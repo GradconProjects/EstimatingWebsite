@@ -39,7 +39,9 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
           {cardOpen ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
         </button>
         <div className="flex-1 min-w-0">
-          <div className="text-[10px] uppercase tracking-widest text-blue-300 font-semibold">{item.section}</div>
+          <div className="text-[10px] uppercase tracking-widest text-blue-300 font-semibold">
+            {item.category} {item.category && item.section ? "›" : ""} {item.section}
+          </div>
           <input
             value={item.label}
             onChange={(e) => setLabel(e.target.value)}

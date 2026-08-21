@@ -23,6 +23,7 @@ export const RESOURCE_COLS = [
 
 /* ---------- Labour task templates, keyed by the element's `labour` field ---------- */
 export const LABOUR_TEMPLATES = {
+  excavation: ["Site setout as required", "Bulk / trench excavate", "Cart spoil offsite", "Trim & compact base", "Backfill & compact", "Factory labour"],
   footing: ["Site setout as required", "Excavate & prep base", "Formwork / box out", "Tie steel", "Pour concrete", "Strip & tidy", "Factory labour"],
   wall: ["Site setout as required", "Excavate & prep (if required)", "Formwork (both faces)", "Tie steel", "Pour concrete", "Strip formwork", "Patch & clean up", "Factory labour"],
   slab_ground: ["Site setout as required", "Excavate & prep base", "Pour blinding", "Lay poly", "Tie steel / box slab", "Pour concrete", "Strip & tidy", "Factory labour"],
@@ -101,31 +102,76 @@ export const FULL_CATALOG = [
 }));
 
 /* ---------- Element types ----------
- * One entry per "tab" in the original workbook. `section` groups them on
- * the Add-Element dropdown and the Quote Summary — keep the array in
- * ground-up construction sequence (piling → propping → columns → capping
- * beams → footings → walls → pool → planter → slabs → beams) since that
- * order is meaningful to an estimator scanning the list, not arbitrary.
+ * Every concrete/structural element Gradcon might reasonably meet across
+ * ANY building or civil project — not curated per job. `category` is the
+ * broad, foldable grouping (Foundations, Suspended Structure, ...) shown
+ * on the Add-Element dropdown; `section` is the finer sub-group used by
+ * the Quote Summary rail. Keep the array in roughly ground-up construction
+ * order (earthworks → foundations → retention → substructure → vertical
+ * structure → suspended structure → external/landscape → pool → civil)
+ * since that's meaningful to an estimator scanning the list, not
+ * arbitrary. See CLAUDE.md → "How to extend" before adding to this list.
  */
 export const ELEMENT_TYPES = [
-  { id: "piles_bored", section: "PILING", name: "Piles - Bored Piers", labour: "footing" },
-  { id: "screw_piles", section: "PILING", name: "Screw Piles", labour: "footing" },
-  { id: "anchor_block_strut", section: "TEMPORARY PROPPING", name: "Anchor Block & Strut", labour: "footing" },
-  { id: "rc_columns", section: "COLUMNS", name: "RC Columns - Fence Post Columns", labour: "footing" },
-  { id: "capping_beam", section: "CAPPING BEAMS", name: "Capping Beam", labour: "footing" },
-  { id: "pile_caps_pad", section: "PILE CAPS & PAD FOOTINGS", name: "Pile Caps - Pad Footings", labour: "footing" },
-  { id: "strip_footings", section: "STRIP FOOTINGS", name: "Strip Footings", labour: "footing" },
-  { id: "shotcrete_wall", section: "SHOTCRETE RETENTION WALLS", name: "Shotcrete Retention Wall", labour: "wall" },
-  { id: "retaining_wall", section: "RETAINING & BOUNDARY WALLS", name: "Basement - Retaining Wall", labour: "wall" },
-  { id: "pool_wall", section: "POOL CONSTRUCTION", name: "Pool Wall", labour: "wall" },
-  { id: "pool_slab", section: "POOL CONSTRUCTION", name: "Pool Slab", labour: "slab_ground" },
-  { id: "planter_wall", section: "PLANTER WALLS", name: "Planter Wall", labour: "wall" },
-  { id: "slab_on_ground", section: "GROUND-BEARING SLABS", name: "Slab on Ground (Garage / Tennis Court / Plant Room / Hardstand)", labour: "slab_ground" },
-  { id: "ramp", section: "GROUND-BEARING SLABS", name: "Ramp", labour: "slab_ground" },
-  { id: "suspended_beam", section: "SUSPENDED BEAMS", name: "Suspended Beam", labour: "slab_suspended" },
-  { id: "suspended_slab", section: "SUSPENDED SLAB", name: "Suspended Slab", labour: "slab_suspended" },
+  // Earthworks — standalone excavation/backfill, not bundled into a pour's labour tasks.
+  { id: "excavation_bulk", category: "EARTHWORKS", section: "EXCAVATION", name: "Bulk Excavation", labour: "excavation" },
+  { id: "excavation_trench", category: "EARTHWORKS", section: "EXCAVATION", name: "Trench Excavation", labour: "excavation" },
+  { id: "excavation_rock", category: "EARTHWORKS", section: "EXCAVATION", name: "Rock Excavation / Breaking", labour: "excavation" },
+  { id: "backfill_compaction", category: "EARTHWORKS", section: "EXCAVATION", name: "Backfill & Compaction", labour: "excavation" },
+
+  // Foundations — piers/piles and footings that carry the structure to ground.
+  { id: "piles_bored", category: "FOUNDATIONS", section: "PILING & PIERS", name: "Piles - Bored Piers", labour: "footing" },
+  { id: "piles_driven", category: "FOUNDATIONS", section: "PILING & PIERS", name: "Driven Piles", labour: "footing" },
+  { id: "piles_cfa", category: "FOUNDATIONS", section: "PILING & PIERS", name: "CFA Piles", labour: "footing" },
+  { id: "screw_piles", category: "FOUNDATIONS", section: "PILING & PIERS", name: "Screw Piles", labour: "footing" },
+  { id: "pile_caps_pad", category: "FOUNDATIONS", section: "FOOTINGS", name: "Pile Caps - Pad Footings", labour: "footing" },
+  { id: "strip_footings", category: "FOUNDATIONS", section: "FOOTINGS", name: "Strip Footings", labour: "footing" },
+  { id: "raft_foundation", category: "FOUNDATIONS", section: "FOOTINGS", name: "Raft / Mat Foundation", labour: "slab_ground" },
+  { id: "capping_beam", category: "FOUNDATIONS", section: "FOOTINGS", name: "Capping Beam", labour: "footing" },
+
+  // Retention & temporary works — holds ground/excavations back during and after construction.
+  { id: "anchor_block_strut", category: "RETENTION & TEMPORARY WORKS", section: "TEMPORARY PROPPING", name: "Anchor Block & Strut", labour: "footing" },
+  { id: "shotcrete_wall", category: "RETENTION & TEMPORARY WORKS", section: "RETENTION SYSTEMS", name: "Shotcrete Retention Wall", labour: "wall" },
+  { id: "secant_pile_wall", category: "RETENTION & TEMPORARY WORKS", section: "RETENTION SYSTEMS", name: "Secant / Contiguous Pile Wall", labour: "wall" },
+  { id: "soldier_pile_wall", category: "RETENTION & TEMPORARY WORKS", section: "RETENTION SYSTEMS", name: "Soldier Pile Wall", labour: "wall" },
+  { id: "retaining_wall", category: "RETENTION & TEMPORARY WORKS", section: "RETENTION SYSTEMS", name: "Basement - Retaining Wall", labour: "wall" },
+
+  // Substructure — ground-bearing slabs below or at the lowest level.
+  { id: "slab_on_ground", category: "SUBSTRUCTURE", section: "GROUND-BEARING SLABS", name: "Slab on Ground (Garage / Tennis Court / Plant Room / Hardstand)", labour: "slab_ground" },
+  { id: "basement_slab", category: "SUBSTRUCTURE", section: "GROUND-BEARING SLABS", name: "Basement Slab", labour: "slab_ground" },
+  { id: "ramp", category: "SUBSTRUCTURE", section: "GROUND-BEARING SLABS", name: "Ramp", labour: "slab_ground" },
+
+  // Vertical structure — columns and load-bearing/core walls carrying floors above.
+  { id: "rc_columns", category: "VERTICAL STRUCTURE", section: "COLUMNS", name: "RC Columns - Fence Post Columns", labour: "footing" },
+  { id: "core_shear_wall", category: "VERTICAL STRUCTURE", section: "WALLS", name: "Core / Shear Wall", labour: "wall" },
+  { id: "loadbearing_wall", category: "VERTICAL STRUCTURE", section: "WALLS", name: "Load-Bearing Wall", labour: "wall" },
+
+  // Suspended structure — elevated slabs/beams, deliberately separate from Foundations.
+  { id: "suspended_beam", category: "SUSPENDED STRUCTURE", section: "SUSPENDED BEAMS", name: "Suspended Beam", labour: "slab_suspended" },
+  { id: "suspended_slab", category: "SUSPENDED STRUCTURE", section: "SUSPENDED SLABS", name: "Suspended Slab", labour: "slab_suspended" },
+  { id: "transfer_slab_beam", category: "SUSPENDED STRUCTURE", section: "SUSPENDED SLABS", name: "Transfer Slab / Beam", labour: "slab_suspended" },
+  { id: "post_tensioned_slab", category: "SUSPENDED STRUCTURE", section: "SUSPENDED SLABS", name: "Post-Tensioned Slab", labour: "slab_suspended" },
+
+  // External & landscape concrete — outside the building envelope.
+  { id: "planter_wall", category: "EXTERNAL & LANDSCAPE CONCRETE", section: "BOUNDARY & LANDSCAPE WALLS", name: "Planter Wall", labour: "wall" },
+  { id: "boundary_wall", category: "EXTERNAL & LANDSCAPE CONCRETE", section: "BOUNDARY & LANDSCAPE WALLS", name: "Boundary Wall", labour: "wall" },
+  { id: "driveway_hardstand", category: "EXTERNAL & LANDSCAPE CONCRETE", section: "PAVING & HARDSTAND", name: "Driveway / External Hardstand", labour: "slab_ground" },
+  { id: "paths_paving", category: "EXTERNAL & LANDSCAPE CONCRETE", section: "PAVING & HARDSTAND", name: "Paths & Paving", labour: "slab_ground" },
+  { id: "kerbs_channels", category: "EXTERNAL & LANDSCAPE CONCRETE", section: "PAVING & HARDSTAND", name: "Kerbs & Channels", labour: "footing" },
+
+  // Pool construction.
+  { id: "pool_wall", category: "POOL CONSTRUCTION", section: "POOL CONSTRUCTION", name: "Pool Wall", labour: "wall" },
+  { id: "pool_slab", category: "POOL CONSTRUCTION", section: "POOL CONSTRUCTION", name: "Pool Slab", labour: "slab_ground" },
+  { id: "spa_water_feature", category: "POOL CONSTRUCTION", section: "POOL CONSTRUCTION", name: "Spa / Water Feature", labour: "wall" },
+
+  // Civil & infrastructure concrete structures.
+  { id: "culvert", category: "CIVIL & INFRASTRUCTURE", section: "CIVIL STRUCTURES", name: "Culvert", labour: "footing" },
+  { id: "headwall", category: "CIVIL & INFRASTRUCTURE", section: "CIVIL STRUCTURES", name: "Headwall", labour: "wall" },
+  { id: "manhole_pit", category: "CIVIL & INFRASTRUCTURE", section: "CIVIL STRUCTURES", name: "Manhole / Pit (in-situ)", labour: "footing" },
+  { id: "bridge_abutment", category: "CIVIL & INFRASTRUCTURE", section: "CIVIL STRUCTURES", name: "Bridge Abutment", labour: "wall" },
 ];
 
+export const CATEGORY_ORDER = [...new Set(ELEMENT_TYPES.map((t) => t.category))];
 export const SECTION_ORDER = [...new Set(ELEMENT_TYPES.map((t) => t.section))];
 
 /* ---------- Overhead/contingency/margin ladder ----------

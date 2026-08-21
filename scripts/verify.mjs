@@ -10,7 +10,7 @@
  */
 import assert from "node:assert/strict";
 import {
-  FULL_CATALOG, RESOURCE_COLS, ELEMENT_TYPES, SECTION_ORDER, MARGIN_STEPS,
+  FULL_CATALOG, RESOURCE_COLS, ELEMENT_TYPES, CATEGORY_ORDER, SECTION_ORDER, LABOUR_TEMPLATES, MARGIN_STEPS,
 } from "../src/data/catalog.js";
 import {
   computeElementCost, computeGrandTotal, computeMarginLadder,
@@ -32,9 +32,18 @@ const check = (name, fn) => {
 console.log("Gradcon Estimator — costing engine checks\n");
 
 /* ---------- catalog shape ---------- */
-check("16 element types, 13 sections", () => {
-  assert.equal(ELEMENT_TYPES.length, 16);
-  assert.equal(SECTION_ORDER.length, 13);
+check("39 element types, 9 categories, 14 sections", () => {
+  assert.equal(ELEMENT_TYPES.length, 39);
+  assert.equal(CATEGORY_ORDER.length, 9);
+  assert.equal(SECTION_ORDER.length, 14);
+});
+
+check("every element type has both a category and a section", () => {
+  ELEMENT_TYPES.forEach((t) => {
+    assert.ok(t.category, `${t.id} is missing category`);
+    assert.ok(t.section, `${t.id} is missing section`);
+    assert.ok(LABOUR_TEMPLATES[t.labour], `${t.id} points at an unknown labour template "${t.labour}"`);
+  });
 });
 
 check("11 material categories, 114 products", () => {

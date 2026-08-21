@@ -1,20 +1,23 @@
 import { useMemo } from "react";
-import { SECTION_ORDER, MARGIN_STEPS, DEFAULT_MARGIN } from "../data/catalog.js";
+import { CATEGORY_ORDER, SECTION_ORDER, MARGIN_STEPS, DEFAULT_MARGIN } from "../data/catalog.js";
 import { computeElementCost, computeGrandTotal, computeMarginLadder, money, money2 } from "../lib/costing.js";
 import { NumInput } from "./atoms.jsx";
 
 export default function QuoteSummary({
   items, rates, gfa, setGfa, overheadPct, setOverheadPct, contingencyPct, setContingencyPct,
 }) {
-  const bySection = useMemo(() => {
-    const groups = {};
-    SECTION_ORDER.forEach((s) => { groups[s] = []; });
+  // Folded two levels deep — category (Foundations, Suspended Structure...)
+  // then section within it — matching the Add-Element dropdown's grouping.
+  const byCategory = useMemo(() => {
+    const cats = {};
+    CATEGORY_ORDER.forEach((c) => { cats[c] = {}; });
     items.forEach((it) => {
       const cost = computeElementCost(it, rates);
-      groups[it.section] = groups[it.section] || [];
-      groups[it.section].push({ item: it, total: cost.total });
+      cats[it.category] = cats[it.category] || {};
+      cats[it.category][it.section] = cats[it.category][it.section] || [];
+      cats[it.category][it.section].push({ item: it, total: cost.total });
     });
-    return groups;
+    return cats;
   }, [items, rates]);
 
   const grandTotal = useMemo(() => computeGrandTotal(items, rates), [items, rates]);
@@ -29,22 +32,27 @@ export default function QuoteSummary({
         <div className="bg-neutral-900 text-white px-4 py-2 text-xs font-semibold uppercase tracking-wide">
           Quote Summary
         </div>
-        <div className="p-3 max-h-[40vh] overflow-y-auto space-y-2">
-          {SECTION_ORDER.filter((s) => bySection[s]?.length).map((section) => {
-            const rowsForSection = bySection[section];
-            const secTotal = rowsForSection.reduce((s, r) => s + r.total, 0);
+        <div className="p-3 max-h-[40vh] overflow-y-auto space-y-3">
+          {CATEGORY_ORDER.filter((c) => Object.values(byCategory[c] || {}).some((rows) => rows.length)).map((category) => {
+            const sections = byCategory[category];
+            const catTotal = Object.values(sections).flat().reduce((s, r) => s + r.total, 0);
             return (
-              <div key={section}>
-                <div className="text-[10px] uppercase tracking-widest text-neutral-400 font-semibold mt-2">{section}</div>
-                {rowsForSection.map((r) => (
-                  <div key={r.item.id} className="flex justify-between text-[13px] py-0.5">
-                    <span className="text-neutral-600 truncate pr-2">{r.item.label}</span>
-                    <span className="font-mono tabular-nums text-neutral-800 flex-none">{money2(r.total)}</span>
+              <div key={category}>
+                <div className="text-[11px] uppercase tracking-widest text-neutral-600 font-bold">{category}</div>
+                {SECTION_ORDER.filter((s) => sections[s]?.length).map((section) => (
+                  <div key={section} className="pl-2 mt-1">
+                    <div className="text-[10px] uppercase tracking-widest text-neutral-400 font-semibold">{section}</div>
+                    {sections[section].map((r) => (
+                      <div key={r.item.id} className="flex justify-between text-[13px] py-0.5">
+                        <span className="text-neutral-600 truncate pr-2">{r.item.label}</span>
+                        <span className="font-mono tabular-nums text-neutral-800 flex-none">{money2(r.total)}</span>
+                      </div>
+                    ))}
                   </div>
                 ))}
                 <div className="flex justify-between text-[12px] font-semibold border-t border-neutral-100 mt-1 pt-1">
                   <span className="text-neutral-500">Subtotal</span>
-                  <span className="font-mono tabular-nums text-neutral-700">{money2(secTotal)}</span>
+                  <span className="font-mono tabular-nums text-neutral-700">{money2(catTotal)}</span>
                 </div>
               </div>
             );

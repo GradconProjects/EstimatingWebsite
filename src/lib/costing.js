@@ -53,6 +53,7 @@ export function newElementItem(type) {
   return {
     id: uid(),
     typeId: type.id,
+    category: type.category,
     section: type.section,
     label: type.name,
     collapsed: false,

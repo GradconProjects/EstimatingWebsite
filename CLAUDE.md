@@ -131,15 +131,23 @@ safety net silently. Keep all cost arithmetic in `lib/costing.js`.
   carefully — see rule 2 above.
 
 - **Add a new element type (tab):** add an entry to `ELEMENT_TYPES` in
-  `catalog.js` with a `section` (existing or new — new sections just
-  appear as a new group in the Add-Element dropdown and Quote Summary
-  automatically) and a `labour` key pointing at one of the
-  `LABOUR_TEMPLATES` (or a new one, if the task sequence genuinely
-  differs — e.g. ground-bearing slabs pour blinding and lay poly;
-  suspended slabs prop and strip formwork instead). Keep new entries in
-  roughly ground-up construction order in the array — that order is what
-  the dropdown and summary display, and it's meaningful to an estimator
-  scanning the list.
+  `catalog.js` with a `category` (the broad, foldable group shown as
+  optgroups in the Add-Element dropdown and as the outer fold in
+  QuoteSummary — e.g. `FOUNDATIONS`, `SUSPENDED STRUCTURE`), a `section`
+  (the finer sub-group nested under category in QuoteSummary — existing
+  or new), and a `labour` key pointing at one of the `LABOUR_TEMPLATES`
+  (or a new one, if the task sequence genuinely differs — e.g.
+  ground-bearing slabs pour blinding and lay poly; suspended slabs prop
+  and strip formwork instead; excavation-only elements don't pour
+  concrete at all). Both `category` and `section` are required — `npm run
+  verify` fails an entry missing either. Keep new entries in roughly
+  ground-up construction order in the array (earthworks → foundations →
+  retention → substructure → vertical structure → suspended structure →
+  external/landscape → pool → civil) — that order is what the dropdown
+  and summary display, and it's meaningful to an estimator scanning the
+  list. `ELEMENT_TYPES` is deliberately comprehensive — every
+  concrete/structural element Gradcon might meet across any building or
+  civil project, not curated per job (see rule 1).
 
 - **Add a new labour resource:** add to `RESOURCE_COLS` with a unique
   `key`. It appears as a new column in every element's Labour/Equipment
@@ -153,19 +161,51 @@ safety net silently. Keep all cost arithmetic in `lib/costing.js`.
   to catalog defaults" button; add one if that's needed (clear the
   relevant key from the stored rates object).
 
+## Multi-project dashboard
+
+The app has two views, switched in `App.jsx` by whether `activeId` points
+at a project: the **Dashboard** (`components/Dashboard.jsx`) lists every
+project with a live-computed summary row (direct cost, sell at the default
+margin, $/m², element count) and a portfolio-wide totals footer; opening
+one renders `ProjectEditor`, the original single-quote UI, scoped to that
+project's own storage key. `lib/projects.js` holds a lightweight index —
+`{ id, storageKey, createdAt }` per project — under `PROJECTS_INDEX_KEY`;
+everything else (name, date, GFA, items) lives in the project's own quote
+object, read via `readQuote`/`readQuotes`. An install that predates
+multi-project support (a single quote under the old fixed `gradcon-quote`
+key) auto-migrates into project #1 the first time the index loads empty —
+see `migrateLegacyQuote`.
+
+## Optional Supabase backend
+
+`lib/storage.js`'s `useStoredState` — the one hook every piece of
+persisted state goes through — transparently backs onto Supabase (a
+single `estimator_kv(key, value, updated_at)` table, see
+`supabase/migrations/0001_estimator_kv.sql`) when
+`VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY` are set, and falls back to
+per-browser `localStorage` otherwise. This is exactly the "network-backed
+implementation swapped in without touching any component" the hook's
+`[value, setValue, status]` signature was originally kept generic for.
+Components never check which backend is active. Both the Supabase load
+and save paths are wrapped in `try/catch` — a network failure (not just an
+API-level error) must still resolve `status` to `"error"`, never leave it
+hung on `"loading"` forever (App.jsx blocks rendering on the projects
+index finishing its load).
+
+`lib/supabaseClient.js` reads the client only from env vars — never
+hardcode a URL or key. `VITE_SUPABASE_ANON_KEY` must be the
+anon/publishable key; the secret/service_role key bypasses every RLS
+policy and must never ship in client code. See `.env.example`.
+
 ## Known limitations, on purpose (not oversights)
 
-- **No shared/multi-user state.** Persistence is per-browser
-  `localStorage` (see `lib/storage.js`), not a backend. Two people on the
-  same job won't see each other's edits. If Grady wants that, it needs a
-  real backend (Postgres + an API, or a hosted key-value store) behind
-  the same `useStoredState`-shaped interface — the hook's `[value,
-  setValue, status]` signature was kept deliberately generic so a
-  network-backed implementation could be swapped in without touching any
-  component.
-- **No auth.** Anyone with the URL and access to the browser can edit
-  rates and quotes. Fine for a single-machine office tool; not fine if
-  this gets deployed publicly.
+- **No auth, even with Supabase configured.** The `estimator_kv` RLS
+  policy allows the anon key to read/write every row — this matches the
+  app's original "no login" design, just shared across devices instead of
+  confined to one browser, not a security boundary. Anyone with the URL
+  and the anon key can edit any project's rates and quotes. Fine for a
+  single-team internal tool; tighten the policy (require `auth.uid()`) if
+  this ever needs real per-user accounts.
 - **No PDF/print export yet.** `window.print()` + a `@media print`
   stylesheet would be the cheapest way to add one if asked.
 - **No undo.** Every edit is immediate and only reversible by hand
@@ -194,9 +234,14 @@ safety net silently. Keep all cost arithmetic in `lib/costing.js`.
 
 1. `npm run verify` — must pass.
 2. `npm run dev` and manually add one of each element-type "shape"
-   (a footing-type, a wall-type, a slab-type) and confirm quantities
-   still roll up into the sticky total and the Quote Summary rail.
+   (an excavation-type, a footing-type, a wall-type, a slab-type) and
+   confirm quantities still roll up into the sticky total and the Quote
+   Summary rail, folded under the right category and section.
 3. If you touched `computeElementCost` or `computeMarginLadder`, add a
    new case to `scripts/verify.mjs` covering it before merging — that
    file is the project's only regression net and should grow with the
    logic, not stay static.
+4. If you touched the Dashboard or multi-project flow: create a second
+   project, add different elements to each, and confirm the Dashboard's
+   per-row totals and "All projects" footer match what each project's own
+   Quote Summary shows.
