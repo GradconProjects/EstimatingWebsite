@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
-import { Settings2, ArrowLeft } from "lucide-react";
+import { Settings2, ArrowLeft, Printer } from "lucide-react";
 import { ELEMENT_TYPES } from "./data/catalog.js";
 import { defaultRates, newElementItem, computeGrandTotal, uid, money } from "./lib/costing.js";
 import { useStoredState } from "./lib/storage.js";
@@ -10,6 +10,7 @@ import ElementCard from "./components/ElementCard.jsx";
 import QuoteSummary from "./components/QuoteSummary.jsx";
 import RatesModal from "./components/RatesModal.jsx";
 import Dashboard from "./components/Dashboard.jsx";
+import PrintQuoteReport from "./components/PrintQuoteReport.jsx";
 
 const blankQuote = () => ({
   projectName: "",
@@ -136,8 +137,8 @@ function ProjectEditor({ project, rates, setRates, ratesStatus, onBack }) {
     : "saved";
 
   return (
-    <div className="min-h-screen bg-neutral-100 text-neutral-900 font-sans">
-      <div className="sticky top-0 z-30 bg-blue-950 text-white shadow-md">
+    <div className="min-h-screen bg-neutral-100 print:bg-white text-neutral-900 font-sans">
+      <div className="print:hidden sticky top-0 z-30 bg-blue-950 text-white shadow-md">
         <div className="max-w-7xl mx-auto px-4 py-2.5 flex items-center gap-4">
           <button
             onClick={onBack}
@@ -160,6 +161,13 @@ function ProjectEditor({ project, rates, setRates, ratesStatus, onBack }) {
             <div className="font-mono tabular-nums text-2xl font-bold text-orange-400">{money(grandTotal)}</div>
           </div>
           <button
+            onClick={() => window.print()}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-900 hover:bg-blue-800 text-sm font-medium transition-colors flex-none"
+            title="Print or save as PDF"
+          >
+            <Printer size={16} /> Print / PDF
+          </button>
+          <button
             onClick={() => setRatesOpen(true)}
             className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-900 hover:bg-blue-800 text-sm font-medium transition-colors flex-none"
           >
@@ -168,7 +176,7 @@ function ProjectEditor({ project, rates, setRates, ratesStatus, onBack }) {
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
+      <div className="print:hidden max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3 text-xs text-neutral-500">
           <span>Date:</span>
           <input
@@ -181,7 +189,7 @@ function ProjectEditor({ project, rates, setRates, ratesStatus, onBack }) {
         <SaveBadge status={overallStatus} />
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 pb-16 grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-4 items-start">
+      <div className="print:hidden max-w-7xl mx-auto px-4 pb-16 grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-4 items-start">
         <div className="space-y-3">
           <AddElementBar onAdd={addElement} />
           {items.map((item) => (
@@ -215,6 +223,8 @@ function ProjectEditor({ project, rates, setRates, ratesStatus, onBack }) {
           />
         </div>
       </div>
+
+      <PrintQuoteReport quote={quote} items={items} rates={rates} />
 
       {ratesOpen && <RatesModal rates={rates} setRates={setRates} onClose={() => setRatesOpen(false)} />}
     </div>

@@ -197,6 +197,21 @@ hardcode a URL or key. `VITE_SUPABASE_ANON_KEY` must be the
 anon/publishable key; the secret/service_role key bypasses every RLS
 policy and must never ship in client code. See `.env.example`.
 
+## PDF / print export
+
+The "Print / PDF" button in `ProjectEditor` calls `window.print()`; the
+browser's own print-to-PDF handles the export, no library needed. What
+prints is **not** the on-screen editable UI — `components/PrintQuoteReport.jsx`
+is a standalone report, hidden on screen and shown only under
+`@media print` (via Tailwind's `print:` variant), built straight from
+`computeElementCost`. Two reasons it's separate rather than just revealing
+the existing cards: (1) collapsed `ElementCard`/`CategoryBlock` sections
+are conditionally unmounted, not just visually hidden, so CSS alone can't
+print their contents regardless of on-screen collapse state; (2) printing
+the full catalog (114 products per element) would be useless — the report
+lists only lines with a quantity entered. The rest of the editor gets
+`print:hidden` (see `App.jsx`). `@page` sizing lives in `index.css`.
+
 ## Known limitations, on purpose (not oversights)
 
 - **No auth, even with Supabase configured.** The `estimator_kv` RLS
@@ -206,8 +221,6 @@ policy and must never ship in client code. See `.env.example`.
   and the anon key can edit any project's rates and quotes. Fine for a
   single-team internal tool; tighten the policy (require `auth.uid()`) if
   this ever needs real per-user accounts.
-- **No PDF/print export yet.** `window.print()` + a `@media print`
-  stylesheet would be the cheapest way to add one if asked.
 - **No undo.** Every edit is immediate and only reversible by hand
   (or duplicating an element before making risky changes to it).
 
