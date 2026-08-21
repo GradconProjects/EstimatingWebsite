@@ -1,0 +1,202 @@
+# Gradcon Estimator — instructions for Claude Code
+
+This is Gradcon Concrete Constructions' estimating tool: pick a structural
+element from a dropdown, the entire material/reo/formwork/labour catalog
+for that element rolls out below it, fill in quantities, and everything
+rolls up live into a quote (element → section → grand total → margin
+ladder). It's a React + Vite + Tailwind app, built to replace an Excel
+workbook that did the same thing with formulas.
+
+Read this whole file before changing anything in `src/lib/costing.js` or
+`src/data/catalog.js` — the costing rules below aren't arbitrary, they're
+what a real Excel workbook got wrong once and had corrected. Breaking one
+of them silently produces a wrong quote, not a crash.
+
+## Quick start
+
+```bash
+npm install
+npm run dev        # http://localhost:5173
+npm run verify      # re-runs the costing regression checks — do this after ANY change to catalog.js or costing.js
+npm run build        # production build
+```
+
+`npm run verify` runs `scripts/verify.mjs` in plain Node — no browser, no
+build step. It caught two real bugs during development (a duplicate
+"Pump" resource key silently overwriting itself, and Trench Mesh/Square
+Mesh/Stock Bar being costed off tonnage instead of their catalog $/unit
+price). Treat a red `verify` run the same as a broken build.
+
+## Architecture
+
+```
+src/
+  data/catalog.js       — ALL domain data. No React, no logic. Plain arrays/objects.
+  lib/costing.js         — ALL domain logic. Pure functions, no React, no DOM.
+  lib/storage.js          — the ONE hook that talks to localStorage.
+  components/              — presentation only. Should not contain business rules
+                             (a component multiplying qty * rate itself, instead of
+                             calling computeElementCost, is a bug waiting to diverge).
+  App.jsx                    — composition root: wires storage + costing + components together.
+scripts/verify.mjs            — Node-runnable regression checks for lib/costing.js.
+```
+
+**Why data/logic/UI are split like this:** `data/catalog.js` and
+`lib/costing.js` have zero React or DOM dependency, so they can be
+imported directly by plain Node (`scripts/verify.mjs` does exactly this).
+That's what makes fast, no-browser regression testing possible. If you
+move costing logic into a component (e.g. compute a row's cost inline in
+`CategoryBlock.jsx` instead of via `computeElementCost`), you lose that
+safety net silently. Keep all cost arithmetic in `lib/costing.js`.
+
+## Costing rules (the part that's easy to get subtly wrong)
+
+1. **Every product in `FULL_CATALOG` is shown on every element type, always.**
+   There is no per-element filtering of which categories or products
+   apply — that was a deliberate decision (Grady wants to see the whole
+   catalog and decide per job what applies, not have the tool guess).
+   A blank quantity costs $0 and contributes nothing — that's what makes
+   showing the whole catalog on every tab harmless. **Do not add
+   per-element-type filtering of catalog rows** without checking that's
+   actually what's wanted; it was explicitly requested to be removed once
+   already (see git history / prior conversation) after an earlier
+   version tried to curate a subset per element type.
+
+2. **Only `PROCESSED BAR` costs off Total Weight.** Its catalog `unitCost`
+   is genuinely $/tonne. Every other category — including Trench Mesh,
+   Square Mesh and Stock Bar, which also carry a `unitWeight` — costs as
+   `qty * unitCost` directly, because their catalog price is per
+   length/sheet/bar, not per tonne. The `unitWeight` on those three exists
+   purely so the UI can show informational tonnage (useful for delivery
+   planning). This is controlled by the `weightBasis` flag on each
+   category in `catalog.js`, consumed in `computeElementCost` in
+   `costing.js`. **If you add a new weight-priced category, set
+   `weightBasis: true` on it. If you're unsure whether a category should
+   be `true`, it almost certainly shouldn't be** — only Processed Bar is.
+
+3. **Percentages are fractions, not whole numbers.** `overheadPct: 0.08`
+   means 8%, not `8`. A whole-number entry displayed with a `%` format
+   but stored as `8` would multiply through as 800%. This bit the
+   original Excel workbook once. There's no UI validation preventing
+   someone typing `8` instead of `0.08` in the Overheads/Contingency
+   inputs right now — if you're touching `QuoteSummary.jsx`, consider
+   whether the input should divide by 100 for a more human-friendly "type
+   8 for 8%" UX, but if you do, update `computeMarginLadder`'s callers
+   consistently (don't have some callers pass fractions and others
+   percentages).
+
+4. **The margin ladder divides, it doesn't multiply.** Sell price =
+   `subtotal / (1 - margin)`, not `subtotal * (1 + margin)`. A 30% margin
+   on cost is not the same number as a 30% markup — this app implements
+   margin-on-sell-price (the construction-industry convention Gradcon
+   uses), matching the original workbook. See
+   `computeMarginLadder` in `costing.js`.
+
+5. **`RESOURCE_COLS` has two entries named "Pump"** (`pump_hr` and
+   `pump_m3` — the catalog prices pumping both per hour and per m³ of
+   concrete pumped). They're distinguished by `key`, not `name`. Anywhere
+   you index labour data by resource, **use `key`, never `name` alone** —
+   keying by name was a real bug during development (the `pump_hr`
+   column's totals silently went missing because a `{name: column}` map
+   only kept the last "Pump" entry). If you add another resource that
+   shares a name with an existing one, give it a distinct `key` and check
+   `verify.mjs`'s "BOTH Pump columns" test still passes as a pattern to
+   follow.
+
+6. **Rate lookups always fall back to the catalog default.** Use
+   `lookupRate(rates, key, fallback)` (or the same `rates[key] || fallback`
+   pattern) everywhere a rate is read — never index into the `rates`
+   object directly and assume the key exists. This matters because a
+   user's saved `rates` blob in localStorage predates any future catalog
+   additions; a missing key should degrade to the catalog default, not
+   render blank/undefined pricing. `verify.mjs` has a test for this
+   ("falls back to catalog default rather than $0") — keep it passing.
+
+7. **GST is hardcoded at 10%** (`GST_RATE` in `catalog.js`). This is an
+   Australian tool. If this is ever adapted for another market, that's
+   the one place to change — but check every place `GST_RATE` or `* 1.1`
+   is used (currently just `computeMarginLadder`).
+
+## How to extend
+
+- **Add a new material product:** add a row to the relevant category's
+  `products` array in `catalog.js` — `[name, unit, unitWeight, unitCost]`,
+  `unitWeight`/`unitCost` are `null` if not applicable. It will
+  automatically appear on every element card and in the Rates modal; no
+  other file needs to change.
+
+- **Add a new material category:** add an object to `FULL_CATALOG`
+  (`{ key, weightBasis, products }`) — it renders automatically via the
+  `FULL_CATALOG.map(...)` in `ElementCard.jsx`. Decide `weightBasis`
+  carefully — see rule 2 above.
+
+- **Add a new element type (tab):** add an entry to `ELEMENT_TYPES` in
+  `catalog.js` with a `section` (existing or new — new sections just
+  appear as a new group in the Add-Element dropdown and Quote Summary
+  automatically) and a `labour` key pointing at one of the
+  `LABOUR_TEMPLATES` (or a new one, if the task sequence genuinely
+  differs — e.g. ground-bearing slabs pour blinding and lay poly;
+  suspended slabs prop and strip formwork instead). Keep new entries in
+  roughly ground-up construction order in the array — that order is what
+  the dropdown and summary display, and it's meaningful to an estimator
+  scanning the list.
+
+- **Add a new labour resource:** add to `RESOURCE_COLS` with a unique
+  `key`. It appears as a new column in every element's Labour/Equipment
+  matrix and in the Rates modal automatically.
+
+- **Change default prices:** edit the `unitCost`/`unitWeight` values
+  directly in `catalog.js`. Note this only changes what a *fresh install*
+  seeds — a user who has already opened the Rates modal and edited a
+  price has that override saved in `localStorage` under `gradcon-rates`,
+  which takes precedence (see `lookupRate`). There's currently no "reset
+  to catalog defaults" button; add one if that's needed (clear the
+  relevant key from the stored rates object).
+
+## Known limitations, on purpose (not oversights)
+
+- **No shared/multi-user state.** Persistence is per-browser
+  `localStorage` (see `lib/storage.js`), not a backend. Two people on the
+  same job won't see each other's edits. If Grady wants that, it needs a
+  real backend (Postgres + an API, or a hosted key-value store) behind
+  the same `useStoredState`-shaped interface — the hook's `[value,
+  setValue, status]` signature was kept deliberately generic so a
+  network-backed implementation could be swapped in without touching any
+  component.
+- **No auth.** Anyone with the URL and access to the browser can edit
+  rates and quotes. Fine for a single-machine office tool; not fine if
+  this gets deployed publicly.
+- **No PDF/print export yet.** `window.print()` + a `@media print`
+  stylesheet would be the cheapest way to add one if asked.
+- **No undo.** Every edit is immediate and only reversible by hand
+  (or duplicating an element before making risky changes to it).
+
+## Design conventions
+
+- Tailwind utility classes throughout, no CSS-in-JS. Palette: `neutral-*`
+  for structure, `blue-950`/`blue-9xx` for the "blueprint navy" header
+  chrome, `orange-*` (safety/hi-vis) for money figures and primary
+  actions, `amber-*` for the labour matrix (visually distinct from
+  material sections). Numbers are `font-mono tabular-nums` throughout so
+  columns of figures align — keep that convention for any new numeric
+  display.
+- Every material/labour input is a controlled `<input type="number">`
+  via the shared `NumInput` component (`components/atoms.jsx`) — reuse
+  it rather than writing a new number input, it already handles the
+  "empty string vs. 0" distinction correctly (an empty cell means "not
+  entered", not "zero").
+- Category blocks and the whole element card are independently
+  collapsible — this was a deliberate response to "the full catalog on
+  every tab is a lot of rows"; don't remove the ability to collapse in
+  the name of simplifying the DOM.
+
+## Verifying a change before calling it done
+
+1. `npm run verify` — must pass.
+2. `npm run dev` and manually add one of each element-type "shape"
+   (a footing-type, a wall-type, a slab-type) and confirm quantities
+   still roll up into the sticky total and the Quote Summary rail.
+3. If you touched `computeElementCost` or `computeMarginLadder`, add a
+   new case to `scripts/verify.mjs` covering it before merging — that
+   file is the project's only regression net and should grow with the
+   logic, not stay static.
