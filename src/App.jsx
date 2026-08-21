@@ -1,27 +1,101 @@
-import { useState, useMemo } from "react";
-import { Settings2 } from "lucide-react";
+import { useState, useMemo, useEffect } from "react";
+import { Settings2, ArrowLeft } from "lucide-react";
 import { ELEMENT_TYPES } from "./data/catalog.js";
 import { defaultRates, newElementItem, computeGrandTotal, uid, money } from "./lib/costing.js";
 import { useStoredState } from "./lib/storage.js";
+import { PROJECTS_INDEX_KEY, newProjectEntry, migrateLegacyQuote, deleteQuote } from "./lib/projects.js";
 import { SaveBadge } from "./components/atoms.jsx";
 import AddElementBar from "./components/AddElementBar.jsx";
 import ElementCard from "./components/ElementCard.jsx";
 import QuoteSummary from "./components/QuoteSummary.jsx";
 import RatesModal from "./components/RatesModal.jsx";
+import Dashboard from "./components/Dashboard.jsx";
 
-const DEFAULT_QUOTE = {
+const blankQuote = () => ({
   projectName: "",
   projectDate: new Date().toISOString().slice(0, 10),
   gfa: undefined,
   overheadPct: 0.08,
   contingencyPct: 0.05,
   items: [],
-};
+});
 
 export default function App() {
-  const [quote, setQuote, quoteStatus] = useStoredState("gradcon-quote", DEFAULT_QUOTE);
+  const [projects, setProjects, projectsStatus] = useStoredState(PROJECTS_INDEX_KEY, []);
   const initialRates = useMemo(() => defaultRates(), []);
   const [rates, setRates, ratesStatus] = useStoredState("gradcon-rates", initialRates);
+  const [activeId, setActiveId] = useState(null);
+  const [ratesOpen, setRatesOpen] = useState(false);
+
+  // One-time migration for installs that had a single quote under the old
+  // fixed "gradcon-quote" key before multi-project support existed.
+  useEffect(() => {
+    if (projectsStatus === "loading") return;
+    if (projects.length === 0) {
+      migrateLegacyQuote().then((migrated) => {
+        if (migrated.length) setProjects(migrated);
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectsStatus]);
+
+  const activeProject = projects.find((p) => p.id === activeId) || null;
+
+  const createProject = () => {
+    const entry = newProjectEntry();
+    setProjects((ps) => [...ps, entry]);
+    setActiveId(entry.id);
+  };
+
+  const deleteProject = (id) => {
+    const target = projects.find((p) => p.id === id);
+    if (!target) return;
+    if (!window.confirm("Delete this project? This can't be undone.")) return;
+    deleteQuote(target.storageKey);
+    setProjects((ps) => ps.filter((p) => p.id !== id));
+    if (activeId === id) setActiveId(null);
+  };
+
+  if (projectsStatus === "loading") {
+    return <div className="min-h-screen bg-neutral-100" />;
+  }
+
+  if (!activeProject) {
+    return (
+      <div className="min-h-screen bg-neutral-100 text-neutral-900 font-sans">
+        <div className="sticky top-0 z-30 bg-blue-950 text-white shadow-md">
+          <div className="max-w-7xl mx-auto px-4 py-2.5 flex items-center justify-between">
+            <div className="text-[10px] uppercase tracking-widest text-blue-300 font-semibold">
+              Gradcon Concrete Constructions
+            </div>
+            <button
+              onClick={() => setRatesOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-900 hover:bg-blue-800 text-sm font-medium transition-colors"
+            >
+              <Settings2 size={16} /> Rates
+            </button>
+          </div>
+        </div>
+        <Dashboard projects={projects} rates={rates} onOpen={setActiveId} onCreate={createProject} onDelete={deleteProject} />
+        {ratesOpen && <RatesModal rates={rates} setRates={setRates} onClose={() => setRatesOpen(false)} />}
+      </div>
+    );
+  }
+
+  return (
+    <ProjectEditor
+      key={activeProject.id}
+      project={activeProject}
+      rates={rates}
+      setRates={setRates}
+      ratesStatus={ratesStatus}
+      onBack={() => setActiveId(null)}
+    />
+  );
+}
+
+function ProjectEditor({ project, rates, setRates, ratesStatus, onBack }) {
+  const [quote, setQuote, quoteStatus] = useStoredState(project.storageKey, blankQuote());
   const [ratesOpen, setRatesOpen] = useState(false);
 
   const items = quote.items || [];
@@ -65,6 +139,13 @@ export default function App() {
     <div className="min-h-screen bg-neutral-100 text-neutral-900 font-sans">
       <div className="sticky top-0 z-30 bg-blue-950 text-white shadow-md">
         <div className="max-w-7xl mx-auto px-4 py-2.5 flex items-center gap-4">
+          <button
+            onClick={onBack}
+            className="flex items-center gap-1 px-2 py-2 rounded-lg hover:bg-blue-900 text-blue-200 hover:text-white text-sm flex-none transition-colors"
+            title="Back to dashboard"
+          >
+            <ArrowLeft size={16} />
+          </button>
           <div className="flex-1 min-w-0">
             <div className="text-[10px] uppercase tracking-widest text-blue-300 font-semibold">Gradcon Concrete Constructions</div>
             <input
