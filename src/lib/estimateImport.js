@@ -1,0 +1,324 @@
+/**
+ * Bridge from the Estimates (Element Takeoff Engine) tool into a Quotes
+ * project. Pure functions only — no React, no DOM — so this can be
+ * Node-tested the same way lib/costing.js is (see scripts/verify.mjs).
+ *
+ * The Estimates tool and the Quotes catalog are two independently-authored
+ * schemas that were never designed to line up 1:1: Estimates computes
+ * generic quantities (a bar diameter + length, a concrete grade + volume,
+ * an area of formwork) while the Quotes catalog prices specific named
+ * Gradcon SKUs. Where the mapping is unambiguous we prefill the quantity;
+ * everywhere it isn't (multiple products could apply, or nothing in the
+ * catalog corresponds at all) we DON'T guess a number into the quote — we
+ * add a flag describing exactly what was found so the estimator enters it
+ * by hand. Silently prefilling a wrong SKU is worse than leaving it blank.
+ */
+import { ELEMENT_TYPES, FULL_CATALOG } from "../data/catalog.js";
+import { newElementItem, rateKey } from "./costing.js";
+
+export const ESTIMATE_EXPORT_KEY = "gradcon-estimate-export";
+
+/**
+ * Estimates "category" (the def.label shown on every takeoff line, e.g.
+ * "Bored Pier") -> Quotes ELEMENT_TYPES id, or null where there's no
+ * reasonable equivalent in the Quotes catalog. Deliberately conservative:
+ * a wrong element-type match buries a line under the wrong cost category,
+ * which is worse than not creating it and flagging the raw numbers instead.
+ */
+export const ESTIMATE_TYPE_MAP = {
+  "Bulk Excavation": "excavation_bulk",
+  "Footing Excavation (standalone)": "excavation_trench",
+  "Slab Trim / Cut-to-fall": null,
+  "Backfill": "backfill_compaction",
+  "Strip Footing": "strip_footings",
+  "Pad Footing": "pile_caps_pad",
+  "Bored Pier": "piles_bored",
+  "Pile Cap": "pile_caps_pad",
+  "Ground Beam": null,
+  "Raft Slab": "raft_foundation",
+  "Waffle Slab": "slab_on_ground",
+  "Industrial Slab": "slab_on_ground",
+  "Slab on Ground": "slab_on_ground",
+  "Suspended Slab": "suspended_slab",
+  "Suspended Beam": "suspended_beam",
+  "Column": "rc_columns",
+  "Concrete Wall / Core": "core_shear_wall",
+  "Retaining Wall": "retaining_wall",
+  "Concrete Stair": null,
+  "Ramp / External Sloped Slab": "ramp",
+  "RC Roof Slab": "suspended_slab",
+  "Driveway": "driveway_hardstand",
+  "Path": "paths_paving",
+  "Hardstand": "driveway_hardstand",
+  "Equipment Pad": null,
+  "Kerb / Channel / Spoon Drain": "kerbs_channels",
+  "Drill & Dowel": null,
+  "Concrete Repair": null,
+  "Crack Repair / Sealing": null,
+  "Turntable Slab (vehicle turntable)": null,
+  "Swimming Pool (concrete shell)": null,
+  "Concrete Planter / Garden Bed": "planter_wall",
+  "Water Tank (in-ground)": null,
+  "Sump Pit (drainage)": "manhole_pit",
+};
+
+const QUOTES_TYPE_BY_ID = {};
+ELEMENT_TYPES.forEach((t) => { QUOTES_TYPE_BY_ID[t.id] = t; });
+
+const CONCRETE_CAT = FULL_CATALOG.find((c) => c.key === "CONCRETE");
+const PROCESSED_BAR_CAT = FULL_CATALOG.find((c) => c.key === "PROCESSED BAR");
+const SQUARE_MESH_CAT = FULL_CATALOG.find((c) => c.key === "SQUARE MESH");
+const FORMWORK_CAT = FULL_CATALOG.find((c) => c.key === "FORMWORK");
+
+/** Extracts a grade number (e.g. 32 from "N32 concrete") from free text. */
+function extractGrade(text) {
+  const m = String(text || "").match(/N?(\d{2})\s*(?:mpa|MPA|concrete)?/);
+  return m ? m[1] : null;
+}
+
+/** Picks the best concrete product for a grade. Prefers the plain "NN mpa"
+ * product over Agilia/walls variants when several exist for that grade, but
+ * always reports whether the pick was ambiguous so it can be flagged. */
+function pickConcreteProduct(grade) {
+  if (!CONCRETE_CAT || !grade) return { product: null, ambiguous: false, candidates: [] };
+  const candidates = CONCRETE_CAT.products.filter((p) => {
+    const g = p.name.match(/^(\d{2})\s*mpa/i);
+    return g && g[1] === grade;
+  });
+  if (candidates.length === 0) return { product: null, ambiguous: false, candidates: [] };
+  const plain = candidates.find((p) => /^\d{2}\s*mpa$/i.test(p.name));
+  return { product: plain || candidates[0], ambiguous: candidates.length > 1, candidates };
+}
+
+function findBarProduct(dia) {
+  if (!PROCESSED_BAR_CAT) return null;
+  return PROCESSED_BAR_CAT.products.find((p) => p.name === dia) || null;
+}
+
+function findMeshProduct(meshType) {
+  if (!SQUARE_MESH_CAT) return null;
+  return SQUARE_MESH_CAT.products.find((p) => p.name === meshType) || null;
+}
+
+function findWallsFormworkProduct() {
+  if (!FORMWORK_CAT) return null;
+  return FORMWORK_CAT.products.find((p) => p.name === "Walls" && p.unit === "m2") || null;
+}
+
+/**
+ * Groups an Estimates export's flat line array by elementId, resolves each
+ * group against the Quotes catalog, and returns a blank-quote-shaped
+ * project plus a flat list of human-readable flags for anything that
+ * couldn't be confidently prefilled.
+ *
+ * `estimateExport` shape: { project: {name,jobNumber,client,revision},
+ * lines: [{elementId, element, category, materialGroup, material, spec,
+ * unit, finalQty, ...}, ...] } — i.e. exactly what the Estimates tool's own
+ * allLines() produces, plus its PROJECT metadata.
+ */
+export function buildImportFromEstimate(estimateExport) {
+  const project = estimateExport?.project || {};
+  const lines = Array.isArray(estimateExport?.lines) ? estimateExport.lines : [];
+
+  const flags = [];
+  const items = [];
+
+  const byElement = new Map();
+  lines.forEach((l) => {
+    if (!byElement.has(l.elementId)) byElement.set(l.elementId, []);
+    byElement.get(l.elementId).push(l);
+  });
+
+  byElement.forEach((group, elementId) => {
+    const first = group[0];
+    const estimateLabel = first.category; // e.g. "Bored Pier"
+    const elementLabel = first.element; // e.g. "Bored Pier 1"
+    const typeId = Object.prototype.hasOwnProperty.call(ESTIMATE_TYPE_MAP, estimateLabel)
+      ? ESTIMATE_TYPE_MAP[estimateLabel]
+      : undefined;
+
+    if (typeId === undefined) {
+      flags.push(
+        `${elementLabel}: "${estimateLabel}" is a type this bridge doesn't know about yet — ` +
+        `add it to ESTIMATE_TYPE_MAP in lib/estimateImport.js, or add the element manually in Quotes.`
+      );
+      return;
+    }
+    if (typeId === null) {
+      const totals = summarizeGroup(group);
+      flags.push(
+        `${elementLabel} (${estimateLabel}): no matching Quotes element type — add it manually. ` +
+        `Totals from the estimate: ${totals}`
+      );
+      return;
+    }
+
+    const type = QUOTES_TYPE_BY_ID[typeId];
+    if (!type) {
+      flags.push(`${elementLabel}: mapped to unknown Quotes type id "${typeId}" — check ESTIMATE_TYPE_MAP.`);
+      return;
+    }
+
+    const item = newElementItem(type);
+    item.label = elementLabel;
+
+    // `handled` tracks exactly which lines ended up EITHER mapped into
+    // item.qtys OR explicitly flagged, so the final sweep below can catch
+    // anything neither happened to (e.g. ligature bars, recorded as a bare
+    // count with no length line — earlier versions of this bridge dropped
+    // those silently because they don't fit the "aggregate by length"
+    // pattern every other bar line does). Nothing is allowed to fall
+    // through without either a number in the quote or a flag about it.
+    const handled = new Set();
+    const flag = (l, msg) => { handled.add(l); flags.push(msg); };
+    const map = (l, key, qty) => { handled.add(l); item.qtys[key] = (Number(item.qtys[key]) || 0) + qty; };
+
+    // --- Concrete: group by grade, aggregate m³ ---
+    const concreteLines = group.filter((l) => l.materialGroup === "Concrete" && (l.unit === "m³" || l.unit === "m3"));
+    const concreteByGrade = {};
+    concreteLines.forEach((l) => {
+      const grade = extractGrade(l.material) || extractGrade(l.spec) || "?";
+      (concreteByGrade[grade] = concreteByGrade[grade] || []).push(l);
+    });
+    Object.entries(concreteByGrade).forEach(([grade, lines]) => {
+      const qty = lines.reduce((s, l) => s + (Number(l.finalQty) || 0), 0);
+      if (grade === "?") {
+        lines.forEach((l) => flag(l, `${elementLabel}: ${qty.toFixed(2)} m³ of concrete with no readable grade — set manually.`));
+        return;
+      }
+      const { product, ambiguous, candidates } = pickConcreteProduct(grade);
+      if (!product) {
+        lines.forEach((l) => flag(l, `${elementLabel}: ${qty.toFixed(2)} m³ of N${grade} concrete — no catalog product for that grade, add manually.`));
+        return;
+      }
+      lines.forEach((l) => map(l, rateKey("CONCRETE", product.name, product.unit), Number(l.finalQty) || 0));
+      if (ambiguous) {
+        flags.push(
+          `${elementLabel}: ${qty.toFixed(2)} m³ of N${grade} concrete prefilled against "${product.name}" — ` +
+          `${candidates.length} matching products exist (${candidates.map((c) => c.name).join(", ")}), verify the right mix was picked.`
+        );
+      }
+    });
+
+    // --- Reinforcement / Connections / Joints bars: group by diameter, aggregate length (m) ---
+    const barLines = group.filter((l) => ["Reinforcement", "Connections", "Joints"].includes(l.materialGroup) && l.unit === "m");
+    const barsByDia = {};
+    barLines.forEach((l) => { (barsByDia[l.material] = barsByDia[l.material] || []).push(l); });
+    Object.entries(barsByDia).forEach(([dia, lines]) => {
+      const len = lines.reduce((s, l) => s + (Number(l.finalQty) || 0), 0);
+      const product = findBarProduct(dia);
+      if (!product) {
+        lines.forEach((l) => flag(l, `${elementLabel}: ${len.toFixed(1)} m of ${dia} reinforcement — no matching Processed Bar product, add manually.`));
+        return;
+      }
+      lines.forEach((l) => map(l, rateKey("PROCESSED BAR", product.name, product.unit), Number(l.finalQty) || 0));
+    });
+
+    // --- Square Mesh: Quotes takes m² of coverage directly (it works out the
+    // sheet count itself — see areaBasis in data/catalog.js), so any
+    // Reinforcement line in m² whose material is a real SL/RL mesh code
+    // maps straight across. The one exception is trench mesh: Estimates
+    // reuses the same SL/RL codes there for its own mass estimate, but a
+    // Quotes Trench Mesh product is a completely different, bar-count-coded
+    // SKU ("4 Bar-L12TM") — an SL/RL code there does NOT identify a real
+    // Square Mesh sheet, so it's flagged instead of mapped.
+    group.filter((l) => l.materialGroup === "Reinforcement" && l.spec === "Trench mesh").forEach((l) => {
+      flag(l,
+        `${elementLabel}: ${(Number(l.finalQty) || 0).toFixed(2)} m² of ${l.material} trench mesh — Quotes' Trench Mesh ` +
+        `catalog is priced by bar-count/length code (e.g. "4 Bar-L12TM"), not by SL/RL sheet type — pick the right product manually.`
+      );
+    });
+    group.filter((l) =>
+      l.materialGroup === "Reinforcement" && (l.unit === "m²" || l.unit === "m2") && !handled.has(l)
+    ).forEach((l) => {
+      const product = findMeshProduct(l.material);
+      if (!product) return; // not a mesh line at all (e.g. a bar-based reo area) — the sweep below flags it
+      map(l, rateKey("SQUARE MESH", product.name, product.unit), Number(l.finalQty) || 0);
+    });
+
+    // --- Formwork: only auto-map wall formwork (the one unambiguous case) ---
+    const formworkLines = group.filter((l) => l.materialGroup === "Formwork");
+    let wallFormworkArea = 0;
+    const wallFormworkLines = [];
+    formworkLines.forEach((l) => {
+      const isWall = /wall/i.test(l.spec || "") || /wall/i.test(l.material || "");
+      const isM2 = l.unit === "m²" || l.unit === "m2";
+      if (isWall && isM2) { wallFormworkArea += Number(l.finalQty) || 0; wallFormworkLines.push(l); }
+      else {
+        flag(l,
+          `${elementLabel}: ${(Number(l.finalQty) || 0).toFixed(2)} ${l.unit} of formwork (${l.material || l.spec}) — ` +
+          `no confident catalog match, pick the right formwork system manually.`
+        );
+      }
+    });
+    if (wallFormworkArea > 0) {
+      const product = findWallsFormworkProduct();
+      if (product) {
+        wallFormworkLines.forEach((l) => map(l, rateKey("FORMWORK", product.name, product.unit), Number(l.finalQty) || 0));
+      } else {
+        wallFormworkLines.forEach((l) => flag(l, `${elementLabel}: ${wallFormworkArea.toFixed(2)} m² of wall formwork — Walls product missing from catalog, add manually.`));
+      }
+    }
+
+    // --- Sweep: anything not yet mapped or flagged gets one now, so nothing
+    // is ever silently lost. A "— mass" line is a pure informational
+    // duplicate of its non-mass sibling line ONLY when both describe the
+    // exact same bars under matching spec text (true for e.g. "Vertical
+    // cage bars" / "Vertical cage bars — mass") — there it's silently
+    // dropped once its sibling is mapped or flagged. Some element
+    // calculators don't keep the two specs aligned (ligatures are recorded
+    // as "Circular ligatures (...)" / "Circular ligatures — mass", which
+    // don't share a prefix), so this pairing can't always be recognised —
+    // in that case both lines get their own flag rather than either being
+    // silently combined or dropped. Slightly redundant is an acceptable
+    // outcome here; losing a real quantity silently is not.
+    const specOf = (l) => (l.spec || "").replace(/ — mass$/, "");
+    const massSiblingOf = (l) => group.find((o) => o.spec === `${specOf(l)} — mass` && o !== l);
+    group.forEach((l) => {
+      if (handled.has(l)) return;
+      const isMass = / — mass$/.test(l.spec || "");
+      if (isMass) {
+        const sibling = group.find((o) => specOf(o) === specOf(l) && o.spec !== l.spec);
+        if (sibling && handled.has(sibling)) { handled.add(l); return; } // redundant with mapped/flagged data
+        flag(l, `${elementLabel}: ${(Number(l.finalQty) || 0).toFixed(2)} ${l.unit} of ${l.materialGroup} (${l.material} — ${specOf(l)}) — Quotes has no catalog line for this, cost it via labour/other allowances manually.`);
+        return;
+      }
+      const sibling = massSiblingOf(l);
+      if (sibling && !handled.has(sibling)) return; // let the mass sibling (more informative) carry the flag instead
+      flag(l, `${elementLabel}: ${(Number(l.finalQty) || 0).toFixed(2)} ${l.unit} of ${l.materialGroup} (${l.material || l.spec}) — Quotes has no catalog line for this, cost it via labour/other allowances manually.`);
+    });
+
+    items.push(item);
+  });
+
+  const quote = {
+    projectName: project.name ? `${project.name} (from Estimates)` : "Imported from Estimates",
+    projectDate: new Date().toISOString().slice(0, 10),
+    gfa: undefined,
+    overheadPct: 0.08,
+    contingencyPct: 0.05,
+    items,
+    importMeta: {
+      jobNumber: project.jobNumber || "",
+      client: project.client || "",
+      revision: project.revision || "",
+      importedAt: new Date().toISOString(),
+    },
+    importFlags: flags,
+  };
+
+  return { quote, flags };
+}
+
+function summarizeGroup(group) {
+  const concrete = group.filter((l) => l.materialGroup === "Concrete").reduce((s, l) => s + (Number(l.finalQty) || 0), 0);
+  const formwork = group.filter((l) => l.materialGroup === "Formwork").reduce((s, l) => s + (Number(l.finalQty) || 0), 0);
+  const reoKg = group
+    .filter((l) => ["Reinforcement", "Connections", "Joints"].includes(l.materialGroup) && l.unit === "kg")
+    .reduce((s, l) => s + (Number(l.finalQty) || 0), 0);
+  const parts = [];
+  if (concrete > 0) parts.push(`${concrete.toFixed(2)} m³ concrete`);
+  if (formwork > 0) parts.push(`${formwork.toFixed(2)} m² formwork`);
+  if (reoKg > 0) parts.push(`${reoKg.toFixed(1)} kg reo`);
+  return parts.length ? parts.join(", ") : "(see the Estimates Quantity Register for this element)";
+}

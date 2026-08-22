@@ -1,0 +1,328 @@
+#!/usr/bin/env node
+/**
+ * Sanity-checks the costing engine without needing a browser.
+ * Run with: npm run verify
+ *
+ * This is NOT a full test suite — it's a fast regression net for the
+ * handful of formulas that are easy to silently break (weight-basis
+ * costing, the duplicate "Pump" resource columns, margin ladder maths).
+ * Extend this file when you add new domain logic to lib/costing.js.
+ */
+import assert from "node:assert/strict";
+import {
+  FULL_CATALOG, RESOURCE_COLS, ELEMENT_TYPES, CATEGORY_ORDER, SECTION_ORDER, LABOUR_TEMPLATES, MARGIN_STEPS,
+} from "../src/data/catalog.js";
+import {
+  computeElementCost, computeGrandTotal, computeMarginLadder,
+  defaultRates, newElementItem, rateKey,
+} from "../src/lib/costing.js";
+import { buildImportFromEstimate } from "../src/lib/estimateImport.js";
+
+let passed = 0;
+const check = (name, fn) => {
+  try {
+    fn();
+    passed++;
+    console.log(`  ok  ${name}`);
+  } catch (e) {
+    console.error(`FAIL  ${name}\n      ${e.message}`);
+    process.exitCode = 1;
+  }
+};
+
+console.log("Gradcon Estimator — costing engine checks\n");
+
+/* ---------- catalog shape ---------- */
+check("39 element types, 9 categories, 14 sections", () => {
+  assert.equal(ELEMENT_TYPES.length, 39);
+  assert.equal(CATEGORY_ORDER.length, 9);
+  assert.equal(SECTION_ORDER.length, 14);
+});
+
+check("every element type has both a category and a section", () => {
+  ELEMENT_TYPES.forEach((t) => {
+    assert.ok(t.category, `${t.id} is missing category`);
+    assert.ok(t.section, `${t.id} is missing section`);
+    assert.ok(LABOUR_TEMPLATES[t.labour], `${t.id} points at an unknown labour template "${t.labour}"`);
+  });
+});
+
+check("11 material categories, 114 products", () => {
+  assert.equal(FULL_CATALOG.length, 11);
+  const total = FULL_CATALOG.reduce((s, c) => s + c.products.length, 0);
+  assert.equal(total, 114);
+});
+
+check("8 labour/equipment resource columns (incl. both Pump hr and Pump m3)", () => {
+  assert.equal(RESOURCE_COLS.length, 8);
+  const pumps = RESOURCE_COLS.filter((r) => r.name === "Pump");
+  assert.equal(pumps.length, 2);
+  assert.notEqual(pumps[0].key, pumps[1].key); // must have distinct keys or one silently overwrites the other
+});
+
+/* ---------- direct-rate costing (qty * unitCost) ---------- */
+check("Concrete costs directly: 50 m3 Small load charge @ $47.25 = $2362.50", () => {
+  const rates = defaultRates();
+  const type = ELEMENT_TYPES.find((t) => t.id === "strip_footings");
+  const item = newElementItem(type);
+  item.qtys[rateKey("CONCRETE", "Small load charge", "m3")] = 50;
+  const cost = computeElementCost(item, rates);
+  assert.equal(cost.materialsTotal, 2362.5);
+  assert.equal(cost.concreteQty, 50);
+});
+
+check("Trench Mesh costs directly (NOT via tonnage): 10x 4 Bar-L12TM @ $41.19 = $411.90", () => {
+  const rates = defaultRates();
+  const type = ELEMENT_TYPES.find((t) => t.id === "strip_footings");
+  const item = newElementItem(type);
+  item.qtys[rateKey("TRENCH MESH", "4 Bar-L12TM", "length")] = 10;
+  const cost = computeElementCost(item, rates);
+  assert.equal(cost.categoryTotals["TRENCH MESH"], 411.9);
+});
+
+
+/* ---------- area-basis costing (Square Mesh only) ---------- */
+check("Square Mesh: qty is m² of coverage, cost = ceil(qty/sheetArea) x $/sheet, never a fractional sheet", () => {
+  const rates = defaultRates();
+  const type = ELEMENT_TYPES.find((t) => t.id === "slab_on_ground");
+  const item = newElementItem(type);
+  // SL82: sheetArea 14.4 m², $98.12/sheet. 20 m² needs ceil(20/14.4) = 2 sheets.
+  item.qtys[rateKey("SQUARE MESH", "SL82", "m2")] = 20;
+  const cost = computeElementCost(item, rates);
+  assert.equal(Math.round(cost.categoryTotals["SQUARE MESH"] * 100) / 100, 196.24);
+
+  // 14.4 m² exactly needs exactly 1 sheet, not 2 — ceil() must not over-round a clean multiple.
+  const item2 = newElementItem(type);
+  item2.qtys[rateKey("SQUARE MESH", "SL82", "m2")] = 14.4;
+  assert.equal(Math.round(computeElementCost(item2, rates).categoryTotals["SQUARE MESH"] * 100) / 100, 98.12);
+});
+
+/* ---------- length-basis costing (Stock Bar only) ---------- */
+check("Stock Bar: qty is m of bar needed, cost = ceil(qty/barLength) x $/bar, never a fractional bar", () => {
+  const rates = defaultRates();
+  const type = ELEMENT_TYPES.find((t) => t.id === "slab_on_ground");
+  const item = newElementItem(type);
+  // N16 - 6.0m length: barLength 6m, $17.51/bar. 13m needs ceil(13/6) = 3 bars = $52.53.
+  item.qtys[rateKey("STOCK BAR", "N16 - 6.0m length", "m")] = 13;
+  const cost = computeElementCost(item, rates);
+  assert.equal(Math.round(cost.categoryTotals["STOCK BAR"] * 100) / 100, 52.53);
+
+  // 12m exactly needs exactly 2 bars, not 3 — ceil() must not over-round a clean multiple.
+  const item2 = newElementItem(type);
+  item2.qtys[rateKey("STOCK BAR", "N16 - 6.0m length", "m")] = 12;
+  assert.equal(Math.round(computeElementCost(item2, rates).categoryTotals["STOCK BAR"] * 100) / 100, 35.02);
+});
+
+/* ---------- weight-basis costing (Processed Bar only) ---------- */
+check("Processed Bar costs via Total Weight x $/tonne: 1000m N16 (1.6kg/m @ $1930/t) = $3088", () => {
+  const rates = defaultRates();
+  const type = ELEMENT_TYPES.find((t) => t.id === "strip_footings");
+  const item = newElementItem(type);
+  item.qtys[rateKey("PROCESSED BAR", "N16", "m")] = 1000;
+  const cost = computeElementCost(item, rates);
+  assert.equal(cost.categoryTotals["PROCESSED BAR"], 3088);
+});
+
+/* ---------- blank rows cost nothing ---------- */
+check("Every product listed with zero qty contributes $0 (full catalog is 'free' until filled in)", () => {
+  const rates = defaultRates();
+  const type = ELEMENT_TYPES.find((t) => t.id === "pool_wall");
+  const item = newElementItem(type);
+  const cost = computeElementCost(item, rates);
+  assert.equal(cost.materialsTotal, 0);
+  assert.equal(cost.labourTotal, 0);
+  assert.equal(cost.total, 0);
+});
+
+/* ---------- labour matrix ---------- */
+check("Labour rolls up: 8 Concreter days + 20 Pump hrs on one task = $9000, folds into element total", () => {
+  const rates = defaultRates();
+  const type = ELEMENT_TYPES.find((t) => t.id === "strip_footings");
+  const item = newElementItem(type);
+  const pourTask = item.tasks.find((t) => t.name === "Pour concrete");
+  pourTask.qtys["concreter_day"] = 8; // 8 * $500
+  pourTask.qtys["pump_hr"] = 20; // 20 * $250
+  const cost = computeElementCost(item, rates);
+  assert.equal(cost.labourTotal, 9000);
+  assert.equal(cost.total, cost.materialsTotal + cost.labourTotal + cost.additionalTotal);
+});
+
+check("Labour totals split correctly across BOTH Pump columns (hr and m3) without collision", () => {
+  const rates = defaultRates();
+  const type = ELEMENT_TYPES.find((t) => t.id === "suspended_slab");
+  const item = newElementItem(type);
+  const task = item.tasks[0];
+  task.qtys["pump_hr"] = 10; // 10 * $250 = 2500
+  task.qtys["pump_m3"] = 40; // 40 * $7   = 280
+  const cost = computeElementCost(item, rates);
+  assert.equal(cost.resourceCosts["pump_hr"], 2500);
+  assert.equal(cost.resourceCosts["pump_m3"], 280);
+  assert.equal(cost.labourTotal, 2780);
+});
+
+/* ---------- custom / one-off items ---------- */
+check("Custom line items add directly (qty * rate)", () => {
+  const rates = defaultRates();
+  const type = ELEMENT_TYPES.find((t) => t.id === "screw_piles");
+  const item = newElementItem(type);
+  item.additional.push({ id: "x", name: "Difficult access allowance", unit: "item", qty: 1, rate: 2500 });
+  const cost = computeElementCost(item, rates);
+  assert.equal(cost.additionalTotal, 2500);
+  assert.equal(cost.total, 2500);
+});
+
+/* ---------- rate overrides / fallback ---------- */
+check("A rates override changes cost; a MISSING key falls back to catalog default rather than $0", () => {
+  const rates = defaultRates();
+  const type = ELEMENT_TYPES.find((t) => t.id === "strip_footings");
+  const item = newElementItem(type);
+  const key = rateKey("CONCRETE", "32 mpa", "m3");
+  item.qtys[key] = 10;
+
+  const before = computeElementCost(item, rates).materialsTotal;
+  assert.equal(before, 10 * 221.5);
+
+  rates[key] = { unitCost: 300, unitWeight: null };
+  const after = computeElementCost(item, rates).materialsTotal;
+  assert.equal(after, 3000);
+
+  delete rates[key]; // simulate an old saved rates blob missing this key
+  const fallback = computeElementCost(item, rates).materialsTotal;
+  assert.equal(fallback, 10 * 221.5); // falls back to catalog default, not 0
+});
+
+/* ---------- multi-element grand total ---------- */
+check("Grand total sums every element's total across the whole quote", () => {
+  const rates = defaultRates();
+  const a = newElementItem(ELEMENT_TYPES.find((t) => t.id === "strip_footings"));
+  a.qtys[rateKey("CONCRETE", "25 mpa", "m3")] = 10; // $2125
+  const b = newElementItem(ELEMENT_TYPES.find((t) => t.id === "capping_beam"));
+  b.qtys[rateKey("CONCRETE", "32 mpa", "m3")] = 5; // $1107.50
+  const total = computeGrandTotal([a, b], rates);
+  assert.equal(total, 10 * 212.5 + 5 * 221.5);
+});
+
+/* ---------- margin ladder ---------- */
+const approxEqual = (a, b, eps = 1e-6) => assert.ok(Math.abs(a - b) < eps, `${a} !~= ${b}`);
+
+check("Margin ladder: overheads/contingency compound onto direct cost, then margin divides (not multiplies)", () => {
+  const directCost = 100000;
+  const { subtotal, rows } = computeMarginLadder(directCost, 0.08, 0.05, 500, MARGIN_STEPS);
+  approxEqual(subtotal, 113000);
+  const row30 = rows.find((r) => Math.abs(r.margin - 0.3) < 1e-9);
+  approxEqual(row30.sellExGst, subtotal / 0.7);
+  approxEqual(row30.sellIncGst, row30.sellExGst * 1.1);
+  approxEqual(row30.perM2, subtotal / 0.7 / 500);
+});
+
+check("Margin ladder with GFA=0 reports $/m² as 0, not an error", () => {
+  const { rows } = computeMarginLadder(50000, 0, 0, 0, MARGIN_STEPS);
+  rows.forEach((r) => assert.equal(r.perM2, 0));
+});
+
+/* ---------- Estimates -> Quotes import bridge (lib/estimateImport.js) ---------- */
+const estLine = (over) => ({
+  stage: "Foundations", category: "Bored Pier", element: "Bored Pier 1", elementId: "EL01",
+  materialGroup: "Concrete", material: "", spec: "", qty: 0, unit: "m³", waste: 0, lap: 0,
+  finalQty: 0, formula: "", linkedElement: "", notes: "", ...over,
+});
+
+check("Import: unambiguous grade + bar diameter prefill cleanly with no flags", () => {
+  const { quote, flags } = buildImportFromEstimate({
+    project: { name: "Test Job" },
+    lines: [
+      estLine({ materialGroup: "Concrete", material: "N20 concrete", unit: "m³", finalQty: 12.5 }),
+      estLine({ materialGroup: "Reinforcement", material: "N16", unit: "m", finalQty: 340 }),
+    ],
+  });
+  assert.equal(quote.items.length, 1);
+  const item = quote.items[0];
+  assert.equal(item.typeId, "piles_bored");
+  assert.equal(item.qtys[rateKey("CONCRETE", "20 mpa", "m3")], 12.5);
+  assert.equal(item.qtys[rateKey("PROCESSED BAR", "N16", "m")], 340);
+  assert.equal(flags.length, 0, `expected no flags, got: ${flags.join(" | ")}`);
+});
+
+check("Import: element type with no Quotes equivalent produces a flag and no item", () => {
+  const { quote, flags } = buildImportFromEstimate({
+    project: { name: "Test Job" },
+    lines: [
+      { ...estLine({}), category: "Water Tank (in-ground)", element: "Water Tank 1", elementId: "EL02", finalQty: 8 },
+    ],
+  });
+  assert.equal(quote.items.length, 0);
+  assert.ok(flags.some((f) => f.includes("Water Tank")), `expected a Water Tank flag, got: ${flags.join(" | ")}`);
+});
+
+check("Import: ambiguous concrete grade (multiple products) still prefills the plain mix and flags it", () => {
+  const { quote, flags } = buildImportFromEstimate({
+    project: {},
+    lines: [estLine({ material: "N32 concrete", finalQty: 6 })],
+  });
+  const item = quote.items[0];
+  assert.equal(item.qtys[rateKey("CONCRETE", "32 mpa", "m3")], 6); // plain mix preferred over Agilia/walls variants
+  assert.ok(flags.some((f) => f.includes("N32") && f.includes("verify")), `expected an ambiguity flag, got: ${flags.join(" | ")}`);
+});
+
+check("Import: mesh reinforcement (m²) maps straight to Square Mesh m² qty; trench mesh with the same SL/RL code is flagged instead", () => {
+  const { quote, flags } = buildImportFromEstimate({
+    project: {},
+    lines: [
+      { ...estLine({}), category: "Slab on Ground", element: "Slab 1", elementId: "EL04",
+        materialGroup: "Reinforcement", material: "SL82", spec: "Mesh ×1 layer(s)", unit: "m²", finalQty: 55.5 },
+      { ...estLine({}), category: "Strip Footing", element: "Footing 1", elementId: "EL05",
+        materialGroup: "Reinforcement", material: "SL62", spec: "Trench mesh", unit: "m²", finalQty: 12 },
+    ],
+  });
+  const slab = quote.items.find((i) => i.typeId === "slab_on_ground");
+  assert.equal(slab.qtys[rateKey("SQUARE MESH", "SL82", "m2")], 55.5); // raw m², NOT converted to a sheet count here
+  const footing = quote.items.find((i) => i.typeId === "strip_footings");
+  assert.equal(footing.qtys[rateKey("SQUARE MESH", "SL62", "m2")], undefined); // must NOT be silently mapped
+  assert.ok(flags.some((f) => f.includes("Trench Mesh") && f.includes("SL62")), `expected a trench-mesh flag, got: ${flags.join(" | ")}`);
+});
+
+check("Import: wall formwork area maps to the catalog Walls product; other formwork is flagged, not guessed", () => {
+  const { quote, flags } = buildImportFromEstimate({
+    project: {},
+    lines: [
+      { ...estLine({}), category: "Concrete Wall / Core", element: "Wall 1", elementId: "EL03",
+        materialGroup: "Formwork", material: "Wall formwork", spec: "Selected faces", unit: "m²", finalQty: 45 },
+      { ...estLine({}), category: "Concrete Wall / Core", element: "Wall 1", elementId: "EL03",
+        materialGroup: "Formwork", material: "Opening reveals", spec: "", unit: "m²", finalQty: 3 },
+    ],
+  });
+  const item = quote.items[0];
+  assert.equal(item.qtys[rateKey("FORMWORK", "Walls", "m2")], 45);
+  assert.ok(flags.some((f) => f.includes("Opening reveals")), `expected the unmatched opening-reveal formwork to be flagged, got: ${flags.join(" | ")}`);
+});
+
+check("Import: a count-only reinforcement line (no length, e.g. ligatures) is flagged with its weight, never silently dropped", () => {
+  const { quote, flags } = buildImportFromEstimate({
+    project: {},
+    lines: [
+      estLine({ material: "N20 concrete", finalQty: 1 }),
+      { ...estLine({}), materialGroup: "Reinforcement", material: "N10",
+        spec: "Circular ligatures (top+mid+bottom zones)", unit: "no.", finalQty: 39 },
+      { ...estLine({}), materialGroup: "Reinforcement", material: "N10",
+        spec: "Circular ligatures — mass", unit: "kg", finalQty: 40.01 },
+    ],
+  });
+  const item = quote.items[0];
+  assert.equal(item.qtys[rateKey("PROCESSED BAR", "N10", "m")], undefined); // no length was ever given — must not be invented
+  // The count line and its mass line use unrelated spec text in the source
+  // tool ("Circular ligatures (top+mid+bottom zones)" vs "Circular
+  // ligatures — mass"), so this bridge can't reliably recognise them as one
+  // pair and merge them into a single flag — it raises one flag per line
+  // instead. That's a safe failure mode (both numbers stay visible) even if
+  // slightly redundant; what actually matters is that the real weight (not
+  // just the bare bar count) shows up somewhere in the flags.
+  assert.ok(flags.some((f) => f.includes("39.00") && f.includes("no.")), `expected the bar count to be flagged, got: ${flags.join(" | ")}`);
+  assert.ok(flags.some((f) => f.includes("40.01") && f.includes("kg")), `expected the actual weight to be flagged too, got: ${flags.join(" | ")}`);
+});
+
+console.log(`\n${passed} check(s) passed.`);
+if (process.exitCode) {
+  console.error("\nSome checks FAILED — see above.");
+} else {
+  console.log("All good.");
+}

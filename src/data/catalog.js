@@ -1,0 +1,208 @@
+/**
+ * Gradcon catalog data.
+ *
+ * Plain data only — no React, no side effects. This file (and lib/costing.js,
+ * which consumes it) is deliberately kept importable by plain Node so the
+ * costing logic can be unit-tested without a browser (see scripts/verify.mjs).
+ *
+ * See CLAUDE.md at the project root for the business rules this data
+ * encodes before changing anything here.
+ */
+
+/* ---------- Resource / labour catalog ---------- */
+export const RESOURCE_COLS = [
+  { key: "concreter_day", name: "Concreter", unit: "day", rate: 500 },
+  { key: "excavator_day", name: "Excavator", unit: "day", rate: 900 },
+  { key: "bobcat_day", name: "Bobcat", unit: "day", rate: 900 },
+  { key: "pump_hr", name: "Pump", unit: "hr", rate: 250 },
+  { key: "pump_m3", name: "Pump", unit: "m3", rate: 7 },
+  { key: "steelfixer_day", name: "Steel fixer", unit: "day", rate: 650 },
+  { key: "crane_day", name: "Crane", unit: "day", rate: 1600 },
+  { key: "factory_hr", name: "Factory labour", unit: "hr", rate: 150 },
+];
+
+/* ---------- Labour task templates, keyed by the element's `labour` field ---------- */
+export const LABOUR_TEMPLATES = {
+  excavation: ["Site setout as required", "Bulk / trench excavate", "Cart spoil offsite", "Trim & compact base", "Backfill & compact", "Factory labour"],
+  footing: ["Site setout as required", "Excavate & prep base", "Formwork / box out", "Tie steel", "Pour concrete", "Strip & tidy", "Factory labour"],
+  wall: ["Site setout as required", "Excavate & prep (if required)", "Formwork (both faces)", "Tie steel", "Pour concrete", "Strip formwork", "Patch & clean up", "Factory labour"],
+  slab_ground: ["Site setout as required", "Excavate & prep base", "Pour blinding", "Lay poly", "Tie steel / box slab", "Pour concrete", "Strip & tidy", "Factory labour"],
+  slab_suspended: ["Site setout as required", "Prop & form suspended soffit", "Tie steel / box slab", "Pour concrete (pump)", "Strip formwork / props", "Strip & tidy", "Factory labour"],
+};
+
+/* ---------- Full material catalog ----------
+ * weightBasis: true means Total Cost = (Qty * Unit Weight / 1000) * Unit Cost
+ *              (Unit Cost is $/tonne). Only PROCESSED BAR is genuinely
+ *              priced this way in Gradcon's supplier pricing.
+ * areaBasis: true means Qty is entered in m² of coverage and Total Cost =
+ *            ceil(Qty / Sheet Area) * Unit Cost (Unit Cost is $/sheet).
+ *            Only SQUARE MESH works this way — sheets are bought whole, so
+ *            the estimator enters the area to cover and the tool works out
+ *            how many sheets that requires, rather than making them count
+ *            sheets by hand.
+ * weightBasis: false, areaBasis: false (the default) means Total Cost =
+ *              Qty * Unit Cost, even for products that also carry a Unit
+ *              Weight for informational tonnage (Trench Mesh is priced per
+ *              length, not per tonne).
+ * lengthBasis: true means Qty is entered in metres of bar needed and Total
+ *              Cost = ceil(Qty / Bar Length) * Unit Cost (Unit Cost is
+ *              $/bar, Bar Length is the fixed stock length in metres —
+ *              6.0m for every current STOCK BAR product). Only STOCK BAR
+ *              works this way — bars are bought as whole fixed-length
+ *              sticks, so the estimator enters the run of metres needed and
+ *              the tool works out how many whole bars that requires, the
+ *              same idea as areaBasis/SQUARE MESH but by length instead of
+ *              area.
+ * See CLAUDE.md → "Costing rules" before changing any of these flags on any
+ * category, and lib/costing.js → computeRowTotal, the ONE place that
+ * implements this — never recompute a row total inline elsewhere.
+ */
+export const FULL_CATALOG = [
+  { key: "TRENCH MESH", weightBasis: false, products: [
+    ["3 Bar-L8TM", "length", 6.8, 14.39], ["4 Bar-L8TM", "length", 9.2, 18.58], ["5 Bar-L8TM", "length", 11.6, 25.87], ["6 Bar-L8TM", "length", 13.9, 31.05],
+    ["3 Bar-L11TM", "length", 13.3, 24.43], ["4 Bar-L11TM", "length", 17.7, 33.79], ["5 Bar-L11TM", "length", 22.3, 41.3], ["6 Bar-L11TM", "length", 26.8, 50.66],
+    ["3 Bar-L12TM", "length", 16.3, 30.07], ["4 Bar-L12TM", "length", 21.8, 41.19], ["5 Bar-L12TM", "length", 27.3, 50.66], ["6 Bar-L12TM", "length", 32.8, 61.84], ["7 Bar-L12TM", "length", 38.75, 103.5],
+    ["3 Bar-L16TM", "length", 28.9, 91.08], ["4 Bar-L16TM", "length", 38.5, 92.89],
+  ]},
+  /* areaBasis: qty is entered in m² of coverage, not sheet count — a
+   * standard AU mesh sheet is 6.0m x 2.4m = 14.4m², so cost is
+   * ceil(qty / sheetArea) * unitCost (you can't buy a fraction of a
+   * sheet). unitCost is still genuinely $/sheet. See computeRowTotal in
+   * lib/costing.js — this mirrors the weightBasis pattern (Processed Bar)
+   * but converts by sheet coverage instead of by weight. */
+  { key: "SQUARE MESH", weightBasis: false, areaBasis: true, products: [
+    ["SL52", "m2", 21, 50.64, 14.4], ["SL62", "m2", 33, 61.84, 14.4], ["SL72", "m2", 41, 74.62, 14.4], ["SL82", "m2", 52, 98.12, 14.4], ["SL92", "m2", 66, 116.54, 14.4],
+    ["SL102", "m2", 80, 141.18, 14.4], ["SL81", "m2", 105, 185.27, 14.4], ["RL718", "m2", 67, 168.71, 14.4], ["RL818", "m2", 79, 196, 14.4], ["RL918", "m2", 93, 230.73, 14.4],
+    ["RL1018", "m2", 109, 255.85, 14.4], ["RL1118", "m2", 130.53, 231.12, 14.4], ["RL1218", "m2", 157, 328.1, 14.4],
+  ]},
+  { key: "STOCK BAR", weightBasis: false, lengthBasis: true, products: [
+    ["N12 - 6.0m length", "m", 5.46, 10, null, 6], ["N16 - 6.0m length", "m", 9.6, 17.51, null, 6], ["N20 - 6.0m length", "m", 15.19, 27.76, null, 6],
+    ["N24 - 6.0m length", "m", 21.83, 38.68, null, 6], ["N28 - 6.0m length", "m", 29.71, 57.9, null, 6], ["N32 - 6.0m length", "m", 38.81, 70.86, null, 6],
+  ]},
+  { key: "PROCESSED BAR", label: "PROCESSED BAR (unit cost $/tonne, applied to Total Weight)", weightBasis: true, products: [
+    ["N10", "m", 0.632, 1930], ["N12", "m", 0.91, 1930], ["N16", "m", 1.6, 1930], ["N20", "m", 2.532, 1930], ["N24", "m", 3.639, 1930],
+    ["N28", "m", 4.951, 1930], ["N32", "m", 6.468, 1930], ["N36", "m", 8.19, 1930], ["N40", "m", 10.107, 1930],
+  ]},
+  { key: "REINFORCING ACCESSORIES", weightBasis: false, products: [
+    ["Delivery fee", "each", null, 300], ["Poly", "roll", null, 89.4], ["Duct Tape", "roll", null, 4.5], ["Abelflex 100mm", "roll", null, 36],
+    ["Abelflex 150mm", "roll", null, 54], ["CP 25/40 Bar chairs", "bag", null, 16.2], ["CP 50/65 Bar chairs", "bag", null, 17.4],
+    ["CP 75/90 Bar chairs", "bag", null, 21], ["CP 85/100 Bar chairs", "bag", null, 24], ["BCPT 30 Bar chairs", "bag", null, 19.2],
+    ["BCPT 100 Bar chairs", "bag", null, 45.6], ["Base 152", "bag", null, 36.6], ["BP1.6 Tie wire", "roll", null, 5.15],
+  ]},
+  { key: "CONCRETE", weightBasis: false, products: [
+    ["25 mpa Agilia", "m3", null, 310.5], ["32 mpa Agilia", "m3", null, 322.5], ["40 mpa Agilia", "m3", null, 334.5], ["40 mpa Agilia (walls)", "m3", null, 342.5],
+    ["15 mpa", "m3", null, 196.5], ["20 mpa", "m3", null, 207.5], ["25 mpa", "m3", null, 212.5], ["32 mpa", "m3", null, 221.5], ["40 mpa", "m3", null, 233.5],
+    ["50 mpa", "m3", null, 252.5], ["Exposed Agg", "m3", null, 400], ["Small load charge", "m3", null, 47.25], ["Penetron (Xypex) additive", "m3", null, 100],
+  ]},
+  { key: "RATE ITEMS", weightBasis: false, products: [
+    ["Hobbs", "m", null, 105], ["Plinths", "m2", null, 610], ["0-50mm set downs", "m", null, 20], ["51-100mm set downs", "m", null, 45],
+    ["101mm-150mm setdown", "m", null, 80], ["Steps", "m", null, 200], ["Screeds", "m2", null, 120], ["Screeds (decorative)", "m2", null, 140],
+    ["Insitu Walls", "m2", null, 760], ["Stair (floor-floor)", "l/m risers", null, 682], ["Shotcrete", "m2", null, 300],
+  ]},
+  { key: "FORMWORK", weightBasis: false, products: [
+    ["Material", "unit", null, 400], ["Conventional", "m2", null, 150], ["Bondek", "m2", null, 125], ["Edgeform", "m", null, 50],
+    ["Beam/fold sides <400mm d", "m", null, 100], ["Beam/fold sides >400mm d", "m2", null, 250], ["Handrail", "m", null, 30],
+    ["Walls", "m2", null, 250], ["Walls Curved", "m2", null, 350], ["Columns (eg 300x300)", "each", null, 1000],
+    ["Oregon boards", "m2", null, 125], ["Crane Truck hire", "each", null, 1500], ["Scaffold Hire", "day", null, 175], ["Certification", "each", null, 400],
+  ]},
+  { key: "OTHER ACCESSORIES", weightBasis: false, products: [
+    ["Packing sand", "m3", null, 50], ["Crushed Rock", "m3", null, 63], ["Insulation", "m2", null, 25], ["Epoxy", "unit", null, 70],
+    ["Marking Paint", "unit", null, 4], ["Sealers/Acid/MBT", "each", null, 400], ["Curing Products", "price", null, 100],
+  ]},
+  { key: "OTHER ALLOWANCES", weightBasis: false, products: [
+    ["Inspector", "each", null, 130], ["Soil removal", "m3", null, 40], ["Bin Hire", "each", null, 600], ["Sawcutting", "day", null, 450],
+    ["Concrete test", "each", null, 241.5], ["Off-site washout fee", "each", null, 400], ["Truck washout fee", "each", null, 10.5],
+  ]},
+  { key: "SUB CONTRACTORS / TEMPORARY WORKS", weightBasis: false, products: [
+    ["Formwork (subcontract)", "quote", null, null], ["Steel supply", "quote", null, null], ["Steel fix", "quote", null, null],
+    ["Screw Piling", "quote", null, null], ["CFA Piling", "quote", null, null],
+    ["Temporary steel props/struts (150UC23.4) — supply/hire", "tonne", null, 3200],
+  ]},
+].map((c) => ({
+  ...c,
+  label: c.label || c.key,
+  products: c.products.map(([name, unit, unitWeight, unitCost, sheetArea, barLength]) => ({ name, unit, unitWeight, unitCost, sheetArea, barLength })),
+}));
+
+/* ---------- Element types ----------
+ * Every concrete/structural element Gradcon might reasonably meet across
+ * ANY building or civil project — not curated per job. `category` is the
+ * broad, foldable grouping (Foundations, Suspended Structure, ...) shown
+ * on the Add-Element dropdown; `section` is the finer sub-group used by
+ * the Quote Summary rail. Keep the array in roughly ground-up construction
+ * order (earthworks → foundations → retention → substructure → vertical
+ * structure → suspended structure → external/landscape → pool → civil)
+ * since that's meaningful to an estimator scanning the list, not
+ * arbitrary. See CLAUDE.md → "How to extend" before adding to this list.
+ */
+export const ELEMENT_TYPES = [
+  // Earthworks — standalone excavation/backfill, not bundled into a pour's labour tasks.
+  { id: "excavation_bulk", category: "EARTHWORKS", section: "EXCAVATION", name: "Bulk Excavation", labour: "excavation" },
+  { id: "excavation_trench", category: "EARTHWORKS", section: "EXCAVATION", name: "Trench Excavation", labour: "excavation" },
+  { id: "excavation_rock", category: "EARTHWORKS", section: "EXCAVATION", name: "Rock Excavation / Breaking", labour: "excavation" },
+  { id: "backfill_compaction", category: "EARTHWORKS", section: "EXCAVATION", name: "Backfill & Compaction", labour: "excavation" },
+
+  // Foundations — piers/piles and footings that carry the structure to ground.
+  { id: "piles_bored", category: "FOUNDATIONS", section: "PILING & PIERS", name: "Piles - Bored Piers", labour: "footing" },
+  { id: "piles_driven", category: "FOUNDATIONS", section: "PILING & PIERS", name: "Driven Piles", labour: "footing" },
+  { id: "piles_cfa", category: "FOUNDATIONS", section: "PILING & PIERS", name: "CFA Piles", labour: "footing" },
+  { id: "screw_piles", category: "FOUNDATIONS", section: "PILING & PIERS", name: "Screw Piles", labour: "footing" },
+  { id: "pile_caps_pad", category: "FOUNDATIONS", section: "FOOTINGS", name: "Pile Caps - Pad Footings", labour: "footing" },
+  { id: "strip_footings", category: "FOUNDATIONS", section: "FOOTINGS", name: "Strip Footings", labour: "footing" },
+  { id: "raft_foundation", category: "FOUNDATIONS", section: "FOOTINGS", name: "Raft / Mat Foundation", labour: "slab_ground" },
+  { id: "capping_beam", category: "FOUNDATIONS", section: "FOOTINGS", name: "Capping Beam", labour: "footing" },
+
+  // Retention & temporary works — holds ground/excavations back during and after construction.
+  { id: "anchor_block_strut", category: "RETENTION & TEMPORARY WORKS", section: "TEMPORARY PROPPING", name: "Anchor Block & Strut", labour: "footing" },
+  { id: "shotcrete_wall", category: "RETENTION & TEMPORARY WORKS", section: "RETENTION SYSTEMS", name: "Shotcrete Retention Wall", labour: "wall" },
+  { id: "secant_pile_wall", category: "RETENTION & TEMPORARY WORKS", section: "RETENTION SYSTEMS", name: "Secant / Contiguous Pile Wall", labour: "wall" },
+  { id: "soldier_pile_wall", category: "RETENTION & TEMPORARY WORKS", section: "RETENTION SYSTEMS", name: "Soldier Pile Wall", labour: "wall" },
+  { id: "retaining_wall", category: "RETENTION & TEMPORARY WORKS", section: "RETENTION SYSTEMS", name: "Basement - Retaining Wall", labour: "wall" },
+
+  // Substructure — ground-bearing slabs below or at the lowest level.
+  { id: "slab_on_ground", category: "SUBSTRUCTURE", section: "GROUND-BEARING SLABS", name: "Slab on Ground (Garage / Tennis Court / Plant Room / Hardstand)", labour: "slab_ground" },
+  { id: "basement_slab", category: "SUBSTRUCTURE", section: "GROUND-BEARING SLABS", name: "Basement Slab", labour: "slab_ground" },
+  { id: "ramp", category: "SUBSTRUCTURE", section: "GROUND-BEARING SLABS", name: "Ramp", labour: "slab_ground" },
+
+  // Vertical structure — columns and load-bearing/core walls carrying floors above.
+  { id: "rc_columns", category: "VERTICAL STRUCTURE", section: "COLUMNS", name: "RC Columns - Fence Post Columns", labour: "footing" },
+  { id: "core_shear_wall", category: "VERTICAL STRUCTURE", section: "WALLS", name: "Core / Shear Wall", labour: "wall" },
+  { id: "loadbearing_wall", category: "VERTICAL STRUCTURE", section: "WALLS", name: "Load-Bearing Wall", labour: "wall" },
+
+  // Suspended structure — elevated slabs/beams, deliberately separate from Foundations.
+  { id: "suspended_beam", category: "SUSPENDED STRUCTURE", section: "SUSPENDED BEAMS", name: "Suspended Beam", labour: "slab_suspended" },
+  { id: "suspended_slab", category: "SUSPENDED STRUCTURE", section: "SUSPENDED SLABS", name: "Suspended Slab", labour: "slab_suspended" },
+  { id: "transfer_slab_beam", category: "SUSPENDED STRUCTURE", section: "SUSPENDED SLABS", name: "Transfer Slab / Beam", labour: "slab_suspended" },
+  { id: "post_tensioned_slab", category: "SUSPENDED STRUCTURE", section: "SUSPENDED SLABS", name: "Post-Tensioned Slab", labour: "slab_suspended" },
+
+  // External & landscape concrete — outside the building envelope.
+  { id: "planter_wall", category: "EXTERNAL & LANDSCAPE CONCRETE", section: "BOUNDARY & LANDSCAPE WALLS", name: "Planter Wall", labour: "wall" },
+  { id: "boundary_wall", category: "EXTERNAL & LANDSCAPE CONCRETE", section: "BOUNDARY & LANDSCAPE WALLS", name: "Boundary Wall", labour: "wall" },
+  { id: "driveway_hardstand", category: "EXTERNAL & LANDSCAPE CONCRETE", section: "PAVING & HARDSTAND", name: "Driveway / External Hardstand", labour: "slab_ground" },
+  { id: "paths_paving", category: "EXTERNAL & LANDSCAPE CONCRETE", section: "PAVING & HARDSTAND", name: "Paths & Paving", labour: "slab_ground" },
+  { id: "kerbs_channels", category: "EXTERNAL & LANDSCAPE CONCRETE", section: "PAVING & HARDSTAND", name: "Kerbs & Channels", labour: "footing" },
+
+  // Pool construction.
+  { id: "pool_wall", category: "POOL CONSTRUCTION", section: "POOL CONSTRUCTION", name: "Pool Wall", labour: "wall" },
+  { id: "pool_slab", category: "POOL CONSTRUCTION", section: "POOL CONSTRUCTION", name: "Pool Slab", labour: "slab_ground" },
+  { id: "spa_water_feature", category: "POOL CONSTRUCTION", section: "POOL CONSTRUCTION", name: "Spa / Water Feature", labour: "wall" },
+
+  // Civil & infrastructure concrete structures.
+  { id: "culvert", category: "CIVIL & INFRASTRUCTURE", section: "CIVIL STRUCTURES", name: "Culvert", labour: "footing" },
+  { id: "headwall", category: "CIVIL & INFRASTRUCTURE", section: "CIVIL STRUCTURES", name: "Headwall", labour: "wall" },
+  { id: "manhole_pit", category: "CIVIL & INFRASTRUCTURE", section: "CIVIL STRUCTURES", name: "Manhole / Pit (in-situ)", labour: "footing" },
+  { id: "bridge_abutment", category: "CIVIL & INFRASTRUCTURE", section: "CIVIL STRUCTURES", name: "Bridge Abutment", labour: "wall" },
+];
+
+export const CATEGORY_ORDER = [...new Set(ELEMENT_TYPES.map((t) => t.category))];
+export const SECTION_ORDER = [...new Set(ELEMENT_TYPES.map((t) => t.section))];
+
+/* ---------- Overhead/contingency/margin ladder ----------
+ * Applied in sequence: Direct Cost -> (+Overheads% +Contingency%) ->
+ * Subtotal -> /(1-margin) -> Sell ex GST -> *1.1 -> Sell inc GST.
+ * Percentages are always stored as fractions (0.08, not 8) — see
+ * CLAUDE.md "the 15-vs-0.15 gotcha" before touching this.
+ */
+export const MARGIN_STEPS = [0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40];
+export const DEFAULT_MARGIN = 0.30;
+export const GST_RATE = 0.10; // Australian GST — change here if this is ever used outside AU
