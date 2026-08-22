@@ -68,6 +68,27 @@ export async function readQuotes(storageKeys) {
   return map;
 }
 
+/** One-time direct write, used only by the Estimates-import flow (see
+ * lib/estimateImport.js) to seed a brand-new project's quote before its
+ * ProjectEditor (and useStoredState) has ever mounted. Everywhere else,
+ * useStoredState owns writes — this bypasses it deliberately because there
+ * is no mounted editor yet to own the save. */
+export async function writeQuote(storageKey, quote) {
+  if (supabaseEnabled) {
+    try {
+      await supabase.from(TABLE).upsert({ key: storageKey, value: quote, updated_at: new Date().toISOString() });
+    } catch {
+      /* best-effort */
+    }
+    return;
+  }
+  try {
+    window.localStorage.setItem(storageKey, JSON.stringify(quote));
+  } catch {
+    /* best-effort */
+  }
+}
+
 export async function deleteQuote(storageKey) {
   if (supabaseEnabled) {
     try {

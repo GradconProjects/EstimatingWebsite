@@ -44,6 +44,16 @@ function StatTile({ label, value, highlight }) {
 export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete }) {
   const [quotesByKey, setQuotesByKey] = useState({});
   const [loading, setLoading] = useState(true);
+  // Two-click "arm, then confirm" delete instead of window.confirm() — a
+  // native confirm() dialog can be silently blocked (throws or is a no-op)
+  // when this app is embedded in a sandboxed iframe, e.g. hosted inside
+  // the portal shell inside an Artifact viewer, which made Delete appear
+  // to do nothing. This has no dependency on any browser dialog API.
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  const armDelete = (id) => {
+    setConfirmDeleteId(id);
+    setTimeout(() => setConfirmDeleteId((cur) => (cur === id ? null : cur)), 3000);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -147,16 +157,30 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete 
                     >
                       <ArrowRight size={14} />
                     </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onDelete(project.id);
-                      }}
-                      className="p-1.5 rounded hover:bg-red-100 text-neutral-400 hover:text-red-600"
-                      title="Delete project"
-                    >
-                      <Trash2 size={14} />
-                    </button>
+                    {confirmDeleteId === project.id ? (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setConfirmDeleteId(null);
+                          onDelete(project.id);
+                        }}
+                        className="px-2 py-1 rounded bg-red-600 hover:bg-red-700 text-white text-[11px] font-semibold whitespace-nowrap"
+                        title="Click again to permanently delete"
+                      >
+                        Confirm delete?
+                      </button>
+                    ) : (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          armDelete(project.id);
+                        }}
+                        className="p-1.5 rounded hover:bg-red-100 text-neutral-400 hover:text-red-600"
+                        title="Delete project"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    )}
                   </div>
                 </td>
               </tr>

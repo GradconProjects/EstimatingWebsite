@@ -17,18 +17,31 @@ export default function RatesModal({ rates, setRates, onClose }) {
         <div className="overflow-y-auto p-4 space-y-4">
           {FULL_CATALOG.map((cat) => (
             <div key={cat.key}>
-              <div className="text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-1">{cat.label}</div>
+              <div className="text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-1">
+                {cat.label}
+                {cat.areaBasis && <span className="normal-case font-normal text-neutral-400"> — qty entered in m², sheet area below controls the conversion</span>}
+                {cat.lengthBasis && <span className="normal-case font-normal text-neutral-400"> — qty entered in m, bar length below controls the conversion</span>}
+              </div>
               <table className="w-full text-[13px]">
                 <tbody>
                   {cat.products.map((p) => {
                     const k = rateKey(cat.key, p.name, p.unit);
-                    const r = rates[k] || { unitCost: p.unitCost, unitWeight: p.unitWeight };
+                    const r = rates[k] || { unitCost: p.unitCost, unitWeight: p.unitWeight, sheetArea: p.sheetArea, barLength: p.barLength };
                     return (
                       <tr key={k} className="border-t border-neutral-100">
                         <td className="py-1 pr-2 text-neutral-700">{p.name} <span className="text-neutral-400">({p.unit})</span></td>
                         {p.unitWeight != null ? (
                           <td className="py-1 pr-2 w-28">
                             <NumInput value={r.unitWeight} onChange={(v) => update(k, "unitWeight", v)} />
+                          </td>
+                        ) : <td className="w-28"></td>}
+                        {cat.areaBasis ? (
+                          <td className="py-1 pr-2 w-28">
+                            <NumInput value={r.sheetArea} onChange={(v) => update(k, "sheetArea", v)} />
+                          </td>
+                        ) : cat.lengthBasis ? (
+                          <td className="py-1 pr-2 w-28">
+                            <NumInput value={r.barLength} onChange={(v) => update(k, "barLength", v)} />
                           </td>
                         ) : <td className="w-28"></td>}
                         <td className="py-1 w-28">

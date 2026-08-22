@@ -2,7 +2,7 @@ import {
   CATEGORY_ORDER, SECTION_ORDER, FULL_CATALOG, RESOURCE_COLS, MARGIN_STEPS, DEFAULT_MARGIN,
 } from "../data/catalog.js";
 import {
-  computeElementCost, computeGrandTotal, computeMarginLadder, rateKey, lookupRate, money, money2,
+  computeElementCost, computeGrandTotal, computeMarginLadder, rateKey, lookupRate, computeRowTotal, money, money2,
 } from "../lib/costing.js";
 
 /**
@@ -14,17 +14,60 @@ import {
  * or (b) print all 114 catalog products per element regardless, which is
  * useless for a client-facing quote. Instead this is a standalone report,
  * built straight from computeElementCost, that lists only the lines an
- * estimator actually filled in. Hidden on screen, shown only under
- * `@media print` via Tailwind's `print:` variant.
+ * estimator actually filled in.
+ *
+ * Two render paths share the same ReportContent: a `hidden print:block` copy
+ * (what actually prints — invisible on screen, shown only under `@media
+ * print`) and an on-screen preview modal (`visible` prop, from the Print/PDF
+ * button in App.jsx). The modal exists because `window.print()` can be
+ * silently blocked when this app is embedded in a sandboxed iframe (e.g.
+ * hosted inside the portal shell inside an Artifact preview) — there's no
+ * reliable way to detect that failure, so the button always opens this
+ * preview too, telling the estimator to use their browser's own Print
+ * command (Ctrl+P/Cmd+P), which works even when the script-triggered dialog
+ * doesn't.
  */
-export default function PrintQuoteReport({ quote, items, rates }) {
+export default function PrintQuoteReport({ quote, items, rates, categoryOrder = CATEGORY_ORDER, sectionOrder = SECTION_ORDER, visible = false, onClose }) {
+  return (
+    <>
+      <div className="hidden print:block text-black text-[11px]">
+        <ReportContent quote={quote} items={items} rates={rates} categoryOrder={categoryOrder} sectionOrder={sectionOrder} />
+      </div>
+      {visible && (
+        <div className="print:hidden fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] flex flex-col shadow-2xl">
+            <div className="flex items-center justify-between gap-4 px-5 py-3 border-b border-neutral-200 bg-amber-50 rounded-t-xl">
+              <div className="text-[13px] text-neutral-800">
+                <b>Print preview.</b> If the print dialog didn't open on its own (this preview's sandbox can silently
+                block it), use your browser's own Print command now — <kbd className="px-1 py-0.5 bg-white border border-neutral-300 rounded text-[11px]">Ctrl+P</kbd> (Windows)
+                or <kbd className="px-1 py-0.5 bg-white border border-neutral-300 rounded text-[11px]">Cmd+P</kbd> (Mac), or the browser menu — then choose
+                "Save as PDF" for a file instead of a physical printout.
+              </div>
+              <button
+                onClick={onClose}
+                className="flex-none px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-900 text-white text-xs font-semibold"
+              >
+                Close
+              </button>
+            </div>
+            <div className="overflow-y-auto p-6 text-black text-[11px]">
+              <ReportContent quote={quote} items={items} rates={rates} categoryOrder={categoryOrder} sectionOrder={sectionOrder} />
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+function ReportContent({ quote, items, rates, categoryOrder, sectionOrder }) {
   const grandTotal = computeGrandTotal(items, rates);
   const { subtotal, rows } = computeMarginLadder(
     grandTotal, quote.overheadPct, quote.contingencyPct, quote.gfa, MARGIN_STEPS
   );
 
   return (
-    <div className="hidden print:block text-black text-[11px]">
+    <>
       <div className="border-b-2 border-black pb-2 mb-3">
         <div className="text-[10px] uppercase tracking-widest text-neutral-600 font-semibold">
           Gradcon Concrete Constructions
@@ -33,13 +76,13 @@ export default function PrintQuoteReport({ quote, items, rates }) {
         <div className="text-neutral-600">Date: {quote.projectDate}</div>
       </div>
 
-      {CATEGORY_ORDER.map((category) => {
+      {categoryOrder.map((category) => {
         const catItems = items.filter((it) => it.category === category);
         if (catItems.length === 0) return null;
         return (
           <div key={category} className="mb-3">
             <div className="text-xs font-bold uppercase tracking-wide bg-neutral-200 px-2 py-1">{category}</div>
-            {SECTION_ORDER.map((section) => {
+            {sectionOrder.map((section) => {
               const secItems = catItems.filter((it) => it.section === section);
               if (secItems.length === 0) return null;
               return (
@@ -104,7 +147,7 @@ export default function PrintQuoteReport({ quote, items, rates }) {
           </tbody>
         </table>
       </div>
-    </div>
+    </>
   );
 }
 
@@ -117,11 +160,8 @@ function ElementReportBlock({ item, rates }) {
       const qKey = rateKey(cat.key, p.name, p.unit);
       const qty = Number(item.qtys[qKey]) || 0;
       if (qty > 0) {
-        const rate = lookupRate(rates, qKey, { unitCost: p.unitCost ?? 0, unitWeight: p.unitWeight });
-        const rowTotal =
-          cat.weightBasis && rate.unitWeight
-            ? ((qty * rate.unitWeight) / 1000) * rate.unitCost
-            : qty * rate.unitCost;
+        const rate = lookupRate(rates, qKey, { unitCost: p.unitCost ?? 0, unitWeight: p.unitWeight, sheetArea: p.sheetArea, barLength: p.barLength });
+        const rowTotal = computeRowTotal(cat, rate, qty);
         materialLines.push({ key: qKey, label: `${p.name} (${cat.key})`, qty, unit: p.unit, total: rowTotal });
       }
     });

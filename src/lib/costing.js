@@ -28,7 +28,7 @@ export function defaultRates() {
   const r = {};
   FULL_CATALOG.forEach((cat) => {
     cat.products.forEach((p) => {
-      r[rateKey(cat.key, p.name, p.unit)] = { unitCost: p.unitCost ?? 0, unitWeight: p.unitWeight };
+      r[rateKey(cat.key, p.name, p.unit)] = { unitCost: p.unitCost ?? 0, unitWeight: p.unitWeight, sheetArea: p.sheetArea, barLength: p.barLength };
     });
   });
   RESOURCE_COLS.forEach((res) => {
@@ -46,6 +46,26 @@ export function defaultRates() {
  */
 export function lookupRate(rates, key, fallback) {
   return rates[key] || fallback;
+}
+
+/**
+ * The ONE place that turns a catalog row's quantity into a dollar figure —
+ * computeElementCost, CategoryBlock.jsx and PrintQuoteReport.jsx all call
+ * this rather than recomputing it themselves, so the three can never
+ * silently disagree. See CLAUDE.md "Costing rules" and the areaBasis/
+ * weightBasis comment above FULL_CATALOG in data/catalog.js.
+ */
+export function computeRowTotal(cat, rate, qty) {
+  if (cat.weightBasis && rate.unitWeight) {
+    return ((qty * rate.unitWeight) / 1000) * rate.unitCost;
+  }
+  if (cat.areaBasis && rate.sheetArea) {
+    return Math.ceil(qty / rate.sheetArea) * rate.unitCost;
+  }
+  if (cat.lengthBasis && rate.barLength) {
+    return Math.ceil(qty / rate.barLength) * rate.unitCost;
+  }
+  return qty * rate.unitCost;
 }
 
 /** Creates a fresh quote line item for the given element type. */
@@ -73,10 +93,17 @@ export function newElementItem(type) {
  *  - weightBasis categories (currently only PROCESSED BAR) cost as
  *    (qty * unitWeight / 1000) * unitCost  — i.e. Total Weight (tonnes) *
  *    $/tonne.
+ *  - areaBasis categories (currently only SQUARE MESH) cost as
+ *    ceil(qty / sheetArea) * unitCost — qty is m² of coverage, sheets are
+ *    bought whole so the count always rounds up.
+ *  - lengthBasis categories (currently only STOCK BAR) cost as
+ *    ceil(qty / barLength) * unitCost — qty is metres of bar needed, bars
+ *    are bought whole (fixed stock lengths) so the count always rounds up.
  *  - All other categories cost as qty * unitCost directly, even if the
- *    product also carries a unitWeight (Trench Mesh / Square Mesh / Stock
- *    Bar show tonnage for information only — do not switch these to
- *    weight-based costing, their catalog price is per length/sheet/bar).
+ *    product also carries a unitWeight (Trench Mesh shows tonnage for
+ *    information only — do not switch it to weight-based costing, its
+ *    catalog price is per length). See computeRowTotal, the single
+ *    implementation of all four rules above.
  *  - Labour: for each task row, quantities are entered per resource
  *    (day-count or hour-count). Resource totals are summed across all task
  *    rows, then each resource total is multiplied by that resource's
@@ -96,11 +123,8 @@ export function computeElementCost(item, rates) {
       const qKey = rateKey(cat.key, p.name, p.unit);
       const qty = Number(item.qtys[qKey]) || 0;
       if (qty > 0) {
-        const rate = lookupRate(rates, qKey, { unitCost: p.unitCost ?? 0, unitWeight: p.unitWeight });
-        const rowTotal =
-          cat.weightBasis && rate.unitWeight
-            ? ((qty * rate.unitWeight) / 1000) * rate.unitCost
-            : qty * rate.unitCost;
+        const rate = lookupRate(rates, qKey, { unitCost: p.unitCost ?? 0, unitWeight: p.unitWeight, sheetArea: p.sheetArea });
+        const rowTotal = computeRowTotal(cat, rate, qty);
         catTotal += rowTotal;
         if (cat.key === "CONCRETE") concreteQty += qty;
       }

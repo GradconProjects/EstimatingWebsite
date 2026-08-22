@@ -4,13 +4,14 @@ import { computeElementCost, computeGrandTotal, computeMarginLadder, money, mone
 import { NumInput } from "./atoms.jsx";
 
 export default function QuoteSummary({
-  items, rates, gfa, setGfa, overheadPct, setOverheadPct, contingencyPct, setContingencyPct,
+  items, rates, categoryOrder = CATEGORY_ORDER, sectionOrder = SECTION_ORDER,
+  gfa, setGfa, overheadPct, setOverheadPct, contingencyPct, setContingencyPct,
 }) {
   // Folded two levels deep — category (Foundations, Suspended Structure...)
   // then section within it — matching the Add-Element dropdown's grouping.
   const byCategory = useMemo(() => {
     const cats = {};
-    CATEGORY_ORDER.forEach((c) => { cats[c] = {}; });
+    categoryOrder.forEach((c) => { cats[c] = {}; });
     items.forEach((it) => {
       const cost = computeElementCost(it, rates);
       cats[it.category] = cats[it.category] || {};
@@ -18,7 +19,7 @@ export default function QuoteSummary({
       cats[it.category][it.section].push({ item: it, total: cost.total });
     });
     return cats;
-  }, [items, rates]);
+  }, [items, rates, categoryOrder]);
 
   const grandTotal = useMemo(() => computeGrandTotal(items, rates), [items, rates]);
   const { subtotal, rows } = useMemo(
@@ -33,13 +34,13 @@ export default function QuoteSummary({
           Quote Summary
         </div>
         <div className="p-3 max-h-[40vh] overflow-y-auto space-y-3">
-          {CATEGORY_ORDER.filter((c) => Object.values(byCategory[c] || {}).some((rows) => rows.length)).map((category) => {
+          {categoryOrder.filter((c) => Object.values(byCategory[c] || {}).some((rows) => rows.length)).map((category) => {
             const sections = byCategory[category];
             const catTotal = Object.values(sections).flat().reduce((s, r) => s + r.total, 0);
             return (
               <div key={category}>
                 <div className="text-[11px] uppercase tracking-widest text-neutral-600 font-bold">{category}</div>
-                {SECTION_ORDER.filter((s) => sections[s]?.length).map((section) => (
+                {sectionOrder.filter((s) => sections[s]?.length).map((section) => (
                   <div key={section} className="pl-2 mt-1">
                     <div className="text-[10px] uppercase tracking-widest text-neutral-400 font-semibold">{section}</div>
                     {sections[section].map((r) => (

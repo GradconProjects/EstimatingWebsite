@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronRight } from "lucide-react";
-import { rateKey, money2, lookupRate } from "../lib/costing.js";
+import { rateKey, money2, lookupRate, computeRowTotal } from "../lib/costing.js";
 import { NumInput } from "./atoms.jsx";
 
 /**
@@ -11,6 +11,8 @@ import { NumInput } from "./atoms.jsx";
  */
 export default function CategoryBlock({ cat, item, rates, onQtyChange, catOpen, toggleCat, catTotal }) {
   const hasWeight = cat.products.some((p) => p.unitWeight != null);
+  const hasArea = !!cat.areaBasis;
+  const hasLength = !!cat.lengthBasis;
   return (
     <div className="border border-neutral-200 rounded-lg overflow-hidden bg-white">
       <button
@@ -33,6 +35,8 @@ export default function CategoryBlock({ cat, item, rates, onQtyChange, catOpen, 
                 <th className="text-left px-3 py-1.5 font-medium">Product</th>
                 <th className="text-left px-2 py-1.5 font-medium">Unit</th>
                 <th className="text-right px-2 py-1.5 font-medium w-24">Qty</th>
+                {hasArea && <th className="text-right px-2 py-1.5 font-medium w-20">Sheets</th>}
+                {hasLength && <th className="text-right px-2 py-1.5 font-medium w-20">Bars</th>}
                 {hasWeight && <th className="text-right px-2 py-1.5 font-medium w-20">Wt (kg)</th>}
                 {hasWeight && <th className="text-right px-2 py-1.5 font-medium w-20">Total (t)</th>}
                 <th className="text-right px-2 py-1.5 font-medium w-24">Unit $</th>
@@ -42,11 +46,14 @@ export default function CategoryBlock({ cat, item, rates, onQtyChange, catOpen, 
             <tbody>
               {cat.products.map((p) => {
                 const qKey = rateKey(cat.key, p.name, p.unit);
-                const rate = lookupRate(rates, qKey, { unitCost: p.unitCost ?? 0, unitWeight: p.unitWeight });
+                const rate = lookupRate(rates, qKey, { unitCost: p.unitCost ?? 0, unitWeight: p.unitWeight, sheetArea: p.sheetArea, barLength: p.barLength });
                 const qty = Number(item.qtys[qKey]) || 0;
-                const totalWeight = rate.unitWeight ? (qty * rate.unitWeight) / 1000 : null;
-                const rowTotal =
-                  cat.weightBasis && rate.unitWeight ? (totalWeight || 0) * rate.unitCost : qty * rate.unitCost;
+                const sheets = hasArea && rate.sheetArea ? Math.ceil(qty / rate.sheetArea) : null;
+                const bars = hasLength && rate.barLength ? Math.ceil(qty / rate.barLength) : null;
+                const totalWeight = rate.unitWeight
+                  ? ((sheets != null ? sheets : bars != null ? bars : qty) * rate.unitWeight) / 1000
+                  : null;
+                const rowTotal = computeRowTotal(cat, rate, qty);
                 const filled = qty > 0;
                 return (
                   <tr key={qKey} className={`border-t border-neutral-100 ${filled ? "bg-orange-50/40" : ""}`}>
@@ -55,6 +62,16 @@ export default function CategoryBlock({ cat, item, rates, onQtyChange, catOpen, 
                     <td className="px-2 py-1">
                       <NumInput value={item.qtys[qKey]} onChange={(v) => onQtyChange(qKey, v)} />
                     </td>
+                    {hasArea && (
+                      <td className="px-2 py-1 text-right font-mono text-neutral-400 tabular-nums">
+                        {sheets != null && qty > 0 ? sheets : "—"}
+                      </td>
+                    )}
+                    {hasLength && (
+                      <td className="px-2 py-1 text-right font-mono text-neutral-400 tabular-nums">
+                        {bars != null && qty > 0 ? bars : "—"}
+                      </td>
+                    )}
                     {hasWeight && (
                       <td className="px-2 py-1 text-right font-mono text-neutral-400 tabular-nums">
                         {rate.unitWeight != null ? rate.unitWeight : "—"}
@@ -62,7 +79,7 @@ export default function CategoryBlock({ cat, item, rates, onQtyChange, catOpen, 
                     )}
                     {hasWeight && (
                       <td className="px-2 py-1 text-right font-mono text-neutral-400 tabular-nums">
-                        {totalWeight != null ? totalWeight.toFixed(3) : "—"}
+                        {totalWeight != null && qty > 0 ? totalWeight.toFixed(3) : "—"}
                       </td>
                     )}
                     <td className="px-2 py-1 text-right font-mono text-neutral-500 tabular-nums">

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Plus } from "lucide-react";
 import { CATEGORY_ORDER, ELEMENT_TYPES } from "../data/catalog.js";
 
-export default function AddElementBar({ onAdd }) {
+export default function AddElementBar({ onAdd, elementTypes = ELEMENT_TYPES, categoryOrder = CATEGORY_ORDER }) {
   const [sel, setSel] = useState("");
   return (
     <div className="flex items-center gap-2 bg-white border border-neutral-200 rounded-xl p-2 shadow-sm">
@@ -12,9 +12,9 @@ export default function AddElementBar({ onAdd }) {
         className="flex-1 border border-neutral-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-orange-400"
       >
         <option value="">Select an element to add to the quote…</option>
-        {CATEGORY_ORDER.map((category) => (
+        {categoryOrder.map((category) => (
           <optgroup key={category} label={category}>
-            {ELEMENT_TYPES.filter((t) => t.category === category).map((t) => (
+            {elementTypes.filter((t) => t.category === category).map((t) => (
               <option key={t.id} value={t.id}>{t.name}</option>
             ))}
           </optgroup>

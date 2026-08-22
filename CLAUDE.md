@@ -62,17 +62,26 @@ safety net silently. Keep all cost arithmetic in `lib/costing.js`.
    already (see git history / prior conversation) after an earlier
    version tried to curate a subset per element type.
 
-2. **Only `PROCESSED BAR` costs off Total Weight.** Its catalog `unitCost`
-   is genuinely $/tonne. Every other category — including Trench Mesh,
-   Square Mesh and Stock Bar, which also carry a `unitWeight` — costs as
-   `qty * unitCost` directly, because their catalog price is per
-   length/sheet/bar, not per tonne. The `unitWeight` on those three exists
-   purely so the UI can show informational tonnage (useful for delivery
-   planning). This is controlled by the `weightBasis` flag on each
-   category in `catalog.js`, consumed in `computeElementCost` in
-   `costing.js`. **If you add a new weight-priced category, set
-   `weightBasis: true` on it. If you're unsure whether a category should
-   be `true`, it almost certainly shouldn't be** — only Processed Bar is.
+2. **Only `PROCESSED BAR` costs off Total Weight, and only `SQUARE MESH`
+   costs off Total Area.** Processed Bar's catalog `unitCost` is genuinely
+   $/tonne (`weightBasis: true`). Square Mesh's `unitCost` is genuinely
+   $/sheet, but the estimator enters **m² of coverage**, not a sheet count
+   — `areaBasis: true` tells `computeRowTotal` to cost it as
+   `ceil(qty / sheetArea) * unitCost` (sheets are bought whole, so this
+   always rounds up; `sheetArea` — 14.4 m², a standard 6.0×2.4m sheet — is
+   a per-product catalog/rate field, editable in the Rates modal like
+   `unitWeight`). Every other category — including Trench Mesh and Stock
+   Bar, which also carry a `unitWeight` — costs as `qty * unitCost`
+   directly, because their catalog price is per length/bar, not per tonne;
+   that leftover `unitWeight` exists purely so the UI can show informational
+   tonnage (useful for delivery planning). **`computeRowTotal` in
+   `costing.js` is the ONE place that implements all three rules — always
+   call it (from `computeElementCost`, `CategoryBlock.jsx`,
+   `PrintQuoteReport.jsx`) rather than recomputing a row total inline
+   anywhere else, or the three will eventually disagree.** If you add a new
+   weight- or area-priced category, set the matching flag in `catalog.js`.
+   If you're unsure whether a category should be `true` on either flag, it
+   almost certainly shouldn't be — only Processed Bar and Square Mesh are.
 
 3. **Percentages are fractions, not whole numbers.** `overheadPct: 0.08`
    means 8%, not `8`. A whole-number entry displayed with a `%` format
@@ -211,6 +220,47 @@ print their contents regardless of on-screen collapse state; (2) printing
 the full catalog (114 products per element) would be useless — the report
 lists only lines with a quantity entered. The rest of the editor gets
 `print:hidden` (see `App.jsx`). `@page` sizing lives in `index.css`.
+
+## Self-service element types (Element Types modal)
+
+`ELEMENT_TYPES` in `catalog.js` stays a static, code-reviewed list — but
+Grady can add his own element types from the app itself via the "Element
+Types" button (`components/ManageElementTypesModal.jsx`), so a new job
+that needs an element type nobody's coded yet doesn't have to wait on a
+code change. Custom types are stored separately under
+`gradcon-custom-element-types` (`{id, category, section, name, labour}`,
+same shape as a built-in entry, `labour` restricted to the existing
+`LABOUR_TEMPLATES` keys) and merged with the built-ins at render time in
+`App.jsx` (`allElementTypes`/`allCategoryOrder`/`allSectionOrder`), which
+is what actually gets threaded down to `AddElementBar`, `QuoteSummary` and
+`PrintQuoteReport` as props — `data/catalog.js` itself is never written to.
+If you add a new prop-consuming place that needs the element list, take
+`elementTypes`/`categoryOrder` as props with the built-in exports as
+defaults, the way those three components do, rather than importing
+`ELEMENT_TYPES` directly.
+
+## Estimates → Quotes import bridge
+
+The separate "Estimates" tool (Gradcon Element Takeoff Engine, embedded
+in the combined portal) computes generic quantities — a bar diameter +
+length, a concrete grade + volume — that don't line up 1:1 with Quotes'
+named catalog SKUs. "Publish to Quote" in that tool writes its live
+Quantity Register (`{project, lines}`, i.e. its own `allLines()` output)
+to `localStorage["gradcon-estimate-export"]` and asks the portal shell to
+switch to the Quotes app; `App.jsx` picks that up on load, runs it through
+`lib/estimateImport.js`'s `buildImportFromEstimate`, and creates a new
+project from the result. That function is deliberately conservative: it
+only prefills a catalog quantity where the match is unambiguous (an exact
+element-type match, a bar diameter that exists in Processed Bar, a
+concrete grade with exactly one product, wall formwork against the one
+"Walls" product) and pushes a plain-English flag onto `quote.importFlags`
+for everything else (ambiguous concrete mixes, formwork it can't
+identify, element types Quotes has no equivalent for, trench mesh — see
+the file's comments for why that last one can't auto-map even though it
+reuses Square Mesh's SL/RL codes). `ImportFlagsBanner.jsx` shows those
+flags once, on the freshly-created project; dismissing just clears
+`quote.importFlags`. Extend `ESTIMATE_TYPE_MAP` there (not `catalog.js`)
+if Estimates gains an element type Quotes already has a match for.
 
 ## Known limitations, on purpose (not oversights)
 

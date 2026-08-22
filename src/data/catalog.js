@@ -34,11 +34,28 @@ export const LABOUR_TEMPLATES = {
  * weightBasis: true means Total Cost = (Qty * Unit Weight / 1000) * Unit Cost
  *              (Unit Cost is $/tonne). Only PROCESSED BAR is genuinely
  *              priced this way in Gradcon's supplier pricing.
- * weightBasis: false (the default) means Total Cost = Qty * Unit Cost,
- *              even for products that also carry a Unit Weight for
- *              informational tonnage (Trench Mesh, Square Mesh, Stock Bar
- *              are priced per length/sheet/bar, not per tonne).
- * See CLAUDE.md → "Costing rules" before changing this flag on any category.
+ * areaBasis: true means Qty is entered in m² of coverage and Total Cost =
+ *            ceil(Qty / Sheet Area) * Unit Cost (Unit Cost is $/sheet).
+ *            Only SQUARE MESH works this way — sheets are bought whole, so
+ *            the estimator enters the area to cover and the tool works out
+ *            how many sheets that requires, rather than making them count
+ *            sheets by hand.
+ * weightBasis: false, areaBasis: false (the default) means Total Cost =
+ *              Qty * Unit Cost, even for products that also carry a Unit
+ *              Weight for informational tonnage (Trench Mesh is priced per
+ *              length, not per tonne).
+ * lengthBasis: true means Qty is entered in metres of bar needed and Total
+ *              Cost = ceil(Qty / Bar Length) * Unit Cost (Unit Cost is
+ *              $/bar, Bar Length is the fixed stock length in metres —
+ *              6.0m for every current STOCK BAR product). Only STOCK BAR
+ *              works this way — bars are bought as whole fixed-length
+ *              sticks, so the estimator enters the run of metres needed and
+ *              the tool works out how many whole bars that requires, the
+ *              same idea as areaBasis/SQUARE MESH but by length instead of
+ *              area.
+ * See CLAUDE.md → "Costing rules" before changing any of these flags on any
+ * category, and lib/costing.js → computeRowTotal, the ONE place that
+ * implements this — never recompute a row total inline elsewhere.
  */
 export const FULL_CATALOG = [
   { key: "TRENCH MESH", weightBasis: false, products: [
@@ -47,14 +64,20 @@ export const FULL_CATALOG = [
     ["3 Bar-L12TM", "length", 16.3, 30.07], ["4 Bar-L12TM", "length", 21.8, 41.19], ["5 Bar-L12TM", "length", 27.3, 50.66], ["6 Bar-L12TM", "length", 32.8, 61.84], ["7 Bar-L12TM", "length", 38.75, 103.5],
     ["3 Bar-L16TM", "length", 28.9, 91.08], ["4 Bar-L16TM", "length", 38.5, 92.89],
   ]},
-  { key: "SQUARE MESH", weightBasis: false, products: [
-    ["SL52", "sheet", 21, 50.64], ["SL62", "sheet", 33, 61.84], ["SL72", "sheet", 41, 74.62], ["SL82", "sheet", 52, 98.12], ["SL92", "sheet", 66, 116.54],
-    ["SL102", "sheet", 80, 141.18], ["SL81", "sheet", 105, 185.27], ["RL718", "sheet", 67, 168.71], ["RL818", "sheet", 79, 196], ["RL918", "sheet", 93, 230.73],
-    ["RL1018", "sheet", 109, 255.85], ["RL1118", "sheet", 130.53, 231.12], ["RL1218", "sheet", 157, 328.1],
+  /* areaBasis: qty is entered in m² of coverage, not sheet count — a
+   * standard AU mesh sheet is 6.0m x 2.4m = 14.4m², so cost is
+   * ceil(qty / sheetArea) * unitCost (you can't buy a fraction of a
+   * sheet). unitCost is still genuinely $/sheet. See computeRowTotal in
+   * lib/costing.js — this mirrors the weightBasis pattern (Processed Bar)
+   * but converts by sheet coverage instead of by weight. */
+  { key: "SQUARE MESH", weightBasis: false, areaBasis: true, products: [
+    ["SL52", "m2", 21, 50.64, 14.4], ["SL62", "m2", 33, 61.84, 14.4], ["SL72", "m2", 41, 74.62, 14.4], ["SL82", "m2", 52, 98.12, 14.4], ["SL92", "m2", 66, 116.54, 14.4],
+    ["SL102", "m2", 80, 141.18, 14.4], ["SL81", "m2", 105, 185.27, 14.4], ["RL718", "m2", 67, 168.71, 14.4], ["RL818", "m2", 79, 196, 14.4], ["RL918", "m2", 93, 230.73, 14.4],
+    ["RL1018", "m2", 109, 255.85, 14.4], ["RL1118", "m2", 130.53, 231.12, 14.4], ["RL1218", "m2", 157, 328.1, 14.4],
   ]},
-  { key: "STOCK BAR", weightBasis: false, products: [
-    ["N12 - 6.0m length", "each", 5.46, 10], ["N16 - 6.0m length", "each", 9.6, 17.51], ["N20 - 6.0m length", "each", 15.19, 27.76],
-    ["N24 - 6.0m length", "each", 21.83, 38.68], ["N28 - 6.0m length", "each", 29.71, 57.9], ["N32 - 6.0m length", "each", 38.81, 70.86],
+  { key: "STOCK BAR", weightBasis: false, lengthBasis: true, products: [
+    ["N12 - 6.0m length", "m", 5.46, 10, null, 6], ["N16 - 6.0m length", "m", 9.6, 17.51, null, 6], ["N20 - 6.0m length", "m", 15.19, 27.76, null, 6],
+    ["N24 - 6.0m length", "m", 21.83, 38.68, null, 6], ["N28 - 6.0m length", "m", 29.71, 57.9, null, 6], ["N32 - 6.0m length", "m", 38.81, 70.86, null, 6],
   ]},
   { key: "PROCESSED BAR", label: "PROCESSED BAR (unit cost $/tonne, applied to Total Weight)", weightBasis: true, products: [
     ["N10", "m", 0.632, 1930], ["N12", "m", 0.91, 1930], ["N16", "m", 1.6, 1930], ["N20", "m", 2.532, 1930], ["N24", "m", 3.639, 1930],
@@ -98,7 +121,7 @@ export const FULL_CATALOG = [
 ].map((c) => ({
   ...c,
   label: c.label || c.key,
-  products: c.products.map(([name, unit, unitWeight, unitCost]) => ({ name, unit, unitWeight, unitCost })),
+  products: c.products.map(([name, unit, unitWeight, unitCost, sheetArea, barLength]) => ({ name, unit, unitWeight, unitCost, sheetArea, barLength })),
 }));
 
 /* ---------- Element types ----------

@@ -16,6 +16,7 @@ import {
   computeElementCost, computeGrandTotal, computeMarginLadder,
   defaultRates, newElementItem, rateKey,
 } from "../src/lib/costing.js";
+import { buildImportFromEstimate } from "../src/lib/estimateImport.js";
 
 let passed = 0;
 const check = (name, fn) => {
@@ -79,15 +80,37 @@ check("Trench Mesh costs directly (NOT via tonnage): 10x 4 Bar-L12TM @ $41.19 = 
   assert.equal(cost.categoryTotals["TRENCH MESH"], 411.9);
 });
 
-check("Square Mesh and Stock Bar also cost directly, not via tonnage", () => {
+
+/* ---------- area-basis costing (Square Mesh only) ---------- */
+check("Square Mesh: qty is m² of coverage, cost = ceil(qty/sheetArea) x $/sheet, never a fractional sheet", () => {
   const rates = defaultRates();
   const type = ELEMENT_TYPES.find((t) => t.id === "slab_on_ground");
   const item = newElementItem(type);
-  item.qtys[rateKey("SQUARE MESH", "SL82", "sheet")] = 5; // $98.12/sheet
-  item.qtys[rateKey("STOCK BAR", "N16 - 6.0m length", "each")] = 3; // $17.51/each
+  // SL82: sheetArea 14.4 m², $98.12/sheet. 20 m² needs ceil(20/14.4) = 2 sheets.
+  item.qtys[rateKey("SQUARE MESH", "SL82", "m2")] = 20;
   const cost = computeElementCost(item, rates);
-  assert.equal(Math.round(cost.categoryTotals["SQUARE MESH"] * 100) / 100, 490.6);
+  assert.equal(Math.round(cost.categoryTotals["SQUARE MESH"] * 100) / 100, 196.24);
+
+  // 14.4 m² exactly needs exactly 1 sheet, not 2 — ceil() must not over-round a clean multiple.
+  const item2 = newElementItem(type);
+  item2.qtys[rateKey("SQUARE MESH", "SL82", "m2")] = 14.4;
+  assert.equal(Math.round(computeElementCost(item2, rates).categoryTotals["SQUARE MESH"] * 100) / 100, 98.12);
+});
+
+/* ---------- length-basis costing (Stock Bar only) ---------- */
+check("Stock Bar: qty is m of bar needed, cost = ceil(qty/barLength) x $/bar, never a fractional bar", () => {
+  const rates = defaultRates();
+  const type = ELEMENT_TYPES.find((t) => t.id === "slab_on_ground");
+  const item = newElementItem(type);
+  // N16 - 6.0m length: barLength 6m, $17.51/bar. 13m needs ceil(13/6) = 3 bars = $52.53.
+  item.qtys[rateKey("STOCK BAR", "N16 - 6.0m length", "m")] = 13;
+  const cost = computeElementCost(item, rates);
   assert.equal(Math.round(cost.categoryTotals["STOCK BAR"] * 100) / 100, 52.53);
+
+  // 12m exactly needs exactly 2 bars, not 3 — ceil() must not over-round a clean multiple.
+  const item2 = newElementItem(type);
+  item2.qtys[rateKey("STOCK BAR", "N16 - 6.0m length", "m")] = 12;
+  assert.equal(Math.round(computeElementCost(item2, rates).categoryTotals["STOCK BAR"] * 100) / 100, 35.02);
 });
 
 /* ---------- weight-basis costing (Processed Bar only) ---------- */
@@ -195,6 +218,106 @@ check("Margin ladder: overheads/contingency compound onto direct cost, then marg
 check("Margin ladder with GFA=0 reports $/m² as 0, not an error", () => {
   const { rows } = computeMarginLadder(50000, 0, 0, 0, MARGIN_STEPS);
   rows.forEach((r) => assert.equal(r.perM2, 0));
+});
+
+/* ---------- Estimates -> Quotes import bridge (lib/estimateImport.js) ---------- */
+const estLine = (over) => ({
+  stage: "Foundations", category: "Bored Pier", element: "Bored Pier 1", elementId: "EL01",
+  materialGroup: "Concrete", material: "", spec: "", qty: 0, unit: "m³", waste: 0, lap: 0,
+  finalQty: 0, formula: "", linkedElement: "", notes: "", ...over,
+});
+
+check("Import: unambiguous grade + bar diameter prefill cleanly with no flags", () => {
+  const { quote, flags } = buildImportFromEstimate({
+    project: { name: "Test Job" },
+    lines: [
+      estLine({ materialGroup: "Concrete", material: "N20 concrete", unit: "m³", finalQty: 12.5 }),
+      estLine({ materialGroup: "Reinforcement", material: "N16", unit: "m", finalQty: 340 }),
+    ],
+  });
+  assert.equal(quote.items.length, 1);
+  const item = quote.items[0];
+  assert.equal(item.typeId, "piles_bored");
+  assert.equal(item.qtys[rateKey("CONCRETE", "20 mpa", "m3")], 12.5);
+  assert.equal(item.qtys[rateKey("PROCESSED BAR", "N16", "m")], 340);
+  assert.equal(flags.length, 0, `expected no flags, got: ${flags.join(" | ")}`);
+});
+
+check("Import: element type with no Quotes equivalent produces a flag and no item", () => {
+  const { quote, flags } = buildImportFromEstimate({
+    project: { name: "Test Job" },
+    lines: [
+      { ...estLine({}), category: "Water Tank (in-ground)", element: "Water Tank 1", elementId: "EL02", finalQty: 8 },
+    ],
+  });
+  assert.equal(quote.items.length, 0);
+  assert.ok(flags.some((f) => f.includes("Water Tank")), `expected a Water Tank flag, got: ${flags.join(" | ")}`);
+});
+
+check("Import: ambiguous concrete grade (multiple products) still prefills the plain mix and flags it", () => {
+  const { quote, flags } = buildImportFromEstimate({
+    project: {},
+    lines: [estLine({ material: "N32 concrete", finalQty: 6 })],
+  });
+  const item = quote.items[0];
+  assert.equal(item.qtys[rateKey("CONCRETE", "32 mpa", "m3")], 6); // plain mix preferred over Agilia/walls variants
+  assert.ok(flags.some((f) => f.includes("N32") && f.includes("verify")), `expected an ambiguity flag, got: ${flags.join(" | ")}`);
+});
+
+check("Import: mesh reinforcement (m²) maps straight to Square Mesh m² qty; trench mesh with the same SL/RL code is flagged instead", () => {
+  const { quote, flags } = buildImportFromEstimate({
+    project: {},
+    lines: [
+      { ...estLine({}), category: "Slab on Ground", element: "Slab 1", elementId: "EL04",
+        materialGroup: "Reinforcement", material: "SL82", spec: "Mesh ×1 layer(s)", unit: "m²", finalQty: 55.5 },
+      { ...estLine({}), category: "Strip Footing", element: "Footing 1", elementId: "EL05",
+        materialGroup: "Reinforcement", material: "SL62", spec: "Trench mesh", unit: "m²", finalQty: 12 },
+    ],
+  });
+  const slab = quote.items.find((i) => i.typeId === "slab_on_ground");
+  assert.equal(slab.qtys[rateKey("SQUARE MESH", "SL82", "m2")], 55.5); // raw m², NOT converted to a sheet count here
+  const footing = quote.items.find((i) => i.typeId === "strip_footings");
+  assert.equal(footing.qtys[rateKey("SQUARE MESH", "SL62", "m2")], undefined); // must NOT be silently mapped
+  assert.ok(flags.some((f) => f.includes("Trench Mesh") && f.includes("SL62")), `expected a trench-mesh flag, got: ${flags.join(" | ")}`);
+});
+
+check("Import: wall formwork area maps to the catalog Walls product; other formwork is flagged, not guessed", () => {
+  const { quote, flags } = buildImportFromEstimate({
+    project: {},
+    lines: [
+      { ...estLine({}), category: "Concrete Wall / Core", element: "Wall 1", elementId: "EL03",
+        materialGroup: "Formwork", material: "Wall formwork", spec: "Selected faces", unit: "m²", finalQty: 45 },
+      { ...estLine({}), category: "Concrete Wall / Core", element: "Wall 1", elementId: "EL03",
+        materialGroup: "Formwork", material: "Opening reveals", spec: "", unit: "m²", finalQty: 3 },
+    ],
+  });
+  const item = quote.items[0];
+  assert.equal(item.qtys[rateKey("FORMWORK", "Walls", "m2")], 45);
+  assert.ok(flags.some((f) => f.includes("Opening reveals")), `expected the unmatched opening-reveal formwork to be flagged, got: ${flags.join(" | ")}`);
+});
+
+check("Import: a count-only reinforcement line (no length, e.g. ligatures) is flagged with its weight, never silently dropped", () => {
+  const { quote, flags } = buildImportFromEstimate({
+    project: {},
+    lines: [
+      estLine({ material: "N20 concrete", finalQty: 1 }),
+      { ...estLine({}), materialGroup: "Reinforcement", material: "N10",
+        spec: "Circular ligatures (top+mid+bottom zones)", unit: "no.", finalQty: 39 },
+      { ...estLine({}), materialGroup: "Reinforcement", material: "N10",
+        spec: "Circular ligatures — mass", unit: "kg", finalQty: 40.01 },
+    ],
+  });
+  const item = quote.items[0];
+  assert.equal(item.qtys[rateKey("PROCESSED BAR", "N10", "m")], undefined); // no length was ever given — must not be invented
+  // The count line and its mass line use unrelated spec text in the source
+  // tool ("Circular ligatures (top+mid+bottom zones)" vs "Circular
+  // ligatures — mass"), so this bridge can't reliably recognise them as one
+  // pair and merge them into a single flag — it raises one flag per line
+  // instead. That's a safe failure mode (both numbers stay visible) even if
+  // slightly redundant; what actually matters is that the real weight (not
+  // just the bare bar count) shows up somewhere in the flags.
+  assert.ok(flags.some((f) => f.includes("39.00") && f.includes("no.")), `expected the bar count to be flagged, got: ${flags.join(" | ")}`);
+  assert.ok(flags.some((f) => f.includes("40.01") && f.includes("kg")), `expected the actual weight to be flagged too, got: ${flags.join(" | ")}`);
 });
 
 console.log(`\n${passed} check(s) passed.`);
