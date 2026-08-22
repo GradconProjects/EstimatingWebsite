@@ -20,6 +20,7 @@
  */
 import { FULL_CATALOG, RESOURCE_COLS, CATEGORY_ORDER, SECTION_ORDER, MARGIN_STEPS, DEFAULT_MARGIN } from "../data/catalog.js";
 import { computeElementCost, computeGrandTotal, computeMarginLadder, rateKey, lookupRate, computeRowTotal } from "./costing.js";
+import { GRADCON_LOGO_DATA_URI } from "./logo.js";
 
 /** Every line (material/labour/custom) actually filled in for one element, plus its total. */
 function buildElementLines(item, rates) {
@@ -110,7 +111,13 @@ export function buildQuoteExcelHtml(quote, items, rates, categoryOrder = CATEGOR
 
   const rowsHtml = [];
 
-  rowsHtml.push(tr(td(esc(`Gradcon Concrete Constructions — ${quote.projectName || "Untitled project"}`), {
+  // White background row for the logo — it has a solid white background
+  // baked into the PNG (no alpha channel), so it must sit on white, never
+  // on the navy title band below.
+  rowsHtml.push(tr(td(`<img src="${GRADCON_LOGO_DATA_URI}" height="34" alt="Gradcon Concrete Constructions">`, {
+    colSpan: 4, border: false,
+  })));
+  rowsHtml.push(tr(td(esc(quote.projectName || "Untitled project"), {
     colSpan: 4, bold: true, bg: COLORS.navy, color: COLORS.navyText, border: false,
   })));
   rowsHtml.push(tr(td(esc(`Date: ${quote.projectDate || ""}`), { colSpan: 4, color: COLORS.muted, border: false })));
