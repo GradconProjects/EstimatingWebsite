@@ -80,13 +80,13 @@ function ReportContent({ quote, items, rates, categoryOrder, sectionOrder }) {
         if (catItems.length === 0) return null;
         return (
           <div key={category} className="mb-3">
-            <div className="text-xs font-bold uppercase tracking-wide bg-neutral-200 px-2 py-1">{category}</div>
+            <div className="text-xs font-bold uppercase tracking-wide bg-blue-900 text-white px-2 py-1">{category}</div>
             {sectionOrder.map((section) => {
               const secItems = catItems.filter((it) => it.section === section);
               if (secItems.length === 0) return null;
               return (
                 <div key={section} className="pl-2">
-                  <div className="text-[10px] uppercase tracking-wide text-neutral-500 font-semibold mt-1">
+                  <div className="text-[10px] uppercase tracking-wide text-blue-900 font-semibold bg-blue-50 px-2 py-0.5 mt-1">
                     {section}
                   </div>
                   {secItems.map((item) => (
@@ -105,7 +105,7 @@ function ReportContent({ quote, items, rates, categoryOrder, sectionOrder }) {
       </div>
 
       <div className="mt-3 break-inside-avoid">
-        <div className="text-xs font-bold uppercase tracking-wide bg-neutral-200 px-2 py-1">GFA &amp; On-Costs</div>
+        <div className="text-xs font-bold uppercase tracking-wide bg-blue-900 text-white px-2 py-1">GFA &amp; On-Costs</div>
         <div className="px-2 py-1 flex justify-between">
           <span>Total GFA</span><span>{quote.gfa ? `${quote.gfa} m²` : "—"}</span>
         </div>
@@ -121,14 +121,14 @@ function ReportContent({ quote, items, rates, categoryOrder, sectionOrder }) {
       </div>
 
       <div className="mt-3 break-inside-avoid">
-        <div className="text-xs font-bold uppercase tracking-wide bg-neutral-200 px-2 py-1">Margin Ladder</div>
+        <div className="text-xs font-bold uppercase tracking-wide bg-blue-900 text-white px-2 py-1">Margin Ladder</div>
         <table className="w-full text-[11px] mt-1">
           <thead>
-            <tr className="text-left border-b border-neutral-400">
-              <th className="py-1">Margin</th>
-              <th className="py-1 text-right">Sell (ex GST)</th>
-              <th className="py-1 text-right">Sell (inc GST)</th>
-              <th className="py-1 text-right">$/m² GFA</th>
+            <tr className="text-left bg-blue-50 text-blue-900">
+              <th className="py-1 px-1">Margin</th>
+              <th className="py-1 px-1 text-right">Sell (ex GST)</th>
+              <th className="py-1 px-1 text-right">Sell (inc GST)</th>
+              <th className="py-1 px-1 text-right">$/m² GFA</th>
             </tr>
           </thead>
           <tbody>

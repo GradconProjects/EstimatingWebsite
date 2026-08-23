@@ -12,9 +12,18 @@ body {
 @media print {
   @page {
     size: A4;
-    margin: 14mm;
+    /* Wider left/right margin than top/bottom, matching Cost Planner's own
+       PDF export — the report otherwise reads edge-to-edge on the page. */
+    margin: 14mm 24mm;
   }
   body {
     background: white;
+  }
+  /* Chrome/Safari drop background colors on print by default unless this is
+     set — without it the navy/light-blue header bands below would print as
+     plain white, same fix Cost Planner's own print CSS already applies. */
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 }

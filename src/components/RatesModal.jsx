@@ -25,6 +25,14 @@ export default function RatesModal({ rates, setRates, onClose }) {
   };
   const unitRateLabel = (cat) =>
     cat.weightBasis ? "$/m" : cat.areaBasis ? "$/m²" : cat.lengthBasis ? "$/m" : null;
+  // The "Base rate" column previously labeled itself off each product's own qty-entry
+  // unit (cat.products[0]?.unit — "m" for Processed Bar/Stock Bar, "m2" for Square
+  // Mesh), which is wrong: the base rate is genuinely priced per tonne/sheet/bar (see
+  // CLAUDE.md rule 2), not per m/m². That mislabeled "$/m" next to Processed Bar's
+  // $1930 figure (obviously not a sane per-metre price) — this labels it correctly so
+  // the real per-tonne/per-sheet/per-bar rate is legible instead of looking like a typo.
+  const baseRateLabel = (cat) =>
+    cat.weightBasis ? "tonne" : cat.areaBasis ? "sheet" : cat.lengthBasis ? "bar" : cat.products[0]?.unit;
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
@@ -47,7 +55,7 @@ export default function RatesModal({ rates, setRates, onClose }) {
                     <th className="text-left font-medium pb-1">Product</th>
                     <th className="text-left font-medium pb-1 w-28">{cat.products.some((p) => p.unitWeight != null) ? "Weight (kg)" : ""}</th>
                     <th className="text-left font-medium pb-1 w-28">{cat.areaBasis ? "Sheet area (m²)" : cat.lengthBasis ? "Bar length (m)" : ""}</th>
-                    <th className="text-left font-medium pb-1 w-28">Base rate ($/{cat.products[0]?.unit})</th>
+                    <th className="text-left font-medium pb-1 w-28">Base rate ($/{baseRateLabel(cat)})</th>
                     {unitRateLabel(cat) && <th className="text-left font-medium pb-1 w-28">Unit rate ({unitRateLabel(cat)})</th>}
                   </tr>
                 </thead>

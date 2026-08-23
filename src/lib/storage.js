@@ -26,6 +26,17 @@ export function useStoredState(key, initial) {
   // fetch that just echoes this browser's own last write is a no-op, and a
   // genuinely newer write from elsewhere is the only thing that ever gets applied.
   const lastSyncedAtRef = useRef(null);
+  // Set right before setValue() is called from the initial load or from the poll —
+  // i.e. whenever `value` is about to change for a reason OTHER than the app/user
+  // actually editing something. Without this, the debounced-save effect below (which
+  // only looks at "did value change") can't tell the difference and re-uploads
+  // whatever was just pulled down with a brand new timestamp. That's more than just
+  // wasted writes: the fresh timestamp can end up NEWER than a genuine edit someone
+  // else makes in the same few hundred milliseconds, so this browser's next poll
+  // wrongly treats its own echoed copy as "already up to date" and ignores the real
+  // edit — a live, silent cross-device sync failure. Skipping the save entirely when
+  // this flag is set removes that failure mode at the source.
+  const remoteApplyRef = useRef(false);
 
   // Re-runs whenever `key` changes, not just on mount — this is what lets a
   // single mounted component switch between projects (each with its own
@@ -51,6 +62,7 @@ export function useStoredState(key, initial) {
           if (cancelled) return;
           if (error) setStatus("error");
           else {
+            remoteApplyRef.current = true;
             setValue(data ? data.value : initial);
             lastSyncedAtRef.current = data ? data.updated_at : null;
             setStatus("saved");
@@ -63,6 +75,7 @@ export function useStoredState(key, initial) {
       } else {
         try {
           const raw = window.localStorage.getItem(key);
+          remoteApplyRef.current = true;
           setValue(raw ? JSON.parse(raw) : initial);
           setStatus("saved");
         } catch {
@@ -86,8 +99,37 @@ export function useStoredState(key, initial) {
   const doSave = async () => {
     if (supabaseEnabled) {
       try {
+        let toSave = valueRef.current;
+        // Array-shaped values (e.g. the projects index — a plain list of
+        // {id, ...} entries) get union-merged by id against whatever is
+        // currently in the cloud before this browser overwrites the row.
+        // Without this, two accounts creating/renaming projects around the
+        // same time would have whichever one saves last silently wipe out
+        // the other's concurrent change — neither account is meant to take
+        // priority over the other (see CLAUDE.md: same shared data, no
+        // per-user separation). Non-array values (a single project's own
+        // quote, the rates blob, etc.) keep the simple overwrite — merging
+        // arbitrary object edits field-by-field isn't safe to do blindly.
+        if (Array.isArray(toSave)) {
+          const { data: current } = await supabase.from(TABLE).select("value, updated_at").eq("key", key).maybeSingle();
+          if (current && Array.isArray(current.value) && current.updated_at !== lastSyncedAtRef.current) {
+            const byId = new Map();
+            current.value.forEach((item) => {
+              if (item && item.id != null) byId.set(item.id, item);
+            });
+            toSave.forEach((item) => {
+              if (item && item.id != null) byId.set(item.id, item);
+            });
+            const merged = Array.from(byId.values());
+            if (merged.length !== toSave.length) {
+              toSave = merged;
+              remoteApplyRef.current = true;
+              setValue(merged);
+            }
+          }
+        }
         const nowIso = new Date().toISOString();
-        const { error } = await supabase.from(TABLE).upsert({ key, value: valueRef.current, updated_at: nowIso });
+        const { error } = await supabase.from(TABLE).upsert({ key, value: toSave, updated_at: nowIso });
         if (!error) lastSyncedAtRef.current = nowIso;
         setStatus(error ? "error" : "saved");
       } catch {
@@ -107,6 +149,13 @@ export function useStoredState(key, initial) {
 
   useEffect(() => {
     if (!loadedRef.current) return;
+    if (remoteApplyRef.current) {
+      // This change came from the initial load or the poll below, not a local
+      // edit — nothing to save, and saving it anyway is what breaks sync (see
+      // remoteApplyRef's comment above).
+      remoteApplyRef.current = false;
+      return;
+    }
     setStatus("saving");
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(doSave, 500);
@@ -160,6 +209,7 @@ export function useStoredState(key, initial) {
         if (error || !data) return;
         if (lastSyncedAtRef.current && data.updated_at <= lastSyncedAtRef.current) return;
         lastSyncedAtRef.current = data.updated_at;
+        remoteApplyRef.current = true;
         setValue(data.value);
       } catch {
         /* best-effort — the next poll tries again */
@@ -167,6 +217,37 @@ export function useStoredState(key, initial) {
     };
     const interval = setInterval(poll, 6000);
     return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+
+  // True push sync: a Postgres change on this row (any device, any account) is
+  // pushed to every subscribed browser over Supabase Realtime within about a
+  // second, instead of waiting for the next 6s poll. The poll above stays in
+  // place as the fallback/safety net — if a realtime event is ever missed
+  // (a reconnect gap, a dropped message), the next poll still catches up, so
+  // a realtime failure degrades to "as fast as before" rather than breaking
+  // sync. Requires the estimator_kv table to be added to the supabase_realtime
+  // publication (see supabase/migrations).
+  useEffect(() => {
+    if (!supabaseEnabled) return;
+    const channel = supabase
+      .channel(`kv-${key}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: TABLE, filter: `key=eq.${key}` },
+        (payload) => {
+          const row = payload.new;
+          if (!row) return;
+          if (lastSyncedAtRef.current && row.updated_at <= lastSyncedAtRef.current) return;
+          lastSyncedAtRef.current = row.updated_at;
+          remoteApplyRef.current = true;
+          setValue(row.value);
+        }
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
 
