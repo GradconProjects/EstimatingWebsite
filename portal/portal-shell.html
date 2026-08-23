@@ -350,6 +350,10 @@
       Portal
     </button>
     <span class="label" id="app-label">Quotes</span>
+    <button class="back-btn" id="refresh-btn" style="margin-left:auto;" title="Pull the latest saved work from any other device/user right now">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M3 12a9 9 0 1 1 2.6 6.4M3 12V6m0 6h6"/></svg>
+      Refresh
+    </button>
   </div>
   <div class="app-frame-wrap">
     <iframe class="app-frame" id="app-frame" title="embedded app"></iframe>
@@ -397,6 +401,29 @@
   var pins = loadPins();
   var currentUser = null;
 
+  // ---------------- session persistence ----------------
+  // A plain refresh (or the browser reclaiming the tab) used to always drop
+  // back to the login screen, and even after logging back in, always back to
+  // the Dashboard rather than whichever app was open — this remembers both
+  // across a reload. Same "no real security boundary" caveat as the PIN
+  // store above: this is a UX convenience, not an auth session.
+  var SESSION_KEY = 'gradcon-portal-session';
+  function loadSession(){
+    try{
+      var raw = window.localStorage.getItem(SESSION_KEY);
+      return raw ? JSON.parse(raw) : null;
+    }catch(e){ return null; }
+  }
+  function saveSession(patch){
+    try{
+      var cur = loadSession() || {};
+      window.localStorage.setItem(SESSION_KEY, JSON.stringify(Object.assign(cur, patch)));
+    }catch(e){}
+  }
+  function clearSession(){
+    try{ window.localStorage.removeItem(SESSION_KEY); }catch(e){}
+  }
+
   function setError(el, msg){
     el.textContent = msg;
     el.hidden = false;
@@ -415,6 +442,7 @@
     clearError(loginError);
     currentUser = email;
     document.getElementById('dash-user').innerHTML = 'Signed in as <b>' + email + '</b>';
+    saveSession({ currentUser: email, activeApp: null });
     show('screen-dashboard');
   });
 
@@ -422,6 +450,7 @@
     currentUser = null;
     document.getElementById('login-form').reset();
     clearError(loginError);
+    clearSession();
     show('screen-login');
   });
 
@@ -472,7 +501,17 @@
 
   document.getElementById('back-btn').addEventListener('click', function(){
     document.getElementById('app-frame').src = 'about:blank';
+    saveSession({ activeApp: null });
     show('screen-dashboard');
+  });
+
+  // Remounts the currently-open app fresh — its own init sequence (loadState()/
+  // loadEstimateState()/loadRates(), or Quotes' useStoredState) runs again and pulls
+  // straight from Supabase, so this is the "give me what the other person just saved,
+  // right now" button rather than waiting on the 45s background poll.
+  document.getElementById('refresh-btn').addEventListener('click', function(){
+    var session = loadSession();
+    if(session && session.activeApp) openApp(session.activeApp, true);
   });
 
   var b64cache = {};
@@ -504,6 +543,7 @@
     document.getElementById('app-label').innerHTML = APP_LABELS[target] || '';
     var go = function(){ frame.src = blobUrlFor(target); };
     if(forceReload){ frame.src = 'about:blank'; setTimeout(go, 0); } else { go(); }
+    saveSession({ activeApp: target });
     show('screen-app');
   }
 
@@ -526,5 +566,20 @@
       openApp(e.data.target, true);
     }
   });
+
+  // Restore whoever was signed in, and whichever app they had open, so a plain
+  // browser refresh (or the tab being reclaimed/reopened) lands back where the
+  // estimator actually was instead of bouncing to the login screen every time.
+  (function restoreSession(){
+    var session = loadSession();
+    if(!session || !session.currentUser || ALLOWED_EMAILS.indexOf(session.currentUser) === -1) return;
+    currentUser = session.currentUser;
+    document.getElementById('dash-user').innerHTML = 'Signed in as <b>' + session.currentUser + '</b>';
+    if(session.activeApp && APP_LABELS[session.activeApp]){
+      openApp(session.activeApp, false);
+    } else {
+      show('screen-dashboard');
+    }
+  })();
 })();
 </script>

@@ -18,6 +18,11 @@ import ImportFlagsBanner from "./components/ImportFlagsBanner.jsx";
 import ManageElementTypesModal from "./components/ManageElementTypesModal.jsx";
 
 export const CUSTOM_ELEMENT_TYPES_KEY = "gradcon-custom-element-types";
+// Per-browser only (never synced) — which project's editor a plain page refresh
+// should land back on, deliberately not shared across devices/users (someone
+// else refreshing shouldn't get yanked into whatever project THIS browser had
+// open).
+const ACTIVE_PROJECT_KEY = "gradcon-active-project";
 
 const blankQuote = () => ({
   projectName: "",
@@ -32,7 +37,15 @@ export default function App() {
   const [projects, setProjects, projectsStatus, saveProjectsNow] = useStoredState(PROJECTS_INDEX_KEY, []);
   const initialRates = useMemo(() => defaultRates(), []);
   const [rates, setRates, ratesStatus] = useStoredState("gradcon-rates", initialRates);
-  const [activeId, setActiveId] = useState(null);
+  const [activeId, setActiveId] = useState(() => {
+    try { return window.localStorage.getItem(ACTIVE_PROJECT_KEY) || null; } catch { return null; }
+  });
+  useEffect(() => {
+    try {
+      if (activeId) window.localStorage.setItem(ACTIVE_PROJECT_KEY, activeId);
+      else window.localStorage.removeItem(ACTIVE_PROJECT_KEY);
+    } catch { /* best-effort */ }
+  }, [activeId]);
   const [ratesOpen, setRatesOpen] = useState(false);
   const [elementTypesOpen, setElementTypesOpen] = useState(false);
 

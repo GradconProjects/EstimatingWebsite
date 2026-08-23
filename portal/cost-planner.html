@@ -2852,7 +2852,7 @@ document.getElementById("saveBtn").addEventListener("click", saveState);
 syncFromCloud();
 window.addEventListener("focus", syncFromCloud);
 document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) syncFromCloud(); });
-setInterval(syncFromCloud, 45000);
+setInterval(syncFromCloud, 6000); // close to live without a WebSocket subscription
 
 </script>
 </body>

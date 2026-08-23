@@ -908,5 +908,5 @@ document.getElementById("saveBtn").addEventListener("click", saveRates);
 syncFromCloud(); // then pull whatever another device last saved (or seed the cloud if this is the very first save anywhere)
 window.addEventListener("focus", syncFromCloud);
 document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) syncFromCloud(); });
-setInterval(syncFromCloud, 45000);
+setInterval(syncFromCloud, 6000); // close to live without a WebSocket subscription
 </script>

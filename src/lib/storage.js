@@ -21,6 +21,11 @@ export function useStoredState(key, initial) {
   const [status, setStatus] = useState("loading");
   const loadedRef = useRef(false);
   const saveTimer = useRef(null);
+  // Tracks the updated_at of whatever value this browser currently holds (set on
+  // load and on every save) — the poll effect below compares against it so a
+  // fetch that just echoes this browser's own last write is a no-op, and a
+  // genuinely newer write from elsewhere is the only thing that ever gets applied.
+  const lastSyncedAtRef = useRef(null);
 
   // Re-runs whenever `key` changes, not just on mount — this is what lets a
   // single mounted component switch between projects (each with its own
@@ -42,11 +47,12 @@ export function useStoredState(key, initial) {
         // (and the whole app blank, since App.jsx waits on it) instead of
         // settling on "error".
         try {
-          const { data, error } = await supabase.from(TABLE).select("value").eq("key", key).maybeSingle();
+          const { data, error } = await supabase.from(TABLE).select("value, updated_at").eq("key", key).maybeSingle();
           if (cancelled) return;
           if (error) setStatus("error");
           else {
             setValue(data ? data.value : initial);
+            lastSyncedAtRef.current = data ? data.updated_at : null;
             setStatus("saved");
           }
         } catch {
@@ -80,7 +86,9 @@ export function useStoredState(key, initial) {
   const doSave = async () => {
     if (supabaseEnabled) {
       try {
-        const { error } = await supabase.from(TABLE).upsert({ key, value: valueRef.current, updated_at: new Date().toISOString() });
+        const nowIso = new Date().toISOString();
+        const { error } = await supabase.from(TABLE).upsert({ key, value: valueRef.current, updated_at: nowIso });
+        if (!error) lastSyncedAtRef.current = nowIso;
         setStatus(error ? "error" : "saved");
       } catch {
         setStatus("error");
@@ -136,6 +144,31 @@ export function useStoredState(key, initial) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Polls for a newer value from another device/user roughly every 6s — as close
+  // to live as this app gets without a WebSocket subscription. Only ever applies
+  // a fetch that's actually newer than what this browser last saved/loaded
+  // (never a bare echo of its own last write), and skips entirely while a local
+  // edit is still sitting in the debounce window, so a poll landing mid-keystroke
+  // can never overwrite what's currently being typed.
+  useEffect(() => {
+    if (!supabaseEnabled) return;
+    const poll = async () => {
+      if (saveTimer.current) return;
+      try {
+        const { data, error } = await supabase.from(TABLE).select("value, updated_at").eq("key", key).maybeSingle();
+        if (error || !data) return;
+        if (lastSyncedAtRef.current && data.updated_at <= lastSyncedAtRef.current) return;
+        lastSyncedAtRef.current = data.updated_at;
+        setValue(data.value);
+      } catch {
+        /* best-effort — the next poll tries again */
+      }
+    };
+    const interval = setInterval(poll, 6000);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
 
   // Live updates from another browsing context sharing this origin — e.g. the
   // Estimates tool (a separate iframe) writing straight to this project's quote via
