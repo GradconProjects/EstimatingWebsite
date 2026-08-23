@@ -268,6 +268,25 @@ const STEEL_BUILDUPS = {
           source:"AKZ Reinforcing's real current Gradcon rate — $1925/t (Gradcon_Supply_July_010726, 1 July 2026) — at the time each product below was seeded; edit each product's own Base Rate below to change it, this card is fallback only" },
 };
 
+// Same constants Quotes' own catalog uses for these categories (src/data/catalog.js) —
+// a 6.0x2.4m mesh sheet, a 6.0m stock bar length — so the "unit rate" figures below match
+// what Quotes actually computes from the same base rate, not an independently-guessed number.
+const MESH_SHEET_AREA_M2 = 14.4;
+const STOCK_BAR_LENGTH_M = 6;
+// Square Mesh/Stock Bar established rates here are genuinely $/sheet and $/bar (match Quotes'
+// own catalog exactly) — the estimator enters m²/m though, so toUnit backs out that "what am I
+// really paying per m/m²" figure for display; toBase does the reverse so editing the unit rate
+// updates the real Base Rate that's actually costed. Processed Bar is the odd one out: its
+// established rate here is ALREADY per-metre (freshRates() pre-converts the industry-standard
+// $/tonne price by each diameter's weight), so its "unit rate" column runs the other way —
+// showing the $/tonne figure a steel supplier would actually quote, alongside the $/m already
+// shown as the Base Rate. Trench mesh isn't here because its own base rate already IS $/length.
+const UNIT_RATE_INFO = {
+  "Processed Bar": { label:"$/t", toUnit:(base,w)=> base*1000/w, toBase:(unit,w)=> unit*w/1000 },
+  "Square Mesh": { label:"$/m²", toUnit:(base)=> base/MESH_SHEET_AREA_M2, toBase:(unit)=> unit*MESH_SHEET_AREA_M2 },
+  "Stock Bar": { label:"$/m", toUnit:(base)=> base/STOCK_BAR_LENGTH_M, toBase:(unit)=> unit*STOCK_BAR_LENGTH_M },
+};
+
 const REINFORCEMENT_ITEMS = {
   "Trench mesh": { buildup:"Mesh", items:[
     {p:"3 Bar-L8TM",u:"length",w:6.8},{p:"4 Bar-L8TM",u:"length",w:9.2},
@@ -722,10 +741,17 @@ function renderApp(){
     const g = REINFORCEMENT_ITEMS[group];
     const mapKey = reoMapFor[group];
     const map = state.reinforcementEstablished[mapKey];
-    reoBody += `<div class="panel-block"><h3>${group}</h3><table class="item-table"><thead><tr><th>Product</th><th>Unit</th><th>Weight (kg)</th><th>Base Rate ($/unit)</th></tr></thead><tbody>`;
+    const uinfo = UNIT_RATE_INFO[group];
+    reoBody += `<div class="panel-block"><h3>${group}</h3><table class="item-table"><thead><tr><th>Product</th><th>Unit</th><th>Weight (kg)</th><th>Base Rate ($/unit)</th>${uinfo?`<th>Unit rate (${uinfo.label})</th>`:''}</tr></thead><tbody>`;
     g.items.forEach(it=>{
       const has = Object.prototype.hasOwnProperty.call(map, it.p);
-      reoBody += `<tr><td>${it.p}</td><td>${it.u}</td><td class="num">${it.w}</td><td>${has?`<input type="number" step="any" class="lib-input" data-map="reinforcementEstablished.${mapKey}" data-key="${it.p}" data-field="_" value="${map[it.p]}">`:'<span class="note">— (BCI fallback below)</span>'}</td></tr>`;
+      const baseCell = has?`<input type="number" step="any" class="lib-input" data-map="reinforcementEstablished.${mapKey}" data-key="${it.p}" data-field="_" value="${map[it.p]}">`:'<span class="note">— (BCI fallback below)</span>';
+      let unitCell = '';
+      if(uinfo){
+        const unitVal = has ? uinfo.toUnit(map[it.p], it.w) : null;
+        unitCell = `<td>${has?`<input type="number" step="any" class="lib-unit-rate-input" data-map="reinforcementEstablished.${mapKey}" data-key="${it.p}" data-w="${it.w}" data-group="${group}" value="${unitVal!=null?(+unitVal.toFixed(4)):''}">`:''}</td>`;
+      }
+      reoBody += `<tr><td>${it.p}</td><td>${it.u}</td><td class="num">${it.w}</td><td>${baseCell}</td>${unitCell}</tr>`;
     });
     reoBody += `</tbody></table></div>`;
   });
@@ -831,6 +857,23 @@ function wireInputs(){
       const key = e.target.dataset.key, field = e.target.dataset.field;
       const val = isNaN(v)?0:(e.target.dataset.pct?v/100:v);
       if(field==="_") target[key] = val; else target[key][field] = val;
+      saveRates();
+    });
+  });
+  // Editing a "unit rate" column (see UNIT_RATE_INFO) writes back to the SAME Base Rate
+  // cell the .lib-input handler above edits — just via the inverse conversion, so either
+  // field stays a valid way to change the one real established rate.
+  document.querySelectorAll(".lib-unit-rate-input").forEach(inp=>{
+    inp.addEventListener("input", e=>{
+      const v = parseFloat(e.target.value);
+      if(isNaN(v)) return;
+      const mapPath = e.target.dataset.map.split(".");
+      let target = state;
+      mapPath.forEach(p=> target = target[p]);
+      const key = e.target.dataset.key;
+      const w = parseFloat(e.target.dataset.w);
+      const info = UNIT_RATE_INFO[e.target.dataset.group];
+      target[key] = info.toBase(v, w);
       saveRates();
     });
   });

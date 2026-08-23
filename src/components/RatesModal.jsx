@@ -7,6 +7,25 @@ export default function RatesModal({ rates, setRates, onClose }) {
   const update = (key, field, value) =>
     setRates((r) => ({ ...r, [key]: { ...r[key], [field]: value === "" ? null : Number(value) } }));
 
+  // Weight/area/length-basis categories price by tonne/sheet/bar (see CLAUDE.md rule 2),
+  // not by the unit the estimator actually types into the quote (m, m², m) — this backs
+  // out that "what am I really paying per m/m²" figure from the catalog rate, and lets
+  // editing it flow back into the real unitCost so Amount = Qty × Rate still holds.
+  const unitRateOf = (cat, r) => {
+    if (cat.weightBasis) return r.unitWeight ? (r.unitCost * r.unitWeight) / 1000 : null;
+    if (cat.areaBasis) return r.sheetArea ? r.unitCost / r.sheetArea : null;
+    if (cat.lengthBasis) return r.barLength ? r.unitCost / r.barLength : null;
+    return null;
+  };
+  const updateUnitRate = (cat, key, r, value) => {
+    if (value === undefined || value === null || Number.isNaN(value)) return;
+    if (cat.weightBasis) { if (r.unitWeight) update(key, "unitCost", (value * 1000) / r.unitWeight); return; }
+    if (cat.areaBasis) { if (r.sheetArea) update(key, "unitCost", value * r.sheetArea); return; }
+    if (cat.lengthBasis) { if (r.barLength) update(key, "unitCost", value * r.barLength); return; }
+  };
+  const unitRateLabel = (cat) =>
+    cat.weightBasis ? "$/m" : cat.areaBasis ? "$/m²" : cat.lengthBasis ? "$/m" : null;
+
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-xl max-w-3xl w-full max-h-[85vh] flex flex-col shadow-2xl">
@@ -23,10 +42,20 @@ export default function RatesModal({ rates, setRates, onClose }) {
                 {cat.lengthBasis && <span className="normal-case font-normal text-neutral-400"> — qty entered in m, bar length below controls the conversion</span>}
               </div>
               <table className="w-full text-[13px]">
+                <thead>
+                  <tr className="text-[10px] uppercase tracking-wide text-neutral-400">
+                    <th className="text-left font-medium pb-1">Product</th>
+                    <th className="text-left font-medium pb-1 w-28">{cat.products.some((p) => p.unitWeight != null) ? "Weight (kg)" : ""}</th>
+                    <th className="text-left font-medium pb-1 w-28">{cat.areaBasis ? "Sheet area (m²)" : cat.lengthBasis ? "Bar length (m)" : ""}</th>
+                    <th className="text-left font-medium pb-1 w-28">Base rate ($/{cat.products[0]?.unit})</th>
+                    {unitRateLabel(cat) && <th className="text-left font-medium pb-1 w-28">Unit rate ({unitRateLabel(cat)})</th>}
+                  </tr>
+                </thead>
                 <tbody>
                   {cat.products.map((p) => {
                     const k = rateKey(cat.key, p.name, p.unit);
                     const r = rates[k] || { unitCost: p.unitCost, unitWeight: p.unitWeight, sheetArea: p.sheetArea, barLength: p.barLength };
+                    const unitRate = unitRateOf(cat, r);
                     return (
                       <tr key={k} className="border-t border-neutral-100">
                         <td className="py-1 pr-2 text-neutral-700">{p.name} <span className="text-neutral-400">({p.unit})</span></td>
@@ -44,9 +73,14 @@ export default function RatesModal({ rates, setRates, onClose }) {
                             <NumInput value={r.barLength} onChange={(v) => update(k, "barLength", v)} />
                           </td>
                         ) : <td className="w-28"></td>}
-                        <td className="py-1 w-28">
+                        <td className="py-1 pr-2 w-28">
                           <NumInput value={r.unitCost} onChange={(v) => update(k, "unitCost", v)} />
                         </td>
+                        {unitRateLabel(cat) && (
+                          <td className="py-1 w-28">
+                            <NumInput value={unitRate} onChange={(v) => updateUnitRate(cat, k, r, v)} />
+                          </td>
+                        )}
                       </tr>
                     );
                   })}
