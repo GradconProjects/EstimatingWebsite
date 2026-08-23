@@ -215,6 +215,17 @@ function ProjectEditor({ project, rates, setRates, ratesStatus, onBack, elementT
   };
   const updateItem = (id, next) => setItems((its) => its.map((it) => (it.id === id ? next : it)));
   const removeItem = (id) => setItems((its) => its.filter((it) => it.id !== id));
+  const reorderItems = (draggedId, targetId) =>
+    setItems((its) => {
+      if (draggedId === targetId) return its;
+      const from = its.findIndex((it) => it.id === draggedId);
+      const to = its.findIndex((it) => it.id === targetId);
+      if (from === -1 || to === -1) return its;
+      const next = [...its];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      return next;
+    });
   const duplicateItem = (id) =>
     setItems((its) => {
       const src = its.find((it) => it.id === id);
@@ -371,6 +382,7 @@ function ProjectEditor({ project, rates, setRates, ratesStatus, onBack, elementT
         <div className="lg:sticky lg:top-20">
           <QuoteSummary
             items={items}
+            onReorder={reorderItems}
             rates={rates}
             categoryOrder={categoryOrder}
             sectionOrder={sectionOrder}

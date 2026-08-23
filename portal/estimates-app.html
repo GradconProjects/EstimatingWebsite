@@ -107,6 +107,8 @@ input[type=text].name:focus,input:focus,select:focus{outline:1px solid var(--acc
 .empty{padding:40px 20px;text-align:center;color:var(--muted);}
 .filterbar{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;}
 .filterbar select,.filterbar input{max-width:180px;}
+tr.reg-group-head td{background:var(--panel2);padding:8px 10px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);}
+tr.reg-group-head .badge{margin:0 4px;}
 footer.note{color:var(--muted);font-size:11px;text-align:center;padding:20px;}
 .tip{background:#132521;border:1px solid #24463f;color:#8fd4c5;border-radius:7px;padding:8px 10px;font-size:11.5px;margin:6px 0 10px;display:flex;gap:8px;align-items:flex-start;line-height:1.45;}
 .tip .ico{flex:none;font-size:14px;}
@@ -206,12 +208,13 @@ footer.note{color:var(--muted);font-size:11px;text-align:center;padding:20px;}
 <section id="page-register" class="page">
   <div class="panel">
     <h2>Quantity Register</h2>
-    <p class="small">Every calculated quantity, fully auditable — element, formula, quantity, waste and linked elements. This is the single source of truth behind every export.</p>
+    <p class="small">Every calculated quantity, fully auditable — element, formula, quantity, waste and linked elements. This is the single source of truth behind every export. Rolled up by element, same as the Workspace — collapse a group to review it at a glance, or remove the element entirely from here.</p>
     <div class="filterbar">
       <select id="filterCategory"></select>
       <select id="filterMaterialGroup"></select>
       <input type="text" id="filterSearch" placeholder="Search element / material...">
     </div>
+    <div class="toolbar"><button class="btn small" onclick="collapseAllCards(true)">▸ Roll up all elements</button><button class="btn small" onclick="collapseAllCards(false)">▾ Expand all</button></div>
     <div class="subsec" id="registerReoSummary"></div>
     <div style="overflow-x:auto;max-height:70vh;overflow-y:auto;border:1px solid var(--line);border-radius:8px;">
       <table class="results" id="registerTable"></table>
@@ -647,9 +650,8 @@ function lineWeightKg(materialGroup,material,unit,finalQty){
     if(!m) return 0;
     return finalQty*massPerM(parseInt(m[1]));
   }
-  if(unit==="m²" && MESHTYPES[material]!==undefined){
-    return finalQty*MESHTYPES[material]*1.1; // +10% laps, matching the mesh area lines' own waste convention
-  }
+  // Mesh is bought and priced by the sheet, not by weight (see MESH_SHEET_AREA_M2 conversion
+  // on each mesh line) — a mesh line never contributes a kg figure, only bar lines do.
   return 0;
 }
 function baseLine(inst,def,over){
@@ -774,7 +776,6 @@ function computePier(inst,def){
     let totalLen = vBars*N*barLen;
     let wt = totalLen*massPerM(dia);
     lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.vDia,spec:"Vertical cage bars",qty:totalLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totalLen,PROJECT.reoWaste),formula:`${vBars}×${N}×(cage ${fmt(cageLen,0)}+bot ${fmt(botLen,0)}+top ${fmt(topLen,0)}+lap ${fmt(lapLen,0)})/1000`,notes:`${fmt(wt,1)} kg`}));
-    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.vDia,spec:"Vertical cage bars — mass",qty:wt,unit:"kg",waste:PROJECT.reoWaste,finalQty:withWaste(wt,PROJECT.reoWaste),formula:"length × d²/162"}));
     if(d.ligs){
       let ligDia=barDiaOf(d.ligDia);
       let cageDia = D-2*cover;
@@ -787,8 +788,7 @@ function computePier(inst,def){
       let totalCount=(topCount+botCount+midCount)*N;
       let totalLigLen = totalCount*ligLen;
       let ligWt = totalLigLen*massPerM(ligDia);
-      lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.ligDia,spec:"Circular ligatures (top+mid+bottom zones)",qty:totalCount,unit:"no.",waste:0,finalQty:totalCount,formula:`(top ${topCount}+mid ${midCount}+bot ${botCount})×${N} piers`}));
-      lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.ligDia,spec:"Circular ligatures — mass",qty:ligWt,unit:"kg",waste:PROJECT.reoWaste,finalQty:withWaste(ligWt,PROJECT.reoWaste),formula:`count × π×(cage dia)/1000 × d²/162`}));
+      lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.ligDia,spec:"Circular ligatures (top+mid+bottom zones)",qty:totalCount,unit:"no.",waste:0,finalQty:totalCount,formula:`(top ${topCount}+mid ${midCount}+bot ${botCount})×${N} piers`,notes:`${fmt(totalLigLen,1)}m, ${fmt(ligWt,1)} kg`}));
     }
   }
   if(d.starters){
@@ -1039,10 +1039,10 @@ function computePadFooting(inst,def){
   }
   if(d.botReoType==="mesh"){
     let layers=num(d.botMeshLayers,1);
-    let massm2=MESHTYPES[d.botMeshType]||3.7;
     let area=N*L*W*layers;
-    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.botMeshType,spec:`Bottom mat — mesh sheet ×${layers} layer(s)`,qty:area,unit:"m²",waste:10,finalQty:withWaste(area,10),formula:`N×L×W×${layers} layer(s) (+10% laps)`,notes:`${fmt(area*massm2*1.1,1)} kg`}));
-    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.botMeshType,spec:"Mesh sheets (6.0x2.4m nominal)",qty:Math.ceil(area/MESH_SHEET_AREA_M2),unit:"sheets",waste:0,finalQty:Math.ceil(area/MESH_SHEET_AREA_M2),formula:`(area × layers) / ${MESH_SHEET_AREA_M2}m² per sheet`}));
+    let wastedArea=withWaste(area,10);
+    let sheets=Math.ceil(wastedArea/MESH_SHEET_AREA_M2);
+    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.botMeshType,spec:`Bottom mat — mesh sheets ×${layers} layer(s)`,qty:area,unit:"m²",waste:10,finalQty:wastedArea,sheets,formula:`N×L×W×${layers} layer(s) (+10% laps) → ceil(/${MESH_SHEET_AREA_M2}m²) = ${sheets} sheets`,notes:`${sheets} sheets (6.0×2.4m nominal)`}));
   } else {
     mat(d.botX,d.botXDia,d.botXSpacing,d.width,d.length,"Bottom X bars");
     mat(d.botY,d.botYDia,d.botYSpacing,d.length,d.width,"Bottom Y bars");
@@ -1336,11 +1336,10 @@ function computeSlab(inst,def){
     // MUST multiply into that area, not just into an informational weight figure, or a
     // 2-layer mesh mat silently costs the same as a single layer.
     let layers=num(d.meshLayers,1);
-    let massm2=MESHTYPES[d.meshType]||3.7;
     let layeredArea=netArea*layers;
-    let wt=layeredArea*massm2*1.1;
-    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.meshType,spec:`Mesh ×${layers} layer(s)`,qty:layeredArea,unit:"m²",waste:10,finalQty:withWaste(layeredArea,10),formula:`net area × ${layers} layer(s) (+10% laps)`,notes:`${fmt(wt,1)} kg`}));
-    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.meshType,spec:"Mesh sheets (6.0x2.4m nominal)",qty:Math.ceil(layeredArea/MESH_SHEET_AREA_M2),unit:"sheets",waste:0,finalQty:Math.ceil(layeredArea/MESH_SHEET_AREA_M2),formula:`(area × layers) / ${MESH_SHEET_AREA_M2}m² per sheet`}));
+    let wastedArea=withWaste(layeredArea,10);
+    let sheets=Math.ceil(wastedArea/MESH_SHEET_AREA_M2);
+    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.meshType,spec:`Mesh sheets ×${layers} layer(s)`,qty:layeredArea,unit:"m²",waste:10,finalQty:wastedArea,sheets,formula:`net area × ${layers} layer(s) (+10% laps) → ceil(/${MESH_SHEET_AREA_M2}m²) = ${sheets} sheets`,notes:`${sheets} sheets (6.0×2.4m nominal)`}));
   }
   if(d.returnBars){
     let dia=barDiaOf(d.retDia);
@@ -1633,11 +1632,10 @@ function computeShotWall(inst,def){
   lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete (shotcrete)`,spec:`${d.thickness}mm thick, sprayed`,qty:vol,unit:"m³",waste:20,finalQty:withWaste(vol,20),formula:`${fmt(Lm,1)}×${fmt(Hm,1)}×${fmt(Tm,2)} (+20% overspray/rebound)`}));
   if(d.xypex) lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:"Penetron (Xypex) additive",spec:"Waterproofing admixture",qty:vol,unit:"m³",waste:0,finalQty:vol,formula:"same volume as shotcrete"}));
   let layers=num(d.meshLayers,1);
-  let massm2=MESHTYPES[d.meshType]||3.7;
   let layeredArea=area*layers;
-  let wt=layeredArea*massm2*1.1;
-  lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.meshType,spec:`Central mesh ×${layers} layer(s)`,qty:layeredArea,unit:"m²",waste:10,finalQty:withWaste(layeredArea,10),formula:`area(${fmt(area,1)}) × ${layers} layer(s) (+10% laps)`,notes:`${fmt(wt,1)} kg`}));
-  lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.meshType,spec:"Mesh sheets (6.0x2.4m nominal)",qty:Math.ceil(layeredArea/MESH_SHEET_AREA_M2),unit:"sheets",waste:0,finalQty:Math.ceil(layeredArea/MESH_SHEET_AREA_M2),formula:`(area × layers) / ${MESH_SHEET_AREA_M2}m² per sheet`}));
+  let wastedArea=withWaste(layeredArea,10);
+  let sheets=Math.ceil(wastedArea/MESH_SHEET_AREA_M2);
+  lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.meshType,spec:`Central mesh sheets ×${layers} layer(s)`,qty:layeredArea,unit:"m²",waste:10,finalQty:wastedArea,sheets,formula:`area(${fmt(area,1)}) × ${layers} layer(s) (+10% laps) → ceil(/${MESH_SHEET_AREA_M2}m²) = ${sheets} sheets`,notes:`${sheets} sheets (6.0×2.4m nominal)`}));
   if(d.starters && num(d.connQty)>0){
     let dia=barDiaOf(d.connDia); let len=(num(d.connEmbed)+num(d.connProj))/1000;
     let totLen=num(d.connQty)*len; let wt2=totLen*massPerM(dia);
@@ -1714,10 +1712,10 @@ function computeStairs(inst,def){
   lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.mainDia,spec:"Main flight bars",qty:mLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(mLen,PROJECT.reoWaste),formula:"count × flight length",notes:`${fmt(mWt,1)} kg`}));
   if(d.distReoType==="mesh"){
     let layers=num(d.distMeshLayers,1);
-    let massm2=MESHTYPES[d.distMeshType]||2.42;
     let area=flightLen*w*layers;
-    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.distMeshType,spec:`Distribution — mesh sheet ×${layers} layer(s)`,qty:area,unit:"m²",waste:10,finalQty:withWaste(area,10),formula:`flight length × width × ${layers} layer(s) (+10% laps)`,notes:`${fmt(area*massm2*1.1,1)} kg`}));
-    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.distMeshType,spec:"Mesh sheets (6.0x2.4m nominal)",qty:Math.ceil(area/MESH_SHEET_AREA_M2),unit:"sheets",waste:0,finalQty:Math.ceil(area/MESH_SHEET_AREA_M2),formula:`(area × layers) / ${MESH_SHEET_AREA_M2}m² per sheet`}));
+    let wastedArea=withWaste(area,10);
+    let sheets=Math.ceil(wastedArea/MESH_SHEET_AREA_M2);
+    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.distMeshType,spec:`Distribution — mesh sheets ×${layers} layer(s)`,qty:area,unit:"m²",waste:10,finalQty:wastedArea,sheets,formula:`flight length × width × ${layers} layer(s) (+10% laps) → ceil(/${MESH_SHEET_AREA_M2}m²) = ${sheets} sheets`,notes:`${sheets} sheets (6.0×2.4m nominal)`}));
   } else {
     let dDia=barDiaOf(d.distDia); let dCount=Math.floor(flightLen*1000/num(d.distSpacing))+1;
     let dLen=dCount*w; let dWt=dLen*massPerM(dDia);
@@ -2118,6 +2116,7 @@ function renderWorkspace(){
 function collapseAllCards(state){
   INSTANCES.forEach(inst=>inst._collapsed=state);
   renderWorkspace();
+  if(document.getElementById("registerTable")) renderRegisterTable();
 }
 function buildCard(inst){
   let def=LIB_INDEX[inst.typeKey];
@@ -2299,8 +2298,8 @@ function summarizeReinforcement(lines){
       let e=bars[l.material]||(bars[l.material]={lm:0,kg:0});
       e.lm+=l.finalQty; e.kg+=(l.weightKg||0);
     } else if(l.unit==="m²"){
-      let e=mesh[l.material]||(mesh[l.material]={area:0,kg:0});
-      e.area+=l.finalQty; e.kg+=(l.weightKg||0);
+      let e=mesh[l.material]||(mesh[l.material]={area:0,sheets:0});
+      e.area+=l.finalQty; e.sheets+=(l.sheets!==undefined? l.sheets : Math.ceil(l.finalQty/MESH_SHEET_AREA_M2));
     }
   });
   return {bars,mesh};
@@ -2324,8 +2323,9 @@ function refreshCardResults(card,inst){
      <tbody>${barKeys.map(m=>`<tr><td>${m}</td><td style="text-align:right;">${fmt(bars[m].lm,2)}</td><td style="text-align:right;">${fmt(bars[m].kg,1)}</td></tr>`).join('')}
      <tr style="font-weight:700;"><td>Total</td><td style="text-align:right;">${fmt(barKeys.reduce((s,m)=>s+bars[m].lm,0),2)}</td><td style="text-align:right;">${fmt(barKeys.reduce((s,m)=>s+bars[m].kg,0),1)}</td></tr>
    </tbody></table>` : ''}
-   ${meshKeys.length? `<table class="results" style="width:auto;min-width:300px;"><thead><tr><th>Mesh</th><th>Area (m²)</th><th>Sheets</th><th>Kg</th></tr></thead>
-     <tbody>${meshKeys.map(m=>`<tr><td>${m}</td><td style="text-align:right;">${fmt(mesh[m].area,2)}</td><td style="text-align:right;">${Math.ceil(mesh[m].area/MESH_SHEET_AREA_M2)}</td><td style="text-align:right;">${fmt(mesh[m].kg,1)}</td></tr>`).join('')}
+   ${meshKeys.length? `<table class="results" style="width:auto;min-width:260px;"><thead><tr><th>Mesh</th><th>Area (m²)</th><th>Sheets</th></tr></thead>
+     <tbody>${meshKeys.map(m=>`<tr><td>${m}</td><td style="text-align:right;">${fmt(mesh[m].area,2)}</td><td style="text-align:right;">${mesh[m].sheets}</td></tr>`).join('')}
+     <tr style="font-weight:700;"><td>Total</td><td style="text-align:right;">${fmt(meshKeys.reduce((s,m)=>s+mesh[m].area,0),2)}</td><td style="text-align:right;">${meshKeys.reduce((s,m)=>s+mesh[m].sheets,0)}</td></tr>
    </tbody></table>` : ''}
    </div></div>` : '';
   host.innerHTML = `
@@ -2447,8 +2447,42 @@ function renderRegisterTable(){
   let q=(document.getElementById("filterSearch").value||"").toLowerCase();
   let filtered=lines.filter(l=> (!cat||l.category===cat) && (!mg||l.materialGroup===mg) && (!q || (l.element+l.material+l.spec).toLowerCase().includes(q)) );
   let t=document.getElementById("registerTable");
+  const REG_COLS=14;
+  let byElement=new Map();
+  filtered.forEach(l=>{
+    if(!byElement.has(l.elementId)) byElement.set(l.elementId,[]);
+    byElement.get(l.elementId).push(l);
+  });
+  let groupsHtml = INSTANCES.filter(inst=>byElement.has(inst.id)).map(inst=>{
+    let glines=byElement.get(inst.id);
+    let collapsed=inst._collapsed;
+    let totC=glines.filter(l=>l.materialGroup==="Concrete").reduce((s,l)=>s+l.finalQty,0);
+    let totR=glines.filter(l=>l.materialGroup==="Reinforcement").reduce((s,l)=>s+(l.weightKg||0),0);
+    let totF=glines.filter(l=>l.materialGroup==="Formwork").reduce((s,l)=>s+l.finalQty,0);
+    return `<tbody data-reg-group="${inst.id}">
+      <tr class="reg-group-head"><td colspan="${REG_COLS}">
+        <button class="btn small ghost" data-action="regCollapseToggle" data-id="${inst.id}" title="Collapse/expand">${collapsed?'▸':'▾'}</button>
+        <span class="badge">${inst.id}</span> <b>${inst.label}</b>
+        <span class="small"> · ${fmt(totC,2)}m³ concrete · ${fmt(totR,1)}kg reo · ${fmt(totF,2)}m² formwork · ${glines.length} line(s)</span>
+        <button class="btn small danger" data-action="regDelete" data-id="${inst.id}" style="float:right;">✕ Remove element</button>
+      </td></tr>
+      ${collapsed? '' : glines.map(l=>`<tr><td>${l.stage}</td><td>${l.category}</td><td>${l.element}</td><td>${l.elementId}</td><td><span class="pill ${pillClass(l.materialGroup)}">${l.materialGroup}</span></td><td>${l.material}</td><td>${l.spec}</td><td>${fmt(l.qty,2)}</td><td>${l.unit}</td><td>${l.waste||0}</td><td><b>${fmt(l.finalQty,2)}</b></td><td>${l.weightKg? fmt(l.weightKg,1) : ''}</td><td class="formula">${l.formula}</td><td>${l.linkedElement||''}</td></tr>`).join('')}
+    </tbody>`;
+  }).join('');
   t.innerHTML = `<thead><tr><th>Stage</th><th>Category</th><th>Element</th><th>ID</th><th>Material Group</th><th>Material</th><th>Spec</th><th>Qty</th><th>Unit</th><th>Waste%</th><th>Final Qty</th><th>Kg</th><th>Formula</th><th>Linked</th></tr></thead>
-  <tbody>${filtered.map(l=>`<tr><td>${l.stage}</td><td>${l.category}</td><td>${l.element}</td><td>${l.elementId}</td><td><span class="pill ${pillClass(l.materialGroup)}">${l.materialGroup}</span></td><td>${l.material}</td><td>${l.spec}</td><td>${fmt(l.qty,2)}</td><td>${l.unit}</td><td>${l.waste||0}</td><td><b>${fmt(l.finalQty,2)}</b></td><td>${l.weightKg? fmt(l.weightKg,1) : ''}</td><td class="formula">${l.formula}</td><td>${l.linkedElement||''}</td></tr>`).join('')}</tbody>`;
+  ${groupsHtml || `<tbody><tr><td colspan="${REG_COLS}" class="small">No quantity lines yet.</td></tr></tbody>`}`;
+  t.onclick=(e)=>{
+    let btn=e.target.closest('button[data-action]'); if(!btn) return;
+    let id=btn.dataset.id;
+    if(btn.dataset.action==="regCollapseToggle"){
+      let inst=INSTANCES.find(i=>i.id===id); if(!inst) return;
+      inst._collapsed=!inst._collapsed;
+      renderRegisterTable();
+    } else if(btn.dataset.action==="regDelete"){
+      let inst=INSTANCES.find(i=>i.id===id);
+      if(inst && confirm(`Remove element ${inst.id} — ${inst.label} and all its quantity lines? This cannot be undone.`)) removeInstance(id);
+    }
+  };
   let reoSummaryHost=document.getElementById("registerReoSummary");
   if(reoSummaryHost){
     let {bars,mesh}=summarizeReinforcement(filtered);
@@ -2460,8 +2494,9 @@ function renderRegisterTable(){
        <tbody>${barKeys.map(m=>`<tr><td>${m}</td><td style="text-align:right;">${fmt(bars[m].lm,2)}</td><td style="text-align:right;">${fmt(bars[m].kg,1)}</td></tr>`).join('')}
        <tr style="font-weight:700;"><td>Total</td><td style="text-align:right;">${fmt(barKeys.reduce((s,m)=>s+bars[m].lm,0),2)}</td><td style="text-align:right;">${fmt(barKeys.reduce((s,m)=>s+bars[m].kg,0),1)}</td></tr>
      </tbody></table>` : ''}
-     ${meshKeys.length? `<table class="results" style="width:auto;min-width:300px;"><thead><tr><th>Mesh</th><th>Area (m²)</th><th>Sheets</th><th>Kg</th></tr></thead>
-       <tbody>${meshKeys.map(m=>`<tr><td>${m}</td><td style="text-align:right;">${fmt(mesh[m].area,2)}</td><td style="text-align:right;">${Math.ceil(mesh[m].area/MESH_SHEET_AREA_M2)}</td><td style="text-align:right;">${fmt(mesh[m].kg,1)}</td></tr>`).join('')}
+     ${meshKeys.length? `<table class="results" style="width:auto;min-width:260px;"><thead><tr><th>Mesh</th><th>Area (m²)</th><th>Sheets</th></tr></thead>
+       <tbody>${meshKeys.map(m=>`<tr><td>${m}</td><td style="text-align:right;">${fmt(mesh[m].area,2)}</td><td style="text-align:right;">${mesh[m].sheets}</td></tr>`).join('')}
+       <tr style="font-weight:700;"><td>Total</td><td style="text-align:right;">${fmt(meshKeys.reduce((s,m)=>s+mesh[m].area,0),2)}</td><td style="text-align:right;">${meshKeys.reduce((s,m)=>s+mesh[m].sheets,0)}</td></tr>
      </tbody></table>` : ''}
      </div>` : '';
   }
@@ -2575,14 +2610,14 @@ function exportAll(){
 }
 function renderExportSummary(){
   let lines=allLines();
-  let byMat={};
-  lines.filter(l=>l.materialGroup==="Reinforcement").forEach(l=>{ byMat[l.material]=(byMat[l.material]||0)+(l.weightKg||0); });
+  let {bars,mesh}=summarizeReinforcement(lines);
   let byGrade={};
   lines.filter(l=>l.materialGroup==="Concrete").forEach(l=>{ byGrade[l.material]=(byGrade[l.material]||0)+l.finalQty; });
   let host=document.getElementById("exportSummary");
   host.innerHTML = `<div class="grid cols2">
    <div><h3>Concrete by grade</h3><table class="results"><thead><tr><th>Grade</th><th>m³</th></tr></thead><tbody>${Object.entries(byGrade).map(([k,v])=>`<tr><td>${k}</td><td>${fmt(v,2)}</td></tr>`).join('')||'<tr><td colspan=2 class="small">No data yet</td></tr>'}</tbody></table></div>
-   <div><h3>Reinforcement by diameter</h3><table class="results"><thead><tr><th>Bar/Mesh</th><th>kg</th></tr></thead><tbody>${Object.entries(byMat).map(([k,v])=>`<tr><td>${k}</td><td>${fmt(v,1)}</td></tr>`).join('')||'<tr><td colspan=2 class="small">No data yet</td></tr>'}</tbody></table></div>
+   <div><h3>Reinforcement bars by diameter</h3><table class="results"><thead><tr><th>Bar</th><th>lm</th><th>kg</th></tr></thead><tbody>${Object.entries(bars).map(([k,v])=>`<tr><td>${k}</td><td>${fmt(v.lm,1)}</td><td>${fmt(v.kg,1)}</td></tr>`).join('')||'<tr><td colspan=3 class="small">No data yet</td></tr>'}</tbody></table></div>
+   <div><h3>Mesh by type (sheets)</h3><table class="results"><thead><tr><th>Mesh</th><th>m²</th><th>Sheets</th></tr></thead><tbody>${Object.entries(mesh).map(([k,v])=>`<tr><td>${k}</td><td>${fmt(v.area,1)}</td><td>${v.sheets}</td></tr>`).join('')||'<tr><td colspan=3 class="small">No data yet</td></tr>'}</tbody></table></div>
   </div>`;
 }
 function exportPDF(){

@@ -4,7 +4,7 @@ import { computeElementCost, computeGrandTotal, computeMarginLadder, money, mone
 import { NumInput } from "./atoms.jsx";
 
 export default function QuoteSummary({
-  items, rates, categoryOrder = CATEGORY_ORDER, sectionOrder = SECTION_ORDER,
+  items, onReorder, rates, categoryOrder = CATEGORY_ORDER, sectionOrder = SECTION_ORDER,
   gfa, setGfa, overheadPct, setOverheadPct, contingencyPct, setContingencyPct,
 }) {
   // Folded two levels deep — category (Foundations, Suspended Structure...)
@@ -44,7 +44,19 @@ export default function QuoteSummary({
                   <div key={section} className="pl-2 mt-1">
                     <div className="text-[10px] uppercase tracking-widest text-neutral-400 font-semibold">{section}</div>
                     {sections[section].map((r) => (
-                      <div key={r.item.id} className="flex justify-between text-[13px] py-0.5">
+                      <div
+                        key={r.item.id}
+                        draggable={!!onReorder}
+                        onDragStart={(e) => { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", r.item.id); }}
+                        onDragOver={(e) => { if (onReorder) e.preventDefault(); }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          const draggedId = e.dataTransfer.getData("text/plain");
+                          if (draggedId && onReorder) onReorder(draggedId, r.item.id);
+                        }}
+                        className={`flex justify-between text-[13px] py-0.5 ${onReorder ? "cursor-grab active:cursor-grabbing hover:bg-neutral-50 rounded" : ""}`}
+                        title={onReorder ? "Drag to reorder" : undefined}
+                      >
                         <span className="text-neutral-600 truncate pr-2">{r.item.label}</span>
                         <span className="font-mono tabular-nums text-neutral-800 flex-none">{money2(r.total)}</span>
                       </div>

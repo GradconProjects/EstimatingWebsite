@@ -127,6 +127,8 @@ input:disabled{background:#f0f4f7;color:#7c8a96;}
 .boq-meta td:first-child{color:#5a7186;width:110px;}
 .boq-meta td{border:none;padding:2px 6px;}
 .boq-table td, .boq-table th{white-space:normal;}
+.boq-report-row{cursor:grab;}
+.boq-report-row:active{cursor:grabbing;}
 
 /* Print / PDF export */
 @media print{
@@ -1269,6 +1271,14 @@ function computeProjectBOQ(proj){
     rows.push({id:item.id, category:item.category, subcategory:item.subcategory, member:disp.member,
       desc:disp.desc, unit:disp.unit, qty, rate, amount});
   });
+  // Manual drag-and-drop order (per project, per trade category — see reorderBoqItem) wins over the
+  // catalog's natural order; anything never dragged keeps its original relative position.
+  if (proj.boqOrder) {
+    const order = proj.boqOrder;
+    rows.forEach((r,i)=>{ r._rank = order[r.id]!=null ? order[r.id] : 100000+i; });
+    rows.sort((a,b)=>a._rank-b._rank);
+    rows.forEach(r=>{ delete r._rank; });
+  }
   // group by building member first (standard BOQ format), trade category as sub-heading within each member
   const byMember = {};
   rows.forEach(r=>{ (byMember[r.member] = byMember[r.member]||[]).push(r); });
@@ -1279,6 +1289,22 @@ function computeProjectBOQ(proj){
   const gst = subtotal*(proj.gstPct||0.10);
   const total = subtotal+gst;
   return {rows, byCategory, byMember, memberOrder, subtotal, gst, total};
+}
+// Drag-and-drop reorder within the Project BOQ report — only ever within the same
+// trade-category sub-group a row is displayed under (reordering across groups would
+// just silently re-file an item under the wrong heading, so it's a no-op instead).
+function reorderBoqItem(proj, draggedId, targetId){
+  if (draggedId===targetId) return;
+  const boq = computeProjectBOQ(proj);
+  const dragged = boq.rows.find(r=>r.id===draggedId);
+  const target = boq.rows.find(r=>r.id===targetId);
+  if (!dragged || !target || dragged.category!==target.category) return;
+  const ids = boq.rows.filter(r=>r.category===dragged.category).map(r=>r.id);
+  const from = ids.indexOf(draggedId), to = ids.indexOf(targetId);
+  if (from===-1 || to===-1) return;
+  ids.splice(to, 0, ids.splice(from,1)[0]);
+  if (!proj.boqOrder) proj.boqOrder = {};
+  ids.forEach((id,i)=>{ proj.boqOrder[id]=i; });
 }
 
 // ---- COST CONTROL: per-project budget tracking ----
@@ -2346,12 +2372,15 @@ function submitCustomBoqItem(){
 }
 
 // ---------- PROJECT BOQ (filtered, exportable) ----------
+let boqReportCollapsed = new Set(); // building-member sections rolled up on screen (session-only, not printed)
 function renderProjectBOQ(){
   const proj = activeProject();
   const boq = computeProjectBOQ(proj);
   let h = `<div class="boq-toolbar no-print">
     <button class="save-btn" onclick="exportBoqPdf()">🖨 Export to PDF</button>
-    <span class="hint" style="margin:0 0 0 10px">Uses your browser's Print dialog — choose "Save as PDF" as the destination.</span>
+    <button class="filter-btn" onclick='boqReportCollapsed=new Set(${JSON.stringify(boq.memberOrder)});renderAll();'>▸ Roll up all sections</button>
+    <button class="filter-btn" onclick="boqReportCollapsed=new Set();renderAll();">▾ Expand all</button>
+    <span class="hint" style="margin:0 0 0 10px">Uses your browser's Print dialog — choose "Save as PDF" as the destination. Drag a row onto another within the same trade category to reorder it.</span>
   </div>
   <div class="boq-report">
     <div class="boq-header">
@@ -2370,22 +2399,27 @@ function renderProjectBOQ(){
   if (boq.rows.length===0){
     h += `<p class="hint">No items selected yet — go to <b>Select BOQ Items</b> and tick what applies to this job.</p>`;
   } else {
-    h += `<table class="item-table boq-table"><thead><tr><th>Item</th><th>Description</th><th>Unit</th><th>Qty</th><th>Rate ($)</th><th>Amount ($)</th></tr></thead><tbody>`;
+    h += `<table class="item-table boq-table" id="boqReportTable"><thead><tr><th>Item</th><th>Description</th><th>Unit</th><th>Qty</th><th>Rate ($)</th><th>Amount ($)</th></tr></thead><tbody>`;
     let itemNo = 1;
     boq.memberOrder.forEach(member=>{
-      h += `<tr class="member-row"><td colspan="6">${member.toUpperCase()}</td></tr>`;
       const memberRows = boq.byMember[member];
-      // sub-group by trade category within the member, for a proper standard-BOQ layout
-      const bySub = {};
-      memberRows.forEach(r=>{ (bySub[r.category] = bySub[r.category]||[]).push(r); });
-      let memberSub = 0;
-      Object.keys(bySub).forEach(cat=>{
-        h += `<tr class="sec-row"><td></td><td colspan="5">${cat}</td></tr>`;
-        bySub[cat].forEach(r=>{
-          memberSub += r.amount;
-          h += `<tr><td class="num">${itemNo++}</td><td>${r.desc}</td><td>${r.unit}</td><td class="num">${r.qty}</td><td class="num">${fmt$(r.rate)}</td><td class="num">${fmt$(r.amount)}</td></tr>`;
+      const memberSub = memberRows.reduce((s,r)=>s+r.amount,0);
+      const collapsed = boqReportCollapsed.has(member);
+      h += `<tr class="member-row"><td colspan="6">
+        <button class="filter-btn boq-collapse-toggle no-print" data-member="${member}" style="margin-right:8px;padding:2px 10px;font-size:11px;">${collapsed?'▸':'▾'}</button>
+        ${member.toUpperCase()}${collapsed? ` — ${fmt$(memberSub)}` : ''}
+      </td></tr>`;
+      if (!collapsed){
+        // sub-group by trade category within the member, for a proper standard-BOQ layout
+        const bySub = {};
+        memberRows.forEach(r=>{ (bySub[r.category] = bySub[r.category]||[]).push(r); });
+        Object.keys(bySub).forEach(cat=>{
+          h += `<tr class="sec-row"><td></td><td colspan="5">${cat}</td></tr>`;
+          bySub[cat].forEach(r=>{
+            h += `<tr class="boq-report-row" draggable="true" data-id="${r.id}"><td class="num">${itemNo++}</td><td>${r.desc}</td><td>${r.unit}</td><td class="num">${r.qty}</td><td class="num">${fmt$(r.rate)}</td><td class="num">${fmt$(r.amount)}</td></tr>`;
+          });
         });
-      });
+      }
       h += `<tr class="subtotal-row"><td colspan="5">${member} — subtotal</td><td class="num">${fmt$(memberSub)}</td></tr>`;
     });
     h += `<tr class="subtotal-row"><td colspan="5">Subtotal (excl. GST)</td><td class="num">${fmt$(boq.subtotal)}</td></tr>
@@ -2395,9 +2429,34 @@ function renderProjectBOQ(){
   }
   h += `</div>`;
   document.getElementById("panel-ProjectBOQ").innerHTML = h;
+  document.querySelectorAll(".boq-collapse-toggle").forEach(btn=>{
+    btn.addEventListener("click", e=>{
+      e.stopPropagation();
+      const m = btn.dataset.member;
+      if (boqReportCollapsed.has(m)) boqReportCollapsed.delete(m); else boqReportCollapsed.add(m);
+      renderAll();
+    });
+  });
+  let boqDragId = null;
+  document.querySelectorAll(".boq-report-row").forEach(row=>{
+    row.addEventListener("dragstart", e=>{ boqDragId = row.dataset.id; e.dataTransfer.effectAllowed = "move"; });
+    row.addEventListener("dragover", e=>{ e.preventDefault(); });
+    row.addEventListener("drop", e=>{
+      e.preventDefault();
+      if (boqDragId && boqDragId!==row.dataset.id){ reorderBoqItem(proj, boqDragId, row.dataset.id); saveState(); renderAll(); }
+      boqDragId = null;
+    });
+  });
 }
 function exportBoqPdf(){
   switchTab("ProjectBOQ");
+  // A client-facing BOQ must show everything, regardless of what the estimator had rolled
+  // up on screen while reviewing it — force every section open for the print, then restore.
+  const savedCollapsed = boqReportCollapsed;
+  boqReportCollapsed = new Set();
+  renderAll();
+  const restore = ()=>{ boqReportCollapsed = savedCollapsed; renderAll(); window.removeEventListener('afterprint', restore); };
+  window.addEventListener('afterprint', restore);
   setTimeout(()=>window.print(), 80);
 }
 
