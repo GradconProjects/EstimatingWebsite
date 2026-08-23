@@ -2783,6 +2783,11 @@ function buildEstimateExportPayload(){
  * the explicit "Publish" button AND the debounced auto-publish below — same payload
  * shape either way, so a manual publish and a live auto-publish are indistinguishable
  * to the apps reading them. */
+const PUBLISHED_ESTIMATES_KEY = "gradcon-published-estimates";
+// Stays synchronous (same contract as before this file had cloud sync at all) so a
+// localStorage failure (quota exceeded, private browsing) still throws synchronously
+// and is caught by publishToQuote()'s own try/catch, which shows the user a real
+// error instead of a silently swallowed promise rejection.
 function writeEstimateExport(payload){
   localStorage.setItem("gradcon-estimate-export", JSON.stringify(payload));
   const record = {
@@ -2791,10 +2796,32 @@ function writeEstimateExport(payload){
     project: payload.project, lines: payload.lines,
     publishedAt: new Date().toISOString(),
   };
-  const existing = JSON.parse(localStorage.getItem("gradcon-published-estimates") || "[]");
+  const existing = JSON.parse(localStorage.getItem(PUBLISHED_ESTIMATES_KEY) || "[]");
   const idx = existing.findIndex(r=>r.estimateSessionId===record.estimateSessionId);
   if(idx>=0) existing[idx] = record; else existing.push(record);
-  localStorage.setItem("gradcon-published-estimates", JSON.stringify(existing));
+  localStorage.setItem(PUBLISHED_ESTIMATES_KEY, JSON.stringify(existing));
+  syncPublishedEstimatesToCloud(record);
+}
+// Background, best-effort: merges this one record into whatever's currently in the
+// cloud (not just this browser's own local copy) before pushing — otherwise
+// publishing from a computer that hasn't synced in a while would silently drop
+// another session's published estimate that only exists in the cloud. Same "read
+// latest, merge by id, then save" pattern as Quotes' projects index
+// (src/lib/storage.js), for the same reason: no publish from either account should
+// be able to wipe out the other's. Runs after the synchronous local write above, so
+// it never blocks the "Published" confirmation or the switch to Quotes.
+async function syncPublishedEstimatesToCloud(record){
+  let merged;
+  try{
+    const cloudRow = await kvFetch(PUBLISHED_ESTIMATES_KEY);
+    merged = cloudRow && Array.isArray(cloudRow.value) ? cloudRow.value.slice() : JSON.parse(localStorage.getItem(PUBLISHED_ESTIMATES_KEY) || "[]");
+  }catch(e){
+    merged = JSON.parse(localStorage.getItem(PUBLISHED_ESTIMATES_KEY) || "[]");
+  }
+  const idx = merged.findIndex(r=>r.estimateSessionId===record.estimateSessionId);
+  if(idx>=0) merged[idx] = record; else merged.push(record);
+  try{ localStorage.setItem(PUBLISHED_ESTIMATES_KEY, JSON.stringify(merged)); }catch(e){}
+  kvPush(PUBLISHED_ESTIMATES_KEY, merged);
 }
 function publishToQuote(){
   if(INSTANCES.length===0){

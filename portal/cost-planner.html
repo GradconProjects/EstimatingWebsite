@@ -848,6 +848,7 @@ function freshState(){
     activeProject: null, nextProjectId: 1,
     projects: {}, customBoqItems: [], boqOverrides: {}, nextCustomBoqId: 1,
     importedEstimateIds: new Set(),
+    importedQuoteIds: new Set(),
     ratesVersion: RATES_VERSION,
   };
 }
@@ -891,6 +892,7 @@ async function kvPush(key, value){
 // gets turned into real app state (Set reconstruction, rates-version migration).
 function normalizeLoadedState(parsed){
   parsed.importedEstimateIds = new Set(parsed.importedEstimateIds || []);
+  parsed.importedQuoteIds = new Set(parsed.importedQuoteIds || []);
   if(parsed.ratesVersion !== RATES_VERSION){
     Object.assign(parsed, freshRateFields());
     parsed.ratesVersion = RATES_VERSION;
@@ -923,7 +925,11 @@ function showSaveStatus(kind){
   }
 }
 function serializableState(){
-  return { ...state, importedEstimateIds: Array.from(state.importedEstimateIds||[]) };
+  return {
+    ...state,
+    importedEstimateIds: Array.from(state.importedEstimateIds||[]),
+    importedQuoteIds: Array.from(state.importedQuoteIds||[]),
+  };
 }
 function saveState(){
   try{
@@ -1132,6 +1138,102 @@ window.addEventListener("storage", (e)=>{
   importPublishedEstimates();
   renderAll();
 });
+
+// The "storage" listener above only ever fires for another TAB in this SAME browser
+// — Estimates publishing from a different computer/account never reaches it, which
+// is exactly the cross-device gap the rest of this file's Supabase sync closes for
+// its own state. Pulls the shared published-estimates list the same way syncFromCloud()
+// pulls this app's own state (newer-wins against a synced-at marker, seeds the cloud
+// if nothing's there yet), then re-runs the same import so a project published on
+// another computer shows up here without a manual refresh.
+/* Quotes has no generic "quantity lines" the way Estimates does — a Quotes project is
+ * priced straight off Gradcon's own catalog SKUs, not a takeoff — so there's no BOQ
+ * mapping to attempt here (unlike importPublishedEstimates() above). This just makes
+ * sure a project started in Quotes shows up in Cost Planner's project list under the
+ * same name/GFA without re-typing it, same "auto-populate, don't force a re-entry"
+ * idea, scoped to what's actually safe to copy across automatically. Re-publishing the
+ * same Quotes project (matched by its own project id) updates that one Cost Planner
+ * project's name/GFA in place rather than spawning a duplicate. */
+function importPublishedQuotes(){
+  let raw;
+  try{ raw = localStorage.getItem("gradcon-published-quotes"); }catch(err){ return; }
+  if(!raw) return;
+  let entries;
+  try{ entries = JSON.parse(raw); }catch(err){ return; }
+  if(!Array.isArray(entries)) return;
+
+  entries.forEach(entry=>{
+    if(!entry || !entry.id) return;
+    const project = entry.project || {};
+    if(!project.name) return;
+    const key = "quote_" + entry.id;
+    const existingProj = state.projects[key];
+    state.importedQuoteIds.add(entry.id);
+    state.projects[key] = makeProject({
+      category: existingProj? existingProj.category : "project",
+      status: existingProj? existingProj.status : undefined,
+      name: `${project.name} (from Quotes)`,
+      gfa: project.gfa || 0,
+      notes: existingProj? existingProj.notes : "Imported from Quotes",
+    });
+    if(existingProj){
+      // Preserve anything edited directly on this project in Cost Planner (scope, BOQ
+      // selections, contingency %, etc.) — only name/GFA refresh from Quotes.
+      Object.assign(state.projects[key], existingProj, { name: `${project.name} (from Quotes)`, gfa: project.gfa || 0 });
+    }
+    state.projects[key].source = "quotes";
+  });
+}
+importPublishedQuotes();
+window.addEventListener("storage", (e)=>{
+  if(e.key!=="gradcon-published-quotes" || !e.newValue) return;
+  importPublishedQuotes();
+  renderAll();
+});
+let syncingPublishedQuotes = false;
+async function syncPublishedQuotesFromCloud(){
+  if(syncingPublishedQuotes) return;
+  syncingPublishedQuotes = true;
+  try{
+    const row = await kvFetch("gradcon-published-quotes");
+    if(!row) return;
+    const localSyncedAt = localStorage.getItem("gradcon-published-quotes__syncedAt");
+    if(localSyncedAt && row.updated_at <= localSyncedAt) return;
+    localStorage.setItem("gradcon-published-quotes", JSON.stringify(row.value || []));
+    localStorage.setItem("gradcon-published-quotes__syncedAt", row.updated_at);
+    importPublishedQuotes();
+    renderAll();
+  } finally {
+    syncingPublishedQuotes = false;
+  }
+}
+
+let syncingPublishedEstimates = false;
+async function syncPublishedEstimatesFromCloud(){
+  if(syncingPublishedEstimates) return;
+  syncingPublishedEstimates = true;
+  try{
+    const row = await kvFetch("gradcon-published-estimates");
+    if(!row){
+      const local = localStorage.getItem("gradcon-published-estimates");
+      if(local){
+        try{
+          const pushed = await kvPush("gradcon-published-estimates", JSON.parse(local));
+          if(pushed) localStorage.setItem("gradcon-published-estimates__syncedAt", pushed.updated_at);
+        }catch(e){}
+      }
+      return;
+    }
+    const localSyncedAt = localStorage.getItem("gradcon-published-estimates__syncedAt");
+    if(localSyncedAt && row.updated_at <= localSyncedAt) return;
+    localStorage.setItem("gradcon-published-estimates", JSON.stringify(row.value || []));
+    localStorage.setItem("gradcon-published-estimates__syncedAt", row.updated_at);
+    importPublishedEstimates();
+    renderAll();
+  } finally {
+    syncingPublishedEstimates = false;
+  }
+}
 
 function escalationFactor(){
   return (1+state.global.escalation2025Pct)*(1+state.global.escalation2026Pct);
@@ -2850,9 +2952,11 @@ function selectProjectAndGo(key){ state.activeProject = key; renderAll(); }
 window.addEventListener("DOMContentLoaded", buildTabs);
 document.getElementById("saveBtn").addEventListener("click", saveState);
 syncFromCloud();
-window.addEventListener("focus", syncFromCloud);
-document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) syncFromCloud(); });
-setInterval(syncFromCloud, 6000); // close to live without a WebSocket subscription
+syncPublishedEstimatesFromCloud();
+syncPublishedQuotesFromCloud();
+window.addEventListener("focus", ()=>{ syncFromCloud(); syncPublishedEstimatesFromCloud(); syncPublishedQuotesFromCloud(); });
+document.addEventListener("visibilitychange", ()=>{ if(!document.hidden){ syncFromCloud(); syncPublishedEstimatesFromCloud(); syncPublishedQuotesFromCloud(); } });
+setInterval(()=>{ syncFromCloud(); syncPublishedEstimatesFromCloud(); syncPublishedQuotesFromCloud(); }, 6000); // close to live without a WebSocket subscription
 
 </script>
 </body>

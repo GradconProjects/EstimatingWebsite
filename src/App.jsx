@@ -4,7 +4,7 @@ import { ELEMENT_TYPES } from "./data/catalog.js";
 import { defaultRates, newElementItem, computeGrandTotal, uid, money } from "./lib/costing.js";
 import { buildQuoteExcelHtml, quoteExcelFilename, buildQuoteCsv } from "./lib/exportQuote.js";
 import { useStoredState } from "./lib/storage.js";
-import { PROJECTS_INDEX_KEY, newProjectEntry, migrateLegacyQuote, deleteQuote, writeQuote, readQuotes } from "./lib/projects.js";
+import { PROJECTS_INDEX_KEY, newProjectEntry, migrateLegacyQuote, deleteQuote, writeQuote, readQuotes, publishQuoteToCostPlanner } from "./lib/projects.js";
 import { ESTIMATE_EXPORT_KEY, buildImportFromEstimate } from "./lib/estimateImport.js";
 import { SaveBadge } from "./components/atoms.jsx";
 import AddElementBar from "./components/AddElementBar.jsx";
@@ -213,6 +213,19 @@ export default function App() {
 
 function ProjectEditor({ project, rates, setRates, ratesStatus, saveProjectsNow, onBack, elementTypes, categoryOrder, sectionOrder, customTypes, setCustomTypes }) {
   const [quote, setQuote, quoteStatus, saveQuoteNow] = useStoredState(project.storageKey, blankQuote());
+
+  // Mirrors the project's name/GFA into Cost Planner automatically, the same way
+  // Estimates already auto-publishes as you edit (see estimateImport.js's sibling
+  // bridge) — so a project started here shows up in Cost Planner's list without
+  // re-typing it. Debounced so rapid typing in the project name field doesn't spam
+  // a Supabase write on every keystroke; silent/best-effort, same as autosave.
+  useEffect(() => {
+    if (!quote.projectName) return;
+    const t = setTimeout(() => { publishQuoteToCostPlanner(project.id, quote); }, 1200);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project.id, quote.projectName, quote.gfa]);
+
   const [ratesOpen, setRatesOpen] = useState(false);
   const [elementTypesOpen, setElementTypesOpen] = useState(false);
   const [printPreviewOpen, setPrintPreviewOpen] = useState(false);

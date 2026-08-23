@@ -13,6 +13,7 @@ const TABLE = "estimator_kv";
 
 export const PROJECTS_INDEX_KEY = "gradcon-projects";
 export const LEGACY_QUOTE_KEY = "gradcon-quote";
+export const PUBLISHED_QUOTES_KEY = "gradcon-published-quotes";
 
 export const quoteStorageKey = (id) => `gradcon-quote-${id}`;
 
@@ -100,6 +101,49 @@ export async function deleteQuote(storageKey) {
   }
   try {
     window.localStorage.removeItem(storageKey);
+  } catch {
+    /* best-effort */
+  }
+}
+
+/**
+ * Mirrors this project's name/GFA into "gradcon-published-quotes" — the same shared
+ * bridge Estimates already publishes to (see estimates-app.html's writeEstimateExport
+ * and cost-planner.html's importPublishedEstimates), so a project started in Quotes
+ * shows up in Cost Planner's project list automatically, matched back by this
+ * project's own id on every re-publish rather than spawning a duplicate. Quotes has
+ * no generic quantity lines the way Estimates does (it's priced straight off catalog
+ * SKUs, not a takeoff), so unlike the Estimates bridge this only ever carries
+ * name/GFA — there's no BOQ to map. Best-effort and silent — called from a debounced
+ * effect on every real edit, so a failure here should never surface as an error to
+ * the estimator working on their quote.
+ */
+export async function publishQuoteToCostPlanner(projectId, quote) {
+  if (!quote.projectName) return;
+  const record = {
+    id: projectId,
+    project: { name: quote.projectName, gfa: Number(quote.gfa) || 0 },
+    publishedAt: new Date().toISOString(),
+  };
+  if (supabaseEnabled) {
+    try {
+      const { data } = await supabase.from(TABLE).select("value").eq("key", PUBLISHED_QUOTES_KEY).maybeSingle();
+      const existing = data && Array.isArray(data.value) ? data.value.slice() : [];
+      const idx = existing.findIndex((r) => r && r.id === record.id);
+      if (idx >= 0) existing[idx] = record; else existing.push(record);
+      await supabase.from(TABLE).upsert({ key: PUBLISHED_QUOTES_KEY, value: existing, updated_at: new Date().toISOString() });
+    } catch {
+      /* best-effort */
+    }
+    return;
+  }
+  if (typeof window === "undefined" || !window.localStorage) return;
+  try {
+    const raw = window.localStorage.getItem(PUBLISHED_QUOTES_KEY);
+    const existing = raw ? JSON.parse(raw) : [];
+    const idx = existing.findIndex((r) => r && r.id === record.id);
+    if (idx >= 0) existing[idx] = record; else existing.push(record);
+    window.localStorage.setItem(PUBLISHED_QUOTES_KEY, JSON.stringify(existing));
   } catch {
     /* best-effort */
   }
