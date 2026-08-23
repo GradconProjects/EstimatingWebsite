@@ -208,10 +208,10 @@ footer.note{color:var(--muted);font-size:11px;text-align:center;padding:20px;}
 
 <section id="page-export" class="page">
   <div class="panel">
-    <h2>Publish to Quote</h2>
-    <p class="small">Sends every element's quantities straight into the Quotes tool as a new project — concrete, reinforcement and wall formwork prefill against the matching Gradcon catalog product where the match is unambiguous. Anything that isn't (an ambiguous concrete mix, a bar size or formwork system the bridge can't confidently pick, an element type Quotes has no equivalent for) is listed in a flag banner on the new quote instead of being guessed.</p>
+    <h2>Publish to Quote &amp; Cost Planner</h2>
+    <p class="small">Sends every element's quantities straight into the Quotes tool AND the Cost Planner dashboard as a new project in each — concrete, reinforcement and wall formwork prefill against the matching Gradcon catalog product where the match is unambiguous. Anything that isn't (an ambiguous concrete mix, a bar size or formwork system the bridge can't confidently pick, an element type there's no equivalent for) is listed in a flag banner on the new project instead of being guessed. No need to re-enter these quantities by hand in either app.</p>
     <div class="toolbar">
-      <button class="btn primary" onclick="publishToQuote()">🚀 Publish to Quote</button>
+      <button class="btn primary" onclick="publishToQuote()">🚀 Publish to Quote &amp; Cost Planner</button>
     </div>
     <div id="publishStatus"></div>
   </div>
@@ -2379,7 +2379,15 @@ document.getElementById("loadFile").addEventListener("change",e=>{
  * inherently ambiguous in places (which concrete mix? which formwork
  * system?) — the Quotes side prefills what it can confidently match and
  * flags everything else rather than guessing, so nothing is silently wrong
- * in the resulting quote. */
+ * in the resulting quote.
+ *
+ * The SAME publish also appends to "gradcon-published-estimates" — a
+ * separate, append-only (never cleared) array read by the Cost Planner
+ * dashboard on load, so a project published here shows up there too without
+ * re-entering anything. This is intentionally a different key to
+ * "gradcon-estimate-export": Quotes deletes that one right after importing
+ * it (a one-shot handoff), so if Cost Planner read the same key it would
+ * lose the race whenever Quotes happens to load first. */
 function publishToQuote(){
   if(INSTANCES.length===0){
     document.getElementById("publishStatus").innerHTML = `<div class="warn">Add at least one element in the Workspace before publishing to a quote.</div>`;
@@ -2393,10 +2401,20 @@ function publishToQuote(){
   try{
     localStorage.setItem("gradcon-estimate-export", JSON.stringify(payload));
   }catch(err){
-    document.getElementById("publishStatus").innerHTML = `<div class="warn">Could not publish: ${err.message}</div>`;
+    document.getElementById("publishStatus").innerHTML = `<div class="warn">Could not publish: ${err.message}<br><br>This usually means the portal was opened as a local file (double-clicked) rather than served over http/https — browsers block shared storage between apps in that mode. It works normally once hosted (e.g. on Vercel), or if you serve this file locally through a simple web server instead of opening it directly.</div>`;
     return;
   }
-  document.getElementById("publishStatus").innerHTML = `<div class="tip"><span class="ico">🚀</span><div>Published ${payload.lines.length} quantity line(s) across ${INSTANCES.length} element(s) — opening Quotes…</div></div>`;
+  try{
+    const record = {
+      id: "est_" + Date.now() + "_" + Math.random().toString(36).slice(2,8),
+      project: payload.project, lines: payload.lines,
+      publishedAt: new Date().toISOString(),
+    };
+    const existing = JSON.parse(localStorage.getItem("gradcon-published-estimates") || "[]");
+    existing.push(record);
+    localStorage.setItem("gradcon-published-estimates", JSON.stringify(existing));
+  }catch(err){ /* best-effort — Quotes import above already succeeded regardless */ }
+  document.getElementById("publishStatus").innerHTML = `<div class="tip"><span class="ico">🚀</span><div>Published ${payload.lines.length} quantity line(s) across ${INSTANCES.length} element(s) to Quotes and the Cost Planner — opening Quotes…</div></div>`;
   try{ window.parent.postMessage({type:"gradcon:publish-estimate"}, "*"); }catch(err){ /* not hosted in the portal — export still sits in localStorage */ }
 }
 
