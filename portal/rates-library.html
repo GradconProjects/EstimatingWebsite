@@ -203,6 +203,12 @@ tr.row-outofscope input, tr.row-outofscope select{background:#eef0f2;color:#9aa5
 .lib-header img{height:44px;}
 .lib-header h1{font-size:19px;margin:0;color:var(--navy2);}
 .lib-header .sub{font-size:12px;color:#5a7186;margin-top:2px;}
+.save-zone{display:flex;align-items:center;gap:9px;margin-left:auto;flex-shrink:0;}
+.save-status{font-size:11px;color:#5a7186;white-space:nowrap;min-width:110px;text-align:right;}
+.save-status.ok{color:var(--linked);}
+.save-status.err{color:#a33;}
+#saveBtn{background:var(--linked);color:#fff;border:none;border-radius:5px;padding:8px 16px;font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap;}
+#saveBtn:hover{opacity:.9;}
 .lib-wrap{max-width:1500px;margin:0 auto;padding:20px;}
 
 .lib-nav{display:flex;flex-wrap:wrap;gap:7px;padding:12px 14px;background:#fff;border:1px solid var(--border);border-radius:8px;margin-bottom:18px;position:sticky;top:10px;z-index:5;box-shadow:0 2px 8px rgba(15,46,76,.06);}
@@ -216,6 +222,10 @@ tr.row-outofscope input, tr.row-outofscope select{background:#eef0f2;color:#9aa5
   <div>
     <h1>GRADCON Rates Library</h1>
     <div class="sub">The single source of established rates for Cost Planner, Quotes and Estimates — no escalation. Real supplier rates where available (AKZ Reinforcing, Holcim), tagged with their source.</div>
+  </div>
+  <div class="save-zone">
+    <span id="saveStatus" class="save-status">All changes saved automatically</span>
+    <button id="saveBtn" type="button">💾 Save</button>
   </div>
 </div>
 <div class="lib-wrap" id="app"></div>
@@ -545,12 +555,30 @@ function loadRates(){
 let state = backfill(loadRates() || {}, freshRates());
 if(!state.ratesVersion) state.ratesVersion = RATES_VERSION;
 
+let saveStatusTimer = null;
+function showSaveStatus(kind){
+  const el = document.getElementById("saveStatus");
+  if(!el) return;
+  el.classList.remove("ok","err");
+  if(kind==="ok"){
+    el.textContent = "Saved " + new Date().toLocaleTimeString([], {hour:"2-digit", minute:"2-digit", second:"2-digit"});
+    el.classList.add("ok");
+  } else if(kind==="err"){
+    el.textContent = "Save failed — storage may be full/disabled";
+    el.classList.add("err");
+  }
+  clearTimeout(saveStatusTimer);
+  if(kind==="ok"){
+    saveStatusTimer = setTimeout(()=>{ el.textContent = "All changes saved automatically"; el.classList.remove("ok"); }, 4000);
+  }
+}
 function saveRates(){
   try{
     state.ratesVersion = RATES_VERSION;
     state.updatedAt = new Date().toISOString();
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  }catch(e){ /* best-effort — e.g. storage full or disabled */ }
+    showSaveStatus("ok");
+  }catch(e){ showSaveStatus("err"); }
 }
 
 function fmt$(v){ if(v==null||isNaN(v)) v=0; return "$"+Number(v).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
@@ -755,4 +783,5 @@ function wireInputs(){
 
 saveRates(); // ensure a fresh install immediately publishes defaults for other apps to read
 renderApp();
+document.getElementById("saveBtn").addEventListener("click", saveRates);
 </script>

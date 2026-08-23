@@ -198,7 +198,7 @@ export default function App() {
 }
 
 function ProjectEditor({ project, rates, setRates, ratesStatus, onBack, elementTypes, categoryOrder, sectionOrder, customTypes, setCustomTypes }) {
-  const [quote, setQuote, quoteStatus] = useStoredState(project.storageKey, blankQuote());
+  const [quote, setQuote, quoteStatus, saveQuoteNow] = useStoredState(project.storageKey, blankQuote());
   const [ratesOpen, setRatesOpen] = useState(false);
   const [elementTypesOpen, setElementTypesOpen] = useState(false);
   const [printPreviewOpen, setPrintPreviewOpen] = useState(false);
@@ -331,7 +331,16 @@ function ProjectEditor({ project, rates, setRates, ratesStatus, onBack, elementT
             className="border border-neutral-200 rounded px-2 py-1 text-xs"
           />
         </div>
-        <SaveBadge status={overallStatus} />
+        <div className="flex items-center gap-3">
+          <SaveBadge status={overallStatus} />
+          <button
+            type="button"
+            onClick={saveQuoteNow}
+            className="text-xs font-semibold px-3 py-1.5 rounded bg-orange-600 text-white hover:bg-orange-700"
+          >
+            Save
+          </button>
+        </div>
       </div>
 
       <div className="print:hidden max-w-7xl mx-auto px-4 pb-16 grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-4 items-start">

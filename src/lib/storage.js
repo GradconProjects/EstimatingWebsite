@@ -72,32 +72,48 @@ export function useStoredState(key, initial) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
 
+  // Kept current on every render so a manual saveNow() (see below) always
+  // writes the latest value even if it fires between renders.
+  const valueRef = useRef(value);
+  valueRef.current = value;
+
+  const doSave = async () => {
+    if (supabaseEnabled) {
+      try {
+        const { error } = await supabase.from(TABLE).upsert({ key, value: valueRef.current, updated_at: new Date().toISOString() });
+        setStatus(error ? "error" : "saved");
+      } catch {
+        setStatus("error");
+      }
+    } else if (typeof window === "undefined" || !window.localStorage) {
+      setStatus("unavailable");
+    } else {
+      try {
+        window.localStorage.setItem(key, JSON.stringify(valueRef.current));
+        setStatus("saved");
+      } catch {
+        setStatus("error");
+      }
+    }
+  };
+
   useEffect(() => {
     if (!loadedRef.current) return;
     setStatus("saving");
     if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(async () => {
-      if (supabaseEnabled) {
-        try {
-          const { error } = await supabase.from(TABLE).upsert({ key, value, updated_at: new Date().toISOString() });
-          setStatus(error ? "error" : "saved");
-        } catch {
-          setStatus("error");
-        }
-      } else if (typeof window === "undefined" || !window.localStorage) {
-        setStatus("unavailable");
-      } else {
-        try {
-          window.localStorage.setItem(key, JSON.stringify(value));
-          setStatus("saved");
-        } catch {
-          setStatus("error");
-        }
-      }
-    }, 500);
+    saveTimer.current = setTimeout(doSave, 500);
     return () => clearTimeout(saveTimer.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value, key]);
+
+  // Explicit "Save" button support — bypasses the 500ms debounce and writes
+  // immediately, so a click gives instant, visible confirmation rather than
+  // trusting the silent auto-save that was already going to happen anyway.
+  const saveNow = () => {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    setStatus("saving");
+    doSave();
+  };
 
   // Live updates from another browsing context sharing this origin — e.g. the
   // Estimates tool (a separate iframe) writing straight to this project's quote via
@@ -121,5 +137,5 @@ export function useStoredState(key, initial) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
 
-  return [value, setValue, status];
+  return [value, setValue, status, saveNow];
 }

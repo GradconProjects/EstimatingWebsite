@@ -18,6 +18,11 @@ header.app .title{display:flex;align-items:center;gap:10px;}
 header.app .title .logo{width:30px;height:30px;border-radius:7px;background:linear-gradient(135deg,var(--accent),#2c7a73);display:flex;align-items:center;justify-content:center;font-weight:700;color:#04211d;}
 header.app .title h1{font-size:16px;}
 header.app .title span{color:var(--muted);font-size:11.5px;}
+.save-zone{display:flex;align-items:center;gap:9px;}
+.save-status{font-size:11px;color:var(--muted);white-space:nowrap;min-width:110px;text-align:right;}
+.save-status.ok{color:#4fd1a5;}
+.save-status.err{color:#e57373;}
+#saveBtn{white-space:nowrap;}
 nav.tabs{display:flex;gap:4px;background:var(--panel2);padding:4px;border-radius:10px;border:1px solid var(--line);}
 nav.tabs button{background:transparent;border:none;color:var(--muted);padding:7px 14px;border-radius:7px;cursor:pointer;font-size:12.5px;font-weight:600;}
 nav.tabs button.active{background:var(--accent);color:#04211d;}
@@ -131,6 +136,10 @@ footer.note{color:var(--muted);font-size:11px;text-align:center;padding:20px;}
     <button data-page="register">4. Quantity Register</button>
     <button data-page="export">5. Export</button>
   </nav>
+  <div class="save-zone">
+    <span id="saveStatus" class="save-status">All changes saved automatically</span>
+    <button class="btn primary" id="saveBtn" type="button">💾 Save</button>
+  </div>
 </header>
 <main>
 
@@ -281,6 +290,56 @@ let SELECTED_TYPES = {};   // typeId -> true
 let INSTANCES = [];        // {id,typeKey,label,data,results}
 let ID_COUNTER = 1;
 let UPLOADED_FILES = [];   // {id,name,size,kind:'csv'|'excel'|'pdf'|'other',addedAt,status,confirmDelete}
+
+/* ============================= PERSISTENCE ============================= */
+// Everything above (PROJECT, SELECTED_TYPES, INSTANCES) previously lived only
+// in memory — a reload, a closed tab or a crashed browser lost the entire
+// takeoff with no warning. This key holds the whole in-progress workspace
+// (distinct from "gradcon-estimate-export"/"gradcon-published-estimates",
+// which are one-shot snapshots written only on Publish) so work survives a
+// reload even before the estimator has published anything.
+const ESTIMATE_STATE_KEY = "gradcon-estimate-state";
+let saveStatusTimer = null;
+function showSaveStatus(kind){
+  let el = document.getElementById("saveStatus");
+  if(!el) return;
+  el.classList.remove("ok","err");
+  if(kind==="ok"){
+    el.textContent = "Saved " + new Date().toLocaleTimeString([], {hour:"2-digit", minute:"2-digit", second:"2-digit"});
+    el.classList.add("ok");
+  } else if(kind==="err"){
+    el.textContent = "Save failed — storage may be full/disabled";
+    el.classList.add("err");
+  } else {
+    el.textContent = "Saving…";
+  }
+  clearTimeout(saveStatusTimer);
+  if(kind==="ok"){
+    saveStatusTimer = setTimeout(()=>{ el.textContent = "All changes saved automatically"; el.classList.remove("ok"); }, 4000);
+  }
+}
+function saveEstimateState(){
+  try{
+    localStorage.setItem(ESTIMATE_STATE_KEY, JSON.stringify({
+      project: PROJECT, selectedTypes: SELECTED_TYPES, instances: INSTANCES,
+      idCounter: ID_COUNTER, savedAt: new Date().toISOString(),
+    }));
+    showSaveStatus("ok");
+  }catch(err){ showSaveStatus("err"); }
+}
+function loadEstimateState(){
+  let raw;
+  try{ raw = localStorage.getItem(ESTIMATE_STATE_KEY); }catch(err){ return false; }
+  if(!raw) return false;
+  try{
+    let parsed = JSON.parse(raw);
+    if(parsed.project) PROJECT = Object.assign({}, PROJECT, parsed.project);
+    if(parsed.selectedTypes) SELECTED_TYPES = parsed.selectedTypes;
+    if(Array.isArray(parsed.instances)) INSTANCES = parsed.instances;
+    if(parsed.idCounter) ID_COUNTER = parsed.idCounter;
+    return true;
+  }catch(err){ return false; }
+}
 
 // Cover varies by exposure/formwork condition, not one flat number — AS 3600-style starting points.
 // Keyed by calc type, optionally refined by slab/beam category. Editable per element in every card.
@@ -1404,7 +1463,8 @@ function retWallDefaults(){ return {
   stemH:2400, stemT:250,
   footBotX:"N16",footBotXSp:200, footBotY:"N16",footBotYSp:200,
   stemVertDia:"N16",stemVertSp:200, stemHorDia:"N12",stemHorSp:250,
-  waterstop:true, backfillDepth:2000
+  waterstop:true, backfillDepth:2000,
+  dowelsOut:"", outQty:0, outDia:"N16", outEmbed:500, outProj:600,
 };}
 function renderRetWall(inst){
   let d=inst.data;
@@ -1425,7 +1485,9 @@ function renderRetWall(inst){
   let reo=`<div class="subsec ${d.footingSource=='compound'?'':'hidden'}" data-show-if="footingSource_compound"><div class="sechead">Footing Reinforcement</div><div class="grid cols4">${F("Bottom X dia",barSizeSel("footBotX",d.footBotX))}${F("Spacing",inpNum("footBotXSp",d.footBotXSp))}${F("Bottom Y dia",barSizeSel("footBotY",d.footBotY))}${F("Spacing",inpNum("footBotYSp",d.footBotYSp))}</div></div>
   <div class="sechead">Stem Reinforcement (each face)</div><div class="grid cols4">${F("Vertical dia",barSizeSel("stemVertDia",d.stemVertDia))}${F("Spacing",inpNum("stemVertSp",d.stemVertSp))}${F("Horizontal dia",barSizeSel("stemHorDia",d.stemHorDia))}${F("Spacing",inpNum("stemHorSp",d.stemHorSp))}</div>
   <div class="grid cols3">${chk("waterstop",d.waterstop,"Waterstop at footing/stem joint")}</div>`;
-  return {geom,conc:d.footingSource=='linked'? "<p class='small'>Concrete = stem only — footing belongs to the linked element.</p>" : "<p class='small'>Footing + stem + heel/toe + key, one compound element.</p>",reo};
+  let conns=`<div class="subsec"><div class="sechead">Dowels out (to slab, wall or element above the stem)</div><div class="grid cols4">${F("Connects to",targetSelect("dowelsOut",d.dowelsOut,inst.id))}${F("Qty",inpNum("outQty",d.outQty))}${F("Dia",barSizeSel("outDia",d.outDia))}${F("Embedment (mm)",inpNum("outEmbed",d.outEmbed))}${F("Projection (mm)",inpNum("outProj",d.outProj))}</div></div>
+  <div class="tip"><span class="ico">🏗️</span><div>Stem starters into an existing (linked) footing are set on the Geometry tab under Footing Source. This section is for what lands on <b>top</b> of the stem — a slab, upstand wall or balustrade continuing above.</div></div>`;
+  return {geom,conc:d.footingSource=='linked'? "<p class='small'>Concrete = stem only — footing belongs to the linked element.</p>" : "<p class='small'>Footing + stem + heel/toe + key, one compound element.</p>",reo,conns};
 }
 function computeRetWall(inst,def){
   let d=inst.data, lines=[];
@@ -1465,6 +1527,12 @@ function computeRetWall(inst,def){
   if(!linked && d.waterstop) lines.push(baseLine(inst,def,{materialGroup:"Joints",material:"PVC waterstop",spec:"Footing/stem joint",qty:Lm,unit:"m",waste:5,finalQty:withWaste(Lm,5),formula:"wall length"}));
   let formArea = linked? 2*Lm*(num(d.stemH)/1000) : (2*Lm*(num(d.stemH)/1000)+2*Lm*(num(d.footD)/1000));
   lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:linked?"Stem formwork":"Footing + stem formwork",spec:"",qty:formArea,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(formArea,PROJECT.formworkWaste),formula:linked?"2×L×stemH":"2×L×stemH + 2×L×footD"}));
+  let tgtOut=targetLabelOf(d.dowelsOut);
+  if(tgtOut && num(d.outQty)>0){
+    let dia=barDiaOf(d.outDia); let outLen=(num(d.outEmbed)+num(d.outProj))/1000;
+    let totLen=num(d.outQty)*outLen; let wt=totLen*massPerM(dia);
+    lines.push(baseLine(inst,def,{materialGroup:"Connections",material:d.outDia,spec:"Dowels out → "+tgtOut,qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`${d.outQty}×(embed ${d.outEmbed}+proj ${d.outProj})/1000`,linkedElement:tgtOut,notes:`${fmt(wt,1)} kg`}));
+  }
   return {lines,warnings:[]};
 }
 
@@ -1907,7 +1975,7 @@ function duplicateInstance(id){
   renderWorkspace(); computeAllAndRefresh();
 }
 
-const TABS=[["geom","Geometry"],["conc","Concrete"],["reo","Reinforcement"],["form","Formwork"],["exc","Excavation"],["conns","Connections"],["results","Results"]];
+const TABS=[["geom","Geometry"],["conc","Concrete"],["reo","Reinforcement"],["form","Formwork"],["exc","Excavation"],["conns","Connections / Dowels"],["results","Results"]];
 
 function renderWorkspace(){
   let host=document.getElementById("cardsHost");
@@ -2121,6 +2189,7 @@ function computeAllAndRefresh(){
   renderRegister();
   renderExportSummary();
   scheduleAutoPublish();
+  saveEstimateState();
 }
 
 /* ============================= PROJECT SETUP / DEFAULTS ============================= */
@@ -2134,7 +2203,7 @@ function renderProjectForm(){
     F("Measurement units",inpText("units_len",PROJECT.units_len)),
     F("Measurement rule",selOpts("measurementRule",PROJECT.measurementRule,[["gross","Gross"],["net","Net"],["configurable","Configurable per element"]])),
   ].join('');
-  f.addEventListener('input',e=>{ let k=e.target.dataset.field; if(k) PROJECT[k]=e.target.value; });
+  f.addEventListener('input',e=>{ let k=e.target.dataset.field; if(k){ PROJECT[k]=e.target.value; saveEstimateState(); } });
 }
 function renderDefaultsForm(){
   let f=document.getElementById("defaultsForm");
@@ -2709,15 +2778,21 @@ document.querySelectorAll('.tabs button').forEach(b=>b.addEventListener('click',
 }));
 
 /* ============================= INIT ============================= */
+document.getElementById("saveBtn").addEventListener("click", saveEstimateState);
+let restoredFromSave = loadEstimateState();
 renderProjectForm();
 renderDefaultsForm();
 renderLibrary();
 renderAddToolbar();
 renderWorkspace();
 computeAllAndRefresh();
-// seed a couple of default-selected common types for convenience
-["boredpier","pilecap","groundbeam","suspslab","column"].forEach(id=>SELECTED_TYPES[id]=true);
-renderLibrary(); renderAddToolbar();
+if(!restoredFromSave){
+  // Fresh install / cleared storage only — seed a couple of default-selected
+  // common types for convenience. Never runs over a restored project, so it
+  // can't silently re-tick types the estimator deliberately unticked.
+  ["boredpier","pilecap","groundbeam","suspslab","column"].forEach(id=>SELECTED_TYPES[id]=true);
+  renderLibrary(); renderAddToolbar();
+}
 </script>
 </body>
 </html>
