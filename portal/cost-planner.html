@@ -249,9 +249,9 @@ const STEEL_BUILDUPS = {
   Bar:  { label:"Reinforcing Bar — fallback only (every Stock Bar size has an established rate)", baseRateBCI:3530,
           delivery:0, consumables:0, fixingLabourHrsPerT:0, waste:GLOBAL.wasteSteelBar,
           source:"BCI Melb: Structural round bar $3,530/t; Deformed bar $3,530/t (installed, June 2025) — fallback only, see note above" },
-  Processed: { label:"Processed / Prefabricated Bar", baseRateBCI:1930,
+  Processed: { label:"Processed / Prefabricated Bar — fallback only (every diameter below has its own established Base Rate)", baseRateBCI:1930,
           delivery:0, consumables:0, fixingLabourHrsPerT:0, waste:0,
-          source:"Gradcon established rate — $1930/t, uniform across every diameter (matches the per-product rate below exactly)" },
+          source:"Gradcon established rate — $1930/t at the time each product below was seeded; edit each product's own Base Rate below to change it, this card is fallback only" },
 };
 // NOTE: BCI reinforcement rates are already ALL-IN (supply+fix+bending+tying+supports).
 // The buildup below treats baseRateBCI as material+labour combined (fixingLabourHrsPerT
@@ -753,21 +753,58 @@ const MASTER_BOQ_CATALOG = buildMasterBOQCatalog();
  * is unreadable) — there is no hardcoded seed project list any more; a
  * fresh install starts with zero projects. */
 const STORAGE_KEY = "gradcon-costplanner-state";
-function freshState(){
+// Bump this whenever a DEFAULT rate value changes in the source arrays below
+// (STEEL_BUILDUPS, CONCRETE_ITEMS, FORMWORK_ITEMS, REINFORCING_ACCESSORIES,
+// GRADCON_*_RATES, etc.) — a browser that already saved state before the
+// change would otherwise keep loading its own frozen (and now stale) copy of
+// those rates forever, since loadState() just returns whatever was last
+// saved. On a version bump, loadRateFields() below re-seeds every rate/
+// build-up field from the current code defaults while leaving projects, BOQ
+// selections and any explicit per-line overrides untouched.
+const RATES_VERSION = 3;
+function freshRateFields(){
   const s = {
     global: {...GLOBAL},
     steel: JSON.parse(JSON.stringify(STEEL_BUILDUPS)),
     reinfAcc: {}, concrete: {}, concreteLabour: {...CONCRETE_LABOUR}, formwork: {},
-    rateItems: {}, bciRef: {}, activeProject: null, nextProjectId: 1,
-    projects: {}, customBoqItems: [], boqOverrides: {}, nextCustomBoqId: 1,
-    importedEstimateIds: new Set(),
+    rateItems: {}, bciRef: {}, concreteGrade: {}, formworkLegacy: {}, otherAcc: {}, otherAllow: {}, labourPlant: {}, prelim: {},
+    // Independent, directly-editable $/unit rate per product — every Trench Mesh,
+    // Square Mesh, Stock Bar and Processed Bar product gets its own entry here
+    // (Processed Bar seeded uniformly at $1930/t converted to $/unit by weight,
+    // but then editable per-diameter same as the others if ever needed).
+    reinforcementEstablished: {
+      trenchMesh: {...GRADCON_TRENCH_MESH_RATES},
+      squareMesh: {...GRADCON_SQUARE_MESH_RATES},
+      stockBar: {...GRADCON_STOCK_BAR_RATES},
+      processedBar: Object.fromEntries(
+        REINFORCEMENT_ITEMS["Processed Bar"].items.map((it) => [it.p, +(GRADCON_PROCESSED_BAR_RATE_PER_TONNE * it.w / 1000).toFixed(4)])
+      ),
+    },
   };
   REINFORCING_ACCESSORIES.forEach(it=> s.reinfAcc[it.p] = {cost:it.cost, waste:GLOBAL.wasteGeneral});
   CONCRETE_ITEMS.forEach(it=> s.concrete[it.p] = {supply:it.supply});
   FORMWORK_ITEMS.forEach(it=> s.formwork[it.p] = {material:it.material, fixHrs:it.fixHrs, stripHrs:it.stripHrs});
   RATE_ITEMS.forEach(it=> s.rateItems[it.p] = {qtyC:it.qtyC, qtyS:it.qtyS, qtyF:it.qtyF, extraHrs:it.extraHrs});
   BCI_REFERENCE.forEach((row,i)=> s.bciRef[i] = {rate: row[3]});
+  // Every remaining material/labour/preliminaries category also gets its own directly-
+  // editable, persisted base rate — not just a BOQ-line override — so "the rate buildup"
+  // genuinely covers every material in the dashboard, not only Concrete/Formwork/Steel.
+  CONCRETE_GRADE_ITEMS.forEach(it=> s.concreteGrade[it.p] = {cost:it.cost});
+  FORMWORK_LEGACY_ITEMS.forEach(it=> s.formworkLegacy[it.p] = {cost:it.cost});
+  OTHER_ACCESSORIES.forEach(it=> s.otherAcc[it.p] = {cost:it.cost});
+  OTHER_ALLOWANCES.forEach(it=> s.otherAllow[it.p] = {cost:it.cost});
+  LABOUR_PLANT_ITEMS.forEach((it,idx)=> s.labourPlant[idx] = {cost:it.cost});
+  PRELIMINARIES_ITEMS.forEach(it=> s.prelim[it.p] = {cost:it.cost});
   return s;
+}
+function freshState(){
+  return {
+    ...freshRateFields(),
+    activeProject: null, nextProjectId: 1,
+    projects: {}, customBoqItems: [], boqOverrides: {}, nextCustomBoqId: 1,
+    importedEstimateIds: new Set(),
+    ratesVersion: RATES_VERSION,
+  };
 }
 function loadState(){
   let raw;
@@ -776,6 +813,10 @@ function loadState(){
   try{
     const parsed = JSON.parse(raw);
     parsed.importedEstimateIds = new Set(parsed.importedEstimateIds || []);
+    if(parsed.ratesVersion !== RATES_VERSION){
+      Object.assign(parsed, freshRateFields());
+      parsed.ratesVersion = RATES_VERSION;
+    }
     return parsed;
   }catch(err){ return null; }
 }
@@ -914,12 +955,17 @@ function computeSteelBuildup(key){
   const sell = markup(net);
   return {...b, escalated, materialAfterWaste, labourCost, net, sell};
 }
-function establishedReinforcementRate(groupLabel, item){
-  if(groupLabel==="Trench mesh") return GRADCON_TRENCH_MESH_RATES[item.p] ?? null;
-  if(groupLabel==="Square Mesh") return GRADCON_SQUARE_MESH_RATES[item.p] ?? null;
-  if(groupLabel==="Stock Bar") return GRADCON_STOCK_BAR_RATES[item.p] ?? null;
-  if(groupLabel==="Processed Bar") return GRADCON_PROCESSED_BAR_RATE_PER_TONNE * item.w/1000;
+function establishedRateMapFor(groupLabel){
+  const est = state.reinforcementEstablished;
+  if(groupLabel==="Trench mesh") return est.trenchMesh;
+  if(groupLabel==="Square Mesh") return est.squareMesh;
+  if(groupLabel==="Stock Bar") return est.stockBar;
+  if(groupLabel==="Processed Bar") return est.processedBar;
   return null;
+}
+function establishedReinforcementRate(groupLabel, item){
+  const map = establishedRateMapFor(groupLabel);
+  return map ? (map[item.p] ?? null) : null;
 }
 function computeReinforcementRate(groupLabel, item){
   const buildupKey = REINFORCEMENT_ITEMS[groupLabel].buildup;
@@ -994,8 +1040,10 @@ function activeProject(){ return state.projects[state.activeProject]; }
 function elementRate(code){
   const proj = activeProject();
   const el = proj.elements[code] || {qty:0, rate:0};
-  // live-link Substructure to the structural buildups regardless of whether qty has been entered
-  if (code==="SB") return {qty: el.qty||0, rate: computeSubstructureRate().sell, note: el.note, linked:true};
+  // Substructure defaults to a live link to the structural buildups (Concrete/Steel/
+  // Formwork) until you type your own rate in — then your entry wins. Clear the field
+  // (or set it back to 0) to return to the live-linked value.
+  if (code==="SB" && !el.rate) return {qty: el.qty||0, rate: computeSubstructureRate().sell, note: el.note, linked:true};
   return {qty: el.qty||0, rate: el.rate||0, note: el.note, linked:false};
 }
 function computeCostPlan(){
@@ -1062,13 +1110,13 @@ function boqItemRate(item){
     case "formwork": return computeFormworkRate(item.itemRef.p).sell;
     case "rateitem": return computeRateItemRate(item.itemRef.p).sell;
     case "bci": { const idx = parseInt(item.id.split("_")[1],10); return computeBciRate(idx); }
-    case "concgrade": { const net = item.itemRef.cost*escalationFactor()*(1+state.global.wasteConcrete); return markup(net); }
-    case "fwlegacy": { const net = item.itemRef.cost*escalationFactor()*(1+state.global.wasteFormwork); return markup(net); }
-    case "otheracc": { const net = item.itemRef.cost*escalationFactor()*(1+state.global.wasteGeneral); return markup(net); }
-    case "otherallow": { const net = item.itemRef.cost*escalationFactor(); return markup(net); }
+    case "concgrade": { const net = state.concreteGrade[item.itemRef.p].cost*escalationFactor()*(1+state.global.wasteConcrete); return markup(net); }
+    case "fwlegacy": { const net = state.formworkLegacy[item.itemRef.p].cost*escalationFactor()*(1+state.global.wasteFormwork); return markup(net); }
+    case "otheracc": { const net = state.otherAcc[item.itemRef.p].cost*escalationFactor()*(1+state.global.wasteGeneral); return markup(net); }
+    case "otherallow": { const net = state.otherAllow[item.itemRef.p].cost*escalationFactor(); return markup(net); }
     case "subbie": return 0; // quote-based — enter directly via the rate override field
-    case "labourplant": return item.itemRef.cost*escalationFactor();
-    case "prelim": { const net = item.itemRef.cost*escalationFactor(); return markup(net); }
+    case "labourplant": { const idx = LABOUR_PLANT_ITEMS.indexOf(item.itemRef); return state.labourPlant[idx].cost*escalationFactor(); }
+    case "prelim": { const net = state.prelim[item.itemRef.p].cost*escalationFactor(); return markup(net); }
     case "custom": return item.rate||0;
     default: return 0;
   }
@@ -1376,7 +1424,10 @@ const TAB_LABELS = {Home:"Dashboard",Summary:"Summary & Charts",Projects:"Projec
   MasterBOQ:"Select BOQ Items",ProjectBOQ:"Project BOQ"};
 
 function fmt$(v){ if(v==null||isNaN(v)) v=0; return "$"+v.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
-function fmt$0(v){ if(v==null||isNaN(v)) v=0; return "$"+v.toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:0}); }
+// Every dollar figure in the dashboard shows 2 decimal places — fmt$0 used to round
+// large totals to whole dollars, now just an alias so nothing had to change at each
+// call site.
+function fmt$0(v){ return fmt$(v); }
 function fmtPct(v){ return (v*100).toFixed(1)+"%"; }
 function cssId(s){ return s.replace(/[^a-zA-Z0-9]/g,"_"); }
 
@@ -1773,16 +1824,22 @@ function renderSteel(){
 
   Object.keys(REINFORCEMENT_ITEMS).forEach(group=>{
     const g = REINFORCEMENT_ITEMS[group];
-    h += `<div class="panel-block"><h3>${group} <span class="tag">${STEEL_BUILDUPS[g.buildup].label.split(" (")[0]} rate applied</span></h3>
-    <table class="item-table"><thead><tr><th>Product</th><th>Unit</th><th>Weight (kg)</th><th>Sell Rate ($/unit)</th></tr></thead><tbody>`;
+    h += `<div class="panel-block"><h3>${group}</h3>
+    <p class="note" style="margin:-4px 0 8px">Base Rate is Gradcon's established $/unit — fully editable, feeds Sell Rate via Overheads/Margin. A blank Base Rate means no established match exists for that product; it falls back to the ${STEEL_BUILDUPS[g.buildup].label.split(" (")[0]} buildup card above instead.</p>
+    <table class="item-table"><thead><tr><th>Product</th><th>Unit</th><th>Weight (kg)</th><th>Base Rate ($/unit)</th><th>Sell Rate ($/unit)</th></tr></thead><tbody>`;
     g.items.forEach(it=>{
       const r = computeReinforcementRate(group, it);
-      h += `<tr><td>${it.p}${r.established?' <span class="tag">established</span>':''}</td><td>${it.u}</td><td class="num">${it.w}</td><td class="num linked">${fmt$(r.rate)}</td></tr>`;
+      const map = establishedRateMapFor(group);
+      const hasEst = map && Object.prototype.hasOwnProperty.call(map, it.p);
+      const baseCell = hasEst
+        ? `<input type="number" step="any" class="in-reo-established" data-group="${group}" data-p="${it.p}" value="${map[it.p]}">`
+        : `<span class="note">— (buildup card)</span>`;
+      h += `<tr><td>${it.p}</td><td>${it.u}</td><td class="num">${it.w}</td><td>${baseCell}</td><td class="num linked">${fmt$(r.rate)}</td></tr>`;
     });
     h += `</tbody></table></div>`;
   });
 
-  h += `<div class="panel-block"><h3>Reinforcing Accessories <span class="tag">supply-only, escalated</span></h3>
+  h += `<div class="panel-block"><h3>Reinforcing Accessories</h3>
   <table class="item-table"><thead><tr><th>Product</th><th>Unit</th><th>Material Cost ($, base)</th><th>Wastage %</th><th>Sell Rate ($/unit)</th></tr></thead><tbody>`;
   REINFORCING_ACCESSORIES.forEach(it=>{
     const s = state.reinfAcc[it.p];
@@ -1801,6 +1858,13 @@ function renderSteel(){
     inp.addEventListener("input", e=>{
       const v=parseFloat(e.target.value); const key=e.target.dataset.key, f=e.target.dataset.f;
       state.steel[key][f] = isNaN(v)?0:(f==="waste"?v/100:v);
+      renderAll();
+    });
+  });
+  document.querySelectorAll("#panel-Steel .in-reo-established").forEach(inp=>{
+    inp.addEventListener("input", e=>{
+      const v=parseFloat(e.target.value); const map=establishedRateMapFor(e.target.dataset.group);
+      map[e.target.dataset.p] = isNaN(v)?0:v;
       renderAll();
     });
   });
@@ -1896,16 +1960,47 @@ function renderRateItems(){
       <td class="num">${fmt$(r.net)}</td><td class="num total-cell">${fmt$(r.sell)}</td></tr>`;
   });
   h += `</tbody></table>`;
+
+  // Every other material/labour/preliminaries category also gets its own directly-
+  // editable, persisted Base Rate here — the same build-up treatment Concrete/
+  // Formwork/Steel/Reinforcing Accessories already have, so nothing in the
+  // dashboard is a fixed, uneditable number.
+  const materialBlocks = [
+    {cat:"concreteGrade", title:"Concrete Supply (by grade)", items:CONCRETE_GRADE_ITEMS, keyOf:(it)=>it.p},
+    {cat:"formworkLegacy", title:"Formwork (general)", items:FORMWORK_LEGACY_ITEMS, keyOf:(it)=>it.p},
+    {cat:"otherAcc", title:"Other Accessories", items:OTHER_ACCESSORIES, keyOf:(it)=>it.p},
+    {cat:"otherAllow", title:"Other Allowances", items:OTHER_ALLOWANCES, keyOf:(it)=>it.p},
+    {cat:"labourPlant", title:"Labour &amp; Plant", items:LABOUR_PLANT_ITEMS, keyOf:(it,idx)=>idx},
+    {cat:"prelim", title:"Preliminaries", items:PRELIMINARIES_ITEMS, keyOf:(it)=>it.p},
+  ];
+  materialBlocks.forEach(b=>{
+    h += `<div class="panel-block"><h3>${b.title}</h3>
+    <table class="item-table"><thead><tr><th>Item</th><th>Unit</th><th>Base Rate ($, editable)</th></tr></thead><tbody>`;
+    b.items.forEach((it,idx)=>{
+      const key = b.keyOf(it, idx);
+      const val = state[b.cat][key].cost;
+      h += `<tr><td>${it.p}</td><td>${it.u}</td><td><input type="number" step="any" class="in-material-rate" data-cat="${b.cat}" data-key="${key}" value="${val}"></td></tr>`;
+    });
+    h += `</tbody></table></div>`;
+  });
+
   document.getElementById("panel-RateItems").innerHTML = h;
   document.querySelectorAll("#panel-RateItems .in-ri").forEach(inp=>{
     inp.addEventListener("input", e=>{ const v=parseFloat(e.target.value)||0; state.rateItems[e.target.dataset.p][e.target.dataset.f]=v; renderAll(); });
+  });
+  document.querySelectorAll("#panel-RateItems .in-material-rate").forEach(inp=>{
+    inp.addEventListener("input", e=>{
+      const v=parseFloat(e.target.value)||0;
+      state[e.target.dataset.cat][e.target.dataset.key].cost = v;
+      renderAll();
+    });
   });
 }
 
 // ---------- BCI REFERENCE RATES ----------
 function renderBciRef(){
   let h = `<h2>BCI Reference Rates — Melbourne</h2>
-  <p class="hint">Curated rates from your AIQS_BCI_RAW_Extracts_2025 file (Rawlinsons Australian Construction Handbook 2025, Ed.43, Building Cost Index June 2025, Melbourne column), escalated to 2026. These feed the non-structural ACMM elements in the Cost Plan tab.</p>
+  <p class="hint">Curated rates from your AIQS_BCI_RAW_Extracts_2025 file (Rawlinsons Australian Construction Handbook 2025, Ed.43, Building Cost Index June 2025, Melbourne column) — escalation defaults to 0% (editable on the Steel tab, applies dashboard-wide). These feed the non-structural ACMM elements in the Cost Plan tab.</p>
   <table class="item-table"><thead><tr><th>Category</th><th>Item</th><th>Unit</th><th>BCI Base Rate ($, June 2025)</th><th>Escalated Rate</th><th>Notes</th></tr></thead><tbody>`;
   let lastCat = "";
   BCI_REFERENCE.forEach((row,i)=>{
@@ -1939,7 +2034,7 @@ function renderCostPlan(){
     h += `<tr><td>${r.no}</td><td>${r.code}</td><td>${r.label}</td><td>${r.group}</td>
       <td><input type="number" step="any" class="in-cp-qty" data-code="${r.code}" value="${r.qty||''}" placeholder="0"></td>
       <td>${r.unit}</td>
-      <td><input type="number" step="any" class="in-cp-rate" data-code="${r.code}" value="${r.rate||''}" placeholder="0" ${r.linked?'disabled title="linked from Steel/Concrete/Formwork build-ups"':''}></td>
+      <td><input type="number" step="any" class="in-cp-rate" data-code="${r.code}" value="${r.linked?'':(r.rate||'')}" placeholder="${r.linked?fmt$(r.rate)+' (linked)':'0'}" ${r.linked?'title="Live-linked from the Steel/Concrete/Formwork build-ups — type a value to override it, clear it to go back to the live-linked rate"':''}></td>
       <td class="num ${r.linked?'linked':''}">${fmt$0(r.cost)}</td>
       <td class="num calc">${fmtPct(pctBC)}</td>
       <td class="num calc">${fmt$0(perM2)}</td>
@@ -2047,7 +2142,7 @@ function renderMasterBOQ(){
       const disabled = !inScope;
       const rateCell = isQuote
         ? `<td><input type="number" step="any" class="boq-rate-override flag-input" data-id="${item.id}" value="${overrideVal}" placeholder="insert quote" ${disabled?'disabled':''}></td>`
-        : `<td class="num linked">${fmt$(rate)}</td>`;
+        : `<td><input type="number" step="any" class="boq-rate-override" data-id="${item.id}" value="${overrideVal!==""?overrideVal:rate.toFixed(2)}" title="Live computed rate shown — edit to override it, clear the field to go back to the computed value" ${disabled?'disabled':''}></td>`;
       h += `<tr class="${entry.selected?'row-selected':''} ${disabled?'row-outofscope':''}">
         <td><input type="checkbox" class="boq-check" data-id="${item.id}" ${entry.selected?'checked':''} ${disabled?'disabled title="Out of scope for this project — enable it on the Projects tab"':''}></td>
         <td>${item.category}</td>
