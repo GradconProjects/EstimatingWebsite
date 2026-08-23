@@ -18,6 +18,7 @@ const distDir = path.join(root, "dist");
 const shellPath = path.join(root, "portal", "portal-shell.html");
 const estimatesPath = path.join(root, "portal", "estimates-app.html");
 const costPlannerPath = path.join(root, "portal", "cost-planner.html");
+const ratesLibraryPath = path.join(root, "portal", "rates-library.html");
 const outPath = path.join(distDir, "index.html");
 
 // --- Inline the built React app (Quotes) into one self-contained document ---
@@ -60,16 +61,19 @@ if (!quotesHtml.includes(`<style>${css.slice(0, 40)}`)) {
 // --- Estimates and Cost Planner are already self-contained, embed verbatim ---
 const estimatesHtml = fs.readFileSync(estimatesPath, "utf8");
 const costPlannerHtml = fs.readFileSync(costPlannerPath, "utf8");
+const ratesLibraryHtml = fs.readFileSync(ratesLibraryPath, "utf8");
 
 const quotesB64 = Buffer.from(quotesHtml, "utf8").toString("base64");
 const estimatesB64 = Buffer.from(estimatesHtml, "utf8").toString("base64");
 const costPlannerB64 = Buffer.from(costPlannerHtml, "utf8").toString("base64");
+const ratesLibraryB64 = Buffer.from(ratesLibraryHtml, "utf8").toString("base64");
 
 let shell = fs.readFileSync(shellPath, "utf8");
 shell = shell
   .replace("__QUOTES_B64__", quotesB64)
   .replace("__ESTIMATES_B64__", estimatesB64)
-  .replace("__COSTPLANNER_B64__", costPlannerB64);
+  .replace("__COSTPLANNER_B64__", costPlannerB64)
+  .replace("__RATESLIBRARY_B64__", ratesLibraryB64);
 
 fs.writeFileSync(outPath, shell);
 console.log("Assembled combined portal at", outPath, "-", (fs.statSync(outPath).size / 1024 / 1024).toFixed(2), "MB");
