@@ -240,6 +240,12 @@ const GLOBAL = {
   // stale every two weeks and needs updating here on its own — check Holcim's
   // fortnightly notice and update this number, not the grade rates above.
   concreteSurchargePerM3: 2.59,
+  // AKZ Reinforcing's delivered-to-site fee for reinforcing steel supply —
+  // applied per tonne on top of every established reinforcement rate below
+  // (Trench Mesh, Square Mesh, Stock Bar, Processed Bar), proportional to
+  // each product's own weight, not baked into the per-product rates
+  // themselves so it can be updated in one place.
+  reinforcementDeliveryPerTonne: 300,
 };
 
 // ---- STEEL: Melbourne BCI installed rates (supply+fix all-in) as base, June 2025 ----
@@ -788,7 +794,7 @@ const STORAGE_KEY = "gradcon-costplanner-state";
 // saved. On a version bump, loadRateFields() below re-seeds every rate/
 // build-up field from the current code defaults while leaving projects, BOQ
 // selections and any explicit per-line overrides untouched.
-const RATES_VERSION = 5;
+const RATES_VERSION = 6;
 function freshRateFields(){
   const s = {
     global: {...GLOBAL},
@@ -1034,7 +1040,9 @@ function computeSteelBuildup(key){
   const escalated = b.baseRateBCI * escalationFactor();
   const materialAfterWaste = escalated * (1+b.waste);
   const labourCost = b.fixingLabourHrsPerT * state.global.labourSteelFixer;
-  const net = materialAfterWaste + b.delivery + b.consumables + labourCost;
+  // Delivery is the one real, uniform AKZ figure (see GLOBAL.reinforcementDeliveryPerTonne)
+  // — it supersedes this buildup's own (fallback-only) `delivery` field.
+  const net = materialAfterWaste + state.global.reinforcementDeliveryPerTonne + b.consumables + labourCost;
   const sell = markup(net);
   return {...b, escalated, materialAfterWaste, labourCost, net, sell};
 }
@@ -1053,9 +1061,13 @@ function establishedReinforcementRate(groupLabel, item){
 function computeReinforcementRate(groupLabel, item){
   const buildupKey = REINFORCEMENT_ITEMS[groupLabel].buildup;
   const established = establishedReinforcementRate(groupLabel, item);
+  // AKZ's reinforcing-steel delivery fee ($/t) applied per item, proportional
+  // to that item's own weight — see GLOBAL.reinforcementDeliveryPerTonne.
+  const deliveryPerItem = state.global.reinforcementDeliveryPerTonne * item.w/1000;
   if(established!=null){
-    const rate = markup(established);
-    return {rate, perTonne: established/(item.w/1000), buildupKey, established:true};
+    const net = established + deliveryPerItem;
+    const rate = markup(net);
+    return {rate, perTonne: net/(item.w/1000), buildupKey, established:true};
   }
   const b = computeSteelBuildup(buildupKey);
   const rate = b.sell * item.w/1000;
