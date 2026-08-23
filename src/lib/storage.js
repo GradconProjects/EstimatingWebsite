@@ -99,5 +99,27 @@ export function useStoredState(key, initial) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value, key]);
 
+  // Live updates from another browsing context sharing this origin — e.g. the
+  // Estimates tool (a separate iframe) writing straight to this project's quote via
+  // writeQuote() in lib/projects.js. The native `storage` event only fires in OTHER
+  // contexts, never the one that wrote the change, so this never fights with the
+  // save effect above. localStorage-only: Supabase-backed state has no equivalent
+  // push channel here, so this is a no-op when Supabase is configured.
+  useEffect(() => {
+    if (supabaseEnabled) return;
+    if (typeof window === "undefined") return;
+    const onStorage = (e) => {
+      if (e.key !== key) return;
+      try {
+        setValue(e.newValue ? JSON.parse(e.newValue) : initial);
+      } catch {
+        /* ignore a malformed external write rather than crash */
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+
   return [value, setValue, status];
 }

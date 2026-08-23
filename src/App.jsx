@@ -4,7 +4,7 @@ import { ELEMENT_TYPES } from "./data/catalog.js";
 import { defaultRates, newElementItem, computeGrandTotal, uid, money } from "./lib/costing.js";
 import { buildQuoteExcelHtml, quoteExcelFilename, buildQuoteCsv } from "./lib/exportQuote.js";
 import { useStoredState } from "./lib/storage.js";
-import { PROJECTS_INDEX_KEY, newProjectEntry, migrateLegacyQuote, deleteQuote, writeQuote } from "./lib/projects.js";
+import { PROJECTS_INDEX_KEY, newProjectEntry, migrateLegacyQuote, deleteQuote, writeQuote, readQuotes } from "./lib/projects.js";
 import { ESTIMATE_EXPORT_KEY, buildImportFromEstimate } from "./lib/estimateImport.js";
 import { SaveBadge } from "./components/atoms.jsx";
 import AddElementBar from "./components/AddElementBar.jsx";
@@ -60,31 +60,69 @@ export default function App() {
   // Picks up a takeoff published from the Estimates tool (see
   // lib/estimateImport.js). Both apps share this browser's localStorage
   // when hosted together, so the Estimates tool just leaves its export
-  // under ESTIMATE_EXPORT_KEY and switches the portal over to this app —
-  // this effect is what actually turns that into a new project.
+  // under ESTIMATE_EXPORT_KEY — this turns that into a project. A re-publish
+  // of the SAME Estimates project (tracked by estimateSessionId, carried in
+  // the export payload) updates that project's items/flags in place instead
+  // of creating a duplicate every time — that's what makes "keep editing in
+  // Estimates, see it land here without re-entering anything" work. Runs on
+  // mount AND live via the "storage" event, which fires here (a different
+  // browsing context to the Estimates iframe that wrote it) the moment
+  // Estimates auto-publishes — no reload needed.
   useEffect(() => {
     if (projectsStatus === "loading") return;
-    let raw;
-    try {
-      raw = window.localStorage.getItem(ESTIMATE_EXPORT_KEY);
-    } catch {
-      return;
-    }
-    if (!raw) return;
-    (async () => {
-      try {
-        const estimateExport = JSON.parse(raw);
-        const { quote } = buildImportFromEstimate(estimateExport);
-        const entry = newProjectEntry();
-        await writeQuote(entry.storageKey, quote);
-        setProjects((ps) => [...ps, entry]);
-        setActiveId(entry.id);
-      } finally {
-        try { window.localStorage.removeItem(ESTIMATE_EXPORT_KEY); } catch { /* best-effort */ }
+
+    const importFromEstimateExport = async (estimateExport) => {
+      const { quote: freshQuote } = buildImportFromEstimate(estimateExport);
+      const estimateSessionId = estimateExport?.project?.estimateSessionId || null;
+      freshQuote.importMeta = { ...freshQuote.importMeta, estimateSessionId };
+
+      if (estimateSessionId) {
+        const quotesByKey = await readQuotes(projects.map((p) => p.storageKey));
+        const existing = projects.find(
+          (p) => quotesByKey[p.storageKey]?.importMeta?.estimateSessionId === estimateSessionId
+        );
+        if (existing) {
+          const prev = quotesByKey[existing.storageKey];
+          // Estimates owns quantities/flags; Quotes-side settings the estimator may
+          // already have adjusted here (name, GFA, overheads/contingency) are kept.
+          await writeQuote(existing.storageKey, {
+            ...prev,
+            items: freshQuote.items,
+            importFlags: freshQuote.importFlags,
+            importMeta: freshQuote.importMeta,
+          });
+          return;
+        }
       }
-    })();
+      const entry = newProjectEntry();
+      await writeQuote(entry.storageKey, freshQuote);
+      setProjects((ps) => [...ps, entry]);
+      setActiveId(entry.id);
+    };
+
+    const consumeExport = () => {
+      let raw;
+      try {
+        raw = window.localStorage.getItem(ESTIMATE_EXPORT_KEY);
+      } catch {
+        return;
+      }
+      if (!raw) return;
+      (async () => {
+        try {
+          await importFromEstimateExport(JSON.parse(raw));
+        } finally {
+          try { window.localStorage.removeItem(ESTIMATE_EXPORT_KEY); } catch { /* best-effort */ }
+        }
+      })();
+    };
+
+    consumeExport();
+    const onStorage = (e) => { if (e.key === ESTIMATE_EXPORT_KEY && e.newValue) consumeExport(); };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectsStatus]);
+  }, [projectsStatus, projects]);
 
   const activeProject = projects.find((p) => p.id === activeId) || null;
 

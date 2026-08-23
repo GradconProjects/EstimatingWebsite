@@ -118,7 +118,10 @@ function findWallsFormworkProduct() {
  */
 export function buildImportFromEstimate(estimateExport) {
   const project = estimateExport?.project || {};
-  const lines = Array.isArray(estimateExport?.lines) ? estimateExport.lines : [];
+  // Only actually-used rows — a line with no quantity yet (an element added to the
+  // Workspace but not filled in) shouldn't create a flag or a phantom quantity.
+  const lines = (Array.isArray(estimateExport?.lines) ? estimateExport.lines : [])
+    .filter((l) => (Number(l.finalQty) || 0) > 0);
 
   const flags = [];
   const items = [];

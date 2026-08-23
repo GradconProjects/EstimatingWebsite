@@ -853,6 +853,15 @@ function findReoBoqId(group, name){
   const idx = items.findIndex(x=>x.p===name);
   return idx>=0 ? `reo_${_boqSafe(group)}_${idx}` : null;
 }
+// Reads "gradcon-published-estimates" and applies every not-yet-applied publish
+// record. Runs on load AND live via a "storage" event listener (see bottom of this
+// function's caller) — Estimates auto-publishes on a short debounce as you edit, so
+// this fires again shortly after, no manual re-publish or reload needed. Each record
+// carries a stable estimateSessionId (set once per Estimates session): a re-publish
+// of the SAME session UPDATES that one Cost Planner project's BOQ selections in
+// place — the whole selection is rebuilt from scratch each time (not merged) so a
+// quantity that changed or dropped to zero in Estimates is reflected here too,
+// rather than only ever growing.
 function importPublishedEstimates(){
   let raw;
   try{ raw = localStorage.getItem("gradcon-published-estimates"); }catch(err){ return; }
@@ -866,14 +875,26 @@ function importPublishedEstimates(){
     state.importedEstimateIds.add(entry.id);
 
     const project = entry.project || {};
-    const lines = Array.isArray(entry.lines) ? entry.lines : [];
+    // Only actually-used rows — a workspace element with no quantity entered yet
+    // shouldn't create a flag or a phantom BOQ selection.
+    const lines = (Array.isArray(entry.lines) ? entry.lines : []).filter((l) => (Number(l.finalQty)||0) > 0);
     const baseName = project.name ? project.name : "Untitled";
-    const key = "estimate_" + entry.id;
+    const sessionKey = project.estimateSessionId || entry.id;
+    const key = "estimate_" + sessionKey;
+    const existingProj = state.projects[key];
     state.projects[key] = makeProject({
-      category:"project", name: `${baseName} (from Estimates)`,
+      category: existingProj? existingProj.category : "project",
+      status: existingProj? existingProj.status : undefined,
+      name: `${baseName} (from Estimates)`,
       notes: project.jobNumber ? `Imported from Estimates — Job ${project.jobNumber}` : "Imported from Estimates",
     });
     const proj = state.projects[key];
+    if(existingProj){
+      // Preserve anything Grady may have edited directly on this project (scope,
+      // GFA, prelim/contingency %, etc.) across a re-sync — only the BOQ selection
+      // and flags are rebuilt from the fresh Estimates data.
+      Object.assign(proj, existingProj, { boq:{}, importFlags:[] });
+    }
     proj.source = "estimates";
     proj.importFlags = [];
     const flag = (msg)=> proj.importFlags.push(msg);
@@ -940,6 +961,14 @@ function importPublishedEstimates(){
   });
 }
 importPublishedEstimates();
+// Live: Estimates auto-publishes on a short debounce as you edit (a different
+// browsing context than this one), so the "storage" event fires here shortly after
+// — no manual re-publish or reload needed to see the update land.
+window.addEventListener("storage", (e)=>{
+  if(e.key!=="gradcon-published-estimates" || !e.newValue) return;
+  importPublishedEstimates();
+  renderAll();
+});
 
 function escalationFactor(){
   return (1+state.global.escalation2025Pct)*(1+state.global.escalation2026Pct);

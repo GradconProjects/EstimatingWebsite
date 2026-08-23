@@ -265,11 +265,17 @@ footer.note{color:var(--muted);font-size:11px;text-align:center;padding:20px;}
 
 <script>
 /* ============================= STATE ============================= */
+// estimateSessionId identifies THIS Estimates project across repeated publishes —
+// generated once per session (or per Load/New) and reused on every subsequent
+// Publish, so Quotes/Cost Planner can recognise "this is an update to the same
+// project" and refresh it in place instead of spawning a duplicate every time.
+function newEstimateSessionId(){ return "sess_" + Date.now() + "_" + Math.random().toString(36).slice(2,8); }
 let PROJECT = {
   name:"", jobNumber:"", client:"", units_len:"mm/m", units_conc:"m3", units_form:"m2", units_reo:"kg", units_exc:"m3",
   units_len_pref:"mm", // "mm" or "m" — preferred input unit for overall lengths/heights (beam, wall, column, pier, kerb runs)
   cover:40, grade:32, reoStandard:"Australian D500N", lapMethod:"Project-defined", anchorMethod:"Project-defined",
-  barStock:12000, concreteWaste:5, reoWaste:3, formworkWaste:0, lapPct:5, bulking:15, revision:"Rev A", measurementRule:"gross"
+  barStock:12000, concreteWaste:5, reoWaste:3, formworkWaste:0, lapPct:5, bulking:15, revision:"Rev A", measurementRule:"gross",
+  estimateSessionId: newEstimateSessionId(),
 };
 let SELECTED_TYPES = {};   // typeId -> true
 let INSTANCES = [];        // {id,typeKey,label,data,results}
@@ -2101,6 +2107,7 @@ function computeAllAndRefresh(){
   INSTANCES.forEach(inst=>{ inst.results = computeInstance(inst); });
   renderRegister();
   renderExportSummary();
+  scheduleAutoPublish();
 }
 
 /* ============================= PROJECT SETUP / DEFAULTS ============================= */
@@ -2388,34 +2395,62 @@ document.getElementById("loadFile").addEventListener("change",e=>{
  * "gradcon-estimate-export": Quotes deletes that one right after importing
  * it (a one-shot handoff), so if Cost Planner read the same key it would
  * lose the race whenever Quotes happens to load first. */
+/* estimateSessionId (set once on PROJECT, see its declaration above) travels in every
+ * payload so Quotes/Cost Planner can recognise a re-publish of THIS SAME project and
+ * refresh it in place, instead of spawning a new duplicate project every time. */
+function buildEstimateExportPayload(){
+  return {
+    project: {name:PROJECT.name, jobNumber:PROJECT.jobNumber, client:PROJECT.client, revision:PROJECT.revision, estimateSessionId:PROJECT.estimateSessionId},
+    lines: allLines(),
+  };
+}
+/* Writes both shared localStorage channels Quotes/Cost Planner read from. Used by both
+ * the explicit "Publish" button AND the debounced auto-publish below — same payload
+ * shape either way, so a manual publish and a live auto-publish are indistinguishable
+ * to the apps reading them. */
+function writeEstimateExport(payload){
+  localStorage.setItem("gradcon-estimate-export", JSON.stringify(payload));
+  const record = {
+    id: "est_" + Date.now() + "_" + Math.random().toString(36).slice(2,8),
+    estimateSessionId: payload.project.estimateSessionId,
+    project: payload.project, lines: payload.lines,
+    publishedAt: new Date().toISOString(),
+  };
+  const existing = JSON.parse(localStorage.getItem("gradcon-published-estimates") || "[]");
+  const idx = existing.findIndex(r=>r.estimateSessionId===record.estimateSessionId);
+  if(idx>=0) existing[idx] = record; else existing.push(record);
+  localStorage.setItem("gradcon-published-estimates", JSON.stringify(existing));
+}
 function publishToQuote(){
   if(INSTANCES.length===0){
     document.getElementById("publishStatus").innerHTML = `<div class="warn">Add at least one element in the Workspace before publishing to a quote.</div>`;
     return;
   }
   computeAllAndRefresh();
-  let payload = {
-    project: {name:PROJECT.name, jobNumber:PROJECT.jobNumber, client:PROJECT.client, revision:PROJECT.revision},
-    lines: allLines(),
-  };
+  const payload = buildEstimateExportPayload();
   try{
-    localStorage.setItem("gradcon-estimate-export", JSON.stringify(payload));
+    writeEstimateExport(payload);
   }catch(err){
     document.getElementById("publishStatus").innerHTML = `<div class="warn">Could not publish: ${err.message}<br><br>This usually means the portal was opened as a local file (double-clicked) rather than served over http/https — browsers block shared storage between apps in that mode. It works normally once hosted (e.g. on Vercel), or if you serve this file locally through a simple web server instead of opening it directly.</div>`;
     return;
   }
-  try{
-    const record = {
-      id: "est_" + Date.now() + "_" + Math.random().toString(36).slice(2,8),
-      project: payload.project, lines: payload.lines,
-      publishedAt: new Date().toISOString(),
-    };
-    const existing = JSON.parse(localStorage.getItem("gradcon-published-estimates") || "[]");
-    existing.push(record);
-    localStorage.setItem("gradcon-published-estimates", JSON.stringify(existing));
-  }catch(err){ /* best-effort — Quotes import above already succeeded regardless */ }
-  document.getElementById("publishStatus").innerHTML = `<div class="tip"><span class="ico">🚀</span><div>Published ${payload.lines.length} quantity line(s) across ${INSTANCES.length} element(s) to Quotes and the Cost Planner — opening Quotes…</div></div>`;
+  document.getElementById("publishStatus").innerHTML = `<div class="tip"><span class="ico">🚀</span><div>Published ${payload.lines.length} quantity line(s) across ${INSTANCES.length} element(s) to Quotes and the Cost Planner — opening Quotes… Further edits here keep syncing live to both, no need to click Publish again.</div></div>`;
   try{ window.parent.postMessage({type:"gradcon:publish-estimate"}, "*"); }catch(err){ /* not hosted in the portal — export still sits in localStorage */ }
+  autoPublishArmed = true;
+}
+// ---- Live auto-publish: once the first manual Publish has happened, every further
+// change quietly re-syncs the same project (via estimateSessionId) to Quotes/Cost
+// Planner, debounced so rapid edits don't spam localStorage writes. Silent — no
+// "Published" banner — to avoid being noisy on every keystroke; the explicit Publish
+// button is still what surfaces the confirmation message and switches to Quotes.
+let autoPublishArmed = false;
+let autoPublishTimer = null;
+function scheduleAutoPublish(){
+  if(!autoPublishArmed || INSTANCES.length===0) return;
+  clearTimeout(autoPublishTimer);
+  autoPublishTimer = setTimeout(()=>{
+    try{ writeEstimateExport(buildEstimateExportPayload()); }catch(err){ /* best-effort */ }
+  }, 1200);
 }
 
 /* ============================= BLUEBEAM CSV IMPORT =============================
