@@ -115,6 +115,28 @@ export function useStoredState(key, initial) {
     doSave();
   };
 
+  // Closing the tab/navigating away within the 500ms debounce window would
+  // otherwise drop whatever was typed last — flush any pending save
+  // immediately instead of waiting for the timer. Synchronous for the
+  // localStorage path (completes before unload proceeds); best-effort for
+  // Supabase, same as the rest of this app's "can't guarantee it, still
+  // worth trying" unload-time patterns.
+  useEffect(() => {
+    const flush = () => {
+      if (!saveTimer.current) return;
+      clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+      doSave();
+    };
+    window.addEventListener("beforeunload", flush);
+    window.addEventListener("pagehide", flush);
+    return () => {
+      window.removeEventListener("beforeunload", flush);
+      window.removeEventListener("pagehide", flush);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Live updates from another browsing context sharing this origin — e.g. the
   // Estimates tool (a separate iframe) writing straight to this project's quote via
   // writeQuote() in lib/projects.js. The native `storage` event only fires in OTHER

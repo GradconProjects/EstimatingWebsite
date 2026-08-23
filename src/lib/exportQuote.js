@@ -22,6 +22,11 @@ import { FULL_CATALOG, RESOURCE_COLS, CATEGORY_ORDER, SECTION_ORDER, MARGIN_STEP
 import { computeElementCost, computeGrandTotal, computeMarginLadder, rateKey, lookupRate, computeRowTotal } from "./costing.js";
 import { GRADCON_LOGO_DATA_URI } from "./logo.js";
 
+/** Rate ($/unit) backed out from the line's own total ÷ qty — always exactly
+ * reproduces `Total = Qty × Rate` for the reader, regardless of whether the
+ * underlying category is costed by weight/area/length (see computeRowTotal). */
+const rateOf = (total, qty) => (qty ? total / qty : 0);
+
 /** Every line (material/labour/custom) actually filled in for one element, plus its total. */
 function buildElementLines(item, rates) {
   const materialLines = [];
@@ -74,9 +79,10 @@ function groupItems(items, rates, categoryOrder, sectionOrder) {
 
 const COLORS = {
   navy: "#172554", navyText: "#ffffff",
-  catBand: "#262626", catText: "#ffffff",
-  sectionBand: "#e5e5e5", sectionText: "#404040",
+  catBand: "#172554", catText: "#ffffff",
+  sectionBand: "#dbeafe", sectionText: "#1e3a8a",
   totalBand: "#171717", totalText: "#fb923c",
+  subtotalBand: "#f5f5f5",
   money: "#c2410c",
   border: "#d4d4d4",
   muted: "#737373",
@@ -102,6 +108,26 @@ function td(content, { colSpan, align = "left", bold, bg, color, italic, border 
 }
 const tr = (cells) => `<tr>${cells}</tr>`;
 
+const ITEM_COLS = 6; // #, Element / Line, Qty, Unit, Rate ($), Total ($)
+
+/** Meta table: a small, borderless label:value block — same shape as Cost
+ * Planner's own project header (Project/Date/GFA/on-costs), so the two
+ * apps' exports read as one family of document. */
+function buildMetaTable(quote) {
+  const rows = [
+    ["Project", esc(quote.projectName || "Untitled project")],
+    ["Date", esc(quote.projectDate || "")],
+    ["GFA", quote.gfa ? `${esc(quote.gfa)} m²` : "—"],
+    ["Overheads", `${Math.round((Number(quote.overheadPct) || 0) * 100)}%`],
+    ["Contingency", `${Math.round((Number(quote.contingencyPct) || 0) * 100)}%`],
+  ];
+  return `<table class="meta"><colgroup><col class="m0"><col class="m1"></colgroup>
+${rows.map(([label, value]) => tr(
+    td(label, { border: false, color: COLORS.muted }) + td(value, { border: false })
+  )).join("\n")}
+</table>`;
+}
+
 export function buildQuoteExcelHtml(quote, items, rates, categoryOrder = CATEGORY_ORDER, sectionOrder = SECTION_ORDER) {
   const groups = groupItems(items, rates, categoryOrder, sectionOrder);
   const grandTotal = computeGrandTotal(items, rates);
@@ -109,52 +135,46 @@ export function buildQuoteExcelHtml(quote, items, rates, categoryOrder = CATEGOR
     grandTotal, quote.overheadPct, quote.contingencyPct, quote.gfa, MARGIN_STEPS
   );
 
+  let itemNo = 0;
   const rowsHtml = [];
 
-  // White background row for the logo — it has a solid white background
-  // baked into the PNG (no alpha channel), so it must sit on white, never
-  // on the navy title band below.
-  rowsHtml.push(tr(td(`<img src="${GRADCON_LOGO_DATA_URI}" height="34" alt="Gradcon Concrete Constructions">`, {
-    colSpan: 4, border: false,
-  })));
-  rowsHtml.push(tr(td(esc(quote.projectName || "Untitled project"), {
-    colSpan: 4, bold: true, bg: COLORS.navy, color: COLORS.navyText, border: false,
-  })));
-  rowsHtml.push(tr(td(esc(`Date: ${quote.projectDate || ""}`), { colSpan: 4, color: COLORS.muted, border: false })));
-  rowsHtml.push(tr(td("&nbsp;", { colSpan: 4, border: false })));
-
   rowsHtml.push(tr(
-    td("Element / Line", { bold: true, bg: COLORS.navy, color: COLORS.navyText })
+    td("#", { bold: true, bg: COLORS.navy, color: COLORS.navyText, align: "right" })
+    + td("Element / Line", { bold: true, bg: COLORS.navy, color: COLORS.navyText })
     + td("Qty", { bold: true, bg: COLORS.navy, color: COLORS.navyText, align: "right" })
     + td("Unit", { bold: true, bg: COLORS.navy, color: COLORS.navyText })
+    + td("Rate ($)", { bold: true, bg: COLORS.navy, color: COLORS.navyText, align: "right" })
     + td("Total ($)", { bold: true, bg: COLORS.navy, color: COLORS.navyText, align: "right" })
   ));
 
   groups.forEach(({ category, sections, catTotal }) => {
-    rowsHtml.push(tr(td(esc(category), { colSpan: 4, bold: true, bg: COLORS.catBand, color: COLORS.catText })));
+    rowsHtml.push(tr(td(esc(category), { colSpan: ITEM_COLS, bold: true, bg: COLORS.catBand, color: COLORS.catText })));
 
     sections.forEach(({ section, elements }) => {
-      rowsHtml.push(tr(td(`&nbsp;&nbsp;${esc(section)}`, { colSpan: 4, bold: true, bg: COLORS.sectionBand, color: COLORS.sectionText })));
+      rowsHtml.push(tr(td(esc(section), { colSpan: ITEM_COLS, bold: true, bg: COLORS.sectionBand, color: COLORS.sectionText })));
 
       elements.forEach(({ item, cost, lines }) => {
         rowsHtml.push(tr(
-          td(`&nbsp;&nbsp;&nbsp;&nbsp;${esc(item.label)}`, { bold: true })
-          + td("", {})
-          + td("", {})
+          td("", {})
+          + td(esc(item.label), { bold: true })
+          + td("", {}) + td("", {}) + td("", {})
           + td(cost.total.toFixed(2), { bold: true, align: "right", color: COLORS.money, numeric: true })
         ));
 
         if (lines.length === 0) {
           rowsHtml.push(tr(
-            td("&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;No quantities entered", { italic: true, color: COLORS.muted })
-            + td("", {}) + td("", {}) + td("", {})
+            td("", {}) + td("&nbsp;&nbsp;No quantities entered", { italic: true, color: COLORS.muted })
+            + td("", {}) + td("", {}) + td("", {}) + td("", {})
           ));
         } else {
           lines.forEach((l) => {
+            itemNo += 1;
             rowsHtml.push(tr(
-              td(`&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${esc(l.label)}`, {})
+              td(String(itemNo), { align: "right", color: COLORS.muted })
+              + td(`&nbsp;&nbsp;${esc(l.label)}`, {})
               + td(String(l.qty), { align: "right", numeric: true })
               + td(esc(l.unit), {})
+              + td(rateOf(l.total, l.qty).toFixed(2), { align: "right", numeric: true })
               + td(l.total.toFixed(2), { align: "right", numeric: true })
             ));
           });
@@ -162,61 +182,64 @@ export function buildQuoteExcelHtml(quote, items, rates, categoryOrder = CATEGOR
       });
 
       rowsHtml.push(tr(
-        td(`&nbsp;&nbsp;${esc(section)} subtotal`, { bold: true })
-        + td("", {}) + td("", {})
+        td("", {}) + td(`${esc(section)} subtotal`, { bold: true })
+        + td("", {}) + td("", {}) + td("", {})
         + td(elements.reduce((s, e) => s + e.cost.total, 0).toFixed(2), {
-          bold: true, align: "right", numeric: true,
+          bold: true, align: "right", bg: COLORS.subtotalBand, numeric: true,
         })
       ));
     });
 
     rowsHtml.push(tr(
-      td(`${esc(category)} SUBTOTAL`, { bold: true, bg: COLORS.sectionBand })
-      + td("", { bg: COLORS.sectionBand }) + td("", { bg: COLORS.sectionBand })
-      + td(catTotal.toFixed(2), { bold: true, align: "right", bg: COLORS.sectionBand, numeric: true })
+      td("", { bg: COLORS.subtotalBand }) + td(`${esc(category)} SUBTOTAL`, { bold: true, bg: COLORS.subtotalBand })
+      + td("", { bg: COLORS.subtotalBand }) + td("", { bg: COLORS.subtotalBand }) + td("", { bg: COLORS.subtotalBand })
+      + td(catTotal.toFixed(2), { bold: true, align: "right", bg: COLORS.subtotalBand, numeric: true })
     ));
-    rowsHtml.push(tr(td("&nbsp;", { colSpan: 4, border: false })));
   });
 
   if (groups.length === 0) {
-    rowsHtml.push(tr(td("No elements added yet.", { colSpan: 4, italic: true, color: COLORS.muted })));
-    rowsHtml.push(tr(td("&nbsp;", { colSpan: 4, border: false })));
+    rowsHtml.push(tr(td("No elements added yet.", { colSpan: ITEM_COLS, italic: true, color: COLORS.muted })));
   }
 
   rowsHtml.push(tr(
-    td("GRAND TOTAL (EX GST)", { bold: true, bg: COLORS.totalBand, color: COLORS.totalText })
-    + td("", { bg: COLORS.totalBand }) + td("", { bg: COLORS.totalBand })
+    td("", { bg: COLORS.totalBand }) + td("GRAND TOTAL (EX GST)", { bold: true, bg: COLORS.totalBand, color: COLORS.totalText })
+    + td("", { bg: COLORS.totalBand }) + td("", { bg: COLORS.totalBand }) + td("", { bg: COLORS.totalBand })
     + td(grandTotal.toFixed(2), { bold: true, align: "right", bg: COLORS.totalBand, color: COLORS.totalText, numeric: true })
   ));
-  rowsHtml.push(tr(td("&nbsp;", { colSpan: 4, border: false })));
 
-  rowsHtml.push(tr(td("GFA &amp; ON-COSTS", { colSpan: 4, bold: true, bg: COLORS.catBand, color: COLORS.catText })));
-  rowsHtml.push(tr(td("Total GFA", {}) + td(quote.gfa ? String(quote.gfa) : "", { align: "right", numeric: !!quote.gfa }) + td("m²", {}) + td("", {})));
-  rowsHtml.push(tr(td("Overheads", {}) + td(`${Math.round((Number(quote.overheadPct) || 0) * 100)}%`, { align: "right" }) + td("", {}) + td("", {})));
-  rowsHtml.push(tr(td("Contingency", {}) + td(`${Math.round((Number(quote.contingencyPct) || 0) * 100)}%`, { align: "right" }) + td("", {}) + td("", {})));
-  rowsHtml.push(tr(
-    td("Subtotal (+ OH + Cont.)", { bold: true }) + td("", {}) + td("", {})
+  const itemTableHtml = `<table class="items"><colgroup><col class="c0"><col class="c1"><col class="c2"><col class="c3"><col class="c4"><col class="c5"></colgroup>
+${rowsHtml.join("\n")}
+</table>`;
+
+  const summaryRows = [];
+  summaryRows.push(tr(
+    td("Subtotal (+ Overheads + Contingency)", { bold: true })
     + td(subtotal.toFixed(2), { bold: true, align: "right", numeric: true })
   ));
-  rowsHtml.push(tr(td("&nbsp;", { colSpan: 4, border: false })));
+  const summaryTableHtml = `<table class="summary"><colgroup><col class="s0"><col class="s1"></colgroup>
+${summaryRows.join("\n")}
+</table>`;
 
-  rowsHtml.push(tr(td("MARGIN LADDER", { colSpan: 4, bold: true, bg: COLORS.catBand, color: COLORS.catText })));
-  rowsHtml.push(tr(
-    td("Margin", { bold: true, bg: COLORS.sectionBand })
-    + td("Sell (ex GST)", { bold: true, bg: COLORS.sectionBand, align: "right" })
-    + td("Sell (inc GST)", { bold: true, bg: COLORS.sectionBand, align: "right" })
-    + td("$/m² GFA", { bold: true, bg: COLORS.sectionBand, align: "right" })
+  const marginRowsHtml = [];
+  marginRowsHtml.push(tr(
+    td("Margin", { bold: true, bg: COLORS.navy, color: COLORS.navyText })
+    + td("Sell (ex GST)", { bold: true, bg: COLORS.navy, color: COLORS.navyText, align: "right" })
+    + td("Sell (inc GST)", { bold: true, bg: COLORS.navy, color: COLORS.navyText, align: "right" })
+    + td("$/m² GFA", { bold: true, bg: COLORS.navy, color: COLORS.navyText, align: "right" })
   ));
   marginRows.forEach((r) => {
     const isDefault = Math.abs(r.margin - DEFAULT_MARGIN) < 1e-9;
     const bg = isDefault ? COLORS.defaultMargin : undefined;
-    rowsHtml.push(tr(
+    marginRowsHtml.push(tr(
       td(`${Math.round(r.margin * 100)}%`, { bold: isDefault, bg })
       + td(r.sellExGst.toFixed(2), { align: "right", bg, numeric: true })
       + td(r.sellIncGst.toFixed(2), { align: "right", bg, numeric: true })
       + td(r.perM2 > 0 ? r.perM2.toFixed(2) : "", { align: "right", bg, numeric: r.perM2 > 0 })
     ));
   });
+  const marginTableHtml = `<table class="margin"><colgroup><col class="g0"><col class="g1"><col class="g2"><col class="g3"></colgroup>
+${marginRowsHtml.join("\n")}
+</table>`;
 
   const sheetName = (quote.projectName || "Quote").slice(0, 31).replace(/[\\/*?:[\]]/g, " ");
 
@@ -230,15 +253,20 @@ export function buildQuoteExcelHtml(quote, items, rates, categoryOrder = CATEGOR
 </x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook>
 </xml><![endif]-->
 <style>
-table { border-collapse: collapse; }
-col.c0 { width: 320px; } col.c1 { width: 90px; } col.c2 { width: 70px; } col.c3 { width: 120px; }
+table { border-collapse: collapse; margin-bottom: 6px; }
+table.meta col.m0 { width: 110px; } table.meta col.m1 { width: 260px; }
+table.items col.c0 { width: 36px; } table.items col.c1 { width: 320px; } table.items col.c2 { width: 80px; }
+table.items col.c3 { width: 60px; } table.items col.c4 { width: 90px; } table.items col.c5 { width: 110px; }
+table.summary col.s0 { width: 320px; } table.summary col.s1 { width: 110px; }
+table.margin col.g0 { width: 90px; } table.margin col.g1 { width: 110px; } table.margin col.g2 { width: 110px; } table.margin col.g3 { width: 100px; }
 </style>
 </head>
 <body>
-<table>
-<colgroup><col class="c0"><col class="c1"><col class="c2"><col class="c3"></colgroup>
-${rowsHtml.join("\n")}
-</table>
+<table><colgroup><col style="width:1px"></colgroup><tr><td style="border:none;padding:4px 8px;"><img src="${GRADCON_LOGO_DATA_URI}" height="34" alt="Gradcon Concrete Constructions"></td></tr></table>
+${buildMetaTable(quote)}
+${itemTableHtml}
+${summaryTableHtml}
+${marginTableHtml}
 </body>
 </html>`;
 }
@@ -260,50 +288,51 @@ export function buildQuoteCsv(quote, items, rates, categoryOrder = CATEGORY_ORDE
   const groups = groupItems(items, rates, categoryOrder, sectionOrder);
   const lines = [];
   lines.push(csvRow("GRADCON CONCRETE CONSTRUCTIONS"));
-  lines.push(csvRow(quote.projectName || "Untitled project"));
-  lines.push(csvRow(`Date: ${quote.projectDate || ""}`));
+  lines.push(csvRow("Project", quote.projectName || "Untitled project"));
+  lines.push(csvRow("Date", quote.projectDate || ""));
+  lines.push(csvRow("GFA", quote.gfa ? `${quote.gfa} m²` : ""));
+  lines.push(csvRow("Overheads", `${Math.round((Number(quote.overheadPct) || 0) * 100)}%`));
+  lines.push(csvRow("Contingency", `${Math.round((Number(quote.contingencyPct) || 0) * 100)}%`));
   lines.push("");
-  lines.push(csvRow("Category", "Section", "Element / Line", "Qty", "Unit", "Total ($)"));
+  lines.push(csvRow("#", "Category", "Section", "Element / Line", "Qty", "Unit", "Rate ($)", "Total ($)"));
 
+  let itemNo = 0;
   groups.forEach(({ category, sections, catTotal }) => {
     let categoryPrinted = false;
     sections.forEach(({ section, elements }) => {
       let sectionPrinted = false;
       elements.forEach(({ item, cost, lines: elLines }) => {
-        lines.push(csvRow(categoryPrinted ? "" : category, sectionPrinted ? "" : section, item.label, "", "", cost.total.toFixed(2)));
+        lines.push(csvRow("", categoryPrinted ? "" : category, sectionPrinted ? "" : section, item.label, "", "", "", cost.total.toFixed(2)));
         categoryPrinted = true;
         sectionPrinted = true;
         if (elLines.length === 0) {
-          lines.push(csvRow("", "", "  No quantities entered", "", "", ""));
+          lines.push(csvRow("", "", "", "  No quantities entered", "", "", "", ""));
         } else {
-          elLines.forEach((l) => lines.push(csvRow("", "", `  ${l.label}`, l.qty, l.unit, l.total.toFixed(2))));
+          elLines.forEach((l) => {
+            itemNo += 1;
+            lines.push(csvRow(itemNo, "", "", `  ${l.label}`, l.qty, l.unit, rateOf(l.total, l.qty).toFixed(2), l.total.toFixed(2)));
+          });
         }
       });
-      lines.push(csvRow("", "", `  ${section} subtotal`, "", "", elements.reduce((s, e) => s + e.cost.total, 0).toFixed(2)));
+      lines.push(csvRow("", "", "", `  ${section} subtotal`, "", "", "", elements.reduce((s, e) => s + e.cost.total, 0).toFixed(2)));
     });
-    lines.push(csvRow(`${category} SUBTOTAL`, "", "", "", "", catTotal.toFixed(2)));
+    lines.push(csvRow("", `${category} SUBTOTAL`, "", "", "", "", "", catTotal.toFixed(2)));
   });
 
   const grandTotal = computeGrandTotal(items, rates);
   lines.push("");
-  lines.push(csvRow("", "", "GRAND TOTAL (EX GST)", "", "", grandTotal.toFixed(2)));
+  lines.push(csvRow("", "", "", "GRAND TOTAL (EX GST)", "", "", "", grandTotal.toFixed(2)));
 
   const { subtotal, rows } = computeMarginLadder(
     grandTotal, quote.overheadPct, quote.contingencyPct, quote.gfa, MARGIN_STEPS
   );
-
-  lines.push("");
-  lines.push(csvRow("GFA & ON-COSTS"));
-  lines.push(csvRow("", "", "Total GFA", quote.gfa || "", "m²", ""));
-  lines.push(csvRow("", "", "Overheads", `${Math.round((Number(quote.overheadPct) || 0) * 100)}%`, "", ""));
-  lines.push(csvRow("", "", "Contingency", `${Math.round((Number(quote.contingencyPct) || 0) * 100)}%`, "", ""));
-  lines.push(csvRow("", "", "Subtotal", "", "", subtotal.toFixed(2)));
+  lines.push(csvRow("", "", "", "Subtotal (+ Overheads + Contingency)", "", "", "", subtotal.toFixed(2)));
 
   lines.push("");
   lines.push(csvRow("MARGIN LADDER"));
-  lines.push(csvRow("Margin", "", "", "Sell (ex GST)", "Sell (inc GST)", "$/m² GFA"));
+  lines.push(csvRow("Margin", "Sell (ex GST)", "Sell (inc GST)", "$/m² GFA"));
   rows.forEach((r) => {
-    lines.push(csvRow(`${Math.round(r.margin * 100)}%`, "", "", r.sellExGst.toFixed(2), r.sellIncGst.toFixed(2), r.perM2 > 0 ? r.perM2.toFixed(2) : ""));
+    lines.push(csvRow(`${Math.round(r.margin * 100)}%`, r.sellExGst.toFixed(2), r.sellIncGst.toFixed(2), r.perM2 > 0 ? r.perM2.toFixed(2) : ""));
   });
 
   return lines.join("\r\n");

@@ -29,7 +29,7 @@ const blankQuote = () => ({
 });
 
 export default function App() {
-  const [projects, setProjects, projectsStatus] = useStoredState(PROJECTS_INDEX_KEY, []);
+  const [projects, setProjects, projectsStatus, saveProjectsNow] = useStoredState(PROJECTS_INDEX_KEY, []);
   const initialRates = useMemo(() => defaultRates(), []);
   const [rates, setRates, ratesStatus] = useStoredState("gradcon-rates", initialRates);
   const [activeId, setActiveId] = useState(null);
@@ -187,6 +187,7 @@ export default function App() {
       rates={rates}
       setRates={setRates}
       ratesStatus={ratesStatus}
+      saveProjectsNow={saveProjectsNow}
       onBack={() => setActiveId(null)}
       elementTypes={allElementTypes}
       categoryOrder={allCategoryOrder}
@@ -197,7 +198,7 @@ export default function App() {
   );
 }
 
-function ProjectEditor({ project, rates, setRates, ratesStatus, onBack, elementTypes, categoryOrder, sectionOrder, customTypes, setCustomTypes }) {
+function ProjectEditor({ project, rates, setRates, ratesStatus, saveProjectsNow, onBack, elementTypes, categoryOrder, sectionOrder, customTypes, setCustomTypes }) {
   const [quote, setQuote, quoteStatus, saveQuoteNow] = useStoredState(project.storageKey, blankQuote());
   const [ratesOpen, setRatesOpen] = useState(false);
   const [elementTypesOpen, setElementTypesOpen] = useState(false);
@@ -346,8 +347,9 @@ function ProjectEditor({ project, rates, setRates, ratesStatus, onBack, elementT
           <SaveBadge status={overallStatus} />
           <button
             type="button"
-            onClick={saveQuoteNow}
+            onClick={() => { saveQuoteNow(); saveProjectsNow(); }}
             className="text-xs font-semibold px-3 py-1.5 rounded bg-orange-600 text-white hover:bg-orange-700"
+            title="Save this quote's current work and its place in the Projects Dashboard immediately"
           >
             Save
           </button>
