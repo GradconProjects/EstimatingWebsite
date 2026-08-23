@@ -86,6 +86,10 @@ table.results tr:hover td{background:#1a2226;}
 .pill.form{background:#22303a;color:#6fb7e0;}
 .pill.exc{background:#33241f;color:#e08a5f;}
 .pill.acc{background:#2c2137;color:#c090e8;}
+tr.manual-override td{background:#2a2410;}
+tr.manual-override:hover td{background:#332c14;}
+.manual-cell input[type=number]{width:80px;}
+.manual-badge{display:inline-block;font-size:10px;font-weight:700;color:#e8c33d;background:#3a2e1c;padding:1px 6px;border-radius:10px;margin-left:4px;white-space:nowrap;}
 .diagram{background:#0c1214;border:1px solid var(--line);border-radius:8px;overflow:hidden;}
 .diag-head{display:flex;align-items:center;justify-content:space-between;padding:6px 10px;border-bottom:1px solid #1e2b30;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:9px;letter-spacing:.08em;color:var(--accent);}
 .diag-head span:last-child{color:var(--muted);letter-spacing:.06em;}
@@ -344,12 +348,12 @@ function loadEstimateState(){
 // Cover varies by exposure/formwork condition, not one flat number — AS 3600-style starting points.
 // Keyed by calc type, optionally refined by slab/beam category. Editable per element in every card.
 const DEFAULT_COVERS = {
-  pier:65, pilecap:50, stripfooting:50, padfooting:50, retwall:50, kerb:45,
+  pier:65, pilecap:50, stripfooting:50, padfooting:50, retwall:50, kerb:45, shotwall:40,
   beam:{Ground:50, Suspended:30},
   slab:{"Slab on Ground":30,"Raft Slab":50,"Waffle Slab":30,"Industrial Slab":40,"Suspended Slab":25,"RC Roof Slab":40,
-        "Driveway":45,"Path":40,"Hardstand":45,"Ramp":40},
+        "Driveway":45,"Path":40,"Hardstand":45,"Ramp":40,"Basement Slab":40},
   column:40, wall:35, stairs:30, generic:40,
-  tankbox:{"Swimming Pool":40,"Water Tank":40,"Sump Pit":40,"Planter":30}
+  tankbox:{"Swimming Pool":40,"Water Tank":40,"Sump Pit":40,"Planter":30,"Lift Pit":40}
 };
 function defaultCoverFor(typeId){
   let def=LIB_INDEX[typeId];
@@ -393,12 +397,21 @@ const LIBRARY = [
    {id:"boredpier", label:"Bored Pier", calc:"pier"},
    {id:"pilecap", label:"Pile Cap", calc:"pilecap"},
    {id:"groundbeam", label:"Ground Beam", calc:"beam", beamCategory:"Ground"},
+   {id:"cappingbeam", label:"Capping Beam", calc:"beam", beamCategory:"Ground"},
+   {id:"anchorblock", label:"Anchor Block", calc:"padfooting"},
  ]},
  {group:"Ground Structure", items:[
    {id:"raftslab", label:"Raft Slab", calc:"slab", slabCategory:"Raft Slab"},
    {id:"waffleslab", label:"Waffle Slab", calc:"slab", slabCategory:"Waffle Slab"},
    {id:"industrialslab", label:"Industrial Slab", calc:"slab", slabCategory:"Industrial Slab"},
    {id:"slabonground", label:"Slab on Ground", calc:"slab", slabCategory:"Slab on Ground"},
+   {id:"basementslab", label:"Basement Slab", calc:"slab", slabCategory:"Basement Slab"},
+   {id:"retainingwall", label:"Retaining Wall", calc:"retwall"},
+   {id:"shotcretewall", label:"Shotcrete Wall", calc:"shotwall"},
+   {id:"liftpit", label:"Lift Pit / Shaft", calc:"tankbox", kind:"Lift Pit"},
+   {id:"stairs", label:"Concrete Stair", calc:"stairs"},
+   {id:"tempshoring", label:"Temporary Shoring", calc:"generic", kind:"temporary"},
+   {id:"tempprop", label:"Temporary Propping", calc:"generic", kind:"temporary"},
  ]},
  {group:"Suspended Structure", items:[
    {id:"suspslab", label:"Suspended Slab", calc:"slab", slabCategory:"Suspended Slab", suspended:true},
@@ -407,10 +420,8 @@ const LIBRARY = [
  {group:"Vertical Structure", items:[
    {id:"column", label:"Column", calc:"column"},
    {id:"concretewall", label:"Concrete Wall / Core", calc:"wall"},
-   {id:"retainingwall", label:"Retaining Wall", calc:"retwall"},
  ]},
- {group:"Stairs / Ramps", items:[
-   {id:"stairs", label:"Concrete Stair", calc:"stairs"},
+ {group:"Ramps", items:[
    {id:"ramp", label:"Ramp / External Sloped Slab", calc:"slab", slabCategory:"Ramp"},
  ]},
  {group:"Roof", items:[
@@ -605,11 +616,31 @@ function updateLigDiagram(card,inst){
 
 /* ============================= CALCULATION MODULES ============================= */
 // Every calc module returns: {lines:[{stage,category,element,elementId,materialGroup,material,spec,qty,unit,waste,finalQty,formula,linkedElement,notes}], warnings:[...]}
+// Manual quantity override: every line baseLine() produces can be manually
+// overridden — the estimator ticks "Manual" on that line in the Results tab
+// and types a final quantity, which replaces the system-calculated finalQty
+// everywhere downstream (Quantity Register, Export, Publish to Quote) since
+// they all just read inst.results.lines. Keyed off (materialGroup, material,
+// spec) rather than a stored index so it survives a geometry change that
+// reorders lines, and needs no per-calc-function changes — every one of the
+// ~13 calc modules gets this for free just by calling baseLine().
+function overrideKeyFor(materialGroup,material,spec){
+  return String((materialGroup||"")+"::"+(material||"")+"::"+(spec||"")).replace(/[.\[\]]/g,"_");
+}
 function baseLine(inst,def,over){
-  return Object.assign({
+  let line = Object.assign({
     stage:def.groupName, category:def.label, element:inst.label, elementId:inst.id,
     materialGroup:"", material:"", spec:"", qty:0, unit:"", waste:0, lap:0, finalQty:0, formula:"", linkedElement:"", notes:""
   }, over);
+  let key = overrideKeyFor(line.materialGroup, line.material, line.spec);
+  line.overrideKey = key;
+  let ov = inst.data.manualOverrides && inst.data.manualOverrides[key];
+  if(ov && ov.enabled){
+    line.calculatedQty = line.finalQty;
+    line.finalQty = (ov.qty===""||ov.qty===undefined||ov.qty===null||isNaN(ov.qty))? 0 : Number(ov.qty);
+    line.manualOverride = true;
+  }
+  return line;
 }
 function withWaste(q,wastePct){ return q*(1+(wastePct||0)/100); }
 // Waste covers offcuts/spillage; lap % is a SEPARATE allowance for splicing bars/mesh that
@@ -960,7 +991,7 @@ function renderPadFooting(inst){
   <div class="subsec ${d.starters?'':'hidden'}" data-show-if="starters"><div class="grid cols4">
    ${F("Connects to",targetSelect("connTarget",d.connTarget,inst.id))}${F("Qty",inpNum("connQty",d.connQty))}${F("Dia",barSizeSel("connDia",d.connDia))}${F("Embedment (mm)",inpNum("connEmbed",d.connEmbed))}${F("Projection (mm)",inpNum("connProj",d.connProj))}${F("Hook",anchorSel("connHook",d.connHook))}
   </div></div>`;
-  return {geom,conc:"<p class='small'>Concrete = qty × L × W × D (+ pedestal if present)</p>",reo,form:cast,exc:"<p class='small'>Excavation = qty × (L+2×oversize)×(W+2×oversize)×excavation depth</p>"};
+  return {geom,conc:"<p class='small'>Concrete = qty × L × W × D (+ pedestal if present)</p>",reo,form:cast,exc:"<p class='small'>Excavation = qty × (L+2×oversize)×(W+2×oversize)×excavation depth</p>",conns};
 }
 function computePadFooting(inst,def){
   let d=inst.data, lines=[];
@@ -1146,7 +1177,8 @@ function slabDefaults(cat,suspended){ return {
   returnBars:false, retDia:"N12", retSpacing:200, retTurndown:150, retLeg:300, retEdges:"perimeter",
   joints:true, jointSpacing:6, dowels:false, dowelDia:"N16", dowelSpacing:300, dowelLength:500,
   starters:false, connTarget:"", connQty:0, connDia:"N12", connEmbed:400, connProj:400,
-  stepdown:false, sdDepth:150, sdDia:"N12", sdSpacing:300, sdProj1:300, sdProj2:300
+  stepdown:false, sdDepth:150, sdDia:"N12", sdSpacing:300, sdProj1:300, sdProj2:300,
+  edgeThicken:false, edgeThickenWidth:300, edgeThickenExtraDepth:150
 };}
 function renderSlab(inst,def){
   let d=inst.data;
@@ -1165,6 +1197,9 @@ function renderSlab(inst,def){
   </div>
   <div class="subsec ${d.meshOn?'':'hidden'}" data-show-if="meshOn"><div class="grid cols3">${F("Mesh type",selOpts("meshType",d.meshType,Object.keys(MESHTYPES).map(m=>[m,m])))}${F("Layers",inpNum("meshLayers",d.meshLayers))}</div></div>
   <div class="grid cols4">${chk("drops",d.drops,"Drops")}${chk("setdowns",d.setdowns,"Setdowns / recesses")}${chk("upstands",d.upstands,"Upstands")}${chk("cjStopEnds",d.cjStopEnds,"Construction joint stop ends")}</div>
+  <div class="subsec"><div class="sechead">Edge Thickening</div><div class="grid cols3">${chk("edgeThicken",d.edgeThicken,"Thickened edge strip around perimeter","edgeThicken")}</div>
+  <div class="subsec ${d.edgeThicken?'':'hidden'}" data-show-if="edgeThicken"><div class="grid cols3">${F("Thickened strip width (mm)",inpNum("edgeThickenWidth",d.edgeThickenWidth))}${F("Extra depth below slab thickness (mm)",inpNum("edgeThickenExtraDepth",d.edgeThickenExtraDepth))}</div>
+  <div class="tip"><span class="ico">🏗️</span><div>A thickened edge (footing-like strip under the slab perimeter, or wherever a line load lands) is extra concrete beyond the flat slab thickness already counted above — it's costed here as perimeter × strip width × extra depth, on top of the main slab volume, not instead of it.</div></div></div></div>
   <div class="subsec"><div class="sechead">Openings / Penetrations</div>
   <table class="rows"><thead><tr><th>Label</th><th>Width (mm)</th><th>Height/Length (mm)</th><th>Qty</th><th></th></tr></thead>
   <tbody>${d.openings.map((r,i)=>openRowHtml(i,r)).join('')}</tbody></table>
@@ -1237,6 +1272,11 @@ function computeSlab(inst,def){
   if(d.edgeForms) lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Perimeter edge formwork",spec:`${d.thickness}mm edge`,qty:perim*t,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(perim*t,PROJECT.formworkWaste),formula:"perimeter × thickness"}));
   if(d.suspended && d.soffit) lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Soffit formwork",spec:"",qty:netArea,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(netArea,PROJECT.formworkWaste),formula:"net area"}));
   if(openArea>0) lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Opening reveals",spec:"perimeter × thickness",qty:(d.openings||[]).reduce((s,o)=>s+2*((num(o.w)/1000)+(num(o.h)/1000))*t*num(o.qty,1),0),unit:"m²",waste:PROJECT.formworkWaste,finalQty:0,formula:"Σ 2×(w+h)×thickness×qty"}));
+  if(d.edgeThicken){
+    let ew=num(d.edgeThickenWidth)/1000, ed=num(d.edgeThickenExtraDepth)/1000;
+    let edgeVol=perim*ew*ed;
+    lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:"Edge thickening (perimeter strip)",qty:edgeVol,unit:"m³",waste:PROJECT.concreteWaste,finalQty:withWaste(edgeVol,PROJECT.concreteWaste),formula:`perimeter(${fmt(perim,1)})×width(${d.edgeThickenWidth}mm)×extra depth(${d.edgeThickenExtraDepth}mm)`}));
+  }
   function barCalc(prefix,label,perpDim){
     if(!d[prefix]) return;
     if(d.manualArea){
@@ -1536,6 +1576,68 @@ function computeRetWall(inst,def){
   return {lines,warnings:[]};
 }
 
+/* ---- SHOTCRETE WALL ---- */
+function shotWallDefaults(){ return {
+  length:10000, height:3000, thickness:120, cover:PROJECT.cover, grade:PROJECT.grade,
+  xypex:true,
+  meshType:"SL82", meshLayers:1,
+  starters:false, connTarget:"", connQty:0, connDia:"N16", connEmbed:400, connProj:400,
+  dowelsOut:"", outQty:0, outDia:"N16", outEmbed:500, outProj:600,
+  stripDrain:false, stripDrainLength:0
+};}
+function renderShotWall(inst){
+  let d=inst.data;
+  let geom=`<div class="grid cols4">${LF("Wall length (mm)","length",d.length)}${LF("Wall height (mm)","height",d.height)}${F("Thickness (mm)",inpNum("thickness",d.thickness))}${coverField(inst)}${F("Concrete grade",inpNum("grade",d.grade))}</div>`;
+  let conc=`<p class="small">Concrete = length × height × thickness, sprayed application (higher rebound/overspray waste than a formed pour).</p>
+  <div class="grid cols3">${chk("xypex",d.xypex,"Penetron (Xypex) waterproofing additive","xypex")}</div>`;
+  let reo=`<div class="grid cols3">${F("Mesh type",selOpts("meshType",d.meshType,Object.keys(MESHTYPES).map(m=>[m,m])))}${F("Layers",inpNum("meshLayers",d.meshLayers))}</div>
+  <p class="small">Central mesh layer(s) across the full wall face — sprayed walls are typically single-face-mesh, not two independent faces like a formed wall.</p>`;
+  let conns=`${chk("starters",d.starters,"Starter bars / dowels in (from footing or pier below)","starters")}
+  <div class="subsec ${d.starters?'':'hidden'}" data-show-if="starters"><div class="grid cols4">${F("Connects to",targetSelect("connTarget",d.connTarget,inst.id))}${F("Qty",inpNum("connQty",d.connQty))}${F("Dia",barSizeSel("connDia",d.connDia))}${F("Embedment (mm)",inpNum("connEmbed",d.connEmbed))}${F("Projection (mm)",inpNum("connProj",d.connProj))}</div></div>
+  <div class="subsec"><div class="sechead">Dowels out (to slab or wall above)</div><div class="grid cols4">${F("Connects to",targetSelect("dowelsOut",d.dowelsOut,inst.id))}${F("Qty",inpNum("outQty",d.outQty))}${F("Dia",barSizeSel("outDia",d.outDia))}${F("Embedment (mm)",inpNum("outEmbed",d.outEmbed))}${F("Projection (mm)",inpNum("outProj",d.outProj))}</div></div>
+  <div class="subsec"><div class="sechead">Strip Drain (behind wall, out of scope by default)</div>${chk("stripDrain",d.stripDrain,"Include strip drain — verify scope","stripDrain")}
+  <div class="subsec ${d.stripDrain?'':'hidden'}" data-show-if="stripDrain">${F("Strip drain length (mm)",inpNum("stripDrainLength",d.stripDrainLength))}</div></div>`;
+  return {geom,conc,reo,conns};
+}
+function computeShotWall(inst,def){
+  let d=inst.data, lines=[];
+  let Lm=num(d.length)/1000, Hm=num(d.height)/1000, Tm=num(d.thickness)/1000;
+  let area=Lm*Hm, vol=area*Tm;
+  lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete (shotcrete)`,spec:`${d.thickness}mm thick, sprayed`,qty:vol,unit:"m³",waste:20,finalQty:withWaste(vol,20),formula:`${fmt(Lm,1)}×${fmt(Hm,1)}×${fmt(Tm,2)} (+20% overspray/rebound)`}));
+  if(d.xypex) lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:"Penetron (Xypex) additive",spec:"Waterproofing admixture",qty:vol,unit:"m³",waste:0,finalQty:vol,formula:"same volume as shotcrete"}));
+  let layers=num(d.meshLayers,1);
+  let massm2=MESHTYPES[d.meshType]||3.7;
+  let layeredArea=area*layers;
+  let wt=layeredArea*massm2*1.1;
+  lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.meshType,spec:`Central mesh ×${layers} layer(s)`,qty:layeredArea,unit:"m²",waste:10,finalQty:withWaste(layeredArea,10),formula:`area(${fmt(area,1)}) × ${layers} layer(s) (+10% laps)`,notes:`${fmt(wt,1)} kg`}));
+  if(d.starters && num(d.connQty)>0){
+    let dia=barDiaOf(d.connDia); let len=(num(d.connEmbed)+num(d.connProj))/1000;
+    let totLen=num(d.connQty)*len; let wt2=totLen*massPerM(dia);
+    let tgt=targetLabelOf(d.connTarget);
+    lines.push(baseLine(inst,def,{materialGroup:"Connections",material:d.connDia,spec:"Starter bars in → "+(tgt||"(unlinked)"),qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`${d.connQty}×len/1000`,linkedElement:tgt,notes:`${fmt(wt2,1)} kg`}));
+  }
+  let tgtOut=targetLabelOf(d.dowelsOut);
+  if(tgtOut && num(d.outQty)>0){
+    let dia=barDiaOf(d.outDia); let outLen=(num(d.outEmbed)+num(d.outProj))/1000;
+    let totLen=num(d.outQty)*outLen; let wt2=totLen*massPerM(dia);
+    lines.push(baseLine(inst,def,{materialGroup:"Connections",material:d.outDia,spec:"Dowels out → "+tgtOut,qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`${d.outQty}×(embed ${d.outEmbed}+proj ${d.outProj})/1000`,linkedElement:tgtOut,notes:`${fmt(wt2,1)} kg`}));
+  }
+  if(d.stripDrain && num(d.stripDrainLength)>0){
+    lines.push(baseLine(inst,def,{materialGroup:"Drainage",material:"Strip drain (out of scope — verify)",spec:"",qty:num(d.stripDrainLength)/1000,unit:"m",waste:0,finalQty:num(d.stripDrainLength)/1000,formula:"manual entry"}));
+  }
+  return {lines,warnings:[]};
+}
+function diagShotWall(inst){ let d=inst.data;
+  let x=20,y=30,w=260,h=90;
+  let content=`<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="rgba(232,163,61,0.06)" stroke="${DWG.ink}" stroke-width="1.6"/>
+   <line x1="${x+2}" y1="${y+h/2}" x2="${x+w-2}" y2="${y+h/2}" stroke="${DWG.bar}" stroke-width="1.4" opacity="0.85"/>
+   ${Array.from({length:12}).map((_,i)=>`<line x1="${x+(w*(i+1))/13}" y1="${y+h/2-6}" x2="${x+(w*(i+1))/13}" y2="${y+h/2+6}" stroke="${DWG.bar}" stroke-width="0.8" opacity="0.6"/>`).join('')}
+   ${dimH(x,x+w,y-10,`${d.length||10000}`)}
+   ${dimV(y,y+h,x+w+14,`${d.height||3000}`)}
+   ${specLine(x,y+h+16,`T${d.thickness||120} · ${d.meshType||'SL82'} central mesh${d.xypex?' · Xypex':''}`)}`;
+  return sheetFrame(inst, "Shotcrete Wall", [300,160], content);
+}
+
 /* ---- STAIRS ---- */
 function stairsDefaults(){ return {
   irregular:false, volumeOverride:0, formworkOverride:0, flightLenOverride:0,
@@ -1656,7 +1758,7 @@ function renderGeneric(inst){
 function computeGeneric(inst,def){
   let d=inst.data, lines=[];
   let vol = d.manualVolume? num(d.volumeOverride) : num(d.qty,1)*(num(d.length)/1000)*(num(d.width)/1000)*(num(d.depth)/1000);
-  let group = (def.kind=="excavation")? "Excavation" : (def.kind=="alteration")? "Alterations" : "Concrete";
+  let group = (def.kind=="excavation")? "Excavation" : (def.kind=="alteration")? "Alterations" : (def.kind=="temporary")? "Temporary Works" : "Concrete";
   lines.push(baseLine(inst,def,{materialGroup:group,material:def.label,spec:d.notes||"",qty:vol,unit:"m³",waste:group=="Concrete"?PROJECT.concreteWaste:0,finalQty:group=="Concrete"?withWaste(vol,PROJECT.concreteWaste):vol,formula:d.manualVolume?"manual entry":"qty×L×W×D"}));
   if(d.formworkOn && num(d.formworkArea)>0) lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:def.label,spec:"",qty:num(d.formworkArea),unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(num(d.formworkArea),PROJECT.formworkWaste),formula:"manual entry"}));
   if(d.reoOn){
@@ -1672,6 +1774,7 @@ const TANKBOX_PRESETS = {
   "Planter":{shape:"rect",L:2400,W:600,depth:450,baseThickness:150,wallThickness:150,waterstop:false,membrane:true,coping:false,lid:false,grate:false,pipePenetrations:1},
   "Water Tank":{shape:"circular",dia:3000,L:3000,W:3000,depth:2500,baseThickness:200,wallThickness:200,waterstop:true,membrane:true,coping:false,lid:true,grate:false,pipePenetrations:2},
   "Sump Pit":{shape:"rect",L:900,W:900,depth:900,baseThickness:150,wallThickness:150,waterstop:false,membrane:false,coping:false,lid:false,grate:true,pipePenetrations:2},
+  "Lift Pit":{shape:"rect",L:2200,W:2200,depth:1600,baseThickness:250,wallThickness:250,waterstop:true,membrane:true,coping:false,lid:false,grate:true,pipePenetrations:1},
 };
 function tankboxDefaults(kind){
   let p=TANKBOX_PRESETS[kind]||TANKBOX_PRESETS["Planter"];
@@ -1791,6 +1894,7 @@ const CALC = {
   column:{defaults:columnDefaults, render:renderColumn, compute:computeColumn, diagram:diagColumn},
   wall:{defaults:wallDefaults, render:renderWall, compute:computeWall, diagram:diagWall},
   retwall:{defaults:retWallDefaults, render:renderRetWall, compute:computeRetWall, diagram:diagRetWall},
+  shotwall:{defaults:shotWallDefaults, render:renderShotWall, compute:computeShotWall, diagram:diagShotWall},
   stairs:{defaults:stairsDefaults, render:renderStairs, compute:computeStairs, diagram:diagStairs},
   kerb:{defaults:kerbDefaults, render:renderKerb, compute:computeKerb, diagram:diagKerb},
   tankbox:{defaults:tankboxDefaults, render:renderTankbox, compute:computeTankbox, diagram:diagTankbox},
@@ -2174,8 +2278,19 @@ function refreshCardResults(card,inst){
      <div class="stat"><div class="n">${fmt(totF,2)}</div><div class="l">m² formwork</div></div>
      <div class="stat"><div class="n">${fmt(totR,1)}</div><div class="l">kg reinforcement</div></div>
    </div>
-   <table class="results"><thead><tr><th>Material Group</th><th>Material</th><th>Spec</th><th>Qty</th><th>Unit</th><th>Waste%</th><th>Lap%</th><th>Final Qty</th><th>Formula</th><th>Linked</th></tr></thead>
-   <tbody>${out.lines.map(l=>`<tr><td><span class="pill ${pillClass(l.materialGroup)}">${l.materialGroup}</span></td><td>${l.material}</td><td>${l.spec}</td><td>${fmt(l.qty,2)}</td><td>${l.unit}</td><td>${l.waste||0}%</td><td>${l.lap||0}%</td><td><b>${fmt(l.finalQty,2)}</b></td><td class="formula">${l.formula}</td><td>${l.linkedElement||''}</td></tr>`).join('')}</tbody></table>
+   <table class="results"><thead><tr><th>Material Group</th><th>Material</th><th>Spec</th><th>Qty</th><th>Unit</th><th>Waste%</th><th>Lap%</th><th>Manual?</th><th>Override Qty</th><th>Final Qty</th><th>Formula</th><th>Linked</th></tr></thead>
+   <tbody>${out.lines.map(l=>{
+     let ov = (inst.data.manualOverrides && inst.data.manualOverrides[l.overrideKey]) || {};
+     return `<tr class="${l.manualOverride?'manual-override':''}">
+       <td><span class="pill ${pillClass(l.materialGroup)}">${l.materialGroup}</span></td>
+       <td>${l.material}</td><td>${l.spec}</td>
+       <td>${fmt(l.qty,2)}</td><td>${l.unit}</td><td>${l.waste||0}%</td><td>${l.lap||0}%</td>
+       <td class="manual-cell"><input type="checkbox" data-field="manualOverrides.${l.overrideKey}.enabled" ${ov.enabled?'checked':''} title="Use a manually entered quantity instead of the system calculation for this line"></td>
+       <td class="manual-cell"><input type="number" step="any" data-field="manualOverrides.${l.overrideKey}.qty" value="${ov.qty===undefined||ov.qty===''?'':ov.qty}" placeholder="${fmt(l.manualOverride?l.calculatedQty:l.finalQty,2)}"></td>
+       <td><b>${fmt(l.finalQty,2)}</b>${l.manualOverride?` <span class="manual-badge" title="Manually entered — system calculated ${fmt(l.calculatedQty,2)}">✎ manual</span>`:''}</td>
+       <td class="formula">${l.formula}</td><td>${l.linkedElement||''}</td>
+     </tr>`;
+   }).join('')}</tbody></table>
   `;
 }
 function pillClass(g){
