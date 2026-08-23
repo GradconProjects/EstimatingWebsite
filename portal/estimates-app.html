@@ -1612,6 +1612,7 @@ function tankboxDefaults(kind){
     baseXDia:"N12",baseXSpacing:200, baseYDia:"N12",baseYSpacing:200,
     wallVertDia:"N12",wallVertSpacing:200, wallHorDia:"N12",wallHorSpacing:200,
     copingWidth:300, dia:p.dia||1000,
+    starters:false, connTarget:"", connQty:8, connDia:"N12", connEmbed:400, connProj:400, connHook:"straight",
   }, p);
 }
 function renderTankbox(inst){
@@ -1629,7 +1630,11 @@ function renderTankbox(inst){
   let reo=`<div class="sechead">Base Mat</div><div class="grid cols4">${F("Bottom X dia",barSizeSel("baseXDia",d.baseXDia))}${F("Spacing (mm)",inpNum("baseXSpacing",d.baseXSpacing))}${F("Bottom Y dia",barSizeSel("baseYDia",d.baseYDia))}${F("Spacing (mm)",inpNum("baseYSpacing",d.baseYSpacing))}</div>
   <div class="sechead">Wall Reinforcement (both faces)</div><div class="grid cols4">${F("Vertical dia",barSizeSel("wallVertDia",d.wallVertDia))}${F("Spacing (mm)",inpNum("wallVertSpacing",d.wallVertSpacing))}${F("Horizontal dia",barSizeSel("wallHorDia",d.wallHorDia))}${F("Spacing (mm)",inpNum("wallHorSpacing",d.wallHorSpacing))}</div>`;
   let form=`<p class="small">Formwork = inner + outer wall faces (perimeter × depth × 2). Base is typically cast against blinding/ground.</p>`;
-  return {geom,conc:"<p class='small'>Concrete = base slab + perimeter walls</p>",reo,form};
+  let conns=`${chk("starters",d.starters,"Starter bars / dowels into adjoining slab or wall","starters")}
+  <div class="subsec ${d.starters?'':'hidden'}" data-show-if="starters"><div class="grid cols4">
+   ${F("Connects to",targetSelect("connTarget",d.connTarget,inst.id))}${F("Quantity",inpNum("connQty",d.connQty))}${F("Diameter",barSizeSel("connDia",d.connDia))}${F("Embedment (mm)",inpNum("connEmbed",d.connEmbed))}${F("Projection (mm)",inpNum("connProj",d.connProj))}${F("Hook",anchorSel("connHook",d.connHook))}
+  </div></div>`;
+  return {geom,conc:"<p class='small'>Concrete = base slab + perimeter walls</p>",reo,form,conns};
 }
 function diagTankbox(inst){ let d=inst.data;
   let cx=130, gy=44, hh=64, bot=gy+hh, wt=10;
@@ -1696,6 +1701,14 @@ function computeTankbox(inst,def){
   lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.wallHorDia,spec:"Wall horizontal bars (both faces)",qty:wallHLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(wallHLen,PROJECT.reoWaste),formula:"depth/spacing × perimeter × 2 faces",notes:`${fmt(wallHLen*massPerM(barDiaOf(d.wallHorDia)),1)} kg`}));
   if(num(d.pipePenetrations)>0) lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Pipe/service penetration trimmers",spec:"formed openings",qty:num(d.pipePenetrations)*N,unit:"no.",waste:0,finalQty:num(d.pipePenetrations)*N,formula:"count × qty"}));
   if(d.grate) lines.push(baseLine(inst,def,{materialGroup:"Cast-ins",material:"Grate / access cover frame",spec:"",qty:N,unit:"no.",waste:0,finalQty:N,formula:"per pit"}));
+  if(d.starters){
+    let dia=barDiaOf(d.connDia);
+    let len=(num(d.connEmbed)+num(d.connProj)+anchorLen(d.connHook,dia,0))/1000;
+    let totLen=num(d.connQty)*N*len;
+    let wt=totLen*massPerM(dia);
+    let targetLabel=targetLabelOf(d.connTarget);
+    lines.push(baseLine(inst,def,{materialGroup:"Connections",material:d.connDia,spec:"Starter bars / dowels → "+(targetLabel||"(unlinked)"),qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`${d.connQty}×${N}×(embed ${d.connEmbed}+proj ${d.connProj})/1000`,linkedElement:targetLabel,notes:`${fmt(wt,1)} kg`}));
+  }
   return {lines,warnings:[]};
 }
 

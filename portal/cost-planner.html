@@ -370,7 +370,7 @@ const RATE_ITEMS = [
   {p:"Screeds (decorative)",u:"m2",qtyC:0.05,qtyS:0,qtyF:0,extraHrs:0.60,note:"PS $370/m3 decorative mix — adjust concrete rate manually if used"},
   {p:"Insitu Walls",u:"m2",qtyC:0.20,qtyS:22,qtyF:2.0,extraHrs:0.3},
   {p:"Stair (floor-floor)",u:"l/m risers",qtyC:0.35,qtyS:28,qtyF:1.4,extraHrs:1.8},
-  {p:"Shote crete",u:"m2",qtyC:0.10,qtyS:6,qtyF:0,extraHrs:0.5,note:"sprayed — no formwork"},
+  {p:"Shotcrete",u:"m2",qtyC:0.10,qtyS:6,qtyF:0,extraHrs:0.5,note:"sprayed — no formwork"},
 ];
 
 // ---- BCI REFERENCE RATES: curated Melbourne rates for non-structural ACMM elements ----
@@ -484,6 +484,7 @@ const LABOUR_PLANT_ITEMS = [
   {p:"Pump",u:"m3",cost:7},
   {p:"Steel fixer",u:"day",cost:650},
   {p:"Crane",u:"day",cost:1600},
+  {p:"Temporary steel props/struts (150UC23.4) — supply/hire",u:"tonne",cost:3200},
 ];
 
 // ---- BUILD METHODOLOGY / RESOURCE SCHEDULE (from your original Estimating Dashboard) ----
@@ -761,7 +762,7 @@ const STORAGE_KEY = "gradcon-costplanner-state";
 // saved. On a version bump, loadRateFields() below re-seeds every rate/
 // build-up field from the current code defaults while leaving projects, BOQ
 // selections and any explicit per-line overrides untouched.
-const RATES_VERSION = 3;
+const RATES_VERSION = 4;
 function freshRateFields(){
   const s = {
     global: {...GLOBAL},
