@@ -307,6 +307,40 @@ let UPLOADED_FILES = [];   // {id,name,size,kind:'csv'|'excel'|'pdf'|'other',add
 // which are one-shot snapshots written only on Publish) so work survives a
 // reload even before the estimator has published anything.
 const ESTIMATE_STATE_KEY = "gradcon-estimate-state";
+
+/* ============================= CROSS-DEVICE SYNC (Supabase) =============================
+ * Same estimator_kv table and pattern as Rates Library/Cost Planner (see their matching
+ * comments) and the Quotes app's src/lib/storage.js — one shared sync fabric across all
+ * four apps, so a workspace saved on one computer shows up on another automatically. */
+const SUPABASE_URL = "https://xbmyhvrcuyapoarmchpv.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_Kr4dTFXhZsifAA28HmMAVQ_EDSR2DL0";
+async function kvFetch(key){
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/estimator_kv?key=eq.${encodeURIComponent(key)}&select=value,updated_at`, {
+      headers:{ apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` },
+      signal: AbortSignal.timeout(8000), // fail fast on a dead/slow connection rather than hang
+    });
+    if(!res.ok) return null;
+    const rows = await res.json();
+    return rows[0] || null;
+  }catch(e){ return null; }
+}
+async function kvPush(key, value){
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/estimator_kv`, {
+      method:"POST",
+      headers:{
+        apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        "Content-Type":"application/json", Prefer:"resolution=merge-duplicates,return=representation"
+      },
+      body: JSON.stringify({ key, value, updated_at: new Date().toISOString() }),
+      signal: AbortSignal.timeout(8000),
+    });
+    if(!res.ok) return null;
+    const rows = await res.json();
+    return rows[0] || null;
+  }catch(e){ return null; }
+}
 let saveStatusTimer = null;
 function showSaveStatus(kind){
   let el = document.getElementById("saveStatus");
@@ -326,14 +360,26 @@ function showSaveStatus(kind){
     saveStatusTimer = setTimeout(()=>{ el.textContent = "All changes saved automatically"; el.classList.remove("ok"); }, 4000);
   }
 }
+function estimateStateSnapshot(){
+  return { project: PROJECT, selectedTypes: SELECTED_TYPES, instances: INSTANCES, idCounter: ID_COUNTER };
+}
 function saveEstimateState(){
   try{
-    localStorage.setItem(ESTIMATE_STATE_KEY, JSON.stringify({
-      project: PROJECT, selectedTypes: SELECTED_TYPES, instances: INSTANCES,
-      idCounter: ID_COUNTER, savedAt: new Date().toISOString(),
-    }));
+    localStorage.setItem(ESTIMATE_STATE_KEY, JSON.stringify({ ...estimateStateSnapshot(), savedAt: new Date().toISOString() }));
     showSaveStatus("ok");
   }catch(err){ showSaveStatus("err"); }
+  kvPush(ESTIMATE_STATE_KEY, estimateStateSnapshot()).then(row=>{
+    if(!row) return;
+    try{ localStorage.setItem(ESTIMATE_STATE_KEY+"__syncedAt", row.updated_at); }catch(e){}
+  });
+}
+// Shared by loadEstimateState() (localStorage, on boot) and syncFromCloud() (Supabase,
+// live) so the two never drift on how a loaded blob becomes real app state.
+function applyLoadedEstimateState(parsed){
+  if(parsed.project) PROJECT = Object.assign({}, PROJECT, parsed.project);
+  if(parsed.selectedTypes) SELECTED_TYPES = parsed.selectedTypes;
+  if(Array.isArray(parsed.instances)) INSTANCES = parsed.instances;
+  if(parsed.idCounter) ID_COUNTER = parsed.idCounter;
 }
 function loadEstimateState(){
   let raw;
@@ -341,12 +387,35 @@ function loadEstimateState(){
   if(!raw) return false;
   try{
     let parsed = JSON.parse(raw);
-    if(parsed.project) PROJECT = Object.assign({}, PROJECT, parsed.project);
-    if(parsed.selectedTypes) SELECTED_TYPES = parsed.selectedTypes;
-    if(Array.isArray(parsed.instances)) INSTANCES = parsed.instances;
-    if(parsed.idCounter) ID_COUNTER = parsed.idCounter;
+    applyLoadedEstimateState(parsed);
     return true;
   }catch(err){ return false; }
+}
+// Pulls whatever another device last saved, if newer than what this browser has — on
+// load, on regaining focus, and on a slow poll. Never overwrites a local edit that's
+// newer than the cloud copy; seeds the cloud from local state if nothing's there yet.
+let syncingFromCloud = false;
+async function syncFromCloud(){
+  if(syncingFromCloud) return;
+  syncingFromCloud = true;
+  try{
+    const row = await kvFetch(ESTIMATE_STATE_KEY);
+    if(!row){
+      const pushed = await kvPush(ESTIMATE_STATE_KEY, estimateStateSnapshot());
+      if(pushed) try{ localStorage.setItem(ESTIMATE_STATE_KEY+"__syncedAt", pushed.updated_at); }catch(e){}
+      return;
+    }
+    const localSyncedAt = localStorage.getItem(ESTIMATE_STATE_KEY+"__syncedAt");
+    if(localSyncedAt && row.updated_at <= localSyncedAt) return;
+    applyLoadedEstimateState(row.value || {});
+    try{
+      localStorage.setItem(ESTIMATE_STATE_KEY, JSON.stringify({ ...estimateStateSnapshot(), savedAt: new Date().toISOString() }));
+      localStorage.setItem(ESTIMATE_STATE_KEY+"__syncedAt", row.updated_at);
+    }catch(e){}
+    renderProjectForm(); renderDefaultsForm(); renderLibrary(); renderAddToolbar(); renderWorkspace(); computeAllAndRefresh();
+  } finally {
+    syncingFromCloud = false;
+  }
 }
 
 // Cover varies by exposure/formwork condition, not one flat number — AS 3600-style starting points.
@@ -3017,6 +3086,10 @@ if(!restoredFromSave){
   ["boredpier","pilecap","groundbeam","suspslab","column"].forEach(id=>SELECTED_TYPES[id]=true);
   renderLibrary(); renderAddToolbar();
 }
+syncFromCloud(); // then pull whatever another device last saved (or seed the cloud if this is the very first save anywhere)
+window.addEventListener("focus", syncFromCloud);
+document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) syncFromCloud(); });
+setInterval(syncFromCloud, 45000);
 </script>
 </body>
 </html>

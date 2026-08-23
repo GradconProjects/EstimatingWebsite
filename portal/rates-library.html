@@ -545,6 +545,45 @@ function backfill(saved, fresh){
   return saved;
 }
 
+/* ============================= CROSS-DEVICE SYNC (Supabase) =============================
+ * Every browser/device reads and writes the same row in Supabase's estimator_kv table
+ * (see supabase/migrations/0001_estimator_kv.sql) — the same table the Quotes app
+ * (src/lib/storage.js) uses, so this file and Quotes share one sync fabric. The
+ * anon/publishable key below is meant to be public — gated by row-level security, not
+ * secrecy (see CLAUDE.md "Known limitations") — and already ships inside the Quotes
+ * bundle the same way. localStorage stays the instant local cache/fallback; Supabase
+ * sync layers on top and never replaces it, so this still works fully offline or if
+ * Supabase is ever unreachable — the "Save failed" path is unaffected either way. */
+const SUPABASE_URL = "https://xbmyhvrcuyapoarmchpv.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_Kr4dTFXhZsifAA28HmMAVQ_EDSR2DL0";
+async function kvFetch(key){
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/estimator_kv?key=eq.${encodeURIComponent(key)}&select=value,updated_at`, {
+      headers:{ apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` },
+      signal: AbortSignal.timeout(8000), // fail fast on a dead/slow connection rather than hang
+    });
+    if(!res.ok) return null;
+    const rows = await res.json();
+    return rows[0] || null;
+  }catch(e){ return null; }
+}
+async function kvPush(key, value){
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/estimator_kv`, {
+      method:"POST",
+      headers:{
+        apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        "Content-Type":"application/json", Prefer:"resolution=merge-duplicates,return=representation"
+      },
+      body: JSON.stringify({ key, value, updated_at: new Date().toISOString() }),
+      signal: AbortSignal.timeout(8000),
+    });
+    if(!res.ok) return null;
+    const rows = await res.json();
+    return rows[0] || null;
+  }catch(e){ return null; }
+}
+
 function loadRates(){
   try{
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -554,6 +593,42 @@ function loadRates(){
 }
 let state = backfill(loadRates() || {}, freshRates());
 if(!state.ratesVersion) state.ratesVersion = RATES_VERSION;
+
+// Pulls whatever another device last saved, if it's newer than what this browser has —
+// on load, when the tab regains focus, and on a slow poll as a background safety net.
+// Never overwrites a local edit that's newer than the cloud copy. If the cloud has no
+// row at all yet (genuinely first save anywhere), seeds it from this browser's current
+// state instead of pulling — the one case a push-on-load is safe, since there's nothing
+// real to clobber.
+let syncingFromCloud = false;
+async function syncFromCloud(){
+  if(syncingFromCloud) return;
+  syncingFromCloud = true;
+  try{
+    const row = await kvFetch(STORAGE_KEY);
+    if(!row){
+      // Nothing in the cloud yet — seed it from this browser's state, and also make sure
+      // a same-browser read of localStorage (Cost Planner's applySharedRatesLibrary(), etc.)
+      // has something to find, matching this file's pre-sync behaviour of always writing
+      // gradcon-rates-library on load.
+      try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }catch(e){}
+      const pushed = await kvPush(STORAGE_KEY, state);
+      if(pushed) try{ localStorage.setItem(STORAGE_KEY+"__syncedAt", pushed.updated_at); }catch(e){}
+      return;
+    }
+    const localSyncedAt = localStorage.getItem(STORAGE_KEY+"__syncedAt");
+    if(localSyncedAt && row.updated_at <= localSyncedAt) return;
+    state = backfill(row.value || {}, freshRates());
+    if(!state.ratesVersion) state.ratesVersion = RATES_VERSION;
+    try{
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      localStorage.setItem(STORAGE_KEY+"__syncedAt", row.updated_at);
+    }catch(e){}
+    renderApp();
+  } finally {
+    syncingFromCloud = false;
+  }
+}
 
 let saveStatusTimer = null;
 function showSaveStatus(kind){
@@ -579,6 +654,10 @@ function saveRates(){
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     showSaveStatus("ok");
   }catch(e){ showSaveStatus("err"); }
+  kvPush(STORAGE_KEY, state).then(row=>{
+    if(!row) return;
+    try{ localStorage.setItem(STORAGE_KEY+"__syncedAt", row.updated_at); }catch(e){}
+  });
 }
 
 function fmt$(v){ if(v==null||isNaN(v)) v=0; return "$"+Number(v).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
@@ -781,7 +860,10 @@ function wireInputs(){
   bind("g_esc26", ["global","escalation2026Pct"], true);
 }
 
-saveRates(); // ensure a fresh install immediately publishes defaults for other apps to read
-renderApp();
+renderApp(); // instant render from local/default state, no wait on the network
 document.getElementById("saveBtn").addEventListener("click", saveRates);
+syncFromCloud(); // then pull whatever another device last saved (or seed the cloud if this is the very first save anywhere)
+window.addEventListener("focus", syncFromCloud);
+document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) syncFromCloud(); });
+setInterval(syncFromCloud, 45000);
 </script>

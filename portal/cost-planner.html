@@ -851,18 +851,58 @@ function freshState(){
     ratesVersion: RATES_VERSION,
   };
 }
+/* ============================= CROSS-DEVICE SYNC (Supabase) =============================
+ * Same estimator_kv table and pattern as Rates Library (see that file's matching comment)
+ * and the Quotes app's src/lib/storage.js — one shared sync fabric across all four apps.
+ * localStorage stays the instant local cache/fallback; this layers cross-device sync on
+ * top without changing the synchronous load-then-render flow the rest of this file relies on. */
+const SUPABASE_URL = "https://xbmyhvrcuyapoarmchpv.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_Kr4dTFXhZsifAA28HmMAVQ_EDSR2DL0";
+async function kvFetch(key){
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/estimator_kv?key=eq.${encodeURIComponent(key)}&select=value,updated_at`, {
+      headers:{ apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` },
+      signal: AbortSignal.timeout(8000), // fail fast on a dead/slow connection rather than hang
+    });
+    if(!res.ok) return null;
+    const rows = await res.json();
+    return rows[0] || null;
+  }catch(e){ return null; }
+}
+async function kvPush(key, value){
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/estimator_kv`, {
+      method:"POST",
+      headers:{
+        apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        "Content-Type":"application/json", Prefer:"resolution=merge-duplicates,return=representation"
+      },
+      body: JSON.stringify({ key, value, updated_at: new Date().toISOString() }),
+      signal: AbortSignal.timeout(8000),
+    });
+    if(!res.ok) return null;
+    const rows = await res.json();
+    return rows[0] || null;
+  }catch(e){ return null; }
+}
+
+// Shared by loadState() (localStorage, already-parsed-from-string) and syncFromCloud()
+// (Supabase jsonb, already a plain object) so the two never drift on how a loaded blob
+// gets turned into real app state (Set reconstruction, rates-version migration).
+function normalizeLoadedState(parsed){
+  parsed.importedEstimateIds = new Set(parsed.importedEstimateIds || []);
+  if(parsed.ratesVersion !== RATES_VERSION){
+    Object.assign(parsed, freshRateFields());
+    parsed.ratesVersion = RATES_VERSION;
+  }
+  return parsed;
+}
 function loadState(){
   let raw;
   try{ raw = localStorage.getItem(STORAGE_KEY); }catch(err){ return null; }
   if(!raw) return null;
   try{
-    const parsed = JSON.parse(raw);
-    parsed.importedEstimateIds = new Set(parsed.importedEstimateIds || []);
-    if(parsed.ratesVersion !== RATES_VERSION){
-      Object.assign(parsed, freshRateFields());
-      parsed.ratesVersion = RATES_VERSION;
-    }
-    return parsed;
+    return normalizeLoadedState(JSON.parse(raw));
   }catch(err){ return null; }
 }
 let saveStatusTimer = null;
@@ -882,15 +922,48 @@ function showSaveStatus(kind){
     saveStatusTimer = setTimeout(()=>{ el.textContent = "All changes saved automatically"; el.classList.remove("ok"); }, 4000);
   }
 }
+function serializableState(){
+  return { ...state, importedEstimateIds: Array.from(state.importedEstimateIds||[]) };
+}
 function saveState(){
   try{
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({
-      ...state, importedEstimateIds: Array.from(state.importedEstimateIds||[]),
-    }));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(serializableState()));
     showSaveStatus("ok");
   }catch(err){ showSaveStatus("err"); }
+  kvPush(STORAGE_KEY, serializableState()).then(row=>{
+    if(!row) return;
+    try{ localStorage.setItem(STORAGE_KEY+"__syncedAt", row.updated_at); }catch(e){}
+  });
 }
 let state = loadState() || freshState();
+
+// Pulls whatever another device last saved, if newer than what this browser has — on
+// load, on regaining focus, and on a slow poll. Never overwrites a local edit that's
+// newer than the cloud copy; seeds the cloud from local state if nothing's there yet.
+let syncingFromCloud = false;
+async function syncFromCloud(){
+  if(syncingFromCloud) return;
+  syncingFromCloud = true;
+  try{
+    const row = await kvFetch(STORAGE_KEY);
+    if(!row){
+      const pushed = await kvPush(STORAGE_KEY, serializableState());
+      if(pushed) try{ localStorage.setItem(STORAGE_KEY+"__syncedAt", pushed.updated_at); }catch(e){}
+      return;
+    }
+    const localSyncedAt = localStorage.getItem(STORAGE_KEY+"__syncedAt");
+    if(localSyncedAt && row.updated_at <= localSyncedAt) return;
+    state = normalizeLoadedState(row.value || {});
+    try{
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(serializableState()));
+      localStorage.setItem(STORAGE_KEY+"__syncedAt", row.updated_at);
+    }catch(e){}
+    applySharedRatesLibrary();
+    renderAll();
+  } finally {
+    syncingFromCloud = false;
+  }
+}
 
 /* ============================= SHARED RATES LIBRARY =============================
  * Rates now live in their own app (portal/rates-library.html) — the single source
@@ -2776,6 +2849,10 @@ function selectProjectAndGo(key){ state.activeProject = key; renderAll(); }
 
 window.addEventListener("DOMContentLoaded", buildTabs);
 document.getElementById("saveBtn").addEventListener("click", saveState);
+syncFromCloud();
+window.addEventListener("focus", syncFromCloud);
+document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) syncFromCloud(); });
+setInterval(syncFromCloud, 45000);
 
 </script>
 </body>
