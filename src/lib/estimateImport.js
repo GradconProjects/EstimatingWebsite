@@ -105,6 +105,11 @@ function findWallsFormworkProduct() {
   return FORMWORK_CAT.products.find((p) => p.name === "Walls" && p.unit === "m2") || null;
 }
 
+function findConventionalFormworkProduct() {
+  if (!FORMWORK_CAT) return null;
+  return FORMWORK_CAT.products.find((p) => p.name === "Conventional" && p.unit === "m2") || null;
+}
+
 /**
  * Groups an Estimates export's flat line array by elementId, resolves each
  * group against the Quotes catalog, and returns a blank-quote-shaped
@@ -239,20 +244,29 @@ export function buildImportFromEstimate(estimateExport) {
       map(l, rateKey("SQUARE MESH", product.name, product.unit), Number(l.finalQty) || 0);
     });
 
-    // --- Formwork: only auto-map wall formwork (the one unambiguous case) ---
+    // --- Formwork: wall lines map to "Walls"; every other m² formwork line (footings,
+    // slabs, beams, stairs, shotcrete, retaining walls, etc. — Estimates always produces
+    // formwork in m²) maps to the catalog's generic "Conventional" line, so a quantity
+    // always crosses into the quote instead of being left for manual entry. A flag still
+    // calls out the non-wall ones so the estimator can swap to Bondek/Edgeform/curved/etc.
+    // if a different system actually applies to that line.
     const formworkLines = group.filter((l) => l.materialGroup === "Formwork");
     let wallFormworkArea = 0;
     const wallFormworkLines = [];
+    let otherFormworkArea = 0;
+    const otherFormworkLines = [];
     formworkLines.forEach((l) => {
       const isWall = /wall/i.test(l.spec || "") || /wall/i.test(l.material || "");
       const isM2 = l.unit === "m²" || l.unit === "m2";
-      if (isWall && isM2) { wallFormworkArea += Number(l.finalQty) || 0; wallFormworkLines.push(l); }
-      else {
+      if (!isM2) {
         flag(l,
           `${elementLabel}: ${(Number(l.finalQty) || 0).toFixed(2)} ${l.unit} of formwork (${l.material || l.spec}) — ` +
           `no confident catalog match, pick the right formwork system manually.`
         );
+        return;
       }
+      if (isWall) { wallFormworkArea += Number(l.finalQty) || 0; wallFormworkLines.push(l); }
+      else { otherFormworkArea += Number(l.finalQty) || 0; otherFormworkLines.push(l); }
     });
     if (wallFormworkArea > 0) {
       const product = findWallsFormworkProduct();
@@ -260,6 +274,20 @@ export function buildImportFromEstimate(estimateExport) {
         wallFormworkLines.forEach((l) => map(l, rateKey("FORMWORK", product.name, product.unit), Number(l.finalQty) || 0));
       } else {
         wallFormworkLines.forEach((l) => flag(l, `${elementLabel}: ${wallFormworkArea.toFixed(2)} m² of wall formwork — Walls product missing from catalog, add manually.`));
+      }
+    }
+    if (otherFormworkArea > 0) {
+      const product = findConventionalFormworkProduct();
+      if (product) {
+        otherFormworkLines.forEach((l) => {
+          map(l, rateKey("FORMWORK", product.name, product.unit), Number(l.finalQty) || 0);
+          flag(l,
+            `${elementLabel}: ${(Number(l.finalQty) || 0).toFixed(2)} m² of formwork (${l.material || l.spec}) prefilled against ` +
+            `"Conventional" — switch to a different Formwork product if a different system applies.`
+          );
+        });
+      } else {
+        otherFormworkLines.forEach((l) => flag(l, `${elementLabel}: ${(Number(l.finalQty) || 0).toFixed(2)} m² of formwork (${l.material || l.spec}) — no confident catalog match, pick the right formwork system manually.`));
       }
     }
 

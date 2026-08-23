@@ -281,7 +281,7 @@ check("Import: mesh reinforcement (m²) maps straight to Square Mesh m² qty; tr
   assert.ok(flags.some((f) => f.includes("Trench Mesh") && f.includes("SL62")), `expected a trench-mesh flag, got: ${flags.join(" | ")}`);
 });
 
-check("Import: wall formwork area maps to the catalog Walls product; other formwork is flagged, not guessed", () => {
+check("Import: wall formwork area maps to Walls; other m² formwork maps to Conventional and is still flagged for review", () => {
   const { quote, flags } = buildImportFromEstimate({
     project: {},
     lines: [
@@ -293,7 +293,8 @@ check("Import: wall formwork area maps to the catalog Walls product; other formw
   });
   const item = quote.items[0];
   assert.equal(item.qtys[rateKey("FORMWORK", "Walls", "m2")], 45);
-  assert.ok(flags.some((f) => f.includes("Opening reveals")), `expected the unmatched opening-reveal formwork to be flagged, got: ${flags.join(" | ")}`);
+  assert.equal(item.qtys[rateKey("FORMWORK", "Conventional", "m2")], 3); // non-wall formwork now crosses over too, not just flagged
+  assert.ok(flags.some((f) => f.includes("Opening reveals")), `expected the non-wall formwork to still be flagged for review, got: ${flags.join(" | ")}`);
 });
 
 check("Import: a count-only reinforcement line (no length, e.g. ligatures) is flagged with its weight, never silently dropped", () => {
