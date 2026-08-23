@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 /**
  * Runs as a postbuild step (see package.json's "build" script) — folds the
- * just-built Quotes app (dist/index.html + its JS/CSS bundle) and the
- * self-contained vanilla-JS Estimates tool (portal/estimates-app.html) into
- * portal/portal-shell.html (the login + tab-switching shell), then
- * overwrites dist/index.html with the result. Vercel serves whatever ends
- * up in dist/, so this makes the single deployed URL the full combined
- * portal (login → Quotes / Estimates tabs) instead of just the bare Quotes
- * SPA vite build produces on its own.
+ * just-built Quotes app (dist/index.html + its JS/CSS bundle) and the two
+ * self-contained vanilla-JS tools (portal/estimates-app.html, portal/
+ * cost-planner.html) into portal/portal-shell.html (the login + tab-
+ * switching shell), then overwrites dist/index.html with the result. Vercel
+ * serves whatever ends up in dist/, so this makes the single deployed URL
+ * the full combined portal (login → Cost Planner / Quotes / Estimates tabs)
+ * instead of just the bare Quotes SPA vite build produces on its own.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -17,6 +17,7 @@ const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const distDir = path.join(root, "dist");
 const shellPath = path.join(root, "portal", "portal-shell.html");
 const estimatesPath = path.join(root, "portal", "estimates-app.html");
+const costPlannerPath = path.join(root, "portal", "cost-planner.html");
 const outPath = path.join(distDir, "index.html");
 
 // --- Inline the built React app (Quotes) into one self-contained document ---
@@ -56,14 +57,19 @@ if (!quotesHtml.includes(`<style>${css.slice(0, 40)}`)) {
   throw new Error("style tag doesn't look inlined — css not found where expected");
 }
 
-// --- Estimates app is already self-contained, embed verbatim ---
+// --- Estimates and Cost Planner are already self-contained, embed verbatim ---
 const estimatesHtml = fs.readFileSync(estimatesPath, "utf8");
+const costPlannerHtml = fs.readFileSync(costPlannerPath, "utf8");
 
 const quotesB64 = Buffer.from(quotesHtml, "utf8").toString("base64");
 const estimatesB64 = Buffer.from(estimatesHtml, "utf8").toString("base64");
+const costPlannerB64 = Buffer.from(costPlannerHtml, "utf8").toString("base64");
 
 let shell = fs.readFileSync(shellPath, "utf8");
-shell = shell.replace("__QUOTES_B64__", quotesB64).replace("__ESTIMATES_B64__", estimatesB64);
+shell = shell
+  .replace("__QUOTES_B64__", quotesB64)
+  .replace("__ESTIMATES_B64__", estimatesB64)
+  .replace("__COSTPLANNER_B64__", costPlannerB64);
 
 fs.writeFileSync(outPath, shell);
 console.log("Assembled combined portal at", outPath, "-", (fs.statSync(outPath).size / 1024 / 1024).toFixed(2), "MB");

@@ -4,6 +4,7 @@ import {
 import {
   computeElementCost, computeGrandTotal, computeMarginLadder, rateKey, lookupRate, computeRowTotal, money, money2,
 } from "../lib/costing.js";
+import { GRADCON_LOGO_DATA_URI } from "../lib/logo.js";
 
 /**
  * Print/PDF export — the "window.print() + @media print stylesheet" approach
@@ -69,9 +70,7 @@ function ReportContent({ quote, items, rates, categoryOrder, sectionOrder }) {
   return (
     <>
       <div className="border-b-2 border-black pb-2 mb-3">
-        <div className="text-[10px] uppercase tracking-widest text-neutral-600 font-semibold">
-          Gradcon Concrete Constructions
-        </div>
+        <img src={GRADCON_LOGO_DATA_URI} alt="Gradcon Concrete Constructions" className="h-8 mb-1.5" />
         <div className="text-xl font-bold">{quote.projectName || "Untitled project"}</div>
         <div className="text-neutral-600">Date: {quote.projectDate}</div>
       </div>
