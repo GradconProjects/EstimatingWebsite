@@ -138,6 +138,26 @@
   }
   .logout:hover{ border-color:var(--muted); color:var(--text); }
 
+  /* ---------------- change-pin modal ---------------- */
+  .pin-modal-backdrop{
+    position:fixed; inset:0; background:rgba(35,31,32,.4); z-index:20;
+    display:flex; align-items:center; justify-content:center; padding:24px;
+  }
+  .pin-modal-backdrop[hidden]{ display:none; }
+  .pin-modal{
+    width:100%; max-width:360px; background:var(--surface); border:1px solid var(--line);
+    border-radius:var(--radius); padding:26px 26px 24px; box-shadow:0 30px 60px -30px rgba(35,31,32,.4);
+  }
+  .pin-modal h3{ font-size:18px; font-weight:700; margin-bottom:6px; }
+  .pin-modal p.sub{ margin:0 0 20px; color:var(--muted); font-size:13px; line-height:1.5; }
+  .pin-modal-actions{ display:flex; gap:10px; margin-top:6px; }
+  .pin-modal-actions .btn-ghost{ flex:1; }
+  .pin-modal-actions .btn-primary{ flex:1; margin-top:0; }
+  .pin-success{
+    background:#eef6e4; border:1px solid #cfe6b4; color:#3d6b1f;
+    font-size:12.5px; line-height:1.5; padding:9px 11px; border-radius:8px; margin:-6px 0 16px;
+  }
+
   .dash-hero{ max-width:640px; margin:56px 0 40px; }
   .dash-hero .eyebrow{ display:inline-flex; align-items:center; gap:7px; font-size:11.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--text); font-weight:700; margin-bottom:10px; }
   .dash-hero .eyebrow::before{ content:""; width:7px; height:7px; border-radius:2px; background:var(--accent); }
@@ -212,12 +232,16 @@
           <option value="projects@gradcon.com.au">projects@gradcon.com.au</option>
         </select>
       </div>
+      <div class="field">
+        <label for="login-pin">PIN</label>
+        <input id="login-pin" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" placeholder="••••" autocomplete="current-password" required>
+      </div>
       <div class="field-error" id="login-error" hidden></div>
       <button class="btn-primary" type="submit">Sign in</button>
     </form>
     <div class="login-note">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
-      <div>Preview build — sign in with a gradcon.com.au email above. No password/PIN required until this is hosted with real auth.</div>
+      <div>Preview build — sign in with a gradcon.com.au email and your PIN. New to this browser? Ask Grady or the office for the current PIN — each user can change theirs from the dashboard once signed in. Stored on this browser only until this is hosted with real auth.</div>
     </div>
   </div>
 </div>
@@ -230,6 +254,7 @@
     </div>
     <div class="dash-actions">
       <span class="dash-user" id="dash-user"></span>
+      <button class="btn-ghost" id="change-pin-btn" type="button">Change PIN</button>
       <button class="logout" id="logout-btn">Log out</button>
     </div>
   </div>
@@ -289,6 +314,34 @@
   <div class="dash-foot">gradcon // internal — review build</div>
 </div>
 
+<!-- ===================== CHANGE PIN ===================== -->
+<div class="pin-modal-backdrop" id="pin-modal-backdrop" hidden>
+  <div class="pin-modal">
+    <h3>Change PIN</h3>
+    <p class="sub">Update the sign-in PIN for <b id="pin-modal-email"></b>. Stored on this browser only.</p>
+    <form id="pin-form">
+      <div class="field">
+        <label for="pin-current">Current PIN</label>
+        <input id="pin-current" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" placeholder="••••" autocomplete="off" required>
+      </div>
+      <div class="field">
+        <label for="pin-new">New PIN</label>
+        <input id="pin-new" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" placeholder="••••" autocomplete="off" required>
+      </div>
+      <div class="field">
+        <label for="pin-confirm">Confirm new PIN</label>
+        <input id="pin-confirm" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" placeholder="••••" autocomplete="off" required>
+      </div>
+      <div class="field-error" id="pin-error" hidden></div>
+      <div class="pin-success" id="pin-success" hidden>PIN updated.</div>
+      <div class="pin-modal-actions">
+        <button class="btn-ghost" id="pin-cancel" type="button">Cancel</button>
+        <button class="btn-primary" type="submit">Save PIN</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <!-- ===================== APP VIEW ===================== -->
 <div class="screen" id="screen-app">
   <div class="app-bar">
@@ -324,11 +377,28 @@
   // No backend in this preview build, so "auth" is a fixed allow-list of the
   // two real Gradcon addresses, each with a 4-digit PIN (default 2580) that
   // can be changed per-user. The PIN store lives in localStorage, so it's
-  // per-browser only, and there's no PIN/password at all — anyone who picks
-  // a gradcon.com.au email off the list is "signed in". Swap this whole
-  // block out once real auth (e.g. Supabase auth) is wired up.
+  // per-browser only — it doesn't sync between devices and isn't a real
+  // security boundary. Swap this whole block out once real auth (e.g.
+  // Supabase auth) is wired up.
   var ALLOWED_EMAILS = ['grady@gradcon.com.au', 'projects@gradcon.com.au'];
+  var DEFAULT_PIN = '2580';
+  var PIN_STORE_KEY = 'gradcon-portal-pins';
 
+  function loadPins(){
+    var stored = {};
+    try{
+      var raw = window.localStorage.getItem(PIN_STORE_KEY);
+      if(raw) stored = JSON.parse(raw) || {};
+    }catch(e){}
+    var pins = {};
+    ALLOWED_EMAILS.forEach(function(email){ pins[email] = stored[email] || DEFAULT_PIN; });
+    return pins;
+  }
+  function savePins(pins){
+    try{ window.localStorage.setItem(PIN_STORE_KEY, JSON.stringify(pins)); }catch(e){}
+  }
+
+  var pins = loadPins();
   var currentUser = null;
 
   // ---------------- session persistence ----------------
@@ -364,8 +434,9 @@
   document.getElementById('login-form').addEventListener('submit', function(e){
     e.preventDefault();
     var email = document.getElementById('login-email').value;
-    if(ALLOWED_EMAILS.indexOf(email) === -1){
-      setError(loginError, 'Select a gradcon.com.au email.');
+    var pin = document.getElementById('login-pin').value;
+    if(ALLOWED_EMAILS.indexOf(email) === -1 || pin !== pins[email]){
+      setError(loginError, 'Incorrect email or PIN.');
       return;
     }
     clearError(loginError);
@@ -381,6 +452,51 @@
     clearError(loginError);
     clearSession();
     show('screen-login');
+  });
+
+  // ---------------- change PIN ----------------
+  var pinBackdrop = document.getElementById('pin-modal-backdrop');
+  var pinForm = document.getElementById('pin-form');
+  var pinError = document.getElementById('pin-error');
+  var pinSuccess = document.getElementById('pin-success');
+
+  document.getElementById('change-pin-btn').addEventListener('click', function(){
+    document.getElementById('pin-modal-email').textContent = currentUser;
+    pinForm.reset();
+    clearError(pinError);
+    pinSuccess.hidden = true;
+    pinBackdrop.hidden = false;
+  });
+  document.getElementById('pin-cancel').addEventListener('click', function(){
+    pinBackdrop.hidden = true;
+  });
+  pinBackdrop.addEventListener('click', function(e){
+    if(e.target === pinBackdrop) pinBackdrop.hidden = true;
+  });
+
+  pinForm.addEventListener('submit', function(e){
+    e.preventDefault();
+    pinSuccess.hidden = true;
+    var current = document.getElementById('pin-current').value;
+    var next = document.getElementById('pin-new').value;
+    var confirm = document.getElementById('pin-confirm').value;
+    if(current !== pins[currentUser]){
+      setError(pinError, 'Current PIN is incorrect.');
+      return;
+    }
+    if(!/^[0-9]{4}$/.test(next)){
+      setError(pinError, 'New PIN must be exactly 4 digits.');
+      return;
+    }
+    if(next !== confirm){
+      setError(pinError, 'New PIN and confirmation don’t match.');
+      return;
+    }
+    pins[currentUser] = next;
+    savePins(pins);
+    clearError(pinError);
+    pinSuccess.hidden = false;
+    pinForm.reset();
   });
 
   document.getElementById('back-btn').addEventListener('click', function(){
