@@ -255,6 +255,20 @@ check("Import: element type with no Quotes equivalent produces a flag and no ite
   assert.ok(flags.some((f) => f.includes("Water Tank")), `expected a Water Tank flag, got: ${flags.join(" | ")}`);
 });
 
+check("Import: Concrete Stair maps to the staircase element type (used to be unmapped/flagged)", () => {
+  const { quote, flags } = buildImportFromEstimate({
+    project: { name: "Test Job" },
+    lines: [
+      { ...estLine({}), category: "Concrete Stair", element: "Stair 1", elementId: "EL06",
+        materialGroup: "Concrete", material: "N25 concrete", spec: "Stair (steps+waist+landing)", unit: "m³", finalQty: 4.2 },
+    ],
+  });
+  assert.equal(quote.items.length, 1);
+  const item = quote.items[0];
+  assert.equal(item.typeId, "staircase");
+  assert.equal(item.qtys[rateKey("CONCRETE", "25 mpa", "m3")], 4.2);
+});
+
 check("Import: ambiguous concrete grade (multiple products) still prefills the plain mix and flags it", () => {
   const { quote, flags } = buildImportFromEstimate({
     project: {},

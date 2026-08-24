@@ -44,7 +44,7 @@ export const ESTIMATE_TYPE_MAP = {
   "Column": "rc_columns",
   "Concrete Wall / Core": "core_shear_wall",
   "Retaining Wall": "retaining_wall",
-  "Concrete Stair": null,
+  "Concrete Stair": "staircase",
   "Ramp / External Sloped Slab": "ramp",
   "RC Roof Slab": "suspended_slab",
   "Driveway": "driveway_hardstand",
