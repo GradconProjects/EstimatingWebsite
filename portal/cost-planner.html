@@ -1237,7 +1237,9 @@ function importPublishedQuotes(){
       // contingency %, etc.) — only name/GFA/BOQ refresh from Quotes below, same
       // "rebuilt from the fresh source data every publish" rule
       // importPublishedEstimates() above already uses for its own BOQ selections.
-      Object.assign(proj, existingProj, { name: `${project.name} (from Quotes)`, gfa: project.gfa || 0, boq: {} });
+      Object.assign(proj, existingProj, { name: `${project.name} (from Quotes)`, gfa: project.gfa || 0, boq: {}, quoteMemberOverrides: {} });
+    } else {
+      proj.quoteMemberOverrides = {};
     }
     proj.source = "quotes";
 
@@ -1246,6 +1248,19 @@ function importPublishedQuotes(){
     // QUOTE_CATEGORY_TO_BOQ_KIND above. Multiple Quotes elements contributing to the
     // same product (e.g. two elements both using "25 mpa Agilia") sum into one line,
     // same accumulation pattern importPublishedEstimates() uses via addQty().
+    //
+    // Each line also carries which real Quotes element (building member — Footings,
+    // Columns, Beams, etc, see QUOTE_SECTION_TO_BUILDING_MEMBER in lib/projects.js) the
+    // quantity came from — a much better signal than Cost Planner's own fallback of
+    // guessing the member from the product alone (every Stock Bar defaulting to
+    // "Columns" regardless of what it's actually reinforcing, every concrete grade
+    // dumped under "General / Other" with no member at all). Since one matched BOQ row
+    // can only carry a single member, and the same product can genuinely be used across
+    // several members on one job, memberQty below tracks quantity per member per item
+    // and the DOMINANT one (by quantity) wins — set as a per-project override, never a
+    // global one, since the same catalog product can legitimately belong to a different
+    // member on a different job (see boqItemDisplay's comment).
+    const memberQtyByItem = {};
     const lines = Array.isArray(entry.lines) ? entry.lines : [];
     lines.forEach(line=>{
       const qty = Number(line.qty)||0;
@@ -1253,11 +1268,20 @@ function importPublishedQuotes(){
       let itemId = line.category==="CUSTOM" ? null : findBoqItemForQuoteLine(line);
       if(!itemId) itemId = findExistingCustomBoqItem(line.name);
       if(!itemId){
-        itemId = addCustomBoqItem({category:"From Quotes (unmatched)", desc:line.name, unit:line.unit, rate:line.rate||0});
+        itemId = addCustomBoqItem({category:"From Quotes (unmatched)", desc:line.name, unit:line.unit, rate:line.rate||0, member:line.member||"General / Other"});
       }
       const e = boqEntry(proj, itemId);
       e.selected = true;
       e.qty = (Number(e.qty)||0) + qty;
+      if(line.member){
+        const totals = memberQtyByItem[itemId] = memberQtyByItem[itemId] || {};
+        totals[line.member] = (totals[line.member]||0) + qty;
+      }
+    });
+    Object.keys(memberQtyByItem).forEach(itemId=>{
+      const totals = memberQtyByItem[itemId];
+      const dominant = Object.keys(totals).sort((a,b)=>totals[b]-totals[a])[0];
+      proj.quoteMemberOverrides[itemId] = dominant;
     });
   });
 }
@@ -1474,12 +1498,20 @@ function createProject(opts){
 
 function fullBoqCatalog(){ return [...MASTER_BOQ_CATALOG, ...state.customBoqItems]; }
 
-function boqItemDisplay(item){
+// `proj` is optional and, when given, its own quoteMemberOverrides (set by
+// importPublishedQuotes() — see there for why) wins over the catalog-wide
+// boqOverrides/static member below. That override is deliberately per-PROJECT, not
+// global like state.boqOverrides: the same catalog product (e.g. N16 Stock Bar) can
+// legitimately belong to a different building member on different jobs — one project's
+// footings, another's columns — so correcting it for one project must never silently
+// recolor every other project that happens to use the same product.
+function boqItemDisplay(item, proj){
   const ov = state.boqOverrides[item.id];
+  const projMember = proj && proj.quoteMemberOverrides && proj.quoteMemberOverrides[item.id];
   return {
     desc: ov&&ov.desc!=null? ov.desc : item.desc,
     unit: ov&&ov.unit!=null? ov.unit : item.unit,
-    member: ov&&ov.member!=null? ov.member : (item.member||"General / Other"),
+    member: projMember || (ov&&ov.member!=null? ov.member : (item.member||"General / Other")),
   };
 }
 function setBoqOverride(itemId, field, value){
@@ -1525,7 +1557,7 @@ function computeProjectBOQ(proj){
   fullBoqCatalog().forEach(item=>{
     const entry = boqEntry(proj, item.id);
     if (!entry.selected) return;
-    const disp = boqItemDisplay(item);
+    const disp = boqItemDisplay(item, proj);
     const rate = boqItemRate(item);
     const qty = entry.qty||0;
     const amount = qty*rate;
@@ -1727,7 +1759,7 @@ function setMemberScope(proj, member, inScope){
   if (!inScope){
     // auto-deselect any BOQ items under this member so out-of-scope work never carries cost
     fullBoqCatalog().forEach(item=>{
-      const disp = boqItemDisplay(item);
+      const disp = boqItemDisplay(item, proj);
       if (disp.member===member){
         const entry = boqEntry(proj, item.id);
         if (entry.selected) entry.selected = false;
@@ -2554,7 +2586,7 @@ function renderMasterBOQ(){
   const grouped = {};
   fullBoqCatalog().forEach(item=>{
     if (boqCategoryFilter!=="all" && item.category!==boqCategoryFilter) return;
-    const disp = boqItemDisplay(item);
+    const disp = boqItemDisplay(item, proj);
     if (boqMemberFilter!=="all" && disp.member!==boqMemberFilter) return;
     if (boqSearch && !disp.desc.toLowerCase().includes(boqSearch.toLowerCase())) return;
     (grouped[disp.member] = grouped[disp.member]||[]).push({item,disp});

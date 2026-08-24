@@ -107,6 +107,32 @@ export async function deleteQuote(storageKey) {
   }
 }
 
+// Maps a Quotes element's own section (see ELEMENT_TYPES in catalog.js) to the Cost
+// Planner "building member" it really belongs under — Footings, Columns, Beams, etc.
+// (see BUILDING_MEMBERS in cost-planner.html). This is a far better signal than Cost
+// Planner's own fallback (guessing the member from the PRODUCT alone, e.g. "any Stock
+// Bar is Columns" — wrong the moment stock bar reinforces a footing instead) because
+// it's the real element the estimator actually filled the quantity in against, not a
+// guess. Every ELEMENT_TYPES (category, section) pair is covered; a section with no
+// obvious match falls through to "General / Other" the same way Cost Planner's own
+// unmatched members already do.
+const QUOTE_SECTION_TO_BUILDING_MEMBER = {
+  "EXCAVATION": "Substructure — Earthworks",
+  "PILING & PIERS": "Footings",
+  "FOOTINGS": "Footings",
+  "TEMPORARY PROPPING": "Substructure — Earthworks",
+  "RETENTION SYSTEMS": "Insitu Walls",
+  "GROUND-BEARING SLABS": "Ground Slab",
+  "COLUMNS": "Columns",
+  "WALLS": "Insitu Walls",
+  "SUSPENDED BEAMS": "Beams",
+  "SUSPENDED SLABS": "Suspended Slab",
+  "BOUNDARY & LANDSCAPE WALLS": "External Works",
+  "PAVING & HARDSTAND": "External Works",
+  "POOL CONSTRUCTION": "External Works",
+  "CIVIL STRUCTURES": "General / Other",
+};
+
 /**
  * Mirrors this project's name/GFA — and every catalog line with a real quantity
  * entered — into "gradcon-published-quotes", the same shared bridge Estimates
@@ -126,16 +152,17 @@ export async function publishQuoteToCostPlanner(projectId, quote) {
   if (!quote.projectName) return;
   const lines = [];
   (quote.items || []).forEach((item) => {
+    const member = QUOTE_SECTION_TO_BUILDING_MEMBER[item.section] || null;
     FULL_CATALOG.forEach((cat) => {
       cat.products.forEach((p) => {
         const qKey = rateKey(cat.key, p.name, p.unit);
         const qty = Number(item.qtys?.[qKey]) || 0;
-        if (qty > 0) lines.push({ category: cat.key, name: p.name, unit: p.unit, qty });
+        if (qty > 0) lines.push({ category: cat.key, name: p.name, unit: p.unit, qty, member });
       });
     });
     (item.additional || []).forEach((a) => {
       const qty = Number(a.qty) || 0;
-      if (qty > 0 && a.name) lines.push({ category: "CUSTOM", name: a.name, unit: a.unit || "each", qty, rate: Number(a.rate) || 0 });
+      if (qty > 0 && a.name) lines.push({ category: "CUSTOM", name: a.name, unit: a.unit || "each", qty, rate: Number(a.rate) || 0, member });
     });
   });
   const record = {
