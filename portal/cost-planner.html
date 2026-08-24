@@ -1249,16 +1249,15 @@ function importPublishedQuotes(){
     // same product (e.g. two elements both using "25 mpa Agilia") sum into one line,
     // same accumulation pattern importPublishedEstimates() uses via addQty().
     //
-    // Each line also carries which real Quotes element (building member — Footings,
-    // Columns, Beams, etc, see QUOTE_SECTION_TO_BUILDING_MEMBER in lib/projects.js) the
-    // quantity came from — a much better signal than Cost Planner's own fallback of
-    // guessing the member from the product alone (every Stock Bar defaulting to
-    // "Columns" regardless of what it's actually reinforcing, every concrete grade
-    // dumped under "General / Other" with no member at all). Since one matched BOQ row
-    // can only carry a single member, and the same product can genuinely be used across
-    // several members on one job, memberQty below tracks quantity per member per item
-    // and the DOMINANT one (by quantity) wins — set as a per-project override, never a
-    // global one, since the same catalog product can legitimately belong to a different
+    // Each line also carries the exact Quotes element it came from as its "member"
+    // (e.g. "RC Columns - Fence Post Columns", "Strip Footings" — see
+    // publishQuoteToCostPlanner in lib/projects.js), a straight 1:1 mirror of Quotes'
+    // own element grouping rather than remapping through Cost Planner's own coarser
+    // member vocabulary. Since one matched BOQ row can only carry a single member, and
+    // the same product can genuinely be used across several elements on one job,
+    // memberQty below tracks quantity per member per item and the DOMINANT one (by
+    // quantity) wins — set as a per-project override, never a global one, since the
+    // same catalog product can legitimately belong to a different
     // member on a different job (see boqItemDisplay's comment).
     const memberQtyByItem = {};
     const lines = Array.isArray(entry.lines) ? entry.lines : [];

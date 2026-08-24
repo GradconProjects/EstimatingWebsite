@@ -107,32 +107,6 @@ export async function deleteQuote(storageKey) {
   }
 }
 
-// Maps a Quotes element's own section (see ELEMENT_TYPES in catalog.js) to the Cost
-// Planner "building member" it really belongs under — Footings, Columns, Beams, etc.
-// (see BUILDING_MEMBERS in cost-planner.html). This is a far better signal than Cost
-// Planner's own fallback (guessing the member from the PRODUCT alone, e.g. "any Stock
-// Bar is Columns" — wrong the moment stock bar reinforces a footing instead) because
-// it's the real element the estimator actually filled the quantity in against, not a
-// guess. Every ELEMENT_TYPES (category, section) pair is covered; a section with no
-// obvious match falls through to "General / Other" the same way Cost Planner's own
-// unmatched members already do.
-const QUOTE_SECTION_TO_BUILDING_MEMBER = {
-  "EXCAVATION": "Substructure — Earthworks",
-  "PILING & PIERS": "Footings",
-  "FOOTINGS": "Footings",
-  "TEMPORARY PROPPING": "Substructure — Earthworks",
-  "RETENTION SYSTEMS": "Insitu Walls",
-  "GROUND-BEARING SLABS": "Ground Slab",
-  "COLUMNS": "Columns",
-  "WALLS": "Insitu Walls",
-  "SUSPENDED BEAMS": "Beams",
-  "SUSPENDED SLABS": "Suspended Slab",
-  "BOUNDARY & LANDSCAPE WALLS": "External Works",
-  "PAVING & HARDSTAND": "External Works",
-  "POOL CONSTRUCTION": "External Works",
-  "CIVIL STRUCTURES": "General / Other",
-};
-
 /**
  * Mirrors this project's name/GFA — and every catalog line with a real quantity
  * entered — into "gradcon-published-quotes", the same shared bridge Estimates
@@ -147,12 +121,21 @@ const QUOTE_SECTION_TO_BUILDING_MEMBER = {
  * spawning a duplicate. Best-effort and silent — called from a debounced effect
  * on every real edit, so a failure here should never surface as an error to the
  * estimator working on their quote.
+ *
+ * Each line also carries the Quotes element's own label (e.g. "RC Columns - Fence
+ * Post Columns", "Strip Footings") as its `member` — Cost Planner groups the BOQ
+ * report by "building member", and mirroring the exact element the quantity was
+ * entered against is a straight 1:1 match to how Quotes itself is organized, rather
+ * than remapping through Cost Planner's own coarser member vocabulary (which loses
+ * which specific element a line came from, and can group unrelated elements — e.g.
+ * two different column types — under one generic "Columns" bucket). Cost Planner's
+ * member grouping already accepts any string here, not just its own built-in list.
  */
 export async function publishQuoteToCostPlanner(projectId, quote) {
   if (!quote.projectName) return;
   const lines = [];
   (quote.items || []).forEach((item) => {
-    const member = QUOTE_SECTION_TO_BUILDING_MEMBER[item.section] || null;
+    const member = item.label || null;
     FULL_CATALOG.forEach((cat) => {
       cat.products.forEach((p) => {
         const qKey = rateKey(cat.key, p.name, p.unit);
