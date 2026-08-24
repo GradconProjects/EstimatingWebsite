@@ -14,7 +14,7 @@ import {
 } from "../src/data/catalog.js";
 import {
   computeElementCost, computeGrandTotal, computeMarginLadder,
-  defaultRates, newElementItem, rateKey,
+  defaultRates, newElementItem, rateKey, suggestedLabourPrefill,
 } from "../src/lib/costing.js";
 import { buildImportFromEstimate } from "../src/lib/estimateImport.js";
 
@@ -47,10 +47,10 @@ check("every element type has both a category and a section", () => {
   });
 });
 
-check("11 material categories, 114 products", () => {
+check("11 material categories, 115 products", () => {
   assert.equal(FULL_CATALOG.length, 11);
   const total = FULL_CATALOG.reduce((s, c) => s + c.products.length, 0);
-  assert.equal(total, 114);
+  assert.equal(total, 115);
 });
 
 check("8 labour/equipment resource columns (incl. both Pump hr and Pump m3)", () => {
@@ -159,6 +159,28 @@ check("Labour totals split correctly across BOTH Pump columns (hr and m3) withou
   assert.equal(cost.resourceCosts["pump_hr"], 2500);
   assert.equal(cost.resourceCosts["pump_m3"], 280);
   assert.equal(cost.labourTotal, 2780);
+});
+
+/* ---------- production-rate labour prefill ---------- */
+check("suggestedLabourPrefill: suggests Pour concrete / Tie steel hours from qty entered, in empty cells only", () => {
+  const rates = defaultRates();
+  const type = ELEMENT_TYPES.find((t) => t.id === "strip_footings");
+  const item = newElementItem(type);
+  item.qtys[rateKey("CONCRETE", "25 mpa", "m3")] = 10; // 10 m3 * (0.55+0.35) hrs/m3 = 9 hrs / 8 = 1.125d
+  item.qtys[rateKey("PROCESSED BAR", "N16", "m")] = 1000; // 1000m * 1.6kg/m = 1.6t * 5.5 hrs/t = 8.8 hrs / 8 = 1.1d
+  const pourTask = item.tasks.find((t) => t.name === "Pour concrete");
+  const tieTask = item.tasks.find((t) => t.name === "Tie steel");
+
+  const suggestions = suggestedLabourPrefill(item, rates);
+  assert.equal(suggestions[pourTask.id].concreter_day, 1.13);
+  assert.equal(suggestions[tieTask.id].steelfixer_day, 1.1);
+
+  // A cell the estimator already filled in is never included in the suggestions,
+  // so applying them (existing qtys spread last in ElementCard) can never overwrite it.
+  pourTask.qtys["concreter_day"] = 5;
+  const suggestions2 = suggestedLabourPrefill(item, rates);
+  assert.equal(suggestions2[pourTask.id], undefined, "must not suggest a value for an already-filled cell");
+  assert.equal(suggestions2[tieTask.id].steelfixer_day, 1.1); // unrelated task/resource still suggested
 });
 
 /* ---------- custom / one-off items ---------- */

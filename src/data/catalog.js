@@ -21,6 +21,23 @@ export const RESOURCE_COLS = [
   { key: "factory_hr", name: "Factory labour", unit: "hr", rate: 150 },
 ];
 
+/* ---------- Production rates ----------
+ * Labour-productivity rates (hours per m³ / per tonne) used to suggest
+ * — never force — labour hours in an element's Labour/Equipment matrix
+ * from quantities already entered in its material rows. Mirrors Rates
+ * Library's own concreteLabour.placingHrsPerM3/finishingHrsPerM3 and
+ * steel fixingLabourHrsPerT fields (same real-world numbers), kept as
+ * Quotes' own separate, independently-editable copy — Quotes has always
+ * had its own rates system rather than reading Rates Library's live data,
+ * see CLAUDE.md. Suggestions only ever fill a genuinely empty cell; see
+ * suggestedLabourPrefill in lib/costing.js.
+ */
+export const PRODUCTION_RATES = [
+  { key: "concrete_placing_hrs_m3", name: "Concrete placing", unit: "hrs/m³", rate: 0.55 },
+  { key: "concrete_finishing_hrs_m3", name: "Concrete finishing", unit: "hrs/m³", rate: 0.35 },
+  { key: "steel_fixing_hrs_tonne", name: "Rebar fixing / tying", unit: "hrs/tonne", rate: 5.5 },
+];
+
 /* ---------- Labour task templates, keyed by the element's `labour` field ---------- */
 export const LABOUR_TEMPLATES = {
   excavation: ["Site setout as required", "Bulk / trench excavate", "Cart spoil offsite", "Trim & compact base", "Backfill & compact", "Factory labour"],
@@ -122,7 +139,7 @@ export const FULL_CATALOG = [
     ["Concrete test", "each", null, 241.5], ["Off-site washout fee", "each", null, 400], ["Truck washout fee", "each", null, 10.5],
   ]},
   { key: "SUB CONTRACTORS / TEMPORARY WORKS", weightBasis: false, products: [
-    ["Formwork (subcontract)", "quote", null, null], ["Steel supply", "quote", null, null], ["Steel fix", "quote", null, null],
+    ["Excavation (subcontract)", "quote", null, null], ["Formwork (subcontract)", "quote", null, null], ["Steel supply", "quote", null, null], ["Steel fix", "quote", null, null],
     ["Screw Piling", "quote", null, null], ["CFA Piling", "quote", null, null],
     ["Temporary steel props/struts (150UC23.4) — supply/hire", "tonne", null, 3200],
   ]},

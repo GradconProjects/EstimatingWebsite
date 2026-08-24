@@ -5,7 +5,7 @@
  *
  * Read CLAUDE.md → "Costing rules" before editing computeElementCost.
  */
-import { FULL_CATALOG, RESOURCE_COLS, LABOUR_TEMPLATES, GST_RATE } from "../data/catalog.js";
+import { FULL_CATALOG, RESOURCE_COLS, LABOUR_TEMPLATES, GST_RATE, PRODUCTION_RATES } from "../data/catalog.js";
 
 export const money = (n) =>
   (n || 0).toLocaleString("en-AU", { style: "currency", currency: "AUD", maximumFractionDigits: 0 });
@@ -33,6 +33,9 @@ export function defaultRates() {
   });
   RESOURCE_COLS.forEach((res) => {
     r[rateKey("LABOUR", res.name, res.unit)] = { unitCost: res.rate, unitWeight: null };
+  });
+  PRODUCTION_RATES.forEach((pr) => {
+    r[rateKey("PRODUCTION", pr.name, pr.unit)] = { unitCost: pr.rate, unitWeight: null };
   });
   return r;
 }
@@ -165,6 +168,65 @@ export function computeElementCost(item, rates) {
     concreteQty,
     total: materialsTotal + labourTotal + additionalTotal,
   };
+}
+
+/**
+ * Total reinforcement weight (tonnes) across every weight-carrying category
+ * in one element — mirrors CategoryBlock.jsx's per-row "Total (t)" column,
+ * summed across the whole element. Used by suggestedLabourPrefill to size
+ * steel-fixing hours; kept separate from computeElementCost's own totals
+ * (which only ever COST Processed Bar by weight — see CLAUDE.md rule 2).
+ */
+export function computeElementReinforcementTonnes(item, rates) {
+  let totalKg = 0;
+  FULL_CATALOG.forEach((cat) => {
+    cat.products.forEach((p) => {
+      if (p.unitWeight == null) return;
+      const qKey = rateKey(cat.key, p.name, p.unit);
+      const qty = Number(item.qtys[qKey]) || 0;
+      if (qty <= 0) return;
+      const rate = lookupRate(rates, qKey, { unitCost: p.unitCost ?? 0, unitWeight: p.unitWeight, sheetArea: p.sheetArea, barLength: p.barLength });
+      if (rate.unitWeight == null) return;
+      const sheets = cat.areaBasis && rate.sheetArea ? Math.ceil(qty / rate.sheetArea) : null;
+      const bars = cat.lengthBasis && rate.barLength ? Math.ceil(qty / rate.barLength) : null;
+      const units = sheets != null ? sheets : bars != null ? bars : qty;
+      totalKg += units * rate.unitWeight;
+    });
+  });
+  return totalKg / 1000;
+}
+
+const WORK_DAY_HOURS = 8;
+const CONCRETE_POUR_TASK_MATCH = /pour concrete/i;
+const STEEL_FIXING_TASK_MATCH = /tie steel/i;
+
+/**
+ * Suggests labour day-counts for an element's "Pour concrete..." and "Tie
+ * steel..." task rows, sized from the concrete/reinforcement quantities
+ * already entered and Quotes' own PRODUCTION_RATES (see catalog.js). Only
+ * ever returns a suggestion for a task+resource cell that is currently
+ * undefined — an estimator's own entry always wins and is never
+ * overwritten; ElementCard's effect applies these with existing qtys
+ * spread last, as a second, defensive guarantee of the same rule.
+ */
+export function suggestedLabourPrefill(item, rates) {
+  const suggestions = {};
+  const concreteQty = computeElementCost(item, rates).concreteQty;
+  const reinfTonnes = computeElementReinforcementTonnes(item, rates);
+  const placing = lookupRate(rates, rateKey("PRODUCTION", "Concrete placing", "hrs/m³"), { unitCost: 0.55 }).unitCost;
+  const finishing = lookupRate(rates, rateKey("PRODUCTION", "Concrete finishing", "hrs/m³"), { unitCost: 0.35 }).unitCost;
+  const fixing = lookupRate(rates, rateKey("PRODUCTION", "Rebar fixing / tying", "hrs/tonne"), { unitCost: 5.5 }).unitCost;
+  (item.tasks || []).forEach((task) => {
+    const entry = {};
+    if (CONCRETE_POUR_TASK_MATCH.test(task.name) && concreteQty > 0 && task.qtys.concreter_day === undefined) {
+      entry.concreter_day = Math.round(((concreteQty * (placing + finishing)) / WORK_DAY_HOURS) * 100) / 100;
+    }
+    if (STEEL_FIXING_TASK_MATCH.test(task.name) && reinfTonnes > 0 && task.qtys.steelfixer_day === undefined) {
+      entry.steelfixer_day = Math.round(((reinfTonnes * fixing) / WORK_DAY_HOURS) * 100) / 100;
+    }
+    if (Object.keys(entry).length) suggestions[task.id] = entry;
+  });
+  return suggestions;
 }
 
 /** Grand total across every quote item. */

@@ -1,22 +1,35 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { ChevronDown, ChevronRight, Copy, Trash2 } from "lucide-react";
 import { FULL_CATALOG } from "../data/catalog.js";
-import { uid, money2, computeElementCost } from "../lib/costing.js";
+import { uid, money2, computeElementCost, suggestedLabourPrefill } from "../lib/costing.js";
 import CategoryBlock from "./CategoryBlock.jsx";
 import LabourMatrix from "./LabourMatrix.jsx";
 import AdditionalItems from "./AdditionalItems.jsx";
 
 export default function ElementCard({ item, rates, onChange, onRemove, onDuplicate }) {
-  const [openCats, setOpenCats] = useState(() => {
-    const o = {};
-    FULL_CATALOG.forEach((c) => { o[c.key] = c.key === "CONCRETE"; });
-    return o;
-  });
+  // Every material category starts collapsed — only Labour/Equipment starts
+  // expanded (it's still collapsible too, just defaults open).
+  const [openCats, setOpenCats] = useState({});
+  const [labourOpen, setLabourOpen] = useState(true);
   const [cardOpen, setCardOpen] = useState(true);
 
   const cost = useMemo(() => computeElementCost(item, rates), [item, rates]);
 
   const patch = (fn) => onChange(fn(item));
+
+  // Suggests (never overwrites) "Pour concrete..."/"Tie steel..." labour
+  // hours from quantities already entered, using Quotes' own PRODUCTION_RATES
+  // (see catalog.js). Keyed on item.qtys rather than item.tasks so applying a
+  // suggestion (which only touches tasks) can't retrigger itself.
+  useEffect(() => {
+    const suggestions = suggestedLabourPrefill(item, rates);
+    if (Object.keys(suggestions).length === 0) return;
+    patch((it) => ({
+      ...it,
+      tasks: it.tasks.map((t) => (suggestions[t.id] ? { ...t, qtys: { ...suggestions[t.id], ...t.qtys } } : t)),
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item.qtys, rates]);
 
   const setQty = (qKey, v) => patch((it) => ({ ...it, qtys: { ...it.qtys, [qKey]: v } }));
   const setLabel = (v) => patch((it) => ({ ...it, label: v }));
@@ -92,6 +105,8 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
             resourceTotals={cost.resourceTotals}
             resourceCosts={cost.resourceCosts}
             labourTotal={cost.labourTotal}
+            labourOpen={labourOpen}
+            toggleLabour={() => setLabourOpen((o) => !o)}
           />
 
           <AdditionalItems

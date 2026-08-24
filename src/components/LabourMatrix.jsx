@@ -1,18 +1,26 @@
-import { Plus, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Plus, Trash2 } from "lucide-react";
 import { RESOURCE_COLS } from "../data/catalog.js";
 import { rateKey, money2, lookupRate } from "../lib/costing.js";
 import { NumInput } from "./atoms.jsx";
 
 export default function LabourMatrix({
   item, rates, onTaskQtyChange, onAddTask, onRemoveTask, onRenameTask,
-  resourceTotals, resourceCosts, labourTotal,
+  resourceTotals, resourceCosts, labourTotal, labourOpen, toggleLabour,
 }) {
   return (
     <div className="border border-amber-300 rounded-lg overflow-hidden bg-white">
-      <div className="px-3 py-2 bg-amber-800 text-white text-xs font-semibold tracking-wide uppercase flex items-center justify-between">
-        <span>Labour / Equipment — day &amp; hour counts</span>
+      <button
+        onClick={toggleLabour}
+        className="w-full px-3 py-2 bg-amber-800 text-white text-xs font-semibold tracking-wide uppercase flex items-center justify-between hover:bg-amber-700 transition-colors"
+      >
+        <span className="flex items-center gap-1.5">
+          {labourOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          Labour / Equipment — day &amp; hour counts
+        </span>
         <span className="font-mono tabular-nums normal-case font-semibold">{money2(labourTotal)}</span>
-      </div>
+      </button>
+      {labourOpen && (
+      <>
       <div className="overflow-x-auto">
         <table className="w-full text-[13px]">
           <thead>
@@ -86,6 +94,8 @@ export default function LabourMatrix({
       >
         <Plus size={13} /> Add task row
       </button>
+      </>
+      )}
     </div>
   );
 }

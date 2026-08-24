@@ -1,5 +1,5 @@
 import { X } from "lucide-react";
-import { FULL_CATALOG, RESOURCE_COLS } from "../data/catalog.js";
+import { FULL_CATALOG, RESOURCE_COLS, PRODUCTION_RATES } from "../data/catalog.js";
 import { rateKey } from "../lib/costing.js";
 import { NumInput } from "./atoms.jsx";
 
@@ -117,6 +117,28 @@ export default function RatesModal({ rates, setRates, onClose }) {
               </table>
             </div>
           ))}
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-1">
+              WORK RATES
+              <span className="normal-case font-normal text-neutral-400"> — used to suggest (never overwrite) Pour concrete / Tie steel labour hours in each element, from its concrete/reinforcement quantities</span>
+            </div>
+            <table className="w-full text-[13px]">
+              <tbody>
+                {PRODUCTION_RATES.map((pr) => {
+                  const k = rateKey("PRODUCTION", pr.name, pr.unit);
+                  const r = rates[k] || { unitCost: pr.rate };
+                  return (
+                    <tr key={k} className="border-t border-neutral-100">
+                      <td className="py-1 pr-2 text-neutral-700">{pr.name} <span className="text-neutral-400">({pr.unit})</span></td>
+                      <td className="py-1 w-28">
+                        <NumInput value={r.unitCost} onChange={(v) => update(k, "unitCost", v)} />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
           <div>
             <div className="text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-1">LABOUR &amp; EQUIPMENT</div>
             <table className="w-full text-[13px]">
