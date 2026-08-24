@@ -964,6 +964,15 @@ async function syncFromCloud(){
     const localSyncedAt = localStorage.getItem(STORAGE_KEY+"__syncedAt");
     if(localSyncedAt && row.updated_at <= localSyncedAt) return;
     state = normalizeLoadedState(row.value || {});
+    // Replacing `state` wholesale from the cloud snapshot loses whatever
+    // importPublishedEstimates()/importPublishedQuotes() had already applied on top of
+    // the previous state (they mutate state.projects in place, so a fresh `state =`
+    // here drops that) — without reapplying them, quantities that just got imported
+    // from Estimates/Quotes could get silently wiped out again by the very next poll,
+    // since this fires roughly every 6s. Reapplying here keeps that invariant true no
+    // matter when/how often a cloud sync lands.
+    importPublishedEstimates();
+    importPublishedQuotes();
     try{
       localStorage.setItem(STORAGE_KEY, JSON.stringify(serializableState()));
       localStorage.setItem(STORAGE_KEY+"__syncedAt", row.updated_at);
