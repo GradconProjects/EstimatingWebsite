@@ -286,6 +286,14 @@ const UNIT_RATE_INFO = {
   "Square Mesh": { label:"$/m²", toUnit:(base)=> base/MESH_SHEET_AREA_M2, toBase:(unit)=> unit*MESH_SHEET_AREA_M2 },
   "Stock Bar": { label:"$/m", toUnit:(base)=> base/STOCK_BAR_LENGTH_M, toBase:(unit)=> unit*STOCK_BAR_LENGTH_M },
 };
+// Stock Bar's Base Rate is genuinely $/bar (costed qty × Base Rate, never off weight), but the
+// real steel price it's built from is a flat $/tonne rate (currently $1825/t, see
+// GRADCON_STOCK_BAR_RATE_PER_TONNE above) converted per diameter by weight — same idea Processed
+// Bar's own $/t "Unit rate" column already covers. Stock Bar gets this as a SECOND derived
+// column (alongside its existing $/m Unit rate) since — unlike Processed Bar, where the Base
+// Rate and this figure are the same conversion — Stock Bar needs both the per-metre AND the
+// per-tonne view to always be visible and editable.
+const STOCK_BAR_TONNE_INFO = { label:"$/t", toUnit:(base,w)=> base*1000/w, toBase:(unit,w)=> unit*w/1000 };
 
 const REINFORCEMENT_ITEMS = {
   "Trench mesh": { buildup:"Mesh", items:[
@@ -340,10 +348,12 @@ const GRADCON_SQUARE_MESH_RATES = {
   RL718:168.71, RL818:196, RL918:230.73, RL1018:255.85, RL1118:231.12, RL1218:328.1,
 };
 
-const GRADCON_STOCK_BAR_RATES = {
-  "N12 - 6.0m length":10, "N16 - 6.0m length":17.51, "N20 - 6.0m length":27.76,
-  "N24 - 6.0m length":38.68, "N28 - 6.0m length":57.9, "N32 - 6.0m length":70.86,
-};
+// One flat $/tonne steel rate, converted to each bar's own $/bar price by weight — same
+// approach Processed Bar already uses below (GRADCON_PROCESSED_BAR_RATE_PER_TONNE).
+const GRADCON_STOCK_BAR_RATE_PER_TONNE = 1825;
+const GRADCON_STOCK_BAR_RATES = Object.fromEntries(
+  REINFORCEMENT_ITEMS["Stock Bar"].items.map((it) => [it.p, +(GRADCON_STOCK_BAR_RATE_PER_TONNE * it.w / 1000).toFixed(2)])
+);
 
 const GRADCON_PROCESSED_BAR_RATE_PER_TONNE = 1925;
 
@@ -742,7 +752,8 @@ function renderApp(){
     const mapKey = reoMapFor[group];
     const map = state.reinforcementEstablished[mapKey];
     const uinfo = UNIT_RATE_INFO[group];
-    reoBody += `<div class="panel-block"><h3>${group}</h3><table class="item-table"><thead><tr><th>Product</th><th>Unit</th><th>Weight (kg)</th><th>Base Rate ($/unit)</th>${uinfo?`<th>Unit rate (${uinfo.label})</th>`:''}</tr></thead><tbody>`;
+    const showsTonne = group === "Stock Bar"; // see STOCK_BAR_TONNE_INFO above
+    reoBody += `<div class="panel-block"><h3>${group}</h3><table class="item-table"><thead><tr><th>Product</th><th>Unit</th><th>Weight (kg)</th><th>Base Rate ($/unit)</th>${uinfo?`<th>Unit rate (${uinfo.label})</th>`:''}${showsTonne?`<th>Steel rate (${STOCK_BAR_TONNE_INFO.label})</th>`:''}</tr></thead><tbody>`;
     g.items.forEach(it=>{
       const has = Object.prototype.hasOwnProperty.call(map, it.p);
       const baseCell = has?`<input type="number" step="any" class="lib-input" data-map="reinforcementEstablished.${mapKey}" data-key="${it.p}" data-field="_" value="${map[it.p]}">`:'<span class="note">— (BCI fallback below)</span>';
@@ -751,7 +762,12 @@ function renderApp(){
         const unitVal = has ? uinfo.toUnit(map[it.p], it.w) : null;
         unitCell = `<td>${has?`<input type="number" step="any" class="lib-unit-rate-input" data-map="reinforcementEstablished.${mapKey}" data-key="${it.p}" data-w="${it.w}" data-group="${group}" value="${unitVal!=null?(+unitVal.toFixed(4)):''}">`:''}</td>`;
       }
-      reoBody += `<tr><td>${it.p}</td><td>${it.u}</td><td class="num">${it.w}</td><td>${baseCell}</td>${unitCell}</tr>`;
+      let tonneCell = '';
+      if(showsTonne){
+        const tonneVal = has ? STOCK_BAR_TONNE_INFO.toUnit(map[it.p], it.w) : null;
+        tonneCell = `<td>${has?`<input type="number" step="any" class="lib-tonne-rate-input" data-map="reinforcementEstablished.${mapKey}" data-key="${it.p}" data-w="${it.w}" value="${tonneVal!=null?(+tonneVal.toFixed(2)):''}">`:''}</td>`;
+      }
+      reoBody += `<tr><td>${it.p}</td><td>${it.u}</td><td class="num">${it.w}</td><td>${baseCell}</td>${unitCell}${tonneCell}</tr>`;
     });
     reoBody += `</tbody></table></div>`;
   });
@@ -874,6 +890,21 @@ function wireInputs(){
       const w = parseFloat(e.target.dataset.w);
       const info = UNIT_RATE_INFO[e.target.dataset.group];
       target[key] = info.toBase(v, w);
+      saveRates();
+    });
+  });
+  // Stock Bar's extra "$/tonne" column (see STOCK_BAR_TONNE_INFO above) — same idea as
+  // the unit-rate handler above, just always Stock Bar so no data-group lookup needed.
+  document.querySelectorAll(".lib-tonne-rate-input").forEach(inp=>{
+    inp.addEventListener("input", e=>{
+      const v = parseFloat(e.target.value);
+      if(isNaN(v)) return;
+      const mapPath = e.target.dataset.map.split(".");
+      let target = state;
+      mapPath.forEach(p=> target = target[p]);
+      const key = e.target.dataset.key;
+      const w = parseFloat(e.target.dataset.w);
+      target[key] = STOCK_BAR_TONNE_INFO.toBase(v, w);
       saveRates();
     });
   });

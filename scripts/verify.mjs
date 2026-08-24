@@ -102,25 +102,26 @@ check("Stock Bar: qty is m of bar needed, cost = ceil(qty/barLength) x $/bar, ne
   const rates = defaultRates();
   const type = ELEMENT_TYPES.find((t) => t.id === "slab_on_ground");
   const item = newElementItem(type);
-  // N16 - 6.0m length: barLength 6m, $17.51/bar. 13m needs ceil(13/6) = 3 bars = $52.53.
+  // N16 - 6.0m length: barLength 6m, $17.52/bar (derived from a flat $1825/t x 9.6kg/bar).
+  // 13m needs ceil(13/6) = 3 bars = $52.56.
   item.qtys[rateKey("STOCK BAR", "N16 - 6.0m length", "m")] = 13;
   const cost = computeElementCost(item, rates);
-  assert.equal(Math.round(cost.categoryTotals["STOCK BAR"] * 100) / 100, 52.53);
+  assert.equal(Math.round(cost.categoryTotals["STOCK BAR"] * 100) / 100, 52.56);
 
   // 12m exactly needs exactly 2 bars, not 3 — ceil() must not over-round a clean multiple.
   const item2 = newElementItem(type);
   item2.qtys[rateKey("STOCK BAR", "N16 - 6.0m length", "m")] = 12;
-  assert.equal(Math.round(computeElementCost(item2, rates).categoryTotals["STOCK BAR"] * 100) / 100, 35.02);
+  assert.equal(Math.round(computeElementCost(item2, rates).categoryTotals["STOCK BAR"] * 100) / 100, 35.04);
 });
 
 /* ---------- weight-basis costing (Processed Bar only) ---------- */
-check("Processed Bar costs via Total Weight x $/tonne: 1000m N16 (1.6kg/m @ $1930/t) = $3088", () => {
+check("Processed Bar costs via Total Weight x $/tonne: 1000m N16 (1.6kg/m @ $1925/t) = $3080", () => {
   const rates = defaultRates();
   const type = ELEMENT_TYPES.find((t) => t.id === "strip_footings");
   const item = newElementItem(type);
   item.qtys[rateKey("PROCESSED BAR", "N16", "m")] = 1000;
   const cost = computeElementCost(item, rates);
-  assert.equal(cost.categoryTotals["PROCESSED BAR"], 3088);
+  assert.equal(cost.categoryTotals["PROCESSED BAR"], 3080);
 });
 
 /* ---------- blank rows cost nothing ---------- */

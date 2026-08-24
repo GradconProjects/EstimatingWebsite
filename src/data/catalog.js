@@ -75,13 +75,20 @@ export const FULL_CATALOG = [
     ["SL102", "m2", 80, 141.18, 14.4], ["SL81", "m2", 105, 185.27, 14.4], ["RL718", "m2", 67, 168.71, 14.4], ["RL818", "m2", 79, 196, 14.4], ["RL918", "m2", 93, 230.73, 14.4],
     ["RL1018", "m2", 109, 255.85, 14.4], ["RL1118", "m2", 130.53, 231.12, 14.4], ["RL1218", "m2", 157, 328.1, 14.4],
   ]},
+  // Stock Bar's unitCost is derived from a flat $1825/tonne (GRADCON_STOCK_BAR_RATE_PER_TONNE)
+  // × each bar's own unitWeight — same "one real steel rate, converted per product" approach
+  // Processed Bar already uses below. It's still priced $/bar (lengthBasis), not by weight —
+  // see rule 2 in CLAUDE.md — this only changes where the $/bar number comes from.
   { key: "STOCK BAR", weightBasis: false, lengthBasis: true, products: [
-    ["N12 - 6.0m length", "m", 5.46, 10, null, 6], ["N16 - 6.0m length", "m", 9.6, 17.51, null, 6], ["N20 - 6.0m length", "m", 15.19, 27.76, null, 6],
-    ["N24 - 6.0m length", "m", 21.83, 38.68, null, 6], ["N28 - 6.0m length", "m", 29.71, 57.9, null, 6], ["N32 - 6.0m length", "m", 38.81, 70.86, null, 6],
+    ["N12 - 6.0m length", "m", 5.46, 9.96, null, 6], ["N16 - 6.0m length", "m", 9.6, 17.52, null, 6], ["N20 - 6.0m length", "m", 15.19, 27.72, null, 6],
+    ["N24 - 6.0m length", "m", 21.83, 39.84, null, 6], ["N28 - 6.0m length", "m", 29.71, 54.22, null, 6], ["N32 - 6.0m length", "m", 38.81, 70.83, null, 6],
   ]},
+  // Uniform $1925/tonne (GRADCON_PROCESSED_BAR_RATE_PER_TONNE, matching Rates Library's own
+  // constant) across every diameter — Processed Bar has always been priced this way, a single
+  // flat mill rate rather than a per-diameter price.
   { key: "PROCESSED BAR", label: "PROCESSED BAR (unit cost $/tonne, applied to Total Weight)", weightBasis: true, products: [
-    ["N10", "m", 0.632, 1930], ["N12", "m", 0.91, 1930], ["N16", "m", 1.6, 1930], ["N20", "m", 2.532, 1930], ["N24", "m", 3.639, 1930],
-    ["N28", "m", 4.951, 1930], ["N32", "m", 6.468, 1930], ["N36", "m", 8.19, 1930], ["N40", "m", 10.107, 1930],
+    ["N10", "m", 0.632, 1925], ["N12", "m", 0.91, 1925], ["N16", "m", 1.6, 1925], ["N20", "m", 2.532, 1925], ["N24", "m", 3.639, 1925],
+    ["N28", "m", 4.951, 1925], ["N32", "m", 6.468, 1925], ["N36", "m", 8.19, 1925], ["N40", "m", 10.107, 1925],
   ]},
   { key: "REINFORCING ACCESSORIES", weightBasis: false, products: [
     ["Delivery fee", "each", null, 300], ["Poly", "roll", null, 89.4], ["Duct Tape", "roll", null, 4.5], ["Abelflex 100mm", "roll", null, 36],

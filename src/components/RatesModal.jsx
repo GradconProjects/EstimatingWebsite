@@ -34,6 +34,21 @@ export default function RatesModal({ rates, setRates, onClose }) {
   const baseRateLabel = (cat) =>
     cat.weightBasis ? "tonne" : cat.areaBasis ? "sheet" : cat.lengthBasis ? "bar" : cat.products[0]?.unit;
 
+  // Stock Bar's base rate is genuinely $/bar (see CLAUDE.md rule 2 — it's costed
+  // qty × unitCost, never off weight), but the real steel price it's built from is a
+  // flat $/tonne rate (currently $1825/t) converted per diameter by weight — same idea
+  // Processed Bar already shows directly as its own base rate. This surfaces that same
+  // $/tonne figure for Stock Bar too, always visible and editable either direction, so
+  // a steel price change can be entered once per diameter as $/t instead of doing the
+  // weight maths by hand. Processed Bar/Square Mesh don't need this: Processed Bar's
+  // base rate already IS $/tonne, and Square Mesh isn't priced by weight at all.
+  const showsTonneRate = (cat) => cat.key === "STOCK BAR";
+  const tonneRateOf = (r) => (r.unitWeight ? (r.unitCost * 1000) / r.unitWeight : null);
+  const updateTonneRate = (key, r, value) => {
+    if (value === undefined || value === null || Number.isNaN(value)) return;
+    if (r.unitWeight) update(key, "unitCost", (value * r.unitWeight) / 1000);
+  };
+
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-xl max-w-3xl w-full max-h-[85vh] flex flex-col shadow-2xl">
@@ -57,6 +72,7 @@ export default function RatesModal({ rates, setRates, onClose }) {
                     <th className="text-left font-medium pb-1 w-28">{cat.areaBasis ? "Sheet area (m²)" : cat.lengthBasis ? "Bar length (m)" : ""}</th>
                     <th className="text-left font-medium pb-1 w-28">Base rate ($/{baseRateLabel(cat)})</th>
                     {unitRateLabel(cat) && <th className="text-left font-medium pb-1 w-28">Unit rate ({unitRateLabel(cat)})</th>}
+                    {showsTonneRate(cat) && <th className="text-left font-medium pb-1 w-28">Steel rate ($/tonne)</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -85,8 +101,13 @@ export default function RatesModal({ rates, setRates, onClose }) {
                           <NumInput value={r.unitCost} onChange={(v) => update(k, "unitCost", v)} />
                         </td>
                         {unitRateLabel(cat) && (
-                          <td className="py-1 w-28">
+                          <td className="py-1 pr-2 w-28">
                             <NumInput value={unitRate} onChange={(v) => updateUnitRate(cat, k, r, v)} />
+                          </td>
+                        )}
+                        {showsTonneRate(cat) && (
+                          <td className="py-1 w-28">
+                            <NumInput value={tonneRateOf(r)} onChange={(v) => updateTonneRate(k, r, v)} />
                           </td>
                         )}
                       </tr>
