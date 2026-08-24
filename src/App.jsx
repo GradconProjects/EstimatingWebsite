@@ -218,13 +218,18 @@ function ProjectEditor({ project, rates, setRates, ratesStatus, saveProjectsNow,
   // Estimates already auto-publishes as you edit (see estimateImport.js's sibling
   // bridge) — so a project started here shows up in Cost Planner's list without
   // re-typing it. Debounced so rapid typing in the project name field doesn't spam
-  // a Supabase write on every keystroke; silent/best-effort, same as autosave.
+  // a Supabase write on every keystroke; silent/best-effort, same as autosave. Must
+  // depend on quote.items too, not just projectName/gfa — otherwise filling in line
+  // quantities after naming the project never re-triggers this, and Cost Planner only
+  // ever sees whatever quantities existed at the moment the name/GFA was last touched
+  // (usually none, since naming a project normally happens before quantities are
+  // entered) — a real bug this had until quantities visibly never showed up there.
   useEffect(() => {
     if (!quote.projectName) return;
     const t = setTimeout(() => { publishQuoteToCostPlanner(project.id, quote); }, 1200);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project.id, quote.projectName, quote.gfa]);
+  }, [project.id, quote.projectName, quote.gfa, quote.items]);
 
   const [ratesOpen, setRatesOpen] = useState(false);
   const [elementTypesOpen, setElementTypesOpen] = useState(false);
