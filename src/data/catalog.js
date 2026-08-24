@@ -28,6 +28,7 @@ export const LABOUR_TEMPLATES = {
   wall: ["Site setout as required", "Excavate & prep (if required)", "Formwork (both faces)", "Tie steel", "Pour concrete", "Strip formwork", "Patch & clean up", "Factory labour"],
   slab_ground: ["Site setout as required", "Excavate & prep base", "Pour blinding", "Lay poly", "Tie steel / box slab", "Pour concrete", "Strip & tidy", "Factory labour"],
   slab_suspended: ["Site setout as required", "Prop & form suspended soffit", "Tie steel / box slab", "Pour concrete (pump)", "Strip formwork / props", "Strip & tidy", "Factory labour"],
+  stairs: ["Site setout as required", "Prop & form stair soffit and riser/tread formwork", "Tie steel", "Pour concrete (pump)", "Strip formwork / props", "Patch & clean up", "Factory labour"],
 };
 
 /* ---------- Full material catalog ----------
@@ -181,6 +182,10 @@ export const ELEMENT_TYPES = [
   { id: "suspended_slab", category: "SUSPENDED STRUCTURE", section: "SUSPENDED SLABS", name: "Suspended Slab", labour: "slab_suspended" },
   { id: "transfer_slab_beam", category: "SUSPENDED STRUCTURE", section: "SUSPENDED SLABS", name: "Transfer Slab / Beam", labour: "slab_suspended" },
   { id: "post_tensioned_slab", category: "SUSPENDED STRUCTURE", section: "SUSPENDED SLABS", name: "Post-Tensioned Slab", labour: "slab_suspended" },
+  // Its own labour template (stepped riser/tread formwork, not a flat soffit — see
+  // LABOUR_TEMPLATES.stairs) and its own section, since a staircase isn't really a
+  // suspended slab even though it's typically propped/formed the same way.
+  { id: "staircase", category: "SUSPENDED STRUCTURE", section: "STAIRS", name: "Staircase", labour: "stairs" },
 
   // External & landscape concrete — outside the building envelope.
   { id: "planter_wall", category: "EXTERNAL & LANDSCAPE CONCRETE", section: "BOUNDARY & LANDSCAPE WALLS", name: "Planter Wall", labour: "wall" },

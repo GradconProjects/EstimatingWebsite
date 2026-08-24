@@ -33,10 +33,10 @@ const check = (name, fn) => {
 console.log("Gradcon Estimator — costing engine checks\n");
 
 /* ---------- catalog shape ---------- */
-check("39 element types, 9 categories, 14 sections", () => {
-  assert.equal(ELEMENT_TYPES.length, 39);
+check("40 element types, 9 categories, 15 sections", () => {
+  assert.equal(ELEMENT_TYPES.length, 40);
   assert.equal(CATEGORY_ORDER.length, 9);
-  assert.equal(SECTION_ORDER.length, 14);
+  assert.equal(SECTION_ORDER.length, 15);
 });
 
 check("every element type has both a category and a section", () => {
