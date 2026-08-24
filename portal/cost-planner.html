@@ -1154,6 +1154,48 @@ window.addEventListener("storage", (e)=>{
  * idea, scoped to what's actually safe to copy across automatically. Re-publishing the
  * same Quotes project (matched by its own project id) updates that one Cost Planner
  * project's name/GFA in place rather than spawning a duplicate. */
+// Quotes and Cost Planner share the same real Gradcon catalog under the hood (reo by
+// group+diameter, concrete by grade, formwork/rate-items/accessories by product name)
+// — this maps each Quotes FULL_CATALOG category to the matching Cost Planner BOQ
+// "kind" (see buildMasterBOQCatalog above) so a published line can be matched straight
+// to its existing BOQ row instead of guessing.
+const QUOTE_CATEGORY_TO_BOQ_KIND = {
+  "TRENCH MESH": {kind:"reo", group:"Trench mesh"},
+  "SQUARE MESH": {kind:"reo", group:"Square Mesh"},
+  "STOCK BAR": {kind:"reo", group:"Stock Bar"},
+  "PROCESSED BAR": {kind:"reo", group:"Processed Bar"},
+  "REINFORCING ACCESSORIES": {kind:"reinfacc"},
+  "CONCRETE": {kind:"concgrade"},
+  "RATE ITEMS": {kind:"rateitem"},
+  "FORMWORK": {kind:"fwlegacy"},
+  "OTHER ACCESSORIES": {kind:"otheracc"},
+  "OTHER ALLOWANCES": {kind:"otherallow"},
+  "SUB CONTRACTORS / TEMPORARY WORKS": {kind:"subbie"},
+};
+// Case/punctuation-insensitive so e.g. "Columns (eg 300x300)" (Quotes) still matches
+// "Columns (eg 300 x 300)" (Cost Planner) — the two catalogs were authored separately
+// and drift like that is exactly why an exact string match would silently miss items.
+function normBoqName(s){ return String(s||"").toLowerCase().replace(/[^a-z0-9]/g,""); }
+function findBoqItemForQuoteLine(line){
+  const map = QUOTE_CATEGORY_TO_BOQ_KIND[line.category];
+  if(!map) return null;
+  const target = normBoqName(line.name);
+  const match = fullBoqCatalog().find(item=>{
+    if(item.kind !== map.kind) return false;
+    if(map.group && item.group !== map.group) return false;
+    return normBoqName(item.desc) === target;
+  });
+  return match ? match.id : null;
+}
+// Finds a previously-created custom row for this exact unmatched product name, so
+// republishing the same Quotes project doesn't spawn a fresh duplicate custom item
+// every time (customBoqItems is global across projects — see freshState() above).
+function findExistingCustomBoqItem(name){
+  const target = normBoqName(name);
+  const match = state.customBoqItems.find(ci=> ci.kind==="custom" && normBoqName(ci.desc)===target);
+  return match ? match.id : null;
+}
+
 function importPublishedQuotes(){
   let raw;
   try{ raw = localStorage.getItem("gradcon-published-quotes"); }catch(err){ return; }
@@ -1176,12 +1218,34 @@ function importPublishedQuotes(){
       gfa: project.gfa || 0,
       notes: existingProj? existingProj.notes : "Imported from Quotes",
     });
+    const proj = state.projects[key];
     if(existingProj){
-      // Preserve anything edited directly on this project in Cost Planner (scope, BOQ
-      // selections, contingency %, etc.) — only name/GFA refresh from Quotes.
-      Object.assign(state.projects[key], existingProj, { name: `${project.name} (from Quotes)`, gfa: project.gfa || 0 });
+      // Preserve anything edited directly on this project in Cost Planner (scope,
+      // contingency %, etc.) — only name/GFA/BOQ refresh from Quotes below, same
+      // "rebuilt from the fresh source data every publish" rule
+      // importPublishedEstimates() above already uses for its own BOQ selections.
+      Object.assign(proj, existingProj, { name: `${project.name} (from Quotes)`, gfa: project.gfa || 0, boq: {} });
     }
-    state.projects[key].source = "quotes";
+    proj.source = "quotes";
+
+    // Every catalog line and custom line item with a real quantity, matched to its
+    // Cost Planner BOQ row (or given a new custom row when nothing matches) — see
+    // QUOTE_CATEGORY_TO_BOQ_KIND above. Multiple Quotes elements contributing to the
+    // same product (e.g. two elements both using "25 mpa Agilia") sum into one line,
+    // same accumulation pattern importPublishedEstimates() uses via addQty().
+    const lines = Array.isArray(entry.lines) ? entry.lines : [];
+    lines.forEach(line=>{
+      const qty = Number(line.qty)||0;
+      if(qty<=0 || !line.name) return;
+      let itemId = line.category==="CUSTOM" ? null : findBoqItemForQuoteLine(line);
+      if(!itemId) itemId = findExistingCustomBoqItem(line.name);
+      if(!itemId){
+        itemId = addCustomBoqItem({category:"From Quotes (unmatched)", desc:line.name, unit:line.unit, rate:line.rate||0});
+      }
+      const e = boqEntry(proj, itemId);
+      e.selected = true;
+      e.qty = (Number(e.qty)||0) + qty;
+    });
   });
 }
 importPublishedQuotes();
@@ -1302,8 +1366,17 @@ function computeFormworkRate(p){
   const net = materialAfterWaste+fix+strip;
   return {net, sell:markup(net), fix, strip};
 }
+// Blended average across the real established Holcim-rate concrete items only — every
+// CONCRETE_ITEMS entry carries a `.note`, including the 8 real ones ("established (...
+// Holcim real rate)"), so a bare `!c.note` filter matched nothing and silently divided
+// 0/0 into NaN here, which then poisoned every Rate Item (Hobbs, Steps, Plinths, set
+// downs, Screeds, Insitu Walls, Stair, Shotcrete — anything routed through
+// computeRateItemRate) to a null rate, and from there any project's WHOLE BOQ subtotal
+// to null the moment one of those lines had a quantity. Filters out only the two
+// genuinely non-representative entries (an add-on grade increment and a specialty
+// stabilising rate, both explicitly marked "no Holcim equivalent") instead.
 function averageConcreteRate(){
-  const rates = CONCRETE_ITEMS.filter(c=>!c.note).map(c=>computeConcreteRate(c.p).sell);
+  const rates = CONCRETE_ITEMS.filter(c=>!/no holcim equivalent/i.test(c.note||"")).map(c=>computeConcreteRate(c.p).sell);
   return rates.reduce((a,b)=>a+b,0)/rates.length;
 }
 function blendedSteelRate(){

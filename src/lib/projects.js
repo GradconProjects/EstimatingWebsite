@@ -6,8 +6,9 @@
  * PROJECTS_INDEX_KEY. Name/date/GFA/items etc. all live in the quote, not
  * here, so there's exactly one place that owns each piece of data.
  */
-import { uid } from "./costing.js";
+import { uid, rateKey } from "./costing.js";
 import { supabase, supabaseEnabled } from "./supabaseClient.js";
+import { FULL_CATALOG } from "../data/catalog.js";
 
 const TABLE = "estimator_kv";
 
@@ -107,22 +108,40 @@ export async function deleteQuote(storageKey) {
 }
 
 /**
- * Mirrors this project's name/GFA into "gradcon-published-quotes" — the same shared
- * bridge Estimates already publishes to (see estimates-app.html's writeEstimateExport
- * and cost-planner.html's importPublishedEstimates), so a project started in Quotes
- * shows up in Cost Planner's project list automatically, matched back by this
- * project's own id on every re-publish rather than spawning a duplicate. Quotes has
- * no generic quantity lines the way Estimates does (it's priced straight off catalog
- * SKUs, not a takeoff), so unlike the Estimates bridge this only ever carries
- * name/GFA — there's no BOQ to map. Best-effort and silent — called from a debounced
- * effect on every real edit, so a failure here should never surface as an error to
- * the estimator working on their quote.
+ * Mirrors this project's name/GFA — and every catalog line with a real quantity
+ * entered — into "gradcon-published-quotes", the same shared bridge Estimates
+ * already publishes to (see estimates-app.html's writeEstimateExport and
+ * cost-planner.html's importPublishedEstimates). Cost Planner matches each line
+ * back to its own BOQ catalog by category+product name (the two apps share the
+ * same real Gradcon catalog, so this matches cleanly for almost everything —
+ * reinforcement, concrete by grade, formwork, rate items, accessories) and drops
+ * a new custom BOQ row for anything it can't match, so nothing entered in Quotes
+ * is silently missing from Cost Planner's BOQ. Matched back to the same Cost
+ * Planner project by this project's own id on every re-publish rather than
+ * spawning a duplicate. Best-effort and silent — called from a debounced effect
+ * on every real edit, so a failure here should never surface as an error to the
+ * estimator working on their quote.
  */
 export async function publishQuoteToCostPlanner(projectId, quote) {
   if (!quote.projectName) return;
+  const lines = [];
+  (quote.items || []).forEach((item) => {
+    FULL_CATALOG.forEach((cat) => {
+      cat.products.forEach((p) => {
+        const qKey = rateKey(cat.key, p.name, p.unit);
+        const qty = Number(item.qtys?.[qKey]) || 0;
+        if (qty > 0) lines.push({ category: cat.key, name: p.name, unit: p.unit, qty });
+      });
+    });
+    (item.additional || []).forEach((a) => {
+      const qty = Number(a.qty) || 0;
+      if (qty > 0 && a.name) lines.push({ category: "CUSTOM", name: a.name, unit: a.unit || "each", qty, rate: Number(a.rate) || 0 });
+    });
+  });
   const record = {
     id: projectId,
     project: { name: quote.projectName, gfa: Number(quote.gfa) || 0 },
+    lines,
     publishedAt: new Date().toISOString(),
   };
   if (supabaseEnabled) {
