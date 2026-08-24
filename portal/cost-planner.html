@@ -71,6 +71,10 @@ h2{color:var(--navy2);margin:0 0 6px 0;}
 .save-btn:hover{opacity:.9;}
 
 .project-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin-bottom:16px;}
+.proj-cat-heading{font-size:13px;font-weight:800;color:var(--navy2);text-transform:uppercase;letter-spacing:.03em;margin:18px 0 8px;}
+.proj-cat-heading:first-child{margin-top:0;}
+.proj-status-heading{display:flex;align-items:center;gap:8px;font-size:11.5px;font-weight:700;color:var(--navy2);background:var(--navy-light);text-transform:uppercase;letter-spacing:.03em;padding:5px 10px;border-radius:5px;margin-bottom:8px;}
+.proj-status-heading .count{font-weight:600;color:#5a7186;text-transform:none;letter-spacing:0;}
 .project-card{background:#fff;border:2px solid var(--border);border-radius:8px;padding:14px;cursor:pointer;position:relative;}
 .project-card:hover{border-color:var(--accent);}
 .project-card.active{border-color:var(--linked);background:#f4fbf6;}
@@ -2057,21 +2061,42 @@ function renderProjects(){
     </div>`;
   }
 
-  h += `<div class="project-cards">`;
-  Object.entries(state.projects).forEach(([key,p])=>{
-    if (projectFilter!=="all" && p.category!==projectFilter) return;
+  // Grouped by status within each category (STATUS_OPTIONS order — e.g. Active before
+  // On Hold before Complete) rather than one flat list, so a long project list is
+  // actually scannable at a glance. When the filter is "all" both categories are shown
+  // with their own heading (their status sets differ — Tendering/Won/Lost vs Active/On
+  // Hold/Complete — so grouping them together under one status list wouldn't make sense).
+  function renderProjectCard(key, p){
     const active = state.activeProject===key;
-    h += `<div class="project-card ${active?'active':''} cat-${p.category}" onclick="selectProject('${key}')">
+    const sourceTag = p.source==='estimates' ? ' · FROM ESTIMATES' : p.source==='quotes' ? ' · FROM QUOTES' : '';
+    return `<div class="project-card ${active?'active':''} cat-${p.category}" onclick="selectProject('${key}')">
       <button class="proj-delete-btn" title="Delete this project" onclick="event.stopPropagation(); deleteProject('${key}');">✕</button>
-      <div class="proj-cat-tag">${p.category==='tender'?'TENDER':'PROJECT'}${p.source==='estimates'?' · FROM ESTIMATES':''}</div>
+      <div class="proj-cat-tag">${p.category==='tender'?'TENDER':'PROJECT'}${sourceTag}</div>
       <div class="proj-title">${p.name}</div>
       <div class="proj-meta">${p.address||''}</div>
       <div class="proj-meta">${p.builder||'—'} ${p.contact? '· '+p.contact:''}</div>
       <div class="proj-meta">Status: <b>${p.status}</b>${p.gfa? ' · GFA '+p.gfa+' m²':''}</div>
       ${active? '<div class="proj-badge">ACTIVE</div>':''}
     </div>`;
+  }
+  const catsToShow = projectFilter==="all" ? ["project","tender"] : [projectFilter];
+  let anyShown = false;
+  catsToShow.forEach(cat=>{
+    const inCat = Object.entries(state.projects).filter(([,p])=>p.category===cat);
+    if(inCat.length===0) return;
+    anyShown = true;
+    if(projectFilter==="all") h += `<div class="proj-cat-heading">${cat==='tender'?'Current Tenders':'Current Projects'}</div>`;
+    const statuses = STATUS_OPTIONS[cat].concat(inCat.map(([,p])=>p.status).filter(s=>!STATUS_OPTIONS[cat].includes(s)));
+    [...new Set(statuses)].forEach(status=>{
+      const inStatus = inCat.filter(([,p])=>p.status===status);
+      if(inStatus.length===0) return;
+      h += `<div class="proj-status-heading">${status} <span class="count">(${inStatus.length})</span></div>`;
+      h += `<div class="project-cards">`;
+      inStatus.forEach(([key,p])=>{ h += renderProjectCard(key,p); });
+      h += `</div>`;
+    });
   });
-  h += `</div>`;
+  if(!anyShown) h += `<div class="project-cards"></div>`;
 
   const proj = activeProject();
   if(!proj){
