@@ -378,9 +378,9 @@ function ProjectEditor({ project, rates, setRates, ratesStatus, saveProjectsNow,
           <SaveBadge status={overallStatus} />
           <button
             type="button"
-            onClick={() => { saveQuoteNow(); saveProjectsNow(); }}
+            onClick={() => { saveQuoteNow(); saveProjectsNow(); publishQuoteToCostPlanner(project.id, quote); }}
             className="text-xs font-semibold px-3 py-1.5 rounded bg-orange-600 text-white hover:bg-orange-700"
-            title="Save this quote's current work and its place in the Projects Dashboard immediately"
+            title="Save this quote's current work, its place in the Projects Dashboard, and push it to Cost Planner's BOQ immediately"
           >
             Save
           </button>
