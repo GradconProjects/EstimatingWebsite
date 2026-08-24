@@ -33,8 +33,10 @@ export default function LabourMatrix({
             </tr>
           </thead>
           <tbody>
-            {item.tasks.map((task) => (
-              <tr key={task.id} className="border-t border-neutral-100">
+            {item.tasks.map((task) => {
+              const filled = RESOURCE_COLS.some((r) => Number(task.qtys[r.key]) > 0);
+              return (
+              <tr key={task.id} className={`border-t border-neutral-100 ${filled ? "bg-orange-50/40" : ""}`}>
                 <td className="px-3 py-1">
                   <input
                     value={task.name}
@@ -57,7 +59,8 @@ export default function LabourMatrix({
                   </button>
                 </td>
               </tr>
-            ))}
+              );
+            })}
             <tr className="border-t border-neutral-200 bg-neutral-50 font-semibold">
               <td className="px-3 py-1 text-neutral-600 text-xs uppercase tracking-wide">Total</td>
               {RESOURCE_COLS.map((r) => (
