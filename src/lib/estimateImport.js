@@ -35,6 +35,7 @@ export const ESTIMATE_TYPE_MAP = {
   "Bored Pier": "piles_bored",
   "Pile Cap": "pile_caps_pad",
   "Ground Beam": null,
+  "Column Base Plate / Grout Pad": "column_base_plate",
   "Raft Slab": "raft_foundation",
   "Waffle Slab": "slab_on_ground",
   "Industrial Slab": "slab_on_ground",

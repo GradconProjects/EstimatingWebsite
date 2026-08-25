@@ -477,6 +477,7 @@ const LIBRARY = [
    {id:"groundbeam", label:"Ground Beam", calc:"beam", beamCategory:"Ground"},
    {id:"cappingbeam", label:"Capping Beam", calc:"beam", beamCategory:"Ground"},
    {id:"anchorblock", label:"Anchor Block", calc:"padfooting"},
+   {id:"columnbaseplate", label:"Column Base Plate / Grout Pad", calc:"padfooting"},
  ]},
  {group:"Ground Structure", items:[
    {id:"raftslab", label:"Raft Slab", calc:"slab", slabCategory:"Raft Slab"},
@@ -2877,6 +2878,7 @@ const CSV_UNITS = {
 };
 const CSV_TYPE_KEYWORDS = [
   [/pad\s*foot/i,"padfooting"], [/strip\s*foot|footing/i,"stripfooting"],
+  [/grout\s*pad|base\s*plate/i,"columnbaseplate"],
   [/bored\s*pier|caisson|drill(ed)?\s*shaft/i,"boredpier"], [/pile\s*cap/i,"pilecap"],
   [/ground\s*beam/i,"groundbeam"], [/susp(ended)?\s*beam/i,"suspbeam"],
   [/raft/i,"raftslab"], [/waffle/i,"waffleslab"], [/industrial\s*slab/i,"industrialslab"],

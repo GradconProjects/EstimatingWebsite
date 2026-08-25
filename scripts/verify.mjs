@@ -291,6 +291,20 @@ check("Import: Concrete Stair maps to the staircase element type (used to be unm
   assert.equal(item.qtys[rateKey("CONCRETE", "25 mpa", "m3")], 4.2);
 });
 
+check("Import: Column Base Plate / Grout Pad maps to the new column_base_plate element type", () => {
+  const { quote, flags } = buildImportFromEstimate({
+    project: { name: "Test Job" },
+    lines: [
+      { ...estLine({}), category: "Column Base Plate / Grout Pad", element: "Base Plate C1", elementId: "EL07",
+        materialGroup: "Concrete", material: "N40 concrete", unit: "m³", finalQty: 0.3 },
+    ],
+  });
+  assert.equal(quote.items.length, 1);
+  const item = quote.items[0];
+  assert.equal(item.typeId, "column_base_plate");
+  assert.equal(item.qtys[rateKey("CONCRETE", "40 mpa", "m3")], 0.3);
+});
+
 check("Import: ambiguous concrete grade (multiple products) still prefills the plain mix and flags it", () => {
   const { quote, flags } = buildImportFromEstimate({
     project: {},
