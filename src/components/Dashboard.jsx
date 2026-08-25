@@ -1,8 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { Plus, Trash2, ArrowRight, LayoutDashboard, Loader2 } from "lucide-react";
-import { MARGIN_STEPS, DEFAULT_MARGIN } from "../data/catalog.js";
+import { MARGIN_STEPS, DEFAULT_MARGIN, QUOTE_STATUSES, QUOTE_STATUS_STYLES } from "../data/catalog.js";
 import { computeGrandTotal, computeMarginLadder, money, money2 } from "../lib/costing.js";
-import { readQuotes } from "../lib/projects.js";
+import { readQuotes, writeQuote } from "../lib/projects.js";
+
+const SORT_OPTIONS = [
+  { key: "added", label: "Recently added" },
+  { key: "status", label: "Status (pipeline order)" },
+  { key: "name", label: "Project name" },
+];
 
 /** Turns one pre-fetched quote object into the numbers a dashboard row (or
  * the portfolio totals) needs. Mirrors the same costing calls
@@ -23,6 +29,7 @@ function summarizeQuote(quote, rates) {
   return {
     name: quote.projectName || "Untitled project",
     date: quote.projectDate,
+    status: quote.status || QUOTE_STATUSES[0],
     gfa: Number(quote.gfa) || 0,
     elementCount: items.length,
     directCost,
@@ -73,6 +80,28 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete 
     [projects, quotesByKey, rates]
   );
 
+  const [sortBy, setSortBy] = useState("added");
+  const sortedSummaries = useMemo(() => {
+    const arr = [...summaries];
+    if (sortBy === "status") {
+      arr.sort((a, b) => QUOTE_STATUSES.indexOf(a.status) - QUOTE_STATUSES.indexOf(b.status) || a.name.localeCompare(b.name));
+    } else if (sortBy === "name") {
+      arr.sort((a, b) => a.name.localeCompare(b.name));
+    } else {
+      // Recently added — newest first, by the project index's own immutable createdAt
+      // (not quote.projectDate, which the estimator can freely edit).
+      arr.sort((a, b) => Number(new Date(b.project.createdAt || 0)) - Number(new Date(a.project.createdAt || 0)));
+    }
+    return arr;
+  }, [summaries, sortBy]);
+
+  const changeStatus = (project, status) => {
+    const quote = quotesByKey[project.storageKey] || {};
+    const updated = { ...quote, status };
+    setQuotesByKey((m) => ({ ...m, [project.storageKey]: updated }));
+    writeQuote(project.storageKey, updated);
+  };
+
   const totals = useMemo(
     () =>
       summaries.reduce(
@@ -96,12 +125,26 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete 
           </h1>
           <p className="text-sm text-neutral-500">Every Gradcon quote, summed across the whole portfolio.</p>
         </div>
-        <button
-          onClick={onCreate}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-950 hover:bg-blue-900 text-white text-sm font-medium transition-colors"
-        >
-          <Plus size={16} /> New project
-        </button>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5 text-xs text-neutral-500">
+            <span>Sort by:</span>
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              className="border border-neutral-200 rounded px-2 py-1 text-xs"
+            >
+              {SORT_OPTIONS.map((o) => (
+                <option key={o.key} value={o.key}>{o.label}</option>
+              ))}
+            </select>
+          </div>
+          <button
+            onClick={onCreate}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-950 hover:bg-blue-900 text-white text-sm font-medium transition-colors"
+          >
+            <Plus size={16} /> New project
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -121,6 +164,7 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete 
             <tr className="bg-neutral-50 text-neutral-500 text-[11px] uppercase tracking-wide">
               <th className="text-left px-4 py-2 font-medium">Project</th>
               <th className="text-left px-3 py-2 font-medium">Date</th>
+              <th className="text-left px-3 py-2 font-medium">Status</th>
               <th className="text-right px-3 py-2 font-medium">Elements</th>
               <th className="text-right px-3 py-2 font-medium">GFA</th>
               <th className="text-right px-3 py-2 font-medium">Direct cost</th>
@@ -130,14 +174,26 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete 
             </tr>
           </thead>
           <tbody>
-            {summaries.map(({ project, ...s }) => (
+            {sortedSummaries.map(({ project, ...s }) => (
               <tr
                 key={project.id}
-                className="border-t border-neutral-100 hover:bg-neutral-50 cursor-pointer"
+                className={`border-t border-neutral-100 border-l-4 ${QUOTE_STATUS_STYLES[s.status].bar} hover:bg-neutral-50 cursor-pointer`}
                 onClick={() => onOpen(project.id)}
               >
                 <td className="px-4 py-2.5 font-medium text-neutral-800">{s.name}</td>
                 <td className="px-3 py-2.5 text-neutral-500">{s.date || "—"}</td>
+                <td className="px-3 py-2.5">
+                  <select
+                    value={s.status}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={(e) => changeStatus(project, e.target.value)}
+                    className={`rounded px-1.5 py-1 text-[11px] font-semibold border-0 ${QUOTE_STATUS_STYLES[s.status].text} ${QUOTE_STATUS_STYLES[s.status].bg}`}
+                  >
+                    {QUOTE_STATUSES.map((opt) => (
+                      <option key={opt} value={opt}>{opt}</option>
+                    ))}
+                  </select>
+                </td>
                 <td className="px-3 py-2.5 text-right font-mono tabular-nums">{s.elementCount}</td>
                 <td className="px-3 py-2.5 text-right font-mono tabular-nums">{s.gfa ? `${s.gfa} m²` : "—"}</td>
                 <td className="px-3 py-2.5 text-right font-mono tabular-nums">{money(s.directCost)}</td>
@@ -187,14 +243,14 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete 
             ))}
             {summaries.length === 0 && loading && (
               <tr>
-                <td colSpan={8} className="text-center py-12 text-neutral-400">
+                <td colSpan={9} className="text-center py-12 text-neutral-400">
                   <Loader2 size={16} className="inline animate-spin mr-1.5" /> Loading projects…
                 </td>
               </tr>
             )}
             {summaries.length === 0 && !loading && (
               <tr>
-                <td colSpan={8} className="text-center py-12 text-neutral-400">
+                <td colSpan={9} className="text-center py-12 text-neutral-400">
                   No projects yet — click &quot;New project&quot; to start your first quote.
                 </td>
               </tr>
@@ -203,7 +259,7 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete 
           {summaries.length > 0 && (
             <tfoot>
               <tr className="border-t-2 border-neutral-200 bg-neutral-50 font-semibold">
-                <td className="px-4 py-2.5" colSpan={2}>All projects</td>
+                <td className="px-4 py-2.5" colSpan={3}>All projects</td>
                 <td className="px-3 py-2.5 text-right font-mono tabular-nums">{totals.elementCount}</td>
                 <td className="px-3 py-2.5 text-right font-mono tabular-nums">{totals.gfa.toLocaleString("en-AU")} m²</td>
                 <td className="px-3 py-2.5 text-right font-mono tabular-nums">{money(totals.directCost)}</td>

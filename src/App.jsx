@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
 import { Settings2, ArrowLeft, Printer, ListPlus, FileSpreadsheet } from "lucide-react";
-import { ELEMENT_TYPES } from "./data/catalog.js";
+import { ELEMENT_TYPES, QUOTE_STATUSES, QUOTE_STATUS_STYLES } from "./data/catalog.js";
 import { defaultRates, newElementItem, computeGrandTotal, uid, money } from "./lib/costing.js";
 import { buildQuoteExcelHtml, quoteExcelFilename, buildQuoteCsv } from "./lib/exportQuote.js";
 import { useStoredState } from "./lib/storage.js";
@@ -30,6 +30,7 @@ const blankQuote = () => ({
   gfa: undefined,
   overheadPct: 0.08,
   contingencyPct: 0.05,
+  status: QUOTE_STATUSES[0],
   items: [],
 });
 
@@ -373,6 +374,16 @@ function ProjectEditor({ project, rates, setRates, ratesStatus, saveProjectsNow,
             onChange={(e) => setQuote((q) => ({ ...q, projectDate: e.target.value }))}
             className="border border-neutral-200 rounded px-2 py-1 text-xs"
           />
+          <span>Status:</span>
+          <select
+            value={quote.status || QUOTE_STATUSES[0]}
+            onChange={(e) => setQuote((q) => ({ ...q, status: e.target.value }))}
+            className={`border border-neutral-200 rounded px-2 py-1 text-xs font-semibold ${QUOTE_STATUS_STYLES[quote.status || QUOTE_STATUSES[0]].text} ${QUOTE_STATUS_STYLES[quote.status || QUOTE_STATUSES[0]].bg}`}
+          >
+            {QUOTE_STATUSES.map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
         </div>
         <div className="flex items-center gap-3">
           <SaveBadge status={overallStatus} />

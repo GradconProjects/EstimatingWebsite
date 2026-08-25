@@ -230,6 +230,26 @@ export const ELEMENT_TYPES = [
 export const CATEGORY_ORDER = [...new Set(ELEMENT_TYPES.map((t) => t.category))];
 export const SECTION_ORDER = [...new Set(ELEMENT_TYPES.map((t) => t.section))];
 
+/* ---------- Quote pipeline status ----------
+ * A project's own stage through Gradcon's estimating/quoting pipeline —
+ * distinct from Cost Planner's post-award project/tender status (Active/On
+ * Hold/Complete, Tendering/Submitted/Won/Lost in cost-planner.html), which
+ * tracks a job already won. This tracks getting there. Order below is the
+ * pipeline order, used both for the Dashboard's status dropdown and for
+ * "sort by status". `quote.status` defaults to QUOTE_STATUSES[0] for any
+ * quote that predates this field (see Dashboard.jsx) — never rendered as
+ * blank/unknown.
+ */
+export const QUOTE_STATUSES = ["Estimating", "Quoting", "Tendered", "Successful", "Unsuccessful", "On Hold"];
+export const QUOTE_STATUS_STYLES = {
+  Estimating: { bar: "bg-slate-400", dot: "bg-slate-400", text: "text-slate-600", bg: "bg-slate-50" },
+  Quoting: { bar: "bg-blue-500", dot: "bg-blue-500", text: "text-blue-700", bg: "bg-blue-50" },
+  Tendered: { bar: "bg-amber-500", dot: "bg-amber-500", text: "text-amber-700", bg: "bg-amber-50" },
+  Successful: { bar: "bg-emerald-500", dot: "bg-emerald-500", text: "text-emerald-700", bg: "bg-emerald-50" },
+  Unsuccessful: { bar: "bg-red-400", dot: "bg-red-400", text: "text-red-600", bg: "bg-red-50" },
+  "On Hold": { bar: "bg-neutral-300", dot: "bg-neutral-300", text: "text-neutral-500", bg: "bg-neutral-100" },
+};
+
 /* ---------- Overhead/contingency/margin ladder ----------
  * Applied in sequence: Direct Cost -> (+Overheads% +Contingency%) ->
  * Subtotal -> /(1-margin) -> Sell ex GST -> *1.1 -> Sell inc GST.
