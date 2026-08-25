@@ -180,23 +180,23 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete 
                 className="border-t border-neutral-100 hover:bg-neutral-50 cursor-pointer"
                 onClick={() => onOpen(project.id)}
               >
-                <td className="px-4 py-2.5 font-medium text-neutral-800">{s.name}</td>
-                <td className="px-3 py-2.5 text-neutral-500">{s.date || "—"}</td>
+                <td className="px-4 py-3 font-semibold text-[15px] text-neutral-900">{s.name}</td>
+                <td className="px-3 py-2.5 text-neutral-400 text-xs">{s.date || "—"}</td>
                 <td className="px-3 py-2.5">
                   <select
                     value={s.status}
                     onClick={(e) => e.stopPropagation()}
                     onChange={(e) => changeStatus(project, e.target.value)}
-                    className={`rounded px-1.5 py-1 text-[11px] font-semibold border-0 ${QUOTE_STATUS_STYLES[s.status].text} ${QUOTE_STATUS_STYLES[s.status].bg}`}
+                    className={`bg-transparent border-0 rounded px-1 py-1 text-xs font-medium ${QUOTE_STATUS_STYLES[s.status].text}`}
                   >
                     {QUOTE_STATUSES.map((opt) => (
                       <option key={opt} value={opt}>{opt}</option>
                     ))}
                   </select>
                 </td>
-                <td className="px-3 py-2.5 text-right font-mono tabular-nums">{s.elementCount}</td>
-                <td className="px-3 py-2.5 text-right font-mono tabular-nums">{s.gfa ? `${s.gfa} m²` : "—"}</td>
-                <td className="px-3 py-2.5 text-right font-mono tabular-nums">{money(s.directCost)}</td>
+                <td className="px-3 py-2.5 text-right font-mono tabular-nums text-neutral-400 text-xs">{s.elementCount}</td>
+                <td className="px-3 py-2.5 text-right font-mono tabular-nums text-neutral-400 text-xs">{s.gfa ? `${s.gfa} m²` : "—"}</td>
+                <td className="px-3 py-2.5 text-right font-mono tabular-nums text-neutral-500">{money(s.directCost)}</td>
                 <td className="px-3 py-2.5 text-right font-mono tabular-nums text-orange-600 font-semibold">
                   {money(s.sellExGst)}
                 </td>
