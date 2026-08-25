@@ -177,7 +177,7 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete 
             {sortedSummaries.map(({ project, ...s }) => (
               <tr
                 key={project.id}
-                className={`border-t border-neutral-100 border-l-4 ${QUOTE_STATUS_STYLES[s.status].bar} hover:bg-neutral-50 cursor-pointer`}
+                className="border-t border-neutral-100 hover:bg-neutral-50 cursor-pointer"
                 onClick={() => onOpen(project.id)}
               >
                 <td className="px-4 py-2.5 font-medium text-neutral-800">{s.name}</td>
@@ -237,6 +237,10 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete 
                         <Trash2 size={14} />
                       </button>
                     )}
+                    <span
+                      className={`inline-block w-2.5 h-2.5 rounded-full flex-none ${QUOTE_STATUS_STYLES[s.status].dot}`}
+                      title={s.status}
+                    />
                   </div>
                 </td>
               </tr>
