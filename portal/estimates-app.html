@@ -746,6 +746,25 @@ function withWaste(q,wastePct){ return q*(1+(wastePct||0)/100); }
 function withWasteLap(q,wastePct,lapPct){ return q*(1+(wastePct||0)/100)*(1+(lapPct||0)/100); }
 function lapApplicable(barLenM){ return barLenM > (PROJECT.barStock/1000); }
 
+// Shared by every footing-family calculator (Pile Cap, Strip Footing, Pad Footing) that
+// blinds its excavation before the main pour. `blindingMaterial` lets the estimator choose
+// concrete blinding (the default, unchanged from before this field existed) or a granular
+// base material instead — compacted (the in-place volume, i.e. the "area × thickness"
+// below already IS that final compacted volume) or loose (the estimator should enter the
+// LOOSE thickness they intend to place, since this file doesn't assume a bulking/compaction
+// ratio — that varies by material and site, and guessing one risks a silently wrong supplier
+// order quantity). Area is in m², thicknessMm in millimetres.
+function blindingLine(inst,def,area,thicknessMm,materialChoice){
+  let vol=area*(num(thicknessMm)/1000);
+  let material = materialChoice==="compacted"? "Base material (compacted)"
+    : materialChoice==="loose"? "Base material (loose — enter loose thickness placed)"
+    : "Blinding concrete";
+  return baseLine(inst,def,{materialGroup:"Base/Blinding",material,spec:`${thicknessMm}mm`,qty:vol,unit:"m³",waste:5,finalQty:withWaste(vol,5),formula:"area × thickness"});
+}
+function vapourMembraneLine(inst,def,area){
+  return baseLine(inst,def,{materialGroup:"Base/Blinding",material:"Vapour membrane",spec:"incl. laps",qty:area,unit:"m²",waste:10,finalQty:withWaste(area,10),formula:"area (+10% laps)"});
+}
+
 /* ---- PIER ---- */
 function pierDefaults(){ return {
   qty:1, dia:600, depth:6000, cutoff:0, founding:0, underream:false, underDia:900, underDepth:600, socketDepth:0, extraPct:0,
@@ -878,7 +897,7 @@ function computePier(inst,def){
 
 /* ---- PILE CAP ---- */
 function pileCapDefaults(){ return {
-  qty:1, shape:"pad", L:1800, W:1800, D:800, cover:PROJECT.cover, grade:PROJECT.grade, oversize:150, blinding:50,
+  qty:1, shape:"pad", L:1800, W:1800, D:800, cover:PROJECT.cover, grade:PROJECT.grade, oversize:150, blinding:50, blindingMaterial:"concrete", vapourMembrane:false,
   linkTarget:"", linkedPierCount:4,
   topX:true, topXDia:"N16", topXSpacing:200, topY:true, topYDia:"N16", topYSpacing:200,
   botX:true, botXDia:"N20", botXSpacing:150, botY:true, botYDia:"N20", botYSpacing:150,
@@ -896,6 +915,10 @@ function renderPileCap(inst){
   <div class="grid cols4">
    ${F("Quantity",inpNum("qty",d.qty))}${F(isBeam?"Beam length (mm)":"Length (mm)",inpNum("L",d.L))}${F(isBeam?"Beam width (mm)":"Width (mm)",inpNum("W",d.W))}${F("Depth (mm)",inpNum("D",d.D))}
    ${coverField(inst)}${F("Blinding thickness (mm)",inpNum("blinding",d.blinding))}${F("Excavation oversize (mm/side)",inpNum("oversize",d.oversize))}${F("Concrete grade (MPa)",inpNum("grade",d.grade))}
+  </div>
+  <div class="grid cols3">
+   ${F("Blinding material",selOpts("blindingMaterial",d.blindingMaterial,[["concrete","Concrete blinding"],["compacted","Base material — compacted"],["loose","Base material — loose"]]))}
+   ${chk("vapourMembrane",d.vapourMembrane,"Vapour membrane under cap")}
   </div>
   <div class="subsec"><div class="sechead">Linked Bored Piers</div>
    <div class="grid cols3">${F("Linked pier element",targetSelect("linkTarget",d.linkTarget,inst.id,'pier'))}${F("Number of piers entering this cap",inpNum("linkedPierCount",d.linkedPierCount))}</div>
@@ -928,8 +951,9 @@ function computePileCap(inst,def){
   let N=num(d.qty,1),L=num(d.L)/1000,W=num(d.W)/1000,D=num(d.D)/1000,cover=num(d.cover);
   let vol=N*L*W*D;
   lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:`${d.L}x${d.W}x${d.D}`,qty:vol,unit:"m³",waste:PROJECT.concreteWaste,finalQty:withWaste(vol,PROJECT.concreteWaste),formula:`${N}×${L}×${W}×${D}`}));
-  let blind=N*(L+2*num(d.oversize)/1000)*(W+2*num(d.oversize)/1000)*(num(d.blinding)/1000);
-  lines.push(baseLine(inst,def,{materialGroup:"Base/Blinding",material:"Blinding concrete",spec:`${d.blinding}mm`,qty:blind,unit:"m³",waste:5,finalQty:withWaste(blind,5),formula:"oversized area × blinding thickness"}));
+  let blindArea=N*(L+2*num(d.oversize)/1000)*(W+2*num(d.oversize)/1000);
+  lines.push(blindingLine(inst,def,blindArea,d.blinding,d.blindingMaterial));
+  if(d.vapourMembrane) lines.push(vapourMembraneLine(inst,def,blindArea));
   let exc=N*(L+2*num(d.oversize)/1000)*(W+2*num(d.oversize)/1000)*(D+num(d.blinding)/1000);
   lines.push(baseLine(inst,def,{materialGroup:"Excavation",material:"Bulk excavation",spec:"Oversized to cap+blinding",qty:exc,unit:"m³",waste:0,finalQty:exc,formula:"(L+2os)×(W+2os)×(D+blind)"}));
   function mat(flag,dia,sp,dim1,dim2,label){
@@ -982,7 +1006,7 @@ function incomingStarters(targetId){
 
 /* ---- STRIP FOOTING ---- */
 function stripFootingDefaults(){ return {
-  qty:1, length:10000, width:600, depth:400, trenchWidth:650, excDepth:450, blinding:50, cover:PROJECT.cover, grade:PROJECT.grade,
+  qty:1, length:10000, width:600, depth:400, trenchWidth:650, excDepth:450, blinding:50, blindingMaterial:"concrete", vapourMembrane:false, cover:PROJECT.cover, grade:PROJECT.grade,
   formLeft:true, formRight:true, formStart:true, formFinish:true,
   botLong:true, botLongQty:4, botLongDia:"N16", topLong:false, topLongQty:2, topLongDia:"N12",
   cross:true, crossDia:"N12", crossSpacing:300, trenchMesh:false, trenchMeshBars:4, trenchMeshDia:"N12",
@@ -995,6 +1019,10 @@ function renderStripFooting(inst){
    ${F("Quantity",inpNum("qty",d.qty))}${F("Length (mm)",inpNum("length",d.length))}${F("Width (mm)",inpNum("width",d.width))}${F("Depth (mm)",inpNum("depth",d.depth))}
    ${F("Trench width (mm)",inpNum("trenchWidth",d.trenchWidth))}${F("Excavation depth (mm)",inpNum("excDepth",d.excDepth))}${F("Blinding thickness (mm)",inpNum("blinding",d.blinding))}${coverField(inst)}
    ${F("Concrete grade",inpNum("grade",d.grade))}
+  </div>
+  <div class="grid cols3">
+   ${F("Blinding material",selOpts("blindingMaterial",d.blindingMaterial,[["concrete","Concrete blinding"],["compacted","Base material — compacted"],["loose","Base material — loose"]]))}
+   ${chk("vapourMembrane",d.vapourMembrane,"Vapour membrane under footing")}
   </div>`;
   let form=`<p class="small">None (cast against trench face) up to all 4 sides.</p>${faceRow([["formLeft","Left side"],["formRight","Right side"],["formStart","Start end"],["formFinish","Finish end"]],d)}`;
   let reo=`<div class="grid cols4">
@@ -1019,8 +1047,8 @@ function computeStripFooting(inst,def){
   lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:`${d.width}x${d.depth}`,qty:vol,unit:"m³",waste:PROJECT.concreteWaste,finalQty:withWaste(vol,PROJECT.concreteWaste),formula:`${N}×${Lm}×${Wm}×${Dm}`}));
   let exc=N*(num(d.length)/1000)*(num(d.trenchWidth)/1000)*(num(d.excDepth)/1000);
   lines.push(baseLine(inst,def,{materialGroup:"Excavation",material:"Trench excavation",spec:"",qty:exc,unit:"m³",waste:0,finalQty:exc,formula:"L×trench W×exc depth"}));
-  let blind=N*Lm*Wm*(num(d.blinding)/1000);
-  lines.push(baseLine(inst,def,{materialGroup:"Base/Blinding",material:"Blinding concrete",spec:`${d.blinding}mm`,qty:blind,unit:"m³",waste:5,finalQty:withWaste(blind,5),formula:"L×W×blinding"}));
+  lines.push(blindingLine(inst,def,N*Lm*Wm,d.blinding,d.blindingMaterial));
+  if(d.vapourMembrane) lines.push(vapourMembraneLine(inst,def,N*Lm*Wm));
   let formArea=0;
   if(d.formLeft) formArea+=N*Lm*Dm;
   if(d.formRight) formArea+=N*Lm*Dm;
@@ -1059,7 +1087,7 @@ function computeStripFooting(inst,def){
 /* ---- PAD FOOTING ---- */
 function padFootingDefaults(){ return {
   qty:4, length:1500, width:1500, depth:500, cover:PROJECT.cover, grade:PROJECT.grade,
-  oversize:150, excDepth:550, blinding:50, pedestal:false, pedH:0, pedW:0, pedD:0, sloping:false,
+  oversize:150, excDepth:550, blinding:50, blindingMaterial:"concrete", vapourMembrane:false, pedestal:false, pedH:0, pedW:0, pedD:0, sloping:false,
   botReoType:"bars", botX:true, botXDia:"N16", botXSpacing:200, botY:true, botYDia:"N16", botYSpacing:200, botMeshType:"SL82", botMeshLayers:1,
   starters:true, connTarget:"", connQty:4, connDia:"N20", connEmbed:600, connProj:900, connHook:"straight",
   castins:false, anchorBolts:false, holdDown:false, ferrules:false, plates:false, boltTemplate:false,
@@ -1071,6 +1099,10 @@ function renderPadFooting(inst){
    ${F("Quantity",inpNum("qty",d.qty))}${F("Length (mm)",inpNum("length",d.length))}${F("Width (mm)",inpNum("width",d.width))}${F("Depth (mm)",inpNum("depth",d.depth))}
    ${coverField(inst)}${F("Excavation oversize (mm)",inpNum("oversize",d.oversize))}${F("Excavation depth (mm)",inpNum("excDepth",d.excDepth))}${F("Blinding (mm)",inpNum("blinding",d.blinding))}
    ${F("Concrete grade",inpNum("grade",d.grade))}
+  </div>
+  <div class="grid cols3">
+   ${F("Blinding material",selOpts("blindingMaterial",d.blindingMaterial,[["concrete","Concrete blinding"],["compacted","Base material — compacted"],["loose","Base material — loose"]]))}
+   ${chk("vapourMembrane",d.vapourMembrane,"Vapour membrane under footing")}
   </div>
   <div class="grid cols2">${chk("pedestal",d.pedestal,"Pedestal above footing","pedestal")}${chk("sloping",d.sloping,"Sloping faces")}</div>
   <div class="subsec ${d.pedestal?'':'hidden'}" data-show-if="pedestal"><div class="grid cols3">${F("Pedestal W (mm)",inpNum("pedW",d.pedW))}${F("Pedestal D (mm)",inpNum("pedD",d.pedD))}${F("Pedestal H (mm)",inpNum("pedH",d.pedH))}</div></div>`;
@@ -1098,8 +1130,8 @@ function computePadFooting(inst,def){
   lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:`${d.length}x${d.width}x${d.depth}`,qty:vol,unit:"m³",waste:PROJECT.concreteWaste,finalQty:withWaste(vol,PROJECT.concreteWaste),formula:`${N}×${L}×${W}×${D}${d.pedestal?' + pedestal':''}`}));
   let exc=N*(L+2*num(d.oversize)/1000)*(W+2*num(d.oversize)/1000)*(num(d.excDepth)/1000);
   lines.push(baseLine(inst,def,{materialGroup:"Excavation",material:"Bulk excavation",spec:"",qty:exc,unit:"m³",waste:0,finalQty:exc,formula:"(L+2os)×(W+2os)×excD"}));
-  let blind=N*L*W*(num(d.blinding)/1000);
-  lines.push(baseLine(inst,def,{materialGroup:"Base/Blinding",material:"Blinding concrete",spec:`${d.blinding}mm`,qty:blind,unit:"m³",waste:5,finalQty:withWaste(blind,5),formula:"L×W×blinding"}));
+  lines.push(blindingLine(inst,def,N*L*W,d.blinding,d.blindingMaterial));
+  if(d.vapourMembrane) lines.push(vapourMembraneLine(inst,def,N*L*W));
   function mat(flag,dia,sp,dim1,dim2,label){
     if(!flag) return;
     let bd=barDiaOf(dia); let count=Math.floor((dim1-2*cover)/sp)+1; let barLen=(dim2-2*cover)/1000;
@@ -1266,7 +1298,7 @@ function computeBeam(inst,def){
 /* ---- SLAB (ground / suspended / raft / driveway / roof etc.) ---- */
 function slabDefaults(cat,suspended){ return {
   category:cat, suspended:!!suspended, manualArea:false, areaOverride:0, length:25,  width:12,  // metres for slabs (large plan dims)
-  thickness:150, perimeterAuto:true, perimeterOverride:0, baseThickness:100, vapourMembrane:!suspended, meshOn:true, meshType:"SL82", meshLayers:1,
+  thickness:150, perimeterAuto:true, perimeterOverride:0, baseThickness:100, baseMaterialState:"compacted", vapourMembrane:!suspended, meshOn:true, meshType:"SL82", meshLayers:1,
   edgeForms:true, soffit:!!suspended, openings:[], drops:false, setdowns:false, upstands:false, cjStopEnds:false,
   botX:true,botXDia:"N12",botXMethod:"spacing",botXSpacing:200,botXQty:0,botXBars:[], botY:true,botYDia:"N12",botYMethod:"spacing",botYSpacing:200,botYQty:0,botYBars:[],
   topX:!!suspended,topXDia:"N12",topXMethod:"spacing",topXSpacing:200,topXQty:0,topXBars:[], topY:!!suspended,topYDia:"N12",topYMethod:"spacing",topYSpacing:200,topYQty:0,topYBars:[],
@@ -1290,6 +1322,7 @@ function renderSlab(inst,def){
   <div class="grid cols4">
    ${!d.suspended? chk("vapourMembrane",d.vapourMembrane,"Vapour membrane"):""}
    ${!d.suspended? F("Base thickness (mm)",inpNum("baseThickness",d.baseThickness)):""}
+   ${!d.suspended? F("Base material",selOpts("baseMaterialState",d.baseMaterialState,[["compacted","Compacted"],["loose","Loose"]])):""}
    ${chk("meshOn",d.meshOn,"Mesh reinforcement","meshOn")}
   </div>
   <div class="subsec ${d.meshOn?'':'hidden'}" data-show-if="meshOn"><div class="grid cols3">${F("Mesh type",selOpts("meshType",d.meshType,Object.keys(MESHTYPES).map(m=>[m,m])))}${F("Layers",inpNum("meshLayers",d.meshLayers))}</div></div>
@@ -1363,8 +1396,9 @@ function computeSlab(inst,def){
   let perim = d.perimeterAuto? 2*(num(d.length)+num(d.width)) : num(d.perimeterOverride);
   if(!d.suspended){
     let baseVol=netArea*(num(d.baseThickness)/1000);
-    lines.push(baseLine(inst,def,{materialGroup:"Base/Blinding",material:"Base material (compacted)",spec:`${d.baseThickness}mm`,qty:baseVol,unit:"m³",waste:5,finalQty:withWaste(baseVol,5),formula:"area×base thickness"}));
-    if(d.vapourMembrane) lines.push(baseLine(inst,def,{materialGroup:"Base/Blinding",material:"Vapour membrane",spec:"incl. laps",qty:netArea,unit:"m²",waste:10,finalQty:withWaste(netArea,10),formula:"area (+10% laps)"}));
+    let baseMatLabel = d.baseMaterialState==="loose"? "Base material (loose — enter loose thickness placed)" : "Base material (compacted)";
+    lines.push(baseLine(inst,def,{materialGroup:"Base/Blinding",material:baseMatLabel,spec:`${d.baseThickness}mm`,qty:baseVol,unit:"m³",waste:5,finalQty:withWaste(baseVol,5),formula:"area×base thickness"}));
+    if(d.vapourMembrane) lines.push(vapourMembraneLine(inst,def,netArea));
   }
   if(d.edgeForms) lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Perimeter edge formwork",spec:`${d.thickness}mm edge`,qty:perim*t,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(perim*t,PROJECT.formworkWaste),formula:"perimeter × thickness"}));
   if(d.suspended && d.soffit) lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Soffit formwork",spec:"",qty:netArea,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(netArea,PROJECT.formworkWaste),formula:"net area"}));
