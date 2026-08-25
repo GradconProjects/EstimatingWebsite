@@ -14,7 +14,7 @@ import {
 } from "../src/data/catalog.js";
 import {
   computeElementCost, computeGrandTotal, computeMarginLadder,
-  defaultRates, newElementItem, rateKey, suggestedLabourPrefill,
+  defaultRates, newElementItem, rateKey, suggestedLabourPrefill, computeExternalScopeLines,
 } from "../src/lib/costing.js";
 import { buildImportFromEstimate } from "../src/lib/estimateImport.js";
 
@@ -181,6 +181,25 @@ check("suggestedLabourPrefill: suggests Pour concrete / Tie steel hours from qty
   const suggestions2 = suggestedLabourPrefill(item, rates);
   assert.equal(suggestions2[pourTask.id], undefined, "must not suggest a value for an already-filled cell");
   assert.equal(suggestions2[tieTask.id].steelfixer_day, 1.1); // unrelated task/resource still suggested
+});
+
+/* ---------- External Quote scope lines (client-facing $ always ties to the real sell price) ---------- */
+check("computeExternalScopeLines: per-element sell allocation sums exactly to the real margin-ladder sell price", () => {
+  const near = (a, b) => assert.ok(Math.abs(a - b) < 1e-6, `${a} !~= ${b}`);
+  const rates = defaultRates();
+  const a = newElementItem(ELEMENT_TYPES.find((t) => t.id === "strip_footings"));
+  a.qtys[rateKey("CONCRETE", "25 mpa", "m3")] = 10; // $2125 direct
+  const b = newElementItem(ELEMENT_TYPES.find((t) => t.id === "capping_beam"));
+  b.qtys[rateKey("CONCRETE", "32 mpa", "m3")] = 5; // $1107.50 direct
+  const c = newElementItem(ELEMENT_TYPES.find((t) => t.id === "pool_wall")); // no qty entered — must be dropped
+  const { lines, totalExGst } = computeExternalScopeLines([a, b, c], rates, 0.08, 0.05, 0.3);
+
+  assert.equal(lines.length, 2, "the zero-qty element must not produce a scope line");
+  const directTotal = 2125 + 1107.5;
+  const expectedTotal = (directTotal * 1.13) / 0.7; // matches computeMarginLadder's own formula
+  near(totalExGst, expectedTotal);
+  near(lines.reduce((s, l) => s + l.sellExGst, 0), totalExGst);
+  near(lines[0].sellExGst, (2125 / directTotal) * expectedTotal);
 });
 
 /* ---------- custom / one-off items ---------- */

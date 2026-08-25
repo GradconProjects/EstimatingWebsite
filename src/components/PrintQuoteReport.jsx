@@ -28,12 +28,14 @@ import { GRADCON_LOGO_DATA_URI } from "../lib/logo.js";
  * command (Ctrl+P/Cmd+P), which works even when the script-triggered dialog
  * doesn't.
  */
-export default function PrintQuoteReport({ quote, items, rates, categoryOrder = CATEGORY_ORDER, sectionOrder = SECTION_ORDER, visible = false, onClose }) {
+export default function PrintQuoteReport({ quote, items, rates, categoryOrder = CATEGORY_ORDER, sectionOrder = SECTION_ORDER, visible = false, onClose, isPrintTarget = true }) {
   return (
     <>
-      <div className="hidden print:block text-black text-[11px]">
-        <ReportContent quote={quote} items={items} rates={rates} categoryOrder={categoryOrder} sectionOrder={sectionOrder} />
-      </div>
+      {isPrintTarget && (
+        <div className="hidden print:block text-black text-[11px]">
+          <ReportContent quote={quote} items={items} rates={rates} categoryOrder={categoryOrder} sectionOrder={sectionOrder} />
+        </div>
+      )}
       {visible && (
         <div className="print:hidden fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
           <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] flex flex-col shadow-2xl">

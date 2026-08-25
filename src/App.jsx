@@ -13,6 +13,7 @@ import QuoteSummary from "./components/QuoteSummary.jsx";
 import RatesModal from "./components/RatesModal.jsx";
 import Dashboard from "./components/Dashboard.jsx";
 import PrintQuoteReport from "./components/PrintQuoteReport.jsx";
+import ExternalQuoteReport from "./components/ExternalQuoteReport.jsx";
 import ExportExcelModal from "./components/ExportExcelModal.jsx";
 import ImportFlagsBanner from "./components/ImportFlagsBanner.jsx";
 import ManageElementTypesModal from "./components/ManageElementTypesModal.jsx";
@@ -235,6 +236,11 @@ function ProjectEditor({ project, rates, setRates, ratesStatus, saveProjectsNow,
   const [ratesOpen, setRatesOpen] = useState(false);
   const [elementTypesOpen, setElementTypesOpen] = useState(false);
   const [printPreviewOpen, setPrintPreviewOpen] = useState(false);
+  const [externalQuoteOpen, setExternalQuoteOpen] = useState(false);
+  // Only one of the two printable reports' `hidden print:block` copies should
+  // ever be in the DOM at once — otherwise Ctrl+P/window.print() would print
+  // both concatenated together. Whichever button was last clicked wins.
+  const [printTarget, setPrintTarget] = useState("internal"); // "internal" | "external"
   const [exportCsv, setExportCsv] = useState(null); // { filename, html, plainText } | null
 
   const items = quote.items || [];
@@ -331,6 +337,7 @@ function ProjectEditor({ project, rates, setRates, ratesStatus, saveProjectsNow,
           </div>
           <button
             onClick={() => {
+              setPrintTarget("internal");
               // window.print() can be silently blocked (no-op, no throw) when
               // this app is embedded in a sandboxed iframe — try it, but
               // always also open the on-screen preview so there's a working
@@ -339,9 +346,19 @@ function ProjectEditor({ project, rates, setRates, ratesStatus, saveProjectsNow,
               setPrintPreviewOpen(true);
             }}
             className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-900 hover:bg-blue-800 text-sm font-medium transition-colors flex-none"
-            title="Print or save as PDF"
+            title="Gradcon's own cost/material/labour breakdown, for internal use"
           >
-            <Printer size={16} /> Print / PDF
+            <Printer size={16} /> Internal Quote
+          </button>
+          <button
+            onClick={() => {
+              setPrintTarget("external");
+              setExternalQuoteOpen(true);
+            }}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-900 hover:bg-blue-800 text-sm font-medium transition-colors flex-none"
+            title="The client-facing quotation letter — editable scope, inclusions/exclusions, terms and signature"
+          >
+            <Printer size={16} /> External Quote
           </button>
           <button
             onClick={exportExcel}
@@ -448,6 +465,17 @@ function ProjectEditor({ project, rates, setRates, ratesStatus, saveProjectsNow,
         sectionOrder={sectionOrder}
         visible={printPreviewOpen}
         onClose={() => setPrintPreviewOpen(false)}
+        isPrintTarget={printTarget === "internal"}
+      />
+
+      <ExternalQuoteReport
+        quote={quote}
+        items={items}
+        rates={rates}
+        visible={externalQuoteOpen}
+        onClose={() => setExternalQuoteOpen(false)}
+        onChange={(externalQuote) => setQuote((q) => ({ ...q, externalQuote }))}
+        isPrintTarget={printTarget === "external"}
       />
 
       {exportCsv && (

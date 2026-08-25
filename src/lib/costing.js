@@ -5,7 +5,7 @@
  *
  * Read CLAUDE.md → "Costing rules" before editing computeElementCost.
  */
-import { FULL_CATALOG, RESOURCE_COLS, LABOUR_TEMPLATES, GST_RATE, PRODUCTION_RATES } from "../data/catalog.js";
+import { FULL_CATALOG, RESOURCE_COLS, LABOUR_TEMPLATES, GST_RATE, PRODUCTION_RATES, DEFAULT_MARGIN } from "../data/catalog.js";
 
 export const money = (n) =>
   (n || 0).toLocaleString("en-AU", { style: "currency", currency: "AUD", maximumFractionDigits: 0 });
@@ -253,4 +253,29 @@ export function computeMarginLadder(directCost, overheadPct, contingencyPct, gfa
     };
   });
   return { subtotal, rows };
+}
+
+/**
+ * Client-facing scope lines for the External Quote (see
+ * components/ExternalQuoteReport.jsx) — one line per element, priced as
+ * that element's share of the actual sell price, so the dollar figures
+ * always tie exactly to the real costed total (computeMarginLadder is the
+ * one place that turns cost into a sell price — reused here, never
+ * reimplemented). Elements with nothing entered (total === 0) are dropped;
+ * an element with a total contributes proportionally to its own direct
+ * cost's share of the whole quote's direct cost.
+ */
+export function computeExternalScopeLines(items, rates, overheadPct, contingencyPct, marginPct = DEFAULT_MARGIN) {
+  const costed = items
+    .map((item) => ({ id: item.id, label: item.label, directCost: computeElementCost(item, rates).total }))
+    .filter((l) => l.directCost > 0);
+  const directTotal = costed.reduce((s, l) => s + l.directCost, 0);
+  const { rows } = computeMarginLadder(directTotal, overheadPct, contingencyPct, 0, [marginPct]);
+  const totalExGst = rows[0]?.sellExGst || 0;
+  const lines = costed.map((l) => ({
+    id: l.id,
+    label: l.label,
+    sellExGst: directTotal > 0 ? (l.directCost / directTotal) * totalExGst : 0,
+  }));
+  return { lines, totalExGst };
 }
