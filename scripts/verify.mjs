@@ -33,8 +33,8 @@ const check = (name, fn) => {
 console.log("Gradcon Estimator — costing engine checks\n");
 
 /* ---------- catalog shape ---------- */
-check("40 element types, 9 categories, 15 sections", () => {
-  assert.equal(ELEMENT_TYPES.length, 40);
+check("44 element types, 9 categories, 15 sections", () => {
+  assert.equal(ELEMENT_TYPES.length, 44);
   assert.equal(CATEGORY_ORDER.length, 9);
   assert.equal(SECTION_ORDER.length, 15);
 });
