@@ -162,6 +162,7 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete 
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-neutral-50 text-neutral-500 text-[11px] uppercase tracking-wide">
+              <th className="px-3 py-2" />
               <th className="text-left px-4 py-2 font-medium">Project</th>
               <th className="text-left px-3 py-2 font-medium">Date</th>
               <th className="text-left px-3 py-2 font-medium">Status</th>
@@ -180,6 +181,12 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete 
                 className="border-t border-neutral-100 hover:bg-neutral-50 cursor-pointer"
                 onClick={() => onOpen(project.id)}
               >
+                <td className="pl-4 pr-1 py-3">
+                  <span
+                    className={`inline-block w-3.5 h-3.5 rounded-full flex-none ${QUOTE_STATUS_STYLES[s.status].dot}`}
+                    title={s.status}
+                  />
+                </td>
                 <td className="px-4 py-3 font-semibold text-[15px] text-neutral-900">{s.name}</td>
                 <td className="px-3 py-2.5 text-neutral-400 text-xs">{s.date || "—"}</td>
                 <td className="px-3 py-2.5">
@@ -237,24 +244,20 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete 
                         <Trash2 size={14} />
                       </button>
                     )}
-                    <span
-                      className={`inline-block w-2.5 h-2.5 rounded-full flex-none ${QUOTE_STATUS_STYLES[s.status].dot}`}
-                      title={s.status}
-                    />
                   </div>
                 </td>
               </tr>
             ))}
             {summaries.length === 0 && loading && (
               <tr>
-                <td colSpan={9} className="text-center py-12 text-neutral-400">
+                <td colSpan={10} className="text-center py-12 text-neutral-400">
                   <Loader2 size={16} className="inline animate-spin mr-1.5" /> Loading projects…
                 </td>
               </tr>
             )}
             {summaries.length === 0 && !loading && (
               <tr>
-                <td colSpan={9} className="text-center py-12 text-neutral-400">
+                <td colSpan={10} className="text-center py-12 text-neutral-400">
                   No projects yet — click &quot;New project&quot; to start your first quote.
                 </td>
               </tr>
@@ -263,7 +266,7 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete 
           {summaries.length > 0 && (
             <tfoot>
               <tr className="border-t-2 border-neutral-200 bg-neutral-50 font-semibold">
-                <td className="px-4 py-2.5" colSpan={3}>All projects</td>
+                <td className="px-4 py-2.5" colSpan={4}>All projects</td>
                 <td className="px-3 py-2.5 text-right font-mono tabular-nums">{totals.elementCount}</td>
                 <td className="px-3 py-2.5 text-right font-mono tabular-nums">{totals.gfa.toLocaleString("en-AU")} m²</td>
                 <td className="px-3 py-2.5 text-right font-mono tabular-nums">{money(totals.directCost)}</td>

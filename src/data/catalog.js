@@ -242,11 +242,12 @@ export const SECTION_ORDER = [...new Set(ELEMENT_TYPES.map((t) => t.section))];
  */
 export const QUOTE_STATUSES = ["Estimating", "Quoting", "Tendered", "Successful", "Unsuccessful", "On Hold"];
 export const QUOTE_STATUS_STYLES = {
-  Estimating: { bar: "bg-slate-400", dot: "bg-slate-400", text: "text-slate-600", bg: "bg-slate-50" },
+  Estimating: { bar: "bg-red-500", dot: "bg-red-500", text: "text-red-600", bg: "bg-red-50" },
   Quoting: { bar: "bg-blue-500", dot: "bg-blue-500", text: "text-blue-700", bg: "bg-blue-50" },
   Tendered: { bar: "bg-amber-500", dot: "bg-amber-500", text: "text-amber-700", bg: "bg-amber-50" },
   Successful: { bar: "bg-emerald-500", dot: "bg-emerald-500", text: "text-emerald-700", bg: "bg-emerald-50" },
-  Unsuccessful: { bar: "bg-red-400", dot: "bg-red-400", text: "text-red-600", bg: "bg-red-50" },
+  // Distinct from Estimating's red (now that it's taken) rather than a near-duplicate shade.
+  Unsuccessful: { bar: "bg-stone-500", dot: "bg-stone-500", text: "text-stone-600", bg: "bg-stone-100" },
   "On Hold": { bar: "bg-neutral-300", dot: "bg-neutral-300", text: "text-neutral-500", bg: "bg-neutral-100" },
 };
 
