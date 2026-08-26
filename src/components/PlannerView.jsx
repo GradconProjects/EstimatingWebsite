@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowRight, Clock, Loader2, MessageSquarePlus, Radar } from "lucide-react";
+import { ArrowRight, ChevronDown, ChevronRight, Clock, Loader2, MessageSquarePlus, Radar } from "lucide-react";
 import { PLANNER_PRIORITIES, PLANNER_PRIORITY_STYLES } from "../data/catalog.js";
 import { readQuotes, writeQuote } from "../lib/projects.js";
 import { uid } from "../lib/costing.js";
@@ -136,6 +136,7 @@ function ProjectPlannerCard({ row, onOpen, onPatchPlanner, onAddCommunication, c
   const { project, name, planner, communications } = row;
   const style = PLANNER_PRIORITY_STYLES[planner.priority] || PLANNER_PRIORITY_STYLES.Medium;
   const due = daysLabel(planner.deadline);
+  const [open, setOpen] = useState(false);
   const [logging, setLogging] = useState(false);
   const [draft, setDraft] = useState({ date: new Date().toISOString().slice(0, 10), contact: "", channel: CHANNELS[0], summary: "" });
 
@@ -148,23 +149,28 @@ function ProjectPlannerCard({ row, onOpen, onPatchPlanner, onAddCommunication, c
   };
 
   return (
-    <div className="rounded-xl border border-neutral-200 bg-white shadow-sm p-4">
-      <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <span className={`inline-block w-2.5 h-2.5 rounded-full flex-none ${style.dot}`} />
-            <span className="font-semibold text-[15px] text-neutral-900">{name}</span>
+    <div className="rounded-xl border border-neutral-200 bg-white shadow-sm">
+      <button onClick={() => setOpen(!open)} className="w-full flex items-start justify-between gap-3 flex-wrap p-4 text-left">
+        <div className="min-w-0 flex items-start gap-2">
+          {open ? <ChevronDown size={16} className="text-neutral-400 mt-0.5 flex-none" /> : <ChevronRight size={16} className="text-neutral-400 mt-0.5 flex-none" />}
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span className={`inline-block w-2.5 h-2.5 rounded-full flex-none ${style.dot}`} />
+              <span className="font-semibold text-[15px] text-neutral-900">{name}</span>
+            </div>
+            {due && <div className={`text-xs mt-0.5 ${due.cls}`}>{due.text}</div>}
           </div>
-          {due && <div className={`text-xs mt-0.5 ${due.cls}`}>{due.text}</div>}
         </div>
-        <button
-          onClick={() => onOpen(project.id)}
+        <span
+          onClick={(e) => { e.stopPropagation(); onOpen(project.id); }}
           className="flex items-center gap-1 text-xs font-medium text-blue-900 hover:text-blue-700 flex-none"
         >
           Open project <ArrowRight size={13} />
-        </button>
-      </div>
+        </span>
+      </button>
 
+      {open && (
+      <div className="px-4 pb-4">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
         <label className="block text-xs">
           <span className="block text-neutral-400 mb-1">Deadline</span>
@@ -249,6 +255,8 @@ function ProjectPlannerCard({ row, onOpen, onPatchPlanner, onAddCommunication, c
           </div>
         )}
       </div>
+      </div>
+      )}
     </div>
   );
 }

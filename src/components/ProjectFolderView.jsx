@@ -10,6 +10,9 @@ const CHANNELS = ["Call", "Email", "Site meeting", "Text/WhatsApp", "Other"];
 function timeLabel(iso) {
   return new Date(iso).toLocaleTimeString("en-AU", { hour: "2-digit", minute: "2-digit" });
 }
+function lastUploadDateLabel(iso) {
+  return new Date(iso).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" });
+}
 
 /** File list + upload for one folder path (an Office-wide folder, or one
  * project's own folder — same UI either way, see storageFiles.js). Picking
@@ -21,7 +24,7 @@ function timeLabel(iso) {
  * just flattened into the stored filename, not a real subfolder. The
  * already-uploaded list folds into Month -> Day groups, newest first, each
  * collapsed by default. */
-function FileFolder({ folderPath }) {
+function FileFolder({ folderPath, onFilesChange }) {
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState([]); // [{file, name}]
@@ -32,7 +35,7 @@ function FileFolder({ folderPath }) {
 
   const refresh = () => {
     setLoading(true);
-    listFiles(folderPath).then((f) => { setFiles(f); setLoading(false); });
+    listFiles(folderPath).then((f) => { setFiles(f); setLoading(false); onFilesChange?.(f); });
   };
   useEffect(refresh, [folderPath]);
 
@@ -248,16 +251,34 @@ function CommsLog({ entries, onAdd }) {
 
 function ProjectFolderCard({ project, name, communications, onAddCommunication, onOpen }) {
   const [open, setOpen] = useState(false);
+  // Fetched independently of `open` (not just once the Documents panel is
+  // expanded) so the "last upload" line is visible on the collapsed row too.
+  const [lastFile, setLastFile] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    if (!supabaseEnabled) return;
+    listFiles(projectFolderPath(project.id)).then((files) => { if (!cancelled) setLastFile(files[0] || null); });
+    return () => { cancelled = true; };
+  }, [project.id]);
+
   return (
     <div className="rounded-xl border border-neutral-200 bg-white shadow-sm">
-      <button onClick={() => setOpen(!open)} className="w-full flex items-center justify-between px-4 py-3">
-        <span className="flex items-center gap-2 font-semibold text-[15px] text-neutral-900">
-          {open ? <ChevronDown size={16} className="text-neutral-400" /> : <ChevronRight size={16} className="text-neutral-400" />}
-          <FolderOpen size={16} className="text-orange-500" /> {name}
+      <button onClick={() => setOpen(!open)} className="w-full flex items-start justify-between px-4 py-3 text-left">
+        <span className="flex items-start gap-2 min-w-0">
+          {open ? <ChevronDown size={16} className="text-neutral-400 mt-0.5 flex-none" /> : <ChevronRight size={16} className="text-neutral-400 mt-0.5 flex-none" />}
+          <FolderOpen size={16} className="text-orange-500 mt-0.5 flex-none" />
+          <span className="min-w-0">
+            <span className="block font-semibold text-[15px] text-neutral-900">{name}</span>
+            {lastFile && (
+              <span className="block text-xs italic text-neutral-400 truncate">
+                Last upload: {lastFile.name} — {lastUploadDateLabel(lastFile.uploadedAt)}
+              </span>
+            )}
+          </span>
         </span>
         <span
           onClick={(e) => { e.stopPropagation(); onOpen(project.id); }}
-          className="flex items-center gap-1 text-xs font-medium text-blue-900 hover:text-blue-700"
+          className="flex items-center gap-1 text-xs font-medium text-blue-900 hover:text-blue-700 flex-none"
         >
           Open project <ArrowRight size={13} />
         </span>
@@ -266,7 +287,7 @@ function ProjectFolderCard({ project, name, communications, onAddCommunication, 
         <div className="px-4 pb-4 grid grid-cols-1 sm:grid-cols-2 gap-4 border-t border-neutral-100 pt-3">
           <div>
             <div className="text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-1.5">Documents</div>
-            <FileFolder folderPath={projectFolderPath(project.id)} />
+            <FileFolder folderPath={projectFolderPath(project.id)} onFilesChange={(files) => setLastFile(files[0] || null)} />
           </div>
           <div>
             <div className="text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-1.5">Communications</div>
