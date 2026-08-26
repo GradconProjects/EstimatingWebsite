@@ -7,11 +7,29 @@
  */
 import { FULL_CATALOG, RESOURCE_COLS, LABOUR_TEMPLATES, GST_RATE, PRODUCTION_RATES, DEFAULT_MARGIN } from "../data/catalog.js";
 
+// Shared with portal-shell.html's Settings modal (same localStorage key, same
+// origin — the portal embeds this app via a blob: URL created from its own
+// page, which inherits that page's origin) — lets a user preference set
+// outside this app's own React tree still reach these plain formatter
+// functions, which are called all over the component tree via a simple
+// import rather than a hook.
+function readPrefs() {
+  try {
+    const raw = localStorage.getItem("gradcon-preferences");
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
 export const money = (n) =>
   (n || 0).toLocaleString("en-AU", { style: "currency", currency: "AUD", maximumFractionDigits: 0 });
 
-export const money2 = (n) =>
-  (n || 0).toLocaleString("en-AU", { style: "currency", currency: "AUD", minimumFractionDigits: 2, maximumFractionDigits: 2 });
+export const money2 = (n) => {
+  const p = readPrefs();
+  const dp = Number.isFinite(p.moneyDecimals) ? p.moneyDecimals : 2;
+  return (n || 0).toLocaleString("en-AU", { style: "currency", currency: "AUD", minimumFractionDigits: dp, maximumFractionDigits: dp });
+};
 
 export const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 

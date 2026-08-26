@@ -137,6 +137,7 @@
     transition:border-color .15s, color .15s;
   }
   .logout:hover{ border-color:var(--muted); color:var(--text); }
+  #settings-btn{ display:inline-flex; align-items:center; gap:6px; }
 
   /* ---------------- change-pin modal ---------------- */
   .pin-modal-backdrop{
@@ -153,6 +154,13 @@
   .pin-modal-actions{ display:flex; gap:10px; margin-top:6px; }
   .pin-modal-actions .btn-ghost{ flex:1; }
   .pin-modal-actions .btn-primary{ flex:1; margin-top:0; }
+  .swatch-row{ display:flex; gap:10px; flex-wrap:wrap; }
+  .swatch{
+    width:32px; height:32px; border-radius:50%; border:2px solid transparent; cursor:pointer;
+    box-shadow:inset 0 0 0 1px rgba(35,31,32,.12); padding:0;
+  }
+  .swatch[aria-pressed="true"]{ border-color:var(--focus); box-shadow:0 0 0 2px var(--surface), 0 0 0 4px var(--focus); }
+  .settings-note{ font-size:12px; color:var(--muted-2); margin:-8px 0 16px; line-height:1.5; }
   .pin-success{
     background:#eef6e4; border:1px solid #cfe6b4; color:#3d6b1f;
     font-size:12.5px; line-height:1.5; padding:9px 11px; border-radius:8px; margin:-6px 0 16px;
@@ -264,6 +272,10 @@
     </div>
     <div class="dash-actions">
       <span class="dash-user" id="dash-user"></span>
+      <button class="btn-ghost" id="settings-btn" type="button" aria-label="Settings" title="Settings">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        Settings
+      </button>
       <button class="btn-ghost" id="change-pin-btn" type="button">Change PIN</button>
       <button class="logout" id="logout-btn">Log out</button>
     </div>
@@ -369,6 +381,31 @@
         <button class="btn-primary" type="submit">Save PIN</button>
       </div>
     </form>
+  </div>
+</div>
+
+<div class="pin-modal-backdrop" id="settings-modal-backdrop" hidden>
+  <div class="pin-modal">
+    <h3>Settings</h3>
+    <p class="sub">Preferences for this portal and every Quotes project. Stored on this browser only.</p>
+    <div class="field">
+      <label>Accent colour</label>
+      <div class="swatch-row" id="settings-swatches"></div>
+    </div>
+    <div class="field">
+      <label for="settings-decimals">Money decimal places (Quotes)</label>
+      <select id="settings-decimals">
+        <option value="0">0 — whole dollars ($1,234)</option>
+        <option value="1">1 ($1,234.5)</option>
+        <option value="2">2 — default ($1,234.56)</option>
+        <option value="3">3 ($1,234.567)</option>
+      </select>
+    </div>
+    <p class="settings-note">Applies to per-line and per-item amounts in Quotes (headline totals always show whole dollars).</p>
+    <div class="pin-modal-actions">
+      <button class="btn-ghost" id="settings-cancel" type="button">Close</button>
+      <button class="btn-primary" id="settings-save" type="button">Save</button>
+    </div>
   </div>
 </div>
 
@@ -528,6 +565,78 @@
     pinSuccess.hidden = false;
     pinForm.reset();
   });
+
+  // ---------------- settings ----------------
+  // Shared with the Quotes app's own lib/costing.js — same localStorage key,
+  // same origin (the app iframe's blob: URL inherits this page's origin) —
+  // so a preference saved here is visible there without any extra plumbing.
+  var PREFS_KEY = 'gradcon-preferences';
+  var DEFAULT_ACCENT = '#d5de5d';
+  var ACCENT_PRESETS = ['#d5de5d', '#5da9de', '#de8f5d', '#5dde9e', '#de5d7f', '#8f5dde'];
+
+  function loadPrefs(){
+    try { return JSON.parse(localStorage.getItem(PREFS_KEY)) || {}; } catch(e){ return {}; }
+  }
+  function savePrefs(p){
+    try { localStorage.setItem(PREFS_KEY, JSON.stringify(p)); } catch(e){}
+  }
+  function darken(hex, amt){
+    var n = parseInt(hex.slice(1), 16);
+    var r = Math.max(0, (n >> 16) - amt), g = Math.max(0, ((n >> 8) & 0xff) - amt), b = Math.max(0, (n & 0xff) - amt);
+    return '#' + (0x1000000 + r * 0x10000 + g * 0x100 + b).toString(16).slice(1);
+  }
+  function applyAccentColor(hex){
+    document.documentElement.style.setProperty('--accent', hex);
+    document.documentElement.style.setProperty('--accent-hover', darken(hex, 20));
+  }
+
+  var settingsBackdrop = document.getElementById('settings-modal-backdrop');
+  var settingsSwatchesHost = document.getElementById('settings-swatches');
+  var settingsDecimals = document.getElementById('settings-decimals');
+  var pendingAccent = (loadPrefs().accentColor) || DEFAULT_ACCENT;
+
+  function renderSwatches(){
+    settingsSwatchesHost.innerHTML = '';
+    ACCENT_PRESETS.forEach(function(hex){
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'swatch';
+      b.style.background = hex;
+      b.setAttribute('aria-pressed', String(hex.toLowerCase() === pendingAccent.toLowerCase()));
+      b.setAttribute('aria-label', 'Accent colour ' + hex);
+      b.addEventListener('click', function(){
+        pendingAccent = hex;
+        renderSwatches();
+      });
+      settingsSwatchesHost.appendChild(b);
+    });
+  }
+
+  document.getElementById('settings-btn').addEventListener('click', function(){
+    var prefs = loadPrefs();
+    pendingAccent = prefs.accentColor || DEFAULT_ACCENT;
+    settingsDecimals.value = (prefs.moneyDecimals !== undefined ? prefs.moneyDecimals : 2);
+    renderSwatches();
+    settingsBackdrop.hidden = false;
+  });
+  document.getElementById('settings-cancel').addEventListener('click', function(){
+    settingsBackdrop.hidden = true;
+  });
+  settingsBackdrop.addEventListener('click', function(e){
+    if(e.target === settingsBackdrop) settingsBackdrop.hidden = true;
+  });
+  document.getElementById('settings-save').addEventListener('click', function(){
+    var prefs = loadPrefs();
+    prefs.accentColor = pendingAccent;
+    prefs.moneyDecimals = parseInt(settingsDecimals.value, 10);
+    savePrefs(prefs);
+    applyAccentColor(pendingAccent);
+    settingsBackdrop.hidden = true;
+  });
+
+  // Apply a saved accent colour immediately on load — before login, too, so
+  // the whole shell (not just the dashboard) reflects the preference.
+  applyAccentColor(loadPrefs().accentColor || DEFAULT_ACCENT);
 
   document.getElementById('back-btn').addEventListener('click', function(){
     document.getElementById('app-frame').src = 'about:blank';
