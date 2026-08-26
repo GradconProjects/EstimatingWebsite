@@ -2641,7 +2641,7 @@ function renderRegisterTable(){
   let q=(document.getElementById("filterSearch").value||"").toLowerCase();
   let filtered=lines.filter(l=> (!cat||l.category===cat) && (!mg||l.materialGroup===mg) && (!q || (l.element+l.material+l.spec).toLowerCase().includes(q)) );
   let t=document.getElementById("registerTable");
-  const REG_COLS=14;
+  const REG_COLS=16;
   let byElement=new Map();
   filtered.forEach(l=>{
     if(!byElement.has(l.elementId)) byElement.set(l.elementId,[]);
@@ -2660,10 +2660,10 @@ function renderRegisterTable(){
         <span class="small"> · ${fmt(totC,2)}m³ concrete · ${fmt(totR,1)}kg reo · ${fmt(totF,2)}m² formwork · ${glines.length} line(s)</span>
         <button class="btn small danger" data-action="regDelete" data-id="${inst.id}" style="float:right;">✕ Remove element</button>
       </td></tr>
-      ${collapsed? '' : glines.map(l=>`<tr><td>${l.stage}</td><td>${l.category}</td><td>${l.element}</td><td>${l.elementId}</td><td><span class="pill ${pillClass(l.materialGroup)}">${l.materialGroup}</span></td><td>${l.material}</td><td>${l.spec}</td><td>${fmt(l.qty,2)}</td><td>${l.unit}</td><td>${l.waste||0}</td><td><b>${fmt(l.finalQty,2)}</b></td><td>${l.weightKg? fmt(l.weightKg,1) : ''}</td><td class="formula">${l.formula}</td><td>${l.linkedElement||''}</td></tr>`).join('')}
+      ${collapsed? '' : glines.map(l=>`<tr><td>${l.stage}</td><td>${l.category}</td><td>${l.element}</td><td>${l.elementId}</td><td><span class="pill ${pillClass(l.materialGroup)}">${l.materialGroup}</span></td><td>${l.material}</td><td>${l.spec}</td><td>${fmt(l.qty,2)}</td><td>${l.unit}</td><td>${l.waste||0}</td><td>${l.lap||0}</td><td><b>${fmt(l.finalQty,2)}</b></td><td>${l.manualOverride?`<span class="manual-badge" title="Manually entered — system calculated ${fmt(l.calculatedQty,2)}">✎ manual</span>`:''}</td><td>${l.weightKg? fmt(l.weightKg,1) : ''}</td><td class="formula">${l.formula}</td><td>${l.linkedElement||''}</td></tr>`).join('')}
     </tbody>`;
   }).join('');
-  t.innerHTML = `<thead><tr><th>Stage</th><th>Category</th><th>Element</th><th>ID</th><th>Material Group</th><th>Material</th><th>Spec</th><th>Qty</th><th>Unit</th><th>Waste%</th><th>Final Qty</th><th>Kg</th><th>Formula</th><th>Linked</th></tr></thead>
+  t.innerHTML = `<thead><tr><th>Stage</th><th>Category</th><th>Element</th><th>ID</th><th>Material Group</th><th>Material</th><th>Spec</th><th>Qty</th><th>Unit</th><th>Waste%</th><th>Lap%</th><th>Final Qty</th><th>Override</th><th>Kg</th><th>Formula</th><th>Linked</th></tr></thead>
   ${groupsHtml || `<tbody><tr><td colspan="${REG_COLS}" class="small">No quantity lines yet.</td></tr></tbody>`}`;
   t.onclick=(e)=>{
     let btn=e.target.closest('button[data-action]'); if(!btn) return;
@@ -2785,8 +2785,9 @@ function sheetLines(kind){
 }
 // Columns: A Stage, B Category, C Element, D ElementID, E MaterialGroup, F Material, G Spec,
 // H Quantity, I Unit, J Waste%, K Lap%, L Final Quantity (LIVE FORMULA = H*(1+J/100)*(1+K/100)),
-// M Formula (reference text), N Linked Element, O Notes.
-const EXPORT_HEADERS=["Stage","Category","Element","Element ID","Material Group","Material","Specification","Quantity","Unit","Waste %","Lap %","Final Quantity","Formula (reference)","Linked Element","Notes"];
+// M Manual Override (Yes/No + system-calculated qty when overridden), N Formula (reference text),
+// O Linked Element, P Notes.
+const EXPORT_HEADERS=["Stage","Category","Element","Element ID","Material Group","Material","Specification","Quantity","Unit","Waste %","Lap %","Final Quantity","Manual Override","Formula (reference)","Linked Element","Notes"];
 function exportSheet(kind){
   let data=sheetLines(kind);
   let rows=data.map((l,i)=>{
@@ -2794,6 +2795,7 @@ function exportSheet(kind){
     return [l.stage,l.category,l.element,l.elementId,l.materialGroup,l.material,l.spec,
       numCell(l.qty), l.unit, numCell(l.waste||0,2), numCell(l.lap||0,2),
       rawFormula(`=ROUND(H${r}*(1+J${r}/100)*(1+K${r}/100),4)`),
+      l.manualOverride? `Yes (system calc ${fmt(l.calculatedQty,2)})` : "No",
       l.formula, l.linkedElement, l.notes];
   });
   let name=`${(PROJECT.name||"Project").replace(/[^a-z0-9]+/gi,'_')}_${kind}.csv`;
