@@ -29,5 +29,18 @@ export function daysLabel(deadline) {
   return { text: `Due in ${days}d`, cls: "text-neutral-400" };
 }
 
+/** Dashboard's own compact deadline styling — italic green until 3 days
+ * out (inclusive), red from there through overdue. Deliberately a
+ * different colour scheme from daysLabel (Planner's own red/orange/grey
+ * urgency read): the Dashboard row is a narrower "at a glance" column,
+ * not the Planner's full urgency triage. */
+export function dashboardDueLabel(deadline) {
+  if (!deadline) return null;
+  const days = Math.ceil((new Date(deadline) - new Date()) / 86400000);
+  const text = days < 0 ? `${Math.abs(days)}d overdue` : days === 0 ? "Due today" : `Due in ${days}d`;
+  const cls = days <= 3 ? "italic text-red-600 font-semibold" : "italic text-green-600 font-medium";
+  return { text, cls };
+}
+
 export const priorityRank = (p) =>
   PLANNER_PRIORITIES.indexOf(p) === -1 ? PLANNER_PRIORITIES.length : PLANNER_PRIORITIES.indexOf(p);

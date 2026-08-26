@@ -3,7 +3,7 @@ import { Plus, Trash2, ArrowRight, LayoutDashboard, Loader2 } from "lucide-react
 import { MARGIN_STEPS, DEFAULT_MARGIN, QUOTE_STATUSES, QUOTE_STATUS_STYLES } from "../data/catalog.js";
 import { computeGrandTotal, computeMarginLadder, money, money2 } from "../lib/costing.js";
 import { readQuotes, writeQuote } from "../lib/projects.js";
-import { daysLabel } from "../lib/planner.js";
+import { dashboardDueLabel } from "../lib/planner.js";
 
 const SORT_OPTIONS = [
   { key: "added", label: "Recently added" },
@@ -194,7 +194,7 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete 
                 <td className="px-3 py-2.5 text-neutral-400 text-xs">{s.date || "—"}</td>
                 <td className="px-3 py-2.5 text-xs">
                   {(() => {
-                    const due = daysLabel(s.deadline);
+                    const due = dashboardDueLabel(s.deadline);
                     return due ? <span className={due.cls}>{due.text}</span> : <span className="text-neutral-300">—</span>;
                   })()}
                 </td>
