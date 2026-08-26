@@ -221,7 +221,7 @@ export default function App() {
             {[
               { key: "dashboard", label: "Dashboard", Icon: LayoutDashboard },
               { key: "planner", label: "Planner", Icon: Radar },
-              { key: "folder", label: "Project Folder", Icon: FolderOpen },
+              { key: "folder", label: "Gradcon Vault", Icon: FolderOpen },
             ].map(({ key, label, Icon }) => (
               <button
                 key={key}
