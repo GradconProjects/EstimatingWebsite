@@ -166,29 +166,38 @@
   .dash-hero-art{ margin:0 0 40px; border-radius:var(--radius); overflow:hidden; box-shadow:0 30px 60px -30px rgba(35,31,32,.4); border:1px solid var(--line-soft); }
   .dash-hero-art img{ display:block; width:100%; height:clamp(160px,26vw,300px); object-fit:cover; }
 
-  .panel-grid{ display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:20px; max-width:1320px; }
-  @media (max-width:1200px){ .panel-grid{ grid-template-columns:1fr 1fr; } }
+  .panel-grid{ display:grid; grid-template-columns:repeat(6, 1fr); gap:14px; max-width:1760px; }
+  @media (max-width:1100px){ .panel-grid{ grid-template-columns:repeat(3, 1fr); gap:16px; } }
   @media (max-width:640px){ .panel-grid{ grid-template-columns:1fr; } }
 
   .panel-btn{
     position:relative; text-align:left; background:var(--surface); border:1px solid var(--line);
-    border-radius:18px; padding:30px 28px 28px; overflow:hidden;
+    border-radius:16px; padding:20px 16px 18px; overflow:hidden;
     transition:transform .18s ease, border-color .18s ease, box-shadow .18s ease;
   }
   .panel-btn:hover{ transform:translateY(-3px); border-color:var(--text); box-shadow:0 22px 44px -26px rgba(35,31,32,.28); }
   .panel-btn:focus-visible{ outline:2px solid var(--focus); outline-offset:3px; }
   .panel-btn .glyph{
-    width:52px; height:52px; border-radius:13px; background:var(--accent); border:1px solid var(--line-soft);
-    display:flex; align-items:center; justify-content:center; margin-bottom:20px; color:var(--text);
+    width:40px; height:40px; border-radius:10px; background:var(--accent); border:1px solid var(--line-soft);
+    display:flex; align-items:center; justify-content:center; margin-bottom:14px; color:var(--text);
   }
-  .panel-btn h2{ font-size:21px; margin-bottom:8px; }
-  .panel-btn p{ margin:0 0 20px; color:var(--muted); font-size:13.5px; line-height:1.55; max-width:40ch; }
-  .panel-btn .cta{ display:flex; align-items:center; gap:7px; font-size:12.5px; font-weight:700; color:var(--text); text-transform:uppercase; letter-spacing:.04em; }
-  .panel-btn .cta svg{ transition:transform .18s ease; }
+  .panel-btn .glyph svg{ width:20px; height:20px; }
+  .panel-btn h2{ font-size:15.5px; margin-bottom:6px; line-height:1.25; }
+  .panel-btn p{ margin:0 0 14px; color:var(--muted); font-size:12px; line-height:1.45; max-width:100%; }
+  .panel-btn .cta{ display:flex; align-items:center; gap:6px; font-size:11px; font-weight:700; color:var(--text); text-transform:uppercase; letter-spacing:.03em; }
+  .panel-btn .cta svg{ width:12px; height:12px; transition:transform .18s ease; }
   .panel-btn:hover .cta svg{ transform:translateX(3px); }
   .panel-btn .tag{
-    position:absolute; top:22px; right:24px; font-family:var(--font-mono); font-size:10.5px;
+    position:absolute; top:14px; right:14px; font-family:var(--font-mono); font-size:9.5px;
     color:var(--muted-2); letter-spacing:.04em;
+  }
+  @media (max-width:1100px){
+    .panel-btn{ padding:26px 24px 24px; }
+    .panel-btn .glyph{ width:48px; height:48px; margin-bottom:18px; }
+    .panel-btn .glyph svg{ width:22px; height:22px; }
+    .panel-btn h2{ font-size:19px; }
+    .panel-btn p{ font-size:13px; line-height:1.55; }
+    .panel-btn .cta{ font-size:12px; }
   }
 
   .dash-foot{ margin-top:40px; font-size:11.5px; color:var(--muted-2); font-family:var(--font-mono); }
