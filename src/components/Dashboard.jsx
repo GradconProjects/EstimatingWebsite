@@ -60,6 +60,12 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete 
   // to do nothing. This has no dependency on any browser dialog API.
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const armDelete = (id) => {
+    // Portal Settings "ask before deleting" toggle — explicitly off skips
+    // the arm step and deletes on the first click.
+    try {
+      const p = JSON.parse(localStorage.getItem("gradcon-preferences")) || {};
+      if (p.confirmDeletes === false) { onDelete(id); return; }
+    } catch { /* fall through to the confirm flow */ }
     setConfirmDeleteId(id);
     setTimeout(() => setConfirmDeleteId((cur) => (cur === id ? null : cur)), 3000);
   };

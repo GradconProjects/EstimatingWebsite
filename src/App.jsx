@@ -89,7 +89,13 @@ export default function App() {
     // this browser last had open — otherwise ProjectEditor would take over
     // and the tab bar (where Planner/Project Folder live) would never render.
     if (initialView) return null;
-    try { return window.localStorage.getItem(ACTIVE_PROJECT_KEY) || null; } catch { return null; }
+    try {
+      // Portal Settings "reopen the last project" toggle — explicitly off
+      // means every load lands on the Dashboard instead.
+      const p = JSON.parse(localStorage.getItem("gradcon-preferences")) || {};
+      if (p.quotesRememberProject === false) return null;
+      return window.localStorage.getItem(ACTIVE_PROJECT_KEY) || null;
+    } catch { return null; }
   });
   useEffect(() => {
     try {

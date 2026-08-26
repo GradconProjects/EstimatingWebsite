@@ -11,7 +11,15 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
   // expanded (it's still collapsible too, just defaults open).
   const [openCats, setOpenCats] = useState({});
   const [labourOpen, setLabourOpen] = useState(true);
-  const [cardOpen, setCardOpen] = useState(true);
+  const [cardOpen, setCardOpen] = useState(() => {
+    // Portal Settings "element cards start collapsed" toggle.
+    try {
+      const p = JSON.parse(localStorage.getItem("gradcon-preferences")) || {};
+      return p.quotesCardsCollapsed !== true;
+    } catch {
+      return true;
+    }
+  });
 
   const cost = useMemo(() => computeElementCost(item, rates), [item, rates]);
 

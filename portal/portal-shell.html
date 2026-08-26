@@ -168,7 +168,17 @@
     font-size:13px !important; font-weight:500 !important; text-transform:none !important;
     letter-spacing:0 !important; color:var(--text) !important; cursor:pointer;
   }
-  .settings-check input{ width:16px; height:16px; accent-color:var(--accent); }
+  .settings-check{ text-align:left; }
+  /* The generic .field input rule sets appearance:none (for text inputs),
+     which strips the native checkbox rendering entirely — no box, no tick.
+     Restore native appearance here so ticking actually draws a tick, and
+     pin accent-color to the dark focus colour (not var(--accent)) so it
+     stays visible whatever accent the user picks. */
+  .field .settings-check input[type="checkbox"]{
+    appearance:auto; -webkit-appearance:auto;
+    width:17px; height:17px; padding:0; border-radius:4px;
+    accent-color:var(--focus); flex:none; cursor:pointer;
+  }
   .field input[type="color"]{ padding:3px; height:40px; cursor:pointer; }
   .swatch-row{ display:flex; gap:10px; flex-wrap:wrap; }
   .swatch{
@@ -195,7 +205,7 @@
   @media (max-width:640px){ .panel-grid{ grid-template-columns:1fr; } }
 
   .panel-btn{
-    position:relative; text-align:left; background:var(--surface); border:1px solid var(--line);
+    position:relative; text-align:center; background:var(--surface); border:1px solid var(--line);
     border-radius:16px; padding:20px 16px 18px; overflow:hidden;
     transition:transform .18s ease, border-color .18s ease, box-shadow .18s ease;
   }
@@ -203,13 +213,13 @@
   .panel-btn:focus-visible{ outline:2px solid var(--focus); outline-offset:3px; }
   .panel-btn .glyph{
     width:144px; height:144px; max-width:100%; border-radius:22px; background:var(--surface-2); border:1px solid var(--line-soft);
-    display:flex; align-items:center; justify-content:center; margin-bottom:14px; color:var(--text); overflow:hidden;
+    display:flex; align-items:center; justify-content:center; margin:0 auto 14px; color:var(--text); overflow:hidden;
   }
   .panel-btn .glyph svg{ width:76%; height:76%; }
   .panel-btn .glyph img{ width:100%; height:100%; object-fit:cover; display:block; }
   .panel-btn h2{ font-size:15.5px; margin-bottom:6px; line-height:1.25; }
   .panel-btn p{ margin:0 0 14px; color:var(--muted); font-size:12px; line-height:1.45; max-width:100%; }
-  .panel-btn .cta{ display:flex; align-items:center; gap:6px; font-size:11px; font-weight:700; color:var(--text); text-transform:uppercase; letter-spacing:.03em; }
+  .panel-btn .cta{ display:flex; align-items:center; justify-content:center; gap:6px; font-size:11px; font-weight:700; color:var(--text); text-transform:uppercase; letter-spacing:.03em; }
   .panel-btn .cta svg{ width:12px; height:12px; transition:transform .18s ease; }
   .panel-btn:hover .cta svg{ transform:translateX(3px); }
   .panel-btn .tag{
@@ -572,6 +582,26 @@
       </div>
     </div>
 
+    <div class="settings-section">App behaviour</div>
+    <div class="settings-grid">
+      <div class="field"><label class="settings-check"><input type="checkbox" id="settings-confirm-deletes" checked> Ask before deleting projects &amp; elements</label></div>
+      <div class="field"><label class="settings-check"><input type="checkbox" id="settings-remember-project" checked> Reopen the last project when Quotes loads</label></div>
+      <div class="field"><label class="settings-check"><input type="checkbox" id="settings-cards-collapsed"> Quotes element cards start collapsed</label></div>
+      <div class="field"><label class="settings-check"><input type="checkbox" id="settings-est-collapsed"> New Estimates elements start collapsed</label></div>
+      <div class="field"><label class="settings-check"><input type="checkbox" id="settings-autopublish" checked> Auto-publish Estimates quantities to Cost Planner</label></div>
+      <div class="field">
+        <label for="settings-est-startpage">Estimates opens on</label>
+        <select id="settings-est-startpage">
+          <option value="setup">1. Project Setup (default)</option>
+          <option value="library">2. Elements</option>
+          <option value="workspace">3. Workspace</option>
+          <option value="register">4. Quantity Register</option>
+          <option value="export">5. Export</option>
+        </select>
+      </div>
+    </div>
+    <p class="settings-note">Turning off delete confirmation makes every ✕ Remove a single, immediate click — there is no undo. Auto-publish keeps the Cost Planner fed live from Estimates' Quantity Register; turn it off if you'd rather it not update automatically.</p>
+
     <div class="settings-section">Estimates — defaults for new takeoffs</div>
     <div class="settings-grid">
       <div class="field">
@@ -919,7 +949,18 @@
     ['settings-est-lenunit','estLenUnit','mm'],
     ['settings-est-measrule','estMeasurementRule','gross'],
     ['settings-est-trenchmesh','estTrenchMeshType','4 Bar-L12TM'],
-    ['settings-est-meshtype','estMeshType','SL82']
+    ['settings-est-meshtype','estMeshType','SL82'],
+    ['settings-est-startpage','estStartPage','setup']
+  ];
+  // Toggle-backed preferences: [element id, prefs key, default-on?]. Stored
+  // as explicit booleans on save (like showHero), so the apps can
+  // distinguish "user turned this off" from "never touched".
+  var BOOL_FIELDS = [
+    ['settings-confirm-deletes','confirmDeletes',true],
+    ['settings-remember-project','quotesRememberProject',true],
+    ['settings-cards-collapsed','quotesCardsCollapsed',false],
+    ['settings-est-collapsed','estNewCollapsed',false],
+    ['settings-autopublish','estAutoPublish',true]
   ];
 
   function populateSettingsForm(){
@@ -935,6 +976,9 @@
     });
     STR_FIELDS.forEach(function(f){
       document.getElementById(f[0]).value = (typeof prefs[f[1]] === 'string') ? prefs[f[1]] : f[2];
+    });
+    BOOL_FIELDS.forEach(function(f){
+      document.getElementById(f[0]).checked = (typeof prefs[f[1]] === 'boolean') ? prefs[f[1]] : f[2];
     });
     renderSwatches();
   }
@@ -972,6 +1016,9 @@
     STR_FIELDS.forEach(function(f){
       var v = document.getElementById(f[0]).value;
       if(v === f[2]){ delete prefs[f[1]]; } else { prefs[f[1]] = v; }
+    });
+    BOOL_FIELDS.forEach(function(f){
+      prefs[f[1]] = document.getElementById(f[0]).checked;
     });
     savePrefs(prefs);
     applyAllPrefs();

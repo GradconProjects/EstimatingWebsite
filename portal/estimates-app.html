@@ -318,6 +318,12 @@ let PROJECT = {
 // slab mesh product for the user's preferred one. Field-name based (any
 // data key ending in "Lap", the two trench-mesh-type keys, the three
 // mesh-type keys), so new calculators pick this up for free.
+// One-key read of the portal-wide Settings blob (shared origin — see the
+// overlay comment above). undefined = never set, so callers can treat
+// "explicitly false" differently from "untouched".
+function portalPref(key){
+  try{ var p = JSON.parse(localStorage.getItem("gradcon-preferences")) || {}; return p[key]; }catch(e){ return undefined; }
+}
 function applyElementPrefs(data){
   try{
     var p = JSON.parse(localStorage.getItem("gradcon-preferences")) || {};
@@ -2324,6 +2330,7 @@ function addInstance(typeId){
   let calc=CALC[def.calc];
   let inst={id:uid("EL"), typeKey:typeId, label:def.label+" "+(INSTANCES.filter(i=>i.typeKey===typeId).length+1), data:applyElementPrefs(calc.defaults(def.slabCategory||def.beamCategory||def.kind, def.suspended))};
   if(inst.data.cover!==undefined) inst.data.cover = defaultCoverFor(typeId);
+  if(portalPref("estNewCollapsed")===true) inst._collapsed = true;
   INSTANCES.push(inst);
   renderWorkspace();
   computeAllAndRefresh();
@@ -2430,7 +2437,7 @@ function attachCardEvents(card,inst){
   let delBtn = card.querySelector('[data-action="del"]');
   let delArmed = false, delTimer = null;
   delBtn.addEventListener('click',()=>{
-    if(!delArmed){
+    if(!delArmed && portalPref("confirmDeletes")!==false){
       delArmed = true;
       delBtn.textContent = '✕ Confirm?';
       delBtn.classList.add('primary');
@@ -2723,7 +2730,7 @@ function renderRegisterTable(){
       renderRegisterTable();
     } else if(btn.dataset.action==="regDelete"){
       let inst=INSTANCES.find(i=>i.id===id);
-      if(inst && confirm(`Remove element ${inst.id} — ${inst.label} and all its quantity lines? This cannot be undone.`)) removeInstance(id);
+      if(inst && (portalPref("confirmDeletes")===false || confirm(`Remove element ${inst.id} — ${inst.label} and all its quantity lines? This cannot be undone.`))) removeInstance(id);
     }
   };
   t.oninput=(e)=>{
@@ -3033,6 +3040,7 @@ function publishToQuote(){
 let autoPublishArmed = false;
 let autoPublishTimer = null;
 function scheduleAutoPublish(){
+  if(portalPref("estAutoPublish")===false) return;
   if(!autoPublishArmed || INSTANCES.length===0) return;
   clearTimeout(autoPublishTimer);
   autoPublishTimer = setTimeout(()=>{
@@ -3299,6 +3307,15 @@ if(!restoredFromSave){
   ["boredpier","pilecap","groundbeam","suspslab","column"].forEach(id=>SELECTED_TYPES[id]=true);
   renderLibrary(); renderAddToolbar();
 }
+// "Estimates opens on" preference — jump to the chosen tab on boot (the nav
+// handlers are attached above, so a synthetic click does the full page swap).
+(function(){
+  var sp = portalPref("estStartPage");
+  if(sp && sp !== "setup"){
+    var b = document.querySelector('.tabs button[data-page="' + sp + '"]');
+    if(b) b.click();
+  }
+})();
 syncFromCloud(); // then pull whatever another device last saved (or seed the cloud if this is the very first save anywhere)
 window.addEventListener("focus", syncFromCloud);
 document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) syncFromCloud(); });
