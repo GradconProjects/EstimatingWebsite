@@ -1320,7 +1320,8 @@ function slabDefaults(cat,suspended){ return {
   starters:false, connTarget:"", connQty:0, connDia:"N12", connEmbed:400, connProj:400,
   stepdown:false, sdDepth:150, sdDia:"N12", sdSpacing:300, sdProj1:300, sdProj2:300,
   edgeThicken:false, edgeThickenWidth:300, edgeThickenExtraDepth:150,
-  beamStrips:false, beamStripsLength:0, beamStripsWidth:300, beamStripsExtraDepth:150
+  beamStrips:false, beamStripsLength:0, beamStripsWidth:300, beamStripsExtraDepth:150,
+  beamStripsReo:false, beamStripsTrenchMesh:false, beamStripsBars:4, beamStripsDia:"N16"
 };}
 function renderSlab(inst,def){
   let d=inst.data;
@@ -1345,7 +1346,13 @@ function renderSlab(inst,def){
   <div class="tip"><span class="ico">🏗️</span><div>A thickened edge (footing-like strip under the slab perimeter, or wherever a line load lands) is extra concrete beyond the flat slab thickness already counted above — it's costed here as perimeter × strip width × extra depth, on top of the main slab volume, not instead of it.</div></div></div></div>
   <div class="subsec"><div class="sechead">Internal Beam Strips / Ribs (e.g. raft foundation load-bearing lines)</div><div class="grid cols3">${chk("beamStrips",d.beamStrips,"Internal thickened beam strips within the slab","beamStrips")}</div>
   <div class="subsec ${d.beamStrips?'':'hidden'}" data-show-if="beamStrips"><div class="grid cols3">${F("Total beam run length (m)",inpNum("beamStripsLength",d.beamStripsLength))}${F("Strip width (mm)",inpNum("beamStripsWidth",d.beamStripsWidth))}${F("Extra depth below slab thickness (mm)",inpNum("beamStripsExtraDepth",d.beamStripsExtraDepth))}</div>
-  <div class="tip"><span class="ico">🏗️</span><div>A raft foundation's internal beams (the thickened ribs that run under load-bearing walls, not just the perimeter) are easy to miss because they're not their own drawing callout — they're a detail cut through the slab. Turn this on to fold them into this raft as one composite element: total the combined length of every internal beam run from the drawing (not the perimeter — that's Edge Thickening above) and it's costed as run length × strip width × extra depth, added on top of the flat slab volume. Leave it off and take the beams off separately as their own Ground Beam element instead if you'd rather price and schedule them apart from the slab — either way, don't double up and count the same beam in both places.</div></div></div></div>
+  <div class="tip"><span class="ico">🏗️</span><div>A raft foundation's internal beams (the thickened ribs that run under load-bearing walls, not just the perimeter) are easy to miss because they're not their own drawing callout — they're a detail cut through the slab. Turn this on to fold them into this raft as one composite element: total the combined length of every internal beam run from the drawing (not the perimeter — that's Edge Thickening above) and it's costed as run length × strip width × extra depth, added on top of the flat slab volume. Leave it off and take the beams off separately as their own Ground Beam element instead if you'd rather price and schedule them apart from the slab — either way, don't double up and count the same beam in both places.</div></div>
+  <div class="subsec"><div class="sechead">Beam Strip Reinforcement</div><div class="grid cols3">${chk("beamStripsReo",d.beamStripsReo,"Longitudinal reinforcement along the beam strips","beamStripsReo")}</div>
+  <div class="subsec ${d.beamStripsReo?'':'hidden'}" data-show-if="beamStripsReo">
+  <div class="grid cols3">${chk("beamStripsTrenchMesh",d.beamStripsTrenchMesh,"Trench mesh instead","beamStripsTrenchMesh")}</div>
+  <div class="grid cols3">${F(d.beamStripsTrenchMesh?"Number of longitudinal bars":"Longitudinal bars (no.)",inpNum("beamStripsBars",d.beamStripsBars))}${F("Bar diameter",barSizeSel("beamStripsDia",d.beamStripsDia))}</div>
+  <p class="small">Same reinforcement options as the standalone Ground Beam element — individual deformed bars or trench mesh, run the full combined beam length entered above. Ligatures/stirrups for these ribs aren't counted here; add them as their own custom line, or take the beam off separately as a Ground Beam element if you need full stirrup-zone detail.</p>
+  </div></div></div></div>
   <div class="subsec"><div class="sechead">Openings / Penetrations</div>
   <table class="rows"><thead><tr><th>Label</th><th>Width (mm)</th><th>Height/Length (mm)</th><th>Qty</th><th></th></tr></thead>
   <tbody>${d.openings.map((r,i)=>openRowHtml(i,r)).join('')}</tbody></table>
@@ -1428,6 +1435,11 @@ function computeSlab(inst,def){
     let bw=num(d.beamStripsWidth)/1000, bd=num(d.beamStripsExtraDepth)/1000;
     let beamVol=num(d.beamStripsLength)*bw*bd;
     lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:"Internal beam strips (raft ribs)",qty:beamVol,unit:"m³",waste:PROJECT.concreteWaste,finalQty:withWaste(beamVol,PROJECT.concreteWaste),formula:`run length(${fmt(num(d.beamStripsLength),1)}m)×width(${d.beamStripsWidth}mm)×extra depth(${d.beamStripsExtraDepth}mm)`}));
+    if(d.beamStripsReo && num(d.beamStripsBars)>0){
+      let bd=barDiaOf(d.beamStripsDia);
+      let totLen=num(d.beamStripsBars)*num(d.beamStripsLength); let wt=totLen*massPerM(bd);
+      lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.beamStripsDia,spec:d.beamStripsTrenchMesh?"Beam strips — trench mesh (longitudinal)":"Beam strips — longitudinal bars",qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`${d.beamStripsBars}×${fmt(num(d.beamStripsLength),1)}`,notes:`${fmt(wt,1)} kg`}));
+    }
   }
   function barCalc(prefix,label,perpDim){
     if(!d[prefix]) return;
