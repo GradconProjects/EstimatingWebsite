@@ -1,19 +1,34 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowRight, ChevronDown, ChevronRight, File, FolderOpen, Loader2, MessageSquarePlus, Trash2, Upload } from "lucide-react";
+import { ArrowRight, ChevronDown, ChevronRight, File, FolderOpen, FolderUp, Loader2, MessageSquarePlus, Trash2, Upload } from "lucide-react";
 import { readQuotes, writeQuote } from "../lib/projects.js";
 import { uid } from "../lib/costing.js";
 import { supabaseEnabled } from "../lib/supabaseClient.js";
-import { OFFICE_FOLDER_PATH, projectFolderPath, listFiles, uploadFile, deleteFile, formatFileSize } from "../lib/storageFiles.js";
+import { OFFICE_FOLDER_PATH, projectFolderPath, listFiles, uploadFile, deleteFile, formatFileSize, groupFilesByMonthDay } from "../lib/storageFiles.js";
 
 const CHANNELS = ["Call", "Email", "Site meeting", "Text/WhatsApp", "Other"];
 
+function timeLabel(iso) {
+  return new Date(iso).toLocaleTimeString("en-AU", { hour: "2-digit", minute: "2-digit" });
+}
+
 /** File list + upload for one folder path (an Office-wide folder, or one
- * project's own folder — same UI either way, see storageFiles.js). */
+ * project's own folder — same UI either way, see storageFiles.js). Picking
+ * files (or an entire folder, via the "Choose folder" picker) stages them
+ * first, each with an editable name (defaulting to the original filename,
+ * or its path within the picked folder) — nothing uploads until confirmed,
+ * so a custom name is set before the file ever leaves the browser. Storage
+ * here is a flat per-folder list, so a folder upload's relative path is
+ * just flattened into the stored filename, not a real subfolder. The
+ * already-uploaded list folds into Month -> Day groups, newest first, each
+ * collapsed by default. */
 function FileFolder({ folderPath }) {
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [pending, setPending] = useState([]); // [{file, name}]
   const [uploading, setUploading] = useState(false);
+  const [openGroups, setOpenGroups] = useState({}); // "month" or "month|dateKey" -> bool
   const inputRef = useRef(null);
+  const folderInputRef = useRef(null);
 
   const refresh = () => {
     setLoading(true);
@@ -21,15 +36,28 @@ function FileFolder({ folderPath }) {
   };
   useEffect(refresh, [folderPath]);
 
-  const onPick = async (e) => {
+  // Shared by both the plain file picker and the folder picker (the latter
+  // sets webkitRelativePath on every File, e.g. "MyFolder/sub/plan.pdf") —
+  // storage here is a flat, per-folder list (see storageFiles.js), so a
+  // folder upload's relative path becomes the staged default name, keeping
+  // the structure visible instead of silently losing it.
+  const onPick = (e) => {
     const picked = Array.from(e.target.files || []);
     if (picked.length === 0) return;
+    setPending((p) => [...p, ...picked.map((file) => ({ file, name: file.webkitRelativePath || file.name }))]);
+    e.target.value = "";
+  };
+  const renamePending = (i, name) => setPending((p) => p.map((x, idx) => (idx === i ? { ...x, name } : x)));
+  const removePending = (i) => setPending((p) => p.filter((_, idx) => idx !== i));
+
+  const confirmUpload = async () => {
+    if (pending.length === 0) return;
     setUploading(true);
-    for (const file of picked) {
-      try { await uploadFile(folderPath, file); } catch (err) { /* best-effort per file */ }
+    for (const { file, name } of pending) {
+      try { await uploadFile(folderPath, file, name); } catch (err) { /* best-effort per file */ }
     }
     setUploading(false);
-    if (inputRef.current) inputRef.current.value = "";
+    setPending([]);
     refresh();
   };
 
@@ -37,6 +65,9 @@ function FileFolder({ folderPath }) {
     await deleteFile(path);
     refresh();
   };
+
+  const groups = useMemo(() => groupFilesByMonthDay(files), [files]);
+  const toggleGroup = (key) => setOpenGroups((g) => ({ ...g, [key]: !g[key] }));
 
   if (!supabaseEnabled) {
     return <div className="text-xs text-neutral-400 italic py-2">File storage needs this app connected to Supabase.</div>;
@@ -46,33 +77,113 @@ function FileFolder({ folderPath }) {
     <div>
       <div className="flex items-center justify-between mb-2">
         <span className="text-xs text-neutral-400">{files.length} file{files.length === 1 ? "" : "s"}</span>
-        <label className="flex items-center gap-1.5 text-xs font-medium text-orange-600 hover:text-orange-700 cursor-pointer">
-          <Upload size={13} /> {uploading ? "Uploading…" : "Upload"}
-          <input ref={inputRef} type="file" multiple onChange={onPick} className="hidden" disabled={uploading} />
-        </label>
+        <div className="flex items-center gap-3">
+          <label className="flex items-center gap-1.5 text-xs font-medium text-orange-600 hover:text-orange-700 cursor-pointer">
+            <Upload size={13} /> Choose files
+            <input ref={inputRef} type="file" multiple onChange={onPick} className="hidden" />
+          </label>
+          <label className="flex items-center gap-1.5 text-xs font-medium text-orange-600 hover:text-orange-700 cursor-pointer">
+            <FolderUp size={13} /> Choose folder
+            <input
+              ref={folderInputRef}
+              type="file"
+              multiple
+              webkitdirectory=""
+              directory=""
+              onChange={onPick}
+              className="hidden"
+            />
+          </label>
+        </div>
       </div>
+
+      {pending.length > 0 && (
+        <div className="mb-3 p-2 bg-neutral-50 rounded-lg border border-neutral-200 space-y-1.5">
+          <div className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wide">Name before uploading</div>
+          {pending.map((p, i) => (
+            <div key={i} className="flex items-center gap-1.5">
+              <input
+                value={p.name}
+                onChange={(e) => renamePending(i, e.target.value)}
+                className="flex-1 min-w-0 border border-neutral-200 rounded px-1.5 py-1 text-xs"
+              />
+              <button onClick={() => removePending(i)} className="text-neutral-300 hover:text-red-600 flex-none">
+                <Trash2 size={12} />
+              </button>
+            </div>
+          ))}
+          <button
+            onClick={confirmUpload}
+            disabled={uploading}
+            className="px-2 py-1 rounded bg-orange-600 hover:bg-orange-700 disabled:bg-neutral-300 text-white text-xs font-semibold"
+          >
+            {uploading ? "Uploading…" : `Upload ${pending.length} file${pending.length === 1 ? "" : "s"}`}
+          </button>
+        </div>
+      )}
+
       {loading ? (
         <div className="text-xs text-neutral-400"><Loader2 size={12} className="inline animate-spin mr-1" /> Loading…</div>
       ) : files.length === 0 ? (
         <div className="text-xs text-neutral-400 italic">No files yet.</div>
       ) : (
         <div className="space-y-1">
-          {files.map((f) => (
-            <div key={f.path} className="flex items-center gap-2 text-xs group">
-              <File size={13} className="text-neutral-400 flex-none" />
-              <a href={f.url} target="_blank" rel="noreferrer" className="text-blue-900 hover:underline truncate flex-1 min-w-0">{f.name}</a>
-              <span className="text-neutral-400 flex-none">{formatFileSize(f.size)}</span>
+          {groups.map((g) => (
+            <div key={g.month}>
               <button
-                onClick={() => onDelete(f.path)}
-                className="text-neutral-300 hover:text-red-600 flex-none opacity-0 group-hover:opacity-100 transition-opacity"
-                title="Delete file"
+                onClick={() => toggleGroup(g.month)}
+                className="w-full flex items-center gap-1 text-xs font-semibold text-neutral-600 py-1"
               >
-                <Trash2 size={13} />
+                {openGroups[g.month] ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                {g.month} <span className="text-neutral-400 font-normal">({g.days.reduce((s, d) => s + d.files.length, 0)})</span>
               </button>
+              {openGroups[g.month] && (
+                <div className="pl-4 space-y-1">
+                  {g.days.map((d) => {
+                    const dayKey = `${g.month}|${d.dateKey}`;
+                    return (
+                      <div key={dayKey}>
+                        <button
+                          onClick={() => toggleGroup(dayKey)}
+                          className="w-full flex items-center gap-1 text-[11px] font-medium text-neutral-500 py-0.5"
+                        >
+                          {openGroups[dayKey] ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+                          {d.day} <span className="text-neutral-400 font-normal">({d.files.length})</span>
+                        </button>
+                        {openGroups[dayKey] && (
+                          <div className="pl-4 space-y-1">
+                            {d.files.map((f) => (
+                              <FileRow key={f.path} f={f} onDelete={() => onDelete(f.path)} />
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function FileRow({ f, onDelete }) {
+  return (
+    <div className="flex items-center gap-2 text-xs group">
+      <File size={13} className="text-neutral-400 flex-none" />
+      <a href={f.url} target="_blank" rel="noreferrer" className="text-blue-900 hover:underline truncate flex-1 min-w-0">{f.name}</a>
+      <span className="text-neutral-400 flex-none">{timeLabel(f.uploadedAt)}</span>
+      <span className="text-neutral-400 flex-none">{formatFileSize(f.size)}</span>
+      <button
+        onClick={onDelete}
+        className="text-neutral-300 hover:text-red-600 flex-none opacity-0 group-hover:opacity-100 transition-opacity"
+        title="Delete file"
+      >
+        <Trash2 size={13} />
+      </button>
     </div>
   );
 }

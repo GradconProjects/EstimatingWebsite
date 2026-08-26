@@ -21,6 +21,7 @@ import ImportFlagsBanner from "./components/ImportFlagsBanner.jsx";
 import ManageElementTypesModal from "./components/ManageElementTypesModal.jsx";
 
 const OFFICE_COMMS_KEY = "gradcon-office-communications";
+const INITIAL_VIEW_KEY = "gradcon-quotes-initial-view";
 
 export const CUSTOM_ELEMENT_TYPES_KEY = "gradcon-custom-element-types";
 // Per-browser only (never synced) — which project's editor a plain page refresh
@@ -39,11 +40,33 @@ const blankQuote = () => ({
   items: [],
 });
 
+// Read once per mount (both activeId and view below need the same answer) —
+// portal-shell.html's Planner/Project Folder welcome-screen tiles set this
+// key then force-reload the Quotes iframe, same "write to localStorage,
+// force a fresh mount" bridge the Estimates "Publish to Quote" flow already
+// uses. Clearing it here means a later plain reload of Quotes (no flag set)
+// falls through to the normal remembered-project/Dashboard behaviour.
+function takeInitialView() {
+  try {
+    const initial = window.localStorage.getItem(INITIAL_VIEW_KEY);
+    if (initial === "planner" || initial === "folder") {
+      window.localStorage.removeItem(INITIAL_VIEW_KEY);
+      return initial;
+    }
+  } catch { /* best-effort */ }
+  return null;
+}
+
 export default function App() {
   const [projects, setProjects, projectsStatus, saveProjectsNow] = useStoredState(PROJECTS_INDEX_KEY, []);
   const initialRates = useMemo(() => defaultRates(), []);
   const [rates, setRates, ratesStatus] = useStoredState("gradcon-rates", initialRates);
+  const [initialView] = useState(takeInitialView);
   const [activeId, setActiveId] = useState(() => {
+    // A pending Planner/Project Folder jump always wins over whatever project
+    // this browser last had open — otherwise ProjectEditor would take over
+    // and the tab bar (where Planner/Project Folder live) would never render.
+    if (initialView) return null;
     try { return window.localStorage.getItem(ACTIVE_PROJECT_KEY) || null; } catch { return null; }
   });
   useEffect(() => {
@@ -57,7 +80,7 @@ export default function App() {
   // Which top-level tab shows when no project is open — Dashboard, Planner
   // or Project Folder. Opening a project (activeId set) always takes over
   // regardless of this, same as before the tabs existed.
-  const [view, setView] = useState("dashboard");
+  const [view, setView] = useState(() => initialView || "dashboard");
   const [officeComms, setOfficeComms] = useStoredState(OFFICE_COMMS_KEY, []);
 
   // Self-service catalog extension (see ManageElementTypesModal) — types

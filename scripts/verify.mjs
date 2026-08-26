@@ -162,25 +162,25 @@ check("Labour totals split correctly across BOTH Pump columns (hr and m3) withou
 });
 
 /* ---------- production-rate labour prefill ---------- */
-check("suggestedLabourPrefill: suggests Pour concrete / Tie steel hours from qty entered, in empty cells only", () => {
+check("suggestedLabourPrefill: suggests Pour concrete / Tie steel days from qty entered, in empty cells only", () => {
   const rates = defaultRates();
   const type = ELEMENT_TYPES.find((t) => t.id === "strip_footings");
   const item = newElementItem(type);
-  item.qtys[rateKey("CONCRETE", "25 mpa", "m3")] = 10; // 10 m3 * (0.55+0.35) hrs/m3 = 9 hrs / 8 = 1.125d
-  item.qtys[rateKey("PROCESSED BAR", "N16", "m")] = 1000; // 1000m * 1.6kg/m = 1.6t * 5.5 hrs/t = 8.8 hrs / 8 = 1.1d
+  item.qtys[rateKey("CONCRETE", "25 mpa", "m3")] = 10; // 10 m3 * 1 day/m3 = 10d
+  item.qtys[rateKey("PROCESSED BAR", "N16", "m")] = 1000; // 1000m * 1.6kg/m = 1.6t * 12 days/t = 19.2d
   const pourTask = item.tasks.find((t) => t.name === "Pour concrete");
   const tieTask = item.tasks.find((t) => t.name === "Tie steel");
 
   const suggestions = suggestedLabourPrefill(item, rates);
-  assert.equal(suggestions[pourTask.id].concreter_day, 1.13);
-  assert.equal(suggestions[tieTask.id].steelfixer_day, 1.1);
+  assert.equal(suggestions[pourTask.id].concreter_day, 10);
+  assert.equal(suggestions[tieTask.id].steelfixer_day, 19.2);
 
   // A cell the estimator already filled in is never included in the suggestions,
   // so applying them (existing qtys spread last in ElementCard) can never overwrite it.
   pourTask.qtys["concreter_day"] = 5;
   const suggestions2 = suggestedLabourPrefill(item, rates);
   assert.equal(suggestions2[pourTask.id], undefined, "must not suggest a value for an already-filled cell");
-  assert.equal(suggestions2[tieTask.id].steelfixer_day, 1.1); // unrelated task/resource still suggested
+  assert.equal(suggestions2[tieTask.id].steelfixer_day, 19.2); // unrelated task/resource still suggested
 });
 
 /* ---------- External Quote scope lines (client-facing $ always ties to the real sell price) ---------- */

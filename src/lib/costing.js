@@ -196,33 +196,33 @@ export function computeElementReinforcementTonnes(item, rates) {
   return totalKg / 1000;
 }
 
-const WORK_DAY_HOURS = 8;
 const CONCRETE_POUR_TASK_MATCH = /pour concrete/i;
 const STEEL_FIXING_TASK_MATCH = /tie steel/i;
 
 /**
  * Suggests labour day-counts for an element's "Pour concrete..." and "Tie
- * steel..." task rows, sized from the concrete/reinforcement quantities
- * already entered and Quotes' own PRODUCTION_RATES (see catalog.js). Only
- * ever returns a suggestion for a task+resource cell that is currently
- * undefined — an estimator's own entry always wins and is never
- * overwritten; ElementCard's effect applies these with existing qtys
- * spread last, as a second, defensive guarantee of the same rule.
+ * steel..." task rows, sized directly from the concrete/reinforcement
+ * quantities already entered — Quotes' own PRODUCTION_RATES (see
+ * catalog.js) are flat days-per-unit crew rates (1 day/m³ concrete poured,
+ * 12 days/tonne reinforcement fixed), not hours converted through a
+ * work-day length. Only ever returns a suggestion for a task+resource cell
+ * that is currently undefined — an estimator's own entry always wins and
+ * is never overwritten; ElementCard's effect applies these with existing
+ * qtys spread last, as a second, defensive guarantee of the same rule.
  */
 export function suggestedLabourPrefill(item, rates) {
   const suggestions = {};
   const concreteQty = computeElementCost(item, rates).concreteQty;
   const reinfTonnes = computeElementReinforcementTonnes(item, rates);
-  const placing = lookupRate(rates, rateKey("PRODUCTION", "Concrete placing", "hrs/m³"), { unitCost: 0.55 }).unitCost;
-  const finishing = lookupRate(rates, rateKey("PRODUCTION", "Concrete finishing", "hrs/m³"), { unitCost: 0.35 }).unitCost;
-  const fixing = lookupRate(rates, rateKey("PRODUCTION", "Rebar fixing / tying", "hrs/tonne"), { unitCost: 5.5 }).unitCost;
+  const concreterDaysPerM3 = lookupRate(rates, rateKey("PRODUCTION", "Concrete pour (placing & finishing)", "days/m³"), { unitCost: 1 }).unitCost;
+  const fixerDaysPerTonne = lookupRate(rates, rateKey("PRODUCTION", "Rebar fixing / tying", "days/tonne"), { unitCost: 12 }).unitCost;
   (item.tasks || []).forEach((task) => {
     const entry = {};
     if (CONCRETE_POUR_TASK_MATCH.test(task.name) && concreteQty > 0 && task.qtys.concreter_day === undefined) {
-      entry.concreter_day = Math.round(((concreteQty * (placing + finishing)) / WORK_DAY_HOURS) * 100) / 100;
+      entry.concreter_day = Math.round(concreteQty * concreterDaysPerM3 * 100) / 100;
     }
     if (STEEL_FIXING_TASK_MATCH.test(task.name) && reinfTonnes > 0 && task.qtys.steelfixer_day === undefined) {
-      entry.steelfixer_day = Math.round(((reinfTonnes * fixing) / WORK_DAY_HOURS) * 100) / 100;
+      entry.steelfixer_day = Math.round(reinfTonnes * fixerDaysPerTonne * 100) / 100;
     }
     if (Object.keys(entry).length) suggestions[task.id] = entry;
   });

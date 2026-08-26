@@ -37,12 +37,17 @@ export async function listFiles(folderPath) {
     });
 }
 
-/** Uploads one File (from an <input type="file">) into a folder. Prefixes
- * the stored name with the upload time so two people uploading
- * "drawing.pdf" on different days never collide. */
-export async function uploadFile(folderPath, file) {
+/** Uploads one File (from an <input type="file">) into a folder, under an
+ * optional display name (defaults to the file's own name) — this is how a
+ * custom name given at upload time is preserved: it becomes the stored
+ * filename itself (Supabase Storage's own `list()` has no separate
+ * "display name" metadata to lean on instead), stripped of the timestamp
+ * prefix again by listFiles() below. Prefixes the stored name with the
+ * upload time so two people uploading "drawing.pdf" on different days
+ * never collide. */
+export async function uploadFile(folderPath, file, displayName) {
   if (!supabaseEnabled) throw new Error("File storage requires this app to be connected to Supabase.");
-  const safeName = file.name.replace(/[^A-Za-z0-9._-]/g, "_");
+  const safeName = (displayName || file.name).replace(/[^A-Za-z0-9._-]/g, "_");
   const path = `${folderPath}/${Date.now()}-${safeName}`;
   const { error } = await supabase.storage.from(BUCKET).upload(path, file, { upsert: false });
   if (error) throw error;
@@ -52,6 +57,35 @@ export async function uploadFile(folderPath, file) {
 export async function deleteFile(path) {
   if (!supabaseEnabled) return;
   await supabase.storage.from(BUCKET).remove([path]);
+}
+
+export function monthLabel(iso) {
+  return new Date(iso).toLocaleDateString("en-AU", { month: "long", year: "numeric" });
+}
+export function dayLabel(iso) {
+  return new Date(iso).toLocaleDateString("en-AU", { day: "numeric", month: "short" });
+}
+
+/** Folds a flat, newest-first file list (as returned by listFiles) into
+ * Month -> Day -> files groups, both levels newest first — the "rolled up
+ * folded according to days and months" browsing structure. */
+export function groupFilesByMonthDay(files) {
+  const byMonth = new Map();
+  files.forEach((f) => {
+    const month = monthLabel(f.uploadedAt);
+    const dateKey = (f.uploadedAt || "").slice(0, 10);
+    const day = dayLabel(f.uploadedAt);
+    if (!byMonth.has(month)) byMonth.set(month, new Map());
+    const byDay = byMonth.get(month);
+    if (!byDay.has(dateKey)) byDay.set(dateKey, { day, dateKey, files: [] });
+    byDay.get(dateKey).files.push(f);
+  });
+  return [...byMonth.entries()]
+    .map(([month, byDay]) => ({
+      month,
+      days: [...byDay.values()].sort((a, b) => b.dateKey.localeCompare(a.dateKey)),
+    }))
+    .sort((a, b) => (b.days[0]?.dateKey || "").localeCompare(a.days[0]?.dateKey || ""));
 }
 
 export function formatFileSize(bytes) {

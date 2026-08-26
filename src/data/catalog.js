@@ -33,9 +33,8 @@ export const RESOURCE_COLS = [
  * suggestedLabourPrefill in lib/costing.js.
  */
 export const PRODUCTION_RATES = [
-  { key: "concrete_placing_hrs_m3", name: "Concrete placing", unit: "hrs/m³", rate: 0.55 },
-  { key: "concrete_finishing_hrs_m3", name: "Concrete finishing", unit: "hrs/m³", rate: 0.35 },
-  { key: "steel_fixing_hrs_tonne", name: "Rebar fixing / tying", unit: "hrs/tonne", rate: 5.5 },
+  { key: "concrete_pour_days_m3", name: "Concrete pour (placing & finishing)", unit: "days/m³", rate: 1 },
+  { key: "steel_fixing_days_tonne", name: "Rebar fixing / tying", unit: "days/tonne", rate: 12 },
 ];
 
 /* ---------- Labour task templates, keyed by the element's `labour` field ---------- */

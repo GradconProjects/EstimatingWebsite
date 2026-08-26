@@ -309,6 +309,26 @@
       <p>Element-driven concrete &amp; reinforcement takeoff — enter geometry per element, get audited quantities ready to price.</p>
       <span class="cta">Open Estimates <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
     </button>
+
+    <button class="panel-btn" data-target="quotes" data-initial-view="planner">
+      <span class="tag">05</span>
+      <span class="glyph">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="0.8" fill="currentColor"/></svg>
+      </span>
+      <h2>Planner</h2>
+      <p>Deadlines, priority and requirements across every project — what to attend to now, and what can wait. Lives inside Quotes.</p>
+      <span class="cta">Open Planner <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
+    </button>
+
+    <button class="panel-btn" data-target="quotes" data-initial-view="folder">
+      <span class="tag">06</span>
+      <span class="glyph">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>
+      </span>
+      <h2>Project Folder</h2>
+      <p>Documents and communications — one folder per project, plus a shared Office folder for company-wide files. Lives inside Quotes.</p>
+      <span class="cta">Open Project Folder <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
+    </button>
   </div>
 
   <div class="dash-foot">gradcon // internal — review build</div>
@@ -549,7 +569,16 @@
 
   document.querySelectorAll('.panel-btn').forEach(function(btn){
     btn.addEventListener('click', function(){
-      openApp(btn.getAttribute('data-target'), false);
+      // Planner/Project Folder tiles: tell the Quotes app which internal tab
+      // to land on (its App.jsx reads+clears this on mount — see
+      // takeInitialView there) and force a fresh iframe load so that read
+      // actually happens, the same way the Estimates "Publish to Quote"
+      // bridge below forces a reload for its own localStorage handoff.
+      var initialView = btn.getAttribute('data-initial-view');
+      if(initialView){
+        try{ localStorage.setItem('gradcon-quotes-initial-view', initialView); }catch(err){}
+      }
+      openApp(btn.getAttribute('data-target'), !!initialView);
     });
   });
 
