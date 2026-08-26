@@ -47,10 +47,10 @@ check("every element type has both a category and a section", () => {
   });
 });
 
-check("11 material categories, 115 products", () => {
+check("11 material categories, 117 products", () => {
   assert.equal(FULL_CATALOG.length, 11);
   const total = FULL_CATALOG.reduce((s, c) => s + c.products.length, 0);
-  assert.equal(total, 115);
+  assert.equal(total, 117);
 });
 
 check("8 labour/equipment resource columns (incl. both Pump hr and Pump m3)", () => {

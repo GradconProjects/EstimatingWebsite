@@ -109,7 +109,14 @@ export const FULL_CATALOG = [
     ["N28", "m", 4.951, 1925], ["N32", "m", 6.468, 1925], ["N36", "m", 8.19, 1925], ["N40", "m", 10.107, 1925],
   ]},
   { key: "REINFORCING ACCESSORIES", weightBasis: false, products: [
-    ["Delivery fee", "each", null, 300], ["Poly", "roll", null, 89.4], ["Duct Tape", "roll", null, 4.5], ["Abelflex 100mm", "roll", null, 36],
+    ["Delivery fee", "each", null, 300], ["Poly", "roll", null, 89.4],
+    // Same product Poly already covers (a roll of polythene sheeting), but named explicitly so
+    // it's findable by name rather than only recognisable to someone who already knows "Poly" is
+    // it — kept as a SEPARATE product rather than renaming Poly, since Poly is an existing,
+    // rateKey-identified product a live quote could already have a quantity saved against;
+    // renaming it would silently orphan that entry from the UI (see CLAUDE.md rule 6).
+    ["Vapour Barrier / DPM membrane", "m2", null, 2.5],
+    ["Duct Tape", "roll", null, 4.5], ["Abelflex 100mm", "roll", null, 36],
     ["Abelflex 150mm", "roll", null, 54], ["CP 25/40 Bar chairs", "bag", null, 16.2], ["CP 50/65 Bar chairs", "bag", null, 17.4],
     ["CP 75/90 Bar chairs", "bag", null, 21], ["CP 85/100 Bar chairs", "bag", null, 24], ["BCPT 30 Bar chairs", "bag", null, 19.2],
     ["BCPT 100 Bar chairs", "bag", null, 45.6], ["Base 152", "bag", null, 36.6], ["BP1.6 Tie wire", "roll", null, 5.15],
@@ -118,6 +125,9 @@ export const FULL_CATALOG = [
     ["25 mpa Agilia", "m3", null, 310.5], ["32 mpa Agilia", "m3", null, 322.5], ["40 mpa Agilia", "m3", null, 334.5], ["40 mpa Agilia (walls)", "m3", null, 342.5],
     ["15 mpa", "m3", null, 196.5], ["20 mpa", "m3", null, 207.5], ["25 mpa", "m3", null, 212.5], ["32 mpa", "m3", null, 221.5], ["40 mpa", "m3", null, 233.5],
     ["50 mpa", "m3", null, 252.5], ["Exposed Agg", "m3", null, 400], ["Small load charge", "m3", null, 47.25], ["Penetron (Xypex) additive", "m3", null, 100],
+    // Blinding is normally a low-strength unreinforced mix — seeded at the same rate as 15 mpa
+    // (the lowest plain mix already in this catalog) rather than inventing a new price point.
+    ["Blinding concrete", "m3", null, 196.5],
   ]},
   { key: "RATE ITEMS", weightBasis: false, products: [
     ["Hobbs", "m", null, 105], ["Plinths", "m2", null, 610], ["0-50mm set downs", "m", null, 20], ["51-100mm set downs", "m", null, 45],
