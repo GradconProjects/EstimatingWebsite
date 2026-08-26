@@ -446,6 +446,21 @@ const MESHTYPES = {"SL52":1.87,"SL62":2.42,"SL72":3.05,"SL81":3.11,"SL82":3.70,"
 const MESH_SHEET_AREA_M2 = 14.4;
 function barDiaOf(sz){ let m=sz.match(/(\d+)/); return m? parseInt(m[1]):12; }
 function massPerM(dia){ return (dia*dia/162); }
+// Real named trench mesh products (bar count + L-type wire size), same names
+// and per-length steel mass as Quotes' own TRENCH MESH catalog (data/catalog.js)
+// — kept in sync so a takeoff and its priced quote never disagree on what
+// "4 Bar-L12TM" actually weighs. unitWeight there is kg per standard 6.0m
+// length (the same supply length AU trench mesh and mesh sheets both come
+// in); massPerM below converts that to kg/m for this tool's per-metre-run
+// reinforcement schedule.
+const TRENCH_MESH_TYPES = [
+  ["3 Bar-L8TM",6.8],["4 Bar-L8TM",9.2],["5 Bar-L8TM",11.6],["6 Bar-L8TM",13.9],
+  ["3 Bar-L11TM",13.3],["4 Bar-L11TM",17.7],["5 Bar-L11TM",22.3],["6 Bar-L11TM",26.8],
+  ["3 Bar-L12TM",16.3],["4 Bar-L12TM",21.8],["5 Bar-L12TM",27.3],["6 Bar-L12TM",32.8],["7 Bar-L12TM",38.75],
+  ["3 Bar-L16TM",28.9],["4 Bar-L16TM",38.5],
+];
+function trenchMeshTypeSel(field,val){ return selOpts(field,val,TRENCH_MESH_TYPES.map(t=>[t[0],t[0]])); }
+function trenchMeshMassPerM(type){ let t=TRENCH_MESH_TYPES.find(t=>t[0]===type); return (t? t[1]:21.8)/6; }
 const ANCHOR_OPTS = [["straight","Straight development"],["hook90","90° hook"],["hook135","135° hook"],["hook180","180° hook"],["coupler","Mechanical coupler"],["starter","Cast-in starter"],["chemical","Chemical anchor"],["custom","Custom length (mm)"]];
 function anchorLen(type,d,custom){
   d=d||12;
@@ -715,7 +730,12 @@ function overrideKeyFor(materialGroup,material,spec){
 // their own — the weight is already counted on that line's paired area line.
 function lineWeightKg(materialGroup,material,unit,finalQty){
   if(materialGroup!=="Reinforcement" && materialGroup!=="Connections") return 0;
-  if(unit==="m"){
+  if(unit==="m" || unit==="lm"){
+    // Trench mesh is named by type ("6 Bar-L12TM"), not a plain bar diameter — check that
+    // first, since the generic \d+ match below would otherwise grab the leading bar-count
+    // digit (the "6" in "6 Bar-...") and mis-price it as a 6mm bar.
+    let tm=TRENCH_MESH_TYPES.find(t=>t[0]===material);
+    if(tm) return finalQty*trenchMeshMassPerM(material);
     let m=String(material||"").match(/(\d+)/);
     if(!m) return 0;
     return finalQty*massPerM(parseInt(m[1]));
@@ -1009,7 +1029,7 @@ function stripFootingDefaults(){ return {
   qty:1, length:10000, width:600, depth:400, trenchWidth:650, excDepth:450, blinding:50, blindingMaterial:"concrete", vapourMembrane:false, cover:PROJECT.cover, grade:PROJECT.grade,
   formLeft:true, formRight:true, formStart:true, formFinish:true,
   botLong:true, botLongQty:4, botLongDia:"N16", topLong:false, topLongQty:2, topLongDia:"N12",
-  cross:true, crossDia:"N12", crossSpacing:300, trenchMesh:false, trenchMeshBars:4, trenchMeshDia:"N12",
+  cross:true, crossDia:"N12", crossSpacing:300, trenchMesh:false, trenchMeshType:"4 Bar-L12TM", trenchMeshLayers:1,
   ligs:false, ligDia:"N10", ligSpacing:300,
   starters:false, connTarget:"", connQty:2, connDia:"N16", connEmbed:500, connProj:600
 };}
@@ -1032,8 +1052,8 @@ function renderStripFooting(inst){
   <div class="subsec ${d.topLong?'':'hidden'}" data-show-if="topLong"><div class="grid cols3">${F("Qty",inpNum("topLongQty",d.topLongQty))}${F("Dia",barSizeSel("topLongDia",d.topLongDia))}</div></div>
   <div class="grid cols4">${chk("cross",d.cross,"Cross bars / ligatures","cross")}${chk("trenchMesh",d.trenchMesh,"Trench mesh instead","trenchMesh")}</div>
   <div class="subsec ${d.cross?'':'hidden'}" data-show-if="cross"><div class="grid cols3">${F("Dia",barSizeSel("crossDia",d.crossDia))}${F("Spacing (mm)",inpNum("crossSpacing",d.crossSpacing))}</div></div>
-  <div class="subsec ${d.trenchMesh?'':'hidden'}" data-show-if="trenchMesh"><div class="grid cols3">${F("Number of longitudinal bars",inpNum("trenchMeshBars",d.trenchMeshBars))}${F("Bar diameter",barSizeSel("trenchMeshDia",d.trenchMeshDia))}</div>
-  <p class="small">Trench mesh is priced and ordered by the metre (a welded strip of longitudinal bars run the length of the trench), not by sheet area — this counts it the same way as any other run of bars.</p></div>`;
+  <div class="subsec ${d.trenchMesh?'':'hidden'}" data-show-if="trenchMesh"><div class="grid cols3">${F("Trench mesh type",trenchMeshTypeSel("trenchMeshType",d.trenchMeshType))}${F("Layers",inpNum("trenchMeshLayers",d.trenchMeshLayers===undefined?1:d.trenchMeshLayers))}</div>
+  <p class="small">Trench mesh is priced and ordered by the metre (a welded strip of longitudinal bars run the length of the trench), not by sheet area — this counts it the same way as any other run of bars. Same named types as Quotes' own Trench Mesh catalog. Layers &gt; 1 stacks that many identical mesh strips (e.g. a doubled-up trench mesh mat on a heavier footing) — steel quantity multiplies accordingly.</p></div>`;
   let conns=`${chk("starters",d.starters,"Starter bars / dowels up (to wall or column)","starters")}
   <div class="subsec ${d.starters?'':'hidden'}" data-show-if="starters"><div class="grid cols4">
    ${F("Connects to",targetSelect("connTarget",d.connTarget,inst.id))}${F("Qty",inpNum("connQty",d.connQty))}${F("Dia",barSizeSel("connDia",d.connDia))}${F("Embedment (mm)",inpNum("connEmbed",d.connEmbed))}${F("Projection (mm)",inpNum("connProj",d.connProj))}
@@ -1071,9 +1091,10 @@ function computeStripFooting(inst,def){
     lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.crossDia,spec:"Cross bars",qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`count(${count})×len×${N}`,notes:`${fmt(wt,1)} kg`}));
   }
   if(d.trenchMesh){
-    let bd=barDiaOf(d.trenchMeshDia);
-    let totLen=N*num(d.trenchMeshBars)*Lm; let wt=totLen*massPerM(bd);
-    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.trenchMeshDia,spec:"Trench mesh",qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`${d.trenchMeshBars}×${N}×${Lm}`,notes:`${fmt(wt,1)} kg`}));
+    let layers=Math.max(1,Math.round(num(d.trenchMeshLayers,1)));
+    let totLen=N*layers*Lm; let wt=totLen*trenchMeshMassPerM(d.trenchMeshType);
+    let layerNote=layers>1?` × ${layers} layers`:"";
+    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.trenchMeshType,spec:`Trench mesh${layerNote}`,qty:totLen,unit:"lm",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`${N}×${layers}L×${Lm}`,notes:`${fmt(wt,1)} kg`}));
   }
   if(d.starters){
     let bd=barDiaOf(d.connDia); let len=(num(d.connEmbed)+num(d.connProj))/1000;
@@ -1174,7 +1195,7 @@ function beamDefaults(cat){ return {
   beamType:"independent", grade:PROJECT.grade, cover:PROJECT.cover,
   formLeft:true, formRight:true, formSoffit:true, formTop:false, formStart:true, formFinish:true,
   reoRows:[{position:"Top continuous",qty:3,dia:"N24",layers:1,startA:"column",endA:"column"},{position:"Bottom continuous",qty:4,dia:"N28",layers:1,startA:"column",endA:"column"}],
-  trenchMesh:false, trenchMeshBars:4, trenchMeshDia:"N12",
+  trenchMesh:false, trenchMeshType:"4 Bar-L12TM", trenchMeshLayers:1,
   ligZones:[{zone:"Left support",length:1200,dia:"N10",spacing:100},{zone:"Midspan",length:0,dia:"N10",spacing:200,auto:true},{zone:"Right support",length:1200,dia:"N10",spacing:100}],
   starters:false, connTarget:"", connQty:4, connDia:"N20", connEmbed:600, connProj:600,
   stepdown:false, sdDepth:150, sdDia:"N12", sdSpacing:300, sdProj1:300, sdProj2:300
@@ -1196,8 +1217,8 @@ function renderBeam(inst,def){
   let form=`<div class="grid cols3">${chk("formLeft",d.formLeft,"Left face")}${chk("formRight",d.formRight,"Right face")}${chk("formSoffit",d.formSoffit,"Soffit")}${chk("formTop",d.formTop,"Top")}${chk("formStart",d.formStart,"Start end")}${chk("formFinish",d.formFinish,"Finish end")}</div>`;
   let reo=`<div class="sechead">Longitudinal Reinforcement</div>
   <div class="grid cols3">${chk("trenchMesh",d.trenchMesh,"Trench mesh instead","trenchMesh")}</div>
-  <div class="subsec ${d.trenchMesh?'':'hidden'}" data-show-if="trenchMesh"><div class="grid cols3">${F("Number of longitudinal bars",inpNum("trenchMeshBars",d.trenchMeshBars))}${F("Bar diameter",barSizeSel("trenchMeshDia",d.trenchMeshDia))}</div>
-  <p class="small">Trench mesh is priced and ordered by the metre (a welded strip of longitudinal bars run the length of the beam), not by sheet area — this counts it the same way as any other run of bars. Same option as Strip Footing, for a ground beam reinforced the same way.</p></div>
+  <div class="subsec ${d.trenchMesh?'':'hidden'}" data-show-if="trenchMesh"><div class="grid cols3">${F("Trench mesh type",trenchMeshTypeSel("trenchMeshType",d.trenchMeshType))}${F("Layers",inpNum("trenchMeshLayers",d.trenchMeshLayers===undefined?1:d.trenchMeshLayers))}</div>
+  <p class="small">Trench mesh is priced and ordered by the metre (a welded strip of longitudinal bars run the length of the beam), not by sheet area — this counts it the same way as any other run of bars. Same named types as Strip Footing and Quotes' own Trench Mesh catalog, for a ground beam reinforced the same way. Layers &gt; 1 stacks that many identical mesh strips — steel quantity multiplies accordingly.</p></div>
   <div class="subsec ${d.trenchMesh?'hidden':''}" data-show-if="trenchMesh_off">
   <p class="small">Layers &gt; 1 stacks that many identical bar sets in the same position (e.g. 2 layers of 4N28 bottom, common on heavily loaded transfer/cap beams) — steel quantity multiplies accordingly.</p>
   <table class="rows" id="reoRows_${inst.id}"><thead><tr><th>Position</th><th>Qty/layer</th><th>Size</th><th>Layers</th><th>Start anchorage</th><th>End anchorage</th><th></th></tr></thead>
@@ -1263,9 +1284,10 @@ function computeBeam(inst,def){
   if(d.formFinish){ let a=N*Wm*sideD; fArea+=a; fParts.push(`Finish ${fmt(a,2)}`); }
   if(fArea>0) lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Beam formwork",spec:"Selected faces",qty:fArea,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(fArea,PROJECT.formworkWaste),formula:fParts.join(" + ")}));
   if(d.trenchMesh){
-    let bd=barDiaOf(d.trenchMeshDia);
-    let totLen=N*num(d.trenchMeshBars)*Lm; let wt=totLen*massPerM(bd);
-    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.trenchMeshDia,spec:"Trench mesh (longitudinal)",qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`${d.trenchMeshBars}×${N}×${fmt(Lm,2)}`,notes:`${fmt(wt,1)} kg`}));
+    let layers=Math.max(1,Math.round(num(d.trenchMeshLayers,1)));
+    let totLen=N*layers*Lm; let wt=totLen*trenchMeshMassPerM(d.trenchMeshType);
+    let layerNote=layers>1?` × ${layers} layers`:"";
+    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.trenchMeshType,spec:`Trench mesh (longitudinal)${layerNote}`,qty:totLen,unit:"lm",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`${N}×${layers}L×${fmt(Lm,2)}`,notes:`${fmt(wt,1)} kg`}));
   } else {
     d.reoRows.forEach(r=>{
       let bd=barDiaOf(r.dia);
@@ -1321,7 +1343,7 @@ function slabDefaults(cat,suspended){ return {
   stepdown:false, sdDepth:150, sdDia:"N12", sdSpacing:300, sdProj1:300, sdProj2:300,
   edgeThicken:false, edgeThickenWidth:300, edgeThickenExtraDepth:150,
   beamStrips:false, beamStripsLength:0, beamStripsWidth:300, beamStripsExtraDepth:150,
-  beamStripsReo:false, beamStripsTrenchMesh:false, beamStripsBars:4, beamStripsDia:"N16"
+  beamStripsReo:false, beamStripsTrenchMesh:false, beamStripsBars:4, beamStripsDia:"N16", beamStripsTrenchType:"4 Bar-L12TM", beamStripsLayers:1
 };}
 function renderSlab(inst,def){
   let d=inst.data;
@@ -1349,9 +1371,14 @@ function renderSlab(inst,def){
   <div class="tip"><span class="ico">🏗️</span><div>A raft foundation's internal beams (the thickened ribs that run under load-bearing walls, not just the perimeter) are easy to miss because they're not their own drawing callout — they're a detail cut through the slab. Turn this on to fold them into this raft as one composite element: total the combined length of every internal beam run from the drawing (not the perimeter — that's Edge Thickening above) and it's costed as run length × strip width × extra depth, added on top of the flat slab volume. Leave it off and take the beams off separately as their own Ground Beam element instead if you'd rather price and schedule them apart from the slab — either way, don't double up and count the same beam in both places.</div></div>
   <div class="subsec"><div class="sechead">Beam Strip Reinforcement</div><div class="grid cols3">${chk("beamStripsReo",d.beamStripsReo,"Longitudinal reinforcement along the beam strips","beamStripsReo")}</div>
   <div class="subsec ${d.beamStripsReo?'':'hidden'}" data-show-if="beamStripsReo">
-  <div class="grid cols3">${chk("beamStripsTrenchMesh",d.beamStripsTrenchMesh,"Trench mesh instead","beamStripsTrenchMesh")}</div>
-  <div class="grid cols3">${F(d.beamStripsTrenchMesh?"Number of longitudinal bars":"Longitudinal bars (no.)",inpNum("beamStripsBars",d.beamStripsBars))}${F("Bar diameter",barSizeSel("beamStripsDia",d.beamStripsDia))}</div>
-  <p class="small">Same reinforcement options as the standalone Ground Beam element — individual deformed bars or trench mesh, run the full combined beam length entered above. Ligatures/stirrups for these ribs aren't counted here; add them as their own custom line, or take the beam off separately as a Ground Beam element if you need full stirrup-zone detail.</p>
+  <div class="grid cols3">${chk("beamStripsTrenchMesh",d.beamStripsTrenchMesh,"Trench mesh instead","beamStripsTrenchMesh",true)}</div>
+  <div class="grid cols3">
+   ${d.beamStripsTrenchMesh
+     ? F("Trench mesh type",trenchMeshTypeSel("beamStripsTrenchType",d.beamStripsTrenchType))
+     : F("Longitudinal bars (no.)",inpNum("beamStripsBars",d.beamStripsBars))+F("Bar diameter",barSizeSel("beamStripsDia",d.beamStripsDia))}
+   ${F("Layers",inpNum("beamStripsLayers",d.beamStripsLayers===undefined?1:d.beamStripsLayers))}
+  </div>
+  <p class="small">Same reinforcement options as the standalone Ground Beam element — individual deformed bars or a named trench mesh type (same list as Quotes' own Trench Mesh catalog), run the full combined beam length entered above. Layers &gt; 1 stacks that many identical bar sets/mesh strips. Ligatures/stirrups for these ribs aren't counted here; add them as their own custom line, or take the beam off separately as a Ground Beam element if you need full stirrup-zone detail.</p>
   </div></div></div></div>
   <div class="subsec"><div class="sechead">Openings / Penetrations</div>
   <table class="rows"><thead><tr><th>Label</th><th>Width (mm)</th><th>Height/Length (mm)</th><th>Qty</th><th></th></tr></thead>
@@ -1435,10 +1462,18 @@ function computeSlab(inst,def){
     let bw=num(d.beamStripsWidth)/1000, bd=num(d.beamStripsExtraDepth)/1000;
     let beamVol=num(d.beamStripsLength)*bw*bd;
     lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:"Internal beam strips (raft ribs)",qty:beamVol,unit:"m³",waste:PROJECT.concreteWaste,finalQty:withWaste(beamVol,PROJECT.concreteWaste),formula:`run length(${fmt(num(d.beamStripsLength),1)}m)×width(${d.beamStripsWidth}mm)×extra depth(${d.beamStripsExtraDepth}mm)`}));
-    if(d.beamStripsReo && num(d.beamStripsBars)>0){
-      let bd=barDiaOf(d.beamStripsDia);
-      let totLen=num(d.beamStripsBars)*num(d.beamStripsLength); let wt=totLen*massPerM(bd);
-      lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.beamStripsDia,spec:d.beamStripsTrenchMesh?"Beam strips — trench mesh (longitudinal)":"Beam strips — longitudinal bars",qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`${d.beamStripsBars}×${fmt(num(d.beamStripsLength),1)}`,notes:`${fmt(wt,1)} kg`}));
+    if(d.beamStripsReo){
+      let layers=Math.max(1,Math.round(num(d.beamStripsLayers,1)));
+      let runLen=num(d.beamStripsLength);
+      let layerNote=layers>1?` × ${layers} layers`:"";
+      if(d.beamStripsTrenchMesh){
+        let totLen=runLen*layers; let wt=totLen*trenchMeshMassPerM(d.beamStripsTrenchType);
+        lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.beamStripsTrenchType,spec:`Beam strips — trench mesh (longitudinal)${layerNote}`,qty:totLen,unit:"lm",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`${layers}L×${fmt(runLen,1)}`,notes:`${fmt(wt,1)} kg`}));
+      } else if(num(d.beamStripsBars)>0){
+        let bd=barDiaOf(d.beamStripsDia);
+        let totLen=num(d.beamStripsBars)*layers*runLen; let wt=totLen*massPerM(bd);
+        lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.beamStripsDia,spec:`Beam strips — longitudinal bars${layerNote}`,qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`${d.beamStripsBars}×${layers}L×${fmt(runLen,1)}`,notes:`${fmt(wt,1)} kg`}));
+      }
     }
   }
   function barCalc(prefix,label,perpDim){
