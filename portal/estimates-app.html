@@ -89,6 +89,12 @@ table.results tr:hover td{background:#1a2226;}
 tr.manual-override td{background:#2a2410;}
 tr.manual-override:hover td{background:#332c14;}
 .manual-cell input[type=number]{width:80px;}
+.takeoff-chip{display:inline-flex;align-items:stretch;border:1px solid var(--line);border-radius:8px;overflow:hidden;}
+.takeoff-chip.active{border-color:var(--accent);}
+.takeoff-chip .takeoff-open{background:var(--input);border:none;color:var(--text);padding:7px 12px;cursor:pointer;font-size:12.5px;}
+.takeoff-chip.active .takeoff-open{background:var(--accent);color:#04211d;font-weight:700;cursor:default;}
+.takeoff-chip .takeoff-del{background:transparent;border:none;border-left:1px solid var(--line);color:var(--muted);padding:0 9px;cursor:pointer;}
+.takeoff-chip .takeoff-del:hover{color:#e74c3c;}
 .manual-badge{display:inline-block;font-size:10px;font-weight:700;color:#e8c33d;background:#3a2e1c;padding:1px 6px;border-radius:10px;margin-left:4px;white-space:nowrap;}
 .diagram{background:#0c1214;border:1px solid var(--line);border-radius:8px;overflow:hidden;}
 .diag-head{display:flex;align-items:center;justify-content:space-between;padding:6px 10px;border-bottom:1px solid #1e2b30;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:9px;letter-spacing:.08em;color:var(--accent);}
@@ -120,7 +126,11 @@ footer.note{color:var(--muted);font-size:11px;text-align:center;padding:20px;}
 .roleband{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;}
 .roleband span{background:var(--panel2);border:1px solid var(--line);border-radius:20px;padding:3px 11px;font-size:10.5px;color:var(--accent2);}
 @media print{
-  header.app, nav.tabs, .toolbar, .card-tabs, footer.note, .filterbar, #page-setup, #page-library, #page-workspace, #page-export .toolbar { display:none !important; }
+  /* Hide the ENTIRE app — every page, whichever is active — so the printed
+     takeoff report is only #printReport. (Previously #page-export/#page-register
+     weren't hidden, so the report came out with the app's publish/export
+     panels stuck on the front.) */
+  header.app, nav.tabs, .toolbar, .card-tabs, footer.note, .filterbar, .page { display:none !important; }
   body{background:#fff;color:#000;font-size:11px;}
   #printReport{display:block !important;}
   .stat{border:1px solid #999;}
@@ -150,6 +160,7 @@ footer.note{color:var(--muted);font-size:11px;text-align:center;padding:20px;}
 <main>
 
 <section id="page-setup" class="page active">
+  <div class="panel" id="takeoffsBar"></div>
   <div class="teach">
     <div class="roleband"><span>👷 Estimator</span><span>🏗️ Structural Engineer</span><span>💻 Software Logic</span><span>🎓 Teacher</span></div>
     <h3>How to run a fast, defensible takeoff with this tool</h3>
@@ -313,6 +324,115 @@ let PROJECT = {
     if(["gross","net","configurable"].indexOf(prefs.estMeasurementRule) !== -1) PROJECT.measurementRule = prefs.estMeasurementRule;
   }catch(e){}
 })();
+// Post-overlay snapshot: what a brand-new takeoff's PROJECT should look like
+// (hardcoded defaults + the user's Settings overrides), captured BEFORE any
+// saved state loads over the live PROJECT object.
+const DEFAULT_PROJECT_TEMPLATE = JSON.parse(JSON.stringify(PROJECT));
+function freshProjectState(){
+  PROJECT = JSON.parse(JSON.stringify(DEFAULT_PROJECT_TEMPLATE));
+  PROJECT.estimateSessionId = newEstimateSessionId();
+  SELECTED_TYPES = {};
+  INSTANCES = [];
+  ID_COUNTER = 1;
+  ["boredpier","pilecap","groundbeam","suspslab","column"].forEach(id=>SELECTED_TYPES[id]=true);
+}
+function rerenderAllPages(){
+  renderProjectForm(); renderDefaultsForm(); renderLibrary(); renderAddToolbar(); renderWorkspace(); computeAllAndRefresh(); renderTakeoffsBar();
+}
+// Boot-time registry setup: seed the index with the historical single-blob
+// key as project #1 if this install predates the registry, then point
+// CURRENT_PROJECT_KEY at the last-active takeoff.
+function initTakeoffRegistry(){
+  let idx = loadProjectsIndex();
+  if(idx.length===0){
+    idx = [{ id:"p1", name:"", key: ESTIMATE_STATE_KEY, savedAt: new Date().toISOString() }];
+    try{ localStorage.setItem(ESTIMATE_INDEX_KEY, JSON.stringify(idx)); }catch(e){}
+  }
+  let activeId = null;
+  try{ activeId = localStorage.getItem(ESTIMATE_ACTIVE_KEY); }catch(e){}
+  let entry = idx.find(p=>p.id===activeId) || idx[0];
+  CURRENT_PROJECT_KEY = entry.key;
+  try{ localStorage.setItem(ESTIMATE_ACTIVE_KEY, entry.id); }catch(e){}
+}
+function activeTakeoffId(){
+  let idx = loadProjectsIndex();
+  let entry = idx.find(p=>p.key===CURRENT_PROJECT_KEY);
+  return entry? entry.id : null;
+}
+function switchToTakeoff(id){
+  let idx = loadProjectsIndex();
+  let entry = idx.find(p=>p.id===id);
+  if(!entry || entry.key===CURRENT_PROJECT_KEY) return;
+  // Persist the takeoff being left under its own key — unless it was just
+  // deleted (no longer in the index), where saving would resurrect its blob.
+  if(idx.some(p=>p.key===CURRENT_PROJECT_KEY)) saveEstimateState();
+  CURRENT_PROJECT_KEY = entry.key;
+  try{ localStorage.setItem(ESTIMATE_ACTIVE_KEY, id); }catch(e){}
+  freshProjectState();
+  loadEstimateState();       // local copy now; cloud pulls a newer one below if it exists
+  rerenderAllPages();
+  syncFromCloud();
+}
+function newTakeoff(){
+  saveEstimateState();
+  let id = "proj_"+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+  let key = ESTIMATE_STATE_KEY+"::"+id;
+  let idx = loadProjectsIndex();
+  idx.push({ id, name:"", key, savedAt:new Date().toISOString() });
+  saveProjectsIndex(idx);
+  CURRENT_PROJECT_KEY = key;
+  try{ localStorage.setItem(ESTIMATE_ACTIVE_KEY, id); }catch(e){}
+  freshProjectState();
+  saveEstimateState();
+  rerenderAllPages();
+}
+function deleteTakeoff(id){
+  let idx = loadProjectsIndex();
+  let entry = idx.find(p=>p.id===id);
+  if(!entry) return;
+  let name = entry.name || "Untitled takeoff";
+  if(portalPref("confirmDeletes")!==false && !confirm(`Delete saved takeoff "${name}" and all its elements? This cannot be undone.`)) return;
+  idx = idx.filter(p=>p.id!==id);
+  try{ localStorage.removeItem(entry.key); localStorage.removeItem(entry.key+"__syncedAt"); }catch(e){}
+  kvPush(entry.key, null); // clear the cloud copy so another device's sync can't resurrect it
+  if(idx.length===0){
+    saveProjectsIndex(idx);
+    newTakeoff();
+    return;
+  }
+  saveProjectsIndex(idx);
+  if(entry.key===CURRENT_PROJECT_KEY){
+    switchToTakeoff(idx[0].id);
+  } else {
+    renderTakeoffsBar();
+  }
+}
+function renderTakeoffsBar(){
+  let host = document.getElementById("takeoffsBar");
+  if(!host) return;
+  let idx = loadProjectsIndex();
+  let activeKey = CURRENT_PROJECT_KEY;
+  host.innerHTML = `<div class="sechead">Saved Takeoffs</div>
+   <div class="tip"><span class="ico">💾</span><div>Each takeoff saves independently — 💾 Save writes only the one that's open. Start another with <b>+ New takeoff</b> and resume any saved one from this list at any time; nothing here touches the others.</div></div>
+   <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+   ${idx.map(p=>{
+     let active = p.key===activeKey;
+     let label = (p.name||"Untitled takeoff");
+     let when = p.savedAt? new Date(p.savedAt).toLocaleString([], {day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}) : "";
+     return `<span class="takeoff-chip${active?' active':''}" data-takeoff="${p.id}">
+       <button class="takeoff-open" data-action="openTakeoff" data-id="${p.id}" ${active?'disabled':''} title="${active?'Currently open':'Resume this takeoff'}">${active?'▶ ':''}${label}<span class="small" style="margin-left:6px;opacity:.7;">${when}</span></button>
+       <button class="takeoff-del" data-action="deleteTakeoff" data-id="${p.id}" title="Delete this saved takeoff">✕</button>
+      </span>`;
+   }).join('')}
+   <button class="btn small primary" data-action="newTakeoff">+ New takeoff</button>
+   </div>`;
+  host.onclick = (e)=>{
+    let btn = e.target.closest('button[data-action]'); if(!btn) return;
+    if(btn.dataset.action==="newTakeoff") newTakeoff();
+    else if(btn.dataset.action==="openTakeoff") switchToTakeoff(btn.dataset.id);
+    else if(btn.dataset.action==="deleteTakeoff") deleteTakeoff(btn.dataset.id);
+  };
+}
 // Per-element preference overlay for freshly added elements: pre-tick every
 // "Include lap allowance (%)" checkbox, and swap the default trench mesh /
 // slab mesh product for the user's preferred one. Field-name based (any
@@ -352,6 +472,23 @@ let UPLOADED_FILES = [];   // {id,name,size,kind:'csv'|'excel'|'pdf'|'other',add
 // which are one-shot snapshots written only on Publish) so work survives a
 // reload even before the estimator has published anything.
 const ESTIMATE_STATE_KEY = "gradcon-estimate-state";
+// ---- Multi-takeoff registry -------------------------------------------------
+// Each saved takeoff lives under its own storage key (localStorage AND the
+// same key in the Supabase kv table), tracked by a small index. The very
+// first takeoff keeps the historical plain ESTIMATE_STATE_KEY so an install
+// (and its cloud copy on other devices) that predates multi-project support
+// carries straight over as project #1; every later takeoff gets a suffixed
+// key. CURRENT_PROJECT_KEY is what save/load/sync actually read and write.
+const ESTIMATE_INDEX_KEY = "gradcon-estimate-projects-index";
+const ESTIMATE_ACTIVE_KEY = "gradcon-estimate-active";
+let CURRENT_PROJECT_KEY = ESTIMATE_STATE_KEY;
+function loadProjectsIndex(){
+  try{ let idx = JSON.parse(localStorage.getItem(ESTIMATE_INDEX_KEY)); return Array.isArray(idx)? idx : []; }catch(e){ return []; }
+}
+function saveProjectsIndex(idx){
+  try{ localStorage.setItem(ESTIMATE_INDEX_KEY, JSON.stringify(idx)); }catch(e){}
+  kvPush(ESTIMATE_INDEX_KEY, idx);
+}
 
 /* ============================= CROSS-DEVICE SYNC (Supabase) =============================
  * Same estimator_kv table and pattern as Rates Library/Cost Planner (see their matching
@@ -410,13 +547,23 @@ function estimateStateSnapshot(){
 }
 function saveEstimateState(){
   try{
-    localStorage.setItem(ESTIMATE_STATE_KEY, JSON.stringify({ ...estimateStateSnapshot(), savedAt: new Date().toISOString() }));
+    localStorage.setItem(CURRENT_PROJECT_KEY, JSON.stringify({ ...estimateStateSnapshot(), savedAt: new Date().toISOString() }));
     showSaveStatus("ok");
   }catch(err){ showSaveStatus("err"); }
-  kvPush(ESTIMATE_STATE_KEY, estimateStateSnapshot()).then(row=>{
+  kvPush(CURRENT_PROJECT_KEY, estimateStateSnapshot()).then(row=>{
     if(!row) return;
-    try{ localStorage.setItem(ESTIMATE_STATE_KEY+"__syncedAt", row.updated_at); }catch(e){}
+    try{ localStorage.setItem(CURRENT_PROJECT_KEY+"__syncedAt", row.updated_at); }catch(e){}
   });
+  // Keep the takeoff registry's name/date for the open project current, so
+  // the Saved Takeoffs list always shows what a resume would open.
+  let idx = loadProjectsIndex();
+  let entry = idx.find(p=>p.key===CURRENT_PROJECT_KEY);
+  if(entry){
+    entry.name = PROJECT.name || "";
+    entry.savedAt = new Date().toISOString();
+    saveProjectsIndex(idx);
+    renderTakeoffsBar();
+  }
 }
 // Shared by loadEstimateState() (localStorage, on boot) and syncFromCloud() (Supabase,
 // live) so the two never drift on how a loaded blob becomes real app state.
@@ -428,7 +575,7 @@ function applyLoadedEstimateState(parsed){
 }
 function loadEstimateState(){
   let raw;
-  try{ raw = localStorage.getItem(ESTIMATE_STATE_KEY); }catch(err){ return false; }
+  try{ raw = localStorage.getItem(CURRENT_PROJECT_KEY); }catch(err){ return false; }
   if(!raw) return false;
   try{
     let parsed = JSON.parse(raw);
@@ -443,24 +590,49 @@ let syncingFromCloud = false;
 async function syncFromCloud(){
   if(syncingFromCloud) return;
   syncingFromCloud = true;
+  const keyAtStart = CURRENT_PROJECT_KEY; // guard: user may switch takeoffs while the fetch is in flight
   try{
-    const row = await kvFetch(ESTIMATE_STATE_KEY);
+    await syncProjectsIndexFromCloud();
+    const row = await kvFetch(keyAtStart);
+    if(CURRENT_PROJECT_KEY !== keyAtStart) return;
     if(!row){
-      const pushed = await kvPush(ESTIMATE_STATE_KEY, estimateStateSnapshot());
-      if(pushed) try{ localStorage.setItem(ESTIMATE_STATE_KEY+"__syncedAt", pushed.updated_at); }catch(e){}
+      const pushed = await kvPush(keyAtStart, estimateStateSnapshot());
+      if(pushed) try{ localStorage.setItem(keyAtStart+"__syncedAt", pushed.updated_at); }catch(e){}
       return;
     }
-    const localSyncedAt = localStorage.getItem(ESTIMATE_STATE_KEY+"__syncedAt");
+    const localSyncedAt = localStorage.getItem(keyAtStart+"__syncedAt");
     if(localSyncedAt && row.updated_at <= localSyncedAt) return;
     applyLoadedEstimateState(row.value || {});
     try{
-      localStorage.setItem(ESTIMATE_STATE_KEY, JSON.stringify({ ...estimateStateSnapshot(), savedAt: new Date().toISOString() }));
-      localStorage.setItem(ESTIMATE_STATE_KEY+"__syncedAt", row.updated_at);
+      localStorage.setItem(keyAtStart, JSON.stringify({ ...estimateStateSnapshot(), savedAt: new Date().toISOString() }));
+      localStorage.setItem(keyAtStart+"__syncedAt", row.updated_at);
     }catch(e){}
     renderProjectForm(); renderDefaultsForm(); renderLibrary(); renderAddToolbar(); renderWorkspace(); computeAllAndRefresh();
   } finally {
     syncingFromCloud = false;
   }
+}
+// Merge the cloud copy of the takeoff registry into the local one (union by
+// id; the entry with the newer savedAt wins its name/date) so a takeoff
+// started on another device shows up in this browser's Saved Takeoffs list.
+async function syncProjectsIndexFromCloud(){
+  try{
+    const row = await kvFetch(ESTIMATE_INDEX_KEY);
+    if(!row || !Array.isArray(row.value)) return;
+    let local = loadProjectsIndex();
+    let byId = {};
+    local.forEach(p=>{ byId[p.id]=p; });
+    let changed = false;
+    row.value.forEach(remote=>{
+      let mine = byId[remote.id];
+      if(!mine){ local.push(remote); byId[remote.id]=remote; changed = true; }
+      else if((remote.savedAt||"") > (mine.savedAt||"")){ mine.name = remote.name; mine.savedAt = remote.savedAt; changed = true; }
+    });
+    if(changed){
+      try{ localStorage.setItem(ESTIMATE_INDEX_KEY, JSON.stringify(local)); }catch(e){}
+      renderTakeoffsBar();
+    }
+  }catch(e){ /* best-effort */ }
 }
 
 // Cover varies by exposure/formwork condition, not one flat number — AS 3600-style starting points.
@@ -968,7 +1140,7 @@ function pileCapDefaults(){ return {
   linkTarget:"", linkedPierCount:4,
   topX:true, topXDia:"N16", topXSpacing:200, topXLap:false, topY:true, topYDia:"N16", topYSpacing:200, topYLap:false,
   botX:true, botXDia:"N20", botXSpacing:150, botXLap:false, botY:true, botYDia:"N20", botYSpacing:150, botYLap:false,
-  sideBars:false, sideDia:"N12", sideSpacing:200,
+  sideBars:false, sideDia:"N12", sideSpacing:200, sideLap:false,
   colStarters:true, colTarget:"", colQty:8, colDia:"N24", colEmbed:600, colProj:900, colHook:"straight", colLap:1200,
   formA:true, formB:true, formC:true, formD:true
 };}
@@ -1001,8 +1173,9 @@ function renderPileCap(inst){
    ${chk("topY",d.topY,isBeam?"Longitudinal bars (along length)":"Top Y bars")}${F("Dia",barSizeSel("topYDia",d.topYDia))}${F("Spacing (mm)",inpNum("topYSpacing",d.topYSpacing))}${chk("topYLap",d.topYLap,"Lap %","topYLap")}
   </div>
   <div class="sechead">Side Bars / Ligatures</div>
-  ${chk("sideBars",d.sideBars,isBeam?"Side face bars / stirrups":"Side face bars","sideBars")}
-  <div class="subsec ${d.sideBars?'':'hidden'}" data-show-if="sideBars"><div class="grid cols3">${F("Dia",barSizeSel("sideDia",d.sideDia))}${F("Spacing (mm)",inpNum("sideSpacing",d.sideSpacing))}</div></div>`;
+  ${chk("sideBars",d.sideBars,isBeam?"Ligatures / stirrups along the beam":"Side face bars (perimeter)","sideBars")}
+  <div class="subsec ${d.sideBars?'':'hidden'}" data-show-if="sideBars"><div class="grid cols3">${F("Dia",barSizeSel("sideDia",d.sideDia))}${F("Spacing (mm)",inpNum("sideSpacing",d.sideSpacing))}${isBeam?"":chk("sideLap",d.sideLap,"Lap %","sideLap")}</div>
+  ${isBeam?`<p class="small">Closed stirrups at the entered spacing along the full beam length — perimeter taken from the beam's width × depth less cover.</p>`:`<p class="small">Horizontal bars running the cap's full perimeter, spaced vertically over the depth — the crack-control bars on deep caps that never appear in the top/bottom mat schedule.</p>`}</div>`;
   let conns=`${chk("colStarters",d.colStarters,"Column starters (out)","colStarters")}
   <div class="subsec ${d.colStarters?'':'hidden'}" data-show-if="colStarters"><div class="grid cols4">
    ${F("Connects to (column)",targetSelect("colTarget",d.colTarget,inst.id))}${F("Quantity",inpNum("colQty",d.colQty))}${F("Diameter",barSizeSel("colDia",d.colDia))}
@@ -1037,6 +1210,26 @@ function computePileCap(inst,def){
   mat(d.botY,d.botYDia,d.botYSpacing,d.L,d.W,"Bottom Y bars",d.botYLap);
   mat(d.topX,d.topXDia,d.topXSpacing,d.W,d.L,"Top X bars",d.topXLap);
   mat(d.topY,d.topYDia,d.topYSpacing,d.L,d.W,"Top Y bars",d.topYLap);
+  if(d.sideBars){
+    // The render UI for this section existed but was never computed — a
+    // ticked "side face bars / stirrups" silently produced no quantity line.
+    let sDia=barDiaOf(d.sideDia);
+    let sp=Math.max(1,num(d.sideSpacing,200));
+    if(d.shape==="beam"){
+      // Closed stirrups along the beam: perimeter of (W×D) less cover.
+      let count=(Math.floor((num(d.L)-2*cover)/sp)+1)*N;
+      let perim=2*(((num(d.W)-2*cover)+(num(d.D)-2*cover))/1000);
+      let totLen=count*perim; let wt=totLen*massPerM(sDia);
+      lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.sideDia,spec:"Ligatures / stirrups",qty:count,unit:"no.",waste:0,finalQty:count,formula:`(beam L−2c)/spacing+1 ×${N}`,notes:`${fmt(totLen,1)}m, ${fmt(wt,1)} kg`}));
+    } else {
+      // Perimeter side-face bars spaced vertically over the cap depth.
+      let count=(Math.floor((num(d.D)-2*cover)/sp)+1);
+      let barLen=2*(((num(d.L)-2*cover)+(num(d.W)-2*cover))/1000);
+      let totLen=count*barLen*N; let wt=totLen*massPerM(sDia);
+      let lapPct=d.sideLap?PROJECT.lapPct:0;
+      lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.sideDia,spec:"Side face bars (perimeter)",qty:totLen,unit:"m",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,lapPct),formula:`(D−2c)/spacing+1 rows × perimeter ×${N}`,notes:`${fmt(wt,1)} kg`}));
+    }
+  }
   let fArea=0, fFaces=[];
   if(d.formA){ fArea+=N*L*D; fFaces.push("A"); }
   if(d.formB){ fArea+=N*L*D; fFaces.push("B"); }
@@ -1158,7 +1351,8 @@ function computeStripFooting(inst,def){
 function padFootingDefaults(){ return {
   qty:4, length:1500, width:1500, depth:500, cover:PROJECT.cover, grade:PROJECT.grade,
   oversize:150, excDepth:550, blinding:50, blindingMaterial:"concrete", vapourMembrane:false, pedestal:false, pedH:0, pedW:0, pedD:0, sloping:false,
-  botReoType:"bars", botX:true, botXDia:"N16", botXSpacing:200, botXLap:false, botY:true, botYDia:"N16", botYSpacing:200, botYLap:false, botMeshType:"SL82", botMeshLayers:1,
+  botReoType:"bars", botX:true, botXDia:"N16", botXSpacing:200, botXLap:false, botY:true, botYDia:"N16", botYSpacing:200, botYLap:false, botMeshType:"SL82", botMeshLayers:1, botMeshLap:false,
+  ligs:false, ligDia:"N10", ligSpacing:200, ligW:300, ligD:300,
   starters:true, connTarget:"", connQty:4, connDia:"N20", connEmbed:600, connProj:900, connHook:"straight",
   castins:false, anchorBolts:false, holdDown:false, ferrules:false, plates:false, boltTemplate:false,
   formA:false, formB:false, formC:false, formD:false
@@ -1182,7 +1376,13 @@ function renderPadFooting(inst){
    ${chk("botX",d.botX,"Bottom X bars")}${F("Dia",barSizeSel("botXDia",d.botXDia))}${F("Spacing",inpNum("botXSpacing",d.botXSpacing))}${chk("botXLap",d.botXLap,"Lap %","botXLap")}
    ${chk("botY",d.botY,"Bottom Y bars")}${F("Dia",barSizeSel("botYDia",d.botYDia))}${F("Spacing",inpNum("botYSpacing",d.botYSpacing))}${chk("botYLap",d.botYLap,"Lap %","botYLap")}
   </div></div>
-  <div class="subsec ${d.botReoType=='mesh'?'':'hidden'}" data-show-if="botReoType_mesh"><div class="grid cols3">${F("Mesh type",selOpts("botMeshType",d.botMeshType,Object.keys(MESHTYPES).map(m=>[m,m])))}${F("Layers",inpNum("botMeshLayers",d.botMeshLayers))}</div></div>`;
+  <div class="subsec ${d.botReoType=='mesh'?'':'hidden'}" data-show-if="botReoType_mesh"><div class="grid cols3">${F("Mesh type",selOpts("botMeshType",d.botMeshType,Object.keys(MESHTYPES).map(m=>[m,m])))}${F("Layers",inpNum("botMeshLayers",d.botMeshLayers))}${chk("botMeshLap",d.botMeshLap,"Extra lap allowance (%)","botMeshLap")}</div></div>
+  <div class="sechead">Ligatures / Starter-cage Ties</div>
+  ${chk("ligs",d.ligs,"Ligatures around the column starter cage / pedestal","ligs")}
+  <div class="subsec ${d.ligs?'':'hidden'}" data-show-if="ligs"><div class="grid cols4">
+   ${F("Tie dia",barSizeSel("ligDia",d.ligDia))}${F("Spacing (mm)",inpNum("ligSpacing",d.ligSpacing))}${F("Tie width (mm)",inpNum("ligW",d.ligW))}${F("Tie depth (mm)",inpNum("ligD",d.ligD))}
+  </div>
+  <div class="tip"><span class="ico">🏗️</span><div>The starter bars projecting from a pad footing into a column (and any pedestal) are tied into a cage with ligatures over the footing depth${'+'}pedestal height — the item most often missed because it appears only in the column base detail, not the footing schedule. Tie width/depth is the cage's cross-section (typically column size − 2×cover).</div></div></div>`;
   let cast=`<div class="sechead">Side Formwork</div><p class="small">None (cast against ground/oversized excavation) up to all 4 sides (formed).</p>
   ${faceRow([["formA","Face A (long side 1) — L×D"],["formB","Face B (long side 2) — L×D"],["formC","Face C (end 1) — W×D"],["formD","Face D (end 2) — W×D"]],d)}
   <div class="sechead" style="margin-top:10px;">Cast-in Items</div><div class="grid cols4">${chk("anchorBolts",d.anchorBolts,"Anchor bolts")}${chk("holdDown",d.holdDown,"Hold-down bolts")}${chk("ferrules",d.ferrules,"Ferrules")}${chk("plates",d.plates,"Cast-in plates")}${chk("boltTemplate",d.boltTemplate,"Bolt template")}</div>`;
@@ -1212,12 +1412,21 @@ function computePadFooting(inst,def){
   if(d.botReoType==="mesh"){
     let layers=num(d.botMeshLayers,1);
     let area=N*L*W*layers;
-    let wastedArea=withWaste(area,10);
+    let meshLapPct=d.botMeshLap?PROJECT.lapPct:0;
+    let wastedArea=withWasteLap(area,10,meshLapPct);
     let sheets=Math.ceil(wastedArea/MESH_SHEET_AREA_M2);
-    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.botMeshType,spec:`Bottom mat — mesh sheets ×${layers} layer(s)`,qty:area,unit:"m²",waste:10,finalQty:wastedArea,sheets,formula:`N×L×W×${layers} layer(s) (+10% laps) → ceil(/${MESH_SHEET_AREA_M2}m²) = ${sheets} sheets`,notes:`${sheets} sheets (6.0×2.4m nominal)`}));
+    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.botMeshType,spec:`Bottom mat — mesh sheets ×${layers} layer(s)`,qty:area,unit:"m²",waste:10,lap:meshLapPct,finalQty:wastedArea,sheets,formula:`N×L×W×${layers} layer(s) (+10% base laps${meshLapPct?`, +${meshLapPct}% extra lap`:''}) → ceil(/${MESH_SHEET_AREA_M2}m²) = ${sheets} sheets`,notes:`${sheets} sheets (6.0×2.4m nominal)`}));
   } else {
     mat(d.botX,d.botXDia,d.botXSpacing,d.width,d.length,"Bottom X bars",d.botXLap);
     mat(d.botY,d.botYDia,d.botYSpacing,d.length,d.width,"Bottom Y bars",d.botYLap);
+  }
+  if(d.ligs){
+    let ligDia=barDiaOf(d.ligDia);
+    let cageH=num(d.depth)+(d.pedestal?num(d.pedH):0);
+    let count=(Math.floor(cageH/Math.max(1,num(d.ligSpacing,200)))+1)*N;
+    let ligPerim=2*((num(d.ligW)+num(d.ligD))/1000);
+    let totLen=count*ligPerim; let wt=totLen*massPerM(ligDia);
+    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.ligDia,spec:"Starter-cage ligatures / ties",qty:count,unit:"no.",waste:0,finalQty:count,formula:`(footing D${d.pedestal?'+pedestal H':''} / spacing +1)×${N}`,notes:`${fmt(totLen,1)}m, ${fmt(wt,1)} kg`}));
   }
   let fArea=0, fFaces=[];
   if(d.formA){ fArea+=N*L*D; fFaces.push("A"); }
@@ -1384,7 +1593,7 @@ function computeBeam(inst,def){
 /* ---- SLAB (ground / suspended / raft / driveway / roof etc.) ---- */
 function slabDefaults(cat,suspended){ return {
   category:cat, suspended:!!suspended, manualArea:false, areaOverride:0, length:25,  width:12,  // metres for slabs (large plan dims)
-  thickness:150, perimeterAuto:true, perimeterOverride:0, baseThickness:100, baseMaterialState:"compacted", vapourMembrane:!suspended, meshOn:true, meshType:"SL82", meshLayers:1,
+  thickness:150, perimeterAuto:true, perimeterOverride:0, baseThickness:100, baseMaterialState:"compacted", vapourMembrane:!suspended, meshOn:true, meshType:"SL82", meshLayers:1, meshLap:false,
   edgeForms:true, soffit:!!suspended, openings:[], drops:false, setdowns:false, upstands:false, cjStopEnds:false,
   botX:true,botXDia:"N12",botXMethod:"spacing",botXSpacing:200,botXQty:0,botXBars:[],botXLap:false, botY:true,botYDia:"N12",botYMethod:"spacing",botYSpacing:200,botYQty:0,botYBars:[],botYLap:false,
   topX:!!suspended,topXDia:"N12",topXMethod:"spacing",topXSpacing:200,topXQty:0,topXBars:[],topXLap:false, topY:!!suspended,topYDia:"N12",topYMethod:"spacing",topYSpacing:200,topYQty:0,topYBars:[],topYLap:false,
@@ -1413,7 +1622,7 @@ function renderSlab(inst,def){
    ${!d.suspended? F("Base material",selOpts("baseMaterialState",d.baseMaterialState,[["compacted","Compacted"],["loose","Loose"]])):""}
    ${chk("meshOn",d.meshOn,"Mesh reinforcement","meshOn")}
   </div>
-  <div class="subsec ${d.meshOn?'':'hidden'}" data-show-if="meshOn"><div class="grid cols3">${F("Mesh type",selOpts("meshType",d.meshType,Object.keys(MESHTYPES).map(m=>[m,m])))}${F("Layers",inpNum("meshLayers",d.meshLayers))}</div></div>
+  <div class="subsec ${d.meshOn?'':'hidden'}" data-show-if="meshOn"><div class="grid cols3">${F("Mesh type",selOpts("meshType",d.meshType,Object.keys(MESHTYPES).map(m=>[m,m])))}${F("Layers",inpNum("meshLayers",d.meshLayers))}${chk("meshLap",d.meshLap,"Extra lap allowance (%)","meshLap")}</div></div>
   <div class="grid cols4">${chk("drops",d.drops,"Drops")}${chk("setdowns",d.setdowns,"Setdowns / recesses")}${chk("upstands",d.upstands,"Upstands")}${chk("cjStopEnds",d.cjStopEnds,"Construction joint stop ends")}</div>
   <div class="subsec"><div class="sechead">Edge Thickening</div><div class="grid cols3">${chk("edgeThicken",d.edgeThicken,"Thickened edge strip around perimeter","edgeThicken")}</div>
   <div class="subsec ${d.edgeThicken?'':'hidden'}" data-show-if="edgeThicken"><div class="grid cols3">${F("Thickened strip width (mm)",inpNum("edgeThickenWidth",d.edgeThickenWidth))}${F("Extra depth below slab thickness (mm)",inpNum("edgeThickenExtraDepth",d.edgeThickenExtraDepth))}</div>
@@ -1565,9 +1774,10 @@ function computeSlab(inst,def){
     // 2-layer mesh mat silently costs the same as a single layer.
     let layers=num(d.meshLayers,1);
     let layeredArea=netArea*layers;
-    let wastedArea=withWaste(layeredArea,10);
+    let meshLapPct=d.meshLap?PROJECT.lapPct:0;
+    let wastedArea=withWasteLap(layeredArea,10,meshLapPct);
     let sheets=Math.ceil(wastedArea/MESH_SHEET_AREA_M2);
-    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.meshType,spec:`Mesh sheets ×${layers} layer(s)`,qty:layeredArea,unit:"m²",waste:10,finalQty:wastedArea,sheets,formula:`net area × ${layers} layer(s) (+10% laps) → ceil(/${MESH_SHEET_AREA_M2}m²) = ${sheets} sheets`,notes:`${sheets} sheets (6.0×2.4m nominal)`}));
+    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.meshType,spec:`Mesh sheets ×${layers} layer(s)`,qty:layeredArea,unit:"m²",waste:10,lap:meshLapPct,finalQty:wastedArea,sheets,formula:`net area × ${layers} layer(s) (+10% base laps${meshLapPct?`, +${meshLapPct}% extra lap`:''}) → ceil(/${MESH_SHEET_AREA_M2}m²) = ${sheets} sheets`,notes:`${sheets} sheets (6.0×2.4m nominal)`}));
   }
   if(d.returnBars){
     let dia=barDiaOf(d.retDia);
@@ -1839,7 +2049,7 @@ function computeRetWall(inst,def){
 function shotWallDefaults(){ return {
   length:10000, height:3000, thickness:120, cover:PROJECT.cover, grade:PROJECT.grade,
   xypex:true,
-  meshType:"SL82", meshLayers:1,
+  meshType:"SL82", meshLayers:1, meshLap:false,
   starters:false, connTarget:"", connQty:0, connDia:"N16", connEmbed:400, connProj:400,
   dowelsOut:"", outQty:0, outDia:"N16", outEmbed:500, outProj:600,
   stripDrain:false, stripDrainLength:0
@@ -1849,7 +2059,7 @@ function renderShotWall(inst){
   let geom=`<div class="grid cols4">${LF("Wall length (mm)","length",d.length)}${LF("Wall height (mm)","height",d.height)}${F("Thickness (mm)",inpNum("thickness",d.thickness))}${coverField(inst)}${F("Concrete grade",inpNum("grade",d.grade))}</div>`;
   let conc=`<p class="small">Concrete = length × height × thickness, sprayed application (higher rebound/overspray waste than a formed pour).</p>
   <div class="grid cols3">${chk("xypex",d.xypex,"Penetron (Xypex) waterproofing additive","xypex")}</div>`;
-  let reo=`<div class="grid cols3">${F("Mesh type",selOpts("meshType",d.meshType,Object.keys(MESHTYPES).map(m=>[m,m])))}${F("Layers",inpNum("meshLayers",d.meshLayers))}</div>
+  let reo=`<div class="grid cols3">${F("Mesh type",selOpts("meshType",d.meshType,Object.keys(MESHTYPES).map(m=>[m,m])))}${F("Layers",inpNum("meshLayers",d.meshLayers))}${chk("meshLap",d.meshLap,"Extra lap allowance (%)","meshLap")}</div>
   <p class="small">Central mesh layer(s) across the full wall face — sprayed walls are typically single-face-mesh, not two independent faces like a formed wall.</p>`;
   let conns=`${chk("starters",d.starters,"Starter bars / dowels in (from footing or pier below)","starters")}
   <div class="subsec ${d.starters?'':'hidden'}" data-show-if="starters"><div class="grid cols4">${F("Connects to",targetSelect("connTarget",d.connTarget,inst.id))}${F("Qty",inpNum("connQty",d.connQty))}${F("Dia",barSizeSel("connDia",d.connDia))}${F("Embedment (mm)",inpNum("connEmbed",d.connEmbed))}${F("Projection (mm)",inpNum("connProj",d.connProj))}</div></div>
@@ -1866,9 +2076,10 @@ function computeShotWall(inst,def){
   if(d.xypex) lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:"Penetron (Xypex) additive",spec:"Waterproofing admixture",qty:vol,unit:"m³",waste:0,finalQty:vol,formula:"same volume as shotcrete"}));
   let layers=num(d.meshLayers,1);
   let layeredArea=area*layers;
-  let wastedArea=withWaste(layeredArea,10);
+  let meshLapPct=d.meshLap?PROJECT.lapPct:0;
+  let wastedArea=withWasteLap(layeredArea,10,meshLapPct);
   let sheets=Math.ceil(wastedArea/MESH_SHEET_AREA_M2);
-  lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.meshType,spec:`Central mesh sheets ×${layers} layer(s)`,qty:layeredArea,unit:"m²",waste:10,finalQty:wastedArea,sheets,formula:`area(${fmt(area,1)}) × ${layers} layer(s) (+10% laps) → ceil(/${MESH_SHEET_AREA_M2}m²) = ${sheets} sheets`,notes:`${sheets} sheets (6.0×2.4m nominal)`}));
+  lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.meshType,spec:`Central mesh sheets ×${layers} layer(s)`,qty:layeredArea,unit:"m²",waste:10,lap:meshLapPct,finalQty:wastedArea,sheets,formula:`area(${fmt(area,1)}) × ${layers} layer(s) (+10% base laps${meshLapPct?`, +${meshLapPct}% extra lap`:''}) → ceil(/${MESH_SHEET_AREA_M2}m²) = ${sheets} sheets`,notes:`${sheets} sheets (6.0×2.4m nominal)`}));
   if(d.starters && num(d.connQty)>0){
     let dia=barDiaOf(d.connDia); let len=(num(d.connEmbed)+num(d.connProj))/1000;
     let totLen=num(d.connQty)*len; let wt2=totLen*massPerM(dia);
@@ -1902,7 +2113,7 @@ function stairsDefaults(){ return {
   irregular:false, volumeOverride:0, formworkOverride:0, flightLenOverride:0,
   risers:14, riserH:175, treadD:280, width:1200, waistT:180, sloped:true,
   landing:false, landL:1200, landW:1200, landD:180,
-  mainDia:"N12", mainSpacing:150, mainLap:false, distReoType:"bars", distDia:"N10", distSpacing:250, distLap:false, distMeshType:"SL62", distMeshLayers:1,
+  mainDia:"N12", mainSpacing:150, mainLap:false, distReoType:"bars", distDia:"N10", distSpacing:250, distLap:false, distMeshType:"SL62", distMeshLayers:1, distMeshLap:false,
   starters:false, connTarget:"", connQty:0, connDia:"N12", connEmbed:400, connProj:400
 };}
 function renderStairs(inst){
@@ -1920,7 +2131,7 @@ function renderStairs(inst){
   <div class="sechead">Distribution Reinforcement</div>
   <div class="grid cols3">${F("Type",selOpts("distReoType",d.distReoType,[["bars","Bars"],["mesh","Mesh sheet"]]))}</div>
   <div class="subsec ${d.distReoType=='bars'?'':'hidden'}" data-show-if="distReoType_bars"><div class="grid cols3">${F("Dia",barSizeSel("distDia",d.distDia))}${F("Spacing (mm)",inpNum("distSpacing",d.distSpacing))}${chk("distLap",d.distLap,"Lap %","distLap")}</div></div>
-  <div class="subsec ${d.distReoType=='mesh'?'':'hidden'}" data-show-if="distReoType_mesh"><div class="grid cols3">${F("Mesh type",selOpts("distMeshType",d.distMeshType,Object.keys(MESHTYPES).map(m=>[m,m])))}${F("Layers",inpNum("distMeshLayers",d.distMeshLayers))}</div></div>`;
+  <div class="subsec ${d.distReoType=='mesh'?'':'hidden'}" data-show-if="distReoType_mesh"><div class="grid cols3">${F("Mesh type",selOpts("distMeshType",d.distMeshType,Object.keys(MESHTYPES).map(m=>[m,m])))}${F("Layers",inpNum("distMeshLayers",d.distMeshLayers))}${chk("distMeshLap",d.distMeshLap,"Extra lap allowance (%)","distMeshLap")}</div></div>`;
   let conns=`${chk("starters",d.starters,"Starter bars into supporting slab/landing","starters")}
   <div class="subsec ${d.starters?'':'hidden'}" data-show-if="starters"><div class="grid cols4">${F("Connects to",targetSelect("connTarget",d.connTarget,inst.id))}${F("Qty",inpNum("connQty",d.connQty))}${F("Dia",barSizeSel("connDia",d.connDia))}${F("Embedment",inpNum("connEmbed",d.connEmbed))}${F("Projection",inpNum("connProj",d.connProj))}</div></div>`;
   return {geom,conc:"<p class='small'>Concrete = triangular step volumes + waist slab + landing (or manual override for irregular stairs)</p>",reo,conns};
@@ -1947,9 +2158,10 @@ function computeStairs(inst,def){
   if(d.distReoType==="mesh"){
     let layers=num(d.distMeshLayers,1);
     let area=flightLen*w*layers;
-    let wastedArea=withWaste(area,10);
+    let distMeshLapPct=d.distMeshLap?PROJECT.lapPct:0;
+    let wastedArea=withWasteLap(area,10,distMeshLapPct);
     let sheets=Math.ceil(wastedArea/MESH_SHEET_AREA_M2);
-    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.distMeshType,spec:`Distribution — mesh sheets ×${layers} layer(s)`,qty:area,unit:"m²",waste:10,finalQty:wastedArea,sheets,formula:`flight length × width × ${layers} layer(s) (+10% laps) → ceil(/${MESH_SHEET_AREA_M2}m²) = ${sheets} sheets`,notes:`${sheets} sheets (6.0×2.4m nominal)`}));
+    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.distMeshType,spec:`Distribution — mesh sheets ×${layers} layer(s)`,qty:area,unit:"m²",waste:10,lap:distMeshLapPct,finalQty:wastedArea,sheets,formula:`flight length × width × ${layers} layer(s) (+10% base laps${distMeshLapPct?`, +${distMeshLapPct}% extra lap`:''}) → ceil(/${MESH_SHEET_AREA_M2}m²) = ${sheets} sheets`,notes:`${sheets} sheets (6.0×2.4m nominal)`}));
   } else {
     let dDia=barDiaOf(d.distDia); let dCount=Math.floor(flightLen*1000/num(d.distSpacing))+1;
     let dLen=dCount*w; let dWt=dLen*massPerM(dDia);
@@ -2131,7 +2343,8 @@ function computeTankbox(inst,def){
     let wallVLen=N*Math.ceil(perim*1000/num(d.wallVertSpacing))*(depth+0.4);
     lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.wallVertDia,spec:"Wall vertical bars (both faces)",qty:wallVLen,unit:"m",waste:PROJECT.reoWaste,lap:wallVLapPct,finalQty:withWasteLap(wallVLen,PROJECT.reoWaste,wallVLapPct),formula:"perimeter/spacing × (depth+lap into base)",notes:`${fmt(wallVLen*massPerM(barDiaOf(d.wallVertDia)),1)} kg`}));
   } else {
-    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.baseXDia,spec:"Base radial/mesh bars (circular — priced as mesh-equivalent)",qty:N*baseArea,unit:"m²",waste:10,finalQty:withWaste(N*baseArea,10),formula:"plan area (+10% laps)"}));
+    let baseMeshLapPct=d.baseXLap?PROJECT.lapPct:0;
+    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.baseXDia,spec:"Base radial/mesh bars (circular — priced as mesh-equivalent)",qty:N*baseArea,unit:"m²",waste:10,lap:baseMeshLapPct,finalQty:withWasteLap(N*baseArea,10,baseMeshLapPct),formula:`plan area (+10% base laps${baseMeshLapPct?`, +${baseMeshLapPct}% extra lap`:''})`}));
     let wallVLen=N*Math.ceil(perim*1000/num(d.wallVertSpacing))*(depth+0.4);
     lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.wallVertDia,spec:"Wall vertical bars (circumferential lap)",qty:wallVLen,unit:"m",waste:PROJECT.reoWaste,lap:wallVLapPct,finalQty:withWasteLap(wallVLen,PROJECT.reoWaste,wallVLapPct),formula:"circumference/spacing × (depth+lap)",notes:`${fmt(wallVLen*massPerM(barDiaOf(d.wallVertDia)),1)} kg`}));
   }
@@ -2619,7 +2832,9 @@ function renderProjectForm(){
     F("Measurement units",inpText("units_len",PROJECT.units_len)),
     F("Measurement rule",selOpts("measurementRule",PROJECT.measurementRule,[["gross","Gross"],["net","Net"],["configurable","Configurable per element"]])),
   ].join('');
-  f.addEventListener('input',e=>{ let k=e.target.dataset.field; if(k){ PROJECT[k]=e.target.value; saveEstimateState(); } });
+  // oninput (not addEventListener) — this renderer re-runs on cloud sync and
+  // on takeoff switches, and stacked listeners would fire the save N times.
+  f.oninput = (e)=>{ let k=e.target.dataset.field; if(k){ PROJECT[k]=e.target.value; saveEstimateState(); } };
 }
 function renderDefaultsForm(){
   let f=document.getElementById("defaultsForm");
@@ -2637,12 +2852,13 @@ function renderDefaultsForm(){
     F("Excavation bulking factor (%)",inpNum("bulking",PROJECT.bulking)),
     F("Preferred input unit for overall lengths/heights (beam/wall/column/pier/kerb runs)",selOpts("units_len_pref",PROJECT.units_len_pref,[["mm","Millimetres (mm)"],["m","Metres (m)"]])),
   ].join('');
-  f.addEventListener('input',e=>{
+  // oninput for the same stacked-listener reason as renderProjectForm above.
+  f.oninput = (e)=>{
     let k=e.target.dataset.field; if(!k) return;
     PROJECT[k]= e.target.type==="number"? parseFloat(e.target.value)||0 : e.target.value;
     computeAllAndRefresh();
     if(k==="units_len_pref") renderWorkspace();
-  });
+  };
 }
 
 /* ============================= LIBRARY PAGE ============================= */
@@ -2911,6 +3127,19 @@ function exportPDF(){
        <tr><td style="border:1px solid #999;padding:6px;">Formwork</td><td style="border:1px solid #999;padding:6px;"><b>${fmt(form,2)} m²</b></td></tr>
        <tr><td style="border:1px solid #999;padding:6px;">Excavation</td><td style="border:1px solid #999;padding:6px;"><b>${fmt(exc,2)} m³</b></td></tr>
      </table>
+     ${(function(){
+       let byGrade={};
+       lines.filter(l=>l.materialGroup==="Concrete").forEach(l=>{ byGrade[l.material]=(byGrade[l.material]||0)+l.finalQty; });
+       let {bars,mesh}=summarizeReinforcement(lines);
+       let cell='border:1px solid #999;padding:4px;';
+       let mk=(title,head,rows)=>rows.length? `<div style="display:inline-block;vertical-align:top;margin:0 18px 12px 0;"><h3 style="margin:0 0 4px;">${title}</h3>
+         <table style="border-collapse:collapse;font-size:10px;"><tr style="background:#eee;">${head.map(h=>`<th style="${cell}">${h}</th>`).join('')}</tr>
+         ${rows.map(r=>`<tr>${r.map((c,i)=>`<td style="${cell}${i>0?'text-align:right;':''}">${c}</td>`).join('')}</tr>`).join('')}</table></div>` : '';
+       return `<h2>Material Summary</h2>
+        ${mk("Concrete by grade",["Grade","m³"],Object.entries(byGrade).map(([k,v])=>[k,fmt(v,2)]))}
+        ${mk("Reinforcement bars by diameter",["Bar","lm","kg"],Object.entries(bars).map(([k,v])=>[k,fmt(v.lm,1),fmt(v.kg,1)]))}
+        ${mk("Mesh by type",["Mesh","m²","Sheets"],Object.entries(mesh).map(([k,v])=>[k,fmt(v.area,1),v.sheets]))}`;
+     })()}
      <h2>Element-by-Element Breakdown</h2>
      ${Object.entries(byElement).map(([k,ls])=>`
        <div style="page-break-inside:avoid;margin-bottom:14px;">
@@ -3293,7 +3522,9 @@ document.querySelectorAll('.tabs button').forEach(b=>b.addEventListener('click',
 
 /* ============================= INIT ============================= */
 document.getElementById("saveBtn").addEventListener("click", saveEstimateState);
+initTakeoffRegistry();
 let restoredFromSave = loadEstimateState();
+renderTakeoffsBar();
 renderProjectForm();
 renderDefaultsForm();
 renderLibrary();
