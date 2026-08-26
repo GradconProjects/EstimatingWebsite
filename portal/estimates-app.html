@@ -1174,6 +1174,7 @@ function beamDefaults(cat){ return {
   beamType:"independent", grade:PROJECT.grade, cover:PROJECT.cover,
   formLeft:true, formRight:true, formSoffit:true, formTop:false, formStart:true, formFinish:true,
   reoRows:[{position:"Top continuous",qty:3,dia:"N24",layers:1,startA:"column",endA:"column"},{position:"Bottom continuous",qty:4,dia:"N28",layers:1,startA:"column",endA:"column"}],
+  trenchMesh:false, trenchMeshBars:4, trenchMeshDia:"N12",
   ligZones:[{zone:"Left support",length:1200,dia:"N10",spacing:100},{zone:"Midspan",length:0,dia:"N10",spacing:200,auto:true},{zone:"Right support",length:1200,dia:"N10",spacing:100}],
   starters:false, connTarget:"", connQty:4, connDia:"N20", connEmbed:600, connProj:600,
   stepdown:false, sdDepth:150, sdDia:"N12", sdSpacing:300, sdProj1:300, sdProj2:300
@@ -1194,10 +1195,15 @@ function renderBeam(inst,def){
   </div></div>`;
   let form=`<div class="grid cols3">${chk("formLeft",d.formLeft,"Left face")}${chk("formRight",d.formRight,"Right face")}${chk("formSoffit",d.formSoffit,"Soffit")}${chk("formTop",d.formTop,"Top")}${chk("formStart",d.formStart,"Start end")}${chk("formFinish",d.formFinish,"Finish end")}</div>`;
   let reo=`<div class="sechead">Longitudinal Reinforcement</div>
+  <div class="grid cols3">${chk("trenchMesh",d.trenchMesh,"Trench mesh instead","trenchMesh")}</div>
+  <div class="subsec ${d.trenchMesh?'':'hidden'}" data-show-if="trenchMesh"><div class="grid cols3">${F("Number of longitudinal bars",inpNum("trenchMeshBars",d.trenchMeshBars))}${F("Bar diameter",barSizeSel("trenchMeshDia",d.trenchMeshDia))}</div>
+  <p class="small">Trench mesh is priced and ordered by the metre (a welded strip of longitudinal bars run the length of the beam), not by sheet area — this counts it the same way as any other run of bars. Same option as Strip Footing, for a ground beam reinforced the same way.</p></div>
+  <div class="subsec ${d.trenchMesh?'hidden':''}" data-show-if="trenchMesh_off">
   <p class="small">Layers &gt; 1 stacks that many identical bar sets in the same position (e.g. 2 layers of 4N28 bottom, common on heavily loaded transfer/cap beams) — steel quantity multiplies accordingly.</p>
   <table class="rows" id="reoRows_${inst.id}"><thead><tr><th>Position</th><th>Qty/layer</th><th>Size</th><th>Layers</th><th>Start anchorage</th><th>End anchorage</th><th></th></tr></thead>
   <tbody>${d.reoRows.map((r,i)=>reoRowHtml(inst.id,r,i)).join('')}</tbody></table>
   <button class="btn small" data-action="addRow" data-target="reoRows">+ Add reinforcement set</button>
+  </div>
   <div class="sechead" style="margin-top:14px;">Ligature Zones</div>
   <table class="rows"><thead><tr><th>Zone</th><th>Length (mm, 0=auto midspan)</th><th>Size</th><th>Spacing (mm)</th><th></th></tr></thead>
   <tbody>${d.ligZones.map((r,i)=>ligRowHtml(inst.id,r,i)).join('')}</tbody></table>
@@ -1256,16 +1262,22 @@ function computeBeam(inst,def){
   if(d.formStart){ let a=N*Wm*sideD; fArea+=a; fParts.push(`Start ${fmt(a,2)}`); }
   if(d.formFinish){ let a=N*Wm*sideD; fArea+=a; fParts.push(`Finish ${fmt(a,2)}`); }
   if(fArea>0) lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Beam formwork",spec:"Selected faces",qty:fArea,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(fArea,PROJECT.formworkWaste),formula:fParts.join(" + ")}));
-  d.reoRows.forEach(r=>{
-    let bd=barDiaOf(r.dia);
-    let clearLen=Lm-2*(cover);
-    let startLen=anchorLen(r.startA,bd,0)/1000, endLen=anchorLen(r.endA,bd,0)/1000;
-    let barLen=clearLen+startLen+endLen;
-    let layers=Math.max(1,Math.round(num(r.layers,1)));
-    let totLen=num(r.qty)*layers*N*barLen; let wt=totLen*massPerM(bd);
-    let layerNote=layers>1?` × ${layers} layers`:"";
-    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:r.dia,spec:`${r.position}${layerNote}`,qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`${r.qty}×${layers}L×${N}×(clear ${fmt(clearLen,2)}+${r.startA} ${fmt(startLen,2)}+${r.endA} ${fmt(endLen,2)})`,notes:`${fmt(wt,1)} kg`}));
-  });
+  if(d.trenchMesh){
+    let bd=barDiaOf(d.trenchMeshDia);
+    let totLen=N*num(d.trenchMeshBars)*Lm; let wt=totLen*massPerM(bd);
+    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.trenchMeshDia,spec:"Trench mesh (longitudinal)",qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`${d.trenchMeshBars}×${N}×${fmt(Lm,2)}`,notes:`${fmt(wt,1)} kg`}));
+  } else {
+    d.reoRows.forEach(r=>{
+      let bd=barDiaOf(r.dia);
+      let clearLen=Lm-2*(cover);
+      let startLen=anchorLen(r.startA,bd,0)/1000, endLen=anchorLen(r.endA,bd,0)/1000;
+      let barLen=clearLen+startLen+endLen;
+      let layers=Math.max(1,Math.round(num(r.layers,1)));
+      let totLen=num(r.qty)*layers*N*barLen; let wt=totLen*massPerM(bd);
+      let layerNote=layers>1?` × ${layers} layers`:"";
+      lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:r.dia,spec:`${r.position}${layerNote}`,qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`${r.qty}×${layers}L×${N}×(clear ${fmt(clearLen,2)}+${r.startA} ${fmt(startLen,2)}+${r.endA} ${fmt(endLen,2)})`,notes:`${fmt(wt,1)} kg`}));
+    });
+  }
   let usedLen=0;
   d.ligZones.forEach((z,i)=>{
     let len=num(z.length);
