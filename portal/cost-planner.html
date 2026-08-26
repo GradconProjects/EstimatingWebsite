@@ -1242,6 +1242,16 @@ function importPublishedQuotes(){
       proj.quoteMemberOverrides = {};
     }
     proj.source = "quotes";
+    // Quotes' own pipeline status/priority/deadline (see PLANNER_PRIORITIES /
+    // QUOTE_STATUSES in src/data/catalog.js and publishQuoteToCostPlanner in
+    // lib/projects.js) — kept under their own prefixed fields rather than
+    // overwriting proj.status/category, since Cost Planner's status is a
+    // DIFFERENT vocabulary (Active/On Hold/Complete or Tendering/Submitted/
+    // Won/Lost — post-award project tracking, not the pre-award estimating
+    // pipeline Quotes tracks). See renderProjectCard for where this shows.
+    proj.quoteDeadline = project.deadline || null;
+    proj.quotePriority = project.priority || null;
+    proj.quoteStatus = project.status || null;
 
     // Every catalog line and custom line item with a real quantity, matched to its
     // Cost Planner BOQ row (or given a new custom row when nothing matches) — see
@@ -2106,9 +2116,23 @@ function renderProjects(){
   // actually scannable at a glance. When the filter is "all" both categories are shown
   // with their own heading (their status sets differ — Tendering/Won/Lost vs Active/On
   // Hold/Complete — so grouping them together under one status list wouldn't make sense).
+  // Mirrors Dashboard.jsx's daysLabel() in the Quotes app — same "overdue /
+  // due today / due in Nd" read of a deadline, so the two apps never
+  // disagree about urgency for the same project.
+  function deadlineBadgeHtml(deadline){
+    if(!deadline) return '';
+    const days = Math.ceil((new Date(deadline) - new Date()) / 86400000);
+    let text, color;
+    if(days < 0){ text = `${Math.abs(days)}d overdue`; color = '#c0392b'; }
+    else if(days === 0){ text = 'Due today'; color = '#c0392b'; }
+    else if(days <= 7){ text = `Due in ${days}d`; color = '#d9822b'; }
+    else { text = `Due in ${days}d`; color = '#8a8a8a'; }
+    return `<span style="color:${color};font-weight:600;">${text}</span>`;
+  }
   function renderProjectCard(key, p){
     const active = state.activeProject===key;
     const sourceTag = p.source==='estimates' ? ' · FROM ESTIMATES' : p.source==='quotes' ? ' · FROM QUOTES' : '';
+    const deadlineHtml = deadlineBadgeHtml(p.quoteDeadline);
     return `<div class="project-card ${active?'active':''} cat-${p.category}" onclick="selectProject('${key}')">
       <button class="proj-delete-btn" title="Delete this project" onclick="event.stopPropagation(); deleteProject('${key}');">✕</button>
       <div class="proj-cat-tag">${p.category==='tender'?'TENDER':'PROJECT'}${sourceTag}</div>
@@ -2116,6 +2140,7 @@ function renderProjects(){
       <div class="proj-meta">${p.address||''}</div>
       <div class="proj-meta">${p.builder||'—'} ${p.contact? '· '+p.contact:''}</div>
       <div class="proj-meta">Status: <b>${p.status}</b>${p.gfa? ' · GFA '+p.gfa+' m²':''}</div>
+      ${p.quoteStatus || deadlineHtml ? `<div class="proj-meta">${p.quoteStatus? 'Quote status: <b>'+p.quoteStatus+'</b>':''}${p.quoteStatus && deadlineHtml? ' · ':''}${deadlineHtml}</div>` : ''}
       ${active? '<div class="proj-badge">ACTIVE</div>':''}
     </div>`;
   }

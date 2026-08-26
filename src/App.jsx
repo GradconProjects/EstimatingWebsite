@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
-import { Settings2, ArrowLeft, Printer, ListPlus, FileSpreadsheet } from "lucide-react";
+import { Settings2, ArrowLeft, Printer, ListPlus, FileSpreadsheet, LayoutDashboard, Radar, FolderOpen } from "lucide-react";
 import { ELEMENT_TYPES, QUOTE_STATUSES, QUOTE_STATUS_STYLES } from "./data/catalog.js";
 import { defaultRates, newElementItem, computeGrandTotal, uid, money } from "./lib/costing.js";
 import { buildQuoteExcelHtml, quoteExcelFilename, buildQuoteCsv } from "./lib/exportQuote.js";
@@ -12,11 +12,15 @@ import ElementCard from "./components/ElementCard.jsx";
 import QuoteSummary from "./components/QuoteSummary.jsx";
 import RatesModal from "./components/RatesModal.jsx";
 import Dashboard from "./components/Dashboard.jsx";
+import PlannerView from "./components/PlannerView.jsx";
+import ProjectFolderView from "./components/ProjectFolderView.jsx";
 import PrintQuoteReport from "./components/PrintQuoteReport.jsx";
 import ExternalQuoteReport from "./components/ExternalQuoteReport.jsx";
 import ExportExcelModal from "./components/ExportExcelModal.jsx";
 import ImportFlagsBanner from "./components/ImportFlagsBanner.jsx";
 import ManageElementTypesModal from "./components/ManageElementTypesModal.jsx";
+
+const OFFICE_COMMS_KEY = "gradcon-office-communications";
 
 export const CUSTOM_ELEMENT_TYPES_KEY = "gradcon-custom-element-types";
 // Per-browser only (never synced) — which project's editor a plain page refresh
@@ -50,6 +54,11 @@ export default function App() {
   }, [activeId]);
   const [ratesOpen, setRatesOpen] = useState(false);
   const [elementTypesOpen, setElementTypesOpen] = useState(false);
+  // Which top-level tab shows when no project is open — Dashboard, Planner
+  // or Project Folder. Opening a project (activeId set) always takes over
+  // regardless of this, same as before the tabs existed.
+  const [view, setView] = useState("dashboard");
+  const [officeComms, setOfficeComms] = useStoredState(OFFICE_COMMS_KEY, []);
 
   // Self-service catalog extension (see ManageElementTypesModal) — types
   // added here merge with the built-in ELEMENT_TYPES everywhere the Add-
@@ -185,8 +194,31 @@ export default function App() {
               </button>
             </div>
           </div>
+          <div className="max-w-7xl mx-auto px-4 flex items-center gap-1 border-t border-blue-900/60">
+            {[
+              { key: "dashboard", label: "Dashboard", Icon: LayoutDashboard },
+              { key: "planner", label: "Planner", Icon: Radar },
+              { key: "folder", label: "Project Folder", Icon: FolderOpen },
+            ].map(({ key, label, Icon }) => (
+              <button
+                key={key}
+                onClick={() => setView(key)}
+                className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium border-b-2 transition-colors ${
+                  view === key ? "border-orange-400 text-white" : "border-transparent text-blue-300 hover:text-white"
+                }`}
+              >
+                <Icon size={15} /> {label}
+              </button>
+            ))}
+          </div>
         </div>
-        <Dashboard projects={projects} rates={rates} onOpen={setActiveId} onCreate={createProject} onDelete={deleteProject} />
+        {view === "dashboard" && (
+          <Dashboard projects={projects} rates={rates} onOpen={setActiveId} onCreate={createProject} onDelete={deleteProject} />
+        )}
+        {view === "planner" && <PlannerView projects={projects} onOpen={setActiveId} />}
+        {view === "folder" && (
+          <ProjectFolderView projects={projects} officeComms={officeComms} setOfficeComms={setOfficeComms} onOpen={setActiveId} />
+        )}
         {ratesOpen && <RatesModal rates={rates} setRates={setRates} onClose={() => setRatesOpen(false)} />}
         {elementTypesOpen && (
           <ManageElementTypesModal customTypes={customTypes} setCustomTypes={setCustomTypes} onClose={() => setElementTypesOpen(false)} />

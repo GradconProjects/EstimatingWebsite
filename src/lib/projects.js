@@ -150,7 +150,13 @@ export async function publishQuoteToCostPlanner(projectId, quote) {
   });
   const record = {
     id: projectId,
-    project: { name: quote.projectName, gfa: Number(quote.gfa) || 0 },
+    project: {
+      name: quote.projectName,
+      gfa: Number(quote.gfa) || 0,
+      status: quote.status || null,
+      deadline: quote.planner?.deadline || null,
+      priority: quote.planner?.priority || null,
+    },
     lines,
     publishedAt: new Date().toISOString(),
   };

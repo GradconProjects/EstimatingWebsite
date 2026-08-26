@@ -3,6 +3,7 @@ import { Plus, Trash2, ArrowRight, LayoutDashboard, Loader2 } from "lucide-react
 import { MARGIN_STEPS, DEFAULT_MARGIN, QUOTE_STATUSES, QUOTE_STATUS_STYLES } from "../data/catalog.js";
 import { computeGrandTotal, computeMarginLadder, money, money2 } from "../lib/costing.js";
 import { readQuotes, writeQuote } from "../lib/projects.js";
+import { daysLabel } from "../lib/planner.js";
 
 const SORT_OPTIONS = [
   { key: "added", label: "Recently added" },
@@ -30,6 +31,7 @@ function summarizeQuote(quote, rates) {
     name: quote.projectName || "Untitled project",
     date: quote.projectDate,
     status: quote.status || QUOTE_STATUSES[0],
+    deadline: quote.planner?.deadline || null,
     gfa: Number(quote.gfa) || 0,
     elementCount: items.length,
     directCost,
@@ -165,6 +167,7 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete 
               <th className="px-3 py-2" />
               <th className="text-left px-4 py-2 font-medium">Project</th>
               <th className="text-left px-3 py-2 font-medium">Date</th>
+              <th className="text-left px-3 py-2 font-medium">Deadline</th>
               <th className="text-left px-3 py-2 font-medium">Status</th>
               <th className="text-right px-3 py-2 font-medium">Elements</th>
               <th className="text-right px-3 py-2 font-medium">GFA</th>
@@ -189,6 +192,12 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete 
                 </td>
                 <td className="px-4 py-3 font-semibold text-[15px] text-neutral-900">{s.name}</td>
                 <td className="px-3 py-2.5 text-neutral-400 text-xs">{s.date || "—"}</td>
+                <td className="px-3 py-2.5 text-xs">
+                  {(() => {
+                    const due = daysLabel(s.deadline);
+                    return due ? <span className={due.cls}>{due.text}</span> : <span className="text-neutral-300">—</span>;
+                  })()}
+                </td>
                 <td className="px-3 py-2.5">
                   <select
                     value={s.status}
@@ -250,14 +259,14 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete 
             ))}
             {summaries.length === 0 && loading && (
               <tr>
-                <td colSpan={10} className="text-center py-12 text-neutral-400">
+                <td colSpan={11} className="text-center py-12 text-neutral-400">
                   <Loader2 size={16} className="inline animate-spin mr-1.5" /> Loading projects…
                 </td>
               </tr>
             )}
             {summaries.length === 0 && !loading && (
               <tr>
-                <td colSpan={10} className="text-center py-12 text-neutral-400">
+                <td colSpan={11} className="text-center py-12 text-neutral-400">
                   No projects yet — click &quot;New project&quot; to start your first quote.
                 </td>
               </tr>
@@ -266,7 +275,7 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete 
           {summaries.length > 0 && (
             <tfoot>
               <tr className="border-t-2 border-neutral-200 bg-neutral-50 font-semibold">
-                <td className="px-4 py-2.5" colSpan={4}>All projects</td>
+                <td className="px-4 py-2.5" colSpan={5}>All projects</td>
                 <td className="px-3 py-2.5 text-right font-mono tabular-nums">{totals.elementCount}</td>
                 <td className="px-3 py-2.5 text-right font-mono tabular-nums">{totals.gfa.toLocaleString("en-AU")} m²</td>
                 <td className="px-3 py-2.5 text-right font-mono tabular-nums">{money(totals.directCost)}</td>

@@ -240,8 +240,9 @@ export const SECTION_ORDER = [...new Set(ELEMENT_TYPES.map((t) => t.section))];
  * quote that predates this field (see Dashboard.jsx) — never rendered as
  * blank/unknown.
  */
-export const QUOTE_STATUSES = ["Estimating", "Quoting", "Tendered", "Successful", "Unsuccessful", "On Hold"];
+export const QUOTE_STATUSES = ["Queued", "Estimating", "Quoting", "Tendered", "Successful", "Unsuccessful", "On Hold"];
 export const QUOTE_STATUS_STYLES = {
+  Queued: { bar: "bg-violet-400", dot: "bg-violet-400", text: "text-violet-600", bg: "bg-violet-50" },
   Estimating: { bar: "bg-red-500", dot: "bg-red-500", text: "text-red-600", bg: "bg-red-50" },
   Quoting: { bar: "bg-blue-500", dot: "bg-blue-500", text: "text-blue-700", bg: "bg-blue-50" },
   Tendered: { bar: "bg-amber-500", dot: "bg-amber-500", text: "text-amber-700", bg: "bg-amber-50" },
@@ -249,6 +250,15 @@ export const QUOTE_STATUS_STYLES = {
   // Distinct from Estimating's red (now that it's taken) rather than a near-duplicate shade.
   Unsuccessful: { bar: "bg-stone-500", dot: "bg-stone-500", text: "text-stone-600", bg: "bg-stone-100" },
   "On Hold": { bar: "bg-neutral-300", dot: "bg-neutral-300", text: "text-neutral-500", bg: "bg-neutral-100" },
+};
+
+/* ---------- Planner priority (Planner tab — see components/PlannerView.jsx) ---------- */
+export const PLANNER_PRIORITIES = ["Urgent", "High", "Medium", "Low"];
+export const PLANNER_PRIORITY_STYLES = {
+  Urgent: { text: "text-red-600", bg: "bg-red-50", dot: "bg-red-500" },
+  High: { text: "text-orange-600", bg: "bg-orange-50", dot: "bg-orange-500" },
+  Medium: { text: "text-amber-600", bg: "bg-amber-50", dot: "bg-amber-400" },
+  Low: { text: "text-neutral-500", bg: "bg-neutral-100", dot: "bg-neutral-300" },
 };
 
 /* ---------- Overhead/contingency/margin ladder ----------
