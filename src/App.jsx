@@ -43,13 +43,22 @@ const prefPct = (key, fallback) => {
   }
 };
 
+const prefStatus = () => {
+  try {
+    const p = JSON.parse(localStorage.getItem("gradcon-preferences")) || {};
+    return QUOTE_STATUSES.includes(p.quotesDefaultStatus) ? p.quotesDefaultStatus : QUOTE_STATUSES[0];
+  } catch {
+    return QUOTE_STATUSES[0];
+  }
+};
+
 const blankQuote = () => ({
   projectName: "",
   projectDate: new Date().toISOString().slice(0, 10),
   gfa: undefined,
   overheadPct: prefPct("overheadPct", 0.08),
   contingencyPct: prefPct("contingencyPct", 0.05),
-  status: QUOTE_STATUSES[0],
+  status: prefStatus(),
   items: [],
 });
 

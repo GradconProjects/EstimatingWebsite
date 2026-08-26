@@ -82,7 +82,15 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete 
     [projects, quotesByKey, rates]
   );
 
-  const [sortBy, setSortBy] = useState("added");
+  const [sortBy, setSortBy] = useState(() => {
+    // Initial sort from the portal Settings preference; session-local after that.
+    try {
+      const p = JSON.parse(localStorage.getItem("gradcon-preferences")) || {};
+      return SORT_OPTIONS.some((o) => o.key === p.quotesDefaultSort) ? p.quotesDefaultSort : "added";
+    } catch {
+      return "added";
+    }
+  });
   const sortedSummaries = useMemo(() => {
     const arr = [...summaries];
     if (sortBy === "status") {

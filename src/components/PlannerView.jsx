@@ -7,6 +7,18 @@ import { isUrgent, daysLabel, priorityRank } from "../lib/planner.js";
 
 const CHANNELS = ["Call", "Email", "Site meeting", "Text/WhatsApp", "Other"];
 
+// Portal Settings preference for the priority a project shows before anyone
+// has set one — validated against the real list so a stale/typo'd stored
+// value can never render an unstyled priority.
+const defaultPriority = () => {
+  try {
+    const p = JSON.parse(localStorage.getItem("gradcon-preferences")) || {};
+    return PLANNER_PRIORITIES.includes(p.plannerDefaultPriority) ? p.plannerDefaultPriority : "Medium";
+  } catch {
+    return "Medium";
+  }
+};
+
 export default function PlannerView({ projects, onOpen }) {
   const [quotesByKey, setQuotesByKey] = useState({});
   const [loading, setLoading] = useState(true);
@@ -29,7 +41,7 @@ export default function PlannerView({ projects, onOpen }) {
       return {
         project: p,
         name: quote.projectName || "Untitled project",
-        planner: quote.planner || { deadline: "", priority: "Medium", requirements: "" },
+        planner: quote.planner || { deadline: "", priority: defaultPriority(), requirements: "" },
         communications: quote.communications || [],
       };
     }),
@@ -134,7 +146,7 @@ function Section({ title, count, tone, children }) {
 
 function ProjectPlannerCard({ row, onOpen, onPatchPlanner, onAddCommunication, commsOpen, setCommsOpen }) {
   const { project, name, planner, communications } = row;
-  const style = PLANNER_PRIORITY_STYLES[planner.priority] || PLANNER_PRIORITY_STYLES.Medium;
+  const style = PLANNER_PRIORITY_STYLES[planner.priority] || PLANNER_PRIORITY_STYLES[defaultPriority()] || PLANNER_PRIORITY_STYLES.Medium;
   const due = daysLabel(planner.deadline);
   const [open, setOpen] = useState(false);
   const [logging, setLogging] = useState(false);
@@ -184,7 +196,7 @@ function ProjectPlannerCard({ row, onOpen, onPatchPlanner, onAddCommunication, c
         <label className="block text-xs">
           <span className="block text-neutral-400 mb-1">Priority</span>
           <select
-            value={planner.priority || "Medium"}
+            value={planner.priority || defaultPriority()}
             onChange={(e) => onPatchPlanner("priority", e.target.value)}
             className={`w-full border border-neutral-200 rounded px-2 py-1 text-sm font-medium ${style.text}`}
           >

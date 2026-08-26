@@ -309,8 +309,30 @@ let PROJECT = {
     Object.keys(map).forEach(function(k){
       if(typeof prefs[k] === "number" && isFinite(prefs[k])) PROJECT[map[k]] = prefs[k];
     });
+    if(prefs.estLenUnit === "m" || prefs.estLenUnit === "mm") PROJECT.units_len_pref = prefs.estLenUnit;
+    if(["gross","net","configurable"].indexOf(prefs.estMeasurementRule) !== -1) PROJECT.measurementRule = prefs.estMeasurementRule;
   }catch(e){}
 })();
+// Per-element preference overlay for freshly added elements: pre-tick every
+// "Include lap allowance (%)" checkbox, and swap the default trench mesh /
+// slab mesh product for the user's preferred one. Field-name based (any
+// data key ending in "Lap", the two trench-mesh-type keys, the three
+// mesh-type keys), so new calculators pick this up for free.
+function applyElementPrefs(data){
+  try{
+    var p = JSON.parse(localStorage.getItem("gradcon-preferences")) || {};
+    if(p.estLapDefaultOn === true){
+      Object.keys(data).forEach(function(k){ if(/Lap$/.test(k) && data[k] === false) data[k] = true; });
+    }
+    if(typeof p.estTrenchMeshType === "string" && TRENCH_MESH_TYPES.some(function(t){ return t[0] === p.estTrenchMeshType; })){
+      ["trenchMeshType","beamStripsTrenchType"].forEach(function(k){ if(k in data) data[k] = p.estTrenchMeshType; });
+    }
+    if(typeof p.estMeshType === "string" && MESHTYPES[p.estMeshType] !== undefined){
+      ["meshType","botMeshType","distMeshType"].forEach(function(k){ if(k in data) data[k] = p.estMeshType; });
+    }
+  }catch(e){}
+  return data;
+}
 let SELECTED_TYPES = {};   // typeId -> true
 let INSTANCES = [];        // {id,typeKey,label,data,results}
 let ID_COUNTER = 1;
@@ -2300,7 +2322,7 @@ function targetLabelOf(id){ if(!id) return ""; let i=INSTANCES.find(x=>x.id===id
 function addInstance(typeId){
   let def=LIB_INDEX[typeId];
   let calc=CALC[def.calc];
-  let inst={id:uid("EL"), typeKey:typeId, label:def.label+" "+(INSTANCES.filter(i=>i.typeKey===typeId).length+1), data:calc.defaults(def.slabCategory||def.beamCategory||def.kind, def.suspended)};
+  let inst={id:uid("EL"), typeKey:typeId, label:def.label+" "+(INSTANCES.filter(i=>i.typeKey===typeId).length+1), data:applyElementPrefs(calc.defaults(def.slabCategory||def.beamCategory||def.kind, def.suspended))};
   if(inst.data.cover!==undefined) inst.data.cover = defaultCoverFor(typeId);
   INSTANCES.push(inst);
   renderWorkspace();

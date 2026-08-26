@@ -202,7 +202,7 @@
   .panel-btn:hover{ transform:translateY(-3px); border-color:var(--text); box-shadow:0 22px 44px -26px rgba(35,31,32,.28); }
   .panel-btn:focus-visible{ outline:2px solid var(--focus); outline-offset:3px; }
   .panel-btn .glyph{
-    width:72px; height:72px; border-radius:14px; background:var(--surface-2); border:1px solid var(--line-soft);
+    width:144px; height:144px; max-width:100%; border-radius:22px; background:var(--surface-2); border:1px solid var(--line-soft);
     display:flex; align-items:center; justify-content:center; margin-bottom:14px; color:var(--text); overflow:hidden;
   }
   .panel-btn .glyph svg{ width:76%; height:76%; }
@@ -218,7 +218,7 @@
   }
   @media (max-width:1100px){
     .panel-btn{ padding:26px 24px 24px; }
-    .panel-btn .glyph{ width:96px; height:96px; margin-bottom:18px; }
+    .panel-btn .glyph{ width:192px; height:192px; margin-bottom:18px; }
     .panel-btn .glyph svg{ width:76%; height:76%; }
     .panel-btn h2{ font-size:19px; }
     .panel-btn p{ font-size:13px; line-height:1.55; }
@@ -496,6 +496,18 @@
     <div class="field">
       <label class="settings-check"><input type="checkbox" id="settings-hero" checked> Show the site photo on the welcome screen</label>
     </div>
+    <div class="field">
+      <label for="settings-default-app">Open after sign-in</label>
+      <select id="settings-default-app">
+        <option value="none">Welcome screen (default)</option>
+        <option value="rateslibrary">Rates Library</option>
+        <option value="costplanner">GRADCON Cost Planner</option>
+        <option value="quotes">Quotes</option>
+        <option value="estimates">Estimates</option>
+        <option value="planner">Planner</option>
+        <option value="folder">Gradcon Vault</option>
+      </select>
+    </div>
 
     <div class="settings-section">Quotes — pricing</div>
     <div class="settings-grid">
@@ -526,6 +538,39 @@
       </div>
     </div>
     <p class="settings-note">Decimal places apply to per-line amounts (headline totals stay whole dollars). Margin/GST take effect everywhere the margin ladder is computed — Quote Summary, Dashboard, print &amp; Excel exports. Overheads/contingency seed new projects only; existing projects keep their own values.</p>
+
+    <div class="settings-section">Quotes — workflow</div>
+    <div class="settings-grid">
+      <div class="field">
+        <label for="settings-sort">Dashboard sort order</label>
+        <select id="settings-sort">
+          <option value="added">Recently added (default)</option>
+          <option value="status">Status (pipeline order)</option>
+          <option value="name">Project name</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="settings-status">New project status</label>
+        <select id="settings-status">
+          <option value="Queued">Queued (default)</option>
+          <option value="Estimating">Estimating</option>
+          <option value="Quoting">Quoting</option>
+          <option value="Tendered">Tendered</option>
+          <option value="Successful">Successful</option>
+          <option value="Unsuccessful">Unsuccessful</option>
+          <option value="On Hold">On Hold</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="settings-priority">Planner default priority</label>
+        <select id="settings-priority">
+          <option value="Urgent">Urgent</option>
+          <option value="High">High</option>
+          <option value="Medium">Medium (default)</option>
+          <option value="Low">Low</option>
+        </select>
+      </div>
+    </div>
 
     <div class="settings-section">Estimates — defaults for new takeoffs</div>
     <div class="settings-grid">
@@ -561,8 +606,48 @@
         <label for="settings-est-grade">Concrete grade (MPa)</label>
         <input id="settings-est-grade" type="number" min="20" max="65" step="1" placeholder="32">
       </div>
+      <div class="field">
+        <label for="settings-est-lenunit">Length input unit</label>
+        <select id="settings-est-lenunit">
+          <option value="mm">Millimetres (default)</option>
+          <option value="m">Metres</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="settings-est-measrule">Measurement rule</label>
+        <select id="settings-est-measrule">
+          <option value="gross">Gross (default)</option>
+          <option value="net">Net</option>
+          <option value="configurable">Configurable per element</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="settings-est-trenchmesh">Default trench mesh type</label>
+        <select id="settings-est-trenchmesh">
+          <option value="3 Bar-L8TM">3 Bar-L8TM</option><option value="4 Bar-L8TM">4 Bar-L8TM</option>
+          <option value="5 Bar-L8TM">5 Bar-L8TM</option><option value="6 Bar-L8TM">6 Bar-L8TM</option>
+          <option value="3 Bar-L11TM">3 Bar-L11TM</option><option value="4 Bar-L11TM">4 Bar-L11TM</option>
+          <option value="5 Bar-L11TM">5 Bar-L11TM</option><option value="6 Bar-L11TM">6 Bar-L11TM</option>
+          <option value="3 Bar-L12TM">3 Bar-L12TM</option><option value="4 Bar-L12TM">4 Bar-L12TM (default)</option>
+          <option value="5 Bar-L12TM">5 Bar-L12TM</option><option value="6 Bar-L12TM">6 Bar-L12TM</option>
+          <option value="7 Bar-L12TM">7 Bar-L12TM</option><option value="3 Bar-L16TM">3 Bar-L16TM</option>
+          <option value="4 Bar-L16TM">4 Bar-L16TM</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="settings-est-meshtype">Default slab mesh type</label>
+        <select id="settings-est-meshtype">
+          <option value="SL52">SL52</option><option value="SL62">SL62</option><option value="SL72">SL72</option>
+          <option value="SL81">SL81</option><option value="SL82">SL82 (default)</option><option value="SL92">SL92</option>
+          <option value="SL102">SL102</option><option value="RL818">RL818</option><option value="RL1018">RL1018</option>
+          <option value="RL1118">RL1118</option>
+        </select>
+      </div>
     </div>
-    <p class="settings-note">These seed the Defaults &amp; Rules page of every NEW Estimates takeoff. A takeoff already saved keeps its own values (still editable per project on its Defaults &amp; Rules tab).</p>
+    <div class="field">
+      <label class="settings-check"><input type="checkbox" id="settings-est-lapon"> Include lap allowance by default on every new element's reinforcement</label>
+    </div>
+    <p class="settings-note">These seed the Defaults &amp; Rules page and element cards of every NEW Estimates takeoff/element. A takeoff already saved keeps its own values (still editable per project on its Defaults &amp; Rules tab). The lap toggle pre-ticks every "Include lap allowance (%)" checkbox on newly added elements — you can still untick any of them per item.</p>
 
     <div class="pin-modal-actions">
       <button class="btn-ghost" id="settings-reset" type="button">Reset all</button>
@@ -674,6 +759,7 @@
     document.getElementById('dash-user').innerHTML = 'Signed in as <b>' + email + '</b>';
     saveSession({ currentUser: email, activeApp: null });
     show('screen-dashboard');
+    maybeAutoOpenApp();
   });
 
   document.getElementById('logout-btn').addEventListener('click', function(){
@@ -767,6 +853,22 @@
     applyHeroVisibility(p.showHero);
   }
 
+  // "Open after sign-in" preference: jump straight into the chosen app the
+  // first time the dashboard shows this page-load (fresh login, or a
+  // restored session that wasn't already inside an app). Never re-fires —
+  // the Back-to-portal button must always land on the welcome screen.
+  var autoOpenedApp = false;
+  function maybeAutoOpenApp(){
+    if(autoOpenedApp) return;
+    autoOpenedApp = true;
+    var target = loadPrefs().portalDefaultApp;
+    if(!target || target === 'none') return;
+    var btn = (target === 'planner' || target === 'folder')
+      ? document.querySelector('.panel-btn[data-initial-view="' + target + '"]')
+      : document.querySelector('.panel-btn[data-target="' + target + '"]:not([data-initial-view])');
+    if(btn) setTimeout(function(){ btn.click(); }, 60);
+  }
+
   var settingsBackdrop = document.getElementById('settings-modal-backdrop');
   var settingsSwatchesHost = document.getElementById('settings-swatches');
   var pendingAccent = (loadPrefs().accentColor) || DEFAULT_ACCENT;
@@ -805,6 +907,20 @@
     ['settings-est-bulking','estBulking'], ['settings-est-cover','estCover'],
     ['settings-est-barstock','estBarStock'], ['settings-est-grade','estGrade']
   ];
+  // Select-backed preferences: [element id, prefs key, default value]. The
+  // default is what the select shows when nothing is stored; saving a value
+  // equal to the default deletes the key (so an untouched setting never
+  // pins a stale copy of a future default).
+  var STR_FIELDS = [
+    ['settings-default-app','portalDefaultApp','none'],
+    ['settings-sort','quotesDefaultSort','added'],
+    ['settings-status','quotesDefaultStatus','Queued'],
+    ['settings-priority','plannerDefaultPriority','Medium'],
+    ['settings-est-lenunit','estLenUnit','mm'],
+    ['settings-est-measrule','estMeasurementRule','gross'],
+    ['settings-est-trenchmesh','estTrenchMeshType','4 Bar-L12TM'],
+    ['settings-est-meshtype','estMeshType','SL82']
+  ];
 
   function populateSettingsForm(){
     var prefs = loadPrefs();
@@ -812,9 +928,13 @@
     document.getElementById('settings-custom-accent').value = pendingAccent;
     document.getElementById('settings-fontscale').value = prefs.portalFontScale || 'default';
     document.getElementById('settings-hero').checked = prefs.showHero !== false;
+    document.getElementById('settings-est-lapon').checked = prefs.estLapDefaultOn === true;
     document.getElementById('settings-decimals').value = (prefs.moneyDecimals !== undefined ? prefs.moneyDecimals : 2);
     NUM_FIELDS.forEach(function(f){
       document.getElementById(f[0]).value = (typeof prefs[f[1]] === 'number' && isFinite(prefs[f[1]])) ? prefs[f[1]] : '';
+    });
+    STR_FIELDS.forEach(function(f){
+      document.getElementById(f[0]).value = (typeof prefs[f[1]] === 'string') ? prefs[f[1]] : f[2];
     });
     renderSwatches();
   }
@@ -839,6 +959,7 @@
     prefs.accentColor = pendingAccent;
     prefs.portalFontScale = document.getElementById('settings-fontscale').value;
     prefs.showHero = document.getElementById('settings-hero').checked;
+    prefs.estLapDefaultOn = document.getElementById('settings-est-lapon').checked;
     prefs.moneyDecimals = parseInt(document.getElementById('settings-decimals').value, 10);
     NUM_FIELDS.forEach(function(f){
       var raw = document.getElementById(f[0]).value;
@@ -847,6 +968,10 @@
         var n = parseFloat(raw);
         if(isFinite(n)) prefs[f[1]] = n; else delete prefs[f[1]];
       }
+    });
+    STR_FIELDS.forEach(function(f){
+      var v = document.getElementById(f[0]).value;
+      if(v === f[2]){ delete prefs[f[1]]; } else { prefs[f[1]] = v; }
     });
     savePrefs(prefs);
     applyAllPrefs();
@@ -952,6 +1077,7 @@
       openApp(session.activeApp, false);
     } else {
       show('screen-dashboard');
+      maybeAutoOpenApp();
     }
   })();
 })();
