@@ -294,6 +294,23 @@ let PROJECT = {
   barStock:12000, concreteWaste:5, reoWaste:3, formworkWaste:0, lapPct:5, bulking:15, revision:"Rev A", measurementRule:"gross",
   estimateSessionId: newEstimateSessionId(),
 };
+// Portal-wide Settings (portal-shell.html's Settings modal, stored under
+// "gradcon-preferences" — same origin as this blob:-embedded app) can
+// override the fresh-project defaults above. Applied here, BEFORE
+// loadEstimateState() runs at the bottom of this file, so a restored saved
+// project still wins with its own values (Object.assign in
+// applyParsedState overwrites these), while a brand-new project starts
+// from the user's preferred defaults instead of the hardcoded ones.
+(function(){
+  try{
+    var prefs = JSON.parse(localStorage.getItem("gradcon-preferences")) || {};
+    var map = { estCover:"cover", estGrade:"grade", estBarStock:"barStock", estConcreteWaste:"concreteWaste",
+                estReoWaste:"reoWaste", estFormworkWaste:"formworkWaste", estLapPct:"lapPct", estBulking:"bulking" };
+    Object.keys(map).forEach(function(k){
+      if(typeof prefs[k] === "number" && isFinite(prefs[k])) PROJECT[map[k]] = prefs[k];
+    });
+  }catch(e){}
+})();
 let SELECTED_TYPES = {};   // typeId -> true
 let INSTANCES = [];        // {id,typeKey,label,data,results}
 let ID_COUNTER = 1;

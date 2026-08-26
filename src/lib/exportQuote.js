@@ -18,8 +18,8 @@
  *   text/plain clipboard fallback in ExportExcelModal (a paste target that
  *   can't accept the HTML clipboard format still gets usable text).
  */
-import { FULL_CATALOG, RESOURCE_COLS, CATEGORY_ORDER, SECTION_ORDER, MARGIN_STEPS, DEFAULT_MARGIN } from "../data/catalog.js";
-import { computeElementCost, computeGrandTotal, computeMarginLadder, rateKey, lookupRate, computeRowTotal } from "./costing.js";
+import { FULL_CATALOG, RESOURCE_COLS, CATEGORY_ORDER, SECTION_ORDER } from "../data/catalog.js";
+import { computeElementCost, computeGrandTotal, computeMarginLadder, rateKey, lookupRate, computeRowTotal, getDefaultMargin, getMarginSteps } from "./costing.js";
 import { GRADCON_LOGO_DATA_URI } from "./logo.js";
 
 /** Rate ($/unit) backed out from the line's own total ÷ qty — always exactly
@@ -132,7 +132,7 @@ export function buildQuoteExcelHtml(quote, items, rates, categoryOrder = CATEGOR
   const groups = groupItems(items, rates, categoryOrder, sectionOrder);
   const grandTotal = computeGrandTotal(items, rates);
   const { subtotal, rows: marginRows } = computeMarginLadder(
-    grandTotal, quote.overheadPct, quote.contingencyPct, quote.gfa, MARGIN_STEPS
+    grandTotal, quote.overheadPct, quote.contingencyPct, quote.gfa, getMarginSteps()
   );
 
   let itemNo = 0;
@@ -228,7 +228,7 @@ ${summaryRows.join("\n")}
     + td("$/m² GFA", { bold: true, bg: COLORS.navy, color: COLORS.navyText, align: "right" })
   ));
   marginRows.forEach((r) => {
-    const isDefault = Math.abs(r.margin - DEFAULT_MARGIN) < 1e-9;
+    const isDefault = Math.abs(r.margin - getDefaultMargin()) < 1e-9;
     const bg = isDefault ? COLORS.defaultMargin : undefined;
     marginRowsHtml.push(tr(
       td(`${Math.round(r.margin * 100)}%`, { bold: isDefault, bg })
@@ -324,7 +324,7 @@ export function buildQuoteCsv(quote, items, rates, categoryOrder = CATEGORY_ORDE
   lines.push(csvRow("", "", "", "GRAND TOTAL (EX GST)", "", "", "", grandTotal.toFixed(2)));
 
   const { subtotal, rows } = computeMarginLadder(
-    grandTotal, quote.overheadPct, quote.contingencyPct, quote.gfa, MARGIN_STEPS
+    grandTotal, quote.overheadPct, quote.contingencyPct, quote.gfa, getMarginSteps()
   );
   lines.push(csvRow("", "", "", "Subtotal (+ Overheads + Contingency)", "", "", "", subtotal.toFixed(2)));
 

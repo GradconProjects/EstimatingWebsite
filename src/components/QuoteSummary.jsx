@@ -1,6 +1,6 @@
 import { useMemo } from "react";
-import { CATEGORY_ORDER, SECTION_ORDER, MARGIN_STEPS, DEFAULT_MARGIN } from "../data/catalog.js";
-import { computeElementCost, computeGrandTotal, computeMarginLadder, money, money2 } from "../lib/costing.js";
+import { CATEGORY_ORDER, SECTION_ORDER } from "../data/catalog.js";
+import { computeElementCost, computeGrandTotal, computeMarginLadder, money, money2, getDefaultMargin, getMarginSteps } from "../lib/costing.js";
 import { NumInput } from "./atoms.jsx";
 
 export default function QuoteSummary({
@@ -23,7 +23,7 @@ export default function QuoteSummary({
 
   const grandTotal = useMemo(() => computeGrandTotal(items, rates), [items, rates]);
   const { subtotal, rows } = useMemo(
-    () => computeMarginLadder(grandTotal, overheadPct, contingencyPct, gfa, MARGIN_STEPS),
+    () => computeMarginLadder(grandTotal, overheadPct, contingencyPct, gfa, getMarginSteps()),
     [grandTotal, overheadPct, contingencyPct, gfa]
   );
 
@@ -115,7 +115,7 @@ export default function QuoteSummary({
           </thead>
           <tbody>
             {rows.map((row) => {
-              const isDefault = Math.abs(row.margin - DEFAULT_MARGIN) < 1e-9;
+              const isDefault = Math.abs(row.margin - getDefaultMargin()) < 1e-9;
               return (
                 <tr key={row.margin} className={`border-t border-neutral-100 ${isDefault ? "bg-emerald-50" : ""}`}>
                   <td className="px-3 py-1 font-medium text-neutral-700">{Math.round(row.margin * 100)}%</td>

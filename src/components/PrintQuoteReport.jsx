@@ -1,8 +1,8 @@
 import {
-  CATEGORY_ORDER, SECTION_ORDER, FULL_CATALOG, RESOURCE_COLS, MARGIN_STEPS, DEFAULT_MARGIN,
+  CATEGORY_ORDER, SECTION_ORDER, FULL_CATALOG, RESOURCE_COLS,
 } from "../data/catalog.js";
 import {
-  computeElementCost, computeGrandTotal, computeMarginLadder, rateKey, lookupRate, computeRowTotal, money, money2,
+  computeElementCost, computeGrandTotal, computeMarginLadder, rateKey, lookupRate, computeRowTotal, money, money2, getDefaultMargin, getMarginSteps,
 } from "../lib/costing.js";
 import { GRADCON_LOGO_DATA_URI } from "../lib/logo.js";
 
@@ -66,7 +66,7 @@ export default function PrintQuoteReport({ quote, items, rates, categoryOrder = 
 function ReportContent({ quote, items, rates, categoryOrder, sectionOrder }) {
   const grandTotal = computeGrandTotal(items, rates);
   const { subtotal, rows } = computeMarginLadder(
-    grandTotal, quote.overheadPct, quote.contingencyPct, quote.gfa, MARGIN_STEPS
+    grandTotal, quote.overheadPct, quote.contingencyPct, quote.gfa, getMarginSteps()
   );
 
   return (
@@ -137,7 +137,7 @@ function ReportContent({ quote, items, rates, categoryOrder, sectionOrder }) {
             {rows.map((row) => (
               <tr
                 key={row.margin}
-                className={`border-b border-neutral-200 ${Math.abs(row.margin - DEFAULT_MARGIN) < 1e-9 ? "font-bold" : ""}`}
+                className={`border-b border-neutral-200 ${Math.abs(row.margin - getDefaultMargin()) < 1e-9 ? "font-bold" : ""}`}
               >
                 <td className="py-0.5">{Math.round(row.margin * 100)}%</td>
                 <td className="py-0.5 text-right">{money(row.sellExGst)}</td>

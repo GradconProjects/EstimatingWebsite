@@ -5,7 +5,7 @@
  *
  * Read CLAUDE.md → "Costing rules" before editing computeElementCost.
  */
-import { FULL_CATALOG, RESOURCE_COLS, LABOUR_TEMPLATES, GST_RATE, PRODUCTION_RATES, DEFAULT_MARGIN } from "../data/catalog.js";
+import { FULL_CATALOG, RESOURCE_COLS, LABOUR_TEMPLATES, GST_RATE, PRODUCTION_RATES, DEFAULT_MARGIN, MARGIN_STEPS } from "../data/catalog.js";
 
 // Shared with portal-shell.html's Settings modal (same localStorage key, same
 // origin — the portal embeds this app via a blob: URL created from its own
@@ -30,6 +30,33 @@ export const money2 = (n) => {
   const dp = Number.isFinite(p.moneyDecimals) ? p.moneyDecimals : 2;
   return (n || 0).toLocaleString("en-AU", { style: "currency", currency: "AUD", minimumFractionDigits: dp, maximumFractionDigits: dp });
 };
+
+/** GST rate as a fraction — the Settings preference (entered as a whole %,
+ * e.g. 10) overrides the catalog's GST_RATE; absent/invalid falls back. */
+export function getGstRate() {
+  const p = readPrefs();
+  return Number.isFinite(p.gstRatePct) ? p.gstRatePct / 100 : GST_RATE;
+}
+
+/** Default margin as a fraction — Settings preference (whole %, e.g. 30)
+ * over the catalog's DEFAULT_MARGIN. Bounded to <95% so the margin ladder's
+ * divide-by-(1-margin) can never blow up on a bad saved value. */
+export function getDefaultMargin() {
+  const p = readPrefs();
+  if (Number.isFinite(p.defaultMarginPct) && p.defaultMarginPct >= 0 && p.defaultMarginPct < 95) {
+    return p.defaultMarginPct / 100;
+  }
+  return DEFAULT_MARGIN;
+}
+
+/** MARGIN_STEPS with the (possibly customised) default margin merged in,
+ * sorted — so the ladder always contains a row for the default margin and
+ * the Dashboard/QuoteSummary "default" highlight always has a row to hit. */
+export function getMarginSteps() {
+  const def = getDefaultMargin();
+  const steps = MARGIN_STEPS.includes(def) ? MARGIN_STEPS : [...MARGIN_STEPS, def];
+  return [...steps].sort((a, b) => a - b);
+}
 
 export const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 
@@ -260,9 +287,10 @@ export function computeGrandTotal(items, rates) {
 export function computeMarginLadder(directCost, overheadPct, contingencyPct, gfa, marginSteps) {
   const subtotal = directCost * (1 + (Number(overheadPct) || 0) + (Number(contingencyPct) || 0));
   const gfaNum = Number(gfa) || 0;
+  const gstRate = getGstRate();
   const rows = marginSteps.map((margin) => {
     const sellExGst = subtotal / (1 - margin);
-    const sellIncGst = sellExGst * (1 + GST_RATE);
+    const sellIncGst = sellExGst * (1 + gstRate);
     return {
       margin,
       sellExGst,
@@ -283,7 +311,8 @@ export function computeMarginLadder(directCost, overheadPct, contingencyPct, gfa
  * an element with a total contributes proportionally to its own direct
  * cost's share of the whole quote's direct cost.
  */
-export function computeExternalScopeLines(items, rates, overheadPct, contingencyPct, marginPct = DEFAULT_MARGIN) {
+export function computeExternalScopeLines(items, rates, overheadPct, contingencyPct, marginPct) {
+  if (marginPct === undefined) marginPct = getDefaultMargin();
   const costed = items
     .map((item) => ({ id: item.id, label: item.label, directCost: computeElementCost(item, rates).total }))
     .filter((l) => l.directCost > 0);

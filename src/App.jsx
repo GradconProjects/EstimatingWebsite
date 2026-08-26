@@ -30,12 +30,25 @@ export const CUSTOM_ELEMENT_TYPES_KEY = "gradcon-custom-element-types";
 // open).
 const ACTIVE_PROJECT_KEY = "gradcon-active-project";
 
+// New-project overheads/contingency seed from the portal Settings modal's
+// stored preferences (entered there as whole %, stored under
+// "gradcon-preferences"), falling back to the historical 8%/5%. Only NEW
+// projects read this — existing quotes keep whatever they were saved with.
+const prefPct = (key, fallback) => {
+  try {
+    const p = JSON.parse(localStorage.getItem("gradcon-preferences")) || {};
+    return Number.isFinite(p[key]) ? p[key] / 100 : fallback;
+  } catch {
+    return fallback;
+  }
+};
+
 const blankQuote = () => ({
   projectName: "",
   projectDate: new Date().toISOString().slice(0, 10),
   gfa: undefined,
-  overheadPct: 0.08,
-  contingencyPct: 0.05,
+  overheadPct: prefPct("overheadPct", 0.08),
+  contingencyPct: prefPct("contingencyPct", 0.05),
   status: QUOTE_STATUSES[0],
   items: [],
 });

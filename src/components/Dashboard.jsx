@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Plus, Trash2, ArrowRight, LayoutDashboard, Loader2 } from "lucide-react";
-import { MARGIN_STEPS, DEFAULT_MARGIN, QUOTE_STATUSES, QUOTE_STATUS_STYLES } from "../data/catalog.js";
-import { computeGrandTotal, computeMarginLadder, money, money2 } from "../lib/costing.js";
+import { QUOTE_STATUSES, QUOTE_STATUS_STYLES } from "../data/catalog.js";
+import { computeGrandTotal, computeMarginLadder, money, money2, getDefaultMargin, getMarginSteps } from "../lib/costing.js";
 import { readQuotes, writeQuote } from "../lib/projects.js";
 import { dashboardDueLabel } from "../lib/planner.js";
 
@@ -24,9 +24,9 @@ function summarizeQuote(quote, rates) {
     quote.overheadPct ?? 0.08,
     quote.contingencyPct ?? 0.05,
     quote.gfa,
-    MARGIN_STEPS
+    getMarginSteps()
   );
-  const defaultRow = rows.find((r) => Math.abs(r.margin - DEFAULT_MARGIN) < 1e-9) || rows[0];
+  const defaultRow = rows.find((r) => Math.abs(r.margin - getDefaultMargin()) < 1e-9) || rows[0];
   return {
     name: quote.projectName || "Untitled project",
     date: quote.projectDate,
@@ -153,7 +153,7 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete 
         <StatTile label="Projects" value={summaries.length} />
         <StatTile label="Total direct cost" value={money(totals.directCost)} />
         <StatTile
-          label={`Total sell (${Math.round(DEFAULT_MARGIN * 100)}% margin, ex GST)`}
+          label={`Total sell (${Math.round(getDefaultMargin() * 100)}% margin, ex GST)`}
           value={money(totals.sellExGst)}
           highlight
         />
@@ -172,7 +172,7 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete 
               <th className="text-right px-3 py-2 font-medium">Elements</th>
               <th className="text-right px-3 py-2 font-medium">GFA</th>
               <th className="text-right px-3 py-2 font-medium">Direct cost</th>
-              <th className="text-right px-3 py-2 font-medium">Sell ({Math.round(DEFAULT_MARGIN * 100)}%, ex GST)</th>
+              <th className="text-right px-3 py-2 font-medium">Sell ({Math.round(getDefaultMargin() * 100)}%, ex GST)</th>
               <th className="text-right px-3 py-2 font-medium">$/m²</th>
               <th className="px-3 py-2" />
             </tr>
