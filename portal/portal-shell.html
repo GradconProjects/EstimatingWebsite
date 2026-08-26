@@ -154,6 +154,22 @@
   .pin-modal-actions{ display:flex; gap:10px; margin-top:6px; }
   .pin-modal-actions .btn-ghost{ flex:1; }
   .pin-modal-actions .btn-primary{ flex:1; margin-top:0; }
+  .settings-modal{ max-width:620px; max-height:88vh; overflow-y:auto; }
+  .settings-section{
+    font-size:11px; font-weight:800; letter-spacing:.08em; text-transform:uppercase;
+    color:var(--muted); border-bottom:1px solid var(--line-soft);
+    padding-bottom:6px; margin:22px 0 14px;
+  }
+  .settings-section:first-of-type{ margin-top:4px; }
+  .settings-grid{ display:grid; grid-template-columns:1fr 1fr; gap:0 16px; }
+  @media (max-width:560px){ .settings-grid{ grid-template-columns:1fr; } }
+  .settings-check{
+    display:flex !important; flex-direction:row !important; align-items:center; gap:8px;
+    font-size:13px !important; font-weight:500 !important; text-transform:none !important;
+    letter-spacing:0 !important; color:var(--text) !important; cursor:pointer;
+  }
+  .settings-check input{ width:16px; height:16px; accent-color:var(--accent); }
+  .field input[type="color"]{ padding:3px; height:40px; cursor:pointer; }
   .swatch-row{ display:flex; gap:10px; flex-wrap:wrap; }
   .swatch{
     width:32px; height:32px; border-radius:50%; border:2px solid transparent; cursor:pointer;
@@ -189,7 +205,7 @@
     width:72px; height:72px; border-radius:14px; background:var(--surface-2); border:1px solid var(--line-soft);
     display:flex; align-items:center; justify-content:center; margin-bottom:14px; color:var(--text); overflow:hidden;
   }
-  .panel-btn .glyph svg{ width:20px; height:20px; }
+  .panel-btn .glyph svg{ width:76%; height:76%; }
   .panel-btn .glyph img{ width:100%; height:100%; object-fit:cover; display:block; }
   .panel-btn h2{ font-size:15.5px; margin-bottom:6px; line-height:1.25; }
   .panel-btn p{ margin:0 0 14px; color:var(--muted); font-size:12px; line-height:1.45; max-width:100%; }
@@ -203,7 +219,7 @@
   @media (max-width:1100px){
     .panel-btn{ padding:26px 24px 24px; }
     .panel-btn .glyph{ width:96px; height:96px; margin-bottom:18px; }
-    .panel-btn .glyph svg{ width:22px; height:22px; }
+    .panel-btn .glyph svg{ width:76%; height:76%; }
     .panel-btn h2{ font-size:19px; }
     .panel-btn p{ font-size:13px; line-height:1.55; }
     .panel-btn .cta{ font-size:12px; }
@@ -294,8 +310,18 @@
   <div class="panel-grid">
     <button class="panel-btn" data-target="rateslibrary">
       <span class="tag">01</span>
-      <span class="glyph">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 2h9l5 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/></svg>
+      <span class="glyph" style="background:#eaf3fc;">
+        <svg viewBox="0 0 48 48" aria-hidden="true">
+          <path d="M6 11c5.2-2.6 11-2.6 16.2 0v26.5C17 35 11.2 35 6 37.5z" fill="#3498db"/>
+          <path d="M42 11c-5.2-2.6-11-2.6-16.2 0v26.5C31 35 36.8 35 42 37.5z" fill="#2471a3"/>
+          <path d="M9.5 16.2c3.2-1.2 6.4-1.2 9.6 0M9.5 21.2c3.2-1.2 6.4-1.2 9.6 0M9.5 26.2c3.2-1.2 6.4-1.2 9.6 0" stroke="#fff" stroke-width="1.9" fill="none" stroke-linecap="round" opacity=".9"/>
+          <g transform="rotate(16 33 30)">
+            <path d="M27 25.5h11a2.4 2.4 0 0 1 2.4 2.4v5.7a2.4 2.4 0 0 1-2.4 2.4H27l-4.2-5.2z" fill="#f39c12"/>
+            <circle cx="27.6" cy="30.8" r="1.6" fill="#fff"/>
+          </g>
+          <circle cx="35.5" cy="13.5" r="7.2" fill="#2ecc71"/>
+          <text x="35.5" y="17.4" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" font-weight="800" fill="#fff">$</text>
+        </svg>
       </span>
       <h2>Rates Library</h2>
       <p>Every established rate — concrete, reinforcement, formwork, labour &amp; plant, accessories, preliminaries — in one place, applied automatically everywhere else.</p>
@@ -304,8 +330,16 @@
 
     <button class="panel-btn" data-target="costplanner">
       <span class="tag">02</span>
-      <span class="glyph">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/></svg>
+      <span class="glyph" style="background:#eafaf1;">
+        <svg viewBox="0 0 48 48" aria-hidden="true">
+          <rect x="7" y="26" width="8" height="16" rx="2" fill="#3498db"/>
+          <rect x="18" y="18" width="8" height="24" rx="2" fill="#2ecc71"/>
+          <rect x="29" y="11" width="8" height="31" rx="2" fill="#f39c12"/>
+          <path d="M8 21 19 13.5 30 7.5 39 4.5" stroke="#2c3e50" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M34.5 3.2 40 4.2l-1.4 5.4" stroke="#2c3e50" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="40" cy="35" r="7.4" fill="#f1c40f" stroke="#e67e22" stroke-width="1.7"/>
+          <text x="40" y="39" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" font-weight="800" fill="#a04000">$</text>
+        </svg>
       </span>
       <h2>GRADCON Cost Planner</h2>
       <p>Project portfolio, cost control, BOQ and schedule in one workbook — the full cost-planning dashboard.</p>
@@ -314,8 +348,21 @@
 
     <button class="panel-btn" data-target="quotes">
       <span class="tag">03</span>
-      <span class="glyph">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 7h8M8 11h8M8 15h5"/><circle cx="17" cy="16" r="3.4" fill="#231f20"/><path d="M17 14.6v2.8M15.9 15.4h2.2M15.9 16.6h2.2"/></svg>
+      <span class="glyph" style="background:#fef5e7;">
+        <svg viewBox="0 0 48 48" aria-hidden="true">
+          <rect x="7" y="4" width="25" height="35" rx="3" fill="#fff" stroke="#d5dbdb" stroke-width="1.4"/>
+          <rect x="7" y="4" width="25" height="7.5" rx="3" fill="#2c3e50"/>
+          <rect x="7" y="8.5" width="25" height="3" fill="#2c3e50"/>
+          <path d="M11.5 17h16M11.5 21.5h16M11.5 26h10" stroke="#aab7c4" stroke-width="2" stroke-linecap="round"/>
+          <rect x="24" y="23" width="17.5" height="21" rx="3" fill="#e67e22"/>
+          <rect x="26.6" y="26" width="12.3" height="5" rx="1.4" fill="#d5f5e3"/>
+          <g fill="#fff">
+            <rect x="26.6" y="33.4" width="3.2" height="3.2" rx="1"/><rect x="31.2" y="33.4" width="3.2" height="3.2" rx="1"/><rect x="35.8" y="33.4" width="3.2" height="3.2" rx="1"/>
+            <rect x="26.6" y="38" width="3.2" height="3.2" rx="1"/><rect x="31.2" y="38" width="3.2" height="3.2" rx="1"/><rect x="35.8" y="38" width="3.2" height="3.2" rx="1"/>
+          </g>
+          <circle cx="12.5" cy="33.5" r="5.4" fill="#2ecc71"/>
+          <text x="12.5" y="37" text-anchor="middle" font-family="Arial, sans-serif" font-size="8.5" font-weight="800" fill="#fff">$</text>
+        </svg>
       </span>
       <h2>Quotes</h2>
       <p>Every project's pricing in one dashboard — materials, reinforcement, formwork and labour roll up live into a margin ladder with GST.</p>
@@ -324,8 +371,22 @@
 
     <button class="panel-btn" data-target="estimates">
       <span class="tag">04</span>
-      <span class="glyph">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 3l7 7M3 3v5M3 3h5"/><rect x="9" y="9" width="12" height="12" rx="1.5"/><path d="M13 13h4M13 16.5h4M13 20h2.5"/></svg>
+      <span class="glyph" style="background:#eaf2fb;">
+        <svg viewBox="0 0 48 48" aria-hidden="true">
+          <rect x="4" y="7" width="31" height="27" rx="2.5" fill="#2980b9"/>
+          <rect x="7" y="10" width="25" height="21" rx="1.5" fill="none" stroke="#aed6f1" stroke-width="1.4" stroke-dasharray="3 2.2"/>
+          <path d="M11 26V15h8v6h7v5z" fill="none" stroke="#fff" stroke-width="1.9" stroke-linejoin="round"/>
+          <g transform="rotate(-14 30 38)">
+            <rect x="16" y="35" width="26" height="7" rx="1.6" fill="#f1c40f" stroke="#d4ac0d" stroke-width="1.2"/>
+            <path d="M20.5 35v3M25 35v4.4M29.5 35v3M34 35v4.4M38.5 35v3" stroke="#7d6608" stroke-width="1.3"/>
+          </g>
+          <g transform="rotate(38 39 16)">
+            <rect x="35" y="4" width="7" height="20" rx="1.4" fill="#e67e22"/>
+            <rect x="35" y="4" width="7" height="4.4" rx="1.4" fill="#f5cba7"/>
+            <path d="M35 24l3.5 6 3.5-6z" fill="#f5cba7"/>
+            <path d="M37.4 28.2l1.1 1.9 1.1-1.9z" fill="#2c3e50"/>
+          </g>
+        </svg>
       </span>
       <h2>Estimates</h2>
       <p>Element-driven concrete &amp; reinforcement takeoff — enter geometry per element, get audited quantities ready to price.</p>
@@ -334,8 +395,21 @@
 
     <button class="panel-btn" data-target="quotes" data-initial-view="planner">
       <span class="tag">05</span>
-      <span class="glyph">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="0.8" fill="currentColor"/></svg>
+      <span class="glyph" style="background:#fdeeee;">
+        <svg viewBox="0 0 48 48" aria-hidden="true">
+          <rect x="5" y="9" width="30" height="30" rx="4" fill="#fff" stroke="#d5dbdb" stroke-width="1.4"/>
+          <path d="M5 13a4 4 0 0 1 4-4h22a4 4 0 0 1 4 4v5H5z" fill="#e74c3c"/>
+          <rect x="11" y="5" width="3.4" height="7" rx="1.7" fill="#2c3e50"/>
+          <rect x="25.6" y="5" width="3.4" height="7" rx="1.7" fill="#2c3e50"/>
+          <g fill="#d5dbdb">
+            <rect x="9.5" y="22" width="5" height="4.4" rx="1"/><rect x="17.5" y="22" width="5" height="4.4" rx="1"/><rect x="25.5" y="22" width="5" height="4.4" rx="1"/>
+            <rect x="9.5" y="29.4" width="5" height="4.4" rx="1"/><rect x="25.5" y="29.4" width="5" height="4.4" rx="1"/>
+          </g>
+          <rect x="17.5" y="29.4" width="5" height="4.4" rx="1" fill="#2ecc71"/>
+          <circle cx="37.5" cy="35" r="8.4" fill="#3498db"/>
+          <circle cx="37.5" cy="35" r="6.4" fill="#fff"/>
+          <path d="M37.5 31.4V35l2.8 1.9" stroke="#2c3e50" stroke-width="1.9" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
       </span>
       <h2>Planner</h2>
       <p>Deadlines, priority and requirements across every project — what to attend to now, and what can wait. Lives inside Quotes.</p>
@@ -344,8 +418,19 @@
 
     <button class="panel-btn" data-target="quotes" data-initial-view="folder">
       <span class="tag">06</span>
-      <span class="glyph">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>
+      <span class="glyph" style="background:#f7f9e6;">
+        <svg viewBox="0 0 48 48" aria-hidden="true">
+          <rect x="6" y="6" width="29" height="31" rx="4" fill="#5d6d7e"/>
+          <rect x="9.4" y="9.4" width="22.2" height="24.2" rx="2.4" fill="#85929e"/>
+          <rect x="11" y="37" width="5" height="4" rx="1.2" fill="#34495e"/>
+          <rect x="25" y="37" width="5" height="4" rx="1.2" fill="#34495e"/>
+          <circle cx="20.5" cy="21.5" r="7" fill="#d5de5d" stroke="#2c3e50" stroke-width="2"/>
+          <path d="M20.5 15.6v3M20.5 24.4v3M14.6 21.5h3M23.4 21.5h3" stroke="#2c3e50" stroke-width="1.8" stroke-linecap="round"/>
+          <circle cx="20.5" cy="21.5" r="1.7" fill="#2c3e50"/>
+          <rect x="31.6" y="14" width="2.6" height="9" rx="1.3" fill="#2c3e50"/>
+          <path d="M28 31h7.4a3 3 0 0 1 2.9 2.2l2.6 8.8H30a3 3 0 0 1-2.9-2.2z" fill="#e59866"/>
+          <path d="M27 28.6h4.4l1.6 2.4h7.6l3.3 11H31.4a3 3 0 0 1-2.9-2.2z" fill="#f5b041"/>
+        </svg>
       </span>
       <h2>Gradcon Vault</h2>
       <p>Documents and communications — one folder per project, plus a shared Office folder for company-wide files. Lives inside Quotes.</p>
@@ -385,24 +470,102 @@
 </div>
 
 <div class="pin-modal-backdrop" id="settings-modal-backdrop" hidden>
-  <div class="pin-modal">
+  <div class="pin-modal settings-modal">
     <h3>Settings</h3>
-    <p class="sub">Preferences for this portal and every Quotes project. Stored on this browser only.</p>
+    <p class="sub">Preferences for the whole portal — appearance, Quotes pricing defaults, and Estimates takeoff defaults. Saved on this browser and applied everywhere.</p>
+
+    <div class="settings-section">Appearance</div>
     <div class="field">
       <label>Accent colour</label>
       <div class="swatch-row" id="settings-swatches"></div>
     </div>
-    <div class="field">
-      <label for="settings-decimals">Money decimal places (Quotes)</label>
-      <select id="settings-decimals">
-        <option value="0">0 — whole dollars ($1,234)</option>
-        <option value="1">1 ($1,234.5)</option>
-        <option value="2">2 — default ($1,234.56)</option>
-        <option value="3">3 ($1,234.567)</option>
-      </select>
+    <div class="settings-grid">
+      <div class="field">
+        <label for="settings-custom-accent">Custom accent</label>
+        <input id="settings-custom-accent" type="color" value="#d5de5d">
+      </div>
+      <div class="field">
+        <label for="settings-fontscale">Text size (portal)</label>
+        <select id="settings-fontscale">
+          <option value="small">Small</option>
+          <option value="default">Default</option>
+          <option value="large">Large</option>
+        </select>
+      </div>
     </div>
-    <p class="settings-note">Applies to per-line and per-item amounts in Quotes (headline totals always show whole dollars).</p>
+    <div class="field">
+      <label class="settings-check"><input type="checkbox" id="settings-hero" checked> Show the site photo on the welcome screen</label>
+    </div>
+
+    <div class="settings-section">Quotes — pricing</div>
+    <div class="settings-grid">
+      <div class="field">
+        <label for="settings-decimals">Money decimal places</label>
+        <select id="settings-decimals">
+          <option value="0">0 — whole dollars ($1,234)</option>
+          <option value="1">1 ($1,234.5)</option>
+          <option value="2">2 — default ($1,234.56)</option>
+          <option value="3">3 ($1,234.567)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="settings-gst">GST rate (%)</label>
+        <input id="settings-gst" type="number" min="0" max="30" step="0.5" placeholder="10">
+      </div>
+      <div class="field">
+        <label for="settings-margin">Default margin (%)</label>
+        <input id="settings-margin" type="number" min="0" max="90" step="1" placeholder="30">
+      </div>
+      <div class="field">
+        <label for="settings-overheads">Overheads (%) — new projects</label>
+        <input id="settings-overheads" type="number" min="0" max="50" step="0.5" placeholder="8">
+      </div>
+      <div class="field">
+        <label for="settings-contingency">Contingency (%) — new projects</label>
+        <input id="settings-contingency" type="number" min="0" max="50" step="0.5" placeholder="5">
+      </div>
+    </div>
+    <p class="settings-note">Decimal places apply to per-line amounts (headline totals stay whole dollars). Margin/GST take effect everywhere the margin ladder is computed — Quote Summary, Dashboard, print &amp; Excel exports. Overheads/contingency seed new projects only; existing projects keep their own values.</p>
+
+    <div class="settings-section">Estimates — defaults for new takeoffs</div>
+    <div class="settings-grid">
+      <div class="field">
+        <label for="settings-est-concwaste">Concrete waste (%)</label>
+        <input id="settings-est-concwaste" type="number" min="0" max="30" step="0.5" placeholder="5">
+      </div>
+      <div class="field">
+        <label for="settings-est-reowaste">Reinforcement waste (%)</label>
+        <input id="settings-est-reowaste" type="number" min="0" max="30" step="0.5" placeholder="3">
+      </div>
+      <div class="field">
+        <label for="settings-est-formwaste">Formwork waste (%)</label>
+        <input id="settings-est-formwaste" type="number" min="0" max="30" step="0.5" placeholder="0">
+      </div>
+      <div class="field">
+        <label for="settings-est-lap">Lap allowance (%)</label>
+        <input id="settings-est-lap" type="number" min="0" max="30" step="0.5" placeholder="5">
+      </div>
+      <div class="field">
+        <label for="settings-est-bulking">Spoil bulking (%)</label>
+        <input id="settings-est-bulking" type="number" min="0" max="60" step="1" placeholder="15">
+      </div>
+      <div class="field">
+        <label for="settings-est-cover">Cover (mm)</label>
+        <input id="settings-est-cover" type="number" min="10" max="100" step="5" placeholder="40">
+      </div>
+      <div class="field">
+        <label for="settings-est-barstock">Bar stock length (mm)</label>
+        <input id="settings-est-barstock" type="number" min="6000" max="18000" step="500" placeholder="12000">
+      </div>
+      <div class="field">
+        <label for="settings-est-grade">Concrete grade (MPa)</label>
+        <input id="settings-est-grade" type="number" min="20" max="65" step="1" placeholder="32">
+      </div>
+    </div>
+    <p class="settings-note">These seed the Defaults &amp; Rules page of every NEW Estimates takeoff. A takeoff already saved keeps its own values (still editable per project on its Defaults &amp; Rules tab).</p>
+
     <div class="pin-modal-actions">
+      <button class="btn-ghost" id="settings-reset" type="button">Reset all</button>
       <button class="btn-ghost" id="settings-cancel" type="button">Close</button>
       <button class="btn-primary" id="settings-save" type="button">Save</button>
     </div>
@@ -590,9 +753,22 @@
     document.documentElement.style.setProperty('--accent-hover', darken(hex, 20));
   }
 
+  function applyFontScale(scale){
+    document.documentElement.style.fontSize = scale === 'small' ? '93%' : scale === 'large' ? '109%' : '';
+  }
+  function applyHeroVisibility(showHero){
+    var hero = document.querySelector('.dash-hero-art');
+    if(hero) hero.style.display = (showHero === false) ? 'none' : '';
+  }
+  function applyAllPrefs(){
+    var p = loadPrefs();
+    applyAccentColor(p.accentColor || DEFAULT_ACCENT);
+    applyFontScale(p.portalFontScale || 'default');
+    applyHeroVisibility(p.showHero);
+  }
+
   var settingsBackdrop = document.getElementById('settings-modal-backdrop');
   var settingsSwatchesHost = document.getElementById('settings-swatches');
-  var settingsDecimals = document.getElementById('settings-decimals');
   var pendingAccent = (loadPrefs().accentColor) || DEFAULT_ACCENT;
 
   function renderSwatches(){
@@ -606,17 +782,45 @@
       b.setAttribute('aria-label', 'Accent colour ' + hex);
       b.addEventListener('click', function(){
         pendingAccent = hex;
+        document.getElementById('settings-custom-accent').value = hex;
         renderSwatches();
       });
       settingsSwatchesHost.appendChild(b);
     });
   }
+  document.getElementById('settings-custom-accent').addEventListener('input', function(e){
+    pendingAccent = e.target.value;
+    renderSwatches();
+  });
 
-  document.getElementById('settings-btn').addEventListener('click', function(){
+  // Every numeric preference field: [element id, prefs key]. A field left
+  // blank stores nothing (the app-side fallback default applies); a number
+  // stores that number. Populating and saving both walk this one list so
+  // the two can never drift apart as more settings are added.
+  var NUM_FIELDS = [
+    ['settings-gst','gstRatePct'], ['settings-margin','defaultMarginPct'],
+    ['settings-overheads','overheadPct'], ['settings-contingency','contingencyPct'],
+    ['settings-est-concwaste','estConcreteWaste'], ['settings-est-reowaste','estReoWaste'],
+    ['settings-est-formwaste','estFormworkWaste'], ['settings-est-lap','estLapPct'],
+    ['settings-est-bulking','estBulking'], ['settings-est-cover','estCover'],
+    ['settings-est-barstock','estBarStock'], ['settings-est-grade','estGrade']
+  ];
+
+  function populateSettingsForm(){
     var prefs = loadPrefs();
     pendingAccent = prefs.accentColor || DEFAULT_ACCENT;
-    settingsDecimals.value = (prefs.moneyDecimals !== undefined ? prefs.moneyDecimals : 2);
+    document.getElementById('settings-custom-accent').value = pendingAccent;
+    document.getElementById('settings-fontscale').value = prefs.portalFontScale || 'default';
+    document.getElementById('settings-hero').checked = prefs.showHero !== false;
+    document.getElementById('settings-decimals').value = (prefs.moneyDecimals !== undefined ? prefs.moneyDecimals : 2);
+    NUM_FIELDS.forEach(function(f){
+      document.getElementById(f[0]).value = (typeof prefs[f[1]] === 'number' && isFinite(prefs[f[1]])) ? prefs[f[1]] : '';
+    });
     renderSwatches();
+  }
+
+  document.getElementById('settings-btn').addEventListener('click', function(){
+    populateSettingsForm();
     settingsBackdrop.hidden = false;
   });
   document.getElementById('settings-cancel').addEventListener('click', function(){
@@ -625,18 +829,39 @@
   settingsBackdrop.addEventListener('click', function(e){
     if(e.target === settingsBackdrop) settingsBackdrop.hidden = true;
   });
+  document.getElementById('settings-reset').addEventListener('click', function(){
+    try { localStorage.removeItem(PREFS_KEY); } catch(e){}
+    populateSettingsForm();
+    applyAllPrefs();
+  });
   document.getElementById('settings-save').addEventListener('click', function(){
     var prefs = loadPrefs();
     prefs.accentColor = pendingAccent;
-    prefs.moneyDecimals = parseInt(settingsDecimals.value, 10);
+    prefs.portalFontScale = document.getElementById('settings-fontscale').value;
+    prefs.showHero = document.getElementById('settings-hero').checked;
+    prefs.moneyDecimals = parseInt(document.getElementById('settings-decimals').value, 10);
+    NUM_FIELDS.forEach(function(f){
+      var raw = document.getElementById(f[0]).value;
+      if(raw === '' || raw === null){ delete prefs[f[1]]; }
+      else {
+        var n = parseFloat(raw);
+        if(isFinite(n)) prefs[f[1]] = n; else delete prefs[f[1]];
+      }
+    });
     savePrefs(prefs);
-    applyAccentColor(pendingAccent);
+    applyAllPrefs();
     settingsBackdrop.hidden = true;
+    // The Quotes/Estimates iframe reads these prefs at render time — force
+    // its next open to see them fresh rather than a mid-session stale read.
+    var frame = document.getElementById('app-frame');
+    if(frame && frame.src && frame.src !== 'about:blank'){
+      try { frame.contentWindow.location.reload(); } catch(e){}
+    }
   });
 
-  // Apply a saved accent colour immediately on load — before login, too, so
-  // the whole shell (not just the dashboard) reflects the preference.
-  applyAccentColor(loadPrefs().accentColor || DEFAULT_ACCENT);
+  // Apply every saved preference immediately on load — before login, too,
+  // so the whole shell reflects them from the first paint.
+  applyAllPrefs();
 
   document.getElementById('back-btn').addEventListener('click', function(){
     document.getElementById('app-frame').src = 'about:blank';
