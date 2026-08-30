@@ -2787,6 +2787,14 @@ function renderProjectBOQ(){
   });
 }
 function exportBoqPdf(){
+  // Portal Settings "PDF / print page orientation" — persists across exports.
+  try{
+    var prefs = JSON.parse(localStorage.getItem("gradcon-preferences"))||{};
+    var orient = prefs.pageOrientation==="landscape"? "landscape":"portrait";
+    var st = document.getElementById("pageOrientStyle");
+    if(!st){ st=document.createElement("style"); st.id="pageOrientStyle"; document.head.appendChild(st); }
+    st.textContent = "@media print{@page{size:A4 "+orient+";}}";
+  }catch(e){}
   switchTab("ProjectBOQ");
   // A client-facing BOQ must show everything, regardless of what the estimator had rolled
   // up on screen while reviewing it — force every section open for the print, then restore.

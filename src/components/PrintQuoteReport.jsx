@@ -28,11 +28,25 @@ import { GRADCON_LOGO_DATA_URI } from "../lib/logo.js";
  * command (Ctrl+P/Cmd+P), which works even when the script-triggered dialog
  * doesn't.
  */
+// Portal Settings "PDF / print page orientation" — read at render time so a
+// changed setting applies to the very next print, and it STAYS applied (the
+// preference persists; the page never falls back to portrait on its own).
+function pageOrientation() {
+  try {
+    const p = JSON.parse(localStorage.getItem("gradcon-preferences")) || {};
+    return p.pageOrientation === "landscape" ? "landscape" : "portrait";
+  } catch {
+    return "portrait";
+  }
+}
+
 export default function PrintQuoteReport({ quote, items, rates, categoryOrder = CATEGORY_ORDER, sectionOrder = SECTION_ORDER, visible = false, onClose, isPrintTarget = true }) {
   return (
     <>
       {isPrintTarget && (
         <div className="hidden print:block text-black text-[11px]">
+          {/* overrides index.css's default `@page { size: A4 }` */}
+          <style>{`@media print { @page { size: A4 ${pageOrientation()}; } }`}</style>
           <ReportContent quote={quote} items={items} rates={rates} categoryOrder={categoryOrder} sectionOrder={sectionOrder} />
         </div>
       )}
@@ -205,7 +219,14 @@ function ElementReportBlock({ item, rates }) {
         m.type === "image" ? (
           <div key={m.id} className="pl-2 mt-1 break-inside-avoid">
             <div className="text-[9px] uppercase tracking-wide text-neutral-500">Markup: {m.name}</div>
-            <img src={m.dataURL} alt={m.name} className="max-h-64 max-w-full object-contain border border-neutral-300" />
+            {/* saved rotation applies here too; a 90°/270° image is bounded on
+                both axes so the rotated result can't spill over the page */}
+            <img
+              src={m.dataURL}
+              alt={m.name}
+              className={`object-contain border border-neutral-300 ${((m.rotation || 0) % 180 !== 0) ? "max-h-56 max-w-56" : "max-h-64 max-w-full"}`}
+              style={{ transform: `rotate(${m.rotation || 0}deg)` }}
+            />
           </div>
         ) : (
           // PDF markups can't be inlined by the print engine — list them so the

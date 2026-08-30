@@ -2580,7 +2580,8 @@ function addInstance(typeId){
   let calc=CALC[def.calc];
   let inst={id:uid("EL"), typeKey:typeId, label:def.label+" "+(INSTANCES.filter(i=>i.typeKey===typeId).length+1), data:applyElementPrefs(calc.defaults(def.slabCategory||def.beamCategory||def.kind, def.suspended))};
   if(inst.data.cover!==undefined) inst.data.cover = defaultCoverFor(typeId);
-  if(portalPref("estNewCollapsed")===true) inst._collapsed = true;
+  // Rolled up by default — only an explicit Settings opt-out (false) adds cards expanded.
+  if(portalPref("estNewCollapsed")!==false) inst._collapsed = true;
   INSTANCES.push(inst);
   renderWorkspace();
   computeAllAndRefresh();
@@ -3138,6 +3139,12 @@ function renderExportSummary(){
   </div>`;
 }
 function exportPDF(){
+  // Persisted portal Settings orientation — applied on every export, so a
+  // landscape choice stays landscape until the setting itself is changed.
+  let orient = portalPref("pageOrientation")==="landscape"? "landscape":"portrait";
+  let orientStyle = document.getElementById("pageOrientStyle");
+  if(!orientStyle){ orientStyle=document.createElement("style"); orientStyle.id="pageOrientStyle"; document.head.appendChild(orientStyle); }
+  orientStyle.textContent = "@media print{@page{size:A4 "+orient+";}}";
   let lines=allLines();
   let concrete=lines.filter(l=>l.materialGroup==="Concrete").reduce((s,l)=>s+l.finalQty,0);
   let reoKg=lines.filter(l=>l.materialGroup==="Reinforcement").reduce((s,l)=>s+(l.weightKg||0),0);

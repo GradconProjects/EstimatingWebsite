@@ -1,9 +1,12 @@
-import { Plus, Trash2 } from "lucide-react";
+import { useState } from "react";
+import { ChevronDown, ChevronRight, Plus, Trash2 } from "lucide-react";
 import { FULL_CATALOG, RESOURCE_COLS } from "../data/catalog.js";
 import { money2, rateKey, lookupRate } from "../lib/costing.js";
 import { NumInput } from "./atoms.jsx";
 
 export default function AdditionalItems({ item, rates, onAdd, onRemove, onChange, onFill, total }) {
+  // Rolled up by default like every other section of the card.
+  const [open, setOpen] = useState(false);
   // "Pick from catalog" prefill: selecting a product (or labour resource)
   // fills name/unit/rate in ONE patch (see fillAdditional in ElementCard —
   // three separate onChange calls would each start from the same stale item
@@ -28,10 +31,17 @@ export default function AdditionalItems({ item, rates, onAdd, onRemove, onChange
 
   return (
     <div className="border border-neutral-200 rounded-lg overflow-hidden bg-white">
-      <div className="px-3 py-2 bg-neutral-800 text-white text-xs font-semibold tracking-wide uppercase flex items-center justify-between">
-        <span>Other Allowances / Custom Items</span>
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full px-3 py-2 bg-neutral-800 text-white text-xs font-semibold tracking-wide uppercase flex items-center justify-between"
+      >
+        <span className="flex items-center gap-1.5">
+          {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          Other Allowances / Custom Items {item.additional.length > 0 && <span className="text-neutral-400 normal-case">({item.additional.length})</span>}
+        </span>
         <span className="font-mono tabular-nums normal-case font-semibold text-orange-300">{money2(total)}</span>
-      </div>
+      </button>
+      {open && (
       <div className="p-2 space-y-1.5">
         {item.additional.map((a) => (
           <div key={a.id} className="flex items-center gap-1.5">
@@ -84,6 +94,7 @@ export default function AdditionalItems({ item, rates, onAdd, onRemove, onChange
           <Plus size={13} /> Add allowance / custom line
         </button>
       </div>
+      )}
     </div>
   );
 }
