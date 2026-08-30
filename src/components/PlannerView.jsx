@@ -109,16 +109,18 @@ export default function PlannerView({ projects, onOpen }) {
         </p>
       </div>
 
-      <div className="flex gap-1 border-b border-neutral-200">
+      <div className="flex flex-wrap gap-2">
         {TABS.map(({ key, label, Icon }) => (
           <button
             key={key}
             onClick={() => setTab(key)}
-            className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
-              tab === key ? "border-orange-500 text-neutral-900" : "border-transparent text-neutral-400 hover:text-neutral-600"
+            className={`flex items-center gap-2 px-5 py-3 rounded-xl text-[15px] font-bold shadow-sm transition-colors ${
+              tab === key
+                ? "bg-orange-600 text-white shadow-md"
+                : "bg-blue-950 text-blue-100 hover:bg-blue-900 hover:text-white"
             }`}
           >
-            <Icon size={15} /> {label}
+            <Icon size={18} /> {label}
           </button>
         ))}
       </div>

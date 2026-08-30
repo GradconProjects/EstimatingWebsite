@@ -245,7 +245,7 @@ export default function App() {
               </button>
             </div>
           </div>
-          <div className="max-w-7xl mx-auto px-4 flex items-center gap-1 border-t border-blue-900/60">
+          <div className="max-w-7xl mx-auto px-4 py-2 flex items-center gap-2 border-t border-blue-900/60">
             {[
               { key: "dashboard", label: "Dashboard", Icon: LayoutDashboard },
               { key: "planner", label: "Project Management", Icon: Radar },
@@ -254,11 +254,13 @@ export default function App() {
               <button
                 key={key}
                 onClick={() => setView(key)}
-                className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium border-b-2 transition-colors ${
-                  view === key ? "border-orange-400 text-white" : "border-transparent text-blue-300 hover:text-white"
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-colors ${
+                  view === key
+                    ? "bg-orange-600 text-white"
+                    : "bg-blue-900 text-blue-100 hover:bg-blue-800 hover:text-white"
                 }`}
               >
-                <Icon size={15} /> {label}
+                <Icon size={16} /> {label}
               </button>
             ))}
           </div>
