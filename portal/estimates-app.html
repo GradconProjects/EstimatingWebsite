@@ -418,9 +418,19 @@ function renderTakeoffsBar(){
    ${idx.map(p=>{
      let active = p.key===activeKey;
      let label = (p.name||"Untitled takeoff");
-     let when = p.savedAt? new Date(p.savedAt).toLocaleString([], {day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}) : "";
+     // Full save date AND time, plus what the saved file holds — so the list
+     // reads like a proper file browser: which job, saved when, how big.
+     let when = p.savedAt? new Date(p.savedAt).toLocaleString([], {day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"}) : "never saved";
+     let count = "";
+     try{
+       let blob = JSON.parse(localStorage.getItem(p.key)||"null");
+       if(blob && Array.isArray(blob.instances)) count = blob.instances.length+" element"+(blob.instances.length===1?"":"s");
+     }catch(e){}
      return `<span class="takeoff-chip${active?' active':''}" data-takeoff="${p.id}">
-       <button class="takeoff-open" data-action="openTakeoff" data-id="${p.id}" ${active?'disabled':''} title="${active?'Currently open':'Resume this takeoff'}">${active?'▶ ':''}${label}<span class="small" style="margin-left:6px;opacity:.7;">${when}</span></button>
+       <button class="takeoff-open" data-action="openTakeoff" data-id="${p.id}" ${active?'disabled':''} title="${active?'Currently open — everything autosaves':'Resume this takeoff — your current work is saved automatically first, nothing is lost'}">
+         <span style="display:block;text-align:left;">${active?'▶ ':''}${label}</span>
+         <span class="small" style="display:block;text-align:left;opacity:.7;">💾 ${when}${count?` · ${count}`:''}</span>
+       </button>
        <button class="takeoff-del" data-action="deleteTakeoff" data-id="${p.id}" title="Delete this saved takeoff">✕</button>
       </span>`;
    }).join('')}
@@ -565,6 +575,21 @@ function saveEstimateState(){
     renderTakeoffsBar();
   }
 }
+// ---- Autosave: no work is ever lost to a forgotten 💾 Save ----
+// Quietly writes the open takeoff to localStorage (no status flash, no cloud
+// push — the manual Save still owns that) and keeps the registry's name/date
+// current. Runs on a slow interval, when the tab is hidden (phone/tablet
+// switching apps), and on unload.
+function autosaveLocal(){
+  try{ localStorage.setItem(CURRENT_PROJECT_KEY, JSON.stringify({ ...estimateStateSnapshot(), savedAt: new Date().toISOString() })); }catch(err){ return; }
+  let idx = loadProjectsIndex();
+  let entry = idx.find(p=>p.key===CURRENT_PROJECT_KEY);
+  if(entry){ entry.name = PROJECT.name || ""; entry.savedAt = new Date().toISOString(); saveProjectsIndex(idx); }
+}
+setInterval(function(){ autosaveLocal(); renderTakeoffsBar(); }, 45000);
+window.addEventListener("beforeunload", autosaveLocal);
+document.addEventListener("visibilitychange", function(){ if(document.visibilityState==="hidden") autosaveLocal(); });
+
 // Shared by loadEstimateState() (localStorage, on boot) and syncFromCloud() (Supabase,
 // live) so the two never drift on how a loaded blob becomes real app state.
 function applyLoadedEstimateState(parsed){

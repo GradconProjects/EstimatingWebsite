@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowRight, ChevronDown, ChevronRight, Clock, GitBranch, HardHat, Loader2, MessageSquarePlus, Package, Plus, Radar, Trash2 } from "lucide-react";
+import { AlertTriangle, ArrowRight, ChevronDown, ChevronRight, Clock, GitBranch, HardHat, HelpCircle, Loader2, MessageSquarePlus, Package, Plus, Radar, Receipt, Trash2 } from "lucide-react";
 import { PLANNER_PRIORITIES, PLANNER_PRIORITY_STYLES } from "../data/catalog.js";
 import { readQuotes, writeQuote } from "../lib/projects.js";
 import { uid, money2 } from "../lib/costing.js";
@@ -86,6 +86,9 @@ export default function PlannerView({ projects, onOpen }) {
   const TABS = [
     { key: "planner", label: "Planner", Icon: Radar },
     { key: "variations", label: "Variations", Icon: GitBranch },
+    { key: "rfis", label: "RFIs", Icon: HelpCircle },
+    { key: "claims", label: "Progress Claims", Icon: Receipt },
+    { key: "defects", label: "Defects", Icon: AlertTriangle },
     { key: "contractors", label: "Contractors", Icon: HardHat },
     { key: "suppliers", label: "Suppliers", Icon: Package },
   ];
@@ -109,6 +112,8 @@ export default function PlannerView({ projects, onOpen }) {
         </p>
       </div>
 
+      <AtAGlance projects={projects} quotesByKey={quotesByKey} goTo={setTab} />
+
       <div className="flex flex-wrap gap-2">
         {TABS.map(({ key, label, Icon }) => (
           <button
@@ -131,6 +136,15 @@ export default function PlannerView({ projects, onOpen }) {
       {tab === "variations" && (
         <VariationsTab projects={projects} quotesByKey={quotesByKey} onOpen={onOpen} patchQuote={patchQuote} />
       )}
+      {(tab === "rfis" || tab === "claims" || tab === "defects") && (
+        <ProjectRegisterTab
+          projects={projects}
+          quotesByKey={quotesByKey}
+          onOpen={onOpen}
+          patchQuote={patchQuote}
+          config={PROJECT_REGISTERS[tab]}
+        />
+      )}
       {tab === "contractors" && (
         <RegisterTab
           storageKey="gradcon-contractors"
@@ -151,6 +165,39 @@ export default function PlannerView({ projects, onOpen }) {
           seed={DEFAULT_SUPPLIERS}
         />
       )}
+    </div>
+  );
+}
+
+/** One-line health strip across every project — each figure jumps to its tab. */
+function AtAGlance({ projects, quotesByKey, goTo }) {
+  const quotes = projects.map((p) => quotesByKey[p.storageKey] || {});
+  const today = new Date().toISOString().slice(0, 10);
+  const overdue = quotes.filter((q) => q.planner?.deadline && q.planner.deadline < today).length;
+  const openRfis = quotes.reduce((s, q) => s + (q.rfis || []).filter((r) => r.status === "Open").length, 0);
+  const openDefects = quotes.reduce((s, q) => s + (q.defects || []).filter((d) => d.status === "Open" || d.status === "In progress").length, 0);
+  const approvedVars = quotes.reduce((s, q) => s + (q.variations || []).filter((v) => v.status === "Approved").reduce((t, v) => t + (Number(v.cost) || 0), 0), 0);
+  const awaitingPay = quotes.reduce((s, q) => s + (q.claims || []).filter((c) => c.status === "Submitted" || c.status === "Certified").reduce((t, c) => t + (Number(c.certified || c.claimed) || 0), 0), 0);
+
+  const tiles = [
+    { label: "Projects overdue", value: overdue, tone: overdue ? "text-red-600" : "text-neutral-700", tab: "planner" },
+    { label: "Open RFIs", value: openRfis, tone: openRfis ? "text-amber-600" : "text-neutral-700", tab: "rfis" },
+    { label: "Defects outstanding", value: openDefects, tone: openDefects ? "text-red-600" : "text-neutral-700", tab: "defects" },
+    { label: "Approved variations", value: money2(approvedVars), tone: "text-green-700", tab: "variations" },
+    { label: "Claims awaiting payment", value: money2(awaitingPay), tone: awaitingPay ? "text-amber-600" : "text-neutral-700", tab: "claims" },
+  ];
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+      {tiles.map((t) => (
+        <button
+          key={t.label}
+          onClick={() => goTo(t.tab)}
+          className="rounded-xl border border-neutral-200 bg-white shadow-sm px-3 py-2.5 text-left hover:border-orange-400 transition-colors"
+        >
+          <div className={`font-mono tabular-nums text-lg font-bold ${t.tone}`}>{t.value}</div>
+          <div className="text-[10px] uppercase tracking-widest text-neutral-400 font-semibold">{t.label}</div>
+        </button>
+      ))}
     </div>
   );
 }
@@ -350,6 +397,197 @@ function VariationsTab({ projects, quotesByKey, onOpen, patchQuote }) {
   );
 }
 
+/* ------- Per-project registers: RFIs, Progress Claims, Defects -------
+   One config-driven table component instead of three near-identical tabs.
+   Rows live on each project's own quote object (quote.rfis / .claims /
+   .defects) so they save and sync exactly like variations do. */
+
+const PROJECT_REGISTERS = {
+  rfis: {
+    field: "rfis", prefix: "RFI", addLabel: "Add RFI", empty: "No RFIs raised for this project.",
+    columns: [
+      { key: "date", type: "date", title: "Date raised" },
+      { key: "subject", type: "text", flex: true, placeholder: "Question / information required" },
+      { key: "to", type: "text", w: "w-44", placeholder: "Sent to (architect, engineer…)" },
+      { key: "due", type: "date", title: "Response due" },
+      { key: "status", type: "select", options: ["Open", "Answered", "Closed"],
+        styles: { Open: "bg-amber-100 text-amber-800", Answered: "bg-blue-100 text-blue-800", Closed: "bg-green-100 text-green-800" } },
+    ],
+    summary: (rows) => { const n = rows.filter((r) => r.status === "Open").length; return n ? `${n} open` : ""; },
+  },
+  claims: {
+    field: "claims", prefix: "PC", addLabel: "Add progress claim", empty: "No progress claims for this project.",
+    columns: [
+      { key: "date", type: "date", title: "Claim date" },
+      { key: "period", type: "text", flex: true, placeholder: "Works period / claim description" },
+      { key: "claimed", type: "number", w: "w-28", placeholder: "$ claimed" },
+      { key: "certified", type: "number", w: "w-28", placeholder: "$ certified" },
+      { key: "status", type: "select", options: ["Draft", "Submitted", "Certified", "Paid"],
+        styles: { Draft: "bg-neutral-100 text-neutral-600", Submitted: "bg-blue-100 text-blue-800", Certified: "bg-amber-100 text-amber-800", Paid: "bg-green-100 text-green-800" } },
+    ],
+    summary: (rows) => {
+      const paid = rows.filter((r) => r.status === "Paid").reduce((s, r) => s + (Number(r.certified || r.claimed) || 0), 0);
+      return paid ? `paid to date ${money2(paid)}` : "";
+    },
+  },
+  defects: {
+    field: "defects", prefix: "DEF", addLabel: "Add defect", empty: "No defects recorded for this project.",
+    columns: [
+      { key: "date", type: "date", title: "Raised" },
+      { key: "description", type: "text", flex: true, placeholder: "Defect & location (e.g. honeycombing — north wall footing)" },
+      { key: "assigned", type: "text", w: "w-40", placeholder: "Assigned to" },
+      { key: "due", type: "date", title: "Rectify by" },
+      { key: "status", type: "select", options: ["Open", "In progress", "Rectified", "Closed"],
+        styles: { Open: "bg-red-100 text-red-700", "In progress": "bg-amber-100 text-amber-800", Rectified: "bg-blue-100 text-blue-800", Closed: "bg-green-100 text-green-800" } },
+    ],
+    summary: (rows) => { const n = rows.filter((r) => r.status === "Open" || r.status === "In progress").length; return n ? `${n} outstanding` : ""; },
+  },
+};
+
+// Plain CSV download for any register — the same escape-everything rule the
+// Excel export uses. Runs in the real browser app, so downloads just work.
+function downloadCsv(filename, header, rows) {
+  const esc = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const csv = [header, ...rows].map((r) => r.map(esc).join(",")).join("\r\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function ProjectRegisterTab({ projects, quotesByKey, onOpen, patchQuote, config }) {
+  const rowsByProject = projects.map((p) => {
+    const quote = quotesByKey[p.storageKey] || {};
+    return { project: p, name: quote.projectName || "Untitled project", rows: quote[config.field] || [] };
+  });
+
+  const patchRows = (project, rows) => patchQuote(project, { [config.field]: rows });
+  const addRow = (project, existing) => {
+    const nextNo = existing.reduce((mx, r) => Math.max(mx, Number(r.no) || 0), 0) + 1;
+    const statusCol = config.columns.find((c) => c.type === "select");
+    const blank = { id: uid(), no: nextNo, status: statusCol ? statusCol.options[0] : "" };
+    config.columns.forEach((c) => { if (!(c.key in blank)) blank[c.key] = c.type === "date" && c.key === "date" ? new Date().toISOString().slice(0, 10) : ""; });
+    patchRows(project, [...existing, blank]);
+  };
+  const changeRow = (project, existing, id, key, value) =>
+    patchRows(project, existing.map((r) => (r.id === id ? { ...r, [key]: value } : r)));
+  const removeRow = (project, existing, id) => patchRows(project, existing.filter((r) => r.id !== id));
+
+  const exportAll = () => {
+    const header = ["Project", "No", ...config.columns.map((c) => c.title || c.placeholder || c.key)];
+    const rows = rowsByProject.flatMap(({ name, rows }) =>
+      rows.map((r) => [name, `${config.prefix}-${String(r.no).padStart(2, "0")}`, ...config.columns.map((c) => r[c.key] ?? "")])
+    );
+    downloadCsv(`gradcon-${config.field}.csv`, header, rows);
+  };
+
+  if (rowsByProject.length === 0) {
+    return (
+      <div className="text-center py-16 text-neutral-400 border-2 border-dashed border-neutral-200 rounded-xl">
+        No projects yet — add one from the Dashboard first.
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-end">
+        <button onClick={exportAll} className="text-xs font-semibold text-blue-900 hover:text-blue-700">
+          ⬇ Export all as CSV
+        </button>
+      </div>
+      {rowsByProject.map(({ project, name, rows }) => {
+        const note = config.summary(rows);
+        return (
+          <div key={project.id} className="rounded-xl border border-neutral-200 bg-white shadow-sm overflow-hidden">
+            <div className="flex items-center justify-between gap-3 px-4 py-2.5 bg-neutral-50 border-b border-neutral-200">
+              <button
+                onClick={() => onOpen(project.id)}
+                className="font-semibold text-[14px] text-neutral-900 hover:text-blue-900 flex items-center gap-1"
+              >
+                {name} <ArrowRight size={13} className="text-neutral-400" />
+              </button>
+              <div className="text-xs text-neutral-500">
+                {rows.length} record{rows.length === 1 ? "" : "s"}{note && <> · <b className="text-neutral-700">{note}</b></>}
+              </div>
+            </div>
+            <div className="p-3 space-y-2">
+              {rows.length === 0 && <div className="text-xs text-neutral-400 italic">{config.empty}</div>}
+              {rows.map((r) => (
+                <div key={r.id} className="flex items-center gap-1.5 flex-wrap sm:flex-nowrap">
+                  <span className="w-14 flex-none text-xs font-mono text-neutral-500 text-center">
+                    {config.prefix}-{String(r.no).padStart(2, "0")}
+                  </span>
+                  {config.columns.map((c) => {
+                    if (c.type === "select") {
+                      return (
+                        <select
+                          key={c.key}
+                          value={r[c.key] || c.options[0]}
+                          onChange={(e) => changeRow(project, rows, r.id, c.key, e.target.value)}
+                          className={`w-32 flex-none border border-neutral-200 rounded px-1.5 py-1 text-xs font-medium ${c.styles[r[c.key]] || ""}`}
+                        >
+                          {c.options.map((o) => <option key={o} value={o}>{o}</option>)}
+                        </select>
+                      );
+                    }
+                    if (c.type === "date") {
+                      return (
+                        <input
+                          key={c.key}
+                          type="date"
+                          title={c.title}
+                          value={r[c.key] || ""}
+                          onChange={(e) => changeRow(project, rows, r.id, c.key, e.target.value)}
+                          className="w-32 flex-none border border-neutral-200 rounded px-2 py-1 text-xs"
+                        />
+                      );
+                    }
+                    if (c.type === "number") {
+                      return (
+                        <input
+                          key={c.key}
+                          type="number"
+                          placeholder={c.placeholder}
+                          value={r[c.key] ?? ""}
+                          onChange={(e) => changeRow(project, rows, r.id, c.key, e.target.value)}
+                          className={`${c.w || "w-28"} flex-none border border-neutral-200 rounded px-2 py-1 text-xs font-mono tabular-nums text-right`}
+                        />
+                      );
+                    }
+                    return (
+                      <input
+                        key={c.key}
+                        placeholder={c.placeholder}
+                        value={r[c.key] || ""}
+                        onChange={(e) => changeRow(project, rows, r.id, c.key, e.target.value)}
+                        className={`${c.flex ? "flex-1 min-w-40" : `${c.w || "w-36"} flex-none`} border border-neutral-200 rounded px-2 py-1 text-[13px]`}
+                      />
+                    );
+                  })}
+                  <button
+                    onClick={() => removeRow(project, rows, r.id)}
+                    className="text-neutral-300 hover:text-red-500 transition-colors flex-none"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ))}
+              <button
+                onClick={() => addRow(project, rows)}
+                className="flex items-center gap-1 text-xs font-medium text-orange-600 hover:text-orange-700"
+              >
+                <Plus size={13} /> {config.addLabel}
+              </button>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 /* ---- Contractor & Supplier registers (global, shared across projects) ---- */
 
 function RegisterTab({ storageKey, title, nounSingular, roleLabel, rolePlaceholder, seed = [] }) {
@@ -371,9 +609,21 @@ function RegisterTab({ storageKey, title, nounSingular, roleLabel, rolePlacehold
 
   return (
     <div className="rounded-xl border border-neutral-200 bg-white shadow-sm overflow-hidden">
-      <div className="px-4 py-2.5 bg-neutral-50 border-b border-neutral-200 flex items-center justify-between">
+      <div className="px-4 py-2.5 bg-neutral-50 border-b border-neutral-200 flex items-center justify-between gap-3">
         <span className="font-semibold text-[14px] text-neutral-900">{title}</span>
-        <span className="text-xs text-neutral-500">{entries.length} {nounSingular}{entries.length === 1 ? "" : "s"}</span>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => downloadCsv(
+              `gradcon-${nounSingular}s.csv`,
+              ["Company / name", roleLabel, "Contact", "Phone", "Email", "Notes"],
+              entries.map((e) => [e.name, e.role, e.contact, e.phone, e.email, e.notes])
+            )}
+            className="text-xs font-semibold text-blue-900 hover:text-blue-700"
+          >
+            ⬇ CSV
+          </button>
+          <span className="text-xs text-neutral-500">{entries.length} {nounSingular}{entries.length === 1 ? "" : "s"}</span>
+        </div>
       </div>
       <div className="p-3 overflow-x-auto">
         {entries.length === 0 && (

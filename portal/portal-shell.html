@@ -254,6 +254,14 @@
   .back-btn:hover{ border-color:var(--muted); color:var(--text); }
   .app-bar .label{ font-size:12.5px; color:var(--muted); font-family:var(--font-mono); }
   .app-bar .label b{ color:var(--text); font-family:var(--font-body); font-weight:700; }
+  .app-menu{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-left:10px; }
+  .app-menu button{
+    padding:7px 14px; border-radius:8px; border:0; cursor:pointer;
+    background:#16233f; color:#cdd8ee; font-size:12.5px; font-weight:700;
+    transition:background .15s, color .15s;
+  }
+  .app-menu button:hover{ background:#22345c; color:#fff; }
+  .app-menu button.active{ background:var(--accent); color:#fff; }
   .app-frame-wrap{ flex:1; min-height:0; }
   .app-frame{ width:100%; height:100%; border:0; display:block; background:#f5f5f5; }
 
@@ -702,6 +710,16 @@
       Portal
     </button>
     <span class="label" id="app-label">Quotes</span>
+    <!-- Persistent section menu: all six tools reachable from inside any of
+         them, no round-trip through the welcome screen. Mirrors the tiles. -->
+    <nav class="app-menu" id="app-menu" aria-label="Sections">
+      <button data-menu="quotes">Quotes</button>
+      <button data-menu="estimates">Estimates</button>
+      <button data-menu="rateslibrary">Rates Library</button>
+      <button data-menu="costplanner">Cost Planner</button>
+      <button data-menu="planner">Project Mgmt</button>
+      <button data-menu="folder">Vault</button>
+    </nav>
     <button class="back-btn" id="refresh-btn" style="margin-left:auto;" title="Pull the latest saved work from any other device/user right now">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M3 12a9 9 0 1 1 2.6 6.4M3 12V6m0 6h6"/></svg>
       Refresh
@@ -1091,6 +1109,36 @@
     show('screen-app');
   }
 
+  // Persistent section menu in the app bar — every tool reachable from
+  // inside any other, matching the welcome tiles one-for-one. Planner/Vault
+  // route through Quotes with an initial-view handoff exactly like their
+  // tiles do. The active key survives refresh via its own localStorage slot.
+  var MENU_ROUTES = {
+    quotes:       { target:'quotes',       view:null },
+    estimates:    { target:'estimates',    view:null },
+    rateslibrary: { target:'rateslibrary', view:null },
+    costplanner:  { target:'costplanner',  view:null },
+    planner:      { target:'quotes',       view:'planner' },
+    folder:       { target:'quotes',       view:'folder' }
+  };
+  function setActiveMenu(key){
+    try{ localStorage.setItem('gradcon-portal-active-menu', key); }catch(err){}
+    document.querySelectorAll('#app-menu button').forEach(function(b){
+      b.classList.toggle('active', b.getAttribute('data-menu') === key);
+    });
+  }
+  document.querySelectorAll('#app-menu button').forEach(function(b){
+    b.addEventListener('click', function(){
+      var key = b.getAttribute('data-menu');
+      var route = MENU_ROUTES[key];
+      if(route.view){
+        try{ localStorage.setItem('gradcon-quotes-initial-view', route.view); }catch(err){}
+      }
+      openApp(route.target, !!route.view);
+      setActiveMenu(key);
+    });
+  });
+
   document.querySelectorAll('.panel-btn').forEach(function(btn){
     btn.addEventListener('click', function(){
       // Planner/Project Folder tiles: tell the Quotes app which internal tab
@@ -1103,6 +1151,7 @@
         try{ localStorage.setItem('gradcon-quotes-initial-view', initialView); }catch(err){}
       }
       openApp(btn.getAttribute('data-target'), !!initialView);
+      setActiveMenu(initialView || btn.getAttribute('data-target'));
     });
   });
 
@@ -1114,9 +1163,11 @@
   window.addEventListener('message', function(e){
     if(e.data && e.data.type === 'gradcon:publish-estimate'){
       openApp('quotes', true);
+      setActiveMenu('quotes');
     }
     if(e.data && e.data.type === 'gradcon:open-app' && e.data.target){
       openApp(e.data.target, true);
+      setActiveMenu(e.data.target);
     }
   });
 
@@ -1130,6 +1181,12 @@
     document.getElementById('dash-user').innerHTML = 'Signed in as <b>' + session.currentUser + '</b>';
     if(session.activeApp && APP_LABELS[session.activeApp]){
       openApp(session.activeApp, false);
+      // Restore the menu highlight — prefer the remembered menu key when it
+      // still routes to the restored app (Planner/Vault both live in Quotes).
+      var remembered = null;
+      try{ remembered = localStorage.getItem('gradcon-portal-active-menu'); }catch(err){}
+      var route = remembered && MENU_ROUTES[remembered];
+      setActiveMenu(route && route.target === session.activeApp ? remembered : session.activeApp);
     } else {
       show('screen-dashboard');
       maybeAutoOpenApp();
