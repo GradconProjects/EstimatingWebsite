@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowRight, ChevronDown, ChevronRight, Clock, Loader2, MessageSquarePlus, Radar } from "lucide-react";
+import { ArrowRight, ChevronDown, ChevronRight, Clock, GitBranch, HardHat, Loader2, MessageSquarePlus, Package, Plus, Radar, Trash2 } from "lucide-react";
 import { PLANNER_PRIORITIES, PLANNER_PRIORITY_STYLES } from "../data/catalog.js";
 import { readQuotes, writeQuote } from "../lib/projects.js";
-import { uid } from "../lib/costing.js";
+import { uid, money2 } from "../lib/costing.js";
+import { useStoredState } from "../lib/storage.js";
 import { isUrgent, daysLabel, priorityRank } from "../lib/planner.js";
 
 const CHANNELS = ["Call", "Email", "Site meeting", "Text/WhatsApp", "Other"];
+const VARIATION_STATUSES = ["Draft", "Submitted", "Approved", "Rejected"];
 
 // Portal Settings preference for the priority a project shows before anyone
 // has set one — validated against the real list so a stale/typo'd stored
@@ -19,10 +21,18 @@ const defaultPriority = () => {
   }
 };
 
+/**
+ * Project Management — the old Planner tab, grown into a sub-tabbed section:
+ * Planner (deadlines/priorities/comms, unchanged), Variations (per-project
+ * variation register, stored on each quote), and global Contractor/Supplier
+ * registers (via useStoredState, so they sync through Supabase like every
+ * other persisted blob). The App.jsx view key stays "planner" — the portal
+ * shell's welcome tile and any remembered view both point at it.
+ */
 export default function PlannerView({ projects, onOpen }) {
+  const [tab, setTab] = useState("planner");
   const [quotesByKey, setQuotesByKey] = useState({});
   const [loading, setLoading] = useState(true);
-  const [openComms, setOpenComms] = useState({}); // projectId -> bool
 
   useEffect(() => {
     let cancelled = false;
@@ -34,6 +44,84 @@ export default function PlannerView({ projects, onOpen }) {
     });
     return () => { cancelled = true; };
   }, [projects]);
+
+  const patchQuote = (project, patch) => {
+    const quote = quotesByKey[project.storageKey] || {};
+    const updated = { ...quote, ...patch };
+    setQuotesByKey((m) => ({ ...m, [project.storageKey]: updated }));
+    writeQuote(project.storageKey, updated);
+  };
+
+  const TABS = [
+    { key: "planner", label: "Planner", Icon: Radar },
+    { key: "variations", label: "Variations", Icon: GitBranch },
+    { key: "contractors", label: "Contractors", Icon: HardHat },
+    { key: "suppliers", label: "Suppliers", Icon: Package },
+  ];
+
+  if (loading && projects.length > 0 && Object.keys(quotesByKey).length === 0) {
+    return (
+      <div className="max-w-5xl mx-auto px-4 py-16 text-center text-neutral-400">
+        <Loader2 size={16} className="inline animate-spin mr-1.5" /> Loading projects…
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-5xl mx-auto px-4 py-6 space-y-5">
+      <div>
+        <h1 className="text-lg font-semibold text-neutral-900 flex items-center gap-2">
+          <Radar size={20} className="text-orange-500" /> Project Management
+        </h1>
+        <p className="text-sm text-neutral-500">
+          Planning, variations and your contractor &amp; supplier registers, in one place.
+        </p>
+      </div>
+
+      <div className="flex gap-1 border-b border-neutral-200">
+        {TABS.map(({ key, label, Icon }) => (
+          <button
+            key={key}
+            onClick={() => setTab(key)}
+            className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+              tab === key ? "border-orange-500 text-neutral-900" : "border-transparent text-neutral-400 hover:text-neutral-600"
+            }`}
+          >
+            <Icon size={15} /> {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "planner" && (
+        <PlannerTab projects={projects} quotesByKey={quotesByKey} onOpen={onOpen} patchQuote={patchQuote} />
+      )}
+      {tab === "variations" && (
+        <VariationsTab projects={projects} quotesByKey={quotesByKey} onOpen={onOpen} patchQuote={patchQuote} />
+      )}
+      {tab === "contractors" && (
+        <RegisterTab
+          storageKey="gradcon-contractors"
+          title="Contractor register"
+          nounSingular="contractor"
+          roleLabel="Trade / scope"
+          rolePlaceholder="e.g. Formwork, Steel fixing, Pumping"
+        />
+      )}
+      {tab === "suppliers" && (
+        <RegisterTab
+          storageKey="gradcon-suppliers"
+          title="Supplier register"
+          nounSingular="supplier"
+          roleLabel="Supplies"
+          rolePlaceholder="e.g. Premix concrete, Reo bar &amp; mesh, Formply"
+        />
+      )}
+    </div>
+  );
+}
+
+function PlannerTab({ projects, quotesByKey, onOpen, patchQuote }) {
+  const [openComms, setOpenComms] = useState({}); // projectId -> bool
 
   const rows = useMemo(
     () => projects.map((p) => {
@@ -48,12 +136,6 @@ export default function PlannerView({ projects, onOpen }) {
     [projects, quotesByKey]
   );
 
-  const patchQuote = (project, patch) => {
-    const quote = quotesByKey[project.storageKey] || {};
-    const updated = { ...quote, ...patch };
-    setQuotesByKey((m) => ({ ...m, [project.storageKey]: updated }));
-    writeQuote(project.storageKey, updated);
-  };
   const patchPlanner = (project, field, value) => {
     const quote = quotesByKey[project.storageKey] || {};
     patchQuote(project, { planner: { ...(quote.planner || {}), [field]: value } });
@@ -72,25 +154,8 @@ export default function PlannerView({ projects, onOpen }) {
     .filter((r) => !isUrgent(r.planner))
     .sort((a, b) => (a.planner.deadline || "9999").localeCompare(b.planner.deadline || "9999"));
 
-  if (loading && rows.length === 0) {
-    return (
-      <div className="max-w-5xl mx-auto px-4 py-16 text-center text-neutral-400">
-        <Loader2 size={16} className="inline animate-spin mr-1.5" /> Loading projects…
-      </div>
-    );
-  }
-
   return (
-    <div className="max-w-5xl mx-auto px-4 py-6 space-y-6">
-      <div>
-        <h1 className="text-lg font-semibold text-neutral-900 flex items-center gap-2">
-          <Radar size={20} className="text-orange-500" /> Planner
-        </h1>
-        <p className="text-sm text-neutral-500">
-          Deadlines, priority and requirements across every project — what to attend to now, and what can wait.
-        </p>
-      </div>
-
+    <div className="space-y-6">
       {rows.length === 0 && (
         <div className="text-center py-16 text-neutral-400 border-2 border-dashed border-neutral-200 rounded-xl">
           No projects yet — add one from the Dashboard first.
@@ -129,6 +194,204 @@ export default function PlannerView({ projects, onOpen }) {
         </Section>
       )}
     </div>
+  );
+}
+
+/* ---------- Variations (stored per project on quote.variations) ---------- */
+
+const VARIATION_STATUS_STYLES = {
+  Draft: "bg-neutral-100 text-neutral-600",
+  Submitted: "bg-blue-100 text-blue-800",
+  Approved: "bg-green-100 text-green-800",
+  Rejected: "bg-red-100 text-red-700",
+};
+
+function VariationsTab({ projects, quotesByKey, onOpen, patchQuote }) {
+  const rowsByProject = projects.map((p) => {
+    const quote = quotesByKey[p.storageKey] || {};
+    return { project: p, name: quote.projectName || "Untitled project", variations: quote.variations || [] };
+  });
+
+  const patchVariations = (project, variations) => patchQuote(project, { variations });
+  const addVariation = (project, existing) => {
+    const nextNo = existing.reduce((mx, v) => Math.max(mx, Number(v.no) || 0), 0) + 1;
+    patchVariations(project, [
+      ...existing,
+      { id: uid(), no: nextNo, date: new Date().toISOString().slice(0, 10), description: "", status: "Draft", cost: "", days: "" },
+    ]);
+  };
+  const changeVariation = (project, existing, id, field, value) =>
+    patchVariations(project, existing.map((v) => (v.id === id ? { ...v, [field]: value } : v)));
+  const removeVariation = (project, existing, id) =>
+    patchVariations(project, existing.filter((v) => v.id !== id));
+
+  if (rowsByProject.length === 0) {
+    return (
+      <div className="text-center py-16 text-neutral-400 border-2 border-dashed border-neutral-200 rounded-xl">
+        No projects yet — add one from the Dashboard first.
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {rowsByProject.map(({ project, name, variations }) => {
+        const approved = variations.filter((v) => v.status === "Approved")
+          .reduce((s, v) => s + (Number(v.cost) || 0), 0);
+        return (
+          <div key={project.id} className="rounded-xl border border-neutral-200 bg-white shadow-sm overflow-hidden">
+            <div className="flex items-center justify-between gap-3 px-4 py-2.5 bg-neutral-50 border-b border-neutral-200">
+              <button
+                onClick={() => onOpen(project.id)}
+                className="font-semibold text-[14px] text-neutral-900 hover:text-blue-900 flex items-center gap-1"
+              >
+                {name} <ArrowRight size={13} className="text-neutral-400" />
+              </button>
+              <div className="text-xs text-neutral-500">
+                {variations.length} variation{variations.length === 1 ? "" : "s"}
+                {approved !== 0 && <> · approved value <b className="font-mono tabular-nums text-green-700">{money2(approved)}</b></>}
+              </div>
+            </div>
+            <div className="p-3 space-y-2">
+              {variations.length === 0 && (
+                <div className="text-xs text-neutral-400 italic">No variations logged for this project.</div>
+              )}
+              {variations.map((v) => (
+                <div key={v.id} className="flex items-center gap-1.5 flex-wrap sm:flex-nowrap">
+                  <span className="w-12 flex-none text-xs font-mono text-neutral-500 text-center">VO-{String(v.no).padStart(2, "0")}</span>
+                  <input
+                    type="date"
+                    value={v.date || ""}
+                    onChange={(e) => changeVariation(project, variations, v.id, "date", e.target.value)}
+                    className="w-32 flex-none border border-neutral-200 rounded px-2 py-1 text-xs"
+                  />
+                  <input
+                    value={v.description}
+                    onChange={(e) => changeVariation(project, variations, v.id, "description", e.target.value)}
+                    placeholder="Variation description (scope change, extra pour, latent condition…)"
+                    className="flex-1 min-w-40 border border-neutral-200 rounded px-2 py-1 text-[13px]"
+                  />
+                  <select
+                    value={v.status}
+                    onChange={(e) => changeVariation(project, variations, v.id, "status", e.target.value)}
+                    className={`w-28 flex-none border border-neutral-200 rounded px-1.5 py-1 text-xs font-medium ${VARIATION_STATUS_STYLES[v.status] || ""}`}
+                  >
+                    {VARIATION_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                  <input
+                    type="number"
+                    value={v.cost}
+                    onChange={(e) => changeVariation(project, variations, v.id, "cost", e.target.value)}
+                    placeholder="$ cost"
+                    className="w-24 flex-none border border-neutral-200 rounded px-2 py-1 text-xs font-mono tabular-nums text-right"
+                  />
+                  <input
+                    type="number"
+                    value={v.days}
+                    onChange={(e) => changeVariation(project, variations, v.id, "days", e.target.value)}
+                    placeholder="days"
+                    title="Time impact (days)"
+                    className="w-16 flex-none border border-neutral-200 rounded px-2 py-1 text-xs font-mono tabular-nums text-right"
+                  />
+                  <button
+                    onClick={() => removeVariation(project, variations, v.id)}
+                    className="text-neutral-300 hover:text-red-500 transition-colors flex-none"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ))}
+              <button
+                onClick={() => addVariation(project, variations)}
+                className="flex items-center gap-1 text-xs font-medium text-orange-600 hover:text-orange-700"
+              >
+                <Plus size={13} /> Add variation
+              </button>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ---- Contractor & Supplier registers (global, shared across projects) ---- */
+
+function RegisterTab({ storageKey, title, nounSingular, roleLabel, rolePlaceholder }) {
+  const [entries, setEntries, status] = useStoredState(storageKey, []);
+
+  const add = () =>
+    setEntries((list) => [...list, { id: uid(), name: "", role: "", contact: "", phone: "", email: "", notes: "" }]);
+  const change = (id, field, v) =>
+    setEntries((list) => list.map((e) => (e.id === id ? { ...e, [field]: v } : e)));
+  const remove = (id) => setEntries((list) => list.filter((e) => e.id !== id));
+
+  if (status === "loading") {
+    return (
+      <div className="py-16 text-center text-neutral-400">
+        <Loader2 size={16} className="inline animate-spin mr-1.5" /> Loading {title.toLowerCase()}…
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-xl border border-neutral-200 bg-white shadow-sm overflow-hidden">
+      <div className="px-4 py-2.5 bg-neutral-50 border-b border-neutral-200 flex items-center justify-between">
+        <span className="font-semibold text-[14px] text-neutral-900">{title}</span>
+        <span className="text-xs text-neutral-500">{entries.length} {nounSingular}{entries.length === 1 ? "" : "s"}</span>
+      </div>
+      <div className="p-3 overflow-x-auto">
+        {entries.length === 0 && (
+          <div className="text-xs text-neutral-400 italic mb-2">No {nounSingular}s registered yet.</div>
+        )}
+        {entries.length > 0 && (
+          <table className="w-full text-[13px] min-w-[720px]">
+            <thead>
+              <tr className="text-left text-[10px] uppercase tracking-widest text-neutral-400">
+                <th className="pb-1.5 pr-2">Company / name</th>
+                <th className="pb-1.5 pr-2">{roleLabel}</th>
+                <th className="pb-1.5 pr-2">Contact person</th>
+                <th className="pb-1.5 pr-2">Phone</th>
+                <th className="pb-1.5 pr-2">Email</th>
+                <th className="pb-1.5 pr-2">Notes</th>
+                <th className="pb-1.5"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {entries.map((e) => (
+                <tr key={e.id} className="border-t border-neutral-100">
+                  <td className="py-1 pr-2"><RegInput value={e.name} onChange={(v) => change(e.id, "name", v)} placeholder="Name" /></td>
+                  <td className="py-1 pr-2"><RegInput value={e.role} onChange={(v) => change(e.id, "role", v)} placeholder={rolePlaceholder} /></td>
+                  <td className="py-1 pr-2"><RegInput value={e.contact} onChange={(v) => change(e.id, "contact", v)} placeholder="Contact" /></td>
+                  <td className="py-1 pr-2"><RegInput value={e.phone} onChange={(v) => change(e.id, "phone", v)} placeholder="Phone" /></td>
+                  <td className="py-1 pr-2"><RegInput value={e.email} onChange={(v) => change(e.id, "email", v)} placeholder="Email" /></td>
+                  <td className="py-1 pr-2"><RegInput value={e.notes} onChange={(v) => change(e.id, "notes", v)} placeholder="Notes (rates, reliability, insurances…)" /></td>
+                  <td className="py-1">
+                    <button onClick={() => remove(e.id)} className="text-neutral-300 hover:text-red-500 transition-colors">
+                      <Trash2 size={14} />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        <button onClick={add} className="mt-2 flex items-center gap-1 text-xs font-medium text-orange-600 hover:text-orange-700">
+          <Plus size={13} /> Add {nounSingular}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function RegInput({ value, onChange, placeholder }) {
+  return (
+    <input
+      value={value || ""}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={placeholder}
+      className="w-full border border-neutral-200 rounded px-2 py-1 text-[13px] focus:outline-none focus:ring-2 focus:ring-orange-400"
+    />
   );
 }
 

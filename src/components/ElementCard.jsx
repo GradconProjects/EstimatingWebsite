@@ -1,5 +1,5 @@
-import { useState, useMemo, useEffect } from "react";
-import { ChevronDown, ChevronRight, Copy, Trash2 } from "lucide-react";
+import { useState, useMemo, useEffect, useRef } from "react";
+import { ChevronDown, ChevronRight, Copy, Trash2, Paperclip, X } from "lucide-react";
 import { FULL_CATALOG } from "../data/catalog.js";
 import { uid, money2, computeElementCost, suggestedLabourPrefill } from "../lib/costing.js";
 import CategoryBlock from "./CategoryBlock.jsx";
@@ -10,14 +10,16 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
   // Every material category starts collapsed — only Labour/Equipment starts
   // expanded (it's still collapsible too, just defaults open).
   const [openCats, setOpenCats] = useState({});
-  const [labourOpen, setLabourOpen] = useState(true);
+  // Everything starts ROLLED UP: the labour matrix and the whole card, same
+  // as every material category. The Settings toggle can restore open-by-
+  // default cards by being explicitly set to false.
+  const [labourOpen, setLabourOpen] = useState(false);
   const [cardOpen, setCardOpen] = useState(() => {
-    // Portal Settings "element cards start collapsed" toggle.
     try {
       const p = JSON.parse(localStorage.getItem("gradcon-preferences")) || {};
-      return p.quotesCardsCollapsed !== true;
+      return p.quotesCardsCollapsed === false;
     } catch {
-      return true;
+      return false;
     }
   });
 
@@ -52,6 +54,45 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
   const removeAdditional = (id) => patch((it) => ({ ...it, additional: it.additional.filter((a) => a.id !== id) }));
   const changeAdditional = (id, field, v) =>
     patch((it) => ({ ...it, additional: it.additional.map((a) => (a.id === id ? { ...a, [field]: v } : a)) }));
+  // Multi-field fill in one patch — used by the catalog picker, which sets
+  // name+unit+rate together (three changeAdditional calls would each start
+  // from the same stale `item` and drop each other's fields).
+  const fillAdditional = (id, fields) =>
+    patch((it) => ({ ...it, additional: it.additional.map((a) => (a.id === id ? { ...a, ...fields } : a)) }));
+
+  const setDescription = (v) => patch((it) => ({ ...it, description: v }));
+
+  // Markup drawings (pdf/png/jpg) stored as data URLs on the item itself so
+  // they travel with the quote through localStorage/Supabase like everything
+  // else. Capped per file — the whole quote has to fit in one storage blob.
+  const MAX_MARKUP_BYTES = 3 * 1024 * 1024;
+  const fileInputRef = useRef(null);
+  const addMarkupFiles = (fileList) => {
+    const files = Array.from(fileList || []);
+    files.forEach((file) => {
+      const ok = /\.(pdf|png|jpe?g)$/i.test(file.name) || /^(application\/pdf|image\/(png|jpeg))$/.test(file.type);
+      if (!ok) {
+        alert(`"${file.name}" isn't a PDF, PNG or JPG — not added.`);
+        return;
+      }
+      if (file.size > MAX_MARKUP_BYTES) {
+        alert(`"${file.name}" is ${(file.size / 1048576).toFixed(1)} MB — markups are capped at 3 MB each so the quote still saves. Export a smaller/flattened copy and try again.`);
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        const isPdf = file.type === "application/pdf" || /\.pdf$/i.test(file.name);
+        patch((it) => ({
+          ...it,
+          markups: [...(it.markups || []), { id: uid(), name: file.name, type: isPdf ? "pdf" : "image", dataURL: reader.result }],
+        }));
+      };
+      reader.readAsDataURL(file);
+    });
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+  const removeMarkup = (id) => patch((it) => ({ ...it, markups: (it.markups || []).filter((m) => m.id !== id) }));
+  const markups = item.markups || [];
 
   return (
     <div className="rounded-xl border border-neutral-200 bg-white shadow-sm overflow-hidden">
@@ -60,8 +101,13 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
           {cardOpen ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
         </button>
         <div className="flex-1 min-w-0">
-          <div className="text-[10px] uppercase tracking-widest text-blue-300 font-semibold">
-            {item.category} {item.category && item.section ? "›" : ""} {item.section}
+          <div className="text-[10px] uppercase tracking-widest text-blue-300 font-semibold flex items-center gap-1.5">
+            <span>{item.category} {item.category && item.section ? "›" : ""} {item.section}</span>
+            {markups.length > 0 && (
+              <span className="inline-flex items-center gap-0.5 text-orange-400 normal-case tracking-normal" title={`${markups.length} markup drawing(s) attached`}>
+                <Paperclip size={10} /> {markups.length}
+              </span>
+            )}
           </div>
           <input
             value={item.label}
@@ -88,6 +134,65 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
             <span>Materials: <b className="font-mono text-neutral-700">{money2(cost.materialsTotal)}</b></span>
             <span>Labour/Equipment: <b className="font-mono text-neutral-700">{money2(cost.labourTotal)}</b></span>
             <span>Custom items: <b className="font-mono text-neutral-700">{money2(cost.additionalTotal)}</b></span>
+          </div>
+
+          <div className="rounded-lg border border-neutral-200 bg-white p-3">
+            <div className="text-[10px] uppercase tracking-widest text-neutral-500 font-semibold mb-1">
+              Element description / specification
+            </div>
+            <textarea
+              value={item.description || ""}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={2}
+              placeholder="Fully editable — spell out the spec: e.g. type of insulation (R2.5 XPS under slab), finish, concrete class notes, inclusions/exclusions…"
+              className="w-full text-[13px] border border-neutral-200 rounded-md px-2 py-1.5 focus:outline-none focus:border-orange-400 resize-y"
+            />
+          </div>
+
+          <div className="rounded-lg border border-neutral-200 bg-white p-3">
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-[10px] uppercase tracking-widest text-neutral-500 font-semibold flex items-center gap-1.5">
+                <Paperclip size={12} /> Markup drawings {markups.length > 0 && <span className="text-orange-600">({markups.length})</span>}
+              </div>
+              <label className="cursor-pointer px-2.5 py-1 rounded-md bg-blue-950 hover:bg-blue-900 text-white text-[11px] font-semibold">
+                Upload PDF / PNG / JPG
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => addMarkupFiles(e.target.files)}
+                />
+              </label>
+            </div>
+            {markups.length === 0 ? (
+              <div className="text-[12px] text-neutral-400 italic">
+                No markups attached — upload the marked-up drawing(s) this line item was measured from.
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {markups.map((m) => (
+                  <div key={m.id} className="border border-neutral-200 rounded-md overflow-hidden">
+                    <div className="flex items-center justify-between px-2 py-1 bg-neutral-100 text-[11px]">
+                      <span className="truncate font-medium text-neutral-700">{m.name}</span>
+                      <button
+                        onClick={() => removeMarkup(m.id)}
+                        title="Remove markup"
+                        className="flex-none text-neutral-400 hover:text-red-500 transition-colors ml-2"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                    {m.type === "pdf" ? (
+                      <embed src={m.dataURL} type="application/pdf" className="w-full h-96 bg-neutral-50" />
+                    ) : (
+                      <img src={m.dataURL} alt={m.name} className="block max-w-full max-h-96 object-contain bg-neutral-50 mx-auto" />
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {FULL_CATALOG.map((cat) => (
@@ -119,9 +224,11 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
 
           <AdditionalItems
             item={item}
+            rates={rates}
             onAdd={addAdditional}
             onRemove={removeAdditional}
             onChange={changeAdditional}
+            onFill={fillAdditional}
             total={cost.additionalTotal}
           />
         </div>

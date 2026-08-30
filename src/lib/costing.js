@@ -125,6 +125,8 @@ export function newElementItem(type) {
     section: type.section,
     label: type.name,
     collapsed: false,
+    description: "", // free-text spec notes ("R2.5 XPS insulation under slab", etc.)
+    markups: [], // [{id, name, type, dataURL}] — uploaded markup drawings (pdf/png/jpg)
     qtys: {}, // rateKey(category, product, unit) -> number
     tasks: LABOUR_TEMPLATES[type.labour].map((name) => ({ id: uid(), name, qtys: {} })), // qtys: resourceKey -> number
     additional: [], // [{id, name, unit, qty, rate}]

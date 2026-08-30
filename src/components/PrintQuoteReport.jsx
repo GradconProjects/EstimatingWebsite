@@ -185,6 +185,9 @@ function ElementReportBlock({ item, rates }) {
         <span>{item.label}</span>
         <span>{money2(cost.total)}</span>
       </div>
+      {item.description && (
+        <div className="pl-2 text-neutral-600 italic whitespace-pre-wrap py-0.5">{item.description}</div>
+      )}
       {[...materialLines, ...labourLines].map((l) => (
         <div key={l.key} className="flex justify-between pl-2 text-neutral-700">
           <span>{l.label} — {l.qty.toLocaleString("en-AU", { maximumFractionDigits: 2 })} {l.unit}</span>
@@ -198,6 +201,20 @@ function ElementReportBlock({ item, rates }) {
         </div>
       ))}
       {noLines && <div className="pl-2 text-neutral-400 italic">No quantities entered</div>}
+      {(item.markups || []).map((m) =>
+        m.type === "image" ? (
+          <div key={m.id} className="pl-2 mt-1 break-inside-avoid">
+            <div className="text-[9px] uppercase tracking-wide text-neutral-500">Markup: {m.name}</div>
+            <img src={m.dataURL} alt={m.name} className="max-h-64 max-w-full object-contain border border-neutral-300" />
+          </div>
+        ) : (
+          // PDF markups can't be inlined by the print engine — list them so the
+          // reader knows a marked-up drawing exists alongside this line item.
+          <div key={m.id} className="pl-2 text-neutral-500 text-[10px]">
+            Markup attached (PDF): {m.name}
+          </div>
+        )
+      )}
     </div>
   );
 }

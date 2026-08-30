@@ -248,7 +248,7 @@ export default function App() {
           <div className="max-w-7xl mx-auto px-4 flex items-center gap-1 border-t border-blue-900/60">
             {[
               { key: "dashboard", label: "Dashboard", Icon: LayoutDashboard },
-              { key: "planner", label: "Planner", Icon: Radar },
+              { key: "planner", label: "Project Management", Icon: Radar },
               { key: "folder", label: "Gradcon Vault", Icon: FolderOpen },
             ].map(({ key, label, Icon }) => (
               <button

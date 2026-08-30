@@ -421,9 +421,9 @@
           <path d="M37.5 31.4V35l2.8 1.9" stroke="#2c3e50" stroke-width="1.9" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
       </span>
-      <h2>Planner</h2>
-      <p>Deadlines, priority and requirements across every project — what to attend to now, and what can wait. Lives inside Quotes.</p>
-      <span class="cta">Open Planner <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
+      <h2>Project Management</h2>
+      <p>Planner, variations, and the contractor &amp; supplier registers — deadlines, priorities and who's doing the work. Lives inside Quotes.</p>
+      <span class="cta">Open Project Management <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
     </button>
 
     <button class="panel-btn" data-target="quotes" data-initial-view="folder">
@@ -514,7 +514,7 @@
         <option value="costplanner">GRADCON Cost Planner</option>
         <option value="quotes">Quotes</option>
         <option value="estimates">Estimates</option>
-        <option value="planner">Planner</option>
+        <option value="planner">Project Management</option>
         <option value="folder">Gradcon Vault</option>
       </select>
     </div>
@@ -586,7 +586,7 @@
     <div class="settings-grid">
       <div class="field"><label class="settings-check"><input type="checkbox" id="settings-confirm-deletes" checked> Ask before deleting projects &amp; elements</label></div>
       <div class="field"><label class="settings-check"><input type="checkbox" id="settings-remember-project" checked> Reopen the last project when Quotes loads</label></div>
-      <div class="field"><label class="settings-check"><input type="checkbox" id="settings-cards-collapsed"> Quotes element cards start collapsed</label></div>
+      <div class="field"><label class="settings-check"><input type="checkbox" id="settings-cards-collapsed" checked> Quotes element cards start collapsed</label></div>
       <div class="field"><label class="settings-check"><input type="checkbox" id="settings-est-collapsed"> New Estimates elements start collapsed</label></div>
       <div class="field"><label class="settings-check"><input type="checkbox" id="settings-autopublish" checked> Auto-publish Estimates quantities to Cost Planner</label></div>
       <div class="field">
@@ -958,7 +958,7 @@
   var BOOL_FIELDS = [
     ['settings-confirm-deletes','confirmDeletes',true],
     ['settings-remember-project','quotesRememberProject',true],
-    ['settings-cards-collapsed','quotesCardsCollapsed',false],
+    ['settings-cards-collapsed','quotesCardsCollapsed',true],
     ['settings-est-collapsed','estNewCollapsed',false],
     ['settings-autopublish','estAutoPublish',true]
   ];

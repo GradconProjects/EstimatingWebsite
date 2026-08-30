@@ -450,7 +450,7 @@ function applyElementPrefs(data){
     if(p.estLapDefaultOn === true){
       Object.keys(data).forEach(function(k){ if(/Lap$/.test(k) && data[k] === false) data[k] = true; });
     }
-    if(typeof p.estTrenchMeshType === "string" && TRENCH_MESH_TYPES.some(function(t){ return t[0] === p.estTrenchMeshType; })){
+    if(typeof p.estTrenchMeshType === "string" && (TRENCH_MESH_TYPES.some(function(t){ return t[0] === p.estTrenchMeshType; }) || MESHTYPES[p.estTrenchMeshType]!==undefined)){
       ["trenchMeshType","beamStripsTrenchType"].forEach(function(k){ if(k in data) data[k] = p.estTrenchMeshType; });
     }
     if(typeof p.estMeshType === "string" && MESHTYPES[p.estMeshType] !== undefined){
@@ -676,8 +676,22 @@ const TRENCH_MESH_TYPES = [
   ["3 Bar-L12TM",16.3],["4 Bar-L12TM",21.8],["5 Bar-L12TM",27.3],["6 Bar-L12TM",32.8],["7 Bar-L12TM",38.75],
   ["3 Bar-L16TM",28.9],["4 Bar-L16TM",38.5],
 ];
-function trenchMeshTypeSel(field,val){ return selOpts(field,val,TRENCH_MESH_TYPES.map(t=>[t[0],t[0]])); }
+// Trench reinforcement can be a named L-series trench mesh OR a square-mesh
+// (SL/RL) sheet cut/laid as trench strips — both offered in one dropdown.
+function trenchMeshTypeSel(field,val){
+  let tm=TRENCH_MESH_TYPES.map(t=>`<option value="${t[0]}" ${String(val)===t[0]?'selected':''}>${t[0]}</option>`).join('');
+  let sq=Object.keys(MESHTYPES).map(m=>`<option value="${m}" ${String(val)===m?'selected':''}>${m} (mesh strip)</option>`).join('');
+  return `<select data-field="${field}"><optgroup label="Trench mesh (L-series)">${tm}</optgroup><optgroup label="Square mesh laid as trench strips">${sq}</optgroup></select>`;
+}
 function trenchMeshMassPerM(type){ let t=TRENCH_MESH_TYPES.find(t=>t[0]===type); return (t? t[1]:21.8)/6; }
+// kg per lineal metre of trench reinforcement: L-series has a fixed kg/6m;
+// an SL/RL sheet strip weighs its kg/m² × the trench/strip width.
+function trenchReoMassPerM(type, widthMm){
+  let t=TRENCH_MESH_TYPES.find(x=>x[0]===type);
+  if(t) return t[1]/6;
+  if(MESHTYPES[type]!==undefined) return MESHTYPES[type]*(num(widthMm,300)/1000);
+  return 21.8/6;
+}
 const ANCHOR_OPTS = [["straight","Straight development"],["hook90","90° hook"],["hook135","135° hook"],["hook180","180° hook"],["coupler","Mechanical coupler"],["starter","Cast-in starter"],["chemical","Chemical anchor"],["custom","Custom length (mm)"]];
 function anchorLen(type,d,custom){
   d=d||12;
@@ -953,6 +967,10 @@ function lineWeightKg(materialGroup,material,unit,finalQty){
     // digit (the "6" in "6 Bar-...") and mis-price it as a 6mm bar.
     let tm=TRENCH_MESH_TYPES.find(t=>t[0]===material);
     if(tm) return finalQty*trenchMeshMassPerM(material);
+    // Square mesh laid as trench strips ("SL82" etc, unit lm) depends on strip width,
+    // which isn't known here — those lines carry an explicit massPerUnit instead. Never
+    // let "SL82" fall through to the \d+ match below and mis-price as an 82mm bar.
+    if(MESHTYPES[material]!==undefined) return 0;
     let m=String(material||"").match(/(\d+)/);
     if(!m) return 0;
     return finalQty*massPerM(parseInt(m[1]));
@@ -974,7 +992,11 @@ function baseLine(inst,def,over){
     line.finalQty = (ov.qty===""||ov.qty===undefined||ov.qty===null||isNaN(ov.qty))? 0 : Number(ov.qty);
     line.manualOverride = true;
   }
-  line.weightKg = lineWeightKg(line.materialGroup, line.material, line.unit, line.finalQty);
+  // Lines whose weight can't be derived from material name alone (e.g. square mesh laid
+  // as trench strips — kg depends on strip width) pass massPerUnit; computing weight from
+  // finalQty HERE (not at the call site) keeps kg tracking manual overrides too.
+  if(line.massPerUnit!==undefined) line.weightKg = line.finalQty*line.massPerUnit;
+  else line.weightKg = lineWeightKg(line.materialGroup, line.material, line.unit, line.finalQty);
   return line;
 }
 function withWaste(q,wastePct){ return q*(1+(wastePct||0)/100); }
@@ -993,6 +1015,14 @@ function withWasteLap(q,wastePct,lapPct){ return q*(1+(wastePct||0)/100)*(1+(lap
 // LOOSE thickness they intend to place, since this file doesn't assume a bulking/compaction
 // ratio — that varies by material and site, and guessing one risks a silently wrong supplier
 // order quantity). Area is in m², thicknessMm in millimetres.
+// Spoil disposal companion to every bulk/trench excavation line — the dug
+// volume bulks up when loosened, so cart-away is its own line item at
+// in-situ volume × (1 + project bulking %), never merged into excavation.
+function spoilLine(inst,def,excVol){
+  let bulk=PROJECT.bulking;
+  let vol=excVol*(1+bulk/100);
+  return baseLine(inst,def,{materialGroup:"Excavation",material:"Spoil disposal (loose, bulked)",spec:`Bulking ${bulk}%`,qty:vol,unit:"m³",waste:0,finalQty:vol,formula:`exc vol × (1+${bulk}%)`});
+}
 function blindingLine(inst,def,area,thicknessMm,materialChoice){
   let vol=area*(num(thicknessMm)/1000);
   let material = materialChoice==="compacted"? "Base material (compacted)"
@@ -1196,6 +1226,7 @@ function computePileCap(inst,def){
   if(d.vapourMembrane) lines.push(vapourMembraneLine(inst,def,blindArea));
   let exc=N*(L+2*num(d.oversize)/1000)*(W+2*num(d.oversize)/1000)*(D+num(d.blinding)/1000);
   lines.push(baseLine(inst,def,{materialGroup:"Excavation",material:"Bulk excavation",spec:"Oversized to cap+blinding",qty:exc,unit:"m³",waste:0,finalQty:exc,formula:"(L+2os)×(W+2os)×(D+blind)"}));
+  lines.push(spoilLine(inst,def,exc));
   function mat(flag,dia,sp,dim1,dim2,label,lapFlag){
     if(!flag) return;
     let barDia=barDiaOf(dia);
@@ -1307,6 +1338,7 @@ function computeStripFooting(inst,def){
   lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:`${d.width}x${d.depth}`,qty:vol,unit:"m³",waste:PROJECT.concreteWaste,finalQty:withWaste(vol,PROJECT.concreteWaste),formula:`${N}×${Lm}×${Wm}×${Dm}`}));
   let exc=N*(num(d.length)/1000)*(num(d.trenchWidth)/1000)*(num(d.excDepth)/1000);
   lines.push(baseLine(inst,def,{materialGroup:"Excavation",material:"Trench excavation",spec:"",qty:exc,unit:"m³",waste:0,finalQty:exc,formula:"L×trench W×exc depth"}));
+  lines.push(spoilLine(inst,def,exc));
   lines.push(blindingLine(inst,def,N*Lm*Wm,d.blinding,d.blindingMaterial));
   if(d.vapourMembrane) lines.push(vapourMembraneLine(inst,def,N*Lm*Wm));
   let formArea=0;
@@ -1333,10 +1365,11 @@ function computeStripFooting(inst,def){
   }
   if(d.trenchMesh){
     let layers=Math.max(1,Math.round(num(d.trenchMeshLayers,1)));
-    let totLen=N*layers*Lm; let wt=totLen*trenchMeshMassPerM(d.trenchMeshType);
+    let mpm=trenchReoMassPerM(d.trenchMeshType,d.width);
+    let totLen=N*layers*Lm; let wt=totLen*mpm;
     let layerNote=layers>1?` × ${layers} layers`:"";
     let lapPct=d.trenchMeshLap?PROJECT.lapPct:0;
-    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.trenchMeshType,spec:`Trench mesh${layerNote}`,qty:totLen,unit:"lm",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,lapPct),formula:`${N}×${layers}L×${Lm}`,notes:`${fmt(wt,1)} kg`}));
+    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.trenchMeshType,spec:`Trench mesh${layerNote}`,qty:totLen,unit:"lm",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,lapPct),massPerUnit:mpm,formula:`${N}×${layers}L×${Lm}`,notes:`${fmt(wt,1)} kg`}));
   }
   if(d.starters){
     let bd=barDiaOf(d.connDia); let len=(num(d.connEmbed)+num(d.connProj))/1000;
@@ -1400,6 +1433,7 @@ function computePadFooting(inst,def){
   lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:`${d.length}x${d.width}x${d.depth}`,qty:vol,unit:"m³",waste:PROJECT.concreteWaste,finalQty:withWaste(vol,PROJECT.concreteWaste),formula:`${N}×${L}×${W}×${D}${d.pedestal?' + pedestal':''}`}));
   let exc=N*(L+2*num(d.oversize)/1000)*(W+2*num(d.oversize)/1000)*(num(d.excDepth)/1000);
   lines.push(baseLine(inst,def,{materialGroup:"Excavation",material:"Bulk excavation",spec:"",qty:exc,unit:"m³",waste:0,finalQty:exc,formula:"(L+2os)×(W+2os)×excD"}));
+  lines.push(spoilLine(inst,def,exc));
   lines.push(blindingLine(inst,def,N*L*W,d.blinding,d.blindingMaterial));
   if(d.vapourMembrane) lines.push(vapourMembraneLine(inst,def,N*L*W));
   function mat(flag,dia,sp,dim1,dim2,label,lapFlag){
@@ -1544,10 +1578,11 @@ function computeBeam(inst,def){
   if(fArea>0) lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Beam formwork",spec:"Selected faces",qty:fArea,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(fArea,PROJECT.formworkWaste),formula:fParts.join(" + ")}));
   if(d.trenchMesh){
     let layers=Math.max(1,Math.round(num(d.trenchMeshLayers,1)));
-    let totLen=N*layers*Lm; let wt=totLen*trenchMeshMassPerM(d.trenchMeshType);
+    let mpm=trenchReoMassPerM(d.trenchMeshType,d.width);
+    let totLen=N*layers*Lm; let wt=totLen*mpm;
     let layerNote=layers>1?` × ${layers} layers`:"";
     let lapPct=d.trenchMeshLap?PROJECT.lapPct:0;
-    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.trenchMeshType,spec:`Trench mesh (longitudinal)${layerNote}`,qty:totLen,unit:"lm",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,lapPct),formula:`${N}×${layers}L×${fmt(Lm,2)}`,notes:`${fmt(wt,1)} kg`}));
+    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.trenchMeshType,spec:`Trench mesh (longitudinal)${layerNote}`,qty:totLen,unit:"lm",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,lapPct),massPerUnit:mpm,formula:`${N}×${layers}L×${fmt(Lm,2)}`,notes:`${fmt(wt,1)} kg`}));
   } else {
     d.reoRows.forEach(r=>{
       let bd=barDiaOf(r.dia);
@@ -1732,8 +1767,9 @@ function computeSlab(inst,def){
       let layerNote=layers>1?` × ${layers} layers`:"";
       let lapPct=d.beamStripsLap?PROJECT.lapPct:0;
       if(d.beamStripsTrenchMesh){
-        let totLen=runLen*layers; let wt=totLen*trenchMeshMassPerM(d.beamStripsTrenchType);
-        lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.beamStripsTrenchType,spec:`Beam strips — trench mesh (longitudinal)${layerNote}`,qty:totLen,unit:"lm",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,lapPct),formula:`${layers}L×${fmt(runLen,1)}`,notes:`${fmt(wt,1)} kg`}));
+        let mpm=trenchReoMassPerM(d.beamStripsTrenchType,d.beamStripsWidth);
+        let totLen=runLen*layers; let wt=totLen*mpm;
+        lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.beamStripsTrenchType,spec:`Beam strips — trench mesh (longitudinal)${layerNote}`,qty:totLen,unit:"lm",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,lapPct),massPerUnit:mpm,formula:`${layers}L×${fmt(runLen,1)}`,notes:`${fmt(wt,1)} kg`}));
       } else if(num(d.beamStripsBars)>0){
         let bd=barDiaOf(d.beamStripsDia);
         let totLen=num(d.beamStripsBars)*layers*runLen; let wt=totLen*massPerM(bd);
@@ -2018,6 +2054,7 @@ function computeRetWall(inst,def){
   } else {
     let excVol=Lm*(num(d.footL)/1000+0.3)*(num(d.footD)/1000+0.15);
     lines.push(baseLine(inst,def,{materialGroup:"Excavation",material:"Bulk excavation",spec:"",qty:excVol,unit:"m³",waste:0,finalQty:excVol,formula:"oversized footing envelope"}));
+    lines.push(spoilLine(inst,def,excVol));
   }
   let backfillVol=Lm*(num(d.heel||1)/1000)*(num(d.backfillDepth)/1000);
   lines.push(baseLine(inst,def,{materialGroup:"Excavation",material:"Backfill (behind wall)",spec:"",qty:backfillVol,unit:"m³",waste:0,finalQty:backfillVol,formula:"heel width × backfill depth × length"}));
@@ -2914,7 +2951,10 @@ function renderRegisterTable(){
   });
   let groupsHtml = INSTANCES.filter(inst=>byElement.has(inst.id)).map(inst=>{
     let glines=byElement.get(inst.id);
-    let collapsed=inst._collapsed;
+    // Register collapse is its OWN flag — the workspace card's _collapsed
+    // (and the "new elements start collapsed" preference) must never roll
+    // up register groups automatically. Default: expanded.
+    let collapsed=inst._regCollapsed===true;
     let totC=glines.filter(l=>l.materialGroup==="Concrete").reduce((s,l)=>s+l.finalQty,0);
     let totR=glines.filter(l=>l.materialGroup==="Reinforcement").reduce((s,l)=>s+(l.weightKg||0),0);
     let totF=glines.filter(l=>l.materialGroup==="Formwork").reduce((s,l)=>s+l.finalQty,0);
@@ -2942,7 +2982,7 @@ function renderRegisterTable(){
     let id=btn.dataset.id;
     if(btn.dataset.action==="regCollapseToggle"){
       let inst=INSTANCES.find(i=>i.id===id); if(!inst) return;
-      inst._collapsed=!inst._collapsed;
+      inst._regCollapsed=!inst._regCollapsed;
       renderRegisterTable();
     } else if(btn.dataset.action==="regDelete"){
       let inst=INSTANCES.find(i=>i.id===id);
