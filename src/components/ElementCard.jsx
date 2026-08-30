@@ -104,7 +104,11 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
   const rotateMarkup = (id) =>
     patch((it) => ({ ...it, markups: (it.markups || []).map((m) => (m.id === id ? { ...m, rotation: ((m.rotation || 0) + 90) % 360 } : m)) }));
   const markups = item.markups || [];
-  const [markupsOpen, setMarkupsOpen] = useState(false);
+  // The drawings themselves must be easily seen, not hidden behind a click:
+  // when an element HAS markups, the section opens with the card and every
+  // drawing renders full-size inline. Only an element with no markups keeps
+  // the section as a slim collapsed header.
+  const [markupsOpen, setMarkupsOpen] = useState(() => (item.markups || []).length > 0);
   const [viewerId, setViewerId] = useState(null); // markup id open in the zoom lightbox
   const viewerMarkup = markups.find((m) => m.id === viewerId) || null;
 
@@ -210,49 +214,60 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
                     No markups attached — upload the marked-up drawing(s) this line item was measured from.
                   </div>
                 ) : (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+                  <div className="space-y-2">
                     {markups.map((m) => (
                       <div key={m.id} className="border border-neutral-200 rounded-md overflow-hidden bg-neutral-50">
-                        <div className="flex items-center justify-between gap-1 px-1.5 py-1 bg-neutral-100 text-[10px]">
+                        <div className="flex items-center justify-between gap-2 px-2 py-1 bg-neutral-100 text-[11px]">
                           <span className="truncate font-medium text-neutral-700" title={m.name}>{m.name}</span>
-                          <div className="flex items-center gap-1 flex-none">
+                          <div className="flex items-center gap-1.5 flex-none">
                             {m.type === "image" && (
                               <button
                                 onClick={() => rotateMarkup(m.id)}
                                 title="Rotate 90° — saved with the quote, stays rotated everywhere"
                                 className="text-neutral-400 hover:text-blue-700 transition-colors"
                               >
-                                <RotateCw size={12} />
+                                <RotateCw size={14} />
                               </button>
                             )}
+                            <button
+                              onClick={() => setViewerId(m.id)}
+                              title="Full screen — zoom with scroll or buttons, drag to pan"
+                              className="text-neutral-400 hover:text-blue-700 transition-colors"
+                            >
+                              <ZoomIn size={14} />
+                            </button>
                             <button
                               onClick={() => removeMarkup(m.id)}
                               title="Remove markup"
                               className="text-neutral-400 hover:text-red-500 transition-colors"
                             >
-                              <X size={12} />
+                              <X size={14} />
                             </button>
                           </div>
                         </div>
-                        <button
-                          onClick={() => setViewerId(m.id)}
-                          title="Click to open — zoom with scroll or buttons, drag to pan"
-                          className="w-full h-32 flex items-center justify-center overflow-hidden cursor-zoom-in"
-                        >
-                          {m.type === "pdf" ? (
-                            <span className="flex flex-col items-center gap-1 text-neutral-400">
-                              <ZoomIn size={20} />
-                              <span className="text-[10px] font-semibold">PDF — click to view</span>
-                            </span>
-                          ) : (
+                        {/* the drawing itself, full size in the card — click it for the zoom viewer */}
+                        {m.type === "pdf" ? (
+                          <embed src={m.dataURL} type="application/pdf" className="w-full h-[32rem] bg-neutral-100" />
+                        ) : (
+                          <div
+                            onClick={() => setViewerId(m.id)}
+                            title="Click to zoom"
+                            className="w-full flex items-center justify-center overflow-hidden cursor-zoom-in bg-white"
+                          >
                             <img
                               src={m.dataURL}
                               alt={m.name}
-                              className="max-w-full max-h-32 object-contain"
-                              style={{ transform: `rotate(${m.rotation || 0}deg)` }}
+                              className="max-w-full object-contain"
+                              style={{
+                                transform: `rotate(${m.rotation || 0}deg)`,
+                                // bound BOTH axes when rotated sideways so the turned image
+                                // can't spill out of the card
+                                maxHeight: (m.rotation || 0) % 180 !== 0 ? "28rem" : "32rem",
+                                maxWidth: (m.rotation || 0) % 180 !== 0 ? "28rem" : "100%",
+                              }}
                             />
-                          )}
-                        </button>
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
