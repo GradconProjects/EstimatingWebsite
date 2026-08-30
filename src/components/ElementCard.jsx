@@ -61,6 +61,12 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
     patch((it) => ({ ...it, additional: it.additional.map((a) => (a.id === id ? { ...a, ...fields } : a)) }));
 
   const setDescription = (v) => patch((it) => ({ ...it, description: v }));
+  // The description box is for SPECIALIST elements only — hidden by default
+  // so ordinary line items stay compact. It appears when the estimator opens
+  // it via the small "+ specification" toggle, and stays visible whenever the
+  // item already carries text (so a saved description can't disappear).
+  const [descOpen, setDescOpen] = useState(false);
+  const showDesc = descOpen || !!(item.description && String(item.description).trim());
 
   // Markup drawings (pdf/png/jpg) stored as data URLs on the item itself so
   // they travel with the quote through localStorage/Supabase like everything
@@ -136,18 +142,37 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
             <span>Custom items: <b className="font-mono text-neutral-700">{money2(cost.additionalTotal)}</b></span>
           </div>
 
-          <div className="rounded-lg border border-neutral-200 bg-white p-3">
-            <div className="text-[10px] uppercase tracking-widest text-neutral-500 font-semibold mb-1">
-              Element description / specification
+          {showDesc ? (
+            <div className="rounded-lg border border-neutral-200 bg-white p-3">
+              <div className="flex items-center justify-between mb-1">
+                <div className="text-[10px] uppercase tracking-widest text-neutral-500 font-semibold">
+                  Specialist element — description / specification
+                </div>
+                <button
+                  onClick={() => { setDescription(""); setDescOpen(false); }}
+                  className="text-[11px] text-neutral-400 hover:text-red-500"
+                  title="Remove the description from this element"
+                >
+                  remove
+                </button>
+              </div>
+              <textarea
+                value={item.description || ""}
+                onChange={(e) => setDescription(e.target.value)}
+                rows={2}
+                autoFocus={descOpen && !(item.description && String(item.description).trim())}
+                placeholder="Spell out the specialist spec: e.g. type of insulation (Kooltherm K3 60mm R2.70 under slab), finish, concrete class notes, inclusions/exclusions…"
+                className="w-full text-[13px] border border-neutral-200 rounded-md px-2 py-1.5 focus:outline-none focus:border-orange-400 resize-y"
+              />
             </div>
-            <textarea
-              value={item.description || ""}
-              onChange={(e) => setDescription(e.target.value)}
-              rows={2}
-              placeholder="Fully editable — spell out the spec: e.g. type of insulation (R2.5 XPS under slab), finish, concrete class notes, inclusions/exclusions…"
-              className="w-full text-[13px] border border-neutral-200 rounded-md px-2 py-1.5 focus:outline-none focus:border-orange-400 resize-y"
-            />
-          </div>
+          ) : (
+            <button
+              onClick={() => setDescOpen(true)}
+              className="text-[11px] font-medium text-neutral-400 hover:text-orange-600 px-1 self-start text-left"
+            >
+              + Add specification / description (specialist elements)
+            </button>
+          )}
 
           <div className="rounded-lg border border-neutral-200 bg-white p-3">
             <div className="flex items-center justify-between mb-2">

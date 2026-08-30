@@ -139,6 +139,24 @@ export const FULL_CATALOG = [
     ["Walls", "m2", null, 250], ["Walls Curved", "m2", null, 350], ["Columns (eg 300x300)", "each", null, 1000],
     ["Oregon boards", "m2", null, 125], ["Crane Truck hire", "each", null, 1500], ["Scaffold Hire", "day", null, 175], ["Certification", "each", null, 400],
   ]},
+  // Specified insulation products (under-slab, slab edge, thermal break) —
+  // the estimator picks the actual material/thickness/R-value, not a generic
+  // "Insulation" line. Prices are catalog seeds, editable in the Rates modal
+  // like everything else. The old generic "Insulation" row stays in OTHER
+  // ACCESSORIES below because its rateKey may already carry quantities in
+  // saved quotes — removing/renaming it would silently drop those from totals.
+  { key: "INSULATION", weightBasis: false, products: [
+    ["Kooltherm K3 Floorboard 50mm (R2.25)", "m2", null, 42],
+    ["Kooltherm K3 Floorboard 60mm (R2.70)", "m2", null, 50],
+    ["XPS rigid board 30mm (R0.88)", "m2", null, 18],
+    ["XPS rigid board 50mm (R1.47)", "m2", null, 26],
+    ["EPS board M-grade 50mm (R1.19)", "m2", null, 12],
+    ["EPS board M-grade 75mm (R1.79)", "m2", null, 16],
+    ["Foilboard rigid panel 25mm", "m2", null, 15],
+    ["Slab edge insulation — 30mm XPS 300mm strip", "m", null, 9],
+    ["Thermal break strip 10mm", "m", null, 6],
+    ["Insulation (other — specify in description)", "m2", null, 25],
+  ]},
   { key: "OTHER ACCESSORIES", weightBasis: false, products: [
     ["Packing sand", "m3", null, 50], ["Crushed Rock", "m3", null, 63], ["Insulation", "m2", null, 25], ["Epoxy", "unit", null, 70],
     ["Marking Paint", "unit", null, 4], ["Sealers/Acid/MBT", "each", null, 400], ["Curing Products", "price", null, 100],

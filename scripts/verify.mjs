@@ -47,10 +47,16 @@ check("every element type has both a category and a section", () => {
   });
 });
 
-check("11 material categories, 117 products", () => {
-  assert.equal(FULL_CATALOG.length, 11);
+check("12 material categories, 127 products (incl. specified INSULATION)", () => {
+  assert.equal(FULL_CATALOG.length, 12);
   const total = FULL_CATALOG.reduce((s, c) => s + c.products.length, 0);
-  assert.equal(total, 117);
+  assert.equal(total, 127);
+  // The INSULATION category carries specified products (material/thickness/
+  // R-value), plain qty × rate — never weight/area/length-priced.
+  const insul = FULL_CATALOG.find((c) => c.key === "INSULATION");
+  assert.ok(insul, "INSULATION category exists");
+  assert.ok(!insul.weightBasis && !insul.areaBasis && !insul.lengthBasis, "INSULATION is plain qty × rate");
+  assert.ok(insul.products.some((p) => /Kooltherm/.test(p.name)), "specified insulation products present");
 });
 
 check("8 labour/equipment resource columns (incl. both Pump hr and Pump m3)", () => {
