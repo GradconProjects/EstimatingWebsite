@@ -188,6 +188,10 @@ export function computeElementCost(item, rates) {
   // by the rate-of-work engine (autoLabourQtys) — quantities entered above
   // flow straight into crew days at the rates-library production rates. A
   // typed cell always wins; nothing is ever written back into the tasks.
+  // Every labour figure is a WHOLE number of crews/days/hours — a typed 0.5
+  // or 1.2 crew-days books 1 or 2 whole crews (fractional crews don't
+  // exist). The one exception is pump m³: a real measured volume, priced
+  // per m³ pumped, never rounded.
   const autoQtys = item.labourAuto !== false ? autoLabourQtys(item, rates) : null;
   const resourceTotals = {};
   RESOURCE_COLS.forEach((res) => { resourceTotals[res.key] = 0; });
@@ -196,7 +200,7 @@ export function computeElementCost(item, rates) {
       const manual = task.qtys[res.key];
       const eff = manual !== undefined && manual !== "" ? Number(manual) || 0
         : (autoQtys && autoQtys[task.id] && autoQtys[task.id][res.key]) || 0;
-      resourceTotals[res.key] += eff;
+      resourceTotals[res.key] += res.key === "pump_m3" ? eff : Math.ceil(eff - 1e-9);
     });
   });
 

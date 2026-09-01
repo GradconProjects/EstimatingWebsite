@@ -290,6 +290,23 @@ check("Crew sheet: Finish row draws mesh m², a typed row Qty overrides the draw
   assert.equal(sug3["L2"].pump_hr, 6); // whole-pour pump booking
 });
 
+check("No fractional crews: a typed (or legacy baked-in) 0.5 books 1 whole crew and 1.2 books 2 — pump m³ alone stays a true volume", () => {
+  const rates = defaultRates();
+  const type = ELEMENT_TYPES.find((t) => t.id === "strip_footings");
+  const item = newElementItem(type);
+  item.labourAuto = false;
+  const pourTask = item.tasks.find((t) => t.name === "Pour / place / vibrate concrete");
+  const tieTask = item.tasks.find((t) => t.name === "Tie reinforcement");
+  pourTask.qtys.concreter_day = 1.2; // fractional crews don't exist -> 2
+  tieTask.qtys.steelfixer_day = 0.5; // -> 1 whole 5-man crew
+  pourTask.qtys.pump_m3 = 36.5; // real measured volume, never rounded
+  const cost = computeElementCost(item, rates);
+  assert.equal(cost.resourceTotals.concreter_day, 2);
+  assert.equal(cost.resourceTotals.steelfixer_day, 1);
+  assert.equal(cost.resourceTotals.pump_m3, 36.5);
+  assert.equal(cost.labourTotal, 2 * 1500 + 1 * 3250 + 36.5 * 10);
+});
+
 check("Crew rates: stale per-person overrides under the old 'day' keys are retired — crew-day keys fall back to catalog", () => {
   const rates = defaultRates();
   const crew = RESOURCE_COLS.find((r) => r.key === "concreter_day");

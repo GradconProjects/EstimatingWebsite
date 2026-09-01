@@ -99,14 +99,22 @@ export default function LabourMatrix({
                 <td className="px-1 py-1 text-neutral-500 text-xs">{meta.unit}</td>
                 {RESOURCE_COLS.map((r) => {
                   const autoVal = labourAuto && autoQtys && autoQtys[task.id] ? autoQtys[task.id][r.key] : undefined;
+                  // Crews/days/hours are whole numbers only — a typed 0.5
+                  // becomes 1, a 1.2 becomes 2, in the cell itself. Pump m³
+                  // is a true measured volume and keeps its decimals.
+                  const whole = r.key !== "pump_m3";
                   return (
                   <td key={r.key} className="px-2 py-1">
                     <NumInput
-                      step="0.5"
+                      step={whole ? "1" : "0.5"}
                       value={task.qtys[r.key]}
                       placeholder={autoVal !== undefined ? String(autoVal) : "—"}
                       className={autoVal !== undefined ? "placeholder:text-amber-800 placeholder:opacity-100 placeholder:font-semibold border-amber-400" : ""}
-                      onChange={(v) => onTaskQtyChange(task.id, r.key, v)}
+                      onChange={(v) => {
+                        const n = Number(v);
+                        const clean = whole && v !== undefined && v !== "" && Number.isFinite(n) && !Number.isInteger(n) ? Math.ceil(n) : v;
+                        onTaskQtyChange(task.id, r.key, clean);
+                      }}
                     />
                   </td>
                   );
@@ -133,7 +141,10 @@ export default function LabourMatrix({
               <td colSpan={2}></td>
               {RESOURCE_COLS.map((r) => (
                 <td key={r.key} className="px-2 py-1 text-right font-mono tabular-nums text-neutral-700">
-                  {(resourceTotals[r.key] || 0).toFixed(2)}
+                  {/* whole crews/days/hours — no decimals; pump m³ is the true volume */}
+                  {r.key === "pump_m3"
+                    ? (resourceTotals[r.key] || 0).toLocaleString("en-AU", { maximumFractionDigits: 2 })
+                    : String(Math.ceil((resourceTotals[r.key] || 0) - 1e-9))}
                 </td>
               ))}
               <td colSpan={2}></td>
