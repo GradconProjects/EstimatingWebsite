@@ -151,6 +151,7 @@ footer.note{color:var(--muted);font-size:11px;text-align:center;padding:20px;}
     <button data-page="workspace">3. Workspace</button>
     <button data-page="register">4. Quantity Register</button>
     <button data-page="export">5. Export</button>
+    <button data-page="orderschedule">6. Order Schedule</button>
   </nav>
   <div class="save-zone">
     <span id="saveStatus" class="save-status">All changes saved automatically</span>
@@ -265,6 +266,21 @@ footer.note{color:var(--muted);font-size:11px;text-align:center;padding:20px;}
     <div id="exportSummary"></div>
   </div>
 </section>
+
+<section id="page-orderschedule" class="page">
+  <div class="panel">
+    <h2>Order Schedule</h2>
+    <p class="small">Every quantity measured across the whole takeoff, summed into one ordering line per material — concrete by grade, bars by size, mesh by type, formwork, excavation, the lot. Untick anything you don't want on this order (already ordered, by others, priced elsewhere) — the totals and the CSV follow the ticks, and your ticks save with the takeoff.</p>
+    <div class="toolbar">
+      <button class="btn primary" onclick="exportOrderScheduleCSV()">⬇ Export Order Schedule (CSV)</button>
+      <button class="btn small" onclick="orderScheduleSetAll(true)">Tick all</button>
+      <button class="btn small ghost" onclick="orderScheduleSetAll(false)">Untick all</button>
+    </div>
+    <div id="orderScheduleHost"></div>
+    <div class="totals-row" id="orderScheduleTotals"></div>
+  </div>
+</section>
+
 <div id="printReport"></div>
 
 <!-- Fallback for environments that block script-triggered file downloads
@@ -338,6 +354,7 @@ function freshProjectState(){
 }
 function rerenderAllPages(){
   renderProjectForm(); renderDefaultsForm(); renderLibrary(); renderAddToolbar(); renderWorkspace(); computeAllAndRefresh(); renderTakeoffsBar();
+  if(document.getElementById("page-orderschedule").classList.contains("active")) renderOrderSchedule();
 }
 // Boot-time registry setup: seed the index with the historical single-blob
 // key as project #1 if this install predates the registry, then point
@@ -3134,6 +3151,69 @@ function renderRegisterTable(){
    ${totalsTypeStr? `<div class="small" style="flex-basis:100%;margin-top:2px;"><b>Reinforcement by type:</b> ${totalsTypeStr}</div>` : ''}`;
 }
 
+/* ============================= ORDER SCHEDULE ============================= */
+// One ordering line per material across the whole takeoff (concrete by grade,
+// bars by size, mesh by type, formwork, excavation…), with an include tick per
+// line. Ticks live on PROJECT.orderExclude (only exclusions stored, so new
+// materials default to included) and save/sync with the takeoff like any
+// other project field.
+function orderScheduleRows(){
+  let agg=new Map();
+  allLines().forEach(l=>{
+    if(!(l.finalQty||l.weightKg)) return;
+    let key=l.materialGroup+"::"+l.material+"::"+l.unit;
+    let e=agg.get(key)||{key,group:l.materialGroup,material:l.material,unit:l.unit,qty:0,kg:0,sheets:0};
+    e.qty+=l.finalQty||0; e.kg+=l.weightKg||0;
+    if(l.sheets!==undefined) e.sheets+=l.sheets;
+    agg.set(key,e);
+  });
+  return [...agg.values()];
+}
+function orderIncluded(key){ return !(PROJECT.orderExclude && PROJECT.orderExclude[key]); }
+function renderOrderSchedule(){
+  let host=document.getElementById("orderScheduleHost"); if(!host) return;
+  let rows=orderScheduleRows();
+  let groups=[...new Set(rows.map(r=>r.group))];
+  host.innerHTML = rows.length? `<table class="results" style="width:100%;"><thead><tr><th style="width:44px;">Incl.</th><th>Item</th><th style="text-align:right;">Order qty</th><th>Unit</th><th style="text-align:right;">kg</th><th style="text-align:right;">Sheets</th></tr></thead>
+   <tbody>${groups.map(g=>{
+     let gs=rows.filter(r=>r.group===g);
+     return `<tr class="reg-group-head"><td colspan="6"><b>${g}</b></td></tr>`+
+       gs.map(r=>`<tr style="${orderIncluded(r.key)?'':'opacity:.45;text-decoration:line-through;'}">
+         <td style="text-align:center;"><input type="checkbox" data-order-key="${r.key.replace(/"/g,'&quot;')}" ${orderIncluded(r.key)?'checked':''} title="Include this line on the order schedule"></td>
+         <td>${r.material}</td><td style="text-align:right;"><b>${fmt(r.qty,2)}</b></td><td>${r.unit}</td>
+         <td style="text-align:right;">${r.kg?fmt(r.kg,1):''}</td><td style="text-align:right;">${r.sheets||''}</td></tr>`).join('');
+   }).join('')}</tbody></table>` : `<p class="small">No quantities yet — add elements in the Workspace first.</p>`;
+  host.oninput=(e)=>{
+    let k=e.target.dataset.orderKey; if(k===undefined) return;
+    if(!PROJECT.orderExclude) PROJECT.orderExclude={};
+    if(e.target.checked) delete PROJECT.orderExclude[k]; else PROJECT.orderExclude[k]=true;
+    renderOrderSchedule();
+  };
+  let inc=rows.filter(r=>orderIncluded(r.key));
+  let sum=(g)=>inc.filter(r=>r.group===g).reduce((s,r)=>s+r.qty,0);
+  let kg=inc.reduce((s,r)=>s+r.kg,0);
+  let sheets=inc.reduce((s,r)=>s+r.sheets,0);
+  let totals=document.getElementById("orderScheduleTotals");
+  if(totals) totals.innerHTML = `<div class="stat"><div class="n">${fmt(sum("Concrete"),2)}</div><div class="l">m³ concrete</div></div>
+   <div class="stat"><div class="n">${fmt(kg,1)}</div><div class="l">kg reinforcement</div></div>
+   <div class="stat"><div class="n">${sheets}</div><div class="l">mesh sheets</div></div>
+   <div class="stat"><div class="n">${fmt(sum("Formwork"),2)}</div><div class="l">m² formwork</div></div>
+   <div class="stat"><div class="n">${fmt(sum("Excavation"),2)}</div><div class="l">m³ excavation & spoil</div></div>
+   <div class="stat"><div class="n">${inc.length} / ${rows.length}</div><div class="l">items included</div></div>`;
+}
+function orderScheduleSetAll(on){
+  if(on){ PROJECT.orderExclude={}; }
+  else { PROJECT.orderExclude={}; orderScheduleRows().forEach(r=>PROJECT.orderExclude[r.key]=true); }
+  renderOrderSchedule();
+}
+function exportOrderScheduleCSV(){
+  let inc=orderScheduleRows().filter(r=>orderIncluded(r.key));
+  let head=["Material Group","Item","Order Qty","Unit","kg","Sheets"];
+  let body=inc.map(r=>[r.group,r.material,numCell(r.qty,2),r.unit,r.kg?numCell(r.kg,1):"",r.sheets||""]);
+  let csv=[head,...body].map(row=>row.map(csvEscape).join(",")).join("\r\n");
+  download((PROJECT.name||"project")+"_order_schedule.csv",csv);
+}
+
 /* ============================= EXPORT ============================= */
 // Excel opens CSV as Windows-1252 unless a UTF-8 BOM is present — that mismatch is exactly what turns
 // × into "Ã—", — into "â€”" and ² into "Â²". A BOM fixes the encoding; ASCII-safe text removes the risk
@@ -3670,6 +3750,7 @@ document.querySelectorAll('.tabs button').forEach(b=>b.addEventListener('click',
   document.getElementById('page-'+b.dataset.page).classList.add('active');
   if(b.dataset.page==="register") renderRegister();
   if(b.dataset.page==="export") renderExportSummary();
+  if(b.dataset.page==="orderschedule") renderOrderSchedule();
   if(b.dataset.page==="library") renderLibrary();
 }));
 
