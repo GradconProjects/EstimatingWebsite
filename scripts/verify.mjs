@@ -12,6 +12,7 @@ import assert from "node:assert/strict";
 import {
   FULL_CATALOG, RESOURCE_COLS, ELEMENT_TYPES, CATEGORY_ORDER, SECTION_ORDER, LABOUR_TEMPLATES, MARGIN_STEPS,
 } from "../src/data/catalog.js";
+import * as catalogAll from "../src/data/catalog.js";
 import {
   computeElementCost, computeGrandTotal, computeMarginLadder,
   defaultRates, newElementItem, rateKey, suggestedLabourPrefill, computeExternalScopeLines,
@@ -195,6 +196,13 @@ check("Small load charge auto-applies to concrete loads under 30 m³ (per m³), 
   delete item.qtys[rateKey("CONCRETE", "Small load charge", "m3")];
   rates[rateKey("CONCRETE", "Small load charge", "m3")] = { unitCost: 60 };
   assert.equal(autoSmallLoadCharge(item, rates).total, 20 * 60);
+});
+
+check("Quote statuses: 'Completed Estimating' sits between Estimating and Quoting, with a style entry", () => {
+  const { QUOTE_STATUSES, QUOTE_STATUS_STYLES } = catalogAll;
+  const i = QUOTE_STATUSES.indexOf("Completed Estimating");
+  assert.ok(i > QUOTE_STATUSES.indexOf("Estimating") && i < QUOTE_STATUSES.indexOf("Quoting"), "pipeline order");
+  QUOTE_STATUSES.forEach((s) => assert.ok(QUOTE_STATUS_STYLES[s], `every status needs a style entry (missing: ${s})`));
 });
 
 check("Formwork rates: Conventional seeds $60/m² and Edgeform $8/lm", () => {

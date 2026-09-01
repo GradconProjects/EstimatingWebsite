@@ -318,10 +318,12 @@ export const SECTION_ORDER = [...new Set(ELEMENT_TYPES.map((t) => t.section))];
  * quote that predates this field (see Dashboard.jsx) — never rendered as
  * blank/unknown.
  */
-export const QUOTE_STATUSES = ["Queued", "Estimating", "Quoting", "Tendered", "Successful", "Unsuccessful", "On Hold"];
+export const QUOTE_STATUSES = ["Queued", "Estimating", "Completed Estimating", "Quoting", "Tendered", "Successful", "Unsuccessful", "On Hold"];
 export const QUOTE_STATUS_STYLES = {
   Queued: { bar: "bg-violet-400", dot: "bg-violet-400", text: "text-violet-600", bg: "bg-violet-50" },
   Estimating: { bar: "bg-red-500", dot: "bg-red-500", text: "text-red-600", bg: "bg-red-50" },
+  // Estimate finished, quote not yet drafted — sits between Estimating (red) and Quoting (blue).
+  "Completed Estimating": { bar: "bg-teal-500", dot: "bg-teal-500", text: "text-teal-700", bg: "bg-teal-50" },
   Quoting: { bar: "bg-blue-500", dot: "bg-blue-500", text: "text-blue-700", bg: "bg-blue-50" },
   Tendered: { bar: "bg-amber-500", dot: "bg-amber-500", text: "text-amber-700", bg: "bg-amber-50" },
   Successful: { bar: "bg-emerald-500", dot: "bg-emerald-500", text: "text-emerald-700", bg: "bg-emerald-50" },
