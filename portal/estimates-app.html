@@ -3653,6 +3653,20 @@ function reoTypeBreakdownStr(lines){
   Object.keys(mesh).sort().forEach(m=>parts.push(`${m} ${fmt(mesh[m].area,1)}m²/${mesh[m].sheets} sheet${mesh[m].sheets===1?'':'s'}`));
   return parts.join(' · ');
 }
+/* Base/Blinding lines summed INDIVIDUALLY — blinding/base layers (m³) kept
+   separate from vapour barrier/membrane (m²). Before this, only concrete/
+   reo/formwork/excavation were summed anywhere, so blinding and vapour
+   quantities read as zero in every totals row despite their register lines
+   computing correctly. */
+function blindingVapourTotals(lines){
+  let blind=0,vap=0;
+  lines.forEach(l=>{
+    if(l.materialGroup!=="Base/Blinding") return;
+    if(/vapour|membrane/i.test(l.material)) vap+=l.finalQty||0;
+    else blind+=l.finalQty||0;
+  });
+  return {blind,vap};
+}
 function refreshCardResults(card,inst){
   let out=computeInstance(inst);
   inst.results=out;
@@ -3660,8 +3674,9 @@ function refreshCardResults(card,inst){
   let totC=out.lines.filter(l=>l.materialGroup==="Concrete").reduce((s,l)=>s+l.finalQty,0);
   let totF=out.lines.filter(l=>l.materialGroup==="Formwork").reduce((s,l)=>s+l.finalQty,0);
   let totR=out.lines.filter(l=>l.materialGroup==="Reinforcement").reduce((s,l)=>s+(l.weightKg||0),0);
+  let bv=blindingVapourTotals(out.lines);
   let headStats=card.querySelector('.headStats');
-  if(headStats) headStats.innerHTML = ` · ${fmt(totC,2)}m³ concrete · ${fmt(totR,1)}kg reo · ${fmt(totF,2)}m² formwork`;
+  if(headStats) headStats.innerHTML = ` · ${fmt(totC,2)}m³ concrete · ${fmt(totR,1)}kg reo · ${fmt(totF,2)}m² formwork${bv.blind?` · ${fmt(bv.blind,2)}m³ blinding/base`:''}${bv.vap?` · ${fmt(bv.vap,2)}m² vapour barrier`:''}`;
   let {bars,mesh}=summarizeReinforcement(out.lines);
   let barKeys=Object.keys(bars).sort();
   let meshKeys=Object.keys(mesh).sort();
@@ -3682,6 +3697,8 @@ function refreshCardResults(card,inst){
      <div class="stat"><div class="n">${fmt(totC,2)}</div><div class="l">m³ concrete</div></div>
      <div class="stat"><div class="n">${fmt(totF,2)}</div><div class="l">m² formwork</div></div>
      <div class="stat"><div class="n">${fmt(totR,1)}</div><div class="l">kg reinforcement</div></div>
+     ${bv.blind?`<div class="stat"><div class="n">${fmt(bv.blind,2)}</div><div class="l">m³ blinding/base</div></div>`:''}
+     ${bv.vap?`<div class="stat"><div class="n">${fmt(bv.vap,2)}</div><div class="l">m² vapour barrier</div></div>`:''}
    </div>
    ${summaryHtml}
    <table class="results detail-results"><thead><tr><th>Material Group</th><th>Material</th><th>Spec</th><th>Qty</th><th>Unit</th><th>Waste%</th><th>Lap%</th><th>Manual?</th><th>Override Qty</th><th>Final Qty</th><th>Kg</th><th>Formula</th><th>Linked</th></tr></thead>
@@ -3816,13 +3833,14 @@ function renderRegisterTable(){
     let totC=glines.filter(l=>l.materialGroup==="Concrete").reduce((s,l)=>s+l.finalQty,0);
     let totR=glines.filter(l=>l.materialGroup==="Reinforcement").reduce((s,l)=>s+(l.weightKg||0),0);
     let totF=glines.filter(l=>l.materialGroup==="Formwork").reduce((s,l)=>s+l.finalQty,0);
+    let gbv=blindingVapourTotals(glines);
     // Decompose the lump reo kg into the bar sizes / mesh types it's made of
     let typeStr=reoTypeBreakdownStr(glines);
     return `<tbody data-reg-group="${inst.id}">
       <tr class="reg-group-head"><td colspan="${REG_COLS}">
         <button class="btn small ghost" data-action="regCollapseToggle" data-id="${inst.id}" title="Collapse/expand">${collapsed?'▸':'▾'}</button>
         <span class="badge">${inst.id}</span> <b>${inst.label}</b>
-        <span class="small"> · ${fmt(totC,2)}m³ concrete · ${fmt(totR,1)}kg reo${typeStr?` <span style="opacity:.72;">(${typeStr})</span>`:''} · ${fmt(totF,2)}m² formwork · ${glines.length} line(s)</span>
+        <span class="small"> · ${fmt(totC,2)}m³ concrete · ${fmt(totR,1)}kg reo${typeStr?` <span style="opacity:.72;">(${typeStr})</span>`:''} · ${fmt(totF,2)}m² formwork${gbv.blind?` · ${fmt(gbv.blind,2)}m³ blinding/base`:''}${gbv.vap?` · ${fmt(gbv.vap,2)}m² vapour barrier`:''} · ${glines.length} line(s)</span>
         <button class="btn small danger" data-action="regDelete" data-id="${inst.id}" style="float:right;">✕ Remove element</button>
       </td></tr>
       ${collapsed? '' : glines.map(l=>{
@@ -3884,6 +3902,7 @@ function renderRegisterTable(){
   let reoKg=filtered.filter(l=>l.materialGroup==="Reinforcement").reduce((s,l)=>s+(l.weightKg||0),0);
   let form=filtered.filter(l=>l.materialGroup==="Formwork").reduce((s,l)=>s+l.finalQty,0);
   let exc=filtered.filter(l=>l.materialGroup==="Excavation").reduce((s,l)=>s+l.finalQty,0);
+  let regBv=blindingVapourTotals(filtered);
   // The reinforcement figure broken into the types it's made of — lm for
   // bars/trench strips and m²+sheets for sheet mesh, alongside the kg.
   let totalsTypeStr=reoTypeBreakdownStr(filtered);
@@ -3891,6 +3910,8 @@ function renderRegisterTable(){
    <div class="stat"><div class="n">${fmt(reoKg,1)}</div><div class="l">kg reinforcement</div></div>
    <div class="stat"><div class="n">${fmt(reoKg/1000,2)}</div><div class="l">tonnes reinforcement</div></div>
    <div class="stat"><div class="n">${fmt(form,2)}</div><div class="l">m² formwork</div></div>
+   <div class="stat"><div class="n">${fmt(regBv.blind,2)}</div><div class="l">m³ blinding/base</div></div>
+   <div class="stat"><div class="n">${fmt(regBv.vap,2)}</div><div class="l">m² vapour barrier</div></div>
    <div class="stat"><div class="n">${fmt(exc,2)}</div><div class="l">m³ excavation</div></div>
    <div class="stat"><div class="n">${filtered.length}</div><div class="l">quantity lines</div></div>
    ${totalsTypeStr? `<div class="small" style="flex-basis:100%;margin-top:2px;"><b>Reinforcement by type:</b> ${totalsTypeStr}</div>` : ''}`;
@@ -3939,10 +3960,15 @@ function renderOrderSchedule(){
   let kg=inc.reduce((s,r)=>s+r.kg,0);
   let sheets=inc.reduce((s,r)=>s+r.sheets,0);
   let totals=document.getElementById("orderScheduleTotals");
+  // Base/Blinding included rows summed individually — blinding/base (m³) vs vapour barrier (m²)
+  let obBlind=inc.filter(r=>r.group==="Base/Blinding" && !/vapour|membrane/i.test(r.material)).reduce((s,r)=>s+r.qty,0);
+  let obVap=inc.filter(r=>r.group==="Base/Blinding" && /vapour|membrane/i.test(r.material)).reduce((s,r)=>s+r.qty,0);
   if(totals) totals.innerHTML = `<div class="stat"><div class="n">${fmt(sum("Concrete"),2)}</div><div class="l">m³ concrete</div></div>
    <div class="stat"><div class="n">${fmt(kg,1)}</div><div class="l">kg reinforcement</div></div>
    <div class="stat"><div class="n">${sheets}</div><div class="l">mesh sheets</div></div>
    <div class="stat"><div class="n">${fmt(sum("Formwork"),2)}</div><div class="l">m² formwork</div></div>
+   <div class="stat"><div class="n">${fmt(obBlind,2)}</div><div class="l">m³ blinding/base</div></div>
+   <div class="stat"><div class="n">${fmt(obVap,2)}</div><div class="l">m² vapour barrier</div></div>
    <div class="stat"><div class="n">${fmt(sum("Excavation"),2)}</div><div class="l">m³ excavation & spoil</div></div>
    <div class="stat"><div class="n">${inc.length} / ${rows.length}</div><div class="l">items included</div></div>`;
 }
@@ -4080,6 +4106,7 @@ function exportPDF(){
   let reoKg=lines.filter(l=>l.materialGroup==="Reinforcement").reduce((s,l)=>s+(l.weightKg||0),0);
   let form=lines.filter(l=>l.materialGroup==="Formwork").reduce((s,l)=>s+l.finalQty,0);
   let exc=lines.filter(l=>l.materialGroup==="Excavation").reduce((s,l)=>s+l.finalQty,0);
+  let pdfBv=blindingVapourTotals(lines);
   let byElement={};
   INSTANCES.forEach(inst=>{
     let key=inst.id+" — "+inst.label;
@@ -4102,6 +4129,8 @@ function exportPDF(){
        <tr><td style="border:1px solid #999;padding:6px;">Concrete</td><td style="border:1px solid #999;padding:6px;"><b>${fmt(concrete,2)} m³</b></td></tr>
        <tr><td style="border:1px solid #999;padding:6px;">Reinforcement</td><td style="border:1px solid #999;padding:6px;"><b>${fmt(reoKg,1)} kg (${fmt(reoKg/1000,2)} t)</b></td></tr>
        <tr><td style="border:1px solid #999;padding:6px;">Formwork</td><td style="border:1px solid #999;padding:6px;"><b>${fmt(form,2)} m²</b></td></tr>
+       <tr><td style="border:1px solid #999;padding:6px;">Blinding / base layers</td><td style="border:1px solid #999;padding:6px;"><b>${fmt(pdfBv.blind,2)} m³</b></td></tr>
+       <tr><td style="border:1px solid #999;padding:6px;">Vapour barrier / membrane</td><td style="border:1px solid #999;padding:6px;"><b>${fmt(pdfBv.vap,2)} m²</b></td></tr>
        <tr><td style="border:1px solid #999;padding:6px;">Excavation</td><td style="border:1px solid #999;padding:6px;"><b>${fmt(exc,2)} m³</b></td></tr>
      </table>
      ${(function(){
