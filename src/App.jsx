@@ -103,6 +103,24 @@ export default function App() {
       else window.localStorage.removeItem(ACTIVE_PROJECT_KEY);
     } catch { /* best-effort */ }
   }, [activeId]);
+  // One-time formwork price corrections: Conventional $150 → $60/m² and
+  // Edgeform $50 → $8/lm. A stored rates blob carrying the OLD SEED value
+  // (any rates-modal save persisted the whole seeded object) gets the new
+  // figure once; any other stored figure is a deliberate edit — untouched.
+  useEffect(() => {
+    if (ratesStatus === "loading") return;
+    const fixes = [
+      [rateKey("FORMWORK", "Conventional", "m2"), 150, 60],
+      [rateKey("FORMWORK", "Edgeform", "m"), 50, 8],
+    ];
+    const stale = fixes.filter(([key, oldSeed]) => rates[key] && rates[key].unitCost === oldSeed);
+    if (stale.length) {
+      const next = { ...rates };
+      stale.forEach(([key, , now]) => { next[key] = { ...next[key], unitCost: now }; });
+      setRates(next);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ratesStatus]);
   const [ratesOpen, setRatesOpen] = useState(false);
   const [elementTypesOpen, setElementTypesOpen] = useState(false);
   // Which top-level tab shows when no project is open — Dashboard, Planner

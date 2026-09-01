@@ -179,7 +179,7 @@ export const FULL_CATALOG = [
     ["Insitu Walls", "m2", null, 760], ["Stair (floor-floor)", "l/m risers", null, 682], ["Shotcrete", "m2", null, 300],
   ]},
   { key: "FORMWORK", weightBasis: false, products: [
-    ["Material", "unit", null, 400], ["Conventional", "m2", null, 150], ["Bondek", "m2", null, 125], ["Edgeform", "m", null, 50],
+    ["Material", "unit", null, 400], ["Conventional", "m2", null, 60], ["Bondek", "m2", null, 125], ["Edgeform", "m", null, 8],
     ["Beam/fold sides <400mm d", "m", null, 100], ["Beam/fold sides >400mm d", "m2", null, 250], ["Handrail", "m", null, 30],
     ["Walls", "m2", null, 250], ["Walls Curved", "m2", null, 350], ["Columns (eg 300x300)", "each", null, 1000],
     ["Oregon boards", "m2", null, 125], ["Crane Truck hire", "each", null, 1500], ["Scaffold Hire", "day", null, 175], ["Certification", "each", null, 400],

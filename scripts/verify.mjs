@@ -197,6 +197,12 @@ check("Small load charge auto-applies to concrete loads under 30 m³ (per m³), 
   assert.equal(autoSmallLoadCharge(item, rates).total, 20 * 60);
 });
 
+check("Formwork rates: Conventional seeds $60/m² and Edgeform $8/lm", () => {
+  const rates = defaultRates();
+  assert.equal(rates[rateKey("FORMWORK", "Conventional", "m2")].unitCost, 60);
+  assert.equal(rates[rateKey("FORMWORK", "Edgeform", "m")].unitCost, 8);
+});
+
 check("Subcontract 'quote' items: the received quote is entered as the rate — qty 1 books the whole quote", () => {
   const rates = defaultRates();
   const item = newElementItem(ELEMENT_TYPES.find((t) => t.id === "slab_on_ground"));
