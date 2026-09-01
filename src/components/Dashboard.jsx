@@ -9,6 +9,9 @@ const SORT_OPTIONS = [
   { key: "added", label: "Recently added" },
   { key: "status", label: "Status (pipeline order)" },
   { key: "name", label: "Project name" },
+  { key: "deadline", label: "Deadline (soonest first)" },
+  { key: "value", label: "Value (highest sell first)" },
+  { key: "date", label: "Project date (newest first)" },
 ];
 
 /** Turns one pre-fetched quote object into the numbers a dashboard row (or
@@ -103,6 +106,14 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete 
       arr.sort((a, b) => QUOTE_STATUSES.indexOf(a.status) - QUOTE_STATUSES.indexOf(b.status) || a.name.localeCompare(b.name));
     } else if (sortBy === "name") {
       arr.sort((a, b) => a.name.localeCompare(b.name));
+    } else if (sortBy === "deadline") {
+      // Soonest deadline first; projects without one sink to the bottom.
+      const t = (s) => (s.deadline ? Number(new Date(s.deadline)) : Infinity);
+      arr.sort((a, b) => t(a) - t(b) || a.name.localeCompare(b.name));
+    } else if (sortBy === "value") {
+      arr.sort((a, b) => b.sellExGst - a.sellExGst || a.name.localeCompare(b.name));
+    } else if (sortBy === "date") {
+      arr.sort((a, b) => Number(new Date(b.date || 0)) - Number(new Date(a.date || 0)) || a.name.localeCompare(b.name));
     } else {
       // Recently added — newest first, by the project index's own immutable createdAt
       // (not quote.projectDate, which the estimator can freely edit).
@@ -110,6 +121,18 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete 
     }
     return arr;
   }, [summaries, sortBy]);
+
+  // Filter row: status dropdown + free-text name search, applied on top of
+  // the chosen sort. Session-local — a fresh load shows everything.
+  const [statusFilter, setStatusFilter] = useState("");
+  const [search, setSearch] = useState("");
+  const visibleSummaries = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return sortedSummaries.filter(
+      (s) => (!statusFilter || s.status === statusFilter) && (!q || s.name.toLowerCase().includes(q))
+    );
+  }, [sortedSummaries, statusFilter, search]);
+  const filtering = !!statusFilter || !!search.trim();
 
   const changeStatus = (project, status) => {
     const quote = quotesByKey[project.storageKey] || {};
@@ -141,7 +164,26 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete 
           </h1>
           <p className="text-sm text-neutral-500">Every Gradcon quote, summed across the whole portfolio.</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search projects…"
+            className="border border-neutral-200 rounded px-2.5 py-1.5 text-xs w-44 focus:outline-none focus:ring-2 focus:ring-orange-400"
+          />
+          <div className="flex items-center gap-1.5 text-xs text-neutral-500">
+            <span>Status:</span>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="border border-neutral-200 rounded px-2 py-1 text-xs"
+            >
+              <option value="">All statuses</option>
+              {QUOTE_STATUSES.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          </div>
           <div className="flex items-center gap-1.5 text-xs text-neutral-500">
             <span>Sort by:</span>
             <select
@@ -192,7 +234,7 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete 
             </tr>
           </thead>
           <tbody>
-            {sortedSummaries.map(({ project, ...s }) => (
+            {visibleSummaries.map(({ project, ...s }) => (
               <tr
                 key={project.id}
                 className="border-t border-neutral-100 hover:bg-neutral-50 cursor-pointer"
@@ -285,19 +327,42 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete 
                 </td>
               </tr>
             )}
+            {summaries.length > 0 && visibleSummaries.length === 0 && (
+              <tr>
+                <td colSpan={11} className="text-center py-12 text-neutral-400">
+                  No projects match the current search/filter.
+                </td>
+              </tr>
+            )}
           </tbody>
-          {summaries.length > 0 && (
+          {summaries.length > 0 && (() => {
+            // Footer follows the filter: sums what's actually listed, and says so.
+            const ft = filtering
+              ? visibleSummaries.reduce(
+                  (acc, s) => ({
+                    directCost: acc.directCost + s.directCost,
+                    sellExGst: acc.sellExGst + s.sellExGst,
+                    gfa: acc.gfa + s.gfa,
+                    elementCount: acc.elementCount + s.elementCount,
+                  }),
+                  { directCost: 0, sellExGst: 0, gfa: 0, elementCount: 0 }
+                )
+              : totals;
+            return (
             <tfoot>
               <tr className="border-t-2 border-neutral-200 bg-neutral-50 font-semibold">
-                <td className="px-4 py-2.5" colSpan={5}>All projects</td>
-                <td className="px-3 py-2.5 text-right font-mono tabular-nums">{totals.elementCount}</td>
-                <td className="px-3 py-2.5 text-right font-mono tabular-nums">{totals.gfa.toLocaleString("en-AU")} m²</td>
-                <td className="px-3 py-2.5 text-right font-mono tabular-nums">{money(totals.directCost)}</td>
-                <td className="px-3 py-2.5 text-right font-mono tabular-nums text-orange-600">{money(totals.sellExGst)}</td>
+                <td className="px-4 py-2.5" colSpan={5}>
+                  {filtering ? `Filtered projects (${visibleSummaries.length} of ${summaries.length})` : "All projects"}
+                </td>
+                <td className="px-3 py-2.5 text-right font-mono tabular-nums">{ft.elementCount}</td>
+                <td className="px-3 py-2.5 text-right font-mono tabular-nums">{ft.gfa.toLocaleString("en-AU")} m²</td>
+                <td className="px-3 py-2.5 text-right font-mono tabular-nums">{money(ft.directCost)}</td>
+                <td className="px-3 py-2.5 text-right font-mono tabular-nums text-orange-600">{money(ft.sellExGst)}</td>
                 <td colSpan={2} />
               </tr>
             </tfoot>
-          )}
+            );
+          })()}
         </table>
       </div>
     </div>
