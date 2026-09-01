@@ -23,6 +23,14 @@ header.app .title span{color:var(--muted);font-size:11.5px;}
 .save-status.ok{color:#4fd1a5;}
 .save-status.err{color:#e57373;}
 #saveBtn{white-space:nowrap;}
+.proj-picker{position:relative;}
+#projBtn{white-space:nowrap;max-width:240px;overflow:hidden;text-overflow:ellipsis;}
+.proj-menu{position:absolute;right:0;top:calc(100% + 6px);z-index:70;background:var(--panel);border:1px solid var(--line);border-radius:10px;min-width:340px;max-height:60vh;overflow:auto;box-shadow:0 10px 34px rgba(0,0,0,.4);padding:6px;}
+.proj-item{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;text-align:left;background:transparent;border:none;border-radius:8px;padding:8px 10px;cursor:pointer;color:var(--text);}
+.proj-item:hover{background:var(--input);}
+.proj-item.active{background:var(--input);cursor:default;outline:1px solid var(--accent);}
+.proj-item .proj-meta{font-size:11px;opacity:.65;display:block;}
+.proj-menu .proj-new{width:100%;margin-top:6px;}
 nav.tabs{display:flex;gap:4px;background:var(--panel2);padding:4px;border-radius:10px;border:1px solid var(--line);}
 nav.tabs button{background:transparent;border:none;color:var(--muted);padding:7px 14px;border-radius:7px;cursor:pointer;font-size:12.5px;font-weight:600;}
 nav.tabs button.active{background:var(--accent);color:#04211d;}
@@ -155,6 +163,10 @@ footer.note{color:var(--muted);font-size:11px;text-align:center;padding:20px;}
   </nav>
   <div class="save-zone">
     <span id="saveStatus" class="save-status">All changes saved automatically</span>
+    <div class="proj-picker">
+      <button class="btn" id="projBtn" type="button" title="Saved projects — switch to any older session; your current work is saved automatically first">📁 <span id="projBtnName">Projects</span> ▾</button>
+      <div id="projMenu" class="proj-menu" style="display:none;"></div>
+    </div>
     <button class="btn primary" id="saveBtn" type="button">💾 Save</button>
   </div>
 </header>
@@ -258,7 +270,7 @@ footer.note{color:var(--muted);font-size:11px;text-align:center;padding:20px;}
       <button class="btn" onclick="exportSheet('excavation')">Excavation / Base &amp; Blinding</button>
       <button class="btn" onclick="exportSheet('connections')">Connections (Starters / Dowels / Step-downs)</button>
       <button class="btn" onclick="exportProjectJSON()">💾 Save Project (.json)</button>
-      <label class="btn" style="position:relative;">📂 Load Project
+      <label class="btn" style="position:relative;" title="Opens the file as a NEW saved project — your current session is saved first and stays in the 📁 Projects list, nothing is overwritten">📂 Load Project (adds as new)
         <input type="file" id="loadFile" accept=".json" style="position:absolute;inset:0;opacity:0;cursor:pointer;">
       </label>
     </div>
@@ -459,7 +471,53 @@ function renderTakeoffsBar(){
     else if(btn.dataset.action==="openTakeoff") switchToTakeoff(btn.dataset.id);
     else if(btn.dataset.action==="deleteTakeoff") deleteTakeoff(btn.dataset.id);
   };
+  updateProjHeaderBtn();
 }
+
+/* ---- Header Saved Projects picker: the same saved sessions as the Saved
+   Takeoffs bar, but reachable from EVERY page of the app. Switching always
+   saves the open session first (switchToTakeoff does that), so picking an
+   older project can never lose current work. ---- */
+function updateProjHeaderBtn(){
+  let el=document.getElementById("projBtnName");
+  if(el) el.textContent = PROJECT.name || "Untitled project";
+}
+function renderProjectMenu(){
+  let menu=document.getElementById("projMenu"); if(!menu) return;
+  let idx=loadProjectsIndex();
+  menu.innerHTML = idx.map(p=>{
+    let active=p.key===CURRENT_PROJECT_KEY;
+    let when=p.savedAt? new Date(p.savedAt).toLocaleString([], {day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"}) : "never saved";
+    let count="";
+    try{
+      let blob=JSON.parse(localStorage.getItem(p.key)||"null");
+      if(blob && Array.isArray(blob.instances)) count=` · ${blob.instances.length} element${blob.instances.length===1?"":"s"}`;
+    }catch(e){}
+    return `<button class="proj-item${active?' active':''}" data-proj-open="${p.id}" ${active?'disabled':''}>
+      <span><b>${active?'▶ ':''}${p.name||"Untitled takeoff"}</b><span class="proj-meta">💾 ${when}${count}</span></span>
+      ${active?'<span class="small">open</span>':''}
+    </button>`;
+  }).join('') + `<button class="btn small primary proj-new" data-proj-new>+ New project</button>`;
+}
+(function initProjPicker(){
+  let btn=document.getElementById("projBtn"), menu=document.getElementById("projMenu");
+  if(!btn||!menu) return;
+  btn.addEventListener("click",(e)=>{
+    e.stopPropagation();
+    let open=menu.style.display!=="none";
+    if(open){ menu.style.display="none"; return; }
+    renderProjectMenu();
+    menu.style.display="block";
+  });
+  menu.addEventListener("click",(e)=>{
+    let item=e.target.closest("[data-proj-open]");
+    if(item && !item.disabled){ menu.style.display="none"; switchToTakeoff(item.dataset.projOpen); return; }
+    if(e.target.closest("[data-proj-new]")){ menu.style.display="none"; newTakeoff(); }
+  });
+  document.addEventListener("click",(e)=>{
+    if(!e.target.closest(".proj-picker")) menu.style.display="none";
+  });
+})();
 // Per-element preference overlay for freshly added elements: pre-tick every
 // "Include lap allowance (%)" checkbox, and swap the default trench mesh /
 // slab mesh product for the user's preferred one. Field-name based (any
@@ -3410,10 +3468,17 @@ document.getElementById("loadFile").addEventListener("change",e=>{
   reader.onload=()=>{
     try{
       let data=JSON.parse(reader.result);
-      PROJECT=data.PROJECT||PROJECT; SELECTED_TYPES=data.SELECTED_TYPES||{}; INSTANCES=data.INSTANCES||[]; ID_COUNTER=data.ID_COUNTER||1;
+      // NEVER overwrite the open session: the file opens as its OWN new
+      // saved project in the Saved Projects list. newTakeoff() saves the
+      // current session first and switches to a fresh one; the loaded data
+      // is applied there and saved under its own key immediately.
+      newTakeoff();
+      PROJECT=Object.assign({}, PROJECT, data.PROJECT||{});
+      SELECTED_TYPES=data.SELECTED_TYPES||{}; INSTANCES=data.INSTANCES||[]; ID_COUNTER=data.ID_COUNTER||1;
       UPLOADED_FILES=data.UPLOADED_FILES||[];
-      renderProjectForm(); renderDefaultsForm(); renderLibrary(); renderAddToolbar(); renderWorkspace(); computeAllAndRefresh(); renderUploadedFiles();
-      try{ alert("Project loaded."); }catch(e){} // alert() can be blocked when embedded in a sandboxed iframe — the load itself already succeeded above regardless
+      saveEstimateState();
+      rerenderAllPages(); renderUploadedFiles();
+      try{ alert(`Loaded "${PROJECT.name||"Untitled project"}" as a NEW saved project — your previous session is saved and still in the 📁 Projects list.`); }catch(e){} // alert() can be blocked when embedded in a sandboxed iframe — the load itself already succeeded above regardless
     }catch(err){ try{ alert("Could not load file: "+err.message); }catch(e){} }
   };
   reader.readAsText(file);
