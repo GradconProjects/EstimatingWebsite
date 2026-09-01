@@ -15,7 +15,7 @@ import {
 import {
   computeElementCost, computeGrandTotal, computeMarginLadder,
   defaultRates, newElementItem, rateKey, suggestedLabourPrefill, computeExternalScopeLines,
-  labourResourceRate, taskRowMeta, labourQuantities,
+  labourResourceRate, taskRowMeta, labourQuantities, autoSmallLoadCharge,
 } from "../src/lib/costing.js";
 import { buildImportFromEstimate } from "../src/lib/estimateImport.js";
 
@@ -156,6 +156,39 @@ check("Every product listed with zero qty contributes $0 (full catalog is 'free'
   assert.equal(cost.materialsTotal, 0);
   assert.equal(cost.labourTotal, 0);
   assert.equal(cost.total, 0);
+});
+
+/* ---------- automatic small-load charge ---------- */
+check("Small load charge auto-applies to concrete loads under 30 m³ (per m³), never at 30+, and a typed qty takes over", () => {
+  const rates = defaultRates();
+  const type = ELEMENT_TYPES.find((t) => t.id === "slab_on_ground");
+  const item = newElementItem(type);
+  item.labourAuto = false; // pin the materials maths
+  item.qtys[rateKey("CONCRETE", "25 mpa", "m3")] = 15;
+  item.qtys[rateKey("CONCRETE", "Blinding concrete", "m3")] = 5; // real poured volume counts
+  item.qtys[rateKey("CONCRETE", "Penetron (Xypex) additive", "m3")] = 15; // additive m³ mirrors the mix — must NOT count
+  const slc = autoSmallLoadCharge(item, rates);
+  assert.equal(slc.qty, 20); // 15 + 5, additive excluded
+  assert.equal(slc.total, 20 * 47.25);
+  const cost = computeElementCost(item, rates);
+  assert.equal(cost.materialsTotal, 15 * 212.5 + 5 * 196.5 + 15 * 100 + 20 * 47.25);
+  assert.equal(cost.categoryTotals["CONCRETE"], cost.materialsTotal); // all rows are CONCRETE here
+  assert.equal(cost.concreteQty, 35, "delivery fee must not inflate poured volume"); // 15+5+15 entered rows only
+
+  // at the 30 m³ threshold and above: no charge
+  item.qtys[rateKey("CONCRETE", "25 mpa", "m3")] = 25; // 25 + 5 = 30
+  assert.equal(autoSmallLoadCharge(item, rates), null);
+
+  // a typed qty on the charge row switches it fully manual (no double-charge)
+  item.qtys[rateKey("CONCRETE", "25 mpa", "m3")] = 15;
+  item.qtys[rateKey("CONCRETE", "Small load charge", "m3")] = 8;
+  assert.equal(autoSmallLoadCharge(item, rates), null);
+  assert.equal(computeElementCost(item, rates).materialsTotal, 15 * 212.5 + 5 * 196.5 + 15 * 100 + 8 * 47.25);
+
+  // the charge rate honours a rates-library override (editable in place)
+  delete item.qtys[rateKey("CONCRETE", "Small load charge", "m3")];
+  rates[rateKey("CONCRETE", "Small load charge", "m3")] = { unitCost: 60 };
+  assert.equal(autoSmallLoadCharge(item, rates).total, 20 * 60);
 });
 
 /* ---------- labour matrix ---------- */
@@ -354,9 +387,11 @@ check("computeExternalScopeLines: per-element sell allocation sums exactly to th
   const a = newElementItem(ELEMENT_TYPES.find((t) => t.id === "strip_footings"));
   a.labourAuto = false;
   a.qtys[rateKey("CONCRETE", "25 mpa", "m3")] = 10; // $2125 direct
+  a.qtys[rateKey("CONCRETE", "Small load charge", "m3")] = 0; // typed 0 disables the auto small-load charge — this check pins the allocation maths
   const b = newElementItem(ELEMENT_TYPES.find((t) => t.id === "capping_beam"));
   b.labourAuto = false;
   b.qtys[rateKey("CONCRETE", "32 mpa", "m3")] = 5; // $1107.50 direct
+  b.qtys[rateKey("CONCRETE", "Small load charge", "m3")] = 0;
   const c = newElementItem(ELEMENT_TYPES.find((t) => t.id === "pool_wall")); // no qty entered — must be dropped
   const { lines, totalExGst } = computeExternalScopeLines([a, b, c], rates, 0.08, 0.05, 0.3);
 
@@ -386,6 +421,7 @@ check("A rates override changes cost; a MISSING key falls back to catalog defaul
   const item = newElementItem(type);
   const key = rateKey("CONCRETE", "32 mpa", "m3");
   item.qtys[key] = 10;
+  item.qtys[rateKey("CONCRETE", "Small load charge", "m3")] = 0; // typed 0 disables the auto charge — this check pins override/fallback maths
 
   const before = computeElementCost(item, rates).materialsTotal;
   assert.equal(before, 10 * 221.5);
@@ -405,9 +441,11 @@ check("Grand total sums every element's total across the whole quote", () => {
   const a = newElementItem(ELEMENT_TYPES.find((t) => t.id === "strip_footings"));
   a.labourAuto = false; // this check pins the MATERIALS maths; auto labour has its own checks
   a.qtys[rateKey("CONCRETE", "25 mpa", "m3")] = 10; // $2125
+  a.qtys[rateKey("CONCRETE", "Small load charge", "m3")] = 0; // typed 0 disables the auto charge
   const b = newElementItem(ELEMENT_TYPES.find((t) => t.id === "capping_beam"));
   b.labourAuto = false;
   b.qtys[rateKey("CONCRETE", "32 mpa", "m3")] = 5; // $1107.50
+  b.qtys[rateKey("CONCRETE", "Small load charge", "m3")] = 0;
   const total = computeGrandTotal([a, b], rates);
   assert.equal(total, 10 * 212.5 + 5 * 221.5);
 });

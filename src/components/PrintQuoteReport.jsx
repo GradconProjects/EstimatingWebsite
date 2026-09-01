@@ -2,7 +2,7 @@ import {
   CATEGORY_ORDER, SECTION_ORDER, FULL_CATALOG, RESOURCE_COLS,
 } from "../data/catalog.js";
 import {
-  computeElementCost, computeGrandTotal, computeMarginLadder, rateKey, lookupRate, computeRowTotal, money, money2, getDefaultMargin, getMarginSteps,
+  computeElementCost, computeGrandTotal, computeMarginLadder, rateKey, lookupRate, computeRowTotal, money, money2, getDefaultMargin, getMarginSteps, autoSmallLoadCharge,
 } from "../lib/costing.js";
 import { GRADCON_LOGO_DATA_URI } from "../lib/logo.js";
 
@@ -181,6 +181,13 @@ function ElementReportBlock({ item, rates }) {
       }
     });
   });
+
+  // the auto small-load charge is real money in the totals, so the report
+  // must show the line even though its Qty cell on screen is only a ghost
+  const smallLoad = autoSmallLoadCharge(item, rates);
+  if (smallLoad) {
+    materialLines.push({ key: `${smallLoad.key}::auto`, label: "Small load charge (CONCRETE — auto, load under 30 m³)", qty: smallLoad.qty, unit: "m3", total: smallLoad.total });
+  }
 
   const labourLines = RESOURCE_COLS.filter((res) => cost.resourceTotals[res.key] > 0).map((res) => ({
     key: res.key,

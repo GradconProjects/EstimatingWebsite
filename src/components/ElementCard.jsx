@@ -7,7 +7,7 @@ import CategoryBlock from "./CategoryBlock.jsx";
 import LabourMatrix from "./LabourMatrix.jsx";
 import AdditionalItems from "./AdditionalItems.jsx";
 
-export default function ElementCard({ item, rates, onChange, onRemove, onDuplicate, onLabourRateChange }) {
+export default function ElementCard({ item, rates, onChange, onRemove, onDuplicate, onLabourRateChange, onMaterialRateChange }) {
   // Every material category starts collapsed — only Labour/Equipment starts
   // expanded (it's still collapsible too, just defaults open).
   const [openCats, setOpenCats] = useState({});
@@ -405,6 +405,7 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
               item={item}
               rates={rates}
               onQtyChange={setQty}
+              onRateChange={onMaterialRateChange}
               catOpen={openCats[cat.key]}
               toggleCat={() => setOpenCats((o) => ({ ...o, [cat.key]: !o[cat.key] }))}
               catTotal={cost.categoryTotals[cat.key]}

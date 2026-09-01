@@ -5,7 +5,7 @@
  *
  * Read CLAUDE.md → "Costing rules" before editing computeElementCost.
  */
-import { FULL_CATALOG, RESOURCE_COLS, LABOUR_TEMPLATES, GST_RATE, PRODUCTION_RATES, DEFAULT_MARGIN, MARGIN_STEPS } from "../data/catalog.js";
+import { FULL_CATALOG, RESOURCE_COLS, LABOUR_TEMPLATES, GST_RATE, PRODUCTION_RATES, DEFAULT_MARGIN, MARGIN_STEPS, SMALL_LOAD_THRESHOLD_M3 } from "../data/catalog.js";
 
 // Shared with portal-shell.html's Settings modal (same localStorage key, same
 // origin — the portal embeds this app via a blob: URL created from its own
@@ -116,6 +116,38 @@ export function computeRowTotal(cat, rate, qty) {
   return qty * rate.unitCost;
 }
 
+const SMALL_LOAD_PRODUCT_MATCH = /small load/i;
+
+/**
+ * Automatic small-load charge: a concrete order under
+ * SMALL_LOAD_THRESHOLD_M3 (30 m³) per element attracts the catalog's
+ * "Small load charge" ($/m³, editable in the Rates modal and on the row
+ * itself) on every m³ of the load — without the estimator having to
+ * remember it. The volume counted is the element's real concrete rows
+ * (mixes + blinding), excluding additives (their m³ mirrors the mix volume)
+ * and the charge row itself. Typing anything into the Small load charge
+ * row's Qty switches the row fully manual and disables the auto.
+ * Returns { key, qty, unitCost, total } or null — the ONE implementation
+ * used by computeElementCost, CategoryBlock and PrintQuoteReport, so the
+ * three can never disagree.
+ */
+export function autoSmallLoadCharge(item, rates) {
+  const cat = FULL_CATALOG.find((c) => c.key === "CONCRETE");
+  const slc = cat && cat.products.find((p) => SMALL_LOAD_PRODUCT_MATCH.test(p.name));
+  if (!slc) return null;
+  const key = rateKey(cat.key, slc.name, slc.unit);
+  const typed = item.qtys[key];
+  if (typed !== undefined && typed !== "") return null; // the estimator's own entry wins
+  let vol = 0;
+  cat.products.forEach((p) => {
+    if (SMALL_LOAD_PRODUCT_MATCH.test(p.name) || /additive/i.test(p.name)) return;
+    vol += Number(item.qtys[rateKey(cat.key, p.name, p.unit)]) || 0;
+  });
+  if (!(vol > 0 && vol < SMALL_LOAD_THRESHOLD_M3)) return null;
+  const rate = lookupRate(rates, key, { unitCost: slc.unitCost ?? 0 });
+  return { key, qty: vol, unitCost: rate.unitCost ?? 0, total: vol * (rate.unitCost ?? 0) };
+}
+
 /** Creates a fresh quote line item for the given element type. */
 export function newElementItem(type) {
   return {
@@ -184,6 +216,15 @@ export function computeElementCost(item, rates) {
     categoryTotals[cat.key] = catTotal;
     materialsTotal += catTotal;
   });
+
+  // Loads under 30 m³ attract the small load charge automatically (per m³
+  // of the load) — see autoSmallLoadCharge. Not added to concreteQty: it's
+  // a delivery fee, not poured volume.
+  const smallLoad = autoSmallLoadCharge(item, rates);
+  if (smallLoad) {
+    categoryTotals["CONCRETE"] = (categoryTotals["CONCRETE"] || 0) + smallLoad.total;
+    materialsTotal += smallLoad.total;
+  }
 
   // Seamless labour: with labourAuto on, empty matrix cells are driven live
   // by the rate-of-work engine (autoLabourQtys) — quantities entered above

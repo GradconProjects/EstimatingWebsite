@@ -322,6 +322,12 @@ function ProjectEditor({ project, rates, setRates, ratesStatus, saveProjectsNow,
     const key = rateKey("LABOUR", res.name, res.unit);
     setRates({ ...rates, [key]: { ...(rates[key] || {}), unitCost: v === undefined || v === "" ? res.rate : Number(v) } });
   };
+  // Same one-library principle for material rates edited in place on a
+  // category row (currently the Small load charge): the edit lands on the
+  // exact key the Rates modal shows; clearing restores the catalog default.
+  const setMaterialRate = (key, v, fallback) => {
+    setRates({ ...rates, [key]: { ...(rates[key] || {}), unitCost: v === undefined || v === "" ? fallback : Number(v) } });
+  };
   const [quote, setQuote, quoteStatus, saveQuoteNow] = useStoredState(project.storageKey, blankQuote());
 
   // Mirrors the project's name/GFA into Cost Planner automatically, the same way
@@ -539,6 +545,7 @@ function ProjectEditor({ project, rates, setRates, ratesStatus, saveProjectsNow,
               onRemove={() => removeItem(item.id)}
               onDuplicate={() => duplicateItem(item.id)}
               onLabourRateChange={setLabourRate}
+              onMaterialRateChange={setMaterialRate}
             />
           ))}
           {items.length === 0 && (

@@ -20,6 +20,11 @@
 // replaced per-person rates saved in existing installs under the old
 // name+"day" keys, and the changed unit retires those stale overrides —
 // lookupRate falls back to these new catalog defaults (CLAUDE.md rule 6).
+// A concrete order under this volume (per element/pour) attracts the
+// catalog's "Small load charge" automatically — see autoSmallLoadCharge in
+// lib/costing.js. Typed values on the Small load charge row always win.
+export const SMALL_LOAD_THRESHOLD_M3 = 30;
+
 export const RESOURCE_COLS = [
   { key: "concreter_day", name: "Concrete Crew", unit: "crew-day", rate: 1500, crew: true, men: 3 },
   { key: "steelfixer_day", name: "Steel Crew", unit: "crew-day", rate: 3250, crew: true, men: 5 },

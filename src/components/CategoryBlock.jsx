@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronRight } from "lucide-react";
-import { rateKey, money2, lookupRate, computeRowTotal } from "../lib/costing.js";
+import { rateKey, money2, lookupRate, computeRowTotal, autoSmallLoadCharge } from "../lib/costing.js";
 import { NumInput } from "./atoms.jsx";
 
 /**
@@ -9,10 +9,13 @@ import { NumInput } from "./atoms.jsx";
  * shouldn't apply to a given job, the estimator just leaves those rows
  * blank (blank quantities cost nothing — see computeElementCost).
  */
-export default function CategoryBlock({ cat, item, rates, onQtyChange, catOpen, toggleCat, catTotal }) {
+export default function CategoryBlock({ cat, item, rates, onQtyChange, onRateChange, catOpen, toggleCat, catTotal }) {
   const hasWeight = cat.products.some((p) => p.unitWeight != null);
   const hasArea = !!cat.areaBasis;
   const hasLength = !!cat.lengthBasis;
+  // Loads under 30 m³ auto-apply the Small load charge (amber ghost on its
+  // row, like the crew sheet) — typing a Qty there takes the row manual.
+  const smallLoad = cat.key === "CONCRETE" ? autoSmallLoadCharge(item, rates) : null;
   return (
     <div className="border border-neutral-200 rounded-lg overflow-hidden bg-white">
       <button
@@ -53,14 +56,23 @@ export default function CategoryBlock({ cat, item, rates, onQtyChange, catOpen, 
                 const totalWeight = rate.unitWeight
                   ? ((sheets != null ? sheets : bars != null ? bars : qty) * rate.unitWeight) / 1000
                   : null;
-                const rowTotal = computeRowTotal(cat, rate, qty);
-                const filled = qty > 0;
+                const isAutoSlc = smallLoad && smallLoad.key === qKey;
+                const rowTotal = isAutoSlc ? smallLoad.total : computeRowTotal(cat, rate, qty);
+                const filled = qty > 0 || isAutoSlc;
                 return (
                   <tr key={qKey} className={`border-t border-neutral-100 ${filled ? "bg-orange-50/40" : ""}`}>
-                    <td className="px-3 py-1 text-neutral-700">{p.name}</td>
+                    <td className="px-3 py-1 text-neutral-700">
+                      {p.name}
+                      {isAutoSlc && <span className="ml-1.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700">auto — load under 30 m³</span>}
+                    </td>
                     <td className="px-2 py-1 text-neutral-400">{p.unit}</td>
                     <td className="px-2 py-1">
-                      <NumInput value={item.qtys[qKey]} onChange={(v) => onQtyChange(qKey, v)} />
+                      <NumInput
+                        value={item.qtys[qKey]}
+                        placeholder={isAutoSlc ? String(smallLoad.qty) : undefined}
+                        className={isAutoSlc ? "placeholder:text-amber-800 placeholder:opacity-100 placeholder:font-semibold border-amber-400" : ""}
+                        onChange={(v) => onQtyChange(qKey, v)}
+                      />
                     </td>
                     {hasArea && (
                       <td className="px-2 py-1 text-right font-mono text-neutral-400 tabular-nums">
@@ -83,7 +95,18 @@ export default function CategoryBlock({ cat, item, rates, onQtyChange, catOpen, 
                       </td>
                     )}
                     <td className="px-2 py-1 text-right font-mono text-neutral-500 tabular-nums">
-                      {money2(rate.unitCost)}
+                      {/* the small-load charge rate is editable IN PLACE and
+                          saves to the same rates-library key the Rates modal
+                          shows — one figure, everywhere */}
+                      {cat.key === "CONCRETE" && /small load/i.test(p.name) && onRateChange ? (
+                        <NumInput
+                          step="0.25"
+                          value={rate.unitCost}
+                          onChange={(v) => onRateChange(qKey, v, p.unitCost ?? 0)}
+                        />
+                      ) : (
+                        money2(rate.unitCost)
+                      )}
                     </td>
                     <td className={`px-3 py-1 text-right font-mono tabular-nums font-medium ${filled ? "text-neutral-900" : "text-neutral-300"}`}>
                       {money2(rowTotal)}
