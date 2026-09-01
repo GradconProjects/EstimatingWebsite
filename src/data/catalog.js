@@ -12,17 +12,22 @@
 /* ---------- Resource / labour catalog ---------- */
 // Crew-sheet columns, in the order they read on Gradcon's labour sheet:
 // the three 3+-person crews first, then plant, pump (hr AND m³ — distinct
-// keys, see CLAUDE.md rule 5), crane, factory. `crew: true` marks the
-// minimum-3-person crews; `legacyName` keeps rate overrides saved under the
-// old column names (Concreter, Steel fixer…) applying until re-saved.
+// keys, see CLAUDE.md rule 5), crane. `crew: true` marks the minimum-crew
+// columns; they count CREW-days (a whole crew booked for a day), so their
+// rates are PER CREW: Concrete Crew 3 men, Steel Crew 5 men, General Labour
+// 3 men. Plant stays per unit-day; pumping is $10/m³ plus $250/hr.
+// The crew units are "crew-day" (not "day") ON PURPOSE: the per-crew rates
+// replaced per-person rates saved in existing installs under the old
+// name+"day" keys, and the changed unit retires those stale overrides —
+// lookupRate falls back to these new catalog defaults (CLAUDE.md rule 6).
 export const RESOURCE_COLS = [
-  { key: "concreter_day", name: "Concrete Crew", legacyName: "Concreter", unit: "day", rate: 500, crew: true },
-  { key: "steelfixer_day", name: "Steel Crew", legacyName: "Steel fixer", unit: "day", rate: 650, crew: true },
-  { key: "labourer_day", name: "General Labour Crew", legacyName: "General Labour", unit: "day", rate: 400, crew: true },
+  { key: "concreter_day", name: "Concrete Crew", unit: "crew-day", rate: 1500, crew: true, men: 3 },
+  { key: "steelfixer_day", name: "Steel Crew", unit: "crew-day", rate: 3250, crew: true, men: 5 },
+  { key: "labourer_day", name: "General Labour Crew", unit: "crew-day", rate: 1200, crew: true, men: 3 },
   { key: "excavator_day", name: "Excavator", unit: "day", rate: 900 },
   { key: "bobcat_day", name: "Bobcat", unit: "day", rate: 900 },
   { key: "pump_hr", name: "Pump", unit: "hr", rate: 250 },
-  { key: "pump_m3", name: "Pump", unit: "m3", rate: 7 },
+  { key: "pump_m3", name: "Pump", unit: "m³", rate: 10 },
   { key: "crane_day", name: "Crane", unit: "day", rate: 1600 },
 ];
 
@@ -37,20 +42,19 @@ export const RESOURCE_COLS = [
  * see CLAUDE.md. Suggestions only ever fill a genuinely empty cell; see
  * suggestedLabourPrefill in lib/costing.js.
  */
-// Crew-based rate-of-work model (minimum crew size 3 people — a "day" here
-// is one PERSON-day, so a 3-man crew pouring ~20 m³ in a day is 3/20 = 0.15
-// person-days per m³). These drive the automatic labour fill on every
-// element card; all editable in the Rates modal like any other rate. The
-// first two names are unchanged from the original release so any saved
-// rate overrides keep applying.
+// Crew-block rules: how much work ONE crew-day (or one plant-day) covers.
+// The engine works in whole crews: the transferred quantity is rounded UP to
+// a whole unit in the background (0.13 t books a full tonne's crew) and then
+// to whole crew-days — the Qty column still DISPLAYS the true quantity.
+// All editable in the Rates modal like every other rate.
 export const PRODUCTION_RATES = [
-  { key: "concrete_pour_days_m3", name: "Concrete pour (placing & finishing)", unit: "days/m³", rate: 0.15 },
-  { key: "finish_days_m2", name: "Finish concrete surfaces", unit: "days/m²", rate: 0.01 },
-  { key: "steel_fixing_days_tonne", name: "Rebar fixing / tying", unit: "days/tonne", rate: 1.5 },
-  { key: "formwork_days_m2", name: "Formwork install & strip", unit: "days/m²", rate: 0.1 },
-  { key: "general_days_m3", name: "General labour (prep, washout, clean & tidy)", unit: "days/m³", rate: 0.05 },
-  { key: "excavation_days_m3", name: "Excavation & base preparation", unit: "days/m³", rate: 0.03 },
-  { key: "pump_hrs_m3", name: "Concrete pumping", unit: "hrs/m³", rate: 0.05 },
+  { key: "pour_m3_crewday", name: "Concrete pour — m³ per crew-day", unit: "m³/day", rate: 10 },
+  { key: "steel_t_crewday", name: "Rebar fixing — tonnes per crew-day", unit: "t/day", rate: 1 },
+  { key: "finish_m2_crewday", name: "Surface finishing — m² per crew-day", unit: "m²/day", rate: 300 },
+  { key: "general_m3_crewday", name: "General labour — m³ per crew-day", unit: "m³/day", rate: 60 },
+  { key: "form_m2_crewday", name: "Formwork — m² per crew-day", unit: "m²/day", rate: 30 },
+  { key: "exc_m3_day", name: "Excavation — m³ per excavator-day", unit: "m³/day", rate: 100 },
+  { key: "pump_hrs_pour", name: "Concrete pump — hours per pour", unit: "hrs", rate: 6 },
 ];
 
 /* ---------- Labour task templates, keyed by the element's `labour` field ---------- */

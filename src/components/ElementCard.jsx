@@ -68,6 +68,16 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
       }
       return { ...it, labourAuto: true };
     });
+  // Wipes every typed Qty/crew cell (and any values baked in by the old
+  // write-in prefill engine) and hands the whole sheet back to the live
+  // crew-day engine — the fix for stale figures like a pour row still
+  // carrying days derived from a long-changed concrete quantity.
+  const resetLabourAuto = () =>
+    patch((it) => ({
+      ...it,
+      labourAuto: true,
+      tasks: it.tasks.map((t) => ({ ...t, qtys: {}, qty: undefined })),
+    }));
 
   const setQty = (qKey, v) => patch((it) => ({ ...it, qtys: { ...it.qtys, [qKey]: v } }));
   const setLabel = (v) => patch((it) => ({ ...it, label: v }));
@@ -382,6 +392,7 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
             labourAuto={labourAuto}
             autoQtys={autoQtys}
             onToggleAuto={toggleLabourAuto}
+            onResetAuto={resetLabourAuto}
             labourQtyCtx={labourQtyCtx}
             onTaskMetaChange={setTaskMeta}
             onLabourRateChange={onLabourRateChange}

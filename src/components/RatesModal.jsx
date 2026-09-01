@@ -119,8 +119,8 @@ export default function RatesModal({ rates, setRates, onClose }) {
           ))}
           <div>
             <div className="text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-1">
-              WORK RATES
-              <span className="normal-case font-normal text-neutral-400"> — used to suggest (never overwrite) Pour concrete / Tie steel labour hours in each element, from its concrete/reinforcement quantities</span>
+              CREW WORK RATES
+              <span className="normal-case font-normal text-neutral-400"> — how much work one whole crew-day covers (1 t of steel = a 5-man crew's day, every 10 m³ poured = a 3-man crew's day, …). The crew sheet books whole crews from these blocks; quantities round up to whole units behind the scenes.</span>
             </div>
             <table className="w-full text-[13px]">
               <tbody>

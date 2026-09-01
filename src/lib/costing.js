@@ -259,7 +259,6 @@ const EXCAVATE_TASK_MATCH = /excavate/i;                      // "Excavate & pre
 const FORMWORK_TASK_MATCH = /formwork|box out|prop & form/i;  // legacy per-type templates only
 const STRIP_TASK_MATCH = /^strip/i;
 const GENERAL_TASK_MATCH = /washout|tidy|clean|patch/i;       // "Washout / clean / tidy"
-const PUMP_TASK_MATCH = /\(pump\)/i;                          // legacy suspended templates
 
 /** The quantities each crew-sheet row draws on, read DIRECTLY from the
  * element's entered line items: concrete m³ from the CONCRETE rows, formwork
@@ -297,49 +296,58 @@ const prodRate = (rates, name, unit, fallback) =>
   lookupRate(rates, rateKey("PRODUCTION", name, unit), { unitCost: fallback }).unitCost;
 const round2 = (v) => Math.round(v * 100) / 100;
 
-/** Labour rate for a resource column, honouring overrides saved under the
- * column's pre-crew-sheet name (Concreter, Steel fixer, General Labour). */
+/** Labour rate for a resource column — always the crew/plant rate saved in
+ * the rates library, falling back to the catalog default (CLAUDE.md rule 6).
+ * The crew columns' unit is "crew-day", deliberately different from the old
+ * per-person "day" keys so stale per-person overrides no longer apply. */
 export function labourResourceRate(rates, res) {
-  const key = rateKey("LABOUR", res.name, res.unit);
-  if (rates[key] !== undefined) return lookupRate(rates, key, { unitCost: res.rate }).unitCost;
-  if (res.legacyName) {
-    const legacyKey = rateKey("LABOUR", res.legacyName, res.unit);
-    if (rates[legacyKey] !== undefined) return lookupRate(rates, legacyKey, { unitCost: res.rate }).unitCost;
-  }
-  return res.rate;
+  return lookupRate(rates, rateKey("LABOUR", res.name, res.unit), { unitCost: res.rate }).unitCost;
 }
 
 /**
- * The seamless labour engine, one row per crew-sheet task:
- *   crew days = row Qty × the rate-of-work rate in the rates library.
- * The row Qty draws DIRECTLY from the quantities entered on the element's
- * line items (concrete m³, reinforcement t, finish m², formwork m²); typing
- * into a row's Qty cell overrides what that row draws on, and typing into a
- * crew-day cell overrides the derived days outright. Returns
+ * The seamless labour engine — whole-CREW mathematics, one row per
+ * crew-sheet task. Each row's Qty draws DIRECTLY from the element's entered
+ * line items (concrete m³, reinforcement t, finish m²); the engine then
+ * books whole crews, never fractional people:
+ *
+ *   crew-days = ceil( ceil(qty) / block )   — minimum 1 whole crew-day
+ *
+ * where `block` is how much ONE crew-day covers (rates library
+ * PRODUCTION_RATES: 1 t of steel = a 5-man Steel Crew for a day, every
+ * 10 m³ of concrete = a 3-man Concrete Crew day, …). The quantity is
+ * rounded UP to a whole unit in the background first — 0.13 t books a full
+ * tonne's crew — but the Qty column keeps DISPLAYING the true 0.13
+ * (taskRowMeta, untouched here). Pump m³ stays the real measured volume
+ * (it's priced per m³ pumped), and pump hours book a flat whole-pour
+ * booking (6 hrs) whenever concrete is poured.
+ *
+ * Typing into a row's Qty cell overrides what that row draws on; typing
+ * into a crew cell overrides the derived crew-days outright. Returns
  * {taskId: {resourceKey: qty}} covering only cells the estimator hasn't
- * filled. Crews are 3+ people, so a trade's derived total under 3
- * person-days bumps up to the 3-day minimum callout.
+ * filled — nothing is ever written back into the tasks.
  */
 export function autoLabourQtys(item, rates) {
   const lq = labourQuantities(item, rates);
-  const pourDaysM3 = prodRate(rates, "Concrete pour (placing & finishing)", "days/m³", 0.15);
-  const finishDaysM2 = prodRate(rates, "Finish concrete surfaces", "days/m²", 0.01);
-  const fixDaysT = prodRate(rates, "Rebar fixing / tying", "days/tonne", 1.5);
-  const formDaysM2 = prodRate(rates, "Formwork install & strip", "days/m²", 0.1);
-  const generalDaysM3 = prodRate(rates, "General labour (prep, washout, clean & tidy)", "days/m³", 0.05);
-  const excDaysM3 = prodRate(rates, "Excavation & base preparation", "days/m³", 0.03);
-  const pumpHrsM3 = prodRate(rates, "Concrete pumping", "hrs/m³", 0.05);
+  const pourM3Block = prodRate(rates, "Concrete pour — m³ per crew-day", "m³/day", 10);
+  const steelTBlock = prodRate(rates, "Rebar fixing — tonnes per crew-day", "t/day", 1);
+  const finishM2Block = prodRate(rates, "Surface finishing — m² per crew-day", "m²/day", 300);
+  const generalM3Block = prodRate(rates, "General labour — m³ per crew-day", "m³/day", 60);
+  const formM2Block = prodRate(rates, "Formwork — m² per crew-day", "m²/day", 30);
+  const excM3Block = prodRate(rates, "Excavation — m³ per excavator-day", "m³/day", 100);
+  const pumpHrsPour = prodRate(rates, "Concrete pump — hours per pour", "hrs", 6);
+
+  // qty → whole crew-days: round the quantity itself up to a whole unit,
+  // then divide by the crew-day block, rounding up again — any quantity at
+  // all books at least one whole crew (the crew IS the minimum: 3+ men).
+  const crewDays = (qty, block) =>
+    qty > 0 ? Math.max(1, Math.ceil(Math.ceil(qty - 1e-9) / Math.max(block, 1e-9))) : 0;
 
   const hasFinishTask = (item.tasks || []).some((t) => FINISH_TASK_MATCH.test(t.name));
   const suggestions = {};
-  // Crews and plant are quoted in WHOLE days (and pump time in whole hours):
-  // 0.73 t of steel doesn't cost 1.1 fixer-days — it books the crew for the
-  // day. Everything except pump m³ (a real measured volume) rounds UP.
   const put = (task, key, qty) => {
     if (qty <= 0) return;
-    if (task.qtys[key] !== undefined && task.qtys[key] !== "") return; // typed crew days win
-    const whole = key === "pump_m3" ? round2(qty) : Math.ceil(qty - 1e-9);
-    (suggestions[task.id] = suggestions[task.id] || {})[key] = whole;
+    if (task.qtys[key] !== undefined && task.qtys[key] !== "") return; // typed cells win
+    (suggestions[task.id] = suggestions[task.id] || {})[key] = key === "pump_m3" ? round2(qty) : qty;
   };
   (item.tasks || []).forEach((task) => {
     const meta = taskRowMeta(task.name, lq);
@@ -347,36 +355,21 @@ export function autoLabourQtys(item, rates) {
     const q = task.qty !== undefined && task.qty !== "" ? Number(task.qty) || 0 : (meta.autoQty || 0);
     if (CONCRETE_POUR_TASK_MATCH.test(task.name)) {
       // legacy templates had no separate finish row — finishing rode on the pour task
-      put(task, "concreter_day", q * pourDaysM3 + (hasFinishTask ? 0 : lq.finishM2 * finishDaysM2));
-      if (PUMP_TASK_MATCH.test(task.name)) {
-        put(task, "pump_m3", q);
-        put(task, "pump_hr", q * pumpHrsM3);
+      put(task, "concreter_day", crewDays(q, pourM3Block) + (hasFinishTask ? 0 : crewDays(lq.finishM2, finishM2Block)));
+      if (q > 0) {
+        put(task, "pump_hr", pumpHrsPour); // a pour books the pump for the whole pour (6 hrs)
+        put(task, "pump_m3", q); // real measured volume — priced per m³ pumped, never rounded up
       }
     } else if (STEEL_FIXING_TASK_MATCH.test(task.name)) {
-      put(task, "steelfixer_day", q * fixDaysT);
+      put(task, "steelfixer_day", crewDays(q, steelTBlock)); // 1 t = a 5-man crew's day
     } else if (FINISH_TASK_MATCH.test(task.name)) {
-      put(task, "concreter_day", q * finishDaysM2);
+      put(task, "concreter_day", crewDays(q, finishM2Block));
     } else if (EXCAVATE_TASK_MATCH.test(task.name)) {
-      put(task, "excavator_day", q * excDaysM3); // q is the typed excavation m³ — no line item to draw from
+      put(task, "excavator_day", crewDays(q, excM3Block)); // q is the typed excavation m³ — no line item to draw from
     } else if (FORMWORK_TASK_MATCH.test(task.name) && !STRIP_TASK_MATCH.test(task.name)) {
-      put(task, "concreter_day", q * formDaysM2);
+      put(task, "concreter_day", crewDays(q, formM2Block));
     } else if (GENERAL_TASK_MATCH.test(task.name)) {
-      put(task, "labourer_day", (task.qty !== undefined && task.qty !== "" ? Number(task.qty) || 0 : lq.concreteM3) * generalDaysM3);
-    }
-  });
-
-  // Minimum 3-person-day crew callout per trade (auto amounts only; manual
-  // entries are respected as-is and count toward the minimum).
-  ["concreter_day", "steelfixer_day", "labourer_day"].forEach((key) => {
-    let auto = 0, manual = 0, largest = null;
-    (item.tasks || []).forEach((task) => {
-      const v = (suggestions[task.id] && suggestions[task.id][key]) || 0;
-      auto += v;
-      if (v > 0 && (!largest || v > largest[key])) largest = suggestions[task.id];
-      manual += Number(task.qtys[key]) || 0;
-    });
-    if (auto > 0 && auto + manual < 3 && largest) {
-      largest[key] += 3 - (auto + manual); // whole-day bump up to the 3-person crew callout
+      put(task, "labourer_day", crewDays(task.qty !== undefined && task.qty !== "" ? Number(task.qty) || 0 : lq.concreteM3, generalM3Block));
     }
   });
   return suggestions;

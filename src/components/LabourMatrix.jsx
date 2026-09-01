@@ -18,7 +18,7 @@ import { NumInput } from "./atoms.jsx";
 export default function LabourMatrix({
   item, rates, onTaskQtyChange, onTaskMetaChange, onAddTask, onRemoveTask, onRenameTask,
   resourceTotals, resourceCosts, labourTotal, labourOpen, toggleLabour,
-  labourAuto, autoQtys, onToggleAuto, labourQtyCtx, onLabourRateChange,
+  labourAuto, autoQtys, onToggleAuto, onResetAuto, labourQtyCtx, onLabourRateChange,
 }) {
   return (
     <div className="border border-amber-300 rounded-lg overflow-hidden bg-white">
@@ -39,11 +39,18 @@ export default function LabourMatrix({
           <input type="checkbox" checked={!!labourAuto} onChange={onToggleAuto} className="accent-amber-700" />
           ⚡ Auto from quantities
         </label>
-        <p className="text-[11px] text-amber-800/80 leading-snug m-0">
+        <p className="text-[11px] text-amber-800/80 leading-snug m-0 flex-1">
           {labourAuto
-            ? "Each row's Qty draws straight from the quantities entered above; crew days = Qty × the rate-of-work rate in the Rates library (minimum 3-person crew per trade). Type over any Qty or crew cell to override it; clear it to hand it back."
+            ? "Whole-crew quoting: figures are crew-days (Concrete Crew = 3 men, Steel Crew = 5 men, General Labour = 3 men) — 1 t of steel books a Steel Crew day, every 10 m³ of concrete a Concrete Crew day, pump 6 hrs + the m³ pumped. Quantities round UP to whole units behind the scenes (0.13 t books a full tonne's crew) while the Qty column shows the true amount. Type over any cell to override; clear it to hand it back."
             : "Off — every cell is manual. Turn auto back on to draw Qty and crew days live from the entered quantities again (typed cells keep their values)."}
         </p>
+        <button
+          onClick={onResetAuto}
+          title="Clear every typed Qty and crew cell on this sheet and re-derive everything live from the entered quantities"
+          className="text-[11px] font-semibold text-amber-900 border border-amber-400 rounded px-2 py-0.5 hover:bg-amber-100 whitespace-nowrap transition-colors"
+        >
+          ↺ Reset to auto
+        </button>
       </div>
       <div className="overflow-x-auto">
         {/* fixed minimum width: the sheet scrolls sideways rather than
