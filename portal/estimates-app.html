@@ -1193,11 +1193,55 @@ function slabOutlineSVG(d){
   let X=v=>pad+(v-minX)*sc, Y=v=>H-pad-(v-minY)*sc; // y up, like a plan
   let path=pts.map((p,i)=>`${i?'L':'M'}${X(num(p.x)).toFixed(1)},${Y(num(p.y)).toFixed(1)}`).join(' ')+' Z';
   let dots=pts.map((p,i)=>`<circle cx="${X(num(p.x)).toFixed(1)}" cy="${Y(num(p.y)).toFixed(1)}" r="3" fill="var(--accent)"/><text x="${(X(num(p.x))+6).toFixed(1)}" y="${(Y(num(p.y))-4).toFixed(1)}" font-size="9" fill="var(--muted)">${i+1}</text>`).join('');
+  let sides=outlineSidesMode(d);
   let mids=pts.map((p,i)=>{ let q=pts[(i+1)%pts.length]; let len=Math.hypot(num(q.x)-num(p.x),num(q.y)-num(p.y)); if(len<0.01) return '';
-    return `<text x="${((X(num(p.x))+X(num(q.x)))/2).toFixed(1)}" y="${((Y(num(p.y))+Y(num(q.y)))/2-3).toFixed(1)}" font-size="9" fill="var(--text)" text-anchor="middle">${fmt(len,2)}m</text>`; }).join('');
+    let lbl = sides? `${String.fromCharCode(65+i)} ${fmt(len,2)}m` : `${fmt(len,2)}m`;
+    return `<text x="${((X(num(p.x))+X(num(q.x)))/2).toFixed(1)}" y="${((Y(num(p.y))+Y(num(q.y)))/2-3).toFixed(1)}" font-size="9" fill="var(--text)" text-anchor="middle" font-weight="${sides?'700':'400'}">${lbl}</text>`; }).join('');
   return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:340px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;">
     <path d="${path}" fill="rgba(46,204,113,.12)" stroke="var(--accent)" stroke-width="1.6"/>${dots}${mids}</svg>
-   <div class="small" style="margin-top:4px;">Measured off the outline: <b>${fmt(polyArea(pts),2)} m²</b> area · <b>${fmt(polyPerim(pts),2)} m</b> perimeter</div>`;
+   <div class="small" style="margin-top:4px;">Measured off the outline: <b>${fmt(polyArea(pts),2)} m²</b> area · <b>${fmt(polyPerim(pts),2)} m</b> perimeter${(function(){ let mc=outlineMisclose(d); return mc>0.05? ` · <span style="color:#e67e22;">misclose ${fmt(mc,2)}m — side lengths don't quite close the loop, adjust until this disappears</span>`:''; })()}</div>`;
+}
+/* ---- Sketch-to-outline: the estimator draws the slab shape ROUGHLY on a
+   canvas; the app straightens the stroke into line segments (Ramer–Douglas–
+   Peucker + angles snapped to 15°), labels the sides A, B, C…, and the
+   estimator then types the TRUE length of each side — the polygon is rebuilt
+   from those lengths keeping the sketched directions, so area and perimeter
+   come from real entered dimensions, with a misclose warning if the lengths
+   don't quite close the loop. ---- */
+function rdpSimplify(pts,eps){
+  if(pts.length<3) return pts.slice();
+  let dmax=0, idx=0, a=pts[0], b=pts[pts.length-1];
+  for(let i=1;i<pts.length-1;i++){
+    let px=pts[i].x-a.x, py=pts[i].y-a.y, vx=b.x-a.x, vy=b.y-a.y;
+    let L2=vx*vx+vy*vy || 1;
+    let t=Math.max(0,Math.min(1,(px*vx+py*vy)/L2));
+    let dx=pts[i].x-(a.x+t*vx), dy=pts[i].y-(a.y+t*vy);
+    let dd=Math.hypot(dx,dy);
+    if(dd>dmax){ dmax=dd; idx=i; }
+  }
+  if(dmax>eps){
+    let left=rdpSimplify(pts.slice(0,idx+1),eps), right=rdpSimplify(pts.slice(idx),eps);
+    return left.slice(0,-1).concat(right);
+  }
+  return [a,b];
+}
+function outlineSidesMode(d){ return Array.isArray(d.outlineDirs) && d.outlineDirs.length>=3; }
+function rebuildOutlineFromSides(d){
+  if(!outlineSidesMode(d)) return;
+  let dirs=d.outlineDirs, lens=d.outlineSideLens||[];
+  let pts=[{x:0,y:0}];
+  for(let i=0;i<dirs.length-1;i++){
+    let p=pts[i], L=Math.max(0,num(lens[i]));
+    pts.push({x:+(p.x+Math.cos(dirs[i])*L).toFixed(3), y:+(p.y+Math.sin(dirs[i])*L).toFixed(3)});
+  }
+  d.outlinePts=pts;
+}
+function outlineMisclose(d){
+  if(!outlineSidesMode(d)) return 0;
+  let pts=d.outlinePts||[]; if(pts.length<3) return 0;
+  let closing=Math.hypot(num(pts[0].x)-num(pts[pts.length-1].x), num(pts[0].y)-num(pts[pts.length-1].y));
+  let lastLen=num((d.outlineSideLens||[])[d.outlineDirs.length-1]);
+  return Math.abs(closing-lastLen);
 }
 function outlinePtRow(i,pt){
   return `<tr data-row="outlinePts.${i}"><td class="small">${i+1}</td><td style="width:110px">${inpNum(`outlinePts.${i}.x`,pt.x)}</td><td style="width:110px">${inpNum(`outlinePts.${i}.y`,pt.y)}</td><td><button class="btn small danger" data-action="delRow" data-target="outlinePts" data-idx="${i}">✕</button></td></tr>`;
@@ -1514,7 +1558,8 @@ function stripFootingDefaults(){ return {
   botLong:true, botLongQty:4, botLongDia:"N16", botLongLap:false, topLong:false, topLongQty:2, topLongDia:"N12", topLongLap:false,
   cross:true, crossDia:"N12", crossSpacing:300, crossLap:false, trenchMesh:false, trenchMeshType:"4 Bar-L12TM", trenchMeshLayers:1, trenchMeshLap:false,
   ligs:false, ligDia:"N10", ligSpacing:300,
-  starters:false, connTarget:"", connQty:2, connDia:"N16", connEmbed:500, connProj:600
+  starters:false, connTarget:"", connQty:2, connDia:"N16", connEmbed:500, connProj:600,
+  stepdown:false, sdLength:3, sdDepth:300, sdDia:"N12", sdSpacing:300, sdProj1:500, sdProj2:500
 };}
 function renderStripFooting(inst){
   let d=inst.data;
@@ -1536,7 +1581,13 @@ function renderStripFooting(inst){
   let conns=`${chk("starters",d.starters,"Starter bars / dowels up (to wall or column)","starters")}
   <div class="subsec ${d.starters?'':'hidden'}" data-show-if="starters"><div class="grid cols4">
    ${F("Connects to",targetSelect("connTarget",d.connTarget,inst.id))}${F("Qty",inpNum("connQty",d.connQty))}${F("Dia",barSizeSel("connDia",d.connDia))}${F("Embedment (mm)",inpNum("connEmbed",d.connEmbed))}${F("Projection (mm)",inpNum("connProj",d.connProj))}
-  </div></div>`;
+  </div></div>
+  <div class="sechead" style="margin-top:10px;">Stepped Footing (step-downs on sloping ground)</div>
+  ${chk("stepdown",d.stepdown,"Footing steps down along its run","stepdown")}
+  <div class="subsec ${d.stepdown?'':'hidden'}" data-show-if="stepdown"><div class="grid cols4">
+   ${F("Total step-down length (m)",inpNum("sdLength",d.sdLength))}${F("Step depth (mm)",inpNum("sdDepth",d.sdDepth))}${F("Dowel size",barSizeSel("sdDia",d.sdDia))}${F("Spacing (mm)",inpNum("sdSpacing",d.sdSpacing))}
+   ${F("Projection each side (mm)",inpNum("sdProj1",d.sdProj1))}${F("Projection other side (mm)",inpNum("sdProj2",d.sdProj2))}
+  </div><div class="tip"><span class="ico">🏗️</span><div>Enter the TOTAL length of stepped footing (sum of every step run along the trench). Dowels are spaced over that length and the vertical step faces get their own formwork line — both the items a stepped strip footing adds over a level one.</div></div></div>`;
   return {geom,conc:concSection(d,"<p class='small'>Concrete = length × width × depth</p>"),reo,form,exc:"<p class='small'>Excavation = length × trench width × excavation depth</p>",blind:blindingSection(d)};
 }
 function computeStripFooting(inst,def){
@@ -1562,6 +1613,18 @@ function computeStripFooting(inst,def){
   }
   longBar(d.botLong,d.botLongQty,d.botLongDia,"Bottom longitudinal",d.botLongLap);
   longBar(d.topLong,d.topLongQty,d.topLongDia,"Top longitudinal",d.topLongLap);
+  if(d.stepdown){
+    let bd=barDiaOf(d.sdDia);
+    let sdRunM=num(d.sdLength);
+    if(sdRunM>0){
+      let count=Math.floor(sdRunM*1000/Math.max(1,num(d.sdSpacing,300)))+1;
+      let len=(num(d.sdProj1,500)+num(d.sdProj2,500))/1000;
+      let totLen=count*len; let wt=totLen*massPerM(bd);
+      lines.push(baseLine(inst,def,{materialGroup:"Connections",material:d.sdDia,spec:"Stepped footing — step dowels",qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`count(${count}=${fmt(sdRunM,1)}m/${d.sdSpacing}mm+1)×(proj1+proj2)/1000`,notes:`${count} dowels, ${fmt(wt,1)} kg`}));
+      let fA=sdRunM*num(d.sdDepth,300)/1000;
+      lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Step-down face formwork",spec:`${d.sdDepth}mm steps`,qty:fA,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(fA,PROJECT.formworkWaste),formula:`step length ${fmt(sdRunM,1)}m × depth`}));
+    }
+  }
   if(d.cross){
     let bd=barDiaOf(d.crossDia);
     let count=Math.floor(num(d.length)/num(d.crossSpacing))+1;
@@ -1751,7 +1814,7 @@ function beamDefaults(cat){ return {
   trenchMesh:false, trenchMeshType:"4 Bar-L12TM", trenchMeshLayers:1, trenchMeshLap:false,
   ligZones:[{zone:"Left support",length:1200,dia:"N10",spacing:100},{zone:"Midspan",length:0,dia:"N10",spacing:200,auto:true},{zone:"Right support",length:1200,dia:"N10",spacing:100}],
   starters:false, connTarget:"", connQty:4, connDia:"N20", connEmbed:600, connProj:600,
-  stepdown:false, sdDepth:150, sdDia:"N12", sdSpacing:300, sdProj1:300, sdProj2:300
+  stepdown:false, sdLength:6, sdDepth:150, sdDia:"N12", sdSpacing:300, sdProj1:300, sdProj2:300
 };}
 function renderBeam(inst,def){
   let d=inst.data;
@@ -1791,7 +1854,7 @@ function renderBeam(inst,def){
   <div class="subsec"><div class="sechead">Step-down / Construction-joint Connecting Bars</div>
   ${chk("stepdown",d.stepdown,"This beam steps down / has a level change requiring connecting dowels","stepdown")}
   <div class="subsec ${d.stepdown?'':'hidden'}" data-show-if="stepdown"><div class="grid cols4">
-   ${F("Step depth (mm)",inpNum("sdDepth",d.sdDepth))}${F("Dowel size",barSizeSel("sdDia",d.sdDia))}${F("Spacing (mm)",inpNum("sdSpacing",d.sdSpacing))}
+   ${F("Total step-down length (m)",inpNum("sdLength",d.sdLength))}${F("Step depth (mm)",inpNum("sdDepth",d.sdDepth))}${F("Dowel size",barSizeSel("sdDia",d.sdDia))}${F("Spacing (mm)",inpNum("sdSpacing",d.sdSpacing))}
    ${F("Projection into upper pour (mm)",inpNum("sdProj1",d.sdProj1))}${F("Projection into lower pour (mm)",inpNum("sdProj2",d.sdProj2))}
   </div><div class="tip"><span class="ico">🏗️</span><div>Any change in soffit or top level along a beam is a cold joint waiting to slip in shear unless it's dowelled. Treat it like a mini footing-to-column connection: embedment into the pour already cast, projection into the pour still to come. Don't fold this into the general waste factor — it's a real, countable item that a site engineer will ask for on the RFI.</div></div></div></div>`;
   return {geom,conc:concSection(d,"<p class='small'>Concrete = L × W × effective depth (downstand uses drop below slab only)</p>"),reo,form,conns};
@@ -1882,10 +1945,17 @@ function computeBeam(inst,def){
   }
   if(d.stepdown){
     let bd=barDiaOf(d.sdDia);
-    let count=Math.floor(num(d.length)/num(d.sdSpacing))+1;
+    // dowels run along the TOTAL entered step-down length (legacy saves
+    // without the field keep the old full-beam-length behaviour)
+    let sdRunM = d.sdLength!==undefined? num(d.sdLength) : num(d.length)/1000;
+    let count=Math.floor(sdRunM*1000/Math.max(1,num(d.sdSpacing,300)))+1;
+    if(d.sdLength!==undefined && sdRunM>0){
+      let fA=sdRunM*num(d.sdDepth)/1000;
+      lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Step-down face formwork",spec:`${d.sdDepth}mm step`,qty:fA,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(fA,PROJECT.formworkWaste),formula:`step length ${fmt(sdRunM,1)}m × depth`}));
+    }
     let len=(num(d.sdProj1)+num(d.sdProj2))/1000;
     let totLen=N*count*len; let wt=totLen*massPerM(bd);
-    lines.push(baseLine(inst,def,{materialGroup:"Connections",material:d.sdDia,spec:"Step-down connecting dowels",qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`count(${count})×(proj1 ${d.sdProj1}+proj2 ${d.sdProj2})/1000×${N}`,notes:`${count} dowels/beam, ${fmt(wt,1)} kg`}));
+    lines.push(baseLine(inst,def,{materialGroup:"Connections",material:d.sdDia,spec:"Step-down connecting dowels",qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`count(${count})×(proj1 ${d.sdProj1}+proj2 ${d.sdProj2})/1000×${N}`,notes:`${count} dowels over ${fmt((d.sdLength!==undefined?num(d.sdLength):num(d.length)/1000),1)}m, ${fmt(wt,1)} kg`}));
   }
   return {lines,warnings:[]};
 }
@@ -1901,7 +1971,7 @@ function slabDefaults(cat,suspended){ return {
   returnBars:false, retDia:"N12", retSpacing:200, retTurndown:150, retLeg:300, retEdges:"perimeter", retLap:false,
   joints:true, jointSpacing:6, dowels:false, dowelDia:"N16", dowelSpacing:300, dowelLength:500,
   starters:false, connTarget:"", connQty:0, connDia:"N12", connEmbed:400, connProj:400,
-  stepdown:false, sdDepth:150, sdDia:"N12", sdSpacing:300, sdProj1:300, sdProj2:300,
+  stepdown:false, sdLength:6, sdDepth:150, sdDia:"N12", sdSpacing:300, sdProj1:300, sdProj2:300,
   edgeThicken:false, edgeThickenWidth:300, edgeThickenExtraDepth:150,
   beamStrips:false, beamStripsLength:0, beamStripsWidth:300, beamStripsExtraDepth:150,
   beamStripsReo:false, beamStripsTrenchMesh:false, beamStripsBars:4, beamStripsDia:"N16", beamStripsTrenchType:"4 Bar-L12TM", beamStripsLayers:1, beamStripsLap:false
@@ -1918,12 +1988,21 @@ function renderSlab(inst,def){
   <div class="subsec ${d.perimeterAuto?'hidden':''}" data-show-if="perimeterAuto_off">${F("Perimeter override (m)",inpNum("perimeterOverride",d.perimeterOverride))}</div>
   <div class="grid cols3">${chk("outlineOn",d.outlineOn,"Draw slab outline (plot corner points — area & perimeter measured, not guessed)",undefined,true)}</div>
   <div class="subsec ${d.outlineOn?'':'hidden'}" data-show-if="outlineOn">
+   <div class="toolbar" style="margin-bottom:8px;">
+    <button class="btn small primary" data-action="sketchOutline" type="button">✏️ Sketch the outline (draw rough, app straightens it)</button>
+    ${outlineSidesMode(d)? `<button class="btn small ghost" data-action="outlineToPoints" type="button">Edit as X/Y points instead</button>`:""}
+   </div>
    <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start;">
     <div style="flex:1;min-width:240px;">
+     ${outlineSidesMode(d)? `
+      <table class="rows"><thead><tr><th>Side</th><th>Direction</th><th>Length (m)</th></tr></thead>
+      <tbody>${d.outlineDirs.map((ang,i)=>`<tr><td><b>${String.fromCharCode(65+i)}</b></td><td class="small">${Math.round((ang*180/Math.PI+360)%360)}°</td><td style="width:120px">${inpNum(`outlineSideLens.${i}`,(d.outlineSideLens||[])[i])}</td></tr>`).join('')}</tbody></table>
+      <p class="small">The app straightened your sketch into sides <b>A–${String.fromCharCode(64+d.outlineDirs.length)}</b>. Type the TRUE length of each side off the drawing — the plan redraws live and area/perimeter are measured from your lengths. The last side closes the loop; a misclose warning shows if the lengths can't close.</p>`
+     : `
      <table class="rows"><thead><tr><th>#</th><th>X (m)</th><th>Y (m)</th><th></th></tr></thead>
      <tbody>${(d.outlinePts||[]).map((pt,i)=>outlinePtRow(i,pt)).join('')}</tbody></table>
      <button class="btn small" data-action="addRow" data-target="outlinePts">+ Add point</button>
-     <p class="small">Plot the corners in order around the slab (clockwise or anti-clockwise), in metres — read them straight off the drawing's grid/dimensions. The sketch, area and perimeter update live; the last point closes back to the first automatically.</p>
+     <p class="small">Plot the corners in order around the slab (clockwise or anti-clockwise), in metres — read them straight off the drawing's grid/dimensions. The sketch, area and perimeter update live; the last point closes back to the first automatically.</p>`}
     </div>
     <div style="flex:1;min-width:260px;" class="outlineHost">${slabOutlineSVG(d)}</div>
    </div>
@@ -2001,7 +2080,7 @@ function renderSlab(inst,def){
   <div class="subsec"><div class="sechead">Step-down / Level-change Connecting Bars</div>
   ${chk("stepdown",d.stepdown,"Slab has a step-down / level change requiring connecting dowels","stepdown")}
   <div class="subsec ${d.stepdown?'':'hidden'}" data-show-if="stepdown"><div class="grid cols4">
-   ${F("Step depth (mm)",inpNum("sdDepth",d.sdDepth))}${F("Dowel size",barSizeSel("sdDia",d.sdDia))}${F("Spacing (mm)",inpNum("sdSpacing",d.sdSpacing))}
+   ${F("Total step-down length (m)",inpNum("sdLength",d.sdLength))}${F("Step depth (mm)",inpNum("sdDepth",d.sdDepth))}${F("Dowel size",barSizeSel("sdDia",d.sdDia))}${F("Spacing (mm)",inpNum("sdSpacing",d.sdSpacing))}
    ${F("Projection each side (mm)",inpNum("sdProj1",d.sdProj1))}${F("Projection other side (mm)",inpNum("sdProj2",d.sdProj2))}
   </div><div class="tip"><span class="ico">🏗️</span><div>Split-level slabs (a sunken wet area, a stepped car park deck) need dowels across the step or the two pours act independently under load. Size and space dowels the same way you'd detail a construction joint — this is the item estimators most often forget because it's buried in a section detail, not called up on the reinforcement schedule.</div></div></div></div>`;
   return {geom,conc:concSection(d,"<p class='small'>Concrete = area × thickness (area = L×W unless manually entered)</p>"),reo,form,
@@ -2126,7 +2205,12 @@ function computeSlab(inst,def){
   }
   if(d.stepdown){
     let dia=barDiaOf(d.sdDia);
-    let count=Math.floor(perim*1000/num(d.sdSpacing))+1;
+    let sdRunM = d.sdLength!==undefined? num(d.sdLength) : perim;
+    let count=Math.floor(sdRunM*1000/Math.max(1,num(d.sdSpacing,300)))+1;
+    if(d.sdLength!==undefined && sdRunM>0){
+      let fA=sdRunM*num(d.sdDepth)/1000;
+      lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Step-down face formwork",spec:`${d.sdDepth}mm step`,qty:fA,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(fA,PROJECT.formworkWaste),formula:`step length ${fmt(sdRunM,1)}m × depth`}));
+    }
     let len=(num(d.sdProj1)+num(d.sdProj2))/1000;
     let totLen=count*len; let wt=totLen*massPerM(dia);
     lines.push(baseLine(inst,def,{materialGroup:"Connections",material:d.sdDia,spec:"Step-down connecting dowels",qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`count(${count})×(proj1+proj2)/1000`,notes:`${count} dowels, ${fmt(wt,1)} kg`}));
@@ -2210,7 +2294,7 @@ function wallDefaults(){ return {
   vertB:true,vertBDia:"N12",vertBSpacing:200,vertBLap:false, horB:true,horBDia:"N12",horBSpacing:200,horBLap:false,
   starters:true, connTarget:"", connQty:0, connDia:"N16", connEmbed:500, connProj:600, connSpacing:200,
   dowelsOut:"", outQty:0, outDia:"N16", outEmbed:500, outProj:600,
-  stepdown:false, sdDepth:150, sdDia:"N12", sdSpacing:300, sdProj1:300, sdProj2:300,
+  stepdown:false, sdLength:6, sdDepth:150, sdDia:"N12", sdSpacing:300, sdProj1:300, sdProj2:300,
   waterstop:false
 };}
 function renderWall(inst){
@@ -2228,7 +2312,7 @@ function renderWall(inst){
   <div class="subsec"><div class="sechead">Dowels out (to slab above)</div><div class="grid cols4">${F("Connects to",targetSelect("dowelsOut",d.dowelsOut,inst.id))}${F("Qty",inpNum("outQty",d.outQty))}${F("Dia",barSizeSel("outDia",d.outDia))}${F("Embedment (mm)",inpNum("outEmbed",d.outEmbed))}${F("Projection (mm)",inpNum("outProj",d.outProj))}</div></div>
   <div class="subsec"><div class="sechead">Step-down / Construction-joint Connecting Bars</div>
   ${chk("stepdown",d.stepdown,"Wall steps down / has level change requiring connecting dowels","stepdown")}
-  <div class="subsec ${d.stepdown?'':'hidden'}" data-show-if="stepdown"><div class="grid cols4">${F("Step depth (mm)",inpNum("sdDepth",d.sdDepth))}${F("Dowel size",barSizeSel("sdDia",d.sdDia))}${F("Spacing (mm)",inpNum("sdSpacing",d.sdSpacing))}${F("Projection each side (mm)",inpNum("sdProj1",d.sdProj1))}</div><div class="tip"><span class="ico">🏗️</span><div>A stepped wall footing or a change in wall thickness up the height both need continuity dowels across the joint — treat each step exactly like a mini construction joint.</div></div></div></div>`;
+  <div class="subsec ${d.stepdown?'':'hidden'}" data-show-if="stepdown"><div class="grid cols4">${F("Total step-down length (m)",inpNum("sdLength",d.sdLength))}${F("Step depth (mm)",inpNum("sdDepth",d.sdDepth))}${F("Dowel size",barSizeSel("sdDia",d.sdDia))}${F("Spacing (mm)",inpNum("sdSpacing",d.sdSpacing))}${F("Projection each side (mm)",inpNum("sdProj1",d.sdProj1))}</div><div class="tip"><span class="ico">🏗️</span><div>A stepped wall footing or a change in wall thickness up the height both need continuity dowels across the joint — treat each step exactly like a mini construction joint.</div></div></div></div>`;
   return {geom,conc:concSection(d,"<p class='small'>Concrete = (L×H − openings) × thickness</p>"),reo,form,conns};
 }
 function computeWall(inst,def){
@@ -2275,7 +2359,9 @@ function computeWall(inst,def){
   }
   if(d.waterstop) lines.push(baseLine(inst,def,{materialGroup:"Joints",material:"PVC waterstop",spec:"At construction joints",qty:N*Lm,unit:"m",waste:5,finalQty:withWaste(N*Lm,5),formula:"wall length"}));
   if(d.stepdown){
-    let dia=barDiaOf(d.sdDia); let count=Math.floor(num(d.length)/num(d.sdSpacing))+1;
+    let dia=barDiaOf(d.sdDia);
+    let sdRunM = d.sdLength!==undefined? num(d.sdLength) : num(d.length)/1000;
+    let count=Math.floor(sdRunM*1000/Math.max(1,num(d.sdSpacing,300)))+1;
     let len=(2*num(d.sdProj1))/1000;
     let totLen=N*count*len; let wt=totLen*massPerM(dia);
     lines.push(baseLine(inst,def,{materialGroup:"Connections",material:d.sdDia,spec:"Step-down connecting dowels",qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`count(${count})×2×proj/1000×${N}`,notes:`${count} dowels, ${fmt(wt,1)} kg`}));
@@ -3010,8 +3096,13 @@ function attachCardEvents(card,inst){
         sec.classList.toggle('hidden', String(val)!==want);
       });
     }
-    // live-update the outline sketch as vertex coordinates are typed
+    // live-update the outline sketch as vertex coordinates or side lengths are typed
     if(/^outlinePts\./.test(f)){
+      let host=card.querySelector('.outlineHost');
+      if(host) host.innerHTML=slabOutlineSVG(inst.data);
+    }
+    if(/^outlineSideLens\./.test(f)){
+      rebuildOutlineFromSides(inst.data);
       let host=card.querySelector('.outlineHost');
       if(host) host.innerHTML=slabOutlineSVG(inst.data);
     }
@@ -3048,6 +3139,11 @@ function attachCardEvents(card,inst){
       let fields=e.target.dataset.fields.split(',');
       fields.forEach(fk=>inst.data[fk]=(act==="facesAll"));
       rerenderCardKeepTab(card,inst);
+    } else if(act==="sketchOutline"){
+      openSketchPad(inst,card);
+    } else if(act==="outlineToPoints"){
+      delete inst.data.outlineDirs; delete inst.data.outlineSideLens;
+      computeAllAndRefresh(); rerenderCardKeepTab(card,inst);
     } else if(act==="collapseToggle"){
       inst._collapsed = !inst._collapsed;
       card.classList.toggle('collapsed',inst._collapsed);
@@ -3953,6 +4049,81 @@ document.getElementById("bluebeamCsvFile").addEventListener("change",e=>{
   }
   e.target.value="";
 });
+
+/* ============================= SKETCH PAD ============================= */
+// Freehand slab-outline sketching. Draw roughly with mouse/finger; on Use
+// sketch, the stroke is simplified to straight sides (RDP), angles snapped
+// to 15°, sides labelled A, B, C… and handed back to the card for true
+// lengths to be typed per side.
+let SKETCH={inst:null,card:null,stroke:[],drawing:false};
+function ensureSketchPad(){
+  if(document.getElementById("sketchPad")) return;
+  let div=document.createElement("div");
+  div.id="sketchPad";
+  div.style.cssText="display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:90;align-items:center;justify-content:center;padding:20px;";
+  div.innerHTML=`<div style="background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;max-width:640px;width:100%;">
+    <h3 style="margin:0 0 6px;">Sketch the slab outline</h3>
+    <p class="small" style="margin:0 0 8px;">Draw the shape roughly in one stroke — corners don't need to be neat. The app straightens it into sides and labels them A, B, C…; you then type the true length of each side.</p>
+    <canvas id="sketchCanvas" width="600" height="400" style="width:100%;background:#0d1416;border:1px solid var(--line);border-radius:8px;touch-action:none;cursor:crosshair;"></canvas>
+    <div class="toolbar" style="margin-top:10px;">
+      <button class="btn primary" id="sketchUse" type="button">✔ Use sketch</button>
+      <button class="btn" id="sketchClear" type="button">↺ Clear</button>
+      <button class="btn ghost" id="sketchCancel" type="button">✕ Cancel</button>
+      <span class="small" id="sketchHint"></span>
+    </div>
+  </div>`;
+  document.body.appendChild(div);
+  let cv=div.querySelector("#sketchCanvas"), ctx=cv.getContext("2d");
+  let pos=(e)=>{ let r=cv.getBoundingClientRect(); let t=e.touches? e.touches[0]:e; return {x:(t.clientX-r.left)*cv.width/r.width, y:(t.clientY-r.top)*cv.height/r.height}; };
+  let redraw=()=>{ ctx.clearRect(0,0,cv.width,cv.height); if(SKETCH.stroke.length<2) return;
+    ctx.strokeStyle="#2ecc71"; ctx.lineWidth=2.5; ctx.lineJoin="round"; ctx.beginPath();
+    SKETCH.stroke.forEach((p,i)=> i? ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y)); ctx.stroke(); };
+  let start=(e)=>{ e.preventDefault(); SKETCH.drawing=true; SKETCH.stroke=[pos(e)]; redraw(); };
+  let move=(e)=>{ if(!SKETCH.drawing) return; e.preventDefault(); SKETCH.stroke.push(pos(e)); redraw(); };
+  let end=(e)=>{ SKETCH.drawing=false; };
+  cv.addEventListener("mousedown",start); cv.addEventListener("mousemove",move); window.addEventListener("mouseup",end);
+  cv.addEventListener("touchstart",start,{passive:false}); cv.addEventListener("touchmove",move,{passive:false}); cv.addEventListener("touchend",end);
+  div.querySelector("#sketchClear").onclick=()=>{ SKETCH.stroke=[]; redraw(); };
+  div.querySelector("#sketchCancel").onclick=()=>{ div.style.display="none"; };
+  div.querySelector("#sketchUse").onclick=()=>{
+    let simp=rdpSimplify(SKETCH.stroke,14);
+    // drop the duplicate closing point if the stroke came back near the start
+    if(simp.length>3){
+      let a=simp[0], b=simp[simp.length-1];
+      if(Math.hypot(a.x-b.x,a.y-b.y)<40) simp=simp.slice(0,-1);
+    }
+    if(simp.length<3){ div.querySelector("#sketchHint").textContent="Need at least 3 corners — draw a closed-ish shape."; return; }
+    if(simp.length>14) simp=rdpSimplify(SKETCH.stroke,26).slice(0,14);
+    // canvas y grows downward — flip so the plan reads like a drawing
+    let pts=simp.map(p=>({x:p.x, y:-p.y}));
+    // sides incl. the closing one, angles snapped to 15°
+    let n=pts.length, dirs=[], lens=[];
+    for(let i=0;i<n;i++){
+      let a=pts[i], b=pts[(i+1)%n];
+      let ang=Math.atan2(b.y-a.y,b.x-a.x);
+      let snap=Math.PI/12;
+      dirs.push(Math.round(ang/snap)*snap);
+      lens.push(Math.hypot(b.x-a.x,b.y-a.y));
+    }
+    // seed side lengths keeping sketch proportions, longest side = 10 m
+    let maxL=Math.max(...lens)||1;
+    let seed=lens.map(L=>+(Math.max(0.5,L/maxL*10).toFixed(1)));
+    let d=SKETCH.inst.data;
+    d.outlineOn=true; d.outlineDirs=dirs; d.outlineSideLens=seed;
+    rebuildOutlineFromSides(d);
+    div.style.display="none";
+    computeAllAndRefresh();
+    rerenderCardKeepTab(SKETCH.card,SKETCH.inst);
+  };
+}
+function openSketchPad(inst,card){
+  ensureSketchPad();
+  SKETCH.inst=inst; SKETCH.card=card; SKETCH.stroke=[];
+  let div=document.getElementById("sketchPad");
+  div.style.display="flex";
+  let cv=div.querySelector("#sketchCanvas"); cv.getContext("2d").clearRect(0,0,cv.width,cv.height);
+  div.querySelector("#sketchHint").textContent="";
+}
 
 /* ============================= NAV ============================= */
 document.querySelectorAll('.tabs button').forEach(b=>b.addEventListener('click',()=>{
