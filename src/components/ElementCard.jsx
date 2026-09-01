@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { ChevronDown, ChevronRight, Copy, Trash2, Paperclip, X, RotateCw, ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
 import { FULL_CATALOG } from "../data/catalog.js";
-import { uid, money2, computeElementCost, autoLabourQtys } from "../lib/costing.js";
+import { uid, money2, computeElementCost, autoLabourQtys, labourQuantities } from "../lib/costing.js";
 import CategoryBlock from "./CategoryBlock.jsx";
 import LabourMatrix from "./LabourMatrix.jsx";
 import AdditionalItems from "./AdditionalItems.jsx";
@@ -38,6 +38,8 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
     () => (labourAuto ? autoLabourQtys(item, rates) : null),
     [labourAuto, item, rates]
   );
+  // The quantities each crew-sheet row draws on, for the Qty column display.
+  const labourQtyCtx = useMemo(() => labourQuantities(item, rates), [item, rates]);
   const toggleLabourAuto = () =>
     patch((it) => {
       if (it.labourAuto !== false) {
@@ -60,6 +62,9 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
   const renameTask = (taskId, name) => patch((it) => ({ ...it, tasks: it.tasks.map((t) => (t.id === taskId ? { ...t, name } : t)) }));
   const setTaskQty = (taskId, resKey, v) =>
     patch((it) => ({ ...it, tasks: it.tasks.map((t) => (t.id === taskId ? { ...t, qtys: { ...t.qtys, [resKey]: v } } : t)) }));
+  // Row Qty override and Notes on the crew sheet
+  const setTaskMeta = (taskId, field, v) =>
+    patch((it) => ({ ...it, tasks: it.tasks.map((t) => (t.id === taskId ? { ...t, [field]: v } : t)) }));
 
   const addAdditional = () =>
     patch((it) => ({ ...it, additional: [...it.additional, { id: uid(), name: "", unit: "", qty: undefined, rate: undefined }] }));
@@ -305,6 +310,8 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
             labourAuto={labourAuto}
             autoQtys={autoQtys}
             onToggleAuto={toggleLabourAuto}
+            labourQtyCtx={labourQtyCtx}
+            onTaskMetaChange={setTaskMeta}
             item={item}
             rates={rates}
             onTaskQtyChange={setTaskQty}

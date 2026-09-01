@@ -203,7 +203,7 @@ export function computeElementCost(item, rates) {
   let labourTotal = 0;
   const resourceCosts = {};
   RESOURCE_COLS.forEach((res) => {
-    const rate = lookupRate(rates, rateKey("LABOUR", res.name, res.unit), { unitCost: res.rate }).unitCost;
+    const rate = labourResourceRate(rates, res);
     const cost = resourceTotals[res.key] * rate;
     resourceCosts[res.key] = cost;
     labourTotal += cost;
@@ -252,18 +252,21 @@ export function computeElementReinforcementTonnes(item, rates) {
   return totalKg / 1000;
 }
 
-const CONCRETE_POUR_TASK_MATCH = /pour concrete/i;
-const STEEL_FIXING_TASK_MATCH = /tie steel/i;
-const FORMWORK_TASK_MATCH = /formwork|box out|prop & form/i;
+const CONCRETE_POUR_TASK_MATCH = /pour/i;                     // "Pour / place / vibrate concrete", legacy "Pour concrete (pump)"
+const STEEL_FIXING_TASK_MATCH = /tie (steel|reinforcement)/i; // "Tie reinforcement", legacy "Tie steel"
+const FINISH_TASK_MATCH = /finish concrete/i;                 // "Finish concrete surfaces"
+const EXCAVATE_TASK_MATCH = /excavate/i;                      // "Excavate & prepare base"
+const FORMWORK_TASK_MATCH = /formwork|box out|prop & form/i;  // legacy per-type templates only
 const STRIP_TASK_MATCH = /^strip/i;
-const GENERAL_TASK_MATCH = /tidy|clean|patch|washout/i;
-const PUMP_TASK_MATCH = /\(pump\)/i;
+const GENERAL_TASK_MATCH = /washout|tidy|clean|patch/i;       // "Washout / clean / tidy"
+const PUMP_TASK_MATCH = /\(pump\)/i;                          // legacy suspended templates
 
-/** Material quantities the rate-of-work model sizes crews from — a pure
- * scan of the entered qtys (no costing), so autoLabourQtys can be called
- * from inside computeElementCost without recursion. Finish area is proxied
- * by the mesh coverage entered (mesh area ≈ slab surface area). */
-function materialQuantitiesForLabour(item) {
+/** The quantities each crew-sheet row draws on, read DIRECTLY from the
+ * element's entered line items: concrete m³ from the CONCRETE rows, formwork
+ * m² from the FORMWORK rows, finish m² from the mesh coverage entered
+ * (mesh area ≈ finished slab surface). Pure qty scan — no costing — so the
+ * labour engine can run inside computeElementCost without recursion. */
+export function labourQuantities(item, rates) {
   let concreteM3 = 0, formworkM2 = 0, finishM2 = 0;
   FULL_CATALOG.forEach((cat) => {
     if (cat.key !== "CONCRETE" && cat.key !== "FORMWORK" && cat.key !== "SQUARE MESH") return;
@@ -275,54 +278,86 @@ function materialQuantitiesForLabour(item) {
       else if (cat.key === "SQUARE MESH") finishM2 += qty;
     });
   });
-  return { concreteM3, formworkM2, finishM2 };
+  return { concreteM3, formworkM2, finishM2, reinfTonnes: computeElementReinforcementTonnes(item, rates) };
+}
+
+/** Crew-sheet row metadata: the unit each task is measured in and which
+ * element quantity fills its Qty column automatically. Excavation has no
+ * Quotes line item to draw from, so its Qty stays manual. */
+export function taskRowMeta(taskName, lq) {
+  if (CONCRETE_POUR_TASK_MATCH.test(taskName)) return { unit: "m³", autoQty: lq ? lq.concreteM3 : undefined };
+  if (STEEL_FIXING_TASK_MATCH.test(taskName)) return { unit: "t", autoQty: lq ? round2(lq.reinfTonnes) : undefined };
+  if (FINISH_TASK_MATCH.test(taskName)) return { unit: "m²", autoQty: lq ? lq.finishM2 : undefined };
+  if (EXCAVATE_TASK_MATCH.test(taskName)) return { unit: "m³", autoQty: undefined };
+  if (FORMWORK_TASK_MATCH.test(taskName) && !STRIP_TASK_MATCH.test(taskName)) return { unit: "m²", autoQty: lq ? lq.formworkM2 : undefined };
+  return { unit: "", autoQty: undefined };
 }
 
 const prodRate = (rates, name, unit, fallback) =>
   lookupRate(rates, rateKey("PRODUCTION", name, unit), { unitCost: fallback }).unitCost;
 const round2 = (v) => Math.round(v * 100) / 100;
 
+/** Labour rate for a resource column, honouring overrides saved under the
+ * column's pre-crew-sheet name (Concreter, Steel fixer, General Labour). */
+export function labourResourceRate(rates, res) {
+  const key = rateKey("LABOUR", res.name, res.unit);
+  if (rates[key] !== undefined) return lookupRate(rates, key, { unitCost: res.rate }).unitCost;
+  if (res.legacyName) {
+    const legacyKey = rateKey("LABOUR", res.legacyName, res.unit);
+    if (rates[legacyKey] !== undefined) return lookupRate(rates, legacyKey, { unitCost: res.rate }).unitCost;
+  }
+  return res.rate;
+}
+
 /**
- * The seamless labour engine: crew person-days/hours derived from the
- * element's entered quantities at the PRODUCTION rate-of-work rates in the
- * rates library. Returns {taskId: {resourceKey: qty}} covering ONLY cells
- * the estimator hasn't filled — a typed value always wins, and clearing a
- * cell hands it back to the engine. Applied live by computeElementCost when
- * item.labourAuto is on, and by the one-shot prefill button otherwise.
- *
- * Crew minimum: crews are 3+ people, so a callout can't book fewer than 3
- * person-days of a trade across the element — tiny computed amounts are
- * bumped up to that minimum (pro-rata across the tasks that produced them).
+ * The seamless labour engine, one row per crew-sheet task:
+ *   crew days = row Qty × the rate-of-work rate in the rates library.
+ * The row Qty draws DIRECTLY from the quantities entered on the element's
+ * line items (concrete m³, reinforcement t, finish m², formwork m²); typing
+ * into a row's Qty cell overrides what that row draws on, and typing into a
+ * crew-day cell overrides the derived days outright. Returns
+ * {taskId: {resourceKey: qty}} covering only cells the estimator hasn't
+ * filled. Crews are 3+ people, so a trade's derived total under 3
+ * person-days bumps up to the 3-day minimum callout.
  */
 export function autoLabourQtys(item, rates) {
-  const { concreteM3, formworkM2, finishM2 } = materialQuantitiesForLabour(item);
-  const reinfTonnes = computeElementReinforcementTonnes(item, rates);
+  const lq = labourQuantities(item, rates);
   const pourDaysM3 = prodRate(rates, "Concrete pour (placing & finishing)", "days/m³", 0.15);
   const finishDaysM2 = prodRate(rates, "Finish concrete surfaces", "days/m²", 0.01);
   const fixDaysT = prodRate(rates, "Rebar fixing / tying", "days/tonne", 1.5);
   const formDaysM2 = prodRate(rates, "Formwork install & strip", "days/m²", 0.1);
   const generalDaysM3 = prodRate(rates, "General labour (prep, washout, clean & tidy)", "days/m³", 0.05);
+  const excDaysM3 = prodRate(rates, "Excavation & base preparation", "days/m³", 0.03);
   const pumpHrsM3 = prodRate(rates, "Concrete pumping", "hrs/m³", 0.05);
 
+  const hasFinishTask = (item.tasks || []).some((t) => FINISH_TASK_MATCH.test(t.name));
   const suggestions = {};
   const put = (task, key, qty) => {
     if (qty <= 0) return;
-    if (task.qtys[key] !== undefined && task.qtys[key] !== "") return; // typed value wins
+    if (task.qtys[key] !== undefined && task.qtys[key] !== "") return; // typed crew days win
     (suggestions[task.id] = suggestions[task.id] || {})[key] = round2(qty);
   };
   (item.tasks || []).forEach((task) => {
+    const meta = taskRowMeta(task.name, lq);
+    // the row's driving quantity: a typed Qty overrides the drawn-in one
+    const q = task.qty !== undefined && task.qty !== "" ? Number(task.qty) || 0 : (meta.autoQty || 0);
     if (CONCRETE_POUR_TASK_MATCH.test(task.name)) {
-      put(task, "concreter_day", concreteM3 * pourDaysM3 + finishM2 * finishDaysM2);
+      // legacy templates had no separate finish row — finishing rode on the pour task
+      put(task, "concreter_day", q * pourDaysM3 + (hasFinishTask ? 0 : lq.finishM2 * finishDaysM2));
       if (PUMP_TASK_MATCH.test(task.name)) {
-        put(task, "pump_m3", concreteM3);
-        put(task, "pump_hr", concreteM3 * pumpHrsM3);
+        put(task, "pump_m3", q);
+        put(task, "pump_hr", q * pumpHrsM3);
       }
     } else if (STEEL_FIXING_TASK_MATCH.test(task.name)) {
-      put(task, "steelfixer_day", reinfTonnes * fixDaysT);
+      put(task, "steelfixer_day", q * fixDaysT);
+    } else if (FINISH_TASK_MATCH.test(task.name)) {
+      put(task, "concreter_day", q * finishDaysM2);
+    } else if (EXCAVATE_TASK_MATCH.test(task.name)) {
+      put(task, "excavator_day", q * excDaysM3); // q is the typed excavation m³ — no line item to draw from
     } else if (FORMWORK_TASK_MATCH.test(task.name) && !STRIP_TASK_MATCH.test(task.name)) {
-      put(task, "concreter_day", formworkM2 * formDaysM2);
+      put(task, "concreter_day", q * formDaysM2);
     } else if (GENERAL_TASK_MATCH.test(task.name)) {
-      put(task, "labourer_day", concreteM3 * generalDaysM3);
+      put(task, "labourer_day", (task.qty !== undefined && task.qty !== "" ? Number(task.qty) || 0 : lq.concreteM3) * generalDaysM3);
     }
   });
 
@@ -344,17 +379,6 @@ export function autoLabourQtys(item, rates) {
   return suggestions;
 }
 
-/**
- * Suggests labour day-counts for an element's "Pour concrete..." and "Tie
- * steel..." task rows, sized directly from the concrete/reinforcement
- * quantities already entered — Quotes' own PRODUCTION_RATES (see
- * catalog.js) are flat days-per-unit crew rates (1 day/m³ concrete poured,
- * 12 days/tonne reinforcement fixed), not hours converted through a
- * work-day length. Only ever returns a suggestion for a task+resource cell
- * that is currently undefined — an estimator's own entry always wins and
- * is never overwritten; ElementCard's effect applies these with existing
- * qtys spread last, as a second, defensive guarantee of the same rule.
- */
 export function suggestedLabourPrefill(item, rates) {
   return autoLabourQtys(item, rates);
 }

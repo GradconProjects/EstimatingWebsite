@@ -152,7 +152,7 @@ check("Labour rolls up: 8 Concreter days + 20 Pump hrs on one task = $9000, fold
   const rates = defaultRates();
   const type = ELEMENT_TYPES.find((t) => t.id === "strip_footings");
   const item = newElementItem(type);
-  const pourTask = item.tasks.find((t) => t.name === "Pour concrete");
+  const pourTask = item.tasks.find((t) => t.name === "Pour / place / vibrate concrete");
   pourTask.qtys["concreter_day"] = 8; // 8 * $500
   pourTask.qtys["pump_hr"] = 20; // 20 * $250
   const cost = computeElementCost(item, rates);
@@ -180,8 +180,8 @@ check("Auto labour: crew days derive from quantities at the crew rate-of-work ra
   const item = newElementItem(type);
   item.qtys[rateKey("CONCRETE", "25 mpa", "m3")] = 50; // 50 m3 * 0.15 person-days/m3 = 7.5d
   item.qtys[rateKey("PROCESSED BAR", "N16", "m")] = 2000; // 2000m * 1.6kg/m = 3.2t * 1.5 days/t = 4.8d
-  const pourTask = item.tasks.find((t) => t.name === "Pour concrete");
-  const tieTask = item.tasks.find((t) => t.name === "Tie steel");
+  const pourTask = item.tasks.find((t) => t.name === "Pour / place / vibrate concrete");
+  const tieTask = item.tasks.find((t) => t.name === "Tie reinforcement");
 
   const suggestions = suggestedLabourPrefill(item, rates);
   assert.equal(suggestions[pourTask.id].concreter_day, 7.5);
@@ -209,7 +209,7 @@ check("Seamless labour: computeElementCost costs the auto crew days live (no wri
   // tasks were NOT written to — the derivation is live
   assert.ok(item.tasks.every((t) => Object.keys(t.qtys).length === 0), "auto labour must not write into tasks");
   // a typed cell wins over the engine
-  const pourTask = item.tasks.find((t) => t.name === "Pour concrete");
+  const pourTask = item.tasks.find((t) => t.name === "Pour / place / vibrate concrete");
   pourTask.qtys.concreter_day = 4;
   assert.equal(computeElementCost(item, rates).resourceTotals.concreter_day, 4);
   // quantities changing flow straight through (the old one-shot prefill went stale here)
@@ -221,16 +221,51 @@ check("Seamless labour: computeElementCost costs the auto crew days live (no wri
   assert.equal(computeElementCost(item, rates).resourceTotals.concreter_day, 0);
 });
 
-check("Auto labour: formwork m² drives formwork-task crew days, and pump tasks get pump hrs + m³", () => {
+check("Crew sheet: Finish row draws mesh m², a typed row Qty overrides the drawn quantity, legacy task names still auto", () => {
   const rates = defaultRates();
-  const type = ELEMENT_TYPES.find((t) => t.id === "suspended_slab");
+  const type = ELEMENT_TYPES.find((t) => t.id === "slab_on_ground");
   const item = newElementItem(type);
   item.qtys[rateKey("CONCRETE", "25 mpa", "m3")] = 40;
-  item.qtys[rateKey("FORMWORK", "Bondek", "m2")] = 200; // 200 m² * 0.1 days/m² = 20d on the forming task
-  const cost = computeElementCost(item, rates);
-  assert.equal(cost.resourceTotals.concreter_day, 40 * 0.15 + 200 * 0.1); // pour + form install/strip
-  assert.equal(cost.resourceTotals.pump_m3, 40); // "Pour concrete (pump)" task pumps the volume
-  assert.equal(cost.resourceTotals.pump_hr, 2); // 40 m³ * 0.05 hrs/m³
+  item.qtys[rateKey("SQUARE MESH", "SL82", "m2")] = 200; // finish area drawn from mesh coverage
+  const finishTask = item.tasks.find((t) => t.name === "Finish concrete surfaces");
+  const sug = suggestedLabourPrefill(item, rates);
+  assert.equal(sug[finishTask.id].concreter_day, 2); // 200 m² × 0.01 days/m² (on its own row, not the pour row)
+  const pourTask = item.tasks.find((t) => t.name === "Pour / place / vibrate concrete");
+  assert.equal(sug[pourTask.id].concreter_day, 6); // 40 m³ × 0.15 — finishing no longer rides on the pour
+
+  // typing a row Qty overrides what the row draws on
+  pourTask.qty = 20;
+  const sug2 = suggestedLabourPrefill(item, rates);
+  assert.equal(sug2[pourTask.id].concreter_day, 3); // 20 × 0.15
+
+  // an element saved before the crew sheet keeps auto on its old task names
+  const legacy = newElementItem(type);
+  legacy.tasks = [
+    { id: "L1", name: "Formwork / box out", qtys: {} },
+    { id: "L2", name: "Pour concrete (pump)", qtys: {} },
+    { id: "L3", name: "Tie steel", qtys: {} },
+  ];
+  legacy.qtys[rateKey("CONCRETE", "25 mpa", "m3")] = 40;
+  legacy.qtys[rateKey("FORMWORK", "Bondek", "m2")] = 100;
+  const sug3 = suggestedLabourPrefill(legacy, rates);
+  assert.equal(sug3["L1"].concreter_day, 10); // 100 m² × 0.1
+  assert.equal(sug3["L2"].pump_m3, 40); // legacy pump task still pumps the volume
+  assert.equal(sug3["L2"].pump_hr, 2);
+});
+
+check("Labour rates: an override saved under the OLD column name (Concreter) still applies to the Concrete Crew", () => {
+  const rates = defaultRates();
+  const type = ELEMENT_TYPES.find((t) => t.id === "strip_footings");
+  const item = newElementItem(type);
+  item.labourAuto = false;
+  const pourTask = item.tasks.find((t) => t.name === "Pour / place / vibrate concrete");
+  pourTask.qtys.concreter_day = 10;
+  // a rates blob saved BEFORE the crew-sheet rename has only the old key
+  delete rates[rateKey("LABOUR", "Concrete Crew", "day")];
+  rates[rateKey("LABOUR", "Concreter", "day")] = { unitCost: 600 }; // legacy key
+  assert.equal(computeElementCost(item, rates).labourTotal, 6000);
+  rates[rateKey("LABOUR", "Concrete Crew", "day")] = { unitCost: 550 }; // new key wins when present
+  assert.equal(computeElementCost(item, rates).labourTotal, 5500);
 });
 
 /* ---------- External Quote scope lines (client-facing $ always ties to the real sell price) ---------- */

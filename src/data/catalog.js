@@ -10,14 +10,19 @@
  */
 
 /* ---------- Resource / labour catalog ---------- */
+// Crew-sheet columns, in the order they read on Gradcon's labour sheet:
+// the three 3+-person crews first, then plant, pump (hr AND m³ — distinct
+// keys, see CLAUDE.md rule 5), crane, factory. `crew: true` marks the
+// minimum-3-person crews; `legacyName` keeps rate overrides saved under the
+// old column names (Concreter, Steel fixer…) applying until re-saved.
 export const RESOURCE_COLS = [
-  { key: "concreter_day", name: "Concreter", unit: "day", rate: 500 },
+  { key: "concreter_day", name: "Concrete Crew", legacyName: "Concreter", unit: "day", rate: 500, crew: true },
+  { key: "steelfixer_day", name: "Steel Crew", legacyName: "Steel fixer", unit: "day", rate: 650, crew: true },
+  { key: "labourer_day", name: "General Labour Crew", legacyName: "General Labour", unit: "day", rate: 400, crew: true },
   { key: "excavator_day", name: "Excavator", unit: "day", rate: 900 },
   { key: "bobcat_day", name: "Bobcat", unit: "day", rate: 900 },
   { key: "pump_hr", name: "Pump", unit: "hr", rate: 250 },
   { key: "pump_m3", name: "Pump", unit: "m3", rate: 7 },
-  { key: "steelfixer_day", name: "Steel fixer", unit: "day", rate: 650 },
-  { key: "labourer_day", name: "General Labour", unit: "day", rate: 400 },
   { key: "crane_day", name: "Crane", unit: "day", rate: 1600 },
   { key: "factory_hr", name: "Factory labour", unit: "hr", rate: 150 },
 ];
@@ -45,17 +50,33 @@ export const PRODUCTION_RATES = [
   { key: "steel_fixing_days_tonne", name: "Rebar fixing / tying", unit: "days/tonne", rate: 1.5 },
   { key: "formwork_days_m2", name: "Formwork install & strip", unit: "days/m²", rate: 0.1 },
   { key: "general_days_m3", name: "General labour (prep, washout, clean & tidy)", unit: "days/m³", rate: 0.05 },
+  { key: "excavation_days_m3", name: "Excavation & base preparation", unit: "days/m³", rate: 0.03 },
   { key: "pump_hrs_m3", name: "Concrete pumping", unit: "hrs/m³", rate: 0.05 },
 ];
 
 /* ---------- Labour task templates, keyed by the element's `labour` field ---------- */
+// ONE fixed crew-sheet task structure for every element type (matching the
+// paper labour sheet: setup, excavate, tie, pour, finish, washout, plus two
+// free additional rows). The template keys survive because every
+// ELEMENT_TYPES entry references one. Elements saved before this change
+// keep the task rows they were created with.
+const CREW_SHEET_TASKS = [
+  "Site setup / mobilisation",
+  "Excavate & prepare base",
+  "Tie reinforcement",
+  "Pour / place / vibrate concrete",
+  "Finish concrete surfaces",
+  "Washout / clean / tidy",
+  "Additional labour / plant",
+  "Additional labour / plant",
+];
 export const LABOUR_TEMPLATES = {
-  excavation: ["Site setout as required", "Bulk / trench excavate", "Cart spoil offsite", "Trim & compact base", "Backfill & compact", "Factory labour"],
-  footing: ["Site setout as required", "Excavate & prep base", "Formwork / box out", "Tie steel", "Pour concrete", "Strip & tidy", "Factory labour"],
-  wall: ["Site setout as required", "Excavate & prep (if required)", "Formwork (both faces)", "Tie steel", "Pour concrete", "Strip formwork", "Patch & clean up", "Factory labour"],
-  slab_ground: ["Site setout as required", "Excavate & prep base", "Pour blinding", "Lay poly", "Tie steel / box slab", "Pour concrete", "Strip & tidy", "Factory labour"],
-  slab_suspended: ["Site setout as required", "Prop & form suspended soffit", "Tie steel / box slab", "Pour concrete (pump)", "Strip formwork / props", "Strip & tidy", "Factory labour"],
-  stairs: ["Site setout as required", "Prop & form stair soffit and riser/tread formwork", "Tie steel", "Pour concrete (pump)", "Strip formwork / props", "Patch & clean up", "Factory labour"],
+  excavation: CREW_SHEET_TASKS,
+  footing: CREW_SHEET_TASKS,
+  wall: CREW_SHEET_TASKS,
+  slab_ground: CREW_SHEET_TASKS,
+  slab_suspended: CREW_SHEET_TASKS,
+  stairs: CREW_SHEET_TASKS,
 };
 
 /* ---------- Full material catalog ----------
