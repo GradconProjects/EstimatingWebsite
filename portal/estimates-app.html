@@ -1675,9 +1675,13 @@ function computeBeam(inst,def){
     }
     let bd=barDiaOf(z.dia);
     let count=Math.floor(len/num(z.spacing||200))+1;
-    let ligPerimeter=(2*(Wm-2*cover)+2*(sideD-2*cover));
+    // Ordering quantity is METRES, not pieces: count × (closed perimeter +
+    // two 135° fitment hooks at 10d each — same anchorLen convention as the
+    // pier's circular ligatures). The piece count stays in formula/notes.
+    let hookExt=anchorLen("hook135",bd,0)/1000;
+    let ligPerimeter=(2*(Wm-2*cover)+2*(sideD-2*cover))+2*hookExt;
     let totLen=N*count*ligPerimeter; let wt=totLen*massPerM(bd);
-    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:z.dia,spec:`Ligatures — ${z.zone}`,qty:count*N,unit:"no.",waste:0,finalQty:count*N,massPerUnit:massPerM(barDiaOf(z.dia))*ligPerimeter,lengthM:totLen,formula:`floor(${fmt(len,0)}/${z.spacing})+1`,notes:`perimeter ${fmt(ligPerimeter,2)}m ea, ${fmt(totLen,1)}m, ${fmt(wt,1)} kg`}));
+    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:z.dia,spec:`Ligatures — ${z.zone}`,qty:totLen,unit:"m",waste:0,finalQty:totLen,formula:`${count}×${N} ligs × (perim ${fmt(ligPerimeter-2*hookExt,2)}m + 2×135° hooks ${fmt(2*hookExt,2)}m)`,notes:`${count*N} no., ${fmt(wt,1)} kg`}));
   });
   if(d.starters){
     let bd=barDiaOf(d.connDia); let len=(num(d.connEmbed)+num(d.connProj))/1000;
