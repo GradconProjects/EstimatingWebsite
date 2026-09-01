@@ -328,7 +328,7 @@ footer.note{color:var(--muted);font-size:11px;text-align:center;padding:20px;}
 function newEstimateSessionId(){ return "sess_" + Date.now() + "_" + Math.random().toString(36).slice(2,8); }
 let PROJECT = {
   name:"", jobNumber:"", client:"", units_len:"mm/m", units_conc:"m3", units_form:"m2", units_reo:"kg", units_exc:"m3",
-  units_len_pref:"mm", // "mm" or "m" — preferred input unit for overall lengths/heights (beam, wall, column, pier, kerb runs)
+  units_len_pref:"m", // "mm" or "m" — preferred input unit for overall lengths/heights (beam, wall, column, pier, kerb runs). Metres by default: a 7.2m beam is typed as 7.2, not 7200 (cross-sections stay mm).
   cover:40, grade:32, reoStandard:"Australian D500N", lapMethod:"Project-defined", anchorMethod:"Project-defined",
   barStock:12000, concreteWaste:5, reoWaste:3, formworkWaste:0, lapPct:5, bulking:15, revision:"Rev A", measurementRule:"gross",
   estimateSessionId: newEstimateSessionId(),
@@ -1164,15 +1164,56 @@ function spoilLine(inst,def,excVol){
   let vol=excVol*(1+bulk/100);
   return baseLine(inst,def,{materialGroup:"Excavation",material:"Spoil disposal (loose, bulked)",spec:`Bulking ${bulk}%`,qty:vol,unit:"m³",waste:0,finalQty:vol,formula:`exc vol × (1+${bulk}%)`});
 }
-function blindingLine(inst,def,area,thicknessMm,materialChoice){
+function blindingLine(inst,def,area,thicknessMm,materialChoice,grade){
   let vol=area*(num(thicknessMm)/1000);
   let material = materialChoice==="compacted"? "Base material (compacted)"
     : materialChoice==="loose"? "Base material (loose — enter loose thickness placed)"
-    : "Blinding concrete";
+    : `Blinding concrete${grade?` N${grade}`:""}`;
   return baseLine(inst,def,{materialGroup:"Base/Blinding",material,spec:`${thicknessMm}mm`,qty:vol,unit:"m³",waste:5,finalQty:withWaste(vol,5),formula:"area × thickness"});
 }
-function vapourMembraneLine(inst,def,area){
-  return baseLine(inst,def,{materialGroup:"Base/Blinding",material:"Vapour membrane",spec:"incl. laps",qty:area,unit:"m²",waste:10,finalQty:withWaste(area,10),formula:"area (+10% laps)"});
+function vapourMembraneLine(inst,def,area,type,lapPct){
+  let lap=lapPct===undefined?10:num(lapPct,10);
+  return baseLine(inst,def,{materialGroup:"Base/Blinding",material:`Vapour barrier — ${type||"200um polyethylene"}`,spec:`incl. ${lap}% laps/upturns`,qty:area,unit:"m²",waste:lap,finalQty:withWaste(area,lap),formula:`area (+${lap}% laps)`});
+}
+/* ---- Blinding & Vapour Barrier: ONE full section shared by every element
+   that blinds its base (strip/pad/stump footings, pile caps), so every
+   parameter — on/off, thickness, material, blinding grade, how far it
+   extends, membrane type and lap allowance — is selectable in one place
+   instead of being scattered through the geometry grid. Legacy elements
+   without the new fields keep behaving exactly as before (blinding on when
+   thickness > 0, footprint extent, 200um membrane, 10% laps). ---- */
+function blindingEnabled(d){ return d.blindingOn!==undefined? !!d.blindingOn : num(d.blinding)>0; }
+function vapourSubsection(d,label){
+  return `${chk("vapourMembrane",d.vapourMembrane,label||"Vapour barrier / membrane under element","vapourMembrane")}
+  <div class="subsec ${d.vapourMembrane?'':'hidden'}" data-show-if="vapourMembrane"><div class="grid cols3">
+   ${F("Membrane type",selOpts("vmType",d.vmType||"200um polyethylene",[["200um polyethylene","200µm polyethylene (standard)"],["300um polyethylene","300µm polyethylene (heavy duty)"],["Fortecon 200um","Fortecon 200µm"],["Damp-proof membrane","Damp-proof membrane (other)"]]))}
+   ${F("Laps & upturns allowance (%)",inpNum("vmLap",d.vmLap===undefined?10:d.vmLap))}
+   ${F("Extends to",selOpts("vmExtent",d.vmExtent||"foot",[["foot","Element footprint"],["exc","Excavation footprint (incl. oversize)"]]))}
+  </div></div>`;
+}
+function blindingSection(d){
+  let on=blindingEnabled(d);
+  return `<div class="sechead">Blinding &amp; Vapour Barrier</div>
+  ${chk("blindingOn",on,"Blinding / base layer under element","blindingOn")}
+  <div class="subsec ${on?'':'hidden'}" data-show-if="blindingOn"><div class="grid cols4">
+   ${F("Thickness (mm)",inpNum("blinding",d.blinding))}
+   ${F("Material",selOpts("blindingMaterial",d.blindingMaterial,[["concrete","Concrete blinding"],["compacted","Base material — compacted"],["loose","Base material — loose"]]))}
+   ${F("Blinding concrete grade (N)",inpNum("blindingGrade",d.blindingGrade===undefined?20:d.blindingGrade))}
+   ${F("Extends to",selOpts("blindingExtent",d.blindingExtent||"foot",[["foot","Element footprint"],["exc","Excavation footprint (incl. oversize)"]]))}
+  </div></div>
+  ${vapourSubsection(d)}`;
+}
+function blindingAndVapourLines(inst,def,d,footArea,excArea,defaultExtent){
+  let out=[];
+  // defaultExtent preserves each element's historical behaviour for saved
+  // takeoffs that predate the extent field (pile caps always blinded the
+  // oversized excavation; footings blinded the element footprint).
+  let pick=(extent)=> (extent||defaultExtent||"foot")==="exc" && excArea!==undefined? excArea : footArea;
+  if(blindingEnabled(d) && num(d.blinding)>0){
+    out.push(blindingLine(inst,def,pick(d.blindingExtent),d.blinding,d.blindingMaterial,d.blindingMaterial==="concrete"||d.blindingMaterial===undefined? (d.blindingGrade===undefined?20:d.blindingGrade):undefined));
+  }
+  if(d.vapourMembrane) out.push(vapourMembraneLine(inst,def,pick(d.vmExtent),d.vmType,d.vmLap));
+  return out;
 }
 
 /* ---- PIER ---- */
@@ -1323,12 +1364,8 @@ function renderPileCap(inst){
    <label class="chk"><input type="radio" name="pcShape_${inst.id}" data-field="shape" value="beam" ${isBeam?"checked":""}>Cap/strap beam (runs along a row of piers)</label>
   </div>
   <div class="grid cols4">
-   ${F("Quantity",inpNum("qty",d.qty))}${F(isBeam?"Beam length (mm)":"Length (mm)",inpNum("L",d.L))}${F(isBeam?"Beam width (mm)":"Width (mm)",inpNum("W",d.W))}${F("Depth (mm)",inpNum("D",d.D))}
-   ${coverField(inst)}${F("Blinding thickness (mm)",inpNum("blinding",d.blinding))}${F("Excavation oversize (mm/side)",inpNum("oversize",d.oversize))}${F("Concrete grade (MPa)",inpNum("grade",d.grade))}
-  </div>
-  <div class="grid cols3">
-   ${F("Blinding material",selOpts("blindingMaterial",d.blindingMaterial,[["concrete","Concrete blinding"],["compacted","Base material — compacted"],["loose","Base material — loose"]]))}
-   ${chk("vapourMembrane",d.vapourMembrane,"Vapour membrane under cap")}
+   ${F("Quantity",inpNum("qty",d.qty))}${LF(isBeam?"Beam length (mm)":"Length (mm)","L",d.L)}${F(isBeam?"Beam width (mm)":"Width (mm)",inpNum("W",d.W))}${F("Depth (mm)",inpNum("D",d.D))}
+   ${coverField(inst)}${F("Excavation oversize (mm/side)",inpNum("oversize",d.oversize))}${F("Concrete grade (MPa)",inpNum("grade",d.grade))}
   </div>
   <div class="subsec"><div class="sechead">Linked Bored Piers</div>
    <div class="grid cols3">${F("Linked pier element",targetSelect("linkTarget",d.linkTarget,inst.id,'pier'))}${F("Number of piers entering this cap",inpNum("linkedPierCount",d.linkedPierCount))}</div>
@@ -1355,7 +1392,7 @@ function renderPileCap(inst){
   <div class="subsec"><div class="sechead">Incoming from linked pier</div>${incomingStarters(d.linkTarget)}</div>`;
   let form=`<p class="small">Pick anywhere from none (fully cast against ground, oversized excavation) to all 4 sides (formed in open excavation with clearance).</p>
   ${faceRow([["formA","Face A (long side 1) — L×D"],["formB","Face B (long side 2) — L×D"],["formC","Face C (end 1) — W×D"],["formD","Face D (end 2) — W×D"]],d)}`;
-  return {geom,conc:`<p class="small">Concrete = L×W×D. Grade set in Geometry tab.</p>`,reo,form,exc:`<p class="small">Excavation = (L+2×oversize)×(W+2×oversize)×(D+blinding)</p>`};
+  return {geom,conc:`<p class="small">Concrete = L×W×D. Grade set in Geometry tab.</p>`,reo,form,exc:`${blindingSection(d)}<p class="small">Excavation = (L+2×oversize)×(W+2×oversize)×(D+blinding)</p>`};
 }
 function computePileCap(inst,def){
   let d=inst.data,lines=[];
@@ -1363,8 +1400,7 @@ function computePileCap(inst,def){
   let vol=N*L*W*D;
   lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:`${d.L}x${d.W}x${d.D}`,qty:vol,unit:"m³",waste:PROJECT.concreteWaste,finalQty:withWaste(vol,PROJECT.concreteWaste),formula:`${N}×${L}×${W}×${D}`}));
   let blindArea=N*(L+2*num(d.oversize)/1000)*(W+2*num(d.oversize)/1000);
-  lines.push(blindingLine(inst,def,blindArea,d.blinding,d.blindingMaterial));
-  if(d.vapourMembrane) lines.push(vapourMembraneLine(inst,def,blindArea));
+  lines.push(...blindingAndVapourLines(inst,def,d,N*L*W,blindArea,"exc"));
   let exc=N*(L+2*num(d.oversize)/1000)*(W+2*num(d.oversize)/1000)*(D+num(d.blinding)/1000);
   lines.push(baseLine(inst,def,{materialGroup:"Excavation",material:"Bulk excavation",spec:"Oversized to cap+blinding",qty:exc,unit:"m³",waste:0,finalQty:exc,formula:"(L+2os)×(W+2os)×(D+blind)"}));
   lines.push(spoilLine(inst,def,exc));
@@ -1448,13 +1484,9 @@ function stripFootingDefaults(){ return {
 function renderStripFooting(inst){
   let d=inst.data;
   let geom=`<div class="grid cols4">
-   ${F("Quantity",inpNum("qty",d.qty))}${F("Length (mm)",inpNum("length",d.length))}${F("Width (mm)",inpNum("width",d.width))}${F("Depth (mm)",inpNum("depth",d.depth))}
-   ${F("Trench width (mm)",inpNum("trenchWidth",d.trenchWidth))}${F("Excavation depth (mm)",inpNum("excDepth",d.excDepth))}${F("Blinding thickness (mm)",inpNum("blinding",d.blinding))}${coverField(inst)}
+   ${F("Quantity",inpNum("qty",d.qty))}${LF("Length (mm)","length",d.length)}${F("Width (mm)",inpNum("width",d.width))}${F("Depth (mm)",inpNum("depth",d.depth))}
+   ${F("Trench width (mm)",inpNum("trenchWidth",d.trenchWidth))}${F("Excavation depth (mm)",inpNum("excDepth",d.excDepth))}${coverField(inst)}
    ${F("Concrete grade",inpNum("grade",d.grade))}
-  </div>
-  <div class="grid cols3">
-   ${F("Blinding material",selOpts("blindingMaterial",d.blindingMaterial,[["concrete","Concrete blinding"],["compacted","Base material — compacted"],["loose","Base material — loose"]]))}
-   ${chk("vapourMembrane",d.vapourMembrane,"Vapour membrane under footing")}
   </div>`;
   let form=`<p class="small">None (cast against trench face) up to all 4 sides.</p>${faceRow([["formLeft","Left side"],["formRight","Right side"],["formStart","Start end"],["formFinish","Finish end"]],d)}`;
   let reo=`<div class="grid cols4">
@@ -1470,7 +1502,7 @@ function renderStripFooting(inst){
   <div class="subsec ${d.starters?'':'hidden'}" data-show-if="starters"><div class="grid cols4">
    ${F("Connects to",targetSelect("connTarget",d.connTarget,inst.id))}${F("Qty",inpNum("connQty",d.connQty))}${F("Dia",barSizeSel("connDia",d.connDia))}${F("Embedment (mm)",inpNum("connEmbed",d.connEmbed))}${F("Projection (mm)",inpNum("connProj",d.connProj))}
   </div></div>`;
-  return {geom,conc:"<p class='small'>Concrete = length × width × depth</p>",reo,form,exc:"<p class='small'>Excavation = length × trench width × excavation depth</p>"};
+  return {geom,conc:"<p class='small'>Concrete = length × width × depth</p>",reo,form,exc:`${blindingSection(d)}<p class='small'>Excavation = length × trench width × excavation depth</p>`};
 }
 function computeStripFooting(inst,def){
   let d=inst.data, lines=[];
@@ -1480,8 +1512,7 @@ function computeStripFooting(inst,def){
   let exc=N*(num(d.length)/1000)*(num(d.trenchWidth)/1000)*(num(d.excDepth)/1000);
   lines.push(baseLine(inst,def,{materialGroup:"Excavation",material:"Trench excavation",spec:"",qty:exc,unit:"m³",waste:0,finalQty:exc,formula:"L×trench W×exc depth"}));
   lines.push(spoilLine(inst,def,exc));
-  lines.push(blindingLine(inst,def,N*Lm*Wm,d.blinding,d.blindingMaterial));
-  if(d.vapourMembrane) lines.push(vapourMembraneLine(inst,def,N*Lm*Wm));
+  lines.push(...blindingAndVapourLines(inst,def,d,N*Lm*Wm,N*Lm*(num(d.trenchWidth)/1000),"foot"));
   let formArea=0;
   if(d.formLeft) formArea+=N*Lm*Dm;
   if(d.formRight) formArea+=N*Lm*Dm;
@@ -1557,12 +1588,8 @@ function renderPadFooting(inst){
    ${F("Diameter (mm)",inpNum("diameter",d.diameter===undefined?1200:d.diameter))}
   </div></div>
   <div class="grid cols4">
-   ${F("Excavation oversize (mm)",inpNum("oversize",d.oversize))}${F("Excavation depth (mm)",inpNum("excDepth",d.excDepth))}${F("Blinding (mm)",inpNum("blinding",d.blinding))}
+   ${F("Excavation oversize (mm)",inpNum("oversize",d.oversize))}${F("Excavation depth (mm)",inpNum("excDepth",d.excDepth))}
    ${F("Concrete grade",inpNum("grade",d.grade))}
-  </div>
-  <div class="grid cols3">
-   ${F("Blinding material",selOpts("blindingMaterial",d.blindingMaterial,[["concrete","Concrete blinding"],["compacted","Base material — compacted"],["loose","Base material — loose"]]))}
-   ${chk("vapourMembrane",d.vapourMembrane,"Vapour membrane under footing")}
   </div>
   <div class="grid cols2">${chk("pedestal",d.pedestal,"Pedestal above footing","pedestal")}${chk("sloping",d.sloping,"Sloping faces")}</div>
   <div class="subsec ${d.pedestal?'':'hidden'}" data-show-if="pedestal"><div class="grid cols3">${F("Pedestal W (mm)",inpNum("pedW",d.pedW))}${F("Pedestal D (mm)",inpNum("pedD",d.pedD))}${F("Pedestal H (mm)",inpNum("pedH",d.pedH))}</div></div>`;
@@ -1591,7 +1618,7 @@ function renderPadFooting(inst){
   <div class="subsec ${d.starters?'':'hidden'}" data-show-if="starters"><div class="grid cols4">
    ${F("Connects to",targetSelect("connTarget",d.connTarget,inst.id))}${F("Qty",inpNum("connQty",d.connQty))}${F("Dia",barSizeSel("connDia",d.connDia))}${F("Embedment (mm)",inpNum("connEmbed",d.connEmbed))}${F("Projection (mm)",inpNum("connProj",d.connProj))}${F("Hook",anchorSel("connHook",d.connHook))}
   </div></div>`;
-  return {geom,conc:"<p class='small'>Concrete = qty × plan area × D (+ pedestal if present). Plan area: L×W rectangular, π×Ø²/4 round.</p>",reo,form:cast,exc:"<p class='small'>Excavation = qty × oversized plan area × excavation depth (oversize added to each side / the diameter).</p>",conns};
+  return {geom,conc:"<p class='small'>Concrete = qty × plan area × D (+ pedestal if present). Plan area: L×W rectangular, π×Ø²/4 round.</p>",reo,form:cast,exc:`${blindingSection(d)}<p class='small'>Excavation = qty × oversized plan area × excavation depth (oversize added to each side / the diameter).</p>`,conns};
 }
 function computePadFooting(inst,def){
   let d=inst.data, lines=[];
@@ -1611,8 +1638,8 @@ function computePadFooting(inst,def){
     : N*(L+2*os)*(W+2*os)*(num(d.excDepth)/1000);
   lines.push(baseLine(inst,def,{materialGroup:"Excavation",material:"Bulk excavation",spec:"",qty:exc,unit:"m³",waste:0,finalQty:exc,formula:round?"π(Ø+2os)²/4×excD":"(L+2os)×(W+2os)×excD"}));
   lines.push(spoilLine(inst,def,exc));
-  lines.push(blindingLine(inst,def,N*planArea,d.blinding,d.blindingMaterial));
-  if(d.vapourMembrane) lines.push(vapourMembraneLine(inst,def,N*planArea));
+  let excPlanArea = round? N*(Math.PI*Math.pow(diaM+2*os,2)/4) : N*(L+2*os)*(W+2*os);
+  lines.push(...blindingAndVapourLines(inst,def,d,N*planArea,excPlanArea,"foot"));
   function mat(flag,dia,sp,dim1,dim2,label,lapFlag){
     if(!flag) return;
     let bd=barDiaOf(dia); let count=Math.floor((dim1-2*cover)/sp)+1; let barLen=(dim2-2*cover)/1000;
@@ -1855,11 +1882,11 @@ function renderSlab(inst,def){
   </div>
   <div class="subsec ${d.perimeterAuto?'hidden':''}" data-show-if="perimeterAuto_off">${F("Perimeter override (m)",inpNum("perimeterOverride",d.perimeterOverride))}</div>
   <div class="grid cols4">
-   ${!d.suspended? chk("vapourMembrane",d.vapourMembrane,"Vapour membrane"):""}
    ${!d.suspended? F("Base thickness (mm)",inpNum("baseThickness",d.baseThickness)):""}
    ${!d.suspended? F("Base material",selOpts("baseMaterialState",d.baseMaterialState,[["compacted","Compacted"],["loose","Loose"]])):""}
    ${chk("meshOn",d.meshOn,"Mesh reinforcement","meshOn")}
   </div>
+  ${!d.suspended? vapourSubsection(d,"Vapour barrier / membrane under slab"):""}
   <div class="subsec ${d.meshOn?'':'hidden'}" data-show-if="meshOn"><div class="grid cols3">${F("Mesh type",selOpts("meshType",d.meshType,Object.keys(MESHTYPES).map(m=>[m,m])))}${F("Layers",inpNum("meshLayers",d.meshLayers))}${chk("meshLap",d.meshLap,"Extra lap allowance (%)","meshLap")}</div></div>
   <div class="grid cols4">${chk("drops",d.drops,"Drops")}${chk("setdowns",d.setdowns,"Setdowns / recesses")}${chk("upstands",d.upstands,"Upstands")}${chk("cjStopEnds",d.cjStopEnds,"Construction joint stop ends")}</div>
   <div class="subsec"><div class="sechead">Edge Thickening</div><div class="grid cols3">${chk("edgeThicken",d.edgeThicken,"Thickened edge strip around perimeter","edgeThicken")}</div>
@@ -1950,7 +1977,7 @@ function computeSlab(inst,def){
     let baseVol=netArea*(num(d.baseThickness)/1000);
     let baseMatLabel = d.baseMaterialState==="loose"? "Base material (loose — enter loose thickness placed)" : "Base material (compacted)";
     lines.push(baseLine(inst,def,{materialGroup:"Base/Blinding",material:baseMatLabel,spec:`${d.baseThickness}mm`,qty:baseVol,unit:"m³",waste:5,finalQty:withWaste(baseVol,5),formula:"area×base thickness"}));
-    if(d.vapourMembrane) lines.push(vapourMembraneLine(inst,def,netArea));
+    if(d.vapourMembrane) lines.push(vapourMembraneLine(inst,def,netArea,d.vmType,d.vmLap));
   }
   if(d.edgeForms) lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Perimeter edge formwork",spec:`${d.thickness}mm edge`,qty:perim*t,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(perim*t,PROJECT.formworkWaste),formula:"perimeter × thickness"}));
   if(d.suspended && d.soffit) lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Soffit formwork",spec:"",qty:netArea,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(netArea,PROJECT.formworkWaste),formula:"net area"}));
@@ -2459,7 +2486,7 @@ function genericDefaults(kind){ return {
 };}
 function renderGeneric(inst){
   let d=inst.data;
-  let geom=`<div class="grid cols4">${F("Quantity",inpNum("qty",d.qty))}${F("Length (mm)",inpNum("length",d.length))}${F("Width (mm)",inpNum("width",d.width))}${F("Depth (mm)",inpNum("depth",d.depth))}</div>
+  let geom=`<div class="grid cols4">${F("Quantity",inpNum("qty",d.qty))}${LF("Length (mm)","length",d.length)}${LF("Width (mm)","width",d.width)}${F("Depth (mm)",inpNum("depth",d.depth))}</div>
   <div class="grid cols3">${chk("manualVolume",d.manualVolume,"Enter volume manually","manualVolume")}</div>
   <div class="subsec ${d.manualVolume?'':'hidden'}" data-show-if="manualVolume">${F("Volume (m³)",inpNum("volumeOverride",d.volumeOverride))}</div>`;
   let reo=`${chk("reoOn",d.reoOn,"Reinforcement required","reoOn")}
