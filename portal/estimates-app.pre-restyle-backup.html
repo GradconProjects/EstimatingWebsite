@@ -4,59 +4,40 @@
 <meta charset="UTF-8">
 <title>Gradcon Element Takeoff Engine</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<!-- media="print" + onload swap: the font stylesheet must NEVER block
-     script execution — offline or with the CDN unreachable the app still
-     boots instantly on the Georgia/Segoe fallbacks. -->
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Karla:wght@400;500;600;700;800&family=Caveat:wght@600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
 <style>
-/* ============ Gradcon Estimates — "craft studio" theme ============
-   Warm linen/paper ground, deep pine ink, thread-red accents, ochre
-   highlights; Fraunces display headings over Karla body text; dashed
-   "stitch" rules and gentle lift-on-hover. Palette and motion language
-   from the approved reference design — layout and every control kept
-   exactly as before, only the skin changed. */
 :root{
-  --bg:#f3ead8; --panel:#faf5e9; --panel2:#ede1c9; --line:rgba(33,56,47,.22); --text:#21382f; --muted:#5c7268;
-  --accent:#2f5448; --accent2:#d9a13b; --danger:#cf4b44; --good:#55745f; --input:#fffdf7;
-  --thread:#cf4b44; --thread2:#a83a34; --pine:#2f5448; --ink2:#16281f; --rose:#e5b3a4; --berry:#7c4a5a;
-  --radius:12px;
-  --shadow-tag:0 10px 24px -12px rgba(22,40,31,.35);
-  --shadow-pin:0 18px 40px -18px rgba(22,40,31,.45);
+  --bg:#0f1416; --panel:#161d21; --panel2:#1c252a; --line:#2a353b; --text:#e7eef0; --muted:#93a5ab;
+  --accent:#4fb0a8; --accent2:#e8a33d; --danger:#d9695f; --good:#5fbf7a; --input:#0c1114;
+  --radius:8px;
 }
 *{box-sizing:border-box;}
-body{margin:0;background:var(--bg);color:var(--text);font-family:"Karla","Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:13.5px;
-  background-image:repeating-linear-gradient(0deg,rgba(33,56,47,.028) 0 1px,transparent 1px 3px),repeating-linear-gradient(90deg,rgba(33,56,47,.028) 0 1px,transparent 1px 3px);}
-h1,h2,h3,h4{margin:0 0 8px 0;font-weight:600;font-family:"Fraunces",Georgia,serif;letter-spacing:-.01em;}
-::selection{background:var(--thread);color:var(--panel);}
-header.app{padding:14px 20px;background:var(--pine);color:#faf5e9;border-bottom:2px dashed rgba(207,75,68,.55);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;position:sticky;top:0;z-index:50;
-  background-image:radial-gradient(rgba(243,234,216,.10) 1px,transparent 1.4px);background-size:22px 22px;}
+body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:13.5px;}
+h1,h2,h3,h4{margin:0 0 8px 0;font-weight:600;}
+header.app{padding:14px 20px;background:linear-gradient(180deg,#131a1d,#0f1416);border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;position:sticky;top:0;z-index:50;}
 header.app .title{display:flex;align-items:center;gap:10px;}
-header.app .title .logo{width:32px;height:32px;border-radius:50%;background:var(--thread);display:flex;align-items:center;justify-content:center;font-weight:800;color:#faf5e9;font-family:"Fraunces",Georgia,serif;box-shadow:var(--shadow-tag);}
-header.app .title h1{font-size:17px;color:#faf5e9;}
-header.app .title span{color:rgba(243,234,216,.72);font-size:11.5px;}
+header.app .title .logo{width:30px;height:30px;border-radius:7px;background:linear-gradient(135deg,var(--accent),#2c7a73);display:flex;align-items:center;justify-content:center;font-weight:700;color:#04211d;}
+header.app .title h1{font-size:16px;}
+header.app .title span{color:var(--muted);font-size:11.5px;}
 .save-zone{display:flex;align-items:center;gap:9px;}
-.save-status{font-size:11px;color:rgba(243,234,216,.75);white-space:nowrap;min-width:110px;text-align:right;}
-.save-status.ok{color:#a9d9b8;}
-.save-status.err{color:#f0b3ab;}
+.save-status{font-size:11px;color:var(--muted);white-space:nowrap;min-width:110px;text-align:right;}
+.save-status.ok{color:#4fd1a5;}
+.save-status.err{color:#e57373;}
 #saveBtn{white-space:nowrap;}
 .proj-picker{position:relative;}
 #projBtn{white-space:nowrap;max-width:240px;overflow:hidden;text-overflow:ellipsis;}
-.proj-menu{position:absolute;right:0;top:calc(100% + 6px);z-index:70;background:var(--panel);border:1px solid var(--line);border-radius:14px;min-width:340px;max-height:60vh;overflow:auto;box-shadow:var(--shadow-pin);padding:6px;color:var(--text);}
-.proj-item{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;text-align:left;background:transparent;border:none;border-radius:9px;padding:8px 10px;cursor:pointer;color:var(--text);font-family:inherit;}
-.proj-item:hover{background:rgba(47,84,72,.08);}
-.proj-item.active{background:rgba(47,84,72,.10);cursor:default;outline:2px dashed rgba(207,75,68,.5);outline-offset:-4px;}
+.proj-menu{position:absolute;right:0;top:calc(100% + 6px);z-index:70;background:var(--panel);border:1px solid var(--line);border-radius:10px;min-width:340px;max-height:60vh;overflow:auto;box-shadow:0 10px 34px rgba(0,0,0,.4);padding:6px;}
+.proj-item{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;text-align:left;background:transparent;border:none;border-radius:8px;padding:8px 10px;cursor:pointer;color:var(--text);}
+.proj-item:hover{background:var(--input);}
+.proj-item.active{background:var(--input);cursor:default;outline:1px solid var(--accent);}
 .proj-item .proj-meta{font-size:11px;opacity:.65;display:block;}
 .proj-menu .proj-new{width:100%;margin-top:6px;}
-nav.tabs{display:flex;gap:4px;background:rgba(22,40,31,.35);padding:4px;border-radius:999px;border:1px solid rgba(243,234,216,.25);flex-wrap:wrap;}
-nav.tabs button{background:transparent;border:none;color:rgba(243,234,216,.85);padding:7px 14px;border-radius:999px;cursor:pointer;font-size:12.5px;font-weight:700;font-family:inherit;transition:transform .2s ease,background-color .2s ease;}
-nav.tabs button:hover{background:rgba(243,234,216,.14);transform:translateY(-1px);}
-nav.tabs button.active{background:var(--thread);color:#faf5e9;box-shadow:var(--shadow-tag);}
+nav.tabs{display:flex;gap:4px;background:var(--panel2);padding:4px;border-radius:10px;border:1px solid var(--line);}
+nav.tabs button{background:transparent;border:none;color:var(--muted);padding:7px 14px;border-radius:7px;cursor:pointer;font-size:12.5px;font-weight:600;}
+nav.tabs button.active{background:var(--accent);color:#04211d;}
 main{max-width:1400px;margin:0 auto;padding:18px 20px 80px;}
 .page{display:none;}
 .page.active{display:block;}
-.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-bottom:16px;box-shadow:var(--shadow-tag);}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-bottom:16px;}
 .grid{display:grid;gap:10px;}
 .grid.cols2{grid-template-columns:repeat(2,1fr);}
 .grid.cols3{grid-template-columns:repeat(3,1fr);}
@@ -64,112 +45,103 @@ main{max-width:1400px;margin:0 auto;padding:18px 20px 80px;}
 .grid.cols6{grid-template-columns:repeat(6,1fr);}
 @media(max-width:900px){.grid.cols2,.grid.cols3,.grid.cols4,.grid.cols6{grid-template-columns:repeat(2,1fr);}}
 label.field{display:flex;flex-direction:column;gap:3px;font-size:11.5px;color:var(--muted);}
-label.field span.lbl{color:var(--text);font-weight:700;}
-input[type=text],input[type=number],select,textarea{background:var(--input);border:1px solid var(--line);color:var(--text);border-radius:8px;padding:6px 8px;font-size:13px;width:100%;font-family:inherit;}
-input[type=number]{font-variant-numeric:tabular-nums;}
-input[type=checkbox]{width:15px;height:15px;accent-color:var(--thread);}
+label.field span.lbl{color:var(--text);font-weight:600;}
+input[type=text],input[type=number],select,textarea{background:var(--input);border:1px solid var(--line);color:var(--text);border-radius:6px;padding:6px 8px;font-size:13px;width:100%;}
+input[type=checkbox]{width:15px;height:15px;accent-color:var(--accent);}
 .chk{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--text);cursor:pointer;}
 .chk input{cursor:pointer;}
 button{cursor:pointer;font-family:inherit;}
-.btn{background:var(--panel);border:1px solid var(--line);color:var(--text);padding:7px 12px;border-radius:999px;font-size:12.5px;font-weight:700;transition:transform .2s ease,box-shadow .2s ease,border-color .2s ease,background-color .2s ease;}
-.btn:hover{border-color:var(--thread);transform:translateY(-2px);box-shadow:var(--shadow-tag);}
-.btn:active{transform:translateY(1px) scale(.98);}
-.btn.primary{background:var(--thread);border-color:var(--thread);color:#faf5e9;}
-.btn.primary:hover{background:var(--thread2);border-color:var(--thread2);}
-.btn.small{padding:4px 10px;font-size:11.5px;}
+.btn{background:var(--panel2);border:1px solid var(--line);color:var(--text);padding:7px 12px;border-radius:7px;font-size:12.5px;font-weight:600;}
+.btn:hover{border-color:var(--accent);}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#04211d;}
+.btn.small{padding:4px 8px;font-size:11.5px;}
 .btn.danger{color:var(--danger);}
 .btn.ghost{background:transparent;}
 .lib-group{margin-bottom:10px;}
-.lib-group h4{color:var(--thread);font-family:"Karla",sans-serif;font-size:11px;text-transform:uppercase;letter-spacing:.22em;margin-bottom:6px;display:flex;align-items:center;gap:8px;}
-.lib-group h4::before{content:"";display:inline-block;height:2px;width:22px;background:var(--thread);}
-.lib-item{display:flex;align-items:center;justify-content:space-between;padding:5px 8px;border-radius:8px;transition:background-color .25s ease;}
-.lib-item:hover{background:rgba(47,84,72,.07);}
+.lib-group h4{color:var(--accent2);font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;}
+.lib-item{display:flex;align-items:center;justify-content:space-between;padding:5px 8px;border-radius:6px;}
+.lib-item:hover{background:var(--panel2);}
 .lib-item .name{display:flex;align-items:center;gap:8px;font-size:12.5px;}
-.lib-item .count{font-size:11px;color:var(--panel);background:var(--accent);padding:1px 8px;border-radius:20px;font-weight:700;}
+.lib-item .count{font-size:11px;color:var(--muted);background:var(--panel2);padding:1px 7px;border-radius:20px;}
 .lib-item button{font-size:11px;padding:3px 8px;}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);margin-bottom:14px;overflow:hidden;box-shadow:var(--shadow-tag);transition:box-shadow .3s ease;}
-.card:hover{box-shadow:var(--shadow-pin);}
-.card .card-head{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--panel2);border-bottom:2px dashed rgba(207,75,68,.45);}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);margin-bottom:14px;overflow:hidden;}
+.card .card-head{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--panel2);border-bottom:1px solid var(--line);}
 .card .card-head .idn{display:flex;align-items:center;gap:10px;}
-.card .card-head .idn .badge{background:var(--thread);color:#faf5e9;font-weight:800;font-size:11px;padding:2px 9px;border-radius:20px;}
-.card .card-head input.name{background:transparent;border:none;color:var(--text);font-size:15px;font-weight:700;width:220px;font-family:"Fraunces",Georgia,serif;}
+.card .card-head .idn .badge{background:var(--accent);color:#04211d;font-weight:700;font-size:11px;padding:2px 8px;border-radius:20px;}
+.card .card-head input.name{background:transparent;border:none;color:var(--text);font-size:14px;font-weight:700;width:220px;}
 .card .card-head .tools{display:flex;gap:6px;}
 .card-body{display:flex;}
-.card-tabs{width:130px;flex:none;background:var(--panel2);border-right:1px solid var(--line);padding:8px;}
-.card-tabs button{display:block;width:100%;text-align:left;background:transparent;border:none;color:var(--muted);padding:8px 9px;border-radius:8px;font-size:12px;margin-bottom:2px;font-weight:700;transition:color .2s ease,background-color .2s ease;}
-.card-tabs button:hover{color:var(--text);}
-.card-tabs button.active{background:var(--panel);color:var(--thread);box-shadow:inset 3px 0 0 var(--thread);}
+.card-tabs{width:130px;flex:none;background:#111819;border-right:1px solid var(--line);padding:8px;}
+.card-tabs button{display:block;width:100%;text-align:left;background:transparent;border:none;color:var(--muted);padding:8px 9px;border-radius:6px;font-size:12px;margin-bottom:2px;font-weight:600;}
+.card-tabs button.active{background:var(--panel2);color:var(--accent);}
 .card-panes{flex:1;padding:14px 16px;min-width:0;}
 .pane{display:none;}
 .pane.active{display:block;}
-.subsec{margin-top:10px;padding-top:10px;border-top:2px dashed rgba(207,75,68,.35);}
+.subsec{margin-top:10px;padding-top:10px;border-top:1px dashed var(--line);}
 .subsec.hidden{display:none;}
-.sechead{font-size:11px;font-weight:800;color:var(--thread);margin:2px 0 8px;text-transform:uppercase;letter-spacing:.22em;display:flex;align-items:center;gap:8px;}
-.sechead::before{content:"";display:inline-block;height:2px;width:22px;background:var(--thread);}
+.sechead{font-size:12px;font-weight:700;color:var(--accent);margin:2px 0 8px;text-transform:uppercase;letter-spacing:.04em;}
 table.rows{width:100%;border-collapse:collapse;margin-bottom:8px;}
-table.rows th{font-size:10.5px;color:var(--muted);text-align:left;padding:4px 6px;border-bottom:1px solid var(--line);text-transform:uppercase;letter-spacing:.06em;}
-table.rows td{padding:3px 4px;border-bottom:1px dotted rgba(33,56,47,.25);font-variant-numeric:tabular-nums;}
+table.rows th{font-size:10.5px;color:var(--muted);text-align:left;padding:4px 6px;border-bottom:1px solid var(--line);}
+table.rows td{padding:3px 4px;border-bottom:1px solid #1a2226;}
 table.rows input,table.rows select{padding:4px 6px;font-size:12px;}
 table.results{width:100%;border-collapse:collapse;font-size:12px;}
-table.results th{background:var(--panel2);text-align:left;padding:6px 8px;font-size:10.5px;color:var(--text);position:sticky;top:0;text-transform:uppercase;letter-spacing:.06em;}
-table.results td{padding:5px 8px;border-bottom:1px dotted rgba(33,56,47,.3);font-variant-numeric:tabular-nums;}
-table.results tr:hover td{background:rgba(47,84,72,.06);}
-.pill{display:inline-block;padding:1px 9px;border-radius:20px;font-size:10.5px;font-weight:800;}
-.pill.concrete{background:rgba(217,161,59,.2);color:#8a6412;}
-.pill.reo{background:rgba(85,116,95,.18);color:#2f5448;}
-.pill.form{background:rgba(109,145,134,.2);color:#3c5f55;}
-.pill.exc{background:rgba(207,75,68,.16);color:#a83a34;}
-.pill.acc{background:rgba(124,74,90,.16);color:#7c4a5a;}
-tr.manual-override td{background:rgba(217,161,59,.14);}
-tr.manual-override:hover td{background:rgba(217,161,59,.22);}
+table.results th{background:var(--panel2);text-align:left;padding:6px 8px;font-size:10.5px;color:var(--muted);position:sticky;top:0;}
+table.results td{padding:5px 8px;border-bottom:1px solid #1a2226;}
+table.results tr:hover td{background:#1a2226;}
+.pill{display:inline-block;padding:1px 8px;border-radius:20px;font-size:10.5px;font-weight:700;}
+.pill.concrete{background:#3a2e1c;color:#e8a33d;}
+.pill.reo{background:#1e3230;color:#5fbf7a;}
+.pill.form{background:#22303a;color:#6fb7e0;}
+.pill.exc{background:#33241f;color:#e08a5f;}
+.pill.acc{background:#2c2137;color:#c090e8;}
+tr.manual-override td{background:#2a2410;}
+tr.manual-override:hover td{background:#332c14;}
 .manual-cell input[type=number]{width:80px;}
-.takeoff-chip{display:inline-flex;align-items:stretch;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--panel);transition:transform .25s ease,box-shadow .25s ease;}
-.takeoff-chip:hover{transform:translateY(-2px);box-shadow:var(--shadow-tag);}
-.takeoff-chip.active{border-color:var(--thread);outline:2px dashed rgba(207,75,68,.4);outline-offset:2px;}
-.takeoff-chip .takeoff-open{background:var(--input);border:none;color:var(--text);padding:7px 12px;cursor:pointer;font-size:12.5px;font-family:inherit;}
-.takeoff-chip.active .takeoff-open{background:var(--thread);color:#faf5e9;font-weight:700;cursor:default;}
-.takeoff-chip.active .takeoff-open .small{color:rgba(250,245,233,.85);}
+.takeoff-chip{display:inline-flex;align-items:stretch;border:1px solid var(--line);border-radius:8px;overflow:hidden;}
+.takeoff-chip.active{border-color:var(--accent);}
+.takeoff-chip .takeoff-open{background:var(--input);border:none;color:var(--text);padding:7px 12px;cursor:pointer;font-size:12.5px;}
+.takeoff-chip.active .takeoff-open{background:var(--accent);color:#04211d;font-weight:700;cursor:default;}
 .takeoff-chip .takeoff-del{background:transparent;border:none;border-left:1px solid var(--line);color:var(--muted);padding:0 9px;cursor:pointer;}
-.takeoff-chip .takeoff-del:hover{color:var(--danger);}
-.manual-badge{display:inline-block;font-size:10px;font-weight:800;color:#8a6412;background:rgba(217,161,59,.22);padding:1px 7px;border-radius:10px;margin-left:4px;white-space:nowrap;}
-.diagram{background:var(--input);border:1px solid var(--line);border-radius:10px;overflow:hidden;background-image:radial-gradient(rgba(33,56,47,.10) 1px,transparent 1.4px);background-size:22px 22px;}
-.diag-head{display:flex;align-items:center;justify-content:space-between;padding:6px 10px;border-bottom:2px dashed rgba(207,75,68,.35);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:9px;letter-spacing:.08em;color:var(--accent);background:var(--panel);}
+.takeoff-chip .takeoff-del:hover{color:#e74c3c;}
+.manual-badge{display:inline-block;font-size:10px;font-weight:700;color:#e8c33d;background:#3a2e1c;padding:1px 6px;border-radius:10px;margin-left:4px;white-space:nowrap;}
+.diagram{background:#0c1214;border:1px solid var(--line);border-radius:8px;overflow:hidden;}
+.diag-head{display:flex;align-items:center;justify-content:space-between;padding:6px 10px;border-bottom:1px solid #1e2b30;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:9px;letter-spacing:.08em;color:var(--accent);}
 .diag-head span:last-child{color:var(--muted);letter-spacing:.06em;}
 .diagram svg{display:block;width:100%;height:auto;padding:8px;box-sizing:border-box;}
+.diagram svg{width:100%;height:auto;display:block;}
 .small{font-size:11px;color:var(--muted);}
-.warn{background:rgba(217,161,59,.14);border:1px solid rgba(217,161,59,.55);color:#7a5a10;padding:8px 10px;border-radius:8px;font-size:12px;margin-bottom:8px;}
+.warn{background:#332318;border:1px solid #6b4a22;color:#e8a33d;padding:8px 10px;border-radius:6px;font-size:12px;margin-bottom:8px;}
 .totals-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;}
-.stat{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 12px;min-width:110px;box-shadow:var(--shadow-tag);}
-.stat .n{font-size:17px;font-weight:800;color:var(--thread);font-family:"Fraunces",Georgia,serif;font-variant-numeric:tabular-nums;}
-.stat .l{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;}
+.stat{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px 12px;min-width:110px;}
+.stat .n{font-size:16px;font-weight:800;color:var(--accent);}
+.stat .l{font-size:10.5px;color:var(--muted);}
 .formula{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;color:var(--muted);}
 .toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;}
-input[type=text].name:focus,input:focus,select:focus{outline:2px solid rgba(207,75,68,.45);outline-offset:0;}
-.empty{padding:40px 20px;text-align:center;color:var(--muted);font-family:"Caveat",cursive;font-size:19px;}
+input[type=text].name:focus,input:focus,select:focus{outline:1px solid var(--accent);}
+.empty{padding:40px 20px;text-align:center;color:var(--muted);}
 .filterbar{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;}
 .filterbar select,.filterbar input{max-width:180px;}
-tr.reg-group-head td{background:var(--panel2);padding:8px 10px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);font-family:"Fraunces",Georgia,serif;font-weight:600;}
+tr.reg-group-head td{background:var(--panel2);padding:8px 10px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);}
 tr.reg-group-head .badge{margin:0 4px;}
 footer.note{color:var(--muted);font-size:11px;text-align:center;padding:20px;}
-.tip{background:rgba(85,116,95,.10);border:1px dashed rgba(47,84,72,.45);color:#3c5a4c;border-radius:10px;padding:8px 10px;font-size:11.5px;margin:6px 0 10px;display:flex;gap:8px;align-items:flex-start;line-height:1.45;}
+.tip{background:#132521;border:1px solid #24463f;color:#8fd4c5;border-radius:7px;padding:8px 10px;font-size:11.5px;margin:6px 0 10px;display:flex;gap:8px;align-items:flex-start;line-height:1.45;}
 .tip .ico{flex:none;font-size:14px;}
-.tip b{color:var(--pine);}
-.teach{background:var(--panel);border:1px dashed rgba(47,84,72,.5);border-radius:12px;padding:14px 16px;margin-bottom:16px;box-shadow:var(--shadow-tag);}
-.teach h3{color:var(--pine);font-size:14px;margin-bottom:8px;}
+.tip b{color:#c8ecdf;}
+.teach{background:linear-gradient(180deg,#182420,#141c1a);border:1px solid #2a4a41;border-radius:10px;padding:14px 16px;margin-bottom:16px;}
+.teach h3{color:#8fd4c5;font-size:13px;margin-bottom:8px;}
 .teach ol,.teach ul{margin:0 0 0 18px;padding:0;font-size:12.5px;color:var(--text);line-height:1.65;}
 .teach li{margin-bottom:4px;}
 .roleband{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;}
-.roleband span{background:var(--panel2);border:1px solid var(--line);border-radius:20px;padding:3px 11px;font-size:10.5px;color:#8a6412;font-weight:700;}
-@media (prefers-reduced-motion: reduce){
-  .btn,.btn:hover,.takeoff-chip,.takeoff-chip:hover,nav.tabs button{transition:none;transform:none;}
-}
+.roleband span{background:var(--panel2);border:1px solid var(--line);border-radius:20px;padding:3px 11px;font-size:10.5px;color:var(--accent2);}
 @media print{
   /* Hide the ENTIRE app — every page, whichever is active — so the printed
-     takeoff report is only #printReport. */
+     takeoff report is only #printReport. (Previously #page-export/#page-register
+     weren't hidden, so the report came out with the app's publish/export
+     panels stuck on the front.) */
   header.app, nav.tabs, .toolbar, .card-tabs, footer.note, .filterbar, .page { display:none !important; }
-  body{background:#fff;color:#000;font-size:11px;background-image:none;}
+  body{background:#fff;color:#000;font-size:11px;}
   #printReport{display:block !important;}
-  .stat{border:1px solid #999;box-shadow:none;}
+  .stat{border:1px solid #999;}
   table.results th, table.results td{border:1px solid #999;color:#000;}
 }
 #printReport{display:none;}
@@ -405,19 +377,9 @@ function initTakeoffRegistry(){
     idx = [{ id:"p1", name:"", key: ESTIMATE_STATE_KEY, savedAt: new Date().toISOString() }];
     try{ localStorage.setItem(ESTIMATE_INDEX_KEY, JSON.stringify(idx)); }catch(e){}
   }
-  let live = liveProjects(idx);
-  if(live.length===0){
-    // Every entry is a tombstone — open a fresh takeoff without reusing a
-    // deleted id/key (reusing one would resurrect it on other devices).
-    let id = "proj_"+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
-    let fresh = { id, name:"", key: ESTIMATE_STATE_KEY+"::"+id, savedAt:new Date().toISOString() };
-    idx.push(fresh);
-    try{ localStorage.setItem(ESTIMATE_INDEX_KEY, JSON.stringify(idx)); }catch(e){}
-    live = [fresh];
-  }
   let activeId = null;
   try{ activeId = localStorage.getItem(ESTIMATE_ACTIVE_KEY); }catch(e){}
-  let entry = live.find(p=>p.id===activeId) || live[0];
+  let entry = idx.find(p=>p.id===activeId) || idx[0];
   CURRENT_PROJECT_KEY = entry.key;
   try{ localStorage.setItem(ESTIMATE_ACTIVE_KEY, entry.id); }catch(e){}
 }
@@ -428,18 +390,15 @@ function activeTakeoffId(){
 }
 function switchToTakeoff(id){
   let idx = loadProjectsIndex();
-  let entry = idx.find(p=>p.id===id && !p.deleted);
+  let entry = idx.find(p=>p.id===id);
   if(!entry || entry.key===CURRENT_PROJECT_KEY) return;
   // Persist the takeoff being left under its own key — unless it was just
-  // deleted, where saving would resurrect its blob.
-  if(idx.some(p=>p.key===CURRENT_PROJECT_KEY && !p.deleted)) saveEstimateState();
+  // deleted (no longer in the index), where saving would resurrect its blob.
+  if(idx.some(p=>p.key===CURRENT_PROJECT_KEY)) saveEstimateState();
   CURRENT_PROJECT_KEY = entry.key;
   try{ localStorage.setItem(ESTIMATE_ACTIVE_KEY, id); }catch(e){}
   freshProjectState();
-  let loadedLocally = loadEstimateState(); // local copy now; cloud pulls a newer one below if it exists
-  // No local blob (fresh browser / other device): the workspace on screen is a
-  // placeholder until the cloud copy arrives — block autosave from writing it.
-  awaitingCloudLoad = !loadedLocally;
+  loadEstimateState();       // local copy now; cloud pulls a newer one below if it exists
   rerenderAllPages();
   syncFromCloud();
 }
@@ -458,25 +417,21 @@ function newTakeoff(){
 }
 function deleteTakeoff(id){
   let idx = loadProjectsIndex();
-  let entry = idx.find(p=>p.id===id && !p.deleted);
+  let entry = idx.find(p=>p.id===id);
   if(!entry) return;
   let name = entry.name || "Untitled takeoff";
   if(portalPref("confirmDeletes")!==false && !confirm(`Delete saved takeoff "${name}" and all its elements? This cannot be undone.`)) return;
-  // Tombstone, don't remove: the deletion itself has to sync to other devices
-  // (see liveProjects) or their copy of the index resurrects the entry.
-  entry.deleted = true;
-  entry.savedAt = new Date().toISOString();
+  idx = idx.filter(p=>p.id!==id);
   try{ localStorage.removeItem(entry.key); localStorage.removeItem(entry.key+"__syncedAt"); localStorage.removeItem(entry.key+"__history"); }catch(e){}
-  kvPush(entry.key, null); // clear the cloud copy too
-  let live = liveProjects(idx);
-  if(live.length===0){
+  kvPush(entry.key, null); // clear the cloud copy so another device's sync can't resurrect it
+  if(idx.length===0){
     saveProjectsIndex(idx);
     newTakeoff();
     return;
   }
   saveProjectsIndex(idx);
   if(entry.key===CURRENT_PROJECT_KEY){
-    switchToTakeoff(live[0].id);
+    switchToTakeoff(idx[0].id);
   } else {
     renderTakeoffsBar();
   }
@@ -484,7 +439,7 @@ function deleteTakeoff(id){
 function renderTakeoffsBar(){
   let host = document.getElementById("takeoffsBar");
   if(!host) return;
-  let idx = liveProjects();
+  let idx = loadProjectsIndex();
   let activeKey = CURRENT_PROJECT_KEY;
   host.innerHTML = `<div class="sechead">Saved Takeoffs</div>
    <div class="tip"><span class="ico">💾</span><div>Each takeoff saves independently — 💾 Save writes only the one that's open. Start another with <b>+ New takeoff</b> and resume any saved one from this list at any time; nothing here touches the others.</div></div>
@@ -529,7 +484,7 @@ function updateProjHeaderBtn(){
 }
 function renderProjectMenu(){
   let menu=document.getElementById("projMenu"); if(!menu) return;
-  let idx=liveProjects();
+  let idx=loadProjectsIndex();
   menu.innerHTML = idx.map(p=>{
     let active=p.key===CURRENT_PROJECT_KEY;
     let when=p.savedAt? new Date(p.savedAt).toLocaleString([], {day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"}) : "never saved";
@@ -629,18 +584,9 @@ const ESTIMATE_STATE_KEY = "gradcon-estimate-state";
 const ESTIMATE_INDEX_KEY = "gradcon-estimate-projects-index";
 const ESTIMATE_ACTIVE_KEY = "gradcon-estimate-active";
 let CURRENT_PROJECT_KEY = ESTIMATE_STATE_KEY;
-// True while the open takeoff has no local blob and its cloud copy hasn't
-// arrived yet — autosave must not write the placeholder state over the save.
-let awaitingCloudLoad = false;
 function loadProjectsIndex(){
   try{ let idx = JSON.parse(localStorage.getItem(ESTIMATE_INDEX_KEY)); return Array.isArray(idx)? idx : []; }catch(e){ return []; }
 }
-// Deleted takeoffs stay in the index as tombstones ({deleted:true}) instead of
-// being filtered out — the cross-device union merge only ever ADDS entries, so
-// a plain removal came straight back the next time another copy of the list
-// synced in (the "deleted untitled saves keep coming back" bug). Everything
-// that shows takeoffs to the user lists liveProjects() only.
-function liveProjects(idx){ return (idx||loadProjectsIndex()).filter(p=>!p.deleted); }
 function saveProjectsIndex(idx){
   try{ localStorage.setItem(ESTIMATE_INDEX_KEY, JSON.stringify(idx)); }catch(e){}
   kvPush(ESTIMATE_INDEX_KEY, idx);
@@ -724,28 +670,19 @@ function restoreSaveHistory(i){
   rerenderAllPages();
 }
 function saveEstimateState(skipHistory){
-  // Capture the key NOW: the cloud push resolves asynchronously, and the user
-  // may have switched takeoffs by then. Writing the old project's sync stamp
-  // under the NEW project's key made syncFromCloud think the new project was
-  // already up to date — so its cloud elements were never pulled, and the
-  // empty fresh state could later be saved over the real one. (This was the
-  // "my save has no elements" bug.)
-  const keyAtSave = CURRENT_PROJECT_KEY;
-  const snapshot = estimateStateSnapshot();
-  awaitingCloudLoad = false; // an explicit save commits the in-memory state
   try{
-    localStorage.setItem(keyAtSave, JSON.stringify({ ...snapshot, savedAt: new Date().toISOString() }));
+    localStorage.setItem(CURRENT_PROJECT_KEY, JSON.stringify({ ...estimateStateSnapshot(), savedAt: new Date().toISOString() }));
     showSaveStatus("ok");
     if(!skipHistory) pushSaveHistory();
   }catch(err){ showSaveStatus("err"); }
-  kvPush(keyAtSave, snapshot).then(row=>{
+  kvPush(CURRENT_PROJECT_KEY, estimateStateSnapshot()).then(row=>{
     if(!row) return;
-    try{ localStorage.setItem(keyAtSave+"__syncedAt", row.updated_at); }catch(e){}
+    try{ localStorage.setItem(CURRENT_PROJECT_KEY+"__syncedAt", row.updated_at); }catch(e){}
   });
   // Keep the takeoff registry's name/date for the open project current, so
   // the Saved Takeoffs list always shows what a resume would open.
   let idx = loadProjectsIndex();
-  let entry = idx.find(p=>p.key===keyAtSave);
+  let entry = idx.find(p=>p.key===CURRENT_PROJECT_KEY);
   if(entry){
     entry.name = PROJECT.name || "";
     entry.savedAt = new Date().toISOString();
@@ -759,10 +696,6 @@ function saveEstimateState(skipHistory){
 // current. Runs on a slow interval, when the tab is hidden (phone/tablet
 // switching apps), and on unload.
 function autosaveLocal(){
-  // Never autosave while a just-opened takeoff is still waiting on its cloud
-  // copy — the in-memory state is a placeholder, and writing it out would
-  // overwrite the real saved elements with an empty workspace.
-  if(awaitingCloudLoad) return;
   try{ localStorage.setItem(CURRENT_PROJECT_KEY, JSON.stringify({ ...estimateStateSnapshot(), savedAt: new Date().toISOString() })); }catch(err){ return; }
   let idx = loadProjectsIndex();
   let entry = idx.find(p=>p.key===CURRENT_PROJECT_KEY);
@@ -803,19 +736,13 @@ async function syncFromCloud(){
     const row = await kvFetch(keyAtStart);
     if(CURRENT_PROJECT_KEY !== keyAtStart) return;
     if(!row){
-      // Nothing in the cloud either — the fresh state IS this takeoff's state.
-      if(CURRENT_PROJECT_KEY === keyAtStart) awaitingCloudLoad = false;
       const pushed = await kvPush(keyAtStart, estimateStateSnapshot());
       if(pushed) try{ localStorage.setItem(keyAtStart+"__syncedAt", pushed.updated_at); }catch(e){}
       return;
     }
     const localSyncedAt = localStorage.getItem(keyAtStart+"__syncedAt");
-    if(localSyncedAt && row.updated_at <= localSyncedAt){
-      if(CURRENT_PROJECT_KEY === keyAtStart) awaitingCloudLoad = false;
-      return;
-    }
+    if(localSyncedAt && row.updated_at <= localSyncedAt) return;
     applyLoadedEstimateState(row.value || {});
-    if(CURRENT_PROJECT_KEY === keyAtStart) awaitingCloudLoad = false;
     try{
       localStorage.setItem(keyAtStart, JSON.stringify({ ...estimateStateSnapshot(), savedAt: new Date().toISOString() }));
       localStorage.setItem(keyAtStart+"__syncedAt", row.updated_at);
@@ -839,23 +766,11 @@ async function syncProjectsIndexFromCloud(){
     row.value.forEach(remote=>{
       let mine = byId[remote.id];
       if(!mine){ local.push(remote); byId[remote.id]=remote; changed = true; }
-      else if((remote.savedAt||"") > (mine.savedAt||"")){
-        mine.name = remote.name; mine.savedAt = remote.savedAt;
-        // Deletions travel as tombstones — a newer remote entry carries the
-        // authoritative deleted state, in both directions.
-        if(remote.deleted) mine.deleted = true; else delete mine.deleted;
-        changed = true;
-      }
+      else if((remote.savedAt||"") > (mine.savedAt||"")){ mine.name = remote.name; mine.savedAt = remote.savedAt; changed = true; }
     });
     if(changed){
       try{ localStorage.setItem(ESTIMATE_INDEX_KEY, JSON.stringify(local)); }catch(e){}
       renderTakeoffsBar();
-      // The open takeoff may have been deleted on another device — move off it.
-      let cur = local.find(p=>p.key===CURRENT_PROJECT_KEY);
-      if(cur && cur.deleted){
-        let live = liveProjects(local);
-        if(live.length) switchToTakeoff(live[0].id); else newTakeoff();
-      }
     }
   }catch(e){ /* best-effort */ }
 }
@@ -1060,7 +975,7 @@ function coverField(inst){
  * a cover/units footer. sheetFrame() is what every diagXxx() below wraps
  * its shape in; dimH/dimV are the dimension-line primitives every shape
  * uses for its length/depth callouts. */
-const DWG = { ink:"#2f5448", bar:"#cf4b44", dim:"#55745f", txt:"#21382f", muted:"#8a9a8f", gl:"#7c4a5a" };
+const DWG = { ink:"#e8a33d", bar:"#4fb0a8", dim:"#7fa3d4", txt:"#8fb8e0", muted:"#5c7379", gl:"#5a7a9a" };
 function sheetFrame(inst,label,vb,content){
   let cov = inst.data.cover!==undefined && inst.data.cover!=="" ? inst.data.cover : PROJECT.cover;
   return `<div class="diagram">
@@ -1077,7 +992,7 @@ function dimH(x1,x2,y,label,mid){
   return `<line x1="${x1}" y1="${y-5}" x2="${x1}" y2="${y+5}" stroke="${DWG.dim}" stroke-width="1"/>
   <line x1="${x2}" y1="${y-5}" x2="${x2}" y2="${y+5}" stroke="${DWG.dim}" stroke-width="1"/>
   <line x1="${x1}" y1="${y}" x2="${x2}" y2="${y}" stroke="${DWG.dim}" stroke-width="1" marker-start="url(#diagArr)" marker-end="url(#diagArr)"/>
-  <text x="${cx}" y="${y-4}" text-anchor="middle" font-size="8" font-family="ui-monospace,Menlo,Consolas,monospace" fill="${DWG.txt}" stroke="#faf5e9" stroke-width="2.5" paint-order="stroke">${label}</text>
+  <text x="${cx}" y="${y-4}" text-anchor="middle" font-size="8" font-family="ui-monospace,Menlo,Consolas,monospace" fill="${DWG.txt}" stroke="#0f1416" stroke-width="2.5" paint-order="stroke">${label}</text>
   ${mid?`<text x="${cx}" y="${y+11}" text-anchor="middle" font-size="6.5" font-family="ui-monospace,Menlo,Consolas,monospace" fill="${DWG.dim}">${mid}</text>`:""}`;
 }
 function dimV(y1,y2,x,label){
@@ -1085,7 +1000,7 @@ function dimV(y1,y2,x,label){
   return `<line x1="${x-5}" y1="${y1}" x2="${x+5}" y2="${y1}" stroke="${DWG.dim}" stroke-width="1"/>
   <line x1="${x-5}" y1="${y2}" x2="${x+5}" y2="${y2}" stroke="${DWG.dim}" stroke-width="1"/>
   <line x1="${x}" y1="${y1}" x2="${x}" y2="${y2}" stroke="${DWG.dim}" stroke-width="1" marker-start="url(#diagArr)" marker-end="url(#diagArr)"/>
-  <text x="${x}" y="${cy}" text-anchor="middle" font-size="8" font-family="ui-monospace,Menlo,Consolas,monospace" fill="${DWG.txt}" stroke="#faf5e9" stroke-width="2.5" paint-order="stroke" transform="rotate(-90 ${x} ${cy})">${label}</text>`;
+  <text x="${x}" y="${cy}" text-anchor="middle" font-size="8" font-family="ui-monospace,Menlo,Consolas,monospace" fill="${DWG.txt}" stroke="#0f1416" stroke-width="2.5" paint-order="stroke" transform="rotate(-90 ${x} ${cy})">${label}</text>`;
 }
 function groundLine(x1,x2,y){
   return `<line x1="${x1}" y1="${y}" x2="${x2}" y2="${y}" stroke="${DWG.gl}" stroke-width="1" stroke-dasharray="5 3"/>
@@ -1283,7 +1198,7 @@ function slabOutlineSVG(d){
     let lbl = sides? `${String.fromCharCode(65+i)} ${fmt(len,2)}m` : `${fmt(len,2)}m`;
     return `<text x="${((X(num(p.x))+X(num(q.x)))/2).toFixed(1)}" y="${((Y(num(p.y))+Y(num(q.y)))/2-3).toFixed(1)}" font-size="9" fill="var(--text)" text-anchor="middle" font-weight="${sides?'700':'400'}">${lbl}</text>`; }).join('');
   return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:340px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;">
-    <path d="${path}" fill="rgba(47,84,72,.12)" stroke="var(--accent)" stroke-width="1.6"/>${dots}${mids}</svg>
+    <path d="${path}" fill="rgba(46,204,113,.12)" stroke="var(--accent)" stroke-width="1.6"/>${dots}${mids}</svg>
    <div class="small" style="margin-top:4px;">Measured off the outline: <b>${fmt(polyArea(pts),2)} m²</b> area · <b>${fmt(polyPerim(pts),2)} m</b> perimeter${(function(){ let mc=outlineMisclose(d); return mc>0.05? ` · <span style="color:#e67e22;">misclose ${fmt(mc,2)}m — side lengths don't quite close the loop, adjust until this disappears</span>`:''; })()}</div>`;
 }
 /* ---- Sketch-to-outline: the estimator draws the slab shape ROUGHLY on a
@@ -2071,13 +1986,10 @@ function renderSlab(inst,def){
    ${chk("perimeterAuto",d.perimeterAuto,"Perimeter auto (2×(L+W))","perimeterAuto")}
   </div>
   <div class="subsec ${d.perimeterAuto?'hidden':''}" data-show-if="perimeterAuto_off">${F("Perimeter override (m)",inpNum("perimeterOverride",d.perimeterOverride))}</div>
-  <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
-   ${chk("outlineOn",d.outlineOn,"Draw slab outline (area & perimeter measured, not guessed)",undefined,true)}
-   <button class="btn small primary" data-action="sketchOutline" type="button" title="Draw the slab shape roughly — the app straightens it into sides A, B, C… and you type each side's true length">✏️ Sketch the outline</button>
-  </div>
+  <div class="grid cols3">${chk("outlineOn",d.outlineOn,"Draw slab outline (plot corner points — area & perimeter measured, not guessed)",undefined,true)}</div>
   <div class="subsec ${d.outlineOn?'':'hidden'}" data-show-if="outlineOn">
    <div class="toolbar" style="margin-bottom:8px;">
-    <button class="btn small ghost" data-action="sketchOutline" type="button">↻ Re-sketch the outline</button>
+    <button class="btn small primary" data-action="sketchOutline" type="button">✏️ Sketch the outline (draw rough, app straightens it)</button>
     ${outlineSidesMode(d)? `<button class="btn small ghost" data-action="outlineToPoints" type="button">Edit as X/Y points instead</button>`:""}
    </div>
    <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start;">
@@ -2979,7 +2891,7 @@ function diagWall(inst){ let d=inst.data;
   let content=`<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="rgba(232,163,61,0.06)" stroke="${DWG.ink}" stroke-width="1.6"/>
    ${Array.from({length:12}).map((_,i)=>`<line x1="${x+(w*(i+1))/13}" y1="${y+2}" x2="${x+(w*(i+1))/13}" y2="${y+h-2}" stroke="${DWG.bar}" stroke-width="0.8" opacity="0.7"/>`).join('')}
    ${Array.from({length:5}).map((_,i)=>`<line x1="${x+2}" y1="${y+(h*(i+1))/6}" x2="${x+w-2}" y2="${y+(h*(i+1))/6}" stroke="${DWG.bar}" stroke-width="0.8" opacity="0.6"/>`).join('')}
-   ${(d.openings||[]).slice(0,3).map((o,i)=>`<rect x="${x+30+i*70}" y="${y+22}" width="34" height="${h-44}" fill="#ede1c9" stroke="${DWG.muted}"/>`).join('')}
+   ${(d.openings||[]).slice(0,3).map((o,i)=>`<rect x="${x+30+i*70}" y="${y+22}" width="34" height="${h-44}" fill="#0c1214" stroke="${DWG.muted}"/>`).join('')}
    ${dimH(x,x+w,y-10,`${d.length||8000}`)}
    ${dimV(y,y+h,x+w+14,`${d.height||3000}`)}
    ${specLine(x,y+h+16,`T${d.thickness||200} · ${d.vertADia||'N12'}@${d.vertASpacing||200} EW${d.vertB?' · 2 FACES':' · 1 FACE'}`)}`;
@@ -4152,7 +4064,7 @@ function ensureSketchPad(){
   div.innerHTML=`<div style="background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;max-width:640px;width:100%;">
     <h3 style="margin:0 0 6px;">Sketch the slab outline</h3>
     <p class="small" style="margin:0 0 8px;">Draw the shape roughly in one stroke — corners don't need to be neat. The app straightens it into sides and labels them A, B, C…; you then type the true length of each side.</p>
-    <canvas id="sketchCanvas" width="600" height="400" style="width:100%;background:var(--input);border:1px solid var(--line);border-radius:8px;touch-action:none;cursor:crosshair;"></canvas>
+    <canvas id="sketchCanvas" width="600" height="400" style="width:100%;background:#0d1416;border:1px solid var(--line);border-radius:8px;touch-action:none;cursor:crosshair;"></canvas>
     <div class="toolbar" style="margin-top:10px;">
       <button class="btn primary" id="sketchUse" type="button">✔ Use sketch</button>
       <button class="btn" id="sketchClear" type="button">↺ Clear</button>
@@ -4164,7 +4076,7 @@ function ensureSketchPad(){
   let cv=div.querySelector("#sketchCanvas"), ctx=cv.getContext("2d");
   let pos=(e)=>{ let r=cv.getBoundingClientRect(); let t=e.touches? e.touches[0]:e; return {x:(t.clientX-r.left)*cv.width/r.width, y:(t.clientY-r.top)*cv.height/r.height}; };
   let redraw=()=>{ ctx.clearRect(0,0,cv.width,cv.height); if(SKETCH.stroke.length<2) return;
-    ctx.strokeStyle="#cf4b44"; ctx.lineWidth=2.5; ctx.lineJoin="round"; ctx.beginPath();
+    ctx.strokeStyle="#2ecc71"; ctx.lineWidth=2.5; ctx.lineJoin="round"; ctx.beginPath();
     SKETCH.stroke.forEach((p,i)=> i? ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y)); ctx.stroke(); };
   let start=(e)=>{ e.preventDefault(); SKETCH.drawing=true; SKETCH.stroke=[pos(e)]; redraw(); };
   let move=(e)=>{ if(!SKETCH.drawing) return; e.preventDefault(); SKETCH.stroke.push(pos(e)); redraw(); };
@@ -4226,15 +4138,9 @@ document.querySelectorAll('.tabs button').forEach(b=>b.addEventListener('click',
 }));
 
 /* ============================= INIT ============================= */
-// NOTE: not passed directly as the handler — the click Event would land in
-// saveEstimateState's skipHistory parameter (truthy), silently skipping the
-// save-history push on every manual 💾 Save.
-document.getElementById("saveBtn").addEventListener("click", ()=>saveEstimateState());
+document.getElementById("saveBtn").addEventListener("click", saveEstimateState);
 initTakeoffRegistry();
 let restoredFromSave = loadEstimateState();
-// Nothing local for this takeoff yet (fresh browser): hold autosave until the
-// cloud copy has been checked, so a placeholder never overwrites a real save.
-awaitingCloudLoad = !restoredFromSave;
 renderTakeoffsBar();
 renderProjectForm();
 renderDefaultsForm();
