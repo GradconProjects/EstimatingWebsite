@@ -3667,6 +3667,18 @@ function blindingVapourTotals(lines){
   });
   return {blind,vap};
 }
+/* Excavation group split INDIVIDUALLY the same way: the dug (in-situ)
+   excavation volume separate from the bulked spoil-disposal volume — one
+   lumped "excavation & spoil" figure forced manual adding-up. */
+function excavationSpoilTotals(lines){
+  let exc=0,spoil=0;
+  lines.forEach(l=>{
+    if(l.materialGroup!=="Excavation") return;
+    if(/spoil disposal/i.test(l.material)) spoil+=l.finalQty||0;
+    else exc+=l.finalQty||0;
+  });
+  return {exc,spoil};
+}
 function refreshCardResults(card,inst){
   let out=computeInstance(inst);
   inst.results=out;
@@ -3901,7 +3913,7 @@ function renderRegisterTable(){
   let concrete=filtered.filter(l=>l.materialGroup==="Concrete").reduce((s,l)=>s+l.finalQty,0);
   let reoKg=filtered.filter(l=>l.materialGroup==="Reinforcement").reduce((s,l)=>s+(l.weightKg||0),0);
   let form=filtered.filter(l=>l.materialGroup==="Formwork").reduce((s,l)=>s+l.finalQty,0);
-  let exc=filtered.filter(l=>l.materialGroup==="Excavation").reduce((s,l)=>s+l.finalQty,0);
+  let regEs=excavationSpoilTotals(filtered);
   let regBv=blindingVapourTotals(filtered);
   // The reinforcement figure broken into the types it's made of — lm for
   // bars/trench strips and m²+sheets for sheet mesh, alongside the kg.
@@ -3912,7 +3924,8 @@ function renderRegisterTable(){
    <div class="stat"><div class="n">${fmt(form,2)}</div><div class="l">m² formwork</div></div>
    <div class="stat"><div class="n">${fmt(regBv.blind,2)}</div><div class="l">m³ blinding/base</div></div>
    <div class="stat"><div class="n">${fmt(regBv.vap,2)}</div><div class="l">m² vapour barrier</div></div>
-   <div class="stat"><div class="n">${fmt(exc,2)}</div><div class="l">m³ excavation</div></div>
+   <div class="stat"><div class="n">${fmt(regEs.exc,2)}</div><div class="l">m³ excavation</div></div>
+   <div class="stat"><div class="n">${fmt(regEs.spoil,2)}</div><div class="l">m³ spoil removal</div></div>
    <div class="stat"><div class="n">${filtered.length}</div><div class="l">quantity lines</div></div>
    ${totalsTypeStr? `<div class="small" style="flex-basis:100%;margin-top:2px;"><b>Reinforcement by type:</b> ${totalsTypeStr}</div>` : ''}`;
 }
@@ -3963,13 +3976,17 @@ function renderOrderSchedule(){
   // Base/Blinding included rows summed individually — blinding/base (m³) vs vapour barrier (m²)
   let obBlind=inc.filter(r=>r.group==="Base/Blinding" && !/vapour|membrane/i.test(r.material)).reduce((s,r)=>s+r.qty,0);
   let obVap=inc.filter(r=>r.group==="Base/Blinding" && /vapour|membrane/i.test(r.material)).reduce((s,r)=>s+r.qty,0);
+  // Excavation included rows likewise — dug volume vs bulked spoil disposal
+  let obExc=inc.filter(r=>r.group==="Excavation" && !/spoil disposal/i.test(r.material)).reduce((s,r)=>s+r.qty,0);
+  let obSpoil=inc.filter(r=>r.group==="Excavation" && /spoil disposal/i.test(r.material)).reduce((s,r)=>s+r.qty,0);
   if(totals) totals.innerHTML = `<div class="stat"><div class="n">${fmt(sum("Concrete"),2)}</div><div class="l">m³ concrete</div></div>
    <div class="stat"><div class="n">${fmt(kg,1)}</div><div class="l">kg reinforcement</div></div>
    <div class="stat"><div class="n">${sheets}</div><div class="l">mesh sheets</div></div>
    <div class="stat"><div class="n">${fmt(sum("Formwork"),2)}</div><div class="l">m² formwork</div></div>
    <div class="stat"><div class="n">${fmt(obBlind,2)}</div><div class="l">m³ blinding/base</div></div>
    <div class="stat"><div class="n">${fmt(obVap,2)}</div><div class="l">m² vapour barrier</div></div>
-   <div class="stat"><div class="n">${fmt(sum("Excavation"),2)}</div><div class="l">m³ excavation & spoil</div></div>
+   <div class="stat"><div class="n">${fmt(obExc,2)}</div><div class="l">m³ excavation</div></div>
+   <div class="stat"><div class="n">${fmt(obSpoil,2)}</div><div class="l">m³ spoil removal</div></div>
    <div class="stat"><div class="n">${inc.length} / ${rows.length}</div><div class="l">items included</div></div>`;
 }
 function orderScheduleSetAll(on){
@@ -4105,7 +4122,7 @@ function exportPDF(){
   let concrete=lines.filter(l=>l.materialGroup==="Concrete").reduce((s,l)=>s+l.finalQty,0);
   let reoKg=lines.filter(l=>l.materialGroup==="Reinforcement").reduce((s,l)=>s+(l.weightKg||0),0);
   let form=lines.filter(l=>l.materialGroup==="Formwork").reduce((s,l)=>s+l.finalQty,0);
-  let exc=lines.filter(l=>l.materialGroup==="Excavation").reduce((s,l)=>s+l.finalQty,0);
+  let pdfEs=excavationSpoilTotals(lines);
   let pdfBv=blindingVapourTotals(lines);
   let byElement={};
   INSTANCES.forEach(inst=>{
@@ -4131,7 +4148,8 @@ function exportPDF(){
        <tr><td style="border:1px solid #999;padding:6px;">Formwork</td><td style="border:1px solid #999;padding:6px;"><b>${fmt(form,2)} m²</b></td></tr>
        <tr><td style="border:1px solid #999;padding:6px;">Blinding / base layers</td><td style="border:1px solid #999;padding:6px;"><b>${fmt(pdfBv.blind,2)} m³</b></td></tr>
        <tr><td style="border:1px solid #999;padding:6px;">Vapour barrier / membrane</td><td style="border:1px solid #999;padding:6px;"><b>${fmt(pdfBv.vap,2)} m²</b></td></tr>
-       <tr><td style="border:1px solid #999;padding:6px;">Excavation</td><td style="border:1px solid #999;padding:6px;"><b>${fmt(exc,2)} m³</b></td></tr>
+       <tr><td style="border:1px solid #999;padding:6px;">Excavation (in-situ dug)</td><td style="border:1px solid #999;padding:6px;"><b>${fmt(pdfEs.exc,2)} m³</b></td></tr>
+       <tr><td style="border:1px solid #999;padding:6px;">Spoil removal (loose, bulked)</td><td style="border:1px solid #999;padding:6px;"><b>${fmt(pdfEs.spoil,2)} m³</b></td></tr>
      </table>
      ${(function(){
        let byGrade={};

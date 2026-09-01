@@ -51,10 +51,12 @@ check("every element type has both a category and a section", () => {
   });
 });
 
-check("12 material categories, 128 products (incl. specified INSULATION, N10 Ligatures stock bar)", () => {
+check("12 material categories, 129 products (incl. specified INSULATION, N10 Ligatures stock bar, Bored Piers subcontract)", () => {
   assert.equal(FULL_CATALOG.length, 12);
   const total = FULL_CATALOG.reduce((s, c) => s + c.products.length, 0);
-  assert.equal(total, 128);
+  assert.equal(total, 129);
+  const subbies = FULL_CATALOG.find((c) => c.key === "SUB CONTRACTORS / TEMPORARY WORKS");
+  assert.ok(subbies.products.some((p) => p.name === "Bored Piers (subcontract)" && p.unit === "quote"), "Bored Piers quote item present");
   const stock = FULL_CATALOG.find((c) => c.key === "STOCK BAR");
   assert.ok(stock.products.some((p) => /N10 Ligatures/.test(p.name)), "N10 Ligatures stock bar present");
   // The INSULATION category carries specified products (material/thickness/
@@ -189,6 +191,17 @@ check("Small load charge auto-applies to concrete loads under 30 m³ (per m³), 
   delete item.qtys[rateKey("CONCRETE", "Small load charge", "m3")];
   rates[rateKey("CONCRETE", "Small load charge", "m3")] = { unitCost: 60 };
   assert.equal(autoSmallLoadCharge(item, rates).total, 20 * 60);
+});
+
+check("Subcontract 'quote' items: the received quote is entered as the rate — qty 1 books the whole quote", () => {
+  const rates = defaultRates();
+  const item = newElementItem(ELEMENT_TYPES.find((t) => t.id === "slab_on_ground"));
+  item.labourAuto = false;
+  const key = rateKey("SUB CONTRACTORS / TEMPORARY WORKS", "Screw Piling", "quote");
+  item.qtys[key] = 1;
+  assert.equal(computeElementCost(item, rates).materialsTotal, 0); // no quote entered yet — costs nothing
+  rates[key] = { unitCost: 45000 }; // the quote received, typed straight on the row
+  assert.equal(computeElementCost(item, rates).materialsTotal, 45000);
 });
 
 /* ---------- labour matrix ---------- */
@@ -362,6 +375,16 @@ check("No fractional crews: a typed (or legacy baked-in) 0.5 books 1 whole crew 
   assert.equal(cost.resourceTotals.steelfixer_day, 1);
   assert.equal(cost.resourceTotals.pump_m3, 36.5);
   assert.equal(cost.labourTotal, 2 * 1500 + 1 * 3250 + 36.5 * 10);
+});
+
+check("Excavate row: Qty prefills from the Soil removal (m³) line, but excavator/crew cells stay blank for manual entry", () => {
+  const rates = defaultRates();
+  const item = newElementItem(ELEMENT_TYPES.find((t) => t.id === "excavation_bulk"));
+  item.qtys[rateKey("OTHER ALLOWANCES", "Soil removal", "m3")] = 85;
+  const excTask = item.tasks.find((t) => /excavate/i.test(t.name));
+  assert.equal(taskRowMeta(excTask.name, labourQuantities(item, rates)).autoQty, 85);
+  const sug = suggestedLabourPrefill(item, rates);
+  assert.ok(!sug[excTask.id] || sug[excTask.id].excavator_day === undefined, "excavator days must never auto-fill");
 });
 
 check("Crew rates: stale per-person overrides under the old 'day' keys are retired — crew-day keys fall back to catalog", () => {

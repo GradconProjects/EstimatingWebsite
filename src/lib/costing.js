@@ -312,28 +312,29 @@ const GENERAL_TASK_MATCH = /washout|tidy|clean|patch/i;       // "Washout / clea
  * (mesh area ≈ finished slab surface). Pure qty scan — no costing — so the
  * labour engine can run inside computeElementCost without recursion. */
 export function labourQuantities(item, rates) {
-  let concreteM3 = 0, formworkM2 = 0, finishM2 = 0;
+  let concreteM3 = 0, formworkM2 = 0, finishM2 = 0, excavationM3 = 0;
   FULL_CATALOG.forEach((cat) => {
-    if (cat.key !== "CONCRETE" && cat.key !== "FORMWORK" && cat.key !== "SQUARE MESH") return;
+    if (cat.key !== "CONCRETE" && cat.key !== "FORMWORK" && cat.key !== "SQUARE MESH" && cat.key !== "OTHER ALLOWANCES") return;
     cat.products.forEach((p) => {
       const qty = Number(item.qtys[rateKey(cat.key, p.name, p.unit)]) || 0;
       if (qty <= 0) return;
       if (cat.key === "CONCRETE") concreteM3 += qty;
       else if (cat.key === "FORMWORK" && p.unit === "m2") formworkM2 += qty;
       else if (cat.key === "SQUARE MESH") finishM2 += qty;
+      else if (cat.key === "OTHER ALLOWANCES" && /soil removal/i.test(p.name)) excavationM3 += qty; // spoil volume ≈ excavation m³
     });
   });
-  return { concreteM3, formworkM2, finishM2, reinfTonnes: computeElementReinforcementTonnes(item, rates) };
+  return { concreteM3, formworkM2, finishM2, excavationM3, reinfTonnes: computeElementReinforcementTonnes(item, rates) };
 }
 
 /** Crew-sheet row metadata: the unit each task is measured in and which
- * element quantity fills its Qty column automatically. Excavation has no
- * Quotes line item to draw from, so its Qty stays manual. */
+ * element quantity fills its Qty column automatically. Excavation draws its
+ * volume from the element's "Soil removal" (m³) line. */
 export function taskRowMeta(taskName, lq) {
   if (CONCRETE_POUR_TASK_MATCH.test(taskName)) return { unit: "m³", autoQty: lq ? lq.concreteM3 : undefined };
   if (STEEL_FIXING_TASK_MATCH.test(taskName)) return { unit: "t", autoQty: lq ? round2(lq.reinfTonnes) : undefined };
   if (FINISH_TASK_MATCH.test(taskName)) return { unit: "m²", autoQty: lq ? lq.finishM2 : undefined };
-  if (EXCAVATE_TASK_MATCH.test(taskName)) return { unit: "m³", autoQty: undefined };
+  if (EXCAVATE_TASK_MATCH.test(taskName)) return { unit: "m³", autoQty: lq ? lq.excavationM3 : undefined };
   if (FORMWORK_TASK_MATCH.test(taskName) && !STRIP_TASK_MATCH.test(taskName)) return { unit: "m²", autoQty: lq ? lq.formworkM2 : undefined };
   return { unit: "", autoQty: undefined };
 }
@@ -378,7 +379,6 @@ export function autoLabourQtys(item, rates) {
   const steelTBlock = prodRate(rates, "Rebar fixing — tonnes per crew-day", "t/day", 1);
   const finishM2Block = prodRate(rates, "Surface finishing — m² per crew-day", "m²/day", 300);
   const generalM3Block = prodRate(rates, "General labour — m³ per crew-day", "m³/day", 60);
-  const excM3Block = prodRate(rates, "Excavation — m³ per excavator-day", "m³/day", 100);
   const pumpHrsPour = prodRate(rates, "Concrete pump — hours per pour", "hrs", 6);
 
   // qty → whole crew-days: round the quantity itself up to a whole unit,
@@ -409,16 +409,14 @@ export function autoLabourQtys(item, rates) {
       put(task, "steelfixer_day", crewDays(q, steelTBlock)); // 1 t = a 5-man crew's day
     } else if (FINISH_TASK_MATCH.test(task.name)) {
       put(task, "concreter_day", crewDays(q, finishM2Block));
-    } else if (EXCAVATE_TASK_MATCH.test(task.name)) {
-      put(task, "excavator_day", crewDays(q, excM3Block)); // q is the typed excavation m³ — no line item to draw from
     } else if (GENERAL_TASK_MATCH.test(task.name)) {
       put(task, "labourer_day", crewDays(task.qty !== undefined && task.qty !== "" ? Number(task.qty) || 0 : lq.concreteM3, generalM3Block));
     }
-    // Formwork / "prop & form" rows deliberately get NO auto crew fill —
-    // propping effort varies too much by system (conventional ply-and-prop
-    // vs Bondek) to derive from m² alone, so those crew cells stay blank
-    // and are entered manually. Their Qty column still shows the drawn
-    // formwork m² as a guide (taskRowMeta).
+    // Formwork ("prop & form") and Excavation rows deliberately get NO auto
+    // crew/plant fill — propping effort varies by system and excavator days
+    // by ground conditions, so those cells stay blank and are entered
+    // manually. Their Qty columns still prefill as a guide (taskRowMeta:
+    // formwork m² from the FORMWORK rows, excavation m³ from Soil removal).
   });
   return suggestions;
 }

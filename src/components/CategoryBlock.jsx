@@ -95,13 +95,18 @@ export default function CategoryBlock({ cat, item, rates, onQtyChange, onRateCha
                       </td>
                     )}
                     <td className="px-2 py-1 text-right font-mono text-neutral-500 tabular-nums">
-                      {/* the small-load charge rate is editable IN PLACE and
-                          saves to the same rates-library key the Rates modal
-                          shows — one figure, everywhere */}
-                      {cat.key === "CONCRETE" && /small load/i.test(p.name) && onRateChange ? (
+                      {/* Editable-in-place rates, saved to the same
+                          rates-library key the Rates modal shows (one figure,
+                          everywhere): the small-load charge, and every
+                          "quote"-unit row — those are subcontract items whose
+                          price IS the quote received, so the estimator types
+                          the quoted amount straight onto the row (qty 1 books
+                          the whole quote). */}
+                      {onRateChange && ((cat.key === "CONCRETE" && /small load/i.test(p.name)) || p.unit === "quote") ? (
                         <NumInput
-                          step="0.25"
+                          step={p.unit === "quote" ? "50" : "0.25"}
                           value={rate.unitCost}
+                          placeholder={p.unit === "quote" ? "quote $" : undefined}
                           onChange={(v) => onRateChange(qKey, v, p.unitCost ?? 0)}
                         />
                       ) : (

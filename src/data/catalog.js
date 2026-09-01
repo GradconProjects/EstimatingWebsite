@@ -60,9 +60,9 @@ export const PRODUCTION_RATES = [
   { key: "steel_t_crewday", name: "Rebar fixing — tonnes per crew-day", unit: "t/day", rate: 1 },
   { key: "finish_m2_crewday", name: "Surface finishing — m² per crew-day", unit: "m²/day", rate: 300 },
   { key: "general_m3_crewday", name: "General labour — m³ per crew-day", unit: "m³/day", rate: 60 },
-  // No formwork block: formwork/"prop & form" crew cells are NOT auto-derived
-  // (propping effort varies too much by system) — entered manually, always.
-  { key: "exc_m3_day", name: "Excavation — m³ per excavator-day", unit: "m³/day", rate: 100 },
+  // No formwork or excavation blocks: those crew/plant cells are NOT
+  // auto-derived (propping effort varies by system, excavator days by ground
+  // conditions) — entered manually, always. Their Qty columns still prefill.
   { key: "pump_hrs_pour", name: "Concrete pump — hours per pour", unit: "hrs", rate: 6 },
 ];
 
@@ -213,6 +213,9 @@ export const FULL_CATALOG = [
   { key: "SUB CONTRACTORS / TEMPORARY WORKS", weightBasis: false, products: [
     ["Excavation (subcontract)", "quote", null, null], ["Formwork (subcontract)", "quote", null, null], ["Steel supply", "quote", null, null], ["Steel fix", "quote", null, null],
     ["Screw Piling", "quote", null, null], ["CFA Piling", "quote", null, null],
+    // Bored piers: the DRILLING is a subcontract quote item — the pier's own
+    // concrete and reinforcement stay priced from their normal categories.
+    ["Bored Piers (subcontract)", "quote", null, null],
     ["Temporary steel props/struts (150UC23.4) — supply/hire", "tonne", null, 3200],
   ]},
 ].map((c) => ({
