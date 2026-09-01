@@ -378,6 +378,48 @@ check("Import: wall formwork area maps to Walls; other m² formwork maps to Conv
   assert.ok(flags.some((f) => f.includes("Opening reveals")), `expected the non-wall formwork to still be flagged for review, got: ${flags.join(" | ")}`);
 });
 
+check("Import: a named formwork system on the spec (Bondek) maps to that exact FORMWORK product, and per-m edge formwork maps to Edgeform", () => {
+  const { quote, flags } = buildImportFromEstimate({
+    project: {},
+    lines: [
+      { ...estLine({}), category: "Suspended Slab", element: "Slab 1", elementId: "EL07",
+        materialGroup: "Formwork", material: "Soffit formwork", spec: "net area · Bondek (permanent metal deck)", unit: "m²", finalQty: 120 },
+      { ...estLine({}), category: "Suspended Slab", element: "Slab 1", elementId: "EL07",
+        materialGroup: "Formwork", material: "Edgeform — perimeter edge formwork", spec: "200mm high edge", unit: "m", finalQty: 44 },
+    ],
+  });
+  const item = quote.items[0];
+  assert.equal(item.qtys[rateKey("FORMWORK", "Bondek", "m2")], 120);
+  assert.equal(item.qtys[rateKey("FORMWORK", "Edgeform", "m")], 44);
+  assert.ok(!flags.some((f) => f.includes("Bondek")), `Bondek should map cleanly without a flag, got: ${flags.join(" | ")}`);
+});
+
+check("Import: insulation lines with catalog product names map onto the INSULATION products (m² boards AND per-m strips)", () => {
+  const { quote, flags } = buildImportFromEstimate({
+    project: {},
+    lines: [
+      { ...estLine({}), category: "Slab on Ground", element: "Slab 1", elementId: "EL08",
+        materialGroup: "Insulation", material: "XPS rigid board 50mm (R1.47)", spec: "Under-slab / under-element insulation", unit: "m²", finalQty: 210 },
+      { ...estLine({}), category: "Slab on Ground", element: "Slab 1", elementId: "EL08",
+        materialGroup: "Insulation", material: "Slab edge insulation — 30mm XPS 300mm strip", spec: "Edge / strip insulation", unit: "m", finalQty: 60 },
+      { ...estLine({}), category: "Slab on Ground", element: "Slab 1", elementId: "EL08",
+        materialGroup: "Insulation", material: "Some unknown foam", spec: "", unit: "m²", finalQty: 5 },
+    ],
+  });
+  const item = quote.items[0];
+  assert.equal(item.qtys[rateKey("INSULATION", "XPS rigid board 50mm (R1.47)", "m2")], 210);
+  assert.equal(item.qtys[rateKey("INSULATION", "Slab edge insulation — 30mm XPS 300mm strip", "m")], 60);
+  assert.ok(flags.some((f) => f.includes("Some unknown foam")), `unknown insulation should be flagged, got: ${flags.join(" | ")}`);
+});
+
+check("Catalog: Bondek is a priced FORMWORK product (m²) so it appears in the Rates modal and the import can target it", () => {
+  const fw = FULL_CATALOG.find((c) => c.key === "FORMWORK");
+  const bondek = fw.products.find((p) => p.name === "Bondek");
+  assert.ok(bondek, "Bondek missing from FORMWORK catalog");
+  assert.equal(bondek.unit, "m2");
+  assert.ok(Number(bondek.unitCost) > 0, "Bondek has no default rate");
+});
+
 check("Import: a count-only reinforcement line (no length, e.g. ligatures) is flagged with its weight, never silently dropped", () => {
   const { quote, flags } = buildImportFromEstimate({
     project: {},

@@ -107,6 +107,26 @@ function findWallsFormworkProduct() {
   return FORMWORK_CAT.products.find((p) => p.name === "Walls" && p.unit === "m2") || null;
 }
 
+const INSULATION_CAT = FULL_CATALOG.find((c) => c.key === "INSULATION");
+function findFormworkProduct(name, unit) {
+  if (!FORMWORK_CAT) return null;
+  const p = FORMWORK_CAT.products.find((pr) => pr.name === name && pr.unit === unit);
+  return p ? { name: p.name, unit: p.unit } : null;
+}
+function findInsulationProduct(name, unit) {
+  if (!INSULATION_CAT) return null;
+  const p = INSULATION_CAT.products.find((pr) => pr.name === name && pr.unit === unit);
+  return p ? { name: p.name, unit: p.unit } : null;
+}
+// The Estimates formwork-system choice travels on every formwork line's spec
+// (e.g. "150mm edge · Bondek (permanent metal deck)") — where that names a
+// specific priced FORMWORK product, land the area straight on it.
+const FORMWORK_SYSTEM_PRODUCTS = [
+  [/bondek/i, "Bondek"],
+  [/oregon/i, "Oregon boards"],
+  [/walls curved|curved wall/i, "Walls Curved"],
+  [/beam \/ fold|beam\/fold|fold sides/i, "Beam/fold sides >400mm d"],
+];
 function findConventionalFormworkProduct() {
   if (!FORMWORK_CAT) return null;
   return FORMWORK_CAT.products.find((p) => p.name === "Conventional" && p.unit === "m2") || null;
@@ -262,8 +282,22 @@ export function buildImportFromEstimate(estimateExport) {
     let otherFormworkArea = 0;
     const otherFormworkLines = [];
     formworkLines.forEach((l) => {
-      const isWall = /wall/i.test(l.spec || "") || /wall/i.test(l.material || "");
+      const text = `${l.spec || ""} ${l.material || ""}`;
       const isM2 = l.unit === "m²" || l.unit === "m2";
+      // Named system on the line -> the exact priced FORMWORK product.
+      if (isM2) {
+        const sys = FORMWORK_SYSTEM_PRODUCTS.find(([re]) => re.test(text));
+        if (sys) {
+          const product = findFormworkProduct(sys[1], "m2");
+          if (product) { map(l, rateKey("FORMWORK", product.name, product.unit), Number(l.finalQty) || 0); return; }
+        }
+      }
+      // Per-metre edge formwork -> the per-m "Edgeform" product.
+      if (l.unit === "m" && /edge/i.test(text)) {
+        const product = findFormworkProduct("Edgeform", "m");
+        if (product) { map(l, rateKey("FORMWORK", product.name, product.unit), Number(l.finalQty) || 0); return; }
+      }
+      const isWall = /wall/i.test(l.spec || "") || /wall/i.test(l.material || "");
       if (!isM2) {
         flag(l,
           `${elementLabel}: ${(Number(l.finalQty) || 0).toFixed(2)} ${l.unit} of formwork (${l.material || l.spec}) — ` +
@@ -296,6 +330,16 @@ export function buildImportFromEstimate(estimateExport) {
         otherFormworkLines.forEach((l) => flag(l, `${elementLabel}: ${(Number(l.finalQty) || 0).toFixed(2)} m² of formwork (${l.material || l.spec}) — no confident catalog match, pick the right formwork system manually.`));
       }
     }
+
+    // --- Insulation: Estimates emits the Quotes catalog product names
+    // verbatim (see INSULATION_TYPES in the Estimates app), so an exact
+    // name+unit match lands the quantity straight on the priced product. ---
+    group.filter((l) => l.materialGroup === "Insulation").forEach((l) => {
+      const unit = (l.unit === "m²" || l.unit === "m2") ? "m2" : l.unit;
+      const product = findInsulationProduct(l.material, unit);
+      if (product) { map(l, rateKey("INSULATION", product.name, product.unit), Number(l.finalQty) || 0); return; }
+      flag(l, `${elementLabel}: ${(Number(l.finalQty) || 0).toFixed(2)} ${l.unit} of insulation (${l.material}) — no matching Insulation catalog product, add manually.`);
+    });
 
     // --- Sweep: anything not yet mapped or flagged gets one now, so nothing
     // is ever silently lost. A "— mass" line is a pure informational

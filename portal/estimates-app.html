@@ -1468,11 +1468,21 @@ function outlinePtRow(i,pt){
    formwork line's specification, so the register and exports say WHICH
    system is being priced, not just an area. ---- */
 const FORMWORK_SYSTEMS=[
+  // Mirrors the Quotes FORMWORK catalog so the publish bridge lands each
+  // line on the right priced product (Bondek, Oregon boards, Walls Curved…)
+  // instead of a generic system name. Generic site systems follow.
   ["conventional","Conventional timber / ply"],
+  ["bondek","Bondek (permanent metal deck)"],
+  ["edgeform","Edgeform (proprietary edge boards)"],
+  ["beamsides","Beam / fold sides"],
+  ["walls","Wall formwork"],
+  ["wallscurved","Walls Curved (curved wall forms)"],
+  ["columns","Column forms"],
+  ["oregon","Oregon boards"],
   ["modular","Modular panel system (handset)"],
   ["engineered","Engineered panel (Peri / Doka type)"],
   ["steel","Steel edge forms"],
-  ["permanent","Permanent / lost formwork"],
+  ["permanent","Permanent / lost formwork (other)"],
   ["eps","EPS / void former"],
 ];
 function formworkSystemName(v){ let m=FORMWORK_SYSTEMS.find(s=>s[0]===v); return m? m[1] : ""; }
@@ -1482,22 +1492,37 @@ function formworkSystemSelect(d){
 /* ---- Under-slab / under-element insulation: its own choice of board type,
    thickness R-value implied by the product, area (auto from the slab where
    possible) and waste. Injected into every Blinding / Insulation tab. ---- */
+// Exactly the Quotes INSULATION catalog products (names match verbatim so
+// the publish bridge maps straight onto the priced product). Strip products
+// are per METRE — the quantity field swaps to a length for those.
 const INSULATION_TYPES=[
-  ["xps30","XPS rigid board 30mm"],
-  ["xps50","XPS rigid board 50mm"],
-  ["xps75","XPS rigid board 75mm"],
-  ["eps50","EPS (Foamex-type) 50mm"],
-  ["eps100","EPS (Foamex-type) 100mm"],
-  ["pir","PIR foil-faced board"],
-  ["edge","Slab edge insulation strip"],
+  ["kool50","Kooltherm K3 Floorboard 50mm (R2.25)","m²"],
+  ["kool60","Kooltherm K3 Floorboard 60mm (R2.70)","m²"],
+  ["xps30","XPS rigid board 30mm (R0.88)","m²"],
+  ["xps50","XPS rigid board 50mm (R1.47)","m²"],
+  ["eps50","EPS board M-grade 50mm (R1.19)","m²"],
+  ["eps75","EPS board M-grade 75mm (R1.79)","m²"],
+  ["foilboard","Foilboard rigid panel 25mm","m²"],
+  ["edge300","Slab edge insulation — 30mm XPS 300mm strip","m"],
+  ["thermalbreak","Thermal break strip 10mm","m"],
+  ["insother","Insulation (other — specify in description)","m²"],
 ];
-function insulationTypeName(v){ let m=INSULATION_TYPES.find(s=>s[0]===v); return m? m[1] : "Insulation"; }
+// keys from the first release of this section resolve to the closest catalog product
+const INSULATION_LEGACY={ xps75:"xps50", eps100:"eps75", pir:"foilboard", edge:"edge300" };
+function insulationType(v){
+  let key = INSULATION_LEGACY[v] || v;
+  let m=INSULATION_TYPES.find(s=>s[0]===key);
+  return m? {name:m[1], unit:m[2]} : {name:"Insulation", unit:"m²"};
+}
+function insulationTypeName(v){ return insulationType(v).name; }
 function insulationSubsection(d){
+  let t=insulationType(d.insType||"xps50");
+  let qtyLabel = t.unit==="m" ? "Length (m, blank = element perimeter)" : "Area (m², blank = element area)";
   return `<div class="subsec"><div class="sechead">Insulation</div>
-  ${chk("insulationOn",d.insulationOn,"Under-slab / under-element insulation","insulationOn")}
+  ${chk("insulationOn",d.insulationOn,"Under-slab / edge insulation","insulationOn")}
   <div class="subsec ${d.insulationOn?'':'hidden'}" data-show-if="insulationOn"><div class="grid cols3">
-   ${F("Insulation type",selOpts("insType",d.insType||"xps50",INSULATION_TYPES))}
-   ${F("Area (m², blank = element area)",inpNum("insArea",d.insArea))}
+   ${F("Insulation type (Quotes catalog products)",selOpts("insType",d.insType||"xps50",INSULATION_TYPES.map(x=>[x[0],x[1]]),true))}
+   ${F(qtyLabel,inpNum("insArea",d.insArea))}
    ${F("Waste %",inpNum("insWaste",d.insWaste===undefined?5:d.insWaste))}
   </div></div></div>`;
 }
@@ -2363,7 +2388,7 @@ function renderSlab(inst,def){
   <tbody>${d.openings.map((r,i)=>openRowHtml(i,r)).join('')}</tbody></table>
   <button class="btn small" data-action="addRow" data-target="openings">+ Add opening</button></div>`;
   let form=`<div class="grid cols4">
-   ${chk("edgeForms",d.edgeForms,"Perimeter edge formwork")}
+   ${chk("edgeForms",d.edgeForms,"Perimeter edge formwork (by the metre)")}
    ${d.suspended? chk("soffit",d.soffit,"Soffit formwork"):""}
    ${chk("cjStopEnds",d.cjStopEnds,"Construction joint stop ends")}
   </div>`;
@@ -2455,13 +2480,17 @@ function computeSlab(inst,def){
   let vol=netArea*t;
   lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:`${d.category} ${d.thickness}mm`,qty:vol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(vol,concWastePct(d)),formula:`(${d.manualArea?'manual area':'L×W'} ${fmt(area,1)} − openings ${fmt(openArea,1)})×${fmt(t,3)}`}));
   let perim = !d.perimeterAuto? num(d.perimeterOverride) : (outline? polyPerim(outline) : 2*(num(d.length)+num(d.width)));
+  d._autoInsPerim = perim; // strip insulation (per-m products) defaults to the perimeter
   if(!d.suspended){
     let baseVol=netArea*(num(d.baseThickness)/1000);
     let baseMatLabel = d.baseMaterialState==="loose"? "Base material (loose — enter loose thickness placed)" : "Base material (compacted)";
     lines.push(baseLine(inst,def,{materialGroup:"Base/Blinding",material:baseMatLabel,spec:`${d.baseThickness}mm`,qty:baseVol,unit:"m³",waste:5,finalQty:withWaste(baseVol,5),formula:"area×base thickness"}));
     if(d.vapourMembrane) lines.push(vapourMembraneLine(inst,def,netArea,d.vmType,d.vmLap));
   }
-  if(d.edgeForms) lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Perimeter edge formwork",spec:`${d.thickness}mm edge`,qty:perim*t,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(perim*t,PROJECT.formworkWaste),formula:"perimeter × thickness"}));
+  // Edge formwork is measured and priced by the METRE (matching the Quotes
+  // catalog's per-m 'Edgeform' product) — the slab thickness stays on the
+  // spec so the height of board is still visible. Soffit stays in m².
+  if(d.edgeForms) lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Edgeform — perimeter edge formwork",spec:`${d.thickness}mm high edge`,qty:perim,unit:"m",waste:PROJECT.formworkWaste,finalQty:withWaste(perim,PROJECT.formworkWaste),formula:`slab perimeter ${fmt(perim,1)}m`}));
   if(d.suspended && d.soffit) lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Soffit formwork",spec:"",qty:netArea,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(netArea,PROJECT.formworkWaste),formula:"net area"}));
   if(openArea>0) lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Opening reveals",spec:"perimeter × thickness",qty:(d.openings||[]).reduce((s,o)=>s+2*((num(o.w)/1000)+(num(o.h)/1000))*t*num(o.qty,1),0),unit:"m²",waste:PROJECT.formworkWaste,finalQty:0,formula:"Σ 2×(w+h)×thickness×qty"}));
   if(d.edgeThicken){
@@ -3568,10 +3597,13 @@ function computeInstance(inst){
   // falling back to the element's own computed plan area (slabs set
   // _autoInsArea during compute).
   if(d.insulationOn){
-    let area = num(d.insArea)>0? num(d.insArea) : num(d._autoInsArea);
+    let t = insulationType(d.insType||"xps50");
+    // sheet products cover the element's plan area; strip products run its perimeter
+    let auto = t.unit==="m" ? num(d._autoInsPerim) : num(d._autoInsArea);
+    let qty = num(d.insArea)>0? num(d.insArea) : auto;
     let waste = d.insWaste===undefined||d.insWaste===""? 5 : num(d.insWaste);
-    if(area>0){
-      out.lines.push(baseLine(inst,def,{materialGroup:"Insulation",material:insulationTypeName(d.insType||"xps50"),spec:"Under-slab / under-element insulation",qty:area,unit:"m²",waste,finalQty:withWaste(area,waste),formula:num(d.insArea)>0?"entered area":"element area"}));
+    if(qty>0){
+      out.lines.push(baseLine(inst,def,{materialGroup:"Insulation",material:t.name,spec:t.unit==="m"?"Edge / strip insulation":"Under-slab / under-element insulation",qty,unit:t.unit,waste,finalQty:withWaste(qty,waste),formula:num(d.insArea)>0?"entered":"from element"}));
     }
   }
   return out;
