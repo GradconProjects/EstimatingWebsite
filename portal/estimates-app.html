@@ -3379,6 +3379,11 @@ function collapseAllCards(state){
   renderWorkspace();
   if(document.getElementById("registerTable")) renderRegisterTable();
 }
+// Which tab each element card has open, keyed by element id — module-level
+// (not on the instance) so it survives even a cloud pull that replaces the
+// INSTANCES array wholesale. In-memory only: a fresh page load starts every
+// card on its first tab as before.
+const CARD_TAB_MEMORY={};
 function buildCard(inst){
   let def=LIB_INDEX[inst.typeKey];
   let calc=CALC[def.calc];
@@ -3391,6 +3396,13 @@ function buildCard(inst){
   if(parts.form!==undefined) parts.form = formworkSystemSelect(inst.data) + parts.form;
   if(parts.blind!==undefined) parts.blind = parts.blind + insulationSubsection(inst.data);
   let collapsed = inst._collapsed;
+  // The active tab is remembered PER ELEMENT (by id, in CARD_TAB_MEMORY)
+  // across every rebuild — autosave/cloud-sync refreshes re-render the whole
+  // workspace, and without this the card snapped back to the Geometry tab
+  // mid-edit whenever that happened.
+  let availTabs=TABS.filter(t=>parts[t[0]]!==undefined || t[0]=="results");
+  let activeTab=CARD_TAB_MEMORY[inst.id];
+  if(activeTab!=="results" && (activeTab===undefined || parts[activeTab]===undefined)) activeTab=availTabs[0][0];
   let card=document.createElement("div"); card.className="card"+(collapsed?" collapsed":""); card.dataset.id=inst.id;
   card.innerHTML=`
    <div class="card-head">
@@ -3402,12 +3414,12 @@ function buildCard(inst){
      </div>
    </div>
    <div class="card-body" style="${collapsed?'display:none;':''}">
-     <div class="card-tabs">${TABS.filter(t=>parts[t[0]]!==undefined || t[0]=="results").map((t,i)=>`<button data-tab="${t[0]}" class="${i===0?'active':''}">${t[1]}</button>`).join('')}</div>
+     <div class="card-tabs">${availTabs.map((t)=>`<button data-tab="${t[0]}" class="${t[0]===activeTab?'active':''}">${t[1]}</button>`).join('')}</div>
      <div class="card-panes">
-       ${TABS.map((t,i)=>parts[t[0]]!==undefined?`<div class="pane ${i===0?'active':''}" data-pane="${t[0]}">
+       ${TABS.map((t)=>parts[t[0]]!==undefined?`<div class="pane ${t[0]===activeTab?'active':''}" data-pane="${t[0]}">
           ${t[0]=="geom"? `<div style="display:flex;gap:16px;flex-wrap:wrap;"><div style="flex:2;min-width:280px;">${parts[t[0]]}</div><div style="flex:1;min-width:220px;">${calc.diagram(inst)}</div></div>` : parts[t[0]]}
         </div>`:'').join('')}
-       <div class="pane" data-pane="results"><div class="resultsHost"></div></div>
+       <div class="pane ${activeTab==="results"?'active':''}" data-pane="results"><div class="resultsHost"></div></div>
      </div>
    </div>`;
   attachCardEvents(card,inst);
@@ -3447,6 +3459,7 @@ function computeExtraConnections(inst,def,out){
 }
 function attachCardEvents(card,inst){
   card.querySelectorAll('.card-tabs button').forEach(b=>b.addEventListener('click',()=>{
+    CARD_TAB_MEMORY[inst.id]=b.dataset.tab; // survives full workspace rebuilds (autosave/cloud sync)
     card.querySelectorAll('.card-tabs button').forEach(x=>x.classList.remove('active'));
     card.querySelectorAll('.pane').forEach(x=>x.classList.remove('active'));
     b.classList.add('active');
