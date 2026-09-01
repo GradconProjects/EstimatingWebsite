@@ -17,6 +17,7 @@ export const RESOURCE_COLS = [
   { key: "pump_hr", name: "Pump", unit: "hr", rate: 250 },
   { key: "pump_m3", name: "Pump", unit: "m3", rate: 7 },
   { key: "steelfixer_day", name: "Steel fixer", unit: "day", rate: 650 },
+  { key: "labourer_day", name: "General Labour", unit: "day", rate: 400 },
   { key: "crane_day", name: "Crane", unit: "day", rate: 1600 },
   { key: "factory_hr", name: "Factory labour", unit: "hr", rate: 150 },
 ];
@@ -32,9 +33,19 @@ export const RESOURCE_COLS = [
  * see CLAUDE.md. Suggestions only ever fill a genuinely empty cell; see
  * suggestedLabourPrefill in lib/costing.js.
  */
+// Crew-based rate-of-work model (minimum crew size 3 people — a "day" here
+// is one PERSON-day, so a 3-man crew pouring ~20 m³ in a day is 3/20 = 0.15
+// person-days per m³). These drive the automatic labour fill on every
+// element card; all editable in the Rates modal like any other rate. The
+// first two names are unchanged from the original release so any saved
+// rate overrides keep applying.
 export const PRODUCTION_RATES = [
-  { key: "concrete_pour_days_m3", name: "Concrete pour (placing & finishing)", unit: "days/m³", rate: 1 },
-  { key: "steel_fixing_days_tonne", name: "Rebar fixing / tying", unit: "days/tonne", rate: 12 },
+  { key: "concrete_pour_days_m3", name: "Concrete pour (placing & finishing)", unit: "days/m³", rate: 0.15 },
+  { key: "finish_days_m2", name: "Finish concrete surfaces", unit: "days/m²", rate: 0.01 },
+  { key: "steel_fixing_days_tonne", name: "Rebar fixing / tying", unit: "days/tonne", rate: 1.5 },
+  { key: "formwork_days_m2", name: "Formwork install & strip", unit: "days/m²", rate: 0.1 },
+  { key: "general_days_m3", name: "General labour (prep, washout, clean & tidy)", unit: "days/m³", rate: 0.05 },
+  { key: "pump_hrs_m3", name: "Concrete pumping", unit: "hrs/m³", rate: 0.05 },
 ];
 
 /* ---------- Labour task templates, keyed by the element's `labour` field ---------- */

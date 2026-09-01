@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { ChevronDown, ChevronRight, Copy, Trash2, Paperclip, X, RotateCw, ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
 import { FULL_CATALOG } from "../data/catalog.js";
-import { uid, money2, computeElementCost, suggestedLabourPrefill } from "../lib/costing.js";
+import { uid, money2, computeElementCost, autoLabourQtys } from "../lib/costing.js";
 import CategoryBlock from "./CategoryBlock.jsx";
 import LabourMatrix from "./LabourMatrix.jsx";
 import AdditionalItems from "./AdditionalItems.jsx";
@@ -27,19 +27,31 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
 
   const patch = (fn) => onChange(fn(item));
 
-  // Suggests (never overwrites) "Pour concrete..."/"Tie steel..." labour
-  // hours from quantities already entered, using Quotes' own PRODUCTION_RATES
-  // (see catalog.js). Keyed on item.qtys rather than item.tasks so applying a
-  // suggestion (which only touches tasks) can't retrigger itself.
-  useEffect(() => {
-    const suggestions = suggestedLabourPrefill(item, rates);
-    if (Object.keys(suggestions).length === 0) return;
-    patch((it) => ({
-      ...it,
-      tasks: it.tasks.map((t) => (suggestions[t.id] ? { ...t, qtys: { ...suggestions[t.id], ...t.qtys } } : t)),
-    }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [item.qtys, rates]);
+  // Seamless labour: with auto on (the default), crew days are DERIVED live
+  // inside computeElementCost from the quantities entered, at the rates
+  // library's production rates — nothing is written into the tasks, so the
+  // labour keeps tracking every quantity change. (The old approach wrote the
+  // suggestion in once, which went stale the moment a quantity changed.)
+  // A typed cell always wins; clearing it hands the cell back to the engine.
+  const labourAuto = item.labourAuto !== false;
+  const autoQtys = useMemo(
+    () => (labourAuto ? autoLabourQtys(item, rates) : null),
+    [labourAuto, item, rates]
+  );
+  const toggleLabourAuto = () =>
+    patch((it) => {
+      if (it.labourAuto !== false) {
+        // Turning auto OFF freezes the current derived numbers into the
+        // matrix so they can be hand-edited from where they stand.
+        const auto = autoLabourQtys(it, rates);
+        return {
+          ...it,
+          labourAuto: false,
+          tasks: it.tasks.map((t) => (auto[t.id] ? { ...t, qtys: { ...auto[t.id], ...t.qtys } } : t)),
+        };
+      }
+      return { ...it, labourAuto: true };
+    });
 
   const setQty = (qKey, v) => patch((it) => ({ ...it, qtys: { ...it.qtys, [qKey]: v } }));
   const setLabel = (v) => patch((it) => ({ ...it, label: v }));
@@ -290,6 +302,9 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
           ))}
 
           <LabourMatrix
+            labourAuto={labourAuto}
+            autoQtys={autoQtys}
+            onToggleAuto={toggleLabourAuto}
             item={item}
             rates={rates}
             onTaskQtyChange={setTaskQty}

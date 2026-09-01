@@ -6,6 +6,7 @@ import { NumInput } from "./atoms.jsx";
 export default function LabourMatrix({
   item, rates, onTaskQtyChange, onAddTask, onRemoveTask, onRenameTask,
   resourceTotals, resourceCosts, labourTotal, labourOpen, toggleLabour,
+  labourAuto, autoQtys, onToggleAuto,
 }) {
   return (
     <div className="border border-amber-300 rounded-lg overflow-hidden bg-white">
@@ -21,6 +22,17 @@ export default function LabourMatrix({
       </button>
       {labourOpen && (
       <>
+      <div className="px-3 py-2 bg-amber-50 border-b border-amber-200 flex items-start gap-2">
+        <label className="flex items-center gap-1.5 text-xs font-semibold text-amber-900 whitespace-nowrap cursor-pointer">
+          <input type="checkbox" checked={!!labourAuto} onChange={onToggleAuto} className="accent-amber-700" />
+          ⚡ Auto labour from quantities
+        </label>
+        <p className="text-[11px] text-amber-800/80 leading-snug m-0">
+          {labourAuto
+            ? "Crew days are sized live from the quantities entered above, at the rate-of-work rates in the Rates library (minimum 3-person crew per trade). Amber ≈ values are automatic — type over any cell to override it, clear the cell to hand it back."
+            : "Off — every cell is manual. Turning auto back on derives crew days live from the quantities again (cells you've typed keep their values; clear a cell to let the engine drive it)."}
+        </p>
+      </div>
       <div className="overflow-x-auto">
         <table className="w-full text-[13px]">
           <thead>
@@ -44,15 +56,20 @@ export default function LabourMatrix({
                     className="w-full bg-transparent border-0 border-b border-dashed border-neutral-200 focus:border-orange-400 focus:outline-none text-neutral-700 text-[13px] py-0.5"
                   />
                 </td>
-                {RESOURCE_COLS.map((r) => (
+                {RESOURCE_COLS.map((r) => {
+                  const autoVal = labourAuto && autoQtys && autoQtys[task.id] ? autoQtys[task.id][r.key] : undefined;
+                  return (
                   <td key={r.key} className="px-2 py-1">
                     <NumInput
                       step="0.5"
                       value={task.qtys[r.key]}
+                      placeholder={autoVal !== undefined ? `≈${autoVal}` : "—"}
+                      className={autoVal !== undefined ? "placeholder-amber-600 border-amber-400" : ""}
                       onChange={(v) => onTaskQtyChange(task.id, r.key, v)}
                     />
                   </td>
-                ))}
+                  );
+                })}
                 <td className="px-1 py-1 text-center">
                   <button onClick={() => onRemoveTask(task.id)} className="text-neutral-300 hover:text-red-500 transition-colors">
                     <Trash2 size={14} />

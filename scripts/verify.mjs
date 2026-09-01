@@ -64,8 +64,9 @@ check("12 material categories, 128 products (incl. specified INSULATION, N10 Lig
   assert.ok(insul.products.some((p) => /Kooltherm/.test(p.name)), "specified insulation products present");
 });
 
-check("8 labour/equipment resource columns (incl. both Pump hr and Pump m3)", () => {
-  assert.equal(RESOURCE_COLS.length, 8);
+check("9 labour/equipment resource columns (incl. both Pump hr and Pump m3, and the General Labour crew)", () => {
+  assert.equal(RESOURCE_COLS.length, 9);
+  assert.ok(RESOURCE_COLS.some((r) => r.key === "labourer_day"), "General Labour column present");
   const pumps = RESOURCE_COLS.filter((r) => r.name === "Pump");
   assert.equal(pumps.length, 2);
   assert.notEqual(pumps[0].key, pumps[1].key); // must have distinct keys or one silently overwrites the other
@@ -173,25 +174,63 @@ check("Labour totals split correctly across BOTH Pump columns (hr and m3) withou
 });
 
 /* ---------- production-rate labour prefill ---------- */
-check("suggestedLabourPrefill: suggests Pour concrete / Tie steel days from qty entered, in empty cells only", () => {
+check("Auto labour: crew days derive from quantities at the crew rate-of-work rates, empty cells only", () => {
   const rates = defaultRates();
   const type = ELEMENT_TYPES.find((t) => t.id === "strip_footings");
   const item = newElementItem(type);
-  item.qtys[rateKey("CONCRETE", "25 mpa", "m3")] = 10; // 10 m3 * 1 day/m3 = 10d
-  item.qtys[rateKey("PROCESSED BAR", "N16", "m")] = 1000; // 1000m * 1.6kg/m = 1.6t * 12 days/t = 19.2d
+  item.qtys[rateKey("CONCRETE", "25 mpa", "m3")] = 50; // 50 m3 * 0.15 person-days/m3 = 7.5d
+  item.qtys[rateKey("PROCESSED BAR", "N16", "m")] = 2000; // 2000m * 1.6kg/m = 3.2t * 1.5 days/t = 4.8d
   const pourTask = item.tasks.find((t) => t.name === "Pour concrete");
   const tieTask = item.tasks.find((t) => t.name === "Tie steel");
 
   const suggestions = suggestedLabourPrefill(item, rates);
-  assert.equal(suggestions[pourTask.id].concreter_day, 10);
-  assert.equal(suggestions[tieTask.id].steelfixer_day, 19.2);
+  assert.equal(suggestions[pourTask.id].concreter_day, 7.5);
+  assert.equal(suggestions[tieTask.id].steelfixer_day, 4.8);
 
   // A cell the estimator already filled in is never included in the suggestions,
-  // so applying them (existing qtys spread last in ElementCard) can never overwrite it.
+  // so a typed value can never be overridden by the engine.
   pourTask.qtys["concreter_day"] = 5;
   const suggestions2 = suggestedLabourPrefill(item, rates);
   assert.equal(suggestions2[pourTask.id], undefined, "must not suggest a value for an already-filled cell");
-  assert.equal(suggestions2[tieTask.id].steelfixer_day, 19.2); // unrelated task/resource still suggested
+  assert.equal(suggestions2[tieTask.id].steelfixer_day, 4.8); // unrelated task/resource still suggested
+});
+
+check("Seamless labour: computeElementCost costs the auto crew days live (no write-back), and a typed cell overrides", () => {
+  const rates = defaultRates();
+  const type = ELEMENT_TYPES.find((t) => t.id === "strip_footings");
+  const item = newElementItem(type);
+  assert.equal(item.labourAuto, true, "new elements default to auto labour");
+  item.qtys[rateKey("CONCRETE", "25 mpa", "m3")] = 50;
+  // 7.5 concreter days @ $500 = $3750; general labour 50*0.05=2.5d but min-crew bumps to 3d @ $400 = $1200
+  const cost = computeElementCost(item, rates);
+  assert.equal(cost.resourceTotals.concreter_day, 7.5);
+  assert.equal(cost.resourceTotals.labourer_day, 3); // 3-person crew minimum callout
+  assert.equal(cost.labourTotal, 7.5 * 500 + 3 * 400);
+  // tasks were NOT written to — the derivation is live
+  assert.ok(item.tasks.every((t) => Object.keys(t.qtys).length === 0), "auto labour must not write into tasks");
+  // a typed cell wins over the engine
+  const pourTask = item.tasks.find((t) => t.name === "Pour concrete");
+  pourTask.qtys.concreter_day = 4;
+  assert.equal(computeElementCost(item, rates).resourceTotals.concreter_day, 4);
+  // quantities changing flow straight through (the old one-shot prefill went stale here)
+  pourTask.qtys.concreter_day = undefined;
+  item.qtys[rateKey("CONCRETE", "25 mpa", "m3")] = 100;
+  assert.equal(computeElementCost(item, rates).resourceTotals.concreter_day, 15);
+  // auto off = fully manual matrix
+  item.labourAuto = false;
+  assert.equal(computeElementCost(item, rates).resourceTotals.concreter_day, 0);
+});
+
+check("Auto labour: formwork m² drives formwork-task crew days, and pump tasks get pump hrs + m³", () => {
+  const rates = defaultRates();
+  const type = ELEMENT_TYPES.find((t) => t.id === "suspended_slab");
+  const item = newElementItem(type);
+  item.qtys[rateKey("CONCRETE", "25 mpa", "m3")] = 40;
+  item.qtys[rateKey("FORMWORK", "Bondek", "m2")] = 200; // 200 m² * 0.1 days/m² = 20d on the forming task
+  const cost = computeElementCost(item, rates);
+  assert.equal(cost.resourceTotals.concreter_day, 40 * 0.15 + 200 * 0.1); // pour + form install/strip
+  assert.equal(cost.resourceTotals.pump_m3, 40); // "Pour concrete (pump)" task pumps the volume
+  assert.equal(cost.resourceTotals.pump_hr, 2); // 40 m³ * 0.05 hrs/m³
 });
 
 /* ---------- External Quote scope lines (client-facing $ always ties to the real sell price) ---------- */
@@ -199,8 +238,10 @@ check("computeExternalScopeLines: per-element sell allocation sums exactly to th
   const near = (a, b) => assert.ok(Math.abs(a - b) < 1e-6, `${a} !~= ${b}`);
   const rates = defaultRates();
   const a = newElementItem(ELEMENT_TYPES.find((t) => t.id === "strip_footings"));
+  a.labourAuto = false;
   a.qtys[rateKey("CONCRETE", "25 mpa", "m3")] = 10; // $2125 direct
   const b = newElementItem(ELEMENT_TYPES.find((t) => t.id === "capping_beam"));
+  b.labourAuto = false;
   b.qtys[rateKey("CONCRETE", "32 mpa", "m3")] = 5; // $1107.50 direct
   const c = newElementItem(ELEMENT_TYPES.find((t) => t.id === "pool_wall")); // no qty entered — must be dropped
   const { lines, totalExGst } = computeExternalScopeLines([a, b, c], rates, 0.08, 0.05, 0.3);
@@ -248,8 +289,10 @@ check("A rates override changes cost; a MISSING key falls back to catalog defaul
 check("Grand total sums every element's total across the whole quote", () => {
   const rates = defaultRates();
   const a = newElementItem(ELEMENT_TYPES.find((t) => t.id === "strip_footings"));
+  a.labourAuto = false; // this check pins the MATERIALS maths; auto labour has its own checks
   a.qtys[rateKey("CONCRETE", "25 mpa", "m3")] = 10; // $2125
   const b = newElementItem(ELEMENT_TYPES.find((t) => t.id === "capping_beam"));
+  b.labourAuto = false;
   b.qtys[rateKey("CONCRETE", "32 mpa", "m3")] = 5; // $1107.50
   const total = computeGrandTotal([a, b], rates);
   assert.equal(total, 10 * 212.5 + 5 * 221.5);
