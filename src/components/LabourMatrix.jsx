@@ -1,6 +1,6 @@
 import { ChevronDown, ChevronRight, Plus, Trash2 } from "lucide-react";
 import { RESOURCE_COLS } from "../data/catalog.js";
-import { money2, labourResourceRate, taskRowMeta } from "../lib/costing.js";
+import { money2, labourResourceRate, taskRowMeta, rateKey } from "../lib/costing.js";
 import { NumInput } from "./atoms.jsx";
 
 /**
@@ -18,7 +18,7 @@ import { NumInput } from "./atoms.jsx";
 export default function LabourMatrix({
   item, rates, onTaskQtyChange, onTaskMetaChange, onAddTask, onRemoveTask, onRenameTask,
   resourceTotals, resourceCosts, labourTotal, labourOpen, toggleLabour,
-  labourAuto, autoQtys, onToggleAuto, labourQtyCtx,
+  labourAuto, autoQtys, onToggleAuto, labourQtyCtx, onLabourRateChange,
 }) {
   return (
     <div className="border border-amber-300 rounded-lg overflow-hidden bg-white">
@@ -131,13 +131,17 @@ export default function LabourMatrix({
               ))}
               <td colSpan={2}></td>
             </tr>
-            <tr className="text-neutral-400 italic text-[12px]">
+            <tr className="text-neutral-500 text-[12px]">
               <td></td>
-              <td className="px-3 py-1">Rate ($ / unit)</td>
+              <td className="px-3 py-1 italic">Rate ($ / unit) — editable, saves to the rates library</td>
               <td colSpan={2}></td>
               {RESOURCE_COLS.map((r) => (
-                <td key={r.key} className="px-2 py-1 text-right font-mono tabular-nums">
-                  {money2(labourResourceRate(rates, r))}
+                <td key={r.key} className="px-2 py-1">
+                  <NumInput
+                    step="1"
+                    value={labourResourceRate(rates, r)}
+                    onChange={(v) => onLabourRateChange && onLabourRateChange(r, v)}
+                  />
                 </td>
               ))}
               <td colSpan={2}></td>

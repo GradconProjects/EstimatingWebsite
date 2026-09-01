@@ -2,11 +2,12 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import { ChevronDown, ChevronRight, Copy, Trash2, Paperclip, X, RotateCw, ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
 import { FULL_CATALOG, LABOUR_TEMPLATES } from "../data/catalog.js";
 import { uid, money2, computeElementCost, autoLabourQtys, labourQuantities } from "../lib/costing.js";
+import { pdfToJpegPages } from "../lib/pdfToImages.js";
 import CategoryBlock from "./CategoryBlock.jsx";
 import LabourMatrix from "./LabourMatrix.jsx";
 import AdditionalItems from "./AdditionalItems.jsx";
 
-export default function ElementCard({ item, rates, onChange, onRemove, onDuplicate }) {
+export default function ElementCard({ item, rates, onChange, onRemove, onDuplicate, onLabourRateChange }) {
   // Every material category starts collapsed — only Labour/Equipment starts
   // expanded (it's still collapsible too, just defaults open).
   const [openCats, setOpenCats] = useState({});
@@ -116,11 +117,37 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
         return;
       }
       const reader = new FileReader();
-      reader.onload = () => {
+      reader.onload = async () => {
         const isPdf = file.type === "application/pdf" || /\.pdf$/i.test(file.name);
+        if (isPdf) {
+          // PDFs convert to JPEG page images on the way in — every markup is
+          // then a plain picture: rotates (and STAYS rotated — saved with the
+          // quote), zooms in the lightbox, prints. The raw PDF is only kept
+          // if the conversion itself fails.
+          setConvertingPdf(true);
+          try {
+            const { pages, numPages } = await pdfToJpegPages(reader.result);
+            const imgs = pages.map((p, i) => ({
+              id: uid(),
+              name: pages.length > 1 ? `${file.name} — page ${i + 1}` : file.name,
+              type: "image",
+              dataURL: p,
+            }));
+            patch((it) => ({ ...it, markups: [...(it.markups || []), ...imgs] }));
+            if (numPages > pages.length) alert(`"${file.name}" has ${numPages} pages — the first ${pages.length} were added (markups are for the relevant sheets, not whole drawing sets).`);
+          } catch (err) {
+            patch((it) => ({
+              ...it,
+              markups: [...(it.markups || []), { id: uid(), name: file.name, type: "pdf", dataURL: reader.result }],
+            }));
+          } finally {
+            setConvertingPdf(false);
+          }
+          return;
+        }
         patch((it) => ({
           ...it,
-          markups: [...(it.markups || []), { id: uid(), name: file.name, type: isPdf ? "pdf" : "image", dataURL: reader.result }],
+          markups: [...(it.markups || []), { id: uid(), name: file.name, type: "image", dataURL: reader.result }],
         }));
       };
       reader.readAsDataURL(file);
@@ -128,6 +155,28 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
   const removeMarkup = (id) => patch((it) => ({ ...it, markups: (it.markups || []).filter((m) => m.id !== id) }));
+  const [convertingPdf, setConvertingPdf] = useState(false);
+  // A PDF markup attached before conversion existed can be upgraded in
+  // place: its pages become image markups (zoom + persistent rotation).
+  const convertPdfMarkup = async (id) => {
+    const m = (item.markups || []).find((x) => x.id === id);
+    if (!m || m.type !== "pdf") return;
+    setConvertingPdf(true);
+    try {
+      const { pages } = await pdfToJpegPages(m.dataURL);
+      const imgs = pages.map((p, i) => ({
+        id: uid(),
+        name: pages.length > 1 ? `${m.name} — page ${i + 1}` : m.name,
+        type: "image",
+        dataURL: p,
+      }));
+      patch((it) => ({ ...it, markups: (it.markups || []).flatMap((x) => (x.id === id ? imgs : [x])) }));
+    } catch (err) {
+      alert(`Couldn't render "${m.name}" to images — the PDF may be corrupt or password-protected.`);
+    } finally {
+      setConvertingPdf(false);
+    }
+  };
   // Rotation is stored ON the markup itself, so a plan uploaded sideways is
   // fixed once and stays fixed — every device, every reload, and the print
   // report all honour it.
@@ -259,6 +308,16 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
                                 <RotateCw size={14} />
                               </button>
                             )}
+                            {m.type === "pdf" && (
+                              <button
+                                onClick={() => convertPdfMarkup(m.id)}
+                                disabled={convertingPdf}
+                                title="Convert this PDF's pages to images — readable, zoomable, rotatable (rotation saves with the quote)"
+                                className="text-[10px] font-semibold text-orange-700 border border-orange-300 rounded px-1.5 py-0.5 hover:bg-orange-50 transition-colors"
+                              >
+                                {convertingPdf ? "Converting…" : "→ Images"}
+                              </button>
+                            )}
                             <button
                               onClick={() => setViewerId(m.id)}
                               title="Full screen — zoom with scroll or buttons, drag to pan"
@@ -325,6 +384,7 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
             onToggleAuto={toggleLabourAuto}
             labourQtyCtx={labourQtyCtx}
             onTaskMetaChange={setTaskMeta}
+            onLabourRateChange={onLabourRateChange}
             item={item}
             rates={rates}
             onTaskQtyChange={setTaskQty}

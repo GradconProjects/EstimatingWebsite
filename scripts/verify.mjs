@@ -179,21 +179,21 @@ check("Auto labour: crew days derive from quantities at the crew rate-of-work ra
   const rates = defaultRates();
   const type = ELEMENT_TYPES.find((t) => t.id === "strip_footings");
   const item = newElementItem(type);
-  item.qtys[rateKey("CONCRETE", "25 mpa", "m3")] = 50; // 50 m3 * 0.15 person-days/m3 = 7.5d
-  item.qtys[rateKey("PROCESSED BAR", "N16", "m")] = 2000; // 2000m * 1.6kg/m = 3.2t * 1.5 days/t = 4.8d
+  item.qtys[rateKey("CONCRETE", "25 mpa", "m3")] = 50; // 50 m3 * 0.15 = 7.5 -> whole-day crew quote: 8d
+  item.qtys[rateKey("PROCESSED BAR", "N16", "m")] = 2000; // 3.2t * 1.5 = 4.8 -> whole-day crew quote: 5d
   const pourTask = item.tasks.find((t) => t.name === "Pour / place / vibrate concrete");
   const tieTask = item.tasks.find((t) => t.name === "Tie reinforcement");
 
   const suggestions = suggestedLabourPrefill(item, rates);
-  assert.equal(suggestions[pourTask.id].concreter_day, 7.5);
-  assert.equal(suggestions[tieTask.id].steelfixer_day, 4.8);
+  assert.equal(suggestions[pourTask.id].concreter_day, 8); // crews quote whole days, never 7.5
+  assert.equal(suggestions[tieTask.id].steelfixer_day, 5);
 
   // A cell the estimator already filled in is never included in the suggestions,
   // so a typed value can never be overridden by the engine.
   pourTask.qtys["concreter_day"] = 5;
   const suggestions2 = suggestedLabourPrefill(item, rates);
   assert.equal(suggestions2[pourTask.id], undefined, "must not suggest a value for an already-filled cell");
-  assert.equal(suggestions2[tieTask.id].steelfixer_day, 4.8); // unrelated task/resource still suggested
+  assert.equal(suggestions2[tieTask.id].steelfixer_day, 5); // unrelated task/resource still suggested
 });
 
 check("Seamless labour: computeElementCost costs the auto crew days live (no write-back), and a typed cell overrides", () => {
@@ -202,11 +202,11 @@ check("Seamless labour: computeElementCost costs the auto crew days live (no wri
   const item = newElementItem(type);
   assert.equal(item.labourAuto, true, "new elements default to auto labour");
   item.qtys[rateKey("CONCRETE", "25 mpa", "m3")] = 50;
-  // 7.5 concreter days @ $500 = $3750; general labour 50*0.05=2.5d but min-crew bumps to 3d @ $400 = $1200
+  // 7.5 -> 8 whole concreter days @ $500; general labour 2.5 -> 3d (whole days meet the crew minimum) @ $400
   const cost = computeElementCost(item, rates);
-  assert.equal(cost.resourceTotals.concreter_day, 7.5);
+  assert.equal(cost.resourceTotals.concreter_day, 8);
   assert.equal(cost.resourceTotals.labourer_day, 3); // 3-person crew minimum callout
-  assert.equal(cost.labourTotal, 7.5 * 500 + 3 * 400);
+  assert.equal(cost.labourTotal, 8 * 500 + 3 * 400);
   // tasks were NOT written to — the derivation is live
   assert.ok(item.tasks.every((t) => Object.keys(t.qtys).length === 0), "auto labour must not write into tasks");
   // a typed cell wins over the engine
@@ -237,7 +237,7 @@ check("Crew sheet: Finish row draws mesh m², a typed row Qty overrides the draw
   // typing a row Qty overrides what the row draws on
   pourTask.qty = 20;
   const sug2 = suggestedLabourPrefill(item, rates);
-  assert.equal(sug2[pourTask.id].concreter_day, 3); // 20 × 0.15
+  assert.equal(sug2[pourTask.id].concreter_day, 3); // 20 × 0.15 = 3 (already whole)
 
   // an element saved before the crew sheet keeps auto on its old task names
   const legacy = newElementItem(type);

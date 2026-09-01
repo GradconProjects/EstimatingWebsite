@@ -332,10 +332,14 @@ export function autoLabourQtys(item, rates) {
 
   const hasFinishTask = (item.tasks || []).some((t) => FINISH_TASK_MATCH.test(t.name));
   const suggestions = {};
+  // Crews and plant are quoted in WHOLE days (and pump time in whole hours):
+  // 0.73 t of steel doesn't cost 1.1 fixer-days — it books the crew for the
+  // day. Everything except pump m³ (a real measured volume) rounds UP.
   const put = (task, key, qty) => {
     if (qty <= 0) return;
     if (task.qtys[key] !== undefined && task.qtys[key] !== "") return; // typed crew days win
-    (suggestions[task.id] = suggestions[task.id] || {})[key] = round2(qty);
+    const whole = key === "pump_m3" ? round2(qty) : Math.ceil(qty - 1e-9);
+    (suggestions[task.id] = suggestions[task.id] || {})[key] = whole;
   };
   (item.tasks || []).forEach((task) => {
     const meta = taskRowMeta(task.name, lq);
@@ -364,16 +368,15 @@ export function autoLabourQtys(item, rates) {
   // Minimum 3-person-day crew callout per trade (auto amounts only; manual
   // entries are respected as-is and count toward the minimum).
   ["concreter_day", "steelfixer_day", "labourer_day"].forEach((key) => {
-    let auto = 0, manual = 0;
+    let auto = 0, manual = 0, largest = null;
     (item.tasks || []).forEach((task) => {
-      auto += (suggestions[task.id] && suggestions[task.id][key]) || 0;
+      const v = (suggestions[task.id] && suggestions[task.id][key]) || 0;
+      auto += v;
+      if (v > 0 && (!largest || v > largest[key])) largest = suggestions[task.id];
       manual += Number(task.qtys[key]) || 0;
     });
-    if (auto > 0 && auto + manual < 3) {
-      const scale = (3 - manual) / auto;
-      Object.values(suggestions).forEach((entry) => {
-        if (entry[key]) entry[key] = round2(entry[key] * scale);
-      });
+    if (auto > 0 && auto + manual < 3 && largest) {
+      largest[key] += 3 - (auto + manual); // whole-day bump up to the 3-person crew callout
     }
   });
   return suggestions;

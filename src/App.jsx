@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { Settings2, ArrowLeft, Printer, ListPlus, FileSpreadsheet, LayoutDashboard, Radar, FolderOpen } from "lucide-react";
 import { ELEMENT_TYPES, QUOTE_STATUSES, QUOTE_STATUS_STYLES } from "./data/catalog.js";
-import { defaultRates, newElementItem, computeGrandTotal, uid, money } from "./lib/costing.js";
+import { defaultRates, newElementItem, computeGrandTotal, uid, money, rateKey } from "./lib/costing.js";
 import { buildQuoteExcelHtml, quoteExcelFilename, buildQuoteCsv } from "./lib/exportQuote.js";
 import { useStoredState } from "./lib/storage.js";
 import { PROJECTS_INDEX_KEY, newProjectEntry, migrateLegacyQuote, deleteQuote, writeQuote, readQuotes, publishQuoteToCostPlanner } from "./lib/projects.js";
@@ -316,6 +316,12 @@ export default function App() {
 }
 
 function ProjectEditor({ project, rates, setRates, ratesStatus, saveProjectsNow, onBack, elementTypes, categoryOrder, sectionOrder, customTypes, setCustomTypes }) {
+  // Editing a labour rate on any element's crew sheet writes the SAME rates
+  // store the Rates modal shows — one library, one figure, everywhere.
+  const setLabourRate = (res, v) => {
+    const key = rateKey("LABOUR", res.name, res.unit);
+    setRates({ ...rates, [key]: { ...(rates[key] || {}), unitCost: v === undefined || v === "" ? res.rate : Number(v) } });
+  };
   const [quote, setQuote, quoteStatus, saveQuoteNow] = useStoredState(project.storageKey, blankQuote());
 
   // Mirrors the project's name/GFA into Cost Planner automatically, the same way
@@ -532,6 +538,7 @@ function ProjectEditor({ project, rates, setRates, ratesStatus, saveProjectsNow,
               onChange={(next) => updateItem(item.id, next)}
               onRemove={() => removeItem(item.id)}
               onDuplicate={() => duplicateItem(item.id)}
+              onLabourRateChange={setLabourRate}
             />
           ))}
           {items.length === 0 && (
