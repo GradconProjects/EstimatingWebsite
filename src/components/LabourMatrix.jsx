@@ -46,15 +46,17 @@ export default function LabourMatrix({
         </p>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full text-[13px]">
+        {/* fixed minimum width: the sheet scrolls sideways rather than
+            crushing its cells — every figure stays fully legible */}
+        <table className="w-full min-w-[1240px] text-[13px]">
           <thead>
             <tr className="bg-neutral-50 text-neutral-500 text-[11px] uppercase tracking-wide">
               <th className="text-right px-2 py-1.5 font-medium w-8">#</th>
               <th className="text-left px-3 py-1.5 font-medium min-w-[180px]">Task</th>
-              <th className="text-right px-2 py-1.5 font-medium w-20">Qty</th>
+              <th className="text-right px-2 py-1.5 font-medium min-w-[76px]">Qty</th>
               <th className="text-left px-1 py-1.5 font-medium w-10">Unit</th>
               {RESOURCE_COLS.map((r) => (
-                <th key={r.key} className="text-right px-2 py-1.5 font-medium w-20">
+                <th key={r.key} className="text-right px-2 py-1.5 font-medium min-w-[84px]">
                   {r.name}{r.crew ? " (3+)" : ""}<br />({r.unit})
                 </th>
               ))}
@@ -82,7 +84,7 @@ export default function LabourMatrix({
                       step="0.01"
                       value={task.qty}
                       placeholder={labourAuto && meta.autoQty ? String(meta.autoQty) : "—"}
-                      className={labourAuto && meta.autoQty ? "placeholder-amber-700 border-amber-400" : ""}
+                      className={labourAuto && meta.autoQty ? "placeholder:text-amber-800 placeholder:opacity-100 placeholder:font-semibold border-amber-400" : ""}
                       onChange={(v) => onTaskMetaChange(task.id, "qty", v)}
                     />
                   ) : <span className="block text-center text-neutral-300">—</span>}
@@ -96,7 +98,7 @@ export default function LabourMatrix({
                       step="0.5"
                       value={task.qtys[r.key]}
                       placeholder={autoVal !== undefined ? String(autoVal) : "—"}
-                      className={autoVal !== undefined ? "placeholder-amber-700 border-amber-400" : ""}
+                      className={autoVal !== undefined ? "placeholder:text-amber-800 placeholder:opacity-100 placeholder:font-semibold border-amber-400" : ""}
                       onChange={(v) => onTaskQtyChange(task.id, r.key, v)}
                     />
                   </td>

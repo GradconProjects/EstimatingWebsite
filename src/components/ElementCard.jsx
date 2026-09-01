@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { ChevronDown, ChevronRight, Copy, Trash2, Paperclip, X, RotateCw, ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
-import { FULL_CATALOG } from "../data/catalog.js";
+import { FULL_CATALOG, LABOUR_TEMPLATES } from "../data/catalog.js";
 import { uid, money2, computeElementCost, autoLabourQtys, labourQuantities } from "../lib/costing.js";
 import CategoryBlock from "./CategoryBlock.jsx";
 import LabourMatrix from "./LabourMatrix.jsx";
@@ -33,6 +33,19 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
   // labour keeps tracking every quantity change. (The old approach wrote the
   // suggestion in once, which went stale the moment a quantity changed.)
   // A typed cell always wins; clearing it hands the cell back to the engine.
+  // Elements created before the crew sheet carry the old per-type task rows
+  // (formwork / setout / blinding etc.). If NOTHING was ever entered on
+  // them, swap the rows for the crew sheet once — entered data is never
+  // touched (those elements keep their rows; delete any by hand).
+  useEffect(() => {
+    const legacy = item.tasks.some((t) => /formwork|setout|blinding|lay poly|cart spoil|backfill|factory/i.test(t.name));
+    const untouched = item.tasks.every((t) => Object.keys(t.qtys || {}).length === 0 && (t.qty === undefined || t.qty === "") && !t.notes);
+    if (legacy && untouched) {
+      patch((it) => ({ ...it, tasks: LABOUR_TEMPLATES.footing.map((name) => ({ id: uid(), name, qtys: {} })) }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const labourAuto = item.labourAuto !== false;
   const autoQtys = useMemo(
     () => (labourAuto ? autoLabourQtys(item, rates) : null),

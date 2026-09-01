@@ -24,7 +24,6 @@ export const RESOURCE_COLS = [
   { key: "pump_hr", name: "Pump", unit: "hr", rate: 250 },
   { key: "pump_m3", name: "Pump", unit: "m3", rate: 7 },
   { key: "crane_day", name: "Crane", unit: "day", rate: 1600 },
-  { key: "factory_hr", name: "Factory labour", unit: "hr", rate: 150 },
 ];
 
 /* ---------- Production rates ----------

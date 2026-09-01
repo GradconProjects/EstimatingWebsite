@@ -64,8 +64,9 @@ check("12 material categories, 128 products (incl. specified INSULATION, N10 Lig
   assert.ok(insul.products.some((p) => /Kooltherm/.test(p.name)), "specified insulation products present");
 });
 
-check("9 labour/equipment resource columns (incl. both Pump hr and Pump m3, and the General Labour crew)", () => {
-  assert.equal(RESOURCE_COLS.length, 9);
+check("8 crew-sheet resource columns (both Pump hr and Pump m3, General Labour crew, no Factory column)", () => {
+  assert.equal(RESOURCE_COLS.length, 8);
+  assert.ok(!RESOURCE_COLS.some((r) => r.key === "factory_hr"), "Factory labour column removed");
   assert.ok(RESOURCE_COLS.some((r) => r.key === "labourer_day"), "General Labour column present");
   const pumps = RESOURCE_COLS.filter((r) => r.name === "Pump");
   assert.equal(pumps.length, 2);
