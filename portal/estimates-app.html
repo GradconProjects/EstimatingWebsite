@@ -3394,7 +3394,18 @@ function buildCard(inst){
   // the formwork system/type choice heads every Formwork tab, and the
   // insulation section joins every Blinding / Insulation tab — no per-
   // calculator wiring needed.
-  if(parts.form!==undefined) parts.form = formworkSystemSelect(inst.data) + parts.form;
+  // Formwork is a CHOICE on every element too: types whose calculator emits
+  // formwork automatically but had no Formwork tab (columns, retaining
+  // walls, stairs, kerbs…) get one — include/exclude tick plus an area
+  // override — so nothing is forced into the takeoff.
+  if(parts.form===undefined){
+    let fd=inst.data, fOn=fd.genFormOn===undefined? true : !!fd.genFormOn;
+    parts.form = `${chk("genFormOn",fOn,"Include formwork for this element","genFormOn")}
+     <div class="subsec ${fOn?'':'hidden'}" data-show-if="genFormOn"><div class="grid cols3">
+       ${F("Formwork area override (m², 0 = auto from element)",inpNum("genFormArea",fd.genFormArea))}
+     </div><p class="small">Auto formwork comes from the element's own maths (faces × height, soffit + risers, both kerb sides…). Untick to exclude formwork from this element entirely, or enter an area to override the auto figure.</p></div>`;
+  }
+  parts.form = formworkSystemSelect(inst.data) + parts.form;
   // EVERY element type carries the Blinding & Vapour Barrier include/exclude
   // section the footings have (beams, walls, columns, the lot — off by
   // default, so it costs nothing until ticked). Calculators with their own
@@ -3618,6 +3629,18 @@ function computeInstance(inst){
   let out=calc.compute(inst,def);
   computeExtraConnections(inst,def,out);
   let d=inst.data;
+  // Generic formwork include/exclude: unticking "Include formwork" strips
+  // every auto-emitted Formwork line; an entered area override replaces
+  // them with one manual line. Untouched elements behave exactly as before.
+  if(d.genFormOn!==undefined || num(d.genFormArea)>0){
+    let fOn = d.genFormOn===undefined? true : !!d.genFormOn;
+    if(!fOn){
+      out.lines=(out.lines||[]).filter(l=>l.materialGroup!=="Formwork");
+    } else if(num(d.genFormArea)>0){
+      out.lines=(out.lines||[]).filter(l=>l.materialGroup!=="Formwork");
+      out.lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:`${def.label} formwork`,spec:"entered area",qty:num(d.genFormArea),unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(num(d.genFormArea),PROJECT.formworkWaste),formula:"manual entry"}));
+    }
+  }
   // Chosen formwork system travels onto every formwork line's spec, so the
   // register/exports price a NAMED system, not just an anonymous area.
   if(d.formworkSystem && d.formworkSystem!=="conventional"){
