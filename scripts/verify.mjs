@@ -290,6 +290,18 @@ check("Crew sheet: Finish row draws mesh m², a typed row Qty overrides the draw
   assert.equal(sug3["L2"].pump_hr, 6); // whole-pour pump booking
 });
 
+check("Suspended slab 2.99 t of steel books 3 whole Steel Crew days, and new elements carry the crew-engine marker (labourVer 2)", () => {
+  const rates = defaultRates();
+  const type = ELEMENT_TYPES.find((t) => t.id === "suspended_slab");
+  const item = newElementItem(type);
+  assert.equal(item.labourVer, 2, "new elements must be born at labourVer 2 so the stale-cell migration never wipes them");
+  item.qtys[rateKey("PROCESSED BAR", "N16", "m")] = 1868; // 1.6 kg/m -> 2.9888 t, shown as 2.99
+  const tie = item.tasks.find((t) => /tie/i.test(t.name));
+  assert.equal(taskRowMeta(tie.name, labourQuantities(item, rates)).autoQty, 2.99);
+  assert.equal(suggestedLabourPrefill(item, rates)[tie.id].steelfixer_day, 3); // ceil(2.99) = 3 crews, never 1
+  assert.equal(computeElementCost(item, rates).resourceCosts.steelfixer_day, 3 * 3250);
+});
+
 check("No fractional crews: a typed (or legacy baked-in) 0.5 books 1 whole crew and 1.2 books 2 — pump m³ alone stays a true volume", () => {
   const rates = defaultRates();
   const type = ELEMENT_TYPES.find((t) => t.id === "strip_footings");

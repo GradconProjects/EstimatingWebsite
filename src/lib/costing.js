@@ -128,6 +128,7 @@ export function newElementItem(type) {
     description: "", // free-text spec notes ("R2.5 XPS insulation under slab", etc.)
     markups: [], // [{id, name, type, dataURL}] — uploaded markup drawings (pdf/png/jpg)
     labourAuto: true, // crew days auto-derived from quantities (rate-of-work); typed cells override
+    labourVer: 2, // crew-engine era marker — elements without it get their labour cells cleared once (see ElementCard), so values baked in by the old write-in prefill can't shadow the live engine
     qtys: {}, // rateKey(category, product, unit) -> number
     tasks: LABOUR_TEMPLATES[type.labour].map((name) => ({ id: uid(), name, qtys: {} })), // qtys: resourceKey -> number
     additional: [], // [{id, name, unit, qty, rate}]

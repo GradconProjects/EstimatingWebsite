@@ -47,6 +47,29 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // One-time crew-engine migration (labourVer 2): elements saved before the
+  // whole-crew engine carry cell values the OLD prefill wrote directly into
+  // the tasks (e.g. 1 steel-crew day against 2.99 t). Filled cells always
+  // beat the engine, so those stale figures would shadow the correct
+  // whole-crew numbers forever — including after an Estimates publish
+  // updates the element's quantities. With auto on, clear them once and let
+  // the live engine drive; an element the estimator set to manual keeps its
+  // figures untouched. New elements are born at ver 2, and any cell typed
+  // AFTER this runs is a genuine override and survives normally.
+  useEffect(() => {
+    if (item.labourVer === 2) return;
+    patch((it) => {
+      if (it.labourVer === 2) return it;
+      const auto = it.labourAuto !== false;
+      return {
+        ...it,
+        labourVer: 2,
+        tasks: auto ? it.tasks.map((t) => ({ ...t, qtys: {}, qty: undefined })) : it.tasks,
+      };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const labourAuto = item.labourAuto !== false;
   const autoQtys = useMemo(
     () => (labourAuto ? autoLabourQtys(item, rates) : null),
