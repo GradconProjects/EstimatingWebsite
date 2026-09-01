@@ -55,7 +55,7 @@ export default function LabourMatrix({
       <div className="overflow-x-auto">
         {/* fixed minimum width: the sheet scrolls sideways rather than
             crushing its cells — every figure stays fully legible */}
-        <table className="w-full min-w-[1240px] text-[13px]">
+        <table className="w-full min-w-[1330px] text-[13px]">
           <thead>
             <tr className="bg-neutral-50 text-neutral-500 text-[11px] uppercase tracking-wide">
               <th className="text-right px-2 py-1.5 font-medium w-8">#</th>

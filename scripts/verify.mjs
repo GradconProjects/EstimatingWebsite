@@ -65,10 +65,19 @@ check("12 material categories, 128 products (incl. specified INSULATION, N10 Lig
   assert.ok(insul.products.some((p) => /Kooltherm/.test(p.name)), "specified insulation products present");
 });
 
-check("8 crew-sheet resource columns (both Pump hr and Pump m3, General Labour crew, no Factory column)", () => {
-  assert.equal(RESOURCE_COLS.length, 8);
+check("9 crew-sheet resource columns (both Pump hr and Pump m3, Formwork crew, General Labour crew, no Factory column)", () => {
+  assert.equal(RESOURCE_COLS.length, 9);
   assert.ok(!RESOURCE_COLS.some((r) => r.key === "factory_hr"), "Factory labour column removed");
   assert.ok(RESOURCE_COLS.some((r) => r.key === "labourer_day"), "General Labour column present");
+  const fw = RESOURCE_COLS.find((r) => r.key === "formwork_day");
+  assert.ok(fw && fw.crew, "Formwork crew column present");
+  // the engine must NEVER auto-fill the formwork crew column — manual only
+  const rates = defaultRates();
+  const item = newElementItem(ELEMENT_TYPES.find((t) => t.id === "suspended_slab"));
+  item.qtys[rateKey("FORMWORK", "Bondek", "m2")] = 120;
+  item.qtys[rateKey("CONCRETE", "25 mpa", "m3")] = 40;
+  const sug = suggestedLabourPrefill(item, rates);
+  assert.ok(Object.values(sug).every((cells) => cells.formwork_day === undefined), "formwork crew stays blank for manual entry");
   const pumps = RESOURCE_COLS.filter((r) => r.name === "Pump");
   assert.equal(pumps.length, 2);
   assert.notEqual(pumps[0].key, pumps[1].key); // must have distinct keys or one silently overwrites the other

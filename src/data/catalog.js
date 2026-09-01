@@ -23,6 +23,9 @@
 export const RESOURCE_COLS = [
   { key: "concreter_day", name: "Concrete Crew", unit: "crew-day", rate: 1500, crew: true, men: 3 },
   { key: "steelfixer_day", name: "Steel Crew", unit: "crew-day", rate: 3250, crew: true, men: 5 },
+  // Formwork crew-days are always entered MANUALLY — the engine never
+  // auto-fills this column (propping effort varies too much by system).
+  { key: "formwork_day", name: "Formwork Crew", unit: "crew-day", rate: 1500, crew: true, men: 3 },
   { key: "labourer_day", name: "General Labour Crew", unit: "crew-day", rate: 1200, crew: true, men: 3 },
   { key: "excavator_day", name: "Excavator", unit: "day", rate: 900 },
   { key: "bobcat_day", name: "Bobcat", unit: "day", rate: 900 },
