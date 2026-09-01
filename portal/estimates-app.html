@@ -2247,6 +2247,7 @@ function computeBeam(inst,def){
   // then propagated into negative reinforcement lengths/masses for every beam in the tool.
   let N=num(d.qty,1), Lm=num(d.length)/1000, Wm=num(d.width)/1000, Dfull=num(d.depth)/1000, slabT=num(d.slabThickness)/1000, cover=num(d.cover)/1000;
   let effD = (d.beamType=="downstand")? Math.max(0.01,Dfull-slabT) : Dfull;
+  d._autoBlindArea = N*Lm*Wm; // beam footprint — drives the generic Blinding & Vapour Barrier bolt-on (ground beams blind under the beam)
   let vol=N*Lm*Wm*effD;
   lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:`${d.width}x${d.depth} (${d.beamType})`,qty:vol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(vol,concWastePct(d)),formula:`${N}×${fmt(Lm,2)}×${fmt(Wm,2)}×${fmt(effD,2)} (${d.beamType=='downstand'?'drop below slab':'overall depth'})`}));
   let sideD = d.beamType=="downstand"? effD : Dfull;
@@ -3394,7 +3395,16 @@ function buildCard(inst){
   // insulation section joins every Blinding / Insulation tab — no per-
   // calculator wiring needed.
   if(parts.form!==undefined) parts.form = formworkSystemSelect(inst.data) + parts.form;
-  if(parts.blind!==undefined) parts.blind = parts.blind + insulationSubsection(inst.data);
+  // EVERY element type carries the Blinding & Vapour Barrier include/exclude
+  // section the footings have (beams, walls, columns, the lot — off by
+  // default, so it costs nothing until ticked). Calculators with their own
+  // blinding UI keep it; the generic section adds an area field for types
+  // whose footprint the calculator doesn't derive (beams derive theirs).
+  if(parts.blind===undefined){
+    let ad=inst.data;
+    parts.blind = blindingSection(ad) + `<div class="grid cols3" style="margin-top:6px;">${F("Blinding / membrane area (m², 0 = element footprint where known)",inpNum("blindArea",ad.blindArea))}</div>`;
+  }
+  parts.blind = parts.blind + insulationSubsection(inst.data);
   let collapsed = inst._collapsed;
   // The active tab is remembered PER ELEMENT (by id, in CARD_TAB_MEMORY)
   // across every rebuild — autosave/cloud-sync refreshes re-render the whole
@@ -3615,6 +3625,22 @@ function computeInstance(inst){
     if(sysName) (out.lines||[]).forEach(l=>{
       if(l.materialGroup==="Formwork") l.spec = l.spec? `${l.spec} · ${sysName}` : sysName;
     });
+  }
+  // Generic Blinding & Vapour Barrier: elements whose calculator has no
+  // blinding maths of its own (beams, walls, columns…) price the ticked
+  // options here — blinding volume = area × thickness, membrane = area with
+  // laps. Area: the entered override, else the footprint the calculator
+  // derived (beams set _autoBlindArea, slabs _autoInsArea). Calculators that
+  // already emit Base/Blinding lines (footings, pile caps, ground slabs)
+  // are left alone so nothing double-counts.
+  if(!(out.lines||[]).some(l=>l.materialGroup==="Base/Blinding")){
+    let bArea = num(d.blindArea)>0? num(d.blindArea) : (num(d._autoBlindArea)||num(d._autoInsArea)||0);
+    if(bArea>0){
+      if(blindingEnabled(d) && num(d.blinding)>0){
+        out.lines.push(blindingLine(inst,def,bArea,d.blinding,d.blindingMaterial,(d.blindingMaterial==="concrete"||d.blindingMaterial===undefined)?(d.blindingGrade===undefined?20:d.blindingGrade):undefined));
+      }
+      if(d.vapourMembrane) out.lines.push(vapourMembraneLine(inst,def,bArea,d.vmType,d.vmLap));
+    }
   }
   // Insulation: its own line wherever it's ticked. Area = the entered value,
   // falling back to the element's own computed plan area (slabs set
