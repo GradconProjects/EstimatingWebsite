@@ -2855,7 +2855,7 @@ function computeInstance(inst){
   return out;
 }
 function summarizeReinforcement(lines){
-  let bars={}, mesh={};
+  let bars={}, mesh={}, strips={};
   lines.forEach(l=>{
     if(l.materialGroup!=="Reinforcement") return;
     if(l.unit==="m"){
@@ -2864,9 +2864,25 @@ function summarizeReinforcement(lines){
     } else if(l.unit==="m²"){
       let e=mesh[l.material]||(mesh[l.material]={area:0,sheets:0});
       e.area+=l.finalQty; e.sheets+=(l.sheets!==undefined? l.sheets : Math.ceil(l.finalQty/MESH_SHEET_AREA_M2));
+    } else if(l.unit==="lm"){
+      // trench mesh / square-mesh-as-trench-strips — ordered by the metre
+      let e=strips[l.material]||(strips[l.material]={lm:0,kg:0});
+      e.lm+=l.finalQty; e.kg+=(l.weightKg||0);
     }
   });
-  return {bars,mesh};
+  return {bars,mesh,strips};
+}
+// Every Reinforcement line's kg, grouped by its material (bar size, trench
+// mesh type, mesh type) — the exact per-type decomposition of the register's
+// lump "kg reinforcement" figure (same weightKg field, so it always adds up).
+function reoKgByType(lines){
+  let by={};
+  lines.forEach(l=>{
+    if(l.materialGroup!=="Reinforcement") return;
+    let kg=l.weightKg||0; if(!kg) return;
+    by[l.material]=(by[l.material]||0)+kg;
+  });
+  return by;
 }
 function refreshCardResults(card,inst){
   let out=computeInstance(inst);
@@ -3029,11 +3045,15 @@ function renderRegisterTable(){
     let totC=glines.filter(l=>l.materialGroup==="Concrete").reduce((s,l)=>s+l.finalQty,0);
     let totR=glines.filter(l=>l.materialGroup==="Reinforcement").reduce((s,l)=>s+(l.weightKg||0),0);
     let totF=glines.filter(l=>l.materialGroup==="Formwork").reduce((s,l)=>s+l.finalQty,0);
+    // Decompose the lump reo kg into the bar sizes / mesh types it's made of
+    let byType=reoKgByType(glines);
+    let typeKeys=Object.keys(byType).sort();
+    let typeStr=typeKeys.map(m=>`${m} ${fmt(byType[m],1)}kg`).join(' · ');
     return `<tbody data-reg-group="${inst.id}">
       <tr class="reg-group-head"><td colspan="${REG_COLS}">
         <button class="btn small ghost" data-action="regCollapseToggle" data-id="${inst.id}" title="Collapse/expand">${collapsed?'▸':'▾'}</button>
         <span class="badge">${inst.id}</span> <b>${inst.label}</b>
-        <span class="small"> · ${fmt(totC,2)}m³ concrete · ${fmt(totR,1)}kg reo · ${fmt(totF,2)}m² formwork · ${glines.length} line(s)</span>
+        <span class="small"> · ${fmt(totC,2)}m³ concrete · ${fmt(totR,1)}kg reo${typeStr?` <span style="opacity:.72;">(${typeStr})</span>`:''} · ${fmt(totF,2)}m² formwork · ${glines.length} line(s)</span>
         <button class="btn small danger" data-action="regDelete" data-id="${inst.id}" style="float:right;">✕ Remove element</button>
       </td></tr>
       ${collapsed? '' : glines.map(l=>{
@@ -3071,14 +3091,18 @@ function renderRegisterTable(){
   };
   let reoSummaryHost=document.getElementById("registerReoSummary");
   if(reoSummaryHost){
-    let {bars,mesh}=summarizeReinforcement(filtered);
-    let barKeys=Object.keys(bars).sort(), meshKeys=Object.keys(mesh).sort();
-    reoSummaryHost.innerHTML = (barKeys.length||meshKeys.length)? `
+    let {bars,mesh,strips}=summarizeReinforcement(filtered);
+    let barKeys=Object.keys(bars).sort(), meshKeys=Object.keys(mesh).sort(), stripKeys=Object.keys(strips).sort();
+    reoSummaryHost.innerHTML = (barKeys.length||meshKeys.length||stripKeys.length)? `
      <div class="sechead">Reinforcement Summary — project-wide, by bar size / mesh type (one line per size, not repeated per element)</div>
      <div style="display:flex;gap:16px;flex-wrap:wrap;">
      ${barKeys.length? `<table class="results" style="width:auto;min-width:260px;"><thead><tr><th>Bar</th><th>Total (lm)</th><th>Total (kg)</th></tr></thead>
        <tbody>${barKeys.map(m=>`<tr><td>${m}</td><td style="text-align:right;">${fmt(bars[m].lm,2)}</td><td style="text-align:right;">${fmt(bars[m].kg,1)}</td></tr>`).join('')}
        <tr style="font-weight:700;"><td>Total</td><td style="text-align:right;">${fmt(barKeys.reduce((s,m)=>s+bars[m].lm,0),2)}</td><td style="text-align:right;">${fmt(barKeys.reduce((s,m)=>s+bars[m].kg,0),1)}</td></tr>
+     </tbody></table>` : ''}
+     ${stripKeys.length? `<table class="results" style="width:auto;min-width:260px;"><thead><tr><th>Trench mesh / strips</th><th>Total (lm)</th><th>Total (kg)</th></tr></thead>
+       <tbody>${stripKeys.map(m=>`<tr><td>${m}</td><td style="text-align:right;">${fmt(strips[m].lm,2)}</td><td style="text-align:right;">${fmt(strips[m].kg,1)}</td></tr>`).join('')}
+       <tr style="font-weight:700;"><td>Total</td><td style="text-align:right;">${fmt(stripKeys.reduce((s,m)=>s+strips[m].lm,0),2)}</td><td style="text-align:right;">${fmt(stripKeys.reduce((s,m)=>s+strips[m].kg,0),1)}</td></tr>
      </tbody></table>` : ''}
      ${meshKeys.length? `<table class="results" style="width:auto;min-width:260px;"><thead><tr><th>Mesh</th><th>Area (m²)</th><th>Sheets</th></tr></thead>
        <tbody>${meshKeys.map(m=>`<tr><td>${m}</td><td style="text-align:right;">${fmt(mesh[m].area,2)}</td><td style="text-align:right;">${mesh[m].sheets}</td></tr>`).join('')}
@@ -3091,12 +3115,17 @@ function renderRegisterTable(){
   let reoKg=filtered.filter(l=>l.materialGroup==="Reinforcement").reduce((s,l)=>s+(l.weightKg||0),0);
   let form=filtered.filter(l=>l.materialGroup==="Formwork").reduce((s,l)=>s+l.finalQty,0);
   let exc=filtered.filter(l=>l.materialGroup==="Excavation").reduce((s,l)=>s+l.finalQty,0);
+  // The reinforcement figure broken into the types it's made of — same
+  // weightKg per line, so the parts always sum to the lump total shown.
+  let totalsByType=reoKgByType(filtered);
+  let totalsTypeKeys=Object.keys(totalsByType).sort();
   totals.innerHTML = `<div class="stat"><div class="n">${fmt(concrete,2)}</div><div class="l">m³ concrete</div></div>
    <div class="stat"><div class="n">${fmt(reoKg,1)}</div><div class="l">kg reinforcement</div></div>
    <div class="stat"><div class="n">${fmt(reoKg/1000,2)}</div><div class="l">tonnes reinforcement</div></div>
    <div class="stat"><div class="n">${fmt(form,2)}</div><div class="l">m² formwork</div></div>
    <div class="stat"><div class="n">${fmt(exc,2)}</div><div class="l">m³ excavation</div></div>
-   <div class="stat"><div class="n">${filtered.length}</div><div class="l">quantity lines</div></div>`;
+   <div class="stat"><div class="n">${filtered.length}</div><div class="l">quantity lines</div></div>
+   ${totalsTypeKeys.length? `<div class="small" style="flex-basis:100%;margin-top:2px;"><b>Reinforcement by type:</b> ${totalsTypeKeys.map(m=>`${m} <b>${fmt(totalsByType[m],1)}kg</b>`).join(' · ')}</div>` : ''}`;
 }
 
 /* ============================= EXPORT ============================= */
