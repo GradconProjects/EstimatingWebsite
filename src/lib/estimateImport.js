@@ -32,6 +32,7 @@ export const ESTIMATE_TYPE_MAP = {
   "Backfill": "backfill_compaction",
   "Strip Footing": "strip_footings",
   "Pad Footing": "pile_caps_pad",
+  "Stump Footing Pad": "stump_footings",
   "Bored Pier": "piles_bored",
   "Pile Cap": "pile_caps_pad",
   "Ground Beam": null,

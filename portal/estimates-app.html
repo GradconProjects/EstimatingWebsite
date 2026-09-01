@@ -760,6 +760,7 @@ const LIBRARY = [
  {group:"Foundations", items:[
    {id:"stripfooting", label:"Strip Footing", calc:"stripfooting"},
    {id:"padfooting", label:"Pad Footing", calc:"padfooting"},
+   {id:"stumpfooting", label:"Stump Footing Pad", calc:"padfooting", kind:"stump"},
    {id:"boredpier", label:"Bored Pier", calc:"pier"},
    {id:"pilecap", label:"Pile Cap", calc:"pilecap"},
    {id:"groundbeam", label:"Ground Beam", calc:"beam", beamCategory:"Ground"},
@@ -1423,7 +1424,20 @@ function computeStripFooting(inst,def){
 }
 
 /* ---- PAD FOOTING ---- */
-function padFootingDefaults(){ return {
+function padFootingDefaults(kind){
+  // Stump Footing Pad reuses the whole pad-footing calculator (incl. the
+  // rect/round cross-section option) with stump-scaled defaults: small pads
+  // in quantity, lighter bars, no starter cage — the stump/post bears on top.
+  if(kind==="stump") return {
+    qty:10, shape:"rect", length:500, width:500, diameter:450, depth:300, cover:PROJECT.cover, grade:PROJECT.grade,
+    oversize:100, excDepth:350, blinding:0, blindingMaterial:"compacted", vapourMembrane:false, pedestal:false, pedH:0, pedW:0, pedD:0, sloping:false,
+    botReoType:"bars", botX:true, botXDia:"N12", botXSpacing:150, botXLap:false, botY:true, botYDia:"N12", botYSpacing:150, botYLap:false, botMeshType:"SL82", botMeshLayers:1, botMeshLap:false,
+    ligs:false, ligDia:"N10", ligSpacing:200, ligW:200, ligD:200,
+    starters:false, connTarget:"", connQty:1, connDia:"N12", connEmbed:250, connProj:300, connHook:"straight",
+    castins:false, anchorBolts:false, holdDown:false, ferrules:false, plates:false, boltTemplate:false,
+    formA:false, formB:false, formC:false, formD:false, formRound:false
+  };
+  return {
   qty:4, shape:"rect", length:1500, width:1500, diameter:1200, depth:500, cover:PROJECT.cover, grade:PROJECT.grade,
   oversize:150, excDepth:550, blinding:50, blindingMaterial:"concrete", vapourMembrane:false, pedestal:false, pedH:0, pedW:0, pedD:0, sloping:false,
   botReoType:"bars", botX:true, botXDia:"N16", botXSpacing:200, botXLap:false, botY:true, botYDia:"N16", botYSpacing:200, botYLap:false, botMeshType:"SL82", botMeshLayers:1, botMeshLap:false,
