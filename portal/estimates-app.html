@@ -1917,21 +1917,27 @@ function renderSlab(inst,def){
   </div>`;
   function barBlock(prefix,label){
     let manual = d.manualArea;
+    // Schedule mode is available on EVERY slab, not just irregular/manual-area
+    // ones: tick "Enter as bar sections" to specify multiple bar sets — each
+    // with its own bar type, spacing, the span the bars are spaced across,
+    // and the bar cut length. Manual-area slabs always use the schedule.
+    let useSched = manual || !!d[prefix+"Sched"];
     let head = `<div class="sechead">${label}</div><div class="grid cols4">
      ${chk(prefix,d[prefix],label+" on",prefix)}
-     ${manual? "" : F("Dia",barSizeSel(prefix+"Dia",d[prefix+"Dia"]))}
-     ${manual? "" : F("Method",selOpts(prefix+"Method",d[prefix+"Method"],[["spacing","By spacing"],["count","By bar count"]]))}
-     ${manual? "" : (d[prefix+"Method"]=="spacing"? F("Spacing (mm)",inpNum(prefix+"Spacing",d[prefix+"Spacing"])) : F("Bar count",inpNum(prefix+"Qty",d[prefix+"Qty"])))}
+     ${manual? "" : chk(prefix+"Sched",d[prefix+"Sched"],"Enter as bar sections (multiple sets)",undefined,true)}
+     ${useSched? "" : F("Dia",barSizeSel(prefix+"Dia",d[prefix+"Dia"]))}
+     ${useSched? "" : F("Method",selOpts(prefix+"Method",d[prefix+"Method"],[["spacing","By spacing"],["count","By bar count"]]))}
+     ${useSched? "" : (d[prefix+"Method"]=="spacing"? F("Spacing (mm)",inpNum(prefix+"Spacing",d[prefix+"Spacing"])) : F("Bar count",inpNum(prefix+"Qty",d[prefix+"Qty"])))}
     </div>
     <div class="subsec ${d[prefix]?'':'hidden'}" data-show-if="${prefix}"><div class="grid cols3">${chk(prefix+"Lap",d[prefix+"Lap"],"Include lap allowance (%)",prefix+"Lap")}</div></div>`;
-    let sched = (manual && d[prefix])? `<div class="subsec"><table class="rows"><thead><tr><th>Section mark</th><th>Dia</th><th>Span across section (m)</th><th>Spacing (mm)</th><th>Bar length (m)</th><th>Bars (calc)</th><th></th></tr></thead>
+    let sched = (useSched && d[prefix])? `<div class="subsec"><table class="rows"><thead><tr><th>Section mark</th><th>Bar type</th><th>Span covered (m)</th><th>Spacing (mm)</th><th>Bar length (m)</th><th>Bars (calc)</th><th></th></tr></thead>
     <tbody>${(d[prefix+"Bars"]||[]).map((r,i)=>barSchedRowHtml(prefix,i,r)).join('')}</tbody></table>
-    <button class="btn small" data-action="addRow" data-target="${prefix}Bars">+ Add section</button>
-    <div class="tip"><span class="ico">🎓</span><div>Irregular slab — break the slab into sections the way you'd read it off the drawing. For each section, enter the span it covers (the dimension the bars are spaced across) and the spacing, and the bar count for that section is calculated for you (span/spacing + 1) — you just supply the actual cut length for bars in that section. Add one section per distinct span/length you've scaled off the drawing; totals sum automatically.</div></div>
+    <button class="btn small" data-action="addRow" data-target="${prefix}Bars">+ Add bar set</button>
+    <div class="tip"><span class="ico">🎓</span><div>One row per distinct bar set, the way it reads off the drawing: bar type, the span the bars are spaced across, their spacing (bar count = span/spacing + 1, calculated for you), and the actual cut length of each bar. Add as many sets as the zone needs — different diameters, spacings and lengths all sum automatically into the register.</div></div>
     </div>` : "";
     return head+sched;
   }
-  let reo = barBlock("botX","Bottom X bars")+barBlock("botY","Bottom Y bars")+(d.suspended? barBlock("topX","Top X bars")+barBlock("topY","Top Y bars"):"")
+  let reo = barBlock("botX","Bottom X bars")+barBlock("botY","Bottom Y bars")+barBlock("topX","Top X bars")+barBlock("topY","Top Y bars")
    + `<div class="subsec"><div class="sechead">Edge Return / Turn-down Bars</div>
    ${chk("returnBars",d.returnBars,"Return bars at slab edges (U-bar turn-down)","returnBars")}
    <div class="subsec ${d.returnBars?'':'hidden'}" data-show-if="returnBars"><div class="grid cols4">
@@ -2009,7 +2015,7 @@ function computeSlab(inst,def){
   }
   function barCalc(prefix,label,perpDim){
     if(!d[prefix]) return;
-    if(d.manualArea){
+    if(d.manualArea || d[prefix+"Sched"]){
       // Irregular slab: no single rectangular formula fits, so it's broken into sections. For each
       // section the estimator gives the span the bars are spaced across and the spacing — the bar
       // count for that section is calculated (span/spacing + 1) — plus the actual cut length.
@@ -2032,7 +2038,9 @@ function computeSlab(inst,def){
     lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d[prefix+"Dia"],spec:label,qty:totLen,unit:"m",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,lapPct),formula:`count(${count})×len(${fmt(barLen,1)}m)`,notes:`${fmt(wt,1)} kg`}));
   }
   barCalc("botX","Bottom X bars",num(d.width)); barCalc("botY","Bottom Y bars",num(d.length));
-  if(d.suspended){ barCalc("topX","Top X bars",num(d.width)); barCalc("topY","Top Y bars",num(d.length)); }
+  // Top bars are offered on EVERY slab (off by default on ground-bearing
+  // ones) — raft top mats over internal beams, cantilever top steel etc.
+  barCalc("topX","Top X bars",num(d.width)); barCalc("topY","Top Y bars",num(d.length));
   if(d.meshOn){
     // qty/finalQty here is what actually gets costed (in Estimates' own CSV/PDF export
     // AND when bridged into Quotes' area-based Square Mesh costing) — the layer count
