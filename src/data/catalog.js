@@ -52,7 +52,8 @@ export const PRODUCTION_RATES = [
   { key: "steel_t_crewday", name: "Rebar fixing — tonnes per crew-day", unit: "t/day", rate: 1 },
   { key: "finish_m2_crewday", name: "Surface finishing — m² per crew-day", unit: "m²/day", rate: 300 },
   { key: "general_m3_crewday", name: "General labour — m³ per crew-day", unit: "m³/day", rate: 60 },
-  { key: "form_m2_crewday", name: "Formwork — m² per crew-day", unit: "m²/day", rate: 30 },
+  // No formwork block: formwork/"prop & form" crew cells are NOT auto-derived
+  // (propping effort varies too much by system) — entered manually, always.
   { key: "exc_m3_day", name: "Excavation — m³ per excavator-day", unit: "m³/day", rate: 100 },
   { key: "pump_hrs_pour", name: "Concrete pump — hours per pour", unit: "hrs", rate: 6 },
 ];

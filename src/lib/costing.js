@@ -337,7 +337,6 @@ export function autoLabourQtys(item, rates) {
   const steelTBlock = prodRate(rates, "Rebar fixing — tonnes per crew-day", "t/day", 1);
   const finishM2Block = prodRate(rates, "Surface finishing — m² per crew-day", "m²/day", 300);
   const generalM3Block = prodRate(rates, "General labour — m³ per crew-day", "m³/day", 60);
-  const formM2Block = prodRate(rates, "Formwork — m² per crew-day", "m²/day", 30);
   const excM3Block = prodRate(rates, "Excavation — m³ per excavator-day", "m³/day", 100);
   const pumpHrsPour = prodRate(rates, "Concrete pump — hours per pour", "hrs", 6);
 
@@ -371,11 +370,14 @@ export function autoLabourQtys(item, rates) {
       put(task, "concreter_day", crewDays(q, finishM2Block));
     } else if (EXCAVATE_TASK_MATCH.test(task.name)) {
       put(task, "excavator_day", crewDays(q, excM3Block)); // q is the typed excavation m³ — no line item to draw from
-    } else if (FORMWORK_TASK_MATCH.test(task.name) && !STRIP_TASK_MATCH.test(task.name)) {
-      put(task, "concreter_day", crewDays(q, formM2Block));
     } else if (GENERAL_TASK_MATCH.test(task.name)) {
       put(task, "labourer_day", crewDays(task.qty !== undefined && task.qty !== "" ? Number(task.qty) || 0 : lq.concreteM3, generalM3Block));
     }
+    // Formwork / "prop & form" rows deliberately get NO auto crew fill —
+    // propping effort varies too much by system (conventional ply-and-prop
+    // vs Bondek) to derive from m² alone, so those crew cells stay blank
+    // and are entered manually. Their Qty column still shows the drawn
+    // formwork m² as a guide (taskRowMeta).
   });
   return suggestions;
 }

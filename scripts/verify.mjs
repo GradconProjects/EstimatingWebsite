@@ -284,7 +284,10 @@ check("Crew sheet: Finish row draws mesh m², a typed row Qty overrides the draw
   legacy.qtys[rateKey("CONCRETE", "25 mpa", "m3")] = 40;
   legacy.qtys[rateKey("FORMWORK", "Bondek", "m2")] = 100;
   const sug3 = suggestedLabourPrefill(legacy, rates);
-  assert.equal(sug3["L1"].concreter_day, 4); // ceil(100 m² / 30 m² per crew-day)
+  // formwork rows get NO auto crew fill — entered manually, always — but
+  // the Qty column still shows the drawn formwork m² as a guide
+  assert.equal(sug3["L1"], undefined, "formwork/prop & form crew cells must stay blank");
+  assert.equal(taskRowMeta("Formwork / box out", labourQuantities(legacy, rates)).autoQty, 100);
   assert.equal(sug3["L2"].concreter_day, 4); // ceil(40/10)
   assert.equal(sug3["L2"].pump_m3, 40); // legacy pump task still pumps the true volume
   assert.equal(sug3["L2"].pump_hr, 6); // whole-pour pump booking
