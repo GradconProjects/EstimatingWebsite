@@ -33,10 +33,13 @@ const check = (name, fn) => {
 console.log("Gradcon Estimator — costing engine checks\n");
 
 /* ---------- catalog shape ---------- */
-check("44 element types, 9 categories, 15 sections", () => {
-  assert.equal(ELEMENT_TYPES.length, 44);
+check("45 element types, 9 categories, 15 sections", () => {
+  assert.equal(ELEMENT_TYPES.length, 45);
   assert.equal(CATEGORY_ORDER.length, 9);
   assert.equal(SECTION_ORDER.length, 15);
+  // Stump Footings and Screw Piles are separate, individually selectable types.
+  assert.ok(ELEMENT_TYPES.some((t) => t.name === "Stump Footings"), "Stump Footings present");
+  assert.ok(ELEMENT_TYPES.some((t) => t.name === "Screw Piles"), "Screw Piles present");
 });
 
 check("every element type has both a category and a section", () => {
