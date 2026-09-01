@@ -203,7 +203,9 @@ export const FULL_CATALOG = [
     ["Insulation (other — specify in description)", "m2", null, 25],
   ]},
   { key: "OTHER ACCESSORIES", weightBasis: false, products: [
-    ["Packing sand", "m3", null, 50], ["Crushed Rock", "m3", null, 63], ["Insulation", "m2", null, 25], ["Epoxy", "unit", null, 70],
+    // Vapour barrier is its own product, DISTINCT from Insulation — a 200µm
+    // poly membrane per m² laid, not an insulation board/strip.
+    ["Packing sand", "m3", null, 50], ["Crushed Rock", "m3", null, 63], ["Insulation", "m2", null, 25], ["Vapour barrier", "m2", null, 3], ["Epoxy", "unit", null, 70],
     ["Marking Paint", "unit", null, 4], ["Sealers/Acid/MBT", "each", null, 400], ["Curing Products", "price", null, 100],
   ]},
   { key: "OTHER ALLOWANCES", weightBasis: false, products: [

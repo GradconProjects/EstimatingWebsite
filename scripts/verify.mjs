@@ -51,10 +51,14 @@ check("every element type has both a category and a section", () => {
   });
 });
 
-check("12 material categories, 129 products (incl. specified INSULATION, N10 Ligatures stock bar, Bored Piers subcontract)", () => {
+check("12 material categories, 130 products (incl. INSULATION, N10 Ligatures, Bored Piers subcontract, Vapour barrier accessory)", () => {
   assert.equal(FULL_CATALOG.length, 12);
   const total = FULL_CATALOG.reduce((s, c) => s + c.products.length, 0);
-  assert.equal(total, 129);
+  assert.equal(total, 130);
+  // Vapour barrier is its own OTHER ACCESSORIES product, distinct from Insulation
+  const acc = FULL_CATALOG.find((c) => c.key === "OTHER ACCESSORIES");
+  assert.ok(acc.products.some((p) => p.name === "Vapour barrier" && p.unit === "m2"), "Vapour barrier accessory present");
+  assert.ok(acc.products.some((p) => p.name === "Insulation" && p.unit === "m2"), "Insulation stays its own separate product");
   const subbies = FULL_CATALOG.find((c) => c.key === "SUB CONTRACTORS / TEMPORARY WORKS");
   assert.ok(subbies.products.some((p) => p.name === "Bored Piers (subcontract)" && p.unit === "quote"), "Bored Piers quote item present");
   const stock = FULL_CATALOG.find((c) => c.key === "STOCK BAR");
@@ -634,6 +638,20 @@ check("Import: insulation lines with catalog product names map onto the INSULATI
   assert.equal(item.qtys[rateKey("INSULATION", "XPS rigid board 50mm (R1.47)", "m2")], 210);
   assert.equal(item.qtys[rateKey("INSULATION", "Slab edge insulation — 30mm XPS 300mm strip", "m")], 60);
   assert.ok(flags.some((f) => f.includes("Some unknown foam")), `unknown insulation should be flagged, got: ${flags.join(" | ")}`);
+});
+
+check("Import: vapour barrier m² lines map onto the OTHER ACCESSORIES 'Vapour barrier' product (distinct from Insulation)", () => {
+  const { quote, flags } = buildImportFromEstimate({
+    project: {},
+    lines: [
+      { ...estLine({}), category: "Slab on Ground", element: "Slab 1", elementId: "EL09",
+        materialGroup: "Base/Blinding", material: "Vapour barrier — 200um polyethylene", spec: "incl. 10% laps/upturns", unit: "m²", finalQty: 339.9 },
+    ],
+  });
+  const item = quote.items[0];
+  assert.equal(item.qtys[rateKey("OTHER ACCESSORIES", "Vapour barrier", "m2")], 339.9);
+  assert.equal(item.qtys[rateKey("INSULATION", "Vapour barrier", "m2")], undefined, "must not land on any Insulation product");
+  assert.ok(!flags.some((f) => f.includes("Vapour barrier")), `vapour barrier must map cleanly, got flags: ${flags.join(" | ")}`);
 });
 
 check("Catalog: Bondek is a priced FORMWORK product (m²) so it appears in the Rates modal and the import can target it", () => {

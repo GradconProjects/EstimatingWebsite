@@ -342,6 +342,13 @@ export function buildImportFromEstimate(estimateExport) {
       flag(l, `${elementLabel}: ${(Number(l.finalQty) || 0).toFixed(2)} ${l.unit} of insulation (${l.material}) — no matching Insulation catalog product, add manually.`);
     });
 
+    // --- Vapour barrier: Estimates' Base/Blinding membrane lines (m², laps
+    // included in finalQty) land on the dedicated OTHER ACCESSORIES "Vapour
+    // barrier" product — distinct from Insulation. ---
+    group.filter((l) => l.materialGroup === "Base/Blinding" && /vapour|membrane/i.test(l.material || "") && (l.unit === "m²" || l.unit === "m2")).forEach((l) => {
+      map(l, rateKey("OTHER ACCESSORIES", "Vapour barrier", "m2"), Number(l.finalQty) || 0);
+    });
+
     // --- Sweep: anything not yet mapped or flagged gets one now, so nothing
     // is ever silently lost. A "— mass" line is a pure informational
     // duplicate of its non-mass sibling line ONLY when both describe the
