@@ -416,19 +416,36 @@ function initTakeoffRegistry(){
   }
   let live = liveProjects(idx);
   if(live.length===0){
-    // Every entry is a tombstone — open a fresh takeoff without reusing a
-    // deleted id/key (reusing one would resurrect it on other devices).
-    let id = "proj_"+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
-    let fresh = { id, name:"", key: ESTIMATE_STATE_KEY+"::"+id, savedAt:new Date().toISOString() };
-    idx.push(fresh);
-    try{ localStorage.setItem(ESTIMATE_INDEX_KEY, JSON.stringify(idx)); }catch(e){}
-    live = [fresh];
+    // Every entry is a tombstone — open a fresh UNREGISTERED draft (it only
+    // appears in the saved list once it actually has content; see
+    // registerDraftIfNeeded). Never reuse a deleted id/key.
+    startUnregisteredDraft();
+    return;
   }
   let activeId = null;
   try{ activeId = localStorage.getItem(ESTIMATE_ACTIVE_KEY); }catch(e){}
   let entry = live.find(p=>p.id===activeId) || live[0];
   CURRENT_PROJECT_KEY = entry.key;
   try{ localStorage.setItem(ESTIMATE_ACTIVE_KEY, entry.id); }catch(e){}
+}
+// A blank workspace that is NOT in the saved list yet — "delete all sessions"
+// must actually leave zero sessions. The draft earns its list entry the first
+// time it has real content (an element added, a project name typed, or an
+// explicit save) — registerDraftIfNeeded() does that from the save paths.
+function startUnregisteredDraft(){
+  let id = "proj_"+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+  CURRENT_PROJECT_KEY = ESTIMATE_STATE_KEY+"::"+id;
+  try{ localStorage.setItem(ESTIMATE_ACTIVE_KEY, id); }catch(e){}
+}
+function registerDraftIfNeeded(){
+  let idx = loadProjectsIndex();
+  if(idx.some(p=>p.key===CURRENT_PROJECT_KEY)) return true;
+  let hasContent = INSTANCES.length>0 || (PROJECT.name||"").trim()!=="";
+  if(!hasContent) return false;
+  let id = CURRENT_PROJECT_KEY.split("::")[1] || ("proj_"+Date.now().toString(36));
+  idx.push({ id, name: PROJECT.name||"", key: CURRENT_PROJECT_KEY, savedAt:new Date().toISOString() });
+  saveProjectsIndex(idx);
+  return true;
 }
 function activeTakeoffId(){
   let idx = loadProjectsIndex();
@@ -453,16 +470,13 @@ function switchToTakeoff(id){
   syncFromCloud();
 }
 function newTakeoff(){
-  saveEstimateState();
-  let id = "proj_"+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
-  let key = ESTIMATE_STATE_KEY+"::"+id;
-  let idx = loadProjectsIndex();
-  idx.push({ id, name:"", key, savedAt:new Date().toISOString() });
-  saveProjectsIndex(idx);
-  CURRENT_PROJECT_KEY = key;
-  try{ localStorage.setItem(ESTIMATE_ACTIVE_KEY, id); }catch(e){}
+  // Save what's open (registering it if it was still a content-holding
+  // draft), then start a blank UNREGISTERED draft — it joins the saved list
+  // only once it has content, so "+ New takeoff" can never litter the list
+  // with empty Untitled entries.
+  if(registerDraftIfNeeded() || INSTANCES.length>0 || (PROJECT.name||"").trim()) saveEstimateState();
+  startUnregisteredDraft();
   freshProjectState();
-  saveEstimateState();
   rerenderAllPages();
 }
 function deleteTakeoff(id){
@@ -479,8 +493,13 @@ function deleteTakeoff(id){
   kvPush(entry.key, null); // clear the cloud copy too
   let live = liveProjects(idx);
   if(live.length===0){
+    // Last one deleted: the list goes genuinely EMPTY. Work continues in an
+    // unregistered blank draft that only re-appears in the list once it has
+    // content again.
     saveProjectsIndex(idx);
-    newTakeoff();
+    startUnregisteredDraft();
+    freshProjectState();
+    rerenderAllPages();
     return;
   }
   saveProjectsIndex(idx);
@@ -498,6 +517,7 @@ function renderTakeoffsBar(){
   host.innerHTML = `<div class="sechead">Saved Takeoffs</div>
    <div class="tip"><span class="ico">💾</span><div>Each takeoff saves independently — 💾 Save writes only the one that's open. Start another with <b>+ New takeoff</b> and resume any saved one from this list at any time; nothing here touches the others.</div></div>
    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+   ${idx.length===0? `<span class="small">No saved takeoffs — this blank workspace will appear here automatically as soon as you name it, add an element, or hit 💾 Save.</span>`:""}
    ${idx.map(p=>{
      let active = p.key===activeKey;
      let label = (p.name||"Untitled takeoff");
@@ -742,6 +762,7 @@ function saveEstimateState(skipHistory){
   const keyAtSave = CURRENT_PROJECT_KEY;
   const snapshot = estimateStateSnapshot();
   awaitingCloudLoad = false; // an explicit save commits the in-memory state
+  registerDraftIfNeeded();   // a draft with content earns its saved-list entry now
   try{
     localStorage.setItem(keyAtSave, JSON.stringify({ ...snapshot, savedAt: new Date().toISOString() }));
     showSaveStatus("ok");
@@ -773,6 +794,7 @@ function autosaveLocal(){
   // overwrite the real saved elements with an empty workspace.
   if(awaitingCloudLoad) return;
   try{ localStorage.setItem(CURRENT_PROJECT_KEY, JSON.stringify({ ...estimateStateSnapshot(), savedAt: new Date().toISOString() })); }catch(err){ return; }
+  registerDraftIfNeeded();
   let idx = loadProjectsIndex();
   let entry = idx.find(p=>p.key===CURRENT_PROJECT_KEY);
   if(entry){ entry.name = PROJECT.name || ""; entry.savedAt = new Date().toISOString(); saveProjectsIndex(idx); }
@@ -863,7 +885,8 @@ async function syncProjectsIndexFromCloud(){
       let cur = local.find(p=>p.key===CURRENT_PROJECT_KEY);
       if(cur && cur.deleted){
         let live = liveProjects(local);
-        if(live.length) switchToTakeoff(live[0].id); else newTakeoff();
+        if(live.length){ switchToTakeoff(live[0].id); }
+        else { startUnregisteredDraft(); freshProjectState(); rerenderAllPages(); }
       }
     }
   }catch(e){ /* best-effort */ }
@@ -894,6 +917,36 @@ async function prefetchTakeoffBlobs(){
         }catch(e){}
       }
     }
+    // Orphan recovery: a takeoff blob in the cloud that still HAS elements
+    // but appears in no index (its registry entry was lost to a race between
+    // two devices overwriting the shared index) is silently invisible on
+    // every device. Re-list it — deliberately deleted takeoffs are safe from
+    // this because deletion tombstones the entry AND nulls the blob.
+    try{
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/estimator_kv?key=like.${encodeURIComponent(ESTIMATE_STATE_KEY)}*&select=key,value,updated_at`, {
+        headers:{ apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` },
+        signal: AbortSignal.timeout(8000),
+      });
+      if(res.ok){
+        const rows = await res.json();
+        let idx = loadProjectsIndex();
+        let changed=false;
+        rows.forEach(r=>{
+          if(!r.key || r.key.indexOf("__")>=0) return;
+          if(idx.some(p=>p.key===r.key)) return; // listed or tombstoned — respect it
+          const v=r.value;
+          if(!v || !Array.isArray(v.instances) || v.instances.length===0) return;
+          const id = r.key.split("::")[1] || r.key;
+          idx.push({ id, key:r.key, name:(v.project&&v.project.name)||"", savedAt:r.updated_at });
+          try{
+            localStorage.setItem(r.key, JSON.stringify({ ...v, savedAt:r.updated_at }));
+            localStorage.setItem(r.key+"__syncedAt", r.updated_at);
+          }catch(e){}
+          changed=true; any=true;
+        });
+        if(changed) saveProjectsIndex(idx);
+      }
+    }catch(e){ /* best-effort */ }
     if(any) renderTakeoffsBar();
   } finally {
     // allow a later retry if some fetches failed (e.g. offline at boot)
@@ -1075,8 +1128,8 @@ function lenInput(field,valMM){
 function lenLabel(label){ return PROJECT.units_len_pref==="m"? label.replace(/\(mm\)/,"(m)") : label; }
 function LF(label,field,valMM){ return F(lenLabel(label), lenInput(field,valMM)); }
 function inpText(field,val){ return `<input type="text" data-field="${field}" value="${val===undefined?'':val}">`; }
-function selOpts(field,val,opts){ // opts: [[value,label]]
-  return `<select data-field="${field}">${opts.map(o=>`<option value="${o[0]}" ${String(val)===String(o[0])?'selected':''}>${o[1]}</option>`).join('')}</select>`;
+function selOpts(field,val,opts,rerender){ // opts: [[value,label]]
+  return `<select data-field="${field}" ${rerender?'data-rerender="true"':''}>${opts.map(o=>`<option value="${o[0]}" ${String(val)===String(o[0])?'selected':''}>${o[1]}</option>`).join('')}</select>`;
 }
 function chk(field,checked,label,toggle,rerender){ return `<label class="chk"><input type="checkbox" data-field="${field}" ${toggle?`data-toggle="${toggle}"`:""} ${rerender?'data-rerender="true"':""} ${checked?'checked':''}>${label}</label>`; }
 function faceRow(fields,data){
@@ -1294,6 +1347,9 @@ function blindingLine(inst,def,area,thicknessMm,materialChoice,grade){
   let vol=area*(num(thicknessMm)/1000);
   let material = materialChoice==="compacted"? "Base material (compacted)"
     : materialChoice==="loose"? "Base material (loose — enter loose thickness placed)"
+    : materialChoice==="sand"? "Sand blinding"
+    : materialChoice==="crushedrock"? "Crushed rock blinding"
+    : materialChoice==="mudslab"? "Mud slab / lean-mix screed"
     : `Blinding concrete${grade?` N${grade}`:""}`;
   return baseLine(inst,def,{materialGroup:"Base/Blinding",material,spec:`${thicknessMm}mm`,qty:vol,unit:"m³",waste:5,finalQty:withWaste(vol,5),formula:"area × thickness"});
 }
@@ -1407,6 +1463,73 @@ function setOutlineCornerAngle(d,k,deg){
 function outlinePtRow(i,pt){
   return `<tr data-row="outlinePts.${i}"><td class="small">${i+1}</td><td style="width:110px">${inpNum(`outlinePts.${i}.x`,pt.x)}</td><td style="width:110px">${inpNum(`outlinePts.${i}.y`,pt.y)}</td><td><button class="btn small danger" data-action="delRow" data-target="outlinePts" data-idx="${i}">✕</button></td></tr>`;
 }
+/* ---- Formwork system: selectable on every element that has a Formwork
+   tab (injected centrally in buildCard). The choice travels onto every
+   formwork line's specification, so the register and exports say WHICH
+   system is being priced, not just an area. ---- */
+const FORMWORK_SYSTEMS=[
+  ["conventional","Conventional timber / ply"],
+  ["modular","Modular panel system (handset)"],
+  ["engineered","Engineered panel (Peri / Doka type)"],
+  ["steel","Steel edge forms"],
+  ["permanent","Permanent / lost formwork"],
+  ["eps","EPS / void former"],
+];
+function formworkSystemName(v){ let m=FORMWORK_SYSTEMS.find(s=>s[0]===v); return m? m[1] : ""; }
+function formworkSystemSelect(d){
+  return `<div class="grid cols3" style="margin-bottom:8px;">${F("Formwork system / type",selOpts("formworkSystem",d.formworkSystem||"conventional",FORMWORK_SYSTEMS))}</div>`;
+}
+/* ---- Under-slab / under-element insulation: its own choice of board type,
+   thickness R-value implied by the product, area (auto from the slab where
+   possible) and waste. Injected into every Blinding / Insulation tab. ---- */
+const INSULATION_TYPES=[
+  ["xps30","XPS rigid board 30mm"],
+  ["xps50","XPS rigid board 50mm"],
+  ["xps75","XPS rigid board 75mm"],
+  ["eps50","EPS (Foamex-type) 50mm"],
+  ["eps100","EPS (Foamex-type) 100mm"],
+  ["pir","PIR foil-faced board"],
+  ["edge","Slab edge insulation strip"],
+];
+function insulationTypeName(v){ let m=INSULATION_TYPES.find(s=>s[0]===v); return m? m[1] : "Insulation"; }
+function insulationSubsection(d){
+  return `<div class="subsec"><div class="sechead">Insulation</div>
+  ${chk("insulationOn",d.insulationOn,"Under-slab / under-element insulation","insulationOn")}
+  <div class="subsec ${d.insulationOn?'':'hidden'}" data-show-if="insulationOn"><div class="grid cols3">
+   ${F("Insulation type",selOpts("insType",d.insType||"xps50",INSULATION_TYPES))}
+   ${F("Area (m², blank = element area)",inpNum("insArea",d.insArea))}
+   ${F("Waste %",inpNum("insWaste",d.insWaste===undefined?5:d.insWaste))}
+  </div></div></div>`;
+}
+/* ---- Step-down setup shared by beams, slabs, walls and stepped strip
+   footings: a PRESET step profile (1/2/3 risers, drawn live so the chosen
+   shape is visible) and the number of dowel layers/legs at each step — a
+   double-layer detail is 2 legs, never assumed to be a single bar. ---- */
+function stepProfileSVG(risers){
+  let R=Math.max(1,Math.min(6,Math.round(num(risers,1)||1)));
+  let W=130,H=64,pad=8;
+  let sw=(W-2*pad)/(R+1), sh=(H-2*pad)/R;
+  let x=pad,y=pad, pts=[[x,y]];
+  for(let i=0;i<R;i++){ x+=sw; pts.push([x,y]); y+=sh; pts.push([x,y]); }
+  pts.push([W-pad,y]);
+  let path=pts.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+','+p[1].toFixed(1)).join(' ');
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:130px;background:var(--input);border:1px solid var(--line);border-radius:6px;">
+    <path d="${path} L ${W-pad},${H-pad} L ${pad},${H-pad} Z" fill="rgba(47,84,72,.10)" stroke="none"/>
+    <path d="${path}" fill="none" stroke="var(--danger)" stroke-width="2.5" stroke-linejoin="round"/></svg>`;
+}
+function sdSetupFields(d){
+  return `<div style="display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap;margin-top:8px;">
+   <div class="grid cols2" style="flex:1;min-width:260px;">
+    ${F("Step profile — risers at each step",selOpts("sdRisers",String(d.sdRisers===undefined?1:d.sdRisers),[["1","Single step — 1 riser"],["2","Double step — 2 risers"],["3","Triple step — 3 risers"]],true))}
+    ${F("Dowel layers / legs per step",inpNum("sdLegs",d.sdLegs===undefined?1:d.sdLegs))}
+   </div>
+   <div style="text-align:center;">${stepProfileSVG(d.sdRisers)}<div class="small">step profile</div></div>
+  </div>
+  <p class="small">Pick the preset profile that matches the drawing (each riser gets its own dowel row and face formwork) and how many layers of dowels each step carries — top and bottom mats tied across = 2 legs. For an irregular multi-level layout, enter the combined length of ALL steps in the total-length field above and keep the profile at the per-location shape.</p>`;
+}
+function sdFactors(d){
+  return { risers: Math.max(1,Math.round(num(d.sdRisers,1)||1)), legs: Math.max(1,Math.round(num(d.sdLegs,1)||1)) };
+}
 function concWastePct(d){ return (d.concreteWasteOverride===undefined||d.concreteWasteOverride==="")? PROJECT.concreteWaste : num(d.concreteWasteOverride); }
 function concSection(d,note){
   return `<div class="grid cols3">${F("Concrete grade (N/MPa)",inpNum("grade",d.grade))}${F(`Concrete waste % (blank = project default ${PROJECT.concreteWaste}%)`,inpNum("concreteWasteOverride",d.concreteWasteOverride))}</div>${note||""}`;
@@ -1437,7 +1560,7 @@ function blindingSection(d){
   ${chk("blindingOn",on,"Blinding / base layer under element","blindingOn")}
   <div class="subsec ${on?'':'hidden'}" data-show-if="blindingOn"><div class="grid cols4">
    ${F("Thickness (mm)",inpNum("blinding",d.blinding))}
-   ${F("Material",selOpts("blindingMaterial",d.blindingMaterial,[["concrete","Concrete blinding"],["compacted","Base material — compacted"],["loose","Base material — loose"]]))}
+   ${F("Blinding type",selOpts("blindingMaterial",d.blindingMaterial,[["concrete","Concrete blinding"],["mudslab","Mud slab / lean-mix screed"],["sand","Sand blinding"],["crushedrock","Crushed rock"],["compacted","Base material — compacted"],["loose","Base material — loose"]]))}
    ${F("Blinding concrete grade (N)",inpNum("blindingGrade",d.blindingGrade===undefined?20:d.blindingGrade))}
    ${F("Extends to",selOpts("blindingExtent",d.blindingExtent||"foot",[["foot","Element footprint"],["exc","Excavation footprint (incl. oversize)"]]))}
   </div></div>
@@ -1445,6 +1568,7 @@ function blindingSection(d){
 }
 function blindingAndVapourLines(inst,def,d,footArea,excArea,defaultExtent){
   let out=[];
+  d._autoInsArea = footArea; // insulation defaults to the element footprint here
   // defaultExtent preserves each element's historical behaviour for saved
   // takeoffs that predate the extent field (pile caps always blinded the
   // oversized excavation; footings blinded the element footprint).
@@ -1743,13 +1867,14 @@ function renderStripFooting(inst){
   <div class="subsec ${d.starters?'':'hidden'}" data-show-if="starters"><div class="grid cols4">
    ${F("Connects to",targetSelect("connTarget",d.connTarget,inst.id))}${F("Qty",inpNum("connQty",d.connQty))}${F("Dia",barSizeSel("connDia",d.connDia))}${F("Embedment (mm)",inpNum("connEmbed",d.connEmbed))}${F("Projection (mm)",inpNum("connProj",d.connProj))}
   </div></div>
-  <div class="sechead" style="margin-top:10px;">Stepped Footing (step-downs on sloping ground)</div>
+  `;
+  let steps=`<div class="sechead">Stepped Footing (step-downs on sloping ground)</div>
   ${chk("stepdown",d.stepdown,"Footing steps down along its run","stepdown")}
   <div class="subsec ${d.stepdown?'':'hidden'}" data-show-if="stepdown"><div class="grid cols4">
    ${F("Total step-down length (m)",inpNum("sdLength",d.sdLength))}${F("Step depth (mm)",inpNum("sdDepth",d.sdDepth))}${F("Dowel size",barSizeSel("sdDia",d.sdDia))}${F("Spacing (mm)",inpNum("sdSpacing",d.sdSpacing))}
    ${F("Projection each side (mm)",inpNum("sdProj1",d.sdProj1))}${F("Projection other side (mm)",inpNum("sdProj2",d.sdProj2))}
-  </div><div class="tip"><span class="ico">🏗️</span><div>Enter the TOTAL length of stepped footing (sum of every step run along the trench). Dowels are spaced over that length and the vertical step faces get their own formwork line — both the items a stepped strip footing adds over a level one.</div></div></div>`;
-  return {geom,conc:concSection(d,"<p class='small'>Concrete = length × width × depth</p>"),reo,form,exc:"<p class='small'>Excavation = length × trench width × excavation depth</p>",blind:blindingSection(d)};
+  </div>${sdSetupFields(d)}<div class="tip"><span class="ico">🏗️</span><div>Enter the TOTAL length of stepped footing (sum of every step run along the trench). Dowels are spaced over that length and the vertical step faces get their own formwork line — both the items a stepped strip footing adds over a level one.</div></div></div>`;
+  return {geom,conc:concSection(d,"<p class='small'>Concrete = length × width × depth</p>"),reo,form,steps,exc:"<p class='small'>Excavation = length × trench width × excavation depth</p>",blind:blindingSection(d)};
 }
 function computeStripFooting(inst,def){
   let d=inst.data, lines=[];
@@ -1778,11 +1903,12 @@ function computeStripFooting(inst,def){
     let bd=barDiaOf(d.sdDia);
     let sdRunM=num(d.sdLength);
     if(sdRunM>0){
-      let count=Math.floor(sdRunM*1000/Math.max(1,num(d.sdSpacing,300)))+1;
+      let sdf=sdFactors(d);
+      let count=(Math.floor(sdRunM*1000/Math.max(1,num(d.sdSpacing,300)))+1)*sdf.risers*sdf.legs;
       let len=(num(d.sdProj1,500)+num(d.sdProj2,500))/1000;
       let totLen=count*len; let wt=totLen*massPerM(bd);
-      lines.push(baseLine(inst,def,{materialGroup:"Connections",material:d.sdDia,spec:"Stepped footing — step dowels",qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`count(${count}=${fmt(sdRunM,1)}m/${d.sdSpacing}mm+1)×(proj1+proj2)/1000`,notes:`${count} dowels, ${fmt(wt,1)} kg`}));
-      let fA=sdRunM*num(d.sdDepth,300)/1000;
+      lines.push(baseLine(inst,def,{materialGroup:"Connections",material:d.sdDia,spec:"Stepped footing — step dowels",qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`count(${count}=${fmt(sdRunM,1)}m/${d.sdSpacing}mm+1 ×${sdf.risers} riser(s) ×${sdf.legs} leg(s))×(proj1+proj2)/1000`,notes:`${count} dowels, ${fmt(wt,1)} kg`}));
+      let fA=sdRunM*num(d.sdDepth,300)/1000*sdf.risers;
       lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Step-down face formwork",spec:`${d.sdDepth}mm steps`,qty:fA,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(fA,PROJECT.formworkWaste),formula:`step length ${fmt(sdRunM,1)}m × depth`}));
     }
   }
@@ -2012,13 +2138,14 @@ function renderBeam(inst,def){
   <div class="subsec ${d.starters?'':'hidden'}" data-show-if="starters"><div class="grid cols4">
    ${F("Connects to",targetSelect("connTarget",d.connTarget,inst.id))}${F("Qty",inpNum("connQty",d.connQty))}${F("Dia",barSizeSel("connDia",d.connDia))}${F("Embedment (mm)",inpNum("connEmbed",d.connEmbed))}${F("Projection (mm)",inpNum("connProj",d.connProj))}
   </div></div>
-  <div class="subsec"><div class="sechead">Step-down / Construction-joint Connecting Bars</div>
+  `;
+  let steps=`<div class="sechead">Step-down / Construction-joint Connecting Bars</div>
   ${chk("stepdown",d.stepdown,"This beam steps down / has a level change requiring connecting dowels","stepdown")}
   <div class="subsec ${d.stepdown?'':'hidden'}" data-show-if="stepdown"><div class="grid cols4">
    ${F("Total step-down length (m)",inpNum("sdLength",d.sdLength))}${F("Step depth (mm)",inpNum("sdDepth",d.sdDepth))}${F("Dowel size",barSizeSel("sdDia",d.sdDia))}${F("Spacing (mm)",inpNum("sdSpacing",d.sdSpacing))}
    ${F("Projection into upper pour (mm)",inpNum("sdProj1",d.sdProj1))}${F("Projection into lower pour (mm)",inpNum("sdProj2",d.sdProj2))}
-  </div><div class="tip"><span class="ico">🏗️</span><div>Any change in soffit or top level along a beam is a cold joint waiting to slip in shear unless it's dowelled. Treat it like a mini footing-to-column connection: embedment into the pour already cast, projection into the pour still to come. Don't fold this into the general waste factor — it's a real, countable item that a site engineer will ask for on the RFI.</div></div></div></div>`;
-  return {geom,conc:concSection(d,"<p class='small'>Concrete = L × W × effective depth (downstand uses drop below slab only)</p>"),reo,form,conns};
+  </div>${sdSetupFields(d)}<div class="tip"><span class="ico">🏗️</span><div>Any change in soffit or top level along a beam is a cold joint waiting to slip in shear unless it's dowelled. Treat it like a mini footing-to-column connection: embedment into the pour already cast, projection into the pour still to come. Don't fold this into the general waste factor — it's a real, countable item that a site engineer will ask for on the RFI.</div></div></div>`;
+  return {geom,conc:concSection(d,"<p class='small'>Concrete = L × W × effective depth (downstand uses drop below slab only)</p>"),reo,form,steps,conns};
 }
 function reoRowHtml(id,r,i){
   return `<tr data-row="reoRows.${i}">
@@ -2109,10 +2236,11 @@ function computeBeam(inst,def){
     // dowels run along the TOTAL entered step-down length (legacy saves
     // without the field keep the old full-beam-length behaviour)
     let sdRunM = d.sdLength!==undefined? num(d.sdLength) : num(d.length)/1000;
-    let count=Math.floor(sdRunM*1000/Math.max(1,num(d.sdSpacing,300)))+1;
+    let sdf=sdFactors(d);
+    let count=(Math.floor(sdRunM*1000/Math.max(1,num(d.sdSpacing,300)))+1)*sdf.risers*sdf.legs;
     if(d.sdLength!==undefined && sdRunM>0){
-      let fA=sdRunM*num(d.sdDepth)/1000;
-      lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Step-down face formwork",spec:`${d.sdDepth}mm step`,qty:fA,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(fA,PROJECT.formworkWaste),formula:`step length ${fmt(sdRunM,1)}m × depth`}));
+      let fA=sdRunM*num(d.sdDepth)/1000*sdf.risers;
+      lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Step-down face formwork",spec:`${d.sdDepth}mm step ×${sdf.risers} riser(s)`,qty:fA,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(fA,PROJECT.formworkWaste),formula:`step length ${fmt(sdRunM,1)}m × depth ×${sdf.risers}`}));
     }
     let len=(num(d.sdProj1)+num(d.sdProj2))/1000;
     let totLen=N*count*len; let wt=totLen*massPerM(bd);
@@ -2178,28 +2306,13 @@ function renderSlab(inst,def){
     <div style="flex:1;min-width:260px;" class="outlineHost">${slabOutlineSVG(d)}</div>
    </div>
   </div>
-  <div class="grid cols4">
-   ${chk("meshOn",d.meshOn,"Mesh reinforcement","meshOn")}
-  </div>
-  <div class="subsec ${d.meshOn?'':'hidden'}" data-show-if="meshOn"><div class="grid cols3">${F("Mesh type",selOpts("meshType",d.meshType,Object.keys(MESHTYPES).map(m=>[m,m])))}${F("Layers",inpNum("meshLayers",d.meshLayers))}${chk("meshLap",d.meshLap,"Extra lap allowance (%)","meshLap")}</div></div>
-  <div class="grid cols4">${chk("drops",d.drops,"Drops")}${chk("setdowns",d.setdowns,"Setdowns / recesses")}${chk("upstands",d.upstands,"Upstands")}${chk("cjStopEnds",d.cjStopEnds,"Construction joint stop ends")}</div>
   <div class="subsec"><div class="sechead">Edge Thickening</div><div class="grid cols3">${chk("edgeThicken",d.edgeThicken,"Thickened edge strip around perimeter","edgeThicken")}</div>
   <div class="subsec ${d.edgeThicken?'':'hidden'}" data-show-if="edgeThicken"><div class="grid cols3">${F("Thickened strip width (mm)",inpNum("edgeThickenWidth",d.edgeThickenWidth))}${F("Extra depth below slab thickness (mm)",inpNum("edgeThickenExtraDepth",d.edgeThickenExtraDepth))}</div>
   <div class="tip"><span class="ico">🏗️</span><div>A thickened edge (footing-like strip under the slab perimeter, or wherever a line load lands) is extra concrete beyond the flat slab thickness already counted above — it's costed here as perimeter × strip width × extra depth, on top of the main slab volume, not instead of it.</div></div></div></div>
   <div class="subsec"><div class="sechead">Internal Beam Strips / Ribs (e.g. raft foundation load-bearing lines)</div><div class="grid cols3">${chk("beamStrips",d.beamStrips,"Internal thickened beam strips within the slab","beamStrips")}</div>
   <div class="subsec ${d.beamStrips?'':'hidden'}" data-show-if="beamStrips"><div class="grid cols3">${F("Total beam run length (m)",inpNum("beamStripsLength",d.beamStripsLength))}${F("Strip width (mm)",inpNum("beamStripsWidth",d.beamStripsWidth))}${F("Extra depth below slab thickness (mm)",inpNum("beamStripsExtraDepth",d.beamStripsExtraDepth))}</div>
   <div class="tip"><span class="ico">🏗️</span><div>A raft foundation's internal beams (the thickened ribs that run under load-bearing walls, not just the perimeter) are easy to miss because they're not their own drawing callout — they're a detail cut through the slab. Turn this on to fold them into this raft as one composite element: total the combined length of every internal beam run from the drawing (not the perimeter — that's Edge Thickening above) and it's costed as run length × strip width × extra depth, added on top of the flat slab volume. Leave it off and take the beams off separately as their own Ground Beam element instead if you'd rather price and schedule them apart from the slab — either way, don't double up and count the same beam in both places.</div></div>
-  <div class="subsec"><div class="sechead">Beam Strip Reinforcement</div><div class="grid cols3">${chk("beamStripsReo",d.beamStripsReo,"Longitudinal reinforcement along the beam strips","beamStripsReo")}</div>
-  <div class="subsec ${d.beamStripsReo?'':'hidden'}" data-show-if="beamStripsReo">
-  <div class="grid cols3">${chk("beamStripsTrenchMesh",d.beamStripsTrenchMesh,"Trench mesh instead","beamStripsTrenchMesh",true)}</div>
-  <div class="grid cols3">
-   ${d.beamStripsTrenchMesh
-     ? F("Trench mesh type",trenchMeshTypeSel("beamStripsTrenchType",d.beamStripsTrenchType))
-     : F("Longitudinal bars (no.)",inpNum("beamStripsBars",d.beamStripsBars))+F("Bar diameter",barSizeSel("beamStripsDia",d.beamStripsDia))}
-   ${F("Layers",inpNum("beamStripsLayers",d.beamStripsLayers===undefined?1:d.beamStripsLayers))}${chk("beamStripsLap",d.beamStripsLap,"Include lap allowance (%)","beamStripsLap")}
-  </div>
-  <p class="small">Same reinforcement options as the standalone Ground Beam element — individual deformed bars or a named trench mesh type (same list as Quotes' own Trench Mesh catalog), run the full combined beam length entered above. Layers &gt; 1 stacks that many identical bar sets/mesh strips. Lap allowance is off by default — turn it on if a run is spliced from more than one length and needs the project's lap % added. Ligatures/stirrups for these ribs aren't counted here; add them as their own custom line, or take the beam off separately as a Ground Beam element if you need full stirrup-zone detail.</p>
-  </div></div></div></div>
+  </div></div>
   <div class="subsec"><div class="sechead">Openings / Penetrations</div>
   <table class="rows"><thead><tr><th>Label</th><th>Width (mm)</th><th>Height/Length (mm)</th><th>Qty</th><th></th></tr></thead>
   <tbody>${d.openings.map((r,i)=>openRowHtml(i,r)).join('')}</tbody></table>
@@ -2231,7 +2344,26 @@ function renderSlab(inst,def){
     </div>` : "";
     return head+sched;
   }
-  let reo = barBlock("botX","Bottom X bars")+barBlock("botY","Bottom Y bars")+barBlock("topX","Top X bars")+barBlock("topY","Top Y bars")
+  // Mesh + beam-strip reinforcement live on the REINFORCEMENT tab (they were
+  // buried in the Geometry grid); visibility of the strip-reo block still
+  // follows the Internal Beam Strips toggle on Geometry — data-show-if
+  // toggling is card-wide, not per-pane.
+  let meshBlock = `<div class="sechead">Mesh</div><div class="grid cols4">
+   ${chk("meshOn",d.meshOn,"Mesh reinforcement","meshOn")}
+  </div>
+  <div class="subsec ${d.meshOn?'':'hidden'}" data-show-if="meshOn"><div class="grid cols3">${F("Mesh type",selOpts("meshType",d.meshType,Object.keys(MESHTYPES).map(m=>[m,m])))}${F("Layers",inpNum("meshLayers",d.meshLayers))}${chk("meshLap",d.meshLap,"Extra lap allowance (%)","meshLap")}</div></div>`;
+  let stripReoBlock = `<div class="subsec ${d.beamStrips?'':'hidden'}" data-show-if="beamStrips"><div class="sechead">Beam Strip Reinforcement</div><div class="grid cols3">${chk("beamStripsReo",d.beamStripsReo,"Longitudinal reinforcement along the beam strips","beamStripsReo")}</div>
+  <div class="subsec ${d.beamStripsReo?'':'hidden'}" data-show-if="beamStripsReo">
+  <div class="grid cols3">${chk("beamStripsTrenchMesh",d.beamStripsTrenchMesh,"Trench mesh instead","beamStripsTrenchMesh",true)}</div>
+  <div class="grid cols3">
+   ${d.beamStripsTrenchMesh
+     ? F("Trench mesh type",trenchMeshTypeSel("beamStripsTrenchType",d.beamStripsTrenchType))
+     : F("Longitudinal bars (no.)",inpNum("beamStripsBars",d.beamStripsBars))+F("Bar diameter",barSizeSel("beamStripsDia",d.beamStripsDia))}
+   ${F("Layers",inpNum("beamStripsLayers",d.beamStripsLayers===undefined?1:d.beamStripsLayers))}${chk("beamStripsLap",d.beamStripsLap,"Include lap allowance (%)","beamStripsLap")}
+  </div>
+  <p class="small">Same reinforcement options as the standalone Ground Beam element — individual deformed bars or a named trench mesh type (same list as Quotes' own Trench Mesh catalog), run the full combined beam length entered on Geometry (Internal Beam Strips). Layers &gt; 1 stacks that many identical bar sets/mesh strips. Lap allowance is off by default. Ligatures/stirrups for these ribs aren't counted here; add them as their own custom line, or take the beam off separately as a Ground Beam element.</p>
+  </div></div>`;
+  let reo = meshBlock + barBlock("botX","Bottom X bars")+barBlock("botY","Bottom Y bars")+barBlock("topX","Top X bars")+barBlock("topY","Top Y bars")
    + `<div class="subsec"><div class="sechead">Edge Return / Turn-down Bars</div>
    ${chk("returnBars",d.returnBars,"Return bars at slab edges (U-bar turn-down)","returnBars")}
    <div class="subsec ${d.returnBars?'':'hidden'}" data-show-if="returnBars"><div class="grid cols4">
@@ -2243,18 +2375,20 @@ function renderSlab(inst,def){
     ${chk("joints",d.joints,"Construction/control joints")}${F("Joint spacing (m)",inpNum("jointSpacing",d.jointSpacing))}
     ${chk("dowels",d.dowels,"Joint dowels","dowels")}
    </div>
-   <div class="subsec ${d.dowels?'':'hidden'}" data-show-if="dowels"><div class="grid cols3">${F("Dowel size",barSizeSel("dowelDia",d.dowelDia))}${F("Spacing (mm)",inpNum("dowelSpacing",d.dowelSpacing))}${F("Total dowel length (mm, both sides of joint)",inpNum("dowelLength",d.dowelLength))}</div></div></div>`;
+   <div class="subsec ${d.dowels?'':'hidden'}" data-show-if="dowels"><div class="grid cols3">${F("Dowel size",barSizeSel("dowelDia",d.dowelDia))}${F("Spacing (mm)",inpNum("dowelSpacing",d.dowelSpacing))}${F("Total dowel length (mm, both sides of joint)",inpNum("dowelLength",d.dowelLength))}</div></div></div>`
+   + stripReoBlock;
   let conns=`${chk("starters",d.starters,"Starter bars in from footing/wall below","starters")}
   <div class="subsec ${d.starters?'':'hidden'}" data-show-if="starters"><div class="grid cols4">
    ${F("Connects to",targetSelect("connTarget",d.connTarget,inst.id))}${F("Qty",inpNum("connQty",d.connQty))}${F("Dia",barSizeSel("connDia",d.connDia))}${F("Embedment (mm)",inpNum("connEmbed",d.connEmbed))}${F("Projection (mm)",inpNum("connProj",d.connProj))}
-  </div></div>
-  <div class="subsec"><div class="sechead">Step-down / Level-change Connecting Bars</div>
+  </div></div>`;
+  let steps = `<div class="sechead">Step-down / Level Change</div>
   ${chk("stepdown",d.stepdown,"Slab has a step-down / level change requiring connecting dowels","stepdown")}
   <div class="subsec ${d.stepdown?'':'hidden'}" data-show-if="stepdown"><div class="grid cols4">
    ${F("Total step-down length (m)",inpNum("sdLength",d.sdLength))}${F("Step depth (mm)",inpNum("sdDepth",d.sdDepth))}${F("Dowel size",barSizeSel("sdDia",d.sdDia))}${F("Spacing (mm)",inpNum("sdSpacing",d.sdSpacing))}
    ${F("Projection each side (mm)",inpNum("sdProj1",d.sdProj1))}${F("Projection other side (mm)",inpNum("sdProj2",d.sdProj2))}
-  </div><div class="tip"><span class="ico">🏗️</span><div>Split-level slabs (a sunken wet area, a stepped car park deck) need dowels across the step or the two pours act independently under load. Size and space dowels the same way you'd detail a construction joint — this is the item estimators most often forget because it's buried in a section detail, not called up on the reinforcement schedule.</div></div></div></div>`;
-  return {geom,conc:concSection(d,"<p class='small'>Concrete = area × thickness (area = L×W unless manually entered)</p>"),reo,form,
+  </div>${sdSetupFields(d)}<div class="tip"><span class="ico">🏗️</span><div>Split-level slabs (a sunken wet area, a stepped car park deck) need dowels across the step or the two pours act independently under load. Size and space dowels the same way you'd detail a construction joint — this is the item estimators most often forget because it's buried in a section detail, not called up on the reinforcement schedule.</div></div></div>`;
+  let concExtras = `<div class="subsec"><div class="sechead">Pour Details</div><div class="grid cols4">${chk("drops",d.drops,"Drops")}${chk("setdowns",d.setdowns,"Setdowns / recesses")}${chk("upstands",d.upstands,"Upstands")}</div></div>`;
+  return {geom,conc:concSection(d,"<p class='small'>Concrete = area × thickness (area = L×W unless manually entered)</p>")+concExtras,reo,form,steps,
    blind: d.suspended? undefined : `<div class="sechead">Base Course</div><div class="grid cols3">${F("Base thickness (mm)",inpNum("baseThickness",d.baseThickness))}${F("Base material",selOpts("baseMaterialState",d.baseMaterialState,[["compacted","Compacted"],["loose","Loose"]]))}</div>${vapourSubsection(d,"Vapour barrier / membrane under slab")}`,
    conns};
 }
@@ -2272,6 +2406,7 @@ function computeSlab(inst,def){
   let openArea=0;
   (d.openings||[]).forEach(o=>{ openArea += (num(o.w)/1000)*(num(o.h)/1000)*num(o.qty,1); });
   let netArea=Math.max(0,area-openArea);
+  d._autoInsArea = netArea; // insulation line (computeInstance) defaults to the slab's own plan area
   let t=num(d.thickness)/1000;
   let vol=netArea*t;
   lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:`${d.category} ${d.thickness}mm`,qty:vol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(vol,concWastePct(d)),formula:`(${d.manualArea?'manual area':'L×W'} ${fmt(area,1)} − openings ${fmt(openArea,1)})×${fmt(t,3)}`}));
@@ -2377,10 +2512,11 @@ function computeSlab(inst,def){
   if(d.stepdown){
     let dia=barDiaOf(d.sdDia);
     let sdRunM = d.sdLength!==undefined? num(d.sdLength) : perim;
-    let count=Math.floor(sdRunM*1000/Math.max(1,num(d.sdSpacing,300)))+1;
+    let sdf=sdFactors(d);
+    let count=(Math.floor(sdRunM*1000/Math.max(1,num(d.sdSpacing,300)))+1)*sdf.risers*sdf.legs;
     if(d.sdLength!==undefined && sdRunM>0){
-      let fA=sdRunM*num(d.sdDepth)/1000;
-      lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Step-down face formwork",spec:`${d.sdDepth}mm step`,qty:fA,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(fA,PROJECT.formworkWaste),formula:`step length ${fmt(sdRunM,1)}m × depth`}));
+      let fA=sdRunM*num(d.sdDepth)/1000*sdf.risers;
+      lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Step-down face formwork",spec:`${d.sdDepth}mm step ×${sdf.risers} riser(s)`,qty:fA,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(fA,PROJECT.formworkWaste),formula:`step length ${fmt(sdRunM,1)}m × depth ×${sdf.risers}`}));
     }
     let len=(num(d.sdProj1)+num(d.sdProj2))/1000;
     let totLen=count*len; let wt=totLen*massPerM(dia);
@@ -2481,10 +2617,11 @@ function renderWall(inst){
   let conns=`${chk("starters",d.starters,"Starter bars in (from footing below)","starters")}
   <div class="subsec ${d.starters?'':'hidden'}" data-show-if="starters"><div class="grid cols4">${F("Connects to",targetSelect("connTarget",d.connTarget,inst.id))}${F("Dia",barSizeSel("connDia",d.connDia))}${F("Spacing (mm)",inpNum("connSpacing",d.connSpacing))}${F("Embedment (mm)",inpNum("connEmbed",d.connEmbed))}${F("Projection (mm)",inpNum("connProj",d.connProj))}</div></div>
   <div class="subsec"><div class="sechead">Dowels out (to slab above)</div><div class="grid cols4">${F("Connects to",targetSelect("dowelsOut",d.dowelsOut,inst.id))}${F("Qty",inpNum("outQty",d.outQty))}${F("Dia",barSizeSel("outDia",d.outDia))}${F("Embedment (mm)",inpNum("outEmbed",d.outEmbed))}${F("Projection (mm)",inpNum("outProj",d.outProj))}</div></div>
-  <div class="subsec"><div class="sechead">Step-down / Construction-joint Connecting Bars</div>
+  `;
+  let steps=`<div class="sechead">Step-down / Construction-joint Connecting Bars</div>
   ${chk("stepdown",d.stepdown,"Wall steps down / has level change requiring connecting dowels","stepdown")}
-  <div class="subsec ${d.stepdown?'':'hidden'}" data-show-if="stepdown"><div class="grid cols4">${F("Total step-down length (m)",inpNum("sdLength",d.sdLength))}${F("Step depth (mm)",inpNum("sdDepth",d.sdDepth))}${F("Dowel size",barSizeSel("sdDia",d.sdDia))}${F("Spacing (mm)",inpNum("sdSpacing",d.sdSpacing))}${F("Projection each side (mm)",inpNum("sdProj1",d.sdProj1))}</div><div class="tip"><span class="ico">🏗️</span><div>A stepped wall footing or a change in wall thickness up the height both need continuity dowels across the joint — treat each step exactly like a mini construction joint.</div></div></div></div>`;
-  return {geom,conc:concSection(d,"<p class='small'>Concrete = (L×H − openings) × thickness</p>"),reo,form,conns};
+  <div class="subsec ${d.stepdown?'':'hidden'}" data-show-if="stepdown"><div class="grid cols4">${F("Total step-down length (m)",inpNum("sdLength",d.sdLength))}${F("Step depth (mm)",inpNum("sdDepth",d.sdDepth))}${F("Dowel size",barSizeSel("sdDia",d.sdDia))}${F("Spacing (mm)",inpNum("sdSpacing",d.sdSpacing))}${F("Projection each side (mm)",inpNum("sdProj1",d.sdProj1))}</div>${sdSetupFields(d)}<div class="tip"><span class="ico">🏗️</span><div>A stepped wall footing or a change in wall thickness up the height both need continuity dowels across the joint — treat each step exactly like a mini construction joint.</div></div></div>`;
+  return {geom,conc:concSection(d,"<p class='small'>Concrete = (L×H − openings) × thickness</p>"),reo,form,steps,conns};
 }
 function computeWall(inst,def){
   let d=inst.data, lines=[];
@@ -2532,7 +2669,12 @@ function computeWall(inst,def){
   if(d.stepdown){
     let dia=barDiaOf(d.sdDia);
     let sdRunM = d.sdLength!==undefined? num(d.sdLength) : num(d.length)/1000;
-    let count=Math.floor(sdRunM*1000/Math.max(1,num(d.sdSpacing,300)))+1;
+    let sdf=sdFactors(d);
+    let count=(Math.floor(sdRunM*1000/Math.max(1,num(d.sdSpacing,300)))+1)*sdf.risers*sdf.legs;
+    if(d.sdLength!==undefined && sdRunM>0){
+      let fA=sdRunM*num(d.sdDepth,150)/1000*sdf.risers;
+      lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Step-down face formwork",spec:`${d.sdDepth}mm step ×${sdf.risers} riser(s)`,qty:fA,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(fA,PROJECT.formworkWaste),formula:`step length ${fmt(sdRunM,1)}m × depth ×${sdf.risers}`}));
+    }
     let len=(2*num(d.sdProj1))/1000;
     let totLen=N*count*len; let wt=totLen*massPerM(dia);
     lines.push(baseLine(inst,def,{materialGroup:"Connections",material:d.sdDia,spec:"Step-down connecting dowels",qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`count(${count})×2×proj/1000×${N}`,notes:`${count} dowels, ${fmt(wt,1)} kg`}));
@@ -3141,7 +3283,7 @@ function duplicateInstance(id){
   renderWorkspace(); computeAllAndRefresh();
 }
 
-const TABS=[["geom","Geometry"],["conc","Concrete"],["reo","Reinforcement"],["form","Formwork"],["exc","Excavation"],["blind","Blinding & Vapour"],["conns","Connections / Dowels"],["results","Results"]];
+const TABS=[["geom","Geometry"],["conc","Concrete"],["reo","Reinforcement"],["form","Formwork"],["steps","Step-downs"],["exc","Excavation"],["blind","Blinding / Insulation"],["conns","Connections / Dowels"],["results","Results"]];
 
 function renderWorkspace(){
   let host=document.getElementById("cardsHost");
@@ -3159,6 +3301,12 @@ function buildCard(inst){
   let calc=CALC[def.calc];
   let parts=calc.render(inst,def);
   parts.conns = (parts.conns||"") + renderExtraConnRows(inst);
+  // Central additions available on EVERY element with the matching tab:
+  // the formwork system/type choice heads every Formwork tab, and the
+  // insulation section joins every Blinding / Insulation tab — no per-
+  // calculator wiring needed.
+  if(parts.form!==undefined) parts.form = formworkSystemSelect(inst.data) + parts.form;
+  if(parts.blind!==undefined) parts.blind = parts.blind + insulationSubsection(inst.data);
   let collapsed = inst._collapsed;
   let card=document.createElement("div"); card.className="card"+(collapsed?" collapsed":""); card.dataset.id=inst.id;
   card.innerHTML=`
@@ -3354,6 +3502,25 @@ function computeInstance(inst){
   let def=LIB_INDEX[inst.typeKey], calc=CALC[def.calc];
   let out=calc.compute(inst,def);
   computeExtraConnections(inst,def,out);
+  let d=inst.data;
+  // Chosen formwork system travels onto every formwork line's spec, so the
+  // register/exports price a NAMED system, not just an anonymous area.
+  if(d.formworkSystem && d.formworkSystem!=="conventional"){
+    let sysName=formworkSystemName(d.formworkSystem);
+    if(sysName) (out.lines||[]).forEach(l=>{
+      if(l.materialGroup==="Formwork") l.spec = l.spec? `${l.spec} · ${sysName}` : sysName;
+    });
+  }
+  // Insulation: its own line wherever it's ticked. Area = the entered value,
+  // falling back to the element's own computed plan area (slabs set
+  // _autoInsArea during compute).
+  if(d.insulationOn){
+    let area = num(d.insArea)>0? num(d.insArea) : num(d._autoInsArea);
+    let waste = d.insWaste===undefined||d.insWaste===""? 5 : num(d.insWaste);
+    if(area>0){
+      out.lines.push(baseLine(inst,def,{materialGroup:"Insulation",material:insulationTypeName(d.insType||"xps50"),spec:"Under-slab / under-element insulation",qty:area,unit:"m²",waste,finalQty:withWaste(area,waste),formula:num(d.insArea)>0?"entered area":"element area"}));
+    }
+  }
   return out;
 }
 function summarizeReinforcement(lines){
