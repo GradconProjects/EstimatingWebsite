@@ -422,7 +422,7 @@ function deleteTakeoff(id){
   let name = entry.name || "Untitled takeoff";
   if(portalPref("confirmDeletes")!==false && !confirm(`Delete saved takeoff "${name}" and all its elements? This cannot be undone.`)) return;
   idx = idx.filter(p=>p.id!==id);
-  try{ localStorage.removeItem(entry.key); localStorage.removeItem(entry.key+"__syncedAt"); }catch(e){}
+  try{ localStorage.removeItem(entry.key); localStorage.removeItem(entry.key+"__syncedAt"); localStorage.removeItem(entry.key+"__history"); }catch(e){}
   kvPush(entry.key, null); // clear the cloud copy so another device's sync can't resurrect it
   if(idx.length===0){
     saveProjectsIndex(idx);
@@ -497,7 +497,22 @@ function renderProjectMenu(){
       <span><b>${active?'▶ ':''}${p.name||"Untitled takeoff"}</b><span class="proj-meta">💾 ${when}${count}</span></span>
       ${active?'<span class="small">open</span>':''}
     </button>`;
-  }).join('') + `<button class="btn small primary proj-new" data-proj-new>+ New project</button>`;
+  }).join('');
+  // Save history for the OPEN project: up to the last 10 deliberate saves,
+  // each restorable — the state being left is pushed into history first, so
+  // stepping back to an earlier session never loses the current one.
+  let hist=loadSaveHistory();
+  if(hist.length){
+    menu.innerHTML += `<div class="proj-meta" style="padding:8px 10px 2px;border-top:1px solid var(--line);margin-top:6px;"><b>Recent saves — ${PROJECT.name||"open project"}</b> (pick one to work from; nothing is lost)</div>`+
+      hist.map((e,i)=>{
+        let when=new Date(e.savedAt).toLocaleString([], {day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"});
+        let n=(e.snapshot&&Array.isArray(e.snapshot.instances))? e.snapshot.instances.length:0;
+        return `<button class="proj-item" data-proj-hist="${i}" title="Restore this save — your current session is kept as the newest entry in this list">
+          <span>🕘 <b>${e.name||PROJECT.name||"Untitled project"}</b><span class="proj-meta">💾 ${when} · ${n} element${n===1?'':'s'}${i===0?' · latest save':''}</span></span>
+        </button>`;
+      }).join('');
+  }
+  menu.innerHTML += `<button class="btn small primary proj-new" data-proj-new>+ New project</button>`;
 }
 (function initProjPicker(){
   let btn=document.getElementById("projBtn"), menu=document.getElementById("projMenu");
@@ -512,6 +527,8 @@ function renderProjectMenu(){
   menu.addEventListener("click",(e)=>{
     let item=e.target.closest("[data-proj-open]");
     if(item && !item.disabled){ menu.style.display="none"; switchToTakeoff(item.dataset.projOpen); return; }
+    let hist=e.target.closest("[data-proj-hist]");
+    if(hist){ menu.style.display="none"; restoreSaveHistory(parseInt(hist.dataset.projHist)); return; }
     if(e.target.closest("[data-proj-new]")){ menu.style.display="none"; newTakeoff(); }
   });
   document.addEventListener("click",(e)=>{
@@ -630,10 +647,33 @@ function showSaveStatus(kind){
 function estimateStateSnapshot(){
   return { project: PROJECT, selectedTypes: SELECTED_TYPES, instances: INSTANCES, idCounter: ID_COUNTER };
 }
-function saveEstimateState(){
+/* ---- Save history: the last 10 deliberate saves of each project, so an
+   estimator can step back to an earlier session without losing anything.
+   Deliberate saves only (💾 Save, switching, importing) — the 45s autosave
+   deliberately does NOT push here, or the 10 slots would churn to nothing. */
+function historyKey(){ return CURRENT_PROJECT_KEY+"__history"; }
+function loadSaveHistory(){ try{ return JSON.parse(localStorage.getItem(historyKey()))||[]; }catch(e){ return []; } }
+function pushSaveHistory(){
+  try{
+    let h=loadSaveHistory();
+    h.unshift({ savedAt:new Date().toISOString(), name: PROJECT.name||"", snapshot: JSON.parse(JSON.stringify(estimateStateSnapshot())) });
+    if(h.length>10) h.length=10;
+    localStorage.setItem(historyKey(), JSON.stringify(h));
+  }catch(e){}
+}
+function restoreSaveHistory(i){
+  let h=loadSaveHistory(); let entry=h[i]; if(!entry) return;
+  // the state being left becomes the NEWEST history entry — nothing is lost
+  pushSaveHistory();
+  applyLoadedEstimateState(entry.snapshot);
+  saveEstimateState(true); // skipHistory: the restore itself isn't a new save-point
+  rerenderAllPages();
+}
+function saveEstimateState(skipHistory){
   try{
     localStorage.setItem(CURRENT_PROJECT_KEY, JSON.stringify({ ...estimateStateSnapshot(), savedAt: new Date().toISOString() }));
     showSaveStatus("ok");
+    if(!skipHistory) pushSaveHistory();
   }catch(err){ showSaveStatus("err"); }
   kvPush(CURRENT_PROJECT_KEY, estimateStateSnapshot()).then(row=>{
     if(!row) return;
@@ -3040,7 +3080,9 @@ function computeAllAndRefresh(){
   renderRegister();
   renderExportSummary();
   scheduleAutoPublish();
-  saveEstimateState();
+  // skipHistory: this fires on every edit — only DELIBERATE saves (💾 Save,
+  // switching/creating takeoffs, imports) become save-history entries.
+  saveEstimateState(true);
 }
 
 /* ============================= PROJECT SETUP / DEFAULTS ============================= */
@@ -3056,7 +3098,7 @@ function renderProjectForm(){
   ].join('');
   // oninput (not addEventListener) — this renderer re-runs on cloud sync and
   // on takeoff switches, and stacked listeners would fire the save N times.
-  f.oninput = (e)=>{ let k=e.target.dataset.field; if(k){ PROJECT[k]=e.target.value; saveEstimateState(); } };
+  f.oninput = (e)=>{ let k=e.target.dataset.field; if(k){ PROJECT[k]=e.target.value; saveEstimateState(true); } };
 }
 function renderDefaultsForm(){
   let f=document.getElementById("defaultsForm");
@@ -3460,7 +3502,11 @@ function exportPDF(){
 }
 function exportProjectJSON(){
   let data={PROJECT,SELECTED_TYPES,INSTANCES,ID_COUNTER,UPLOADED_FILES};
-  download((PROJECT.name||"project")+"_takeoff.json", JSON.stringify(data,null,2), "application/json");
+  // filename carries the project name AND the save date/time, so a folder of
+  // exported sessions reads like a proper file register
+  let d=new Date();
+  let stamp=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}_${String(d.getHours()).padStart(2,"0")}${String(d.getMinutes()).padStart(2,"0")}`;
+  download((PROJECT.name||"project")+"_takeoff_"+stamp+".json", JSON.stringify(data,null,2), "application/json");
 }
 document.getElementById("loadFile").addEventListener("change",e=>{
   let file=e.target.files[0]; if(!file) return;
