@@ -1530,6 +1530,53 @@ function sdSetupFields(d){
 function sdFactors(d){
   return { risers: Math.max(1,Math.round(num(d.sdRisers,1)||1)), legs: Math.max(1,Math.round(num(d.sdLegs,1)||1)) };
 }
+/* ---- Step/dowel bar SHAPE: sketched exactly like the slab outline. The
+   estimator draws the bar's profile off the drawing (down–across–down, an
+   L, a Z…), the stroke is straightened into segments A, B, C…, each
+   segment's TRUE length is typed in mm, and the bar per dowel position is
+   the segments summed — run along the step at the entered spacing, same as
+   before. A plain single total-length field is the fallback when the bar
+   is straight. ---- */
+function sdBarLenMm(d, legacyMm){
+  if(Array.isArray(d.sdBarLens) && d.sdBarLens.length) return d.sdBarLens.reduce((s,v)=>s+num(v),0);
+  if(d.sdBarLen!==undefined && d.sdBarLen!=="") return num(d.sdBarLen);
+  return legacyMm;
+}
+function stepBarSVG(d){
+  let dirs=d.sdBarDirs||[], lens=d.sdBarLens||[];
+  if(!dirs.length) return "";
+  let pts=[{x:0,y:0}];
+  for(let i=0;i<dirs.length;i++){ let p=pts[i], L=Math.max(1,num(lens[i])); pts.push({x:p.x+Math.cos(dirs[i])*L, y:p.y+Math.sin(dirs[i])*L}); }
+  let xs=pts.map(p=>p.x), ys=pts.map(p=>p.y);
+  let minX=Math.min(...xs),maxX=Math.max(...xs),minY=Math.min(...ys),maxY=Math.max(...ys);
+  let w=Math.max(1,maxX-minX), h=Math.max(1,maxY-minY);
+  let W=220,H=120,pad=20, sc=Math.min((W-2*pad)/w,(H-2*pad)/h);
+  let X=v=>pad+(v-minX)*sc, Y=v=>H-pad-(v-minY)*sc;
+  let path=pts.map((p,i)=>(i?'L':'M')+X(p.x).toFixed(1)+','+Y(p.y).toFixed(1)).join(' ');
+  let labels=pts.slice(0,-1).map((p,i)=>{ let q=pts[i+1];
+    return `<text x="${((X(p.x)+X(q.x))/2).toFixed(1)}" y="${((Y(p.y)+Y(q.y))/2-4).toFixed(1)}" font-size="9" font-weight="700" text-anchor="middle" fill="var(--text)">${String.fromCharCode(65+i)} ${Math.round(num(lens[i]))}</text>`; }).join('');
+  let tot=lens.reduce((s,v)=>s+num(v),0);
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:240px;background:var(--input);border:1px solid var(--line);border-radius:8px;">
+    <path d="${path}" fill="none" stroke="var(--danger)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>${labels}</svg>
+   <div class="small">bar shape — lengths in mm · one bar = <b>${Math.round(tot)}mm</b></div>`;
+}
+function sdBarShapeUI(d, legacyMm){
+  let has=Array.isArray(d.sdBarDirs)&&d.sdBarDirs.length;
+  return `<div class="subsec"><div class="sechead">Dowel / Step Bar Shape</div>
+   <div class="toolbar" style="margin-bottom:8px;">
+    <button class="btn small primary" data-action="sketchStepBar" type="button">✏️ ${has?'Re-sketch':'Sketch'} the bar shape (draw it off the drawing)</button>
+    ${has? `<button class="btn small ghost" data-action="clearStepBar" type="button">Use a single length instead</button>`:""}
+   </div>
+   ${has? `<div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start;">
+     <div style="flex:1;min-width:200px;"><table class="rows"><thead><tr><th>Segment</th><th>Length (mm)</th></tr></thead>
+      <tbody>${d.sdBarDirs.map((a,i)=>`<tr><td><b>${String.fromCharCode(65+i)}</b></td><td style="width:130px">${inpNum(`sdBarLens.${i}`,(d.sdBarLens||[])[i])}</td></tr>`).join('')}</tbody></table>
+      <p class="small">The sketch was straightened into segments <b>A–${String.fromCharCode(64+d.sdBarDirs.length)}</b>. Type each segment's TRUE length in mm off the drawing — one bar per dowel position is the segments summed, run along the total step-down length at the spacing set above.</p></div>
+     <div style="flex:1;min-width:200px;" class="sdBarHost">${stepBarSVG(d)}</div>
+    </div>`
+   : `<div class="grid cols3">${F("Bar length per dowel (mm, total)",inpNum("sdBarLen",d.sdBarLen===undefined? legacyMm : d.sdBarLen))}</div>
+      <p class="small">A single straight length per dowel position. If the detail is an L / Z / cranked step bar, sketch the shape instead and type each leg's length.</p>`}
+  </div>`;
+}
 function concWastePct(d){ return (d.concreteWasteOverride===undefined||d.concreteWasteOverride==="")? PROJECT.concreteWaste : num(d.concreteWasteOverride); }
 function concSection(d,note){
   return `<div class="grid cols3">${F("Concrete grade (N/MPa)",inpNum("grade",d.grade))}${F(`Concrete waste % (blank = project default ${PROJECT.concreteWaste}%)`,inpNum("concreteWasteOverride",d.concreteWasteOverride))}</div>${note||""}`;
@@ -1872,9 +1919,8 @@ function renderStripFooting(inst){
   ${chk("stepdown",d.stepdown,"Footing steps down along its run","stepdown")}
   <div class="subsec ${d.stepdown?'':'hidden'}" data-show-if="stepdown"><div class="grid cols4">
    ${F("Total step-down length (m)",inpNum("sdLength",d.sdLength))}${F("Step depth (mm)",inpNum("sdDepth",d.sdDepth))}${F("Dowel size",barSizeSel("sdDia",d.sdDia))}${F("Spacing (mm)",inpNum("sdSpacing",d.sdSpacing))}
-   ${F("Projection each side (mm)",inpNum("sdProj1",d.sdProj1))}${F("Projection other side (mm)",inpNum("sdProj2",d.sdProj2))}
-  </div>${sdSetupFields(d)}<div class="tip"><span class="ico">🏗️</span><div>Enter the TOTAL length of stepped footing (sum of every step run along the trench). Dowels are spaced over that length and the vertical step faces get their own formwork line — both the items a stepped strip footing adds over a level one.</div></div></div>`;
-  return {geom,conc:concSection(d,"<p class='small'>Concrete = length × width × depth</p>"),reo,form,steps,exc:"<p class='small'>Excavation = length × trench width × excavation depth</p>",blind:blindingSection(d)};
+  </div>${sdBarShapeUI(d,num(d.sdProj1,500)+num(d.sdProj2,500))}${sdSetupFields(d)}<div class="tip"><span class="ico">🏗️</span><div>Enter the TOTAL length of stepped footing (sum of every step run along the trench). Dowels are spaced over that length and the vertical step faces get their own formwork line — both the items a stepped strip footing adds over a level one.</div></div></div>`;
+  return {geom,conc:concSection(d,"<p class='small'>Concrete = length × width × depth</p>"),reo:reo+steps,form,exc:"<p class='small'>Excavation = length × trench width × excavation depth</p>",blind:blindingSection(d)};
 }
 function computeStripFooting(inst,def){
   let d=inst.data, lines=[];
@@ -1905,7 +1951,7 @@ function computeStripFooting(inst,def){
     if(sdRunM>0){
       let sdf=sdFactors(d);
       let count=(Math.floor(sdRunM*1000/Math.max(1,num(d.sdSpacing,300)))+1)*sdf.risers*sdf.legs;
-      let len=(num(d.sdProj1,500)+num(d.sdProj2,500))/1000;
+      let len=sdBarLenMm(d, num(d.sdProj1,500)+num(d.sdProj2,500))/1000;
       let totLen=count*len; let wt=totLen*massPerM(bd);
       lines.push(baseLine(inst,def,{materialGroup:"Connections",material:d.sdDia,spec:"Stepped footing — step dowels",qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`count(${count}=${fmt(sdRunM,1)}m/${d.sdSpacing}mm+1 ×${sdf.risers} riser(s) ×${sdf.legs} leg(s))×(proj1+proj2)/1000`,notes:`${count} dowels, ${fmt(wt,1)} kg`}));
       let fA=sdRunM*num(d.sdDepth,300)/1000*sdf.risers;
@@ -2143,9 +2189,8 @@ function renderBeam(inst,def){
   ${chk("stepdown",d.stepdown,"This beam steps down / has a level change requiring connecting dowels","stepdown")}
   <div class="subsec ${d.stepdown?'':'hidden'}" data-show-if="stepdown"><div class="grid cols4">
    ${F("Total step-down length (m)",inpNum("sdLength",d.sdLength))}${F("Step depth (mm)",inpNum("sdDepth",d.sdDepth))}${F("Dowel size",barSizeSel("sdDia",d.sdDia))}${F("Spacing (mm)",inpNum("sdSpacing",d.sdSpacing))}
-   ${F("Projection into upper pour (mm)",inpNum("sdProj1",d.sdProj1))}${F("Projection into lower pour (mm)",inpNum("sdProj2",d.sdProj2))}
-  </div>${sdSetupFields(d)}<div class="tip"><span class="ico">🏗️</span><div>Any change in soffit or top level along a beam is a cold joint waiting to slip in shear unless it's dowelled. Treat it like a mini footing-to-column connection: embedment into the pour already cast, projection into the pour still to come. Don't fold this into the general waste factor — it's a real, countable item that a site engineer will ask for on the RFI.</div></div></div>`;
-  return {geom,conc:concSection(d,"<p class='small'>Concrete = L × W × effective depth (downstand uses drop below slab only)</p>"),reo,form,steps,conns};
+  </div>${sdBarShapeUI(d,num(d.sdProj1)+num(d.sdProj2))}${sdSetupFields(d)}<div class="tip"><span class="ico">🏗️</span><div>Any change in soffit or top level along a beam is a cold joint waiting to slip in shear unless it's dowelled. Treat it like a mini footing-to-column connection: embedment into the pour already cast, projection into the pour still to come. Don't fold this into the general waste factor — it's a real, countable item that a site engineer will ask for on the RFI.</div></div></div>`;
+  return {geom,conc:concSection(d,"<p class='small'>Concrete = L × W × effective depth (downstand uses drop below slab only)</p>"),reo:reo+steps,form,conns};
 }
 function reoRowHtml(id,r,i){
   return `<tr data-row="reoRows.${i}">
@@ -2242,7 +2287,7 @@ function computeBeam(inst,def){
       let fA=sdRunM*num(d.sdDepth)/1000*sdf.risers;
       lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Step-down face formwork",spec:`${d.sdDepth}mm step ×${sdf.risers} riser(s)`,qty:fA,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(fA,PROJECT.formworkWaste),formula:`step length ${fmt(sdRunM,1)}m × depth ×${sdf.risers}`}));
     }
-    let len=(num(d.sdProj1)+num(d.sdProj2))/1000;
+    let len=sdBarLenMm(d, num(d.sdProj1)+num(d.sdProj2))/1000;
     let totLen=N*count*len; let wt=totLen*massPerM(bd);
     lines.push(baseLine(inst,def,{materialGroup:"Connections",material:d.sdDia,spec:"Step-down connecting dowels",qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`count(${count})×(proj1 ${d.sdProj1}+proj2 ${d.sdProj2})/1000×${N}`,notes:`${count} dowels over ${fmt((d.sdLength!==undefined?num(d.sdLength):num(d.length)/1000),1)}m, ${fmt(wt,1)} kg`}));
   }
@@ -2385,10 +2430,9 @@ function renderSlab(inst,def){
   ${chk("stepdown",d.stepdown,"Slab has a step-down / level change requiring connecting dowels","stepdown")}
   <div class="subsec ${d.stepdown?'':'hidden'}" data-show-if="stepdown"><div class="grid cols4">
    ${F("Total step-down length (m)",inpNum("sdLength",d.sdLength))}${F("Step depth (mm)",inpNum("sdDepth",d.sdDepth))}${F("Dowel size",barSizeSel("sdDia",d.sdDia))}${F("Spacing (mm)",inpNum("sdSpacing",d.sdSpacing))}
-   ${F("Projection each side (mm)",inpNum("sdProj1",d.sdProj1))}${F("Projection other side (mm)",inpNum("sdProj2",d.sdProj2))}
-  </div>${sdSetupFields(d)}<div class="tip"><span class="ico">🏗️</span><div>Split-level slabs (a sunken wet area, a stepped car park deck) need dowels across the step or the two pours act independently under load. Size and space dowels the same way you'd detail a construction joint — this is the item estimators most often forget because it's buried in a section detail, not called up on the reinforcement schedule.</div></div></div>`;
+  </div>${sdBarShapeUI(d,num(d.sdProj1)+num(d.sdProj2))}${sdSetupFields(d)}<div class="tip"><span class="ico">🏗️</span><div>Split-level slabs (a sunken wet area, a stepped car park deck) need dowels across the step or the two pours act independently under load. Size and space dowels the same way you'd detail a construction joint — this is the item estimators most often forget because it's buried in a section detail, not called up on the reinforcement schedule.</div></div></div>`;
   let concExtras = `<div class="subsec"><div class="sechead">Pour Details</div><div class="grid cols4">${chk("drops",d.drops,"Drops")}${chk("setdowns",d.setdowns,"Setdowns / recesses")}${chk("upstands",d.upstands,"Upstands")}</div></div>`;
-  return {geom,conc:concSection(d,"<p class='small'>Concrete = area × thickness (area = L×W unless manually entered)</p>")+concExtras,reo,form,steps,
+  return {geom,conc:concSection(d,"<p class='small'>Concrete = area × thickness (area = L×W unless manually entered)</p>")+concExtras,reo:reo+steps,form,
    blind: d.suspended? undefined : `<div class="sechead">Base Course</div><div class="grid cols3">${F("Base thickness (mm)",inpNum("baseThickness",d.baseThickness))}${F("Base material",selOpts("baseMaterialState",d.baseMaterialState,[["compacted","Compacted"],["loose","Loose"]]))}</div>${vapourSubsection(d,"Vapour barrier / membrane under slab")}`,
    conns};
 }
@@ -2518,7 +2562,7 @@ function computeSlab(inst,def){
       let fA=sdRunM*num(d.sdDepth)/1000*sdf.risers;
       lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Step-down face formwork",spec:`${d.sdDepth}mm step ×${sdf.risers} riser(s)`,qty:fA,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(fA,PROJECT.formworkWaste),formula:`step length ${fmt(sdRunM,1)}m × depth ×${sdf.risers}`}));
     }
-    let len=(num(d.sdProj1)+num(d.sdProj2))/1000;
+    let len=sdBarLenMm(d, num(d.sdProj1)+num(d.sdProj2))/1000;
     let totLen=count*len; let wt=totLen*massPerM(dia);
     lines.push(baseLine(inst,def,{materialGroup:"Connections",material:d.sdDia,spec:"Step-down connecting dowels",qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`count(${count})×(proj1+proj2)/1000`,notes:`${count} dowels, ${fmt(wt,1)} kg`}));
   }
@@ -2620,8 +2664,8 @@ function renderWall(inst){
   `;
   let steps=`<div class="sechead">Step-down / Construction-joint Connecting Bars</div>
   ${chk("stepdown",d.stepdown,"Wall steps down / has level change requiring connecting dowels","stepdown")}
-  <div class="subsec ${d.stepdown?'':'hidden'}" data-show-if="stepdown"><div class="grid cols4">${F("Total step-down length (m)",inpNum("sdLength",d.sdLength))}${F("Step depth (mm)",inpNum("sdDepth",d.sdDepth))}${F("Dowel size",barSizeSel("sdDia",d.sdDia))}${F("Spacing (mm)",inpNum("sdSpacing",d.sdSpacing))}${F("Projection each side (mm)",inpNum("sdProj1",d.sdProj1))}</div>${sdSetupFields(d)}<div class="tip"><span class="ico">🏗️</span><div>A stepped wall footing or a change in wall thickness up the height both need continuity dowels across the joint — treat each step exactly like a mini construction joint.</div></div></div>`;
-  return {geom,conc:concSection(d,"<p class='small'>Concrete = (L×H − openings) × thickness</p>"),reo,form,steps,conns};
+  <div class="subsec ${d.stepdown?'':'hidden'}" data-show-if="stepdown"><div class="grid cols4">${F("Total step-down length (m)",inpNum("sdLength",d.sdLength))}${F("Step depth (mm)",inpNum("sdDepth",d.sdDepth))}${F("Dowel size",barSizeSel("sdDia",d.sdDia))}${F("Spacing (mm)",inpNum("sdSpacing",d.sdSpacing))}</div>${sdBarShapeUI(d,2*num(d.sdProj1))}${sdSetupFields(d)}<div class="tip"><span class="ico">🏗️</span><div>A stepped wall footing or a change in wall thickness up the height both need continuity dowels across the joint — treat each step exactly like a mini construction joint.</div></div></div>`;
+  return {geom,conc:concSection(d,"<p class='small'>Concrete = (L×H − openings) × thickness</p>"),reo:reo+steps,form,conns};
 }
 function computeWall(inst,def){
   let d=inst.data, lines=[];
@@ -2675,7 +2719,7 @@ function computeWall(inst,def){
       let fA=sdRunM*num(d.sdDepth,150)/1000*sdf.risers;
       lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Step-down face formwork",spec:`${d.sdDepth}mm step ×${sdf.risers} riser(s)`,qty:fA,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(fA,PROJECT.formworkWaste),formula:`step length ${fmt(sdRunM,1)}m × depth ×${sdf.risers}`}));
     }
-    let len=(2*num(d.sdProj1))/1000;
+    let len=sdBarLenMm(d, 2*num(d.sdProj1))/1000;
     let totLen=N*count*len; let wt=totLen*massPerM(dia);
     lines.push(baseLine(inst,def,{materialGroup:"Connections",material:d.sdDia,spec:"Step-down connecting dowels",qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`count(${count})×2×proj/1000×${N}`,notes:`${count} dowels, ${fmt(wt,1)} kg`}));
   }
@@ -3283,7 +3327,7 @@ function duplicateInstance(id){
   renderWorkspace(); computeAllAndRefresh();
 }
 
-const TABS=[["geom","Geometry"],["conc","Concrete"],["reo","Reinforcement"],["form","Formwork"],["steps","Step-downs"],["exc","Excavation"],["blind","Blinding / Insulation"],["conns","Connections / Dowels"],["results","Results"]];
+const TABS=[["geom","Geometry"],["conc","Concrete"],["reo","Reinforcement"],["form","Formwork"],["exc","Excavation"],["blind","Blinding / Insulation"],["conns","Connections / Dowels"],["results","Results"]];
 
 function renderWorkspace(){
   let host=document.getElementById("cardsHost");
@@ -3435,6 +3479,10 @@ function attachCardEvents(card,inst){
       let host=card.querySelector('.outlineHost');
       if(host) host.innerHTML=slabOutlineSVG(inst.data);
     }
+    if(/^sdBarLens\./.test(f)){
+      let host=card.querySelector('.sdBarHost');
+      if(host) host.innerHTML=stepBarSVG(inst.data);
+    }
     if(/^outlineSideLens\./.test(f)){
       rebuildOutlineFromSides(inst.data);
       let host=card.querySelector('.outlineHost');
@@ -3473,6 +3521,11 @@ function attachCardEvents(card,inst){
       let fields=e.target.dataset.fields.split(',');
       fields.forEach(fk=>inst.data[fk]=(act==="facesAll"));
       rerenderCardKeepTab(card,inst);
+    } else if(act==="sketchStepBar"){
+      openSketchPad(inst,card,"stepbar");
+    } else if(act==="clearStepBar"){
+      delete inst.data.sdBarDirs; delete inst.data.sdBarLens;
+      computeAllAndRefresh(); rerenderCardKeepTab(card,inst);
     } else if(act==="sketchOutline"){
       openSketchPad(inst,card);
     } else if(act==="outlineToPoints"){
@@ -4415,8 +4468,8 @@ function ensureSketchPad(){
   div.id="sketchPad";
   div.style.cssText="display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:90;align-items:center;justify-content:center;padding:20px;";
   div.innerHTML=`<div style="background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;max-width:640px;width:100%;">
-    <h3 style="margin:0 0 6px;">Sketch the slab outline</h3>
-    <p class="small" style="margin:0 0 8px;">Draw the shape roughly in one stroke — corners don't need to be neat. The app straightens it into sides labelled A, B, C…; you then type the true length of each side, and can adjust any corner's angle afterwards.</p>
+    <h3 style="margin:0 0 6px;" id="sketchTitle">Sketch the slab outline</h3>
+    <p class="small" style="margin:0 0 8px;" id="sketchCopy">Draw the shape roughly in one stroke — corners don't need to be neat. The app straightens it into sides labelled A, B, C…; you then type the true length of each side, and can adjust any corner's angle afterwards.</p>
     <label class="chk" style="margin:0 0 8px;"><input type="checkbox" id="sketchSquare" checked> Square corners — snap every corner to 90° (untick for angled / splayed shapes)</label>
     <canvas id="sketchCanvas" width="600" height="400" style="width:100%;background:var(--input);border:1px solid var(--line);border-radius:8px;touch-action:none;cursor:crosshair;"></canvas>
     <div class="toolbar" style="margin-top:10px;">
@@ -4440,6 +4493,38 @@ function ensureSketchPad(){
   div.querySelector("#sketchClear").onclick=()=>{ SKETCH.stroke=[]; redraw(); };
   div.querySelector("#sketchCancel").onclick=()=>{ div.style.display="none"; };
   div.querySelector("#sketchUse").onclick=()=>{
+    if(SKETCH.mode==="stepbar"){
+      // OPEN polyline: the bar's profile, not a closed outline. Straighten,
+      // snap (90° default), merge wobble, label segments A, B, C… — true
+      // lengths in mm are typed on the card afterwards.
+      let simp=rdpSimplify(SKETCH.stroke,14);
+      if(simp.length>9) simp=rdpSimplify(SKETCH.stroke,26).slice(0,9);
+      if(simp.length<2){ div.querySelector("#sketchHint").textContent="Draw the bar's profile as one stroke (e.g. down, across, down)."; return; }
+      let bpts=simp.map(p=>({x:p.x, y:-p.y}));
+      let bsq=div.querySelector("#sketchSquare").checked;
+      let bsnap=bsq? Math.PI/2 : Math.PI/12;
+      let bdirs=[],blens=[];
+      for(let i=0;i<bpts.length-1;i++){
+        let a=bpts[i], b=bpts[i+1];
+        bdirs.push(Math.round(Math.atan2(b.y-a.y,b.x-a.x)/bsnap)*bsnap);
+        blens.push(Math.hypot(b.x-a.x,b.y-a.y));
+      }
+      let mdirs=[],mlens=[];
+      for(let i=0;i<bdirs.length;i++){
+        if(mdirs.length && Math.abs(normTurn(bdirs[i]-mdirs[mdirs.length-1]))<1e-9){ mlens[mlens.length-1]+=blens[i]; }
+        else { mdirs.push(bdirs[i]); mlens.push(blens[i]); }
+      }
+      if(mdirs.length<1){ div.querySelector("#sketchHint").textContent="Couldn't read a bar shape from that stroke — try again."; return; }
+      // seed mm lengths keeping sketch proportions, longest leg = 600mm
+      let bmax=Math.max(...mlens)||1;
+      let bseed=mlens.map(L=>Math.max(50,Math.round(L/bmax*600/10)*10));
+      let bd=SKETCH.inst.data;
+      bd.sdBarDirs=mdirs; bd.sdBarLens=bseed;
+      div.style.display="none";
+      computeAllAndRefresh();
+      rerenderCardKeepTab(SKETCH.card,SKETCH.inst);
+      return;
+    }
     let simp=rdpSimplify(SKETCH.stroke,14);
     // drop the duplicate closing point if the stroke came back near the start
     if(simp.length>3){
@@ -4484,10 +4569,17 @@ function ensureSketchPad(){
     rerenderCardKeepTab(SKETCH.card,SKETCH.inst);
   };
 }
-function openSketchPad(inst,card){
+function openSketchPad(inst,card,mode){
   ensureSketchPad();
-  SKETCH.inst=inst; SKETCH.card=card; SKETCH.stroke=[];
+  SKETCH.inst=inst; SKETCH.card=card; SKETCH.stroke=[]; SKETCH.mode=mode||"outline";
   let div=document.getElementById("sketchPad");
+  if(SKETCH.mode==="stepbar"){
+    div.querySelector("#sketchTitle").textContent="Sketch the dowel / step bar shape";
+    div.querySelector("#sketchCopy").textContent="Draw the bar's profile in one stroke, straight off the drawing — down, across, down for a Z-bar; two strokes of an L become one stroke with a corner. It's straightened into segments A, B, C… and you type each segment's true length in mm.";
+  } else {
+    div.querySelector("#sketchTitle").textContent="Sketch the slab outline";
+    div.querySelector("#sketchCopy").textContent="Draw the shape roughly in one stroke — corners don't need to be neat. The app straightens it into sides labelled A, B, C…; you then type the true length of each side, and can adjust any corner's angle afterwards.";
+  }
   div.style.display="flex";
   let cv=div.querySelector("#sketchCanvas"); cv.getContext("2d").clearRect(0,0,cv.width,cv.height);
   div.querySelector("#sketchHint").textContent="";
