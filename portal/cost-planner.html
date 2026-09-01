@@ -1062,8 +1062,16 @@ function importPublishedEstimates(){
     const lines = (Array.isArray(entry.lines) ? entry.lines : []).filter((l) => (Number(l.finalQty)||0) > 0);
     const baseName = project.name ? project.name : "Untitled";
     const sessionKey = project.estimateSessionId || entry.id;
-    const key = "estimate_" + sessionKey;
-    const existingProj = state.projects[key];
+    let key = "estimate_" + sessionKey;
+    let existingProj = state.projects[key];
+    // Same takeoff under a fresh session id (a .json re-imported into
+    // Estimates, or a pre-session-id save): merge into the existing planner
+    // project with the same imported name instead of standing up a duplicate.
+    if(!existingProj){
+      const wantName = `${baseName} (from Estimates)`;
+      const priorKey = Object.keys(state.projects).find(k=> k.indexOf("estimate_")===0 && state.projects[k] && state.projects[k].source==="estimates" && state.projects[k].name===wantName);
+      if(priorKey){ key = priorKey; existingProj = state.projects[key]; }
+    }
     state.projects[key] = makeProject({
       category: existingProj? existingProj.category : "project",
       status: existingProj? existingProj.status : undefined,

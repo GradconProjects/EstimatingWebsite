@@ -171,6 +171,10 @@ export function buildImportFromEstimate(estimateExport) {
 
     const item = newElementItem(type);
     item.label = elementLabel;
+    // Marks this card as owned by the Estimates bridge: a re-publish replaces
+    // fromEstimate items wholesale but leaves the estimator's manually added
+    // cards on the same project untouched (see the merge in App.jsx).
+    item.fromEstimate = true;
 
     // `handled` tracks exactly which lines ended up EITHER mapped into
     // item.qtys OR explicitly flagged, so the final sweep below can catch
@@ -324,13 +328,37 @@ export function buildImportFromEstimate(estimateExport) {
     items.push(item);
   });
 
+  // --- Combine same-type elements into ONE Quotes element ---
+  // Three ground slabs in the takeoff should land as a single "Ground
+  // Bearing Slabs" card with summed quantities, not three near-identical
+  // cards — the Quotes catalog is priced per product, so the sums are
+  // exactly equivalent, and the quote stays readable. The source element
+  // names are kept in the merged label so nothing loses its audit trail.
+  const byType = new Map();
+  const mergedItems = [];
+  items.forEach((item) => {
+    const prior = byType.get(item.typeId);
+    if (!prior) {
+      byType.set(item.typeId, { item, labels: [item.label] });
+      mergedItems.push(item);
+      return;
+    }
+    Object.entries(item.qtys).forEach(([key, qty]) => {
+      prior.item.qtys[key] = (Number(prior.item.qtys[key]) || 0) + (Number(qty) || 0);
+    });
+    prior.labels.push(item.label);
+    const typeName = QUOTES_TYPE_BY_ID[item.typeId]?.name || prior.labels[0];
+    prior.item.label = `${typeName} (×${prior.labels.length} combined)`;
+    prior.item.description = `Combined from Estimates elements: ${prior.labels.join(", ")}.`;
+  });
+
   const quote = {
     projectName: project.name ? `${project.name} (from Estimates)` : "Imported from Estimates",
     projectDate: new Date().toISOString().slice(0, 10),
     gfa: undefined,
     overheadPct: 0.08,
     contingencyPct: 0.05,
-    items,
+    items: mergedItems,
     importMeta: {
       jobNumber: project.jobNumber || "",
       client: project.client || "",

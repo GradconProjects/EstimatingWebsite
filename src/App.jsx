@@ -151,23 +151,40 @@ export default function App() {
       const estimateSessionId = estimateExport?.project?.estimateSessionId || null;
       freshQuote.importMeta = { ...freshQuote.importMeta, estimateSessionId };
 
-      if (estimateSessionId) {
-        const quotesByKey = await readQuotes(projects.map((p) => p.storageKey));
-        const existing = projects.find(
-          (p) => quotesByKey[p.storageKey]?.importMeta?.estimateSessionId === estimateSessionId
-        );
-        if (existing) {
-          const prev = quotesByKey[existing.storageKey];
-          // Estimates owns quantities/flags; Quotes-side settings the estimator may
-          // already have adjusted here (name, GFA, overheads/contingency) are kept.
-          await writeQuote(existing.storageKey, {
-            ...prev,
-            items: freshQuote.items,
-            importFlags: freshQuote.importFlags,
-            importMeta: freshQuote.importMeta,
-          });
-          return;
-        }
+      const quotesByKey = await readQuotes(projects.map((p) => p.storageKey));
+      // Match the already-imported project for this takeoff: primarily by
+      // estimateSessionId; failing that (a takeoff saved before session ids
+      // existed, or a .json re-imported into Estimates under a fresh id) by
+      // the project name of a previous import. Either way the publish MERGES
+      // into that project — quantities/flags refresh, while Quotes-side
+      // settings (rates, GFA, margins, markups) are kept — instead of piling
+      // up "Project X (from Estimates)" duplicates.
+      const existing =
+        (estimateSessionId &&
+          projects.find(
+            (p) => quotesByKey[p.storageKey]?.importMeta?.estimateSessionId === estimateSessionId
+          )) ||
+        projects.find((p) => {
+          const q = quotesByKey[p.storageKey];
+          return q?.importMeta?.importedAt && q?.projectName === freshQuote.projectName;
+        });
+      if (existing) {
+        const prev = quotesByKey[existing.storageKey];
+        // Estimates owns the bridge-created cards (fromEstimate) — those are
+        // replaced with the fresh publish. Cards the estimator added by hand
+        // on this project are kept alongside them. (Projects imported before
+        // the fromEstimate tag existed have no way to tell the two apart, so
+        // they keep the original replace-everything behaviour.)
+        const prevItems = Array.isArray(prev.items) ? prev.items : [];
+        const postTagEra = prevItems.some((it) => it.fromEstimate);
+        const manualKept = postTagEra ? prevItems.filter((it) => !it.fromEstimate) : [];
+        await writeQuote(existing.storageKey, {
+          ...prev,
+          items: [...freshQuote.items, ...manualKept],
+          importFlags: freshQuote.importFlags,
+          importMeta: freshQuote.importMeta,
+        });
+        return;
       }
       const entry = newProjectEntry();
       await writeQuote(entry.storageKey, freshQuote);

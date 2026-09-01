@@ -202,6 +202,19 @@ footer.note{color:var(--muted);font-size:11px;text-align:center;padding:20px;}
 
 <section id="page-setup" class="page active">
   <div class="panel" id="takeoffsBar"></div>
+  <!-- Project file save/load lives HERE with the saved sessions — not buried
+       on the Export page — so opening or backing up a project is part of
+       project setup, where an estimator looks for it. -->
+  <div class="panel">
+    <div class="sechead">Project File</div>
+    <div class="toolbar" style="margin-bottom:6px;">
+      <button class="btn primary" onclick="exportProjectJSON()">💾 Save Project (.json)</button>
+      <label class="btn" style="position:relative;" title="Opens the file as a NEW saved project — your current session is saved first and stays in the 📁 Projects list, nothing is overwritten">📂 Load Project (adds as new)
+        <input type="file" id="loadFile" accept=".json" style="position:absolute;inset:0;opacity:0;cursor:pointer;">
+      </label>
+    </div>
+    <p class="small" style="margin:0;">The .json file is a complete portable copy of one takeoff — every element and value. Loading one never overwrites anything: it always comes in as its own new saved project.</p>
+  </div>
   <div class="teach">
     <div class="roleband"><span>👷 Estimator</span><span>🏗️ Structural Engineer</span><span>💻 Software Logic</span><span>🎓 Teacher</span></div>
     <h3>How to run a fast, defensible takeoff with this tool</h3>
@@ -297,10 +310,6 @@ footer.note{color:var(--muted);font-size:11px;text-align:center;padding:20px;}
       <button class="btn" onclick="exportSheet('formwork')">Formwork</button>
       <button class="btn" onclick="exportSheet('excavation')">Excavation / Base &amp; Blinding</button>
       <button class="btn" onclick="exportSheet('connections')">Connections (Starters / Dowels / Step-downs)</button>
-      <button class="btn" onclick="exportProjectJSON()">💾 Save Project (.json)</button>
-      <label class="btn" style="position:relative;" title="Opens the file as a NEW saved project — your current session is saved first and stays in the 📁 Projects list, nothing is overwritten">📂 Load Project (adds as new)
-        <input type="file" id="loadFile" accept=".json" style="position:absolute;inset:0;opacity:0;cursor:pointer;">
-      </label>
     </div>
     <div class="tip"><span class="ico">👷</span><div><b>CSV</b> is the pricing file — one worksheet per material group, ready to paste rates against in Excel. <b>PDF</b> is the clean report — project header, defaults, element-by-element breakdown and grand totals, suitable for a file note, client submission or subcontractor RFQ pack. Both pull from the same live Quantity Register, so they can never disagree with each other.</div></div>
     <div id="exportSummary"></div>
@@ -860,6 +869,38 @@ async function syncProjectsIndexFromCloud(){
   }catch(e){ /* best-effort */ }
 }
 
+// On boot, pull down the saved blob of every takeoff this browser doesn't
+// hold locally yet — so the Saved Takeoffs list shows real element counts
+// straight away and resuming any session opens instantly with all its
+// values, even on a brand-new device. Skips the open project (syncFromCloud
+// owns that one) and anything already cached; never overwrites local data.
+let prefetchedBlobs = false;
+async function prefetchTakeoffBlobs(){
+  if(prefetchedBlobs) return;
+  prefetchedBlobs = true;
+  try{
+    let missing = liveProjects().filter(p=>{
+      if(p.key===CURRENT_PROJECT_KEY) return false;
+      try{ return !localStorage.getItem(p.key); }catch(e){ return false; }
+    });
+    let any=false;
+    for(const p of missing){
+      const row = await kvFetch(p.key);
+      if(row && row.value){
+        try{
+          localStorage.setItem(p.key, JSON.stringify({ ...row.value, savedAt: row.updated_at }));
+          localStorage.setItem(p.key+"__syncedAt", row.updated_at);
+          any=true;
+        }catch(e){}
+      }
+    }
+    if(any) renderTakeoffsBar();
+  } finally {
+    // allow a later retry if some fetches failed (e.g. offline at boot)
+    setTimeout(()=>{ prefetchedBlobs=false; }, 120000);
+  }
+}
+
 // Cover varies by exposure/formwork condition, not one flat number — AS 3600-style starting points.
 // Keyed by calc type, optionally refined by slab/beam category. Editable per element in every card.
 const DEFAULT_COVERS = {
@@ -1277,8 +1318,13 @@ function slabOutlineSVG(d){
   let sc=Math.min((W-2*pad)/w,(H-2*pad)/h);
   let X=v=>pad+(v-minX)*sc, Y=v=>H-pad-(v-minY)*sc; // y up, like a plan
   let path=pts.map((p,i)=>`${i?'L':'M'}${X(num(p.x)).toFixed(1)},${Y(num(p.y)).toFixed(1)}`).join(' ')+' Z';
-  let dots=pts.map((p,i)=>`<circle cx="${X(num(p.x)).toFixed(1)}" cy="${Y(num(p.y)).toFixed(1)}" r="3" fill="var(--accent)"/><text x="${(X(num(p.x))+6).toFixed(1)}" y="${(Y(num(p.y))-4).toFixed(1)}" font-size="9" fill="var(--muted)">${i+1}</text>`).join('');
   let sides=outlineSidesMode(d);
+  // In sides mode each corner shows its interior angle (the number an
+  // estimator checks against the drawing); point mode keeps corner numbers.
+  let dots=pts.map((p,i)=>{
+    let lbl = sides? Math.round(outlineCornerAngle(d,(i-1+pts.length)%pts.length))+"°" : String(i+1);
+    return `<circle cx="${X(num(p.x)).toFixed(1)}" cy="${Y(num(p.y)).toFixed(1)}" r="3" fill="var(--accent)"/><text x="${(X(num(p.x))+6).toFixed(1)}" y="${(Y(num(p.y))-4).toFixed(1)}" font-size="8.5" fill="${sides?'var(--danger)':'var(--muted)'}" font-weight="${sides?'700':'400'}">${lbl}</text>`;
+  }).join('');
   let mids=pts.map((p,i)=>{ let q=pts[(i+1)%pts.length]; let len=Math.hypot(num(q.x)-num(p.x),num(q.y)-num(p.y)); if(len<0.01) return '';
     let lbl = sides? `${String.fromCharCode(65+i)} ${fmt(len,2)}m` : `${fmt(len,2)}m`;
     return `<text x="${((X(num(p.x))+X(num(q.x)))/2).toFixed(1)}" y="${((Y(num(p.y))+Y(num(q.y)))/2-3).toFixed(1)}" font-size="9" fill="var(--text)" text-anchor="middle" font-weight="${sides?'700':'400'}">${lbl}</text>`; }).join('');
@@ -1327,6 +1373,36 @@ function outlineMisclose(d){
   let closing=Math.hypot(num(pts[0].x)-num(pts[pts.length-1].x), num(pts[0].y)-num(pts[pts.length-1].y));
   let lastLen=num((d.outlineSideLens||[])[d.outlineDirs.length-1]);
   return Math.abs(closing-lastLen);
+}
+/* ---- Corner angles between sides ----
+   The polygon is stored as per-side directions (outlineDirs); the interior
+   angle at the corner where side k meets side k+1 falls out of the turn
+   between the two directions. Editing a corner rotates every LATER side by
+   the same delta — the shape "bends" at that corner while all its other
+   corner angles stay put. The closing corner (last side back to side A) is
+   fixed by all the others, so it's display-only. */
+function normTurn(a){ while(a>Math.PI)a-=2*Math.PI; while(a<=-Math.PI)a+=2*Math.PI; return a; }
+function outlineWinding(d){
+  let pts=d.outlinePts||[]; if(pts.length<3) return 1;
+  let s=0;
+  for(let i=0;i<pts.length;i++){ let a=pts[i],b=pts[(i+1)%pts.length]; s+=num(a.x)*num(b.y)-num(b.x)*num(a.y); }
+  return s>=0? 1 : -1;
+}
+function outlineCornerAngle(d,k){
+  let dirs=d.outlineDirs||[]; let n=dirs.length; if(n<3) return 90;
+  let turn=normTurn(dirs[(k+1)%n]-dirs[k]);
+  let interior=180 - outlineWinding(d)*turn*180/Math.PI;
+  return ((interior%360)+360)%360;
+}
+function setOutlineCornerAngle(d,k,deg){
+  let dirs=d.outlineDirs; if(!dirs) return;
+  let n=dirs.length;
+  if(k<0 || k>=n-1) return; // closing corner is read-only
+  let turnNew=outlineWinding(d)*(180-deg)*Math.PI/180;
+  let turnCur=normTurn(dirs[k+1]-dirs[k]);
+  let delta=turnNew-turnCur;
+  for(let j=k+1;j<n;j++) dirs[j]=dirs[j]+delta;
+  rebuildOutlineFromSides(d);
 }
 function outlinePtRow(i,pt){
   return `<tr data-row="outlinePts.${i}"><td class="small">${i+1}</td><td style="width:110px">${inpNum(`outlinePts.${i}.x`,pt.x)}</td><td style="width:110px">${inpNum(`outlinePts.${i}.y`,pt.y)}</td><td><button class="btn small danger" data-action="delRow" data-target="outlinePts" data-idx="${i}">✕</button></td></tr>`;
@@ -2083,9 +2159,16 @@ function renderSlab(inst,def){
    <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start;">
     <div style="flex:1;min-width:240px;">
      ${outlineSidesMode(d)? `
-      <table class="rows"><thead><tr><th>Side</th><th>Direction</th><th>Length (m)</th></tr></thead>
-      <tbody>${d.outlineDirs.map((ang,i)=>`<tr><td><b>${String.fromCharCode(65+i)}</b></td><td class="small">${Math.round((ang*180/Math.PI+360)%360)}°</td><td style="width:120px">${inpNum(`outlineSideLens.${i}`,(d.outlineSideLens||[])[i])}</td></tr>`).join('')}</tbody></table>
-      <p class="small">The app straightened your sketch into sides <b>A–${String.fromCharCode(64+d.outlineDirs.length)}</b>. Type the TRUE length of each side off the drawing — the plan redraws live and area/perimeter are measured from your lengths. The last side closes the loop; a misclose warning shows if the lengths can't close.</p>`
+      <table class="rows"><thead><tr><th>Side</th><th>Length (m)</th><th>Corner ∠ after (°)</th></tr></thead>
+      <tbody>${d.outlineDirs.map((ang,i)=>{
+        let nSides=d.outlineDirs.length;
+        let cAng=Math.round(outlineCornerAngle(d,i));
+        let angCell = i<nSides-1
+          ? `<input type="number" step="1" min="1" max="359" value="${cAng}" data-angfield="${i}" style="width:80px" title="Interior angle at the corner between side ${String.fromCharCode(65+i)} and side ${String.fromCharCode(65+i+1)} — change it and the shape bends to follow">`
+          : `<span class="small outlineCloseAng" title="The closing corner is fixed by all the other sides">${cAng}° (closes)</span>`;
+        return `<tr><td><b>${String.fromCharCode(65+i)}</b> <span class="small">${Math.round((ang*180/Math.PI+360)%360)}°</span></td><td style="width:120px">${inpNum(`outlineSideLens.${i}`,(d.outlineSideLens||[])[i])}</td><td>${angCell}</td></tr>`;
+      }).join('')}</tbody></table>
+      <p class="small">The app straightened your sketch into sides <b>A–${String.fromCharCode(64+d.outlineDirs.length)}</b>. Type the TRUE length of each side off the drawing — the plan redraws live and area/perimeter are measured from your lengths. Corner angles default to square (90°); adjust any corner and the rest of the shape bends to follow. The last side closes the loop; a misclose warning shows if the lengths can't close.</p>`
      : `
      <table class="rows"><thead><tr><th>#</th><th>X (m)</th><th>Y (m)</th><th></th></tr></thead>
      <tbody>${(d.outlinePts||[]).map((pt,i)=>outlinePtRow(i,pt)).join('')}</tbody></table>
@@ -3160,6 +3243,21 @@ function attachCardEvents(card,inst){
   });
   card.querySelector('[data-action="dup"]').addEventListener('click',()=>duplicateInstance(inst.id));
   card.addEventListener('input',e=>{
+    // Corner-angle inputs on the outline sides table (not backed by a data
+    // field — the angle is derived from the stored side directions).
+    if(e.target.dataset.angfield!==undefined){
+      let k=parseInt(e.target.dataset.angfield);
+      let v=parseFloat(e.target.value);
+      if(!isNaN(v) && v>0 && v<360){
+        setOutlineCornerAngle(inst.data,k,v);
+        let host=card.querySelector('.outlineHost');
+        if(host) host.innerHTML=slabOutlineSVG(inst.data);
+        let closeCell=card.querySelector('.outlineCloseAng');
+        if(closeCell) closeCell.textContent=Math.round(outlineCornerAngle(inst.data,inst.data.outlineDirs.length-1))+"° (closes)";
+        computeAllAndRefresh();
+      }
+      return;
+    }
     let f=e.target.dataset.field; if(!f) return;
     if(f==="__label"){ inst.label=e.target.value; card.querySelector('.tools .small').textContent=LIB_INDEX[inst.typeKey].groupName+" / "+LIB_INDEX[inst.typeKey].label; refreshAllDiagramsReferencing(); computeAllAndRefresh(); return; }
     let val = e.target.type==="checkbox"? e.target.checked : (e.target.type==="number"? (e.target.value===""?"": parseFloat(e.target.value)) : e.target.value);
@@ -4151,7 +4249,8 @@ function ensureSketchPad(){
   div.style.cssText="display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:90;align-items:center;justify-content:center;padding:20px;";
   div.innerHTML=`<div style="background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;max-width:640px;width:100%;">
     <h3 style="margin:0 0 6px;">Sketch the slab outline</h3>
-    <p class="small" style="margin:0 0 8px;">Draw the shape roughly in one stroke — corners don't need to be neat. The app straightens it into sides and labels them A, B, C…; you then type the true length of each side.</p>
+    <p class="small" style="margin:0 0 8px;">Draw the shape roughly in one stroke — corners don't need to be neat. The app straightens it into sides labelled A, B, C…; you then type the true length of each side, and can adjust any corner's angle afterwards.</p>
+    <label class="chk" style="margin:0 0 8px;"><input type="checkbox" id="sketchSquare" checked> Square corners — snap every corner to 90° (untick for angled / splayed shapes)</label>
     <canvas id="sketchCanvas" width="600" height="400" style="width:100%;background:var(--input);border:1px solid var(--line);border-radius:8px;touch-action:none;cursor:crosshair;"></canvas>
     <div class="toolbar" style="margin-top:10px;">
       <button class="btn primary" id="sketchUse" type="button">✔ Use sketch</button>
@@ -4184,15 +4283,29 @@ function ensureSketchPad(){
     if(simp.length>14) simp=rdpSimplify(SKETCH.stroke,26).slice(0,14);
     // canvas y grows downward — flip so the plan reads like a drawing
     let pts=simp.map(p=>({x:p.x, y:-p.y}));
-    // sides incl. the closing one, angles snapped to 15°
+    // sides incl. the closing one. Square corners (the default — most slabs
+    // are rectilinear) snap every direction to 90°; unticked falls back to
+    // 15° so splayed/angled outlines keep their character.
+    let square=div.querySelector("#sketchSquare").checked;
+    let snap=square? Math.PI/2 : Math.PI/12;
     let n=pts.length, dirs=[], lens=[];
     for(let i=0;i<n;i++){
       let a=pts[i], b=pts[(i+1)%n];
       let ang=Math.atan2(b.y-a.y,b.x-a.x);
-      let snap=Math.PI/12;
       dirs.push(Math.round(ang/snap)*snap);
       lens.push(Math.hypot(b.x-a.x,b.y-a.y));
     }
+    // Snapping can leave consecutive sides pointing the same way (a wobble
+    // the 90° snap flattened) — merge them into one side so every remaining
+    // corner is a real turn.
+    let mdirs=[],mlens=[];
+    for(let i=0;i<dirs.length;i++){
+      if(mdirs.length && Math.abs(normTurn(dirs[i]-mdirs[mdirs.length-1]))<1e-9){ mlens[mlens.length-1]+=lens[i]; }
+      else { mdirs.push(dirs[i]); mlens.push(lens[i]); }
+    }
+    if(mdirs.length>3 && Math.abs(normTurn(mdirs[0]-mdirs[mdirs.length-1]))<1e-9){ mlens[0]+=mlens.pop(); mdirs.pop(); }
+    if(mdirs.length<3){ div.querySelector("#sketchHint").textContent="Squaring the corners flattened this into a line — draw the corners more distinctly, or untick Square corners."; return; }
+    dirs=mdirs; lens=mlens;
     // seed side lengths keeping sketch proportions, longest side = 10 m
     let maxL=Math.max(...lens)||1;
     let seed=lens.map(L=>+(Math.max(0.5,L/maxL*10).toFixed(1)));
@@ -4258,7 +4371,7 @@ if(!restoredFromSave){
     if(b) b.click();
   }
 })();
-syncFromCloud(); // then pull whatever another device last saved (or seed the cloud if this is the very first save anywhere)
+syncFromCloud().then(prefetchTakeoffBlobs); // pull the open takeoff first, then warm every other saved session so the whole list is ready to resume
 window.addEventListener("focus", syncFromCloud);
 document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) syncFromCloud(); });
 setInterval(syncFromCloud, 6000); // close to live without a WebSocket subscription
