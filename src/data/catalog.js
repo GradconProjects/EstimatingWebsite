@@ -97,6 +97,7 @@ export const FULL_CATALOG = [
   // Processed Bar already uses below. It's still priced $/bar (lengthBasis), not by weight —
   // see rule 2 in CLAUDE.md — this only changes where the $/bar number comes from.
   { key: "STOCK BAR", weightBasis: false, lengthBasis: true, products: [
+    ["N10 Ligatures - 6.0m length", "m", 3.79, 6.92, null, 6],
     ["N12 - 6.0m length", "m", 5.46, 9.96, null, 6], ["N16 - 6.0m length", "m", 9.6, 17.52, null, 6], ["N20 - 6.0m length", "m", 15.19, 27.72, null, 6],
     ["N24 - 6.0m length", "m", 21.83, 39.84, null, 6], ["N28 - 6.0m length", "m", 29.71, 54.22, null, 6], ["N32 - 6.0m length", "m", 38.81, 70.83, null, 6],
   ]},

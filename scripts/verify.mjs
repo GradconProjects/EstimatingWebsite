@@ -50,10 +50,12 @@ check("every element type has both a category and a section", () => {
   });
 });
 
-check("12 material categories, 127 products (incl. specified INSULATION)", () => {
+check("12 material categories, 128 products (incl. specified INSULATION, N10 Ligatures stock bar)", () => {
   assert.equal(FULL_CATALOG.length, 12);
   const total = FULL_CATALOG.reduce((s, c) => s + c.products.length, 0);
-  assert.equal(total, 127);
+  assert.equal(total, 128);
+  const stock = FULL_CATALOG.find((c) => c.key === "STOCK BAR");
+  assert.ok(stock.products.some((p) => /N10 Ligatures/.test(p.name)), "N10 Ligatures stock bar present");
   // The INSULATION category carries specified products (material/thickness/
   // R-value), plain qty × rate — never weight/area/length-priced.
   const insul = FULL_CATALOG.find((c) => c.key === "INSULATION");

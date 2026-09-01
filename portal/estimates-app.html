@@ -1171,7 +1171,7 @@ function computePier(inst,def){
       let totalCount=(topCount+botCount+midCount)*N;
       let totalLigLen = totalCount*ligLen;
       let ligWt = totalLigLen*massPerM(ligDia);
-      lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.ligDia,spec:"Circular ligatures (top+mid+bottom zones)",qty:totalCount,unit:"no.",waste:0,finalQty:totalCount,formula:`(top ${topCount}+mid ${midCount}+bot ${botCount})×${N} piers`,notes:`${fmt(totalLigLen,1)}m, ${fmt(ligWt,1)} kg`}));
+      lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.ligDia,spec:"Circular ligatures (top+mid+bottom zones)",qty:totalCount,unit:"no.",waste:0,finalQty:totalCount,massPerUnit:(totalCount? ligWt/totalCount:0),lengthM:totalLigLen,formula:`(top ${topCount}+mid ${midCount}+bot ${botCount})×${N} piers`,notes:`${fmt(totalLigLen,1)}m, ${fmt(ligWt,1)} kg`}));
     }
   }
   if(d.starters){
@@ -1276,7 +1276,7 @@ function computePileCap(inst,def){
       let count=(Math.floor((num(d.L)-2*cover)/sp)+1)*N;
       let perim=2*(((num(d.W)-2*cover)+(num(d.D)-2*cover))/1000);
       let totLen=count*perim; let wt=totLen*massPerM(sDia);
-      lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.sideDia,spec:"Ligatures / stirrups",qty:count,unit:"no.",waste:0,finalQty:count,formula:`(beam L−2c)/spacing+1 ×${N}`,notes:`${fmt(totLen,1)}m, ${fmt(wt,1)} kg`}));
+      lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.sideDia,spec:"Ligatures / stirrups",qty:count,unit:"no.",waste:0,finalQty:count,massPerUnit:(count? wt/count:0),lengthM:totLen,formula:`(beam L−2c)/spacing+1 ×${N}`,notes:`${fmt(totLen,1)}m, ${fmt(wt,1)} kg`}));
     } else {
       // Perimeter side-face bars spaced vertically over the cap depth.
       let count=(Math.floor((num(d.D)-2*cover)/sp)+1);
@@ -1523,7 +1523,7 @@ function computePadFooting(inst,def){
     let count=(Math.floor(cageH/Math.max(1,num(d.ligSpacing,200)))+1)*N;
     let ligPerim=2*((num(d.ligW)+num(d.ligD))/1000);
     let totLen=count*ligPerim; let wt=totLen*massPerM(ligDia);
-    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.ligDia,spec:"Starter-cage ligatures / ties",qty:count,unit:"no.",waste:0,finalQty:count,formula:`(footing D${d.pedestal?'+pedestal H':''} / spacing +1)×${N}`,notes:`${fmt(totLen,1)}m, ${fmt(wt,1)} kg`}));
+    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.ligDia,spec:"Starter-cage ligatures / ties",qty:count,unit:"no.",waste:0,finalQty:count,massPerUnit:(count? wt/count:0),lengthM:totLen,formula:`(footing D${d.pedestal?'+pedestal H':''} / spacing +1)×${N}`,notes:`${fmt(totLen,1)}m, ${fmt(wt,1)} kg`}));
   }
   if(round){
     if(d.formRound){
@@ -1677,7 +1677,7 @@ function computeBeam(inst,def){
     let count=Math.floor(len/num(z.spacing||200))+1;
     let ligPerimeter=(2*(Wm-2*cover)+2*(sideD-2*cover));
     let totLen=N*count*ligPerimeter; let wt=totLen*massPerM(bd);
-    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:z.dia,spec:`Ligatures — ${z.zone}`,qty:count*N,unit:"no.",waste:0,finalQty:count*N,formula:`floor(${fmt(len,0)}/${z.spacing})+1`,notes:`perimeter ${fmt(ligPerimeter,2)}m ea, ${fmt(totLen,1)}m, ${fmt(wt,1)} kg`}));
+    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:z.dia,spec:`Ligatures — ${z.zone}`,qty:count*N,unit:"no.",waste:0,finalQty:count*N,massPerUnit:massPerM(barDiaOf(z.dia))*ligPerimeter,lengthM:totLen,formula:`floor(${fmt(len,0)}/${z.spacing})+1`,notes:`perimeter ${fmt(ligPerimeter,2)}m ea, ${fmt(totLen,1)}m, ${fmt(wt,1)} kg`}));
   });
   if(d.starters){
     let bd=barDiaOf(d.connDia); let len=(num(d.connEmbed)+num(d.connProj))/1000;
@@ -1973,7 +1973,7 @@ function computeColumn(inst,def){
   let midCount=Math.floor(midLen/num(d.ligSpacing))+1;
   let ligCount=(topCount+midCount+botCount)*N;
   let ligLen=ligCount*perim; let ligWt=ligLen*massPerM(ligDia);
-  lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.ligDia,spec:"Ligatures (top/mid/bottom zones)",qty:ligCount,unit:"no.",waste:0,finalQty:ligCount,formula:`(top ${topCount}+mid ${midCount}+bot ${botCount})×${N}`,notes:`${fmt(ligLen,1)}m, ${fmt(ligWt,1)} kg`}));
+  lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.ligDia,spec:"Ligatures (top/mid/bottom zones)",qty:ligCount,unit:"no.",waste:0,finalQty:ligCount,massPerUnit:(ligCount? ligWt/ligCount:0),lengthM:ligLen,formula:`(top ${topCount}+mid ${midCount}+bot ${botCount})×${N}`,notes:`${fmt(ligLen,1)}m, ${fmt(ligWt,1)} kg`}));
   if(d.crossTies){
     let ctDia=barDiaOf(d.ctDia); let ctLen=ligCount*num(d.ctQty)*((num(d.width)||num(d.dia))-2*cover)/1000; let ctWt=ctLen*massPerM(ctDia);
     lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.ctDia,spec:"Cross ties",qty:ctLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(ctLen,PROJECT.reoWaste),formula:"tie sets × qty × width",notes:`${fmt(ctWt,1)} kg`}));
@@ -2868,6 +2868,11 @@ function summarizeReinforcement(lines){
       // trench mesh / square-mesh-as-trench-strips — ordered by the metre
       let e=strips[l.material]||(strips[l.material]={lm:0,kg:0});
       e.lm+=l.finalQty; e.kg+=(l.weightKg||0);
+    } else if(l.unit==="no." && (l.weightKg||l.lengthM)){
+      // ligatures/stirrups/ties — counted in no., but they're cut from the
+      // same bar stock, so their metres and kg join that bar size's totals
+      let e=bars[l.material]||(bars[l.material]={lm:0,kg:0});
+      e.lm+=(l.lengthM||0); e.kg+=(l.weightKg||0);
     }
   });
   return {bars,mesh,strips};
