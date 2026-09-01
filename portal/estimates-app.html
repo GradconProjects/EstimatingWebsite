@@ -1979,8 +1979,8 @@ function computeStripFooting(inst,def){
       let len=sdBarLenMm(d, num(d.sdProj1,500)+num(d.sdProj2,500))/1000;
       let totLen=count*len; let wt=totLen*massPerM(bd);
       lines.push(baseLine(inst,def,{materialGroup:"Connections",material:d.sdDia,spec:"Stepped footing — step dowels",qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`count(${count}=${fmt(sdRunM,1)}m/${d.sdSpacing}mm+1 ×${sdf.risers} riser(s) ×${sdf.legs} leg(s))×(proj1+proj2)/1000`,notes:`${count} dowels, ${fmt(wt,1)} kg`}));
-      let fA=sdRunM*num(d.sdDepth,300)/1000*sdf.risers;
-      lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Step-down face formwork",spec:`${d.sdDepth}mm steps`,qty:fA,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(fA,PROJECT.formworkWaste),formula:`step length ${fmt(sdRunM,1)}m × depth`}));
+      let fLm=sdRunM*sdf.risers;
+      lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Step-down face formwork",spec:`${d.sdDepth}mm deep steps ×${sdf.risers} riser(s)`,qty:fLm,unit:"m",waste:PROJECT.formworkWaste,finalQty:withWaste(fLm,PROJECT.formworkWaste),formula:`step length ${fmt(sdRunM,1)}m ×${sdf.risers}`}));
     }
   }
   if(d.cross){
@@ -2309,8 +2309,8 @@ function computeBeam(inst,def){
     let sdf=sdFactors(d);
     let count=(Math.floor(sdRunM*1000/Math.max(1,num(d.sdSpacing,300)))+1)*sdf.risers*sdf.legs;
     if(d.sdLength!==undefined && sdRunM>0){
-      let fA=sdRunM*num(d.sdDepth)/1000*sdf.risers;
-      lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Step-down face formwork",spec:`${d.sdDepth}mm step ×${sdf.risers} riser(s)`,qty:fA,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(fA,PROJECT.formworkWaste),formula:`step length ${fmt(sdRunM,1)}m × depth ×${sdf.risers}`}));
+      let fLm=sdRunM*sdf.risers;
+      lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Step-down face formwork",spec:`${d.sdDepth}mm deep step ×${sdf.risers} riser(s)`,qty:fLm,unit:"m",waste:PROJECT.formworkWaste,finalQty:withWaste(fLm,PROJECT.formworkWaste),formula:`step length ${fmt(sdRunM,1)}m ×${sdf.risers}`}));
     }
     let len=sdBarLenMm(d, num(d.sdProj1)+num(d.sdProj2))/1000;
     let totLen=N*count*len; let wt=totLen*massPerM(bd);
@@ -2492,7 +2492,14 @@ function computeSlab(inst,def){
   // spec so the height of board is still visible. Soffit stays in m².
   if(d.edgeForms) lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Edgeform — perimeter edge formwork",spec:`${d.thickness}mm high edge`,qty:perim,unit:"m",waste:PROJECT.formworkWaste,finalQty:withWaste(perim,PROJECT.formworkWaste),formula:`slab perimeter ${fmt(perim,1)}m`}));
   if(d.suspended && d.soffit) lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Soffit formwork",spec:"",qty:netArea,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(netArea,PROJECT.formworkWaste),formula:"net area"}));
-  if(openArea>0) lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Opening reveals",spec:"perimeter × thickness",qty:(d.openings||[]).reduce((s,o)=>s+2*((num(o.w)/1000)+(num(o.h)/1000))*t*num(o.qty,1),0),unit:"m²",waste:PROJECT.formworkWaste,finalQty:0,formula:"Σ 2×(w+h)×thickness×qty"}));
+  if(openArea>0){
+    // Reveals are edge boards — measured by the METRE around each opening
+    // (like Edgeform), with the slab thickness on the spec as the board
+    // height. Previously area-based AND carried finalQty:0, so reveals
+    // never actually reached the register totals.
+    let revLm=(d.openings||[]).reduce((s,o)=>s+2*((num(o.w)/1000)+(num(o.h)/1000))*num(o.qty,1),0);
+    lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Opening reveals",spec:`${d.thickness}mm high reveal`,qty:revLm,unit:"m",waste:PROJECT.formworkWaste,finalQty:withWaste(revLm,PROJECT.formworkWaste),formula:"Σ 2×(w+h)×qty"}));
+  }
   if(d.edgeThicken){
     let ew=num(d.edgeThickenWidth)/1000, ed=num(d.edgeThickenExtraDepth)/1000;
     let edgeVol=perim*ew*ed;
@@ -2588,8 +2595,8 @@ function computeSlab(inst,def){
     let sdf=sdFactors(d);
     let count=(Math.floor(sdRunM*1000/Math.max(1,num(d.sdSpacing,300)))+1)*sdf.risers*sdf.legs;
     if(d.sdLength!==undefined && sdRunM>0){
-      let fA=sdRunM*num(d.sdDepth)/1000*sdf.risers;
-      lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Step-down face formwork",spec:`${d.sdDepth}mm step ×${sdf.risers} riser(s)`,qty:fA,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(fA,PROJECT.formworkWaste),formula:`step length ${fmt(sdRunM,1)}m × depth ×${sdf.risers}`}));
+      let fLm=sdRunM*sdf.risers;
+      lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Step-down face formwork",spec:`${d.sdDepth}mm deep step ×${sdf.risers} riser(s)`,qty:fLm,unit:"m",waste:PROJECT.formworkWaste,finalQty:withWaste(fLm,PROJECT.formworkWaste),formula:`step length ${fmt(sdRunM,1)}m ×${sdf.risers}`}));
     }
     let len=sdBarLenMm(d, num(d.sdProj1)+num(d.sdProj2))/1000;
     let totLen=count*len; let wt=totLen*massPerM(dia);
@@ -2708,7 +2715,10 @@ function computeWall(inst,def){
   if(d.formEnds) fArea+=N*2*Tm*Hm;
   if(d.formTop) fArea+=N*Lm*Tm;
   if(fArea>0) lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Wall formwork",spec:"Selected faces",qty:fArea,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(fArea,PROJECT.formworkWaste),formula:"faces × (L×H − openings) / ends"}));
-  if(openArea>0) lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Opening reveals",spec:"",qty:N*(d.openings||[]).reduce((s,o)=>s+2*((num(o.w)/1000)+(num(o.h)/1000))*Tm*num(o.qty,1),0),unit:"m²",waste:PROJECT.formworkWaste,finalQty:0,formula:"Σ2×(w+h)×thickness×qty"}));
+  if(openArea>0){
+    let revLm=N*(d.openings||[]).reduce((s,o)=>s+2*((num(o.w)/1000)+(num(o.h)/1000))*num(o.qty,1),0);
+    lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Opening reveals",spec:`${d.thickness}mm deep reveal`,qty:revLm,unit:"m",waste:PROJECT.formworkWaste,finalQty:withWaste(revLm,PROJECT.formworkWaste),formula:"Σ 2×(w+h)×qty"}));
+  }
   function barCalc(vflag,vdia,vsp,vlap,hflag,hdia,hsp,hlap,faceLabel){
     if(vflag){
       let dia=barDiaOf(vdia); let count=Math.floor(num(d.length)/vsp)+1; let barLen=Hm-2*cover/1000+0.4;
@@ -2745,8 +2755,8 @@ function computeWall(inst,def){
     let sdf=sdFactors(d);
     let count=(Math.floor(sdRunM*1000/Math.max(1,num(d.sdSpacing,300)))+1)*sdf.risers*sdf.legs;
     if(d.sdLength!==undefined && sdRunM>0){
-      let fA=sdRunM*num(d.sdDepth,150)/1000*sdf.risers;
-      lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Step-down face formwork",spec:`${d.sdDepth}mm step ×${sdf.risers} riser(s)`,qty:fA,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(fA,PROJECT.formworkWaste),formula:`step length ${fmt(sdRunM,1)}m × depth ×${sdf.risers}`}));
+      let fLm=sdRunM*sdf.risers;
+      lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Step-down face formwork",spec:`${d.sdDepth}mm deep step ×${sdf.risers} riser(s)`,qty:fLm,unit:"m",waste:PROJECT.formworkWaste,finalQty:withWaste(fLm,PROJECT.formworkWaste),formula:`step length ${fmt(sdRunM,1)}m ×${sdf.risers}`}));
     }
     let len=sdBarLenMm(d, 2*num(d.sdProj1))/1000;
     let totLen=N*count*len; let wt=totLen*massPerM(dia);

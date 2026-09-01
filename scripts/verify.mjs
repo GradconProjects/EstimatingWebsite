@@ -386,11 +386,17 @@ check("Import: a named formwork system on the spec (Bondek) maps to that exact F
         materialGroup: "Formwork", material: "Soffit formwork", spec: "net area · Bondek (permanent metal deck)", unit: "m²", finalQty: 120 },
       { ...estLine({}), category: "Suspended Slab", element: "Slab 1", elementId: "EL07",
         materialGroup: "Formwork", material: "Edgeform — perimeter edge formwork", spec: "200mm high edge", unit: "m", finalQty: 44 },
+      // Reveals and step-down faces are also per-m edge boards now — they
+      // land on the same Edgeform product and sum with the perimeter run.
+      { ...estLine({}), category: "Suspended Slab", element: "Slab 1", elementId: "EL07",
+        materialGroup: "Formwork", material: "Opening reveals", spec: "200mm high reveal", unit: "m", finalQty: 6 },
+      { ...estLine({}), category: "Suspended Slab", element: "Slab 1", elementId: "EL07",
+        materialGroup: "Formwork", material: "Step-down face formwork", spec: "150mm deep step ×1 riser(s)", unit: "m", finalQty: 5 },
     ],
   });
   const item = quote.items[0];
   assert.equal(item.qtys[rateKey("FORMWORK", "Bondek", "m2")], 120);
-  assert.equal(item.qtys[rateKey("FORMWORK", "Edgeform", "m")], 44);
+  assert.equal(item.qtys[rateKey("FORMWORK", "Edgeform", "m")], 55); // 44 edge + 6 reveals + 5 step faces
   assert.ok(!flags.some((f) => f.includes("Bondek")), `Bondek should map cleanly without a flag, got: ${flags.join(" | ")}`);
 });
 

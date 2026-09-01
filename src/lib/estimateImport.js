@@ -292,8 +292,9 @@ export function buildImportFromEstimate(estimateExport) {
           if (product) { map(l, rateKey("FORMWORK", product.name, product.unit), Number(l.finalQty) || 0); return; }
         }
       }
-      // Per-metre edge formwork -> the per-m "Edgeform" product.
-      if (l.unit === "m" && /edge/i.test(text)) {
+      // Per-metre edge-board formwork (slab edges, opening reveals, step-down
+      // faces) -> the per-m "Edgeform" product.
+      if (l.unit === "m" && /edge|reveal|step-down face/i.test(text)) {
         const product = findFormworkProduct("Edgeform", "m");
         if (product) { map(l, rateKey("FORMWORK", product.name, product.unit), Number(l.finalQty) || 0); return; }
       }
