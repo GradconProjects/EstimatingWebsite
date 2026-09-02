@@ -2476,7 +2476,11 @@ function renderSlab(inst,def){
    + `<div class="subsec"><div class="sechead">Edge Return / Turn-down Bars</div>
    ${chk("returnBars",d.returnBars,"Return bars at slab edges (U-bar turn-down)","returnBars")}
    <div class="subsec ${d.returnBars?'':'hidden'}" data-show-if="returnBars"><div class="grid cols4">
-    ${F("Bar size",barSizeSel("retDia",d.retDia))}${F("Spacing (mm)",inpNum("retSpacing",d.retSpacing))}${F("Turn-down depth (mm)",inpNum("retTurndown",d.retTurndown))}${F("Horizontal leg (mm)",inpNum("retLeg",d.retLeg))}
+    ${F("Material",selOpts("retMode",d.retMode||"bars",[["bars","Individual U-bars"],["strip","Trench mesh / mesh strip (bent)"]],true))}
+    ${(d.retMode||"bars")==="strip"
+      ? F("Strip type",trenchMeshTypeSel("retStripType",d.retStripType||"4 Bar-L12TM"))
+      : F("Bar size",barSizeSel("retDia",d.retDia))+F("Spacing (mm)",inpNum("retSpacing",d.retSpacing))}
+    ${F("Turn-down depth (mm)",inpNum("retTurndown",d.retTurndown))}${F("Horizontal leg (mm)",inpNum("retLeg",d.retLeg))}
    </div>
    <div class="grid cols3">${chk("retLap",d.retLap,"Include lap allowance (%)","retLap")}</div>
    <div class="tip"><span class="ico">🎓</span><div>Applied around the full perimeter unless overridden. Free (unsupported) slab edges need the top and bottom mats tied together, or the edge behaves like a hinge under load — that's what the turn-down U-bar does. It's one of the most commonly missed items in a manual takeoff because it never shows as its own line on the drawing; it's implied by the edge detail.</div></div></div></div>
@@ -2608,12 +2612,24 @@ function computeSlab(inst,def){
     });
   }
   if(d.returnBars){
-    let dia=barDiaOf(d.retDia);
-    let count=Math.floor(perim*1000/num(d.retSpacing))+1;
-    let barLen=(num(d.retTurndown)*2+num(d.retLeg))/1000;
-    let totLen=count*barLen; let wt=totLen*massPerM(dia);
     let retLapPct=d.retLap?PROJECT.lapPct:0;
-    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.retDia,spec:"Edge return / turn-down bars",qty:totLen,unit:"m",waste:PROJECT.reoWaste,lap:retLapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,retLapPct),formula:`count(${count})×(2×turndown ${d.retTurndown}+leg ${d.retLeg})/1000`,notes:`${count} bars, ${fmt(wt,1)} kg`}));
+    let girthMm=num(d.retTurndown)*2+num(d.retLeg);
+    if((d.retMode||"bars")==="strip"){
+      // A bent trench-mesh / mesh strip run along the edge instead of
+      // individual U-bars: quantity is the perimeter run in lineal metres;
+      // the bent girth (2×turndown+leg) is a square-mesh strip's effective
+      // width for its kg/lm (L-series strips carry a fixed kg/6m).
+      let type=d.retStripType||"4 Bar-L12TM";
+      let mpm=trenchReoMassPerM(type,girthMm);
+      let totLen=perim; let wt=totLen*mpm;
+      lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:type,spec:`Edge return / turn-down strip (bent, girth ${girthMm}mm)`,qty:totLen,unit:"lm",waste:PROJECT.reoWaste,lap:retLapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,retLapPct),massPerUnit:mpm,formula:`perimeter run ${fmt(perim,1)}m`,notes:`${fmt(wt,1)} kg`}));
+    } else {
+      let dia=barDiaOf(d.retDia);
+      let count=Math.floor(perim*1000/num(d.retSpacing))+1;
+      let barLen=girthMm/1000;
+      let totLen=count*barLen; let wt=totLen*massPerM(dia);
+      lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.retDia,spec:"Edge return / turn-down bars",qty:totLen,unit:"m",waste:PROJECT.reoWaste,lap:retLapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,retLapPct),formula:`count(${count})×(2×turndown ${d.retTurndown}+leg ${d.retLeg})/1000`,notes:`${count} bars, ${fmt(wt,1)} kg`}));
+    }
   }
   if(d.joints){
     let numJoints=Math.max(0,Math.floor(num(d.length)/num(d.jointSpacing))-1);
