@@ -1472,6 +1472,16 @@ function outlineWinding(d){
   for(let i=0;i<pts.length;i++){ let a=pts[i],b=pts[(i+1)%pts.length]; s+=num(a.x)*num(b.y)-num(b.x)*num(a.y); }
   return s>=0? 1 : -1;
 }
+/* Count of re-entrant (reflex interior, >180°) corners on the sketched
+   outline — feeds the slab's diagonal corner reinforcement as the auto
+   count when the estimator leaves the corner count blank. */
+function reentrantCornerCount(d){
+  let dirs=d&&d.outlineDirs||[];
+  if(!d||!d.outlineOn||dirs.length<3) return 0;
+  let c=0;
+  for(let k=0;k<dirs.length;k++){ if(outlineCornerAngle(d,k)>180.5) c++; }
+  return c;
+}
 function outlineCornerAngle(d,k){
   let dirs=d.outlineDirs||[]; let n=dirs.length; if(n<3) return 90;
   let turn=normTurn(dirs[(k+1)%n]-dirs[k]);
@@ -2366,6 +2376,7 @@ function slabDefaults(cat,suspended){ return {
   topX:!!suspended,topXDia:"N12",topXMethod:"spacing",topXSpacing:200,topXQty:0,topXBars:[],topXLap:false, topY:!!suspended,topYDia:"N12",topYMethod:"spacing",topYSpacing:200,topYQty:0,topYBars:[],topYLap:false,
   cover:PROJECT.cover, grade:PROJECT.grade,
   returnBars:false, retDia:"N12", retSpacing:200, retTurndown:150, retLeg:300, retEdges:"perimeter", retLap:false,
+  reentrantOn:false, reentrantQty:"", reentrantMode:"bars", reentrantDia:"N12", reentrantPer:2, reentrantLen:1200, reentrantStripType:"4 Bar-L12TM", reentrantStripW:300,
   joints:true, jointSpacing:6, dowels:false, dowelDia:"N16", dowelSpacing:300, dowelLength:500,
   starters:false, connTarget:"", connQty:0, connDia:"N12", connEmbed:400, connProj:400,
   stepdown:false, sdLength:6, sdDepth:150, sdDia:"N12", sdSpacing:300, sdProj1:300, sdProj2:300,
@@ -2484,6 +2495,17 @@ function renderSlab(inst,def){
    </div>
    <div class="grid cols3">${chk("retLap",d.retLap,"Include lap allowance (%)","retLap")}</div>
    <div class="tip"><span class="ico">🎓</span><div>Applied around the full perimeter unless overridden. Free (unsupported) slab edges need the top and bottom mats tied together, or the edge behaves like a hinge under load — that's what the turn-down U-bar does. It's one of the most commonly missed items in a manual takeoff because it never shows as its own line on the drawing; it's implied by the edge detail.</div></div></div></div>
+   <div class="subsec"><div class="sechead">Diagonal Re-entrant Corner Bars</div>
+   ${chk("reentrantOn",d.reentrantOn,"Diagonal crack-control reinforcement at re-entrant (internal) corners","reentrantOn")}
+   <div class="subsec ${d.reentrantOn?'':'hidden'}" data-show-if="reentrantOn"><div class="grid cols4">
+    ${F(`Re-entrant corners (count${reentrantCornerCount(d)?`, sketch shows ${reentrantCornerCount(d)}`:''})`,inpNum("reentrantQty",d.reentrantQty))}
+    ${F("Material",selOpts("reentrantMode",d.reentrantMode||"bars",[["bars","Diagonal bars"],["strip","Trench mesh / mesh strip"]],true))}
+    ${(d.reentrantMode||"bars")==="strip"
+      ? F("Strip type",trenchMeshTypeSel("reentrantStripType",d.reentrantStripType||"4 Bar-L12TM"))+F("Strip width (mm)",inpNum("reentrantStripW",d.reentrantStripW===undefined?300:d.reentrantStripW))
+      : F("Bar size",barSizeSel("reentrantDia",d.reentrantDia))+F("Bars per corner",inpNum("reentrantPer",d.reentrantPer===undefined?2:d.reentrantPer))}
+    ${F((d.reentrantMode||"bars")==="strip"?"Strip length per corner (mm)":"Bar length (mm)",inpNum("reentrantLen",d.reentrantLen===undefined?1200:d.reentrantLen))}
+   </div>
+   <div class="tip"><span class="ico">🎓</span><div>Every internal (re-entrant) corner of an L-, T- or U-shaped slab concentrates shrinkage stress and cracks diagonally from the corner — standard practice lays diagonal bars (typically 2×N12×1200 top) or a short mesh/trench strip at 45° across each one. Leave the count blank to use the sketched outline's own re-entrant corner count where one is drawn.</div></div></div></div>
    <div class="subsec"><div class="sechead">Joints &amp; Dowels</div><div class="grid cols4">
     ${chk("joints",d.joints,"Construction/control joints")}${F("Joint spacing (m)",inpNum("jointSpacing",d.jointSpacing))}
     ${chk("dowels",d.dowels,"Joint dowels","dowels")}
@@ -2629,6 +2651,26 @@ function computeSlab(inst,def){
       let barLen=girthMm/1000;
       let totLen=count*barLen; let wt=totLen*massPerM(dia);
       lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.retDia,spec:"Edge return / turn-down bars",qty:totLen,unit:"m",waste:PROJECT.reoWaste,lap:retLapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,retLapPct),formula:`count(${count})×(2×turndown ${d.retTurndown}+leg ${d.retLeg})/1000`,notes:`${count} bars, ${fmt(wt,1)} kg`}));
+    }
+  }
+  if(d.reentrantOn){
+    // diagonal crack-control reinforcement at re-entrant corners — an
+    // entered count wins; blank falls back to the sketched outline's own
+    // reflex-corner count
+    let corners = num(d.reentrantQty)>0? Math.round(num(d.reentrantQty)) : reentrantCornerCount(d);
+    let lenM=num(d.reentrantLen,1200)/1000;
+    if(corners>0 && lenM>0){
+      if((d.reentrantMode||"bars")==="strip"){
+        let type=d.reentrantStripType||"4 Bar-L12TM";
+        let mpm=trenchReoMassPerM(type,num(d.reentrantStripW,300));
+        let totLen=corners*lenM; let wt=totLen*mpm;
+        lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:type,spec:`Re-entrant corner strips (diagonal, ${corners} corner(s))`,qty:totLen,unit:"lm",waste:PROJECT.reoWaste,lap:0,finalQty:withWaste(totLen,PROJECT.reoWaste),massPerUnit:mpm,formula:`${corners} corners × ${fmt(lenM,2)}m strip`,notes:`${fmt(wt,1)} kg`}));
+      } else {
+        let dia=barDiaOf(d.reentrantDia);
+        let per=Math.max(1,Math.round(num(d.reentrantPer,2)));
+        let totLen=corners*per*lenM; let wt=totLen*massPerM(dia);
+        lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.reentrantDia,spec:`Re-entrant corner bars (diagonal, ${corners} corner(s))`,qty:totLen,unit:"m",waste:PROJECT.reoWaste,lap:0,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`${corners} corners × ${per} bars × ${fmt(lenM,2)}m`,notes:`${corners*per} bars, ${fmt(wt,1)} kg`}));
+      }
     }
   }
   if(d.joints){
