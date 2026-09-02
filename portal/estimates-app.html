@@ -2113,7 +2113,7 @@ function renderPadFooting(inst){
    ${chk("botX",d.botX,"Bottom X bars")}${F("Dia",barSizeSel("botXDia",d.botXDia))}${F("Spacing",inpNum("botXSpacing",d.botXSpacing))}${chk("botXLap",d.botXLap,"Lap %","botXLap")}
    ${chk("botY",d.botY,"Bottom Y bars")}${F("Dia",barSizeSel("botYDia",d.botYDia))}${F("Spacing",inpNum("botYSpacing",d.botYSpacing))}${chk("botYLap",d.botYLap,"Lap %","botYLap")}
   </div></div>
-  <div class="subsec ${d.botReoType=='mesh'?'':'hidden'}" data-show-if="botReoType_mesh"><div class="grid cols3">${F("Mesh type",selOpts("botMeshType",d.botMeshType,Object.keys(MESHTYPES).map(m=>[m,m]),true))}${F("Layers",inpNumR("botMeshLayers",d.botMeshLayers))}${chk("botMeshLap",d.botMeshLap,"Extra lap allowance (%)","botMeshLap")}</div>
+  <div class="subsec ${d.botReoType=='mesh'?'':'hidden'}" data-show-if="botReoType_mesh"><div class="grid cols3">${F("Mesh type",selOpts("botMeshType",d.botMeshType,Object.keys(MESHTYPES).map(m=>[m,m]),true))}${F("Layers",inpNumR("botMeshLayers",d.botMeshLayers))}${chk("botMeshLap",d.botMeshLap,"Include lap allowance (%)","botMeshLap")}</div>
   ${layerTypeSelects(d,"botMeshLayers","botMeshType","botMeshLayerTypes",(f,v)=>selOpts(f,v,Object.keys(MESHTYPES).map(m=>[m,m])),"mesh type")}</div>
   <div class="sechead">Ligatures / Starter-cage Ties</div>
   ${chk("ligs",d.ligs,"Ligatures around the column starter cage / pedestal","ligs")}
@@ -2179,9 +2179,9 @@ function computePadFooting(inst,def){
     let meshLapPct=d.botMeshLap?MESH_LAP_PCT:0;
     layerTypeCounts(d,"botMeshLayers","botMeshType","botMeshLayerTypes").forEach((n,type)=>{
       let area=N*planArea*n;
-      let wastedArea=withWasteLap(area,REO_WASTE_PCT,MESH_LAP_PCT+meshLapPct);
+      let wastedArea=withWasteLap(area,REO_WASTE_PCT,meshLapPct);
       let sheets=Math.ceil(wastedArea/MESH_SHEET_AREA_M2);
-      lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:type,spec:`Bottom mat — mesh sheets ×${n} layer(s)`,qty:area,unit:"m²",waste:REO_WASTE_PCT,lap:MESH_LAP_PCT+meshLapPct,finalQty:wastedArea,sheets,formula:`N×${round?'π×Ø²/4':'L×W'}×${n} layer(s) (+5% waste, +5% laps${meshLapPct?`, +${meshLapPct}% extra lap`:''}) → ceil(/${MESH_SHEET_AREA_M2}m²) = ${sheets} sheets`,notes:`${sheets} sheets (6.0×2.4m nominal)`}));
+      lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:type,spec:`Bottom mat — mesh sheets ×${n} layer(s)`,qty:area,unit:"m²",waste:REO_WASTE_PCT,lap:meshLapPct,finalQty:wastedArea,sheets,formula:`N×${round?'π×Ø²/4':'L×W'}×${n} layer(s) (+${REO_WASTE_PCT}% waste${meshLapPct?`, +${meshLapPct}% lap`:''}) → ceil(/${MESH_SHEET_AREA_M2}m²) = ${sheets} sheets`,notes:`${sheets} sheets (6.0×2.4m nominal)`}));
     });
   } else if(round){
     matRound(d.botX,d.botXDia,d.botXSpacing,"Bottom X bars",d.botXLap);
@@ -2487,7 +2487,7 @@ function renderSlab(inst,def){
   let meshBlock = `<div class="sechead">Mesh</div><div class="grid cols4">
    ${chk("meshOn",d.meshOn,"Mesh reinforcement","meshOn")}
   </div>
-  <div class="subsec ${d.meshOn?'':'hidden'}" data-show-if="meshOn"><div class="grid cols3">${F("Mesh type",selOpts("meshType",d.meshType,Object.keys(MESHTYPES).map(m=>[m,m]),true))}${F("Layers",inpNumR("meshLayers",d.meshLayers))}${chk("meshLap",d.meshLap,"Extra lap allowance (%)","meshLap")}</div>
+  <div class="subsec ${d.meshOn?'':'hidden'}" data-show-if="meshOn"><div class="grid cols3">${F("Mesh type",selOpts("meshType",d.meshType,Object.keys(MESHTYPES).map(m=>[m,m]),true))}${F("Layers",inpNumR("meshLayers",d.meshLayers))}${chk("meshLap",d.meshLap,"Include lap allowance (%)","meshLap")}</div>
   ${layerTypeSelects(d,"meshLayers","meshType","meshLayerTypes",(f,v)=>selOpts(f,v,Object.keys(MESHTYPES).map(m=>[m,m])),"mesh type")}</div>`;
   let stripReoBlock = `<div class="subsec ${d.beamStrips?'':'hidden'}" data-show-if="beamStrips"><div class="sechead">Beam Strip Reinforcement</div><div class="grid cols3">${chk("beamStripsReo",d.beamStripsReo,"Longitudinal reinforcement along the beam strips","beamStripsReo")}</div>
   <div class="subsec ${d.beamStripsReo?'':'hidden'}" data-show-if="beamStripsReo">
@@ -2646,9 +2646,9 @@ function computeSlab(inst,def){
     let meshLapPct=d.meshLap?MESH_LAP_PCT:0;
     layerTypeCounts(d,"meshLayers","meshType","meshLayerTypes").forEach((n,type)=>{
       let layeredArea=netArea*n;
-      let wastedArea=withWasteLap(layeredArea,REO_WASTE_PCT,MESH_LAP_PCT+meshLapPct);
+      let wastedArea=withWasteLap(layeredArea,REO_WASTE_PCT,meshLapPct);
       let sheets=Math.ceil(wastedArea/MESH_SHEET_AREA_M2);
-      lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:type,spec:`Mesh sheets ×${n} layer(s)`,qty:layeredArea,unit:"m²",waste:REO_WASTE_PCT,lap:MESH_LAP_PCT+meshLapPct,finalQty:wastedArea,sheets,formula:`net area × ${n} layer(s) (+5% waste, +5% laps${meshLapPct?`, +${meshLapPct}% extra lap`:''}) → ceil(/${MESH_SHEET_AREA_M2}m²) = ${sheets} sheets`,notes:`${sheets} sheets (6.0×2.4m nominal)`}));
+      lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:type,spec:`Mesh sheets ×${n} layer(s)`,qty:layeredArea,unit:"m²",waste:REO_WASTE_PCT,lap:meshLapPct,finalQty:wastedArea,sheets,formula:`net area × ${n} layer(s) (+${REO_WASTE_PCT}% waste${meshLapPct?`, +${meshLapPct}% lap`:''}) → ceil(/${MESH_SHEET_AREA_M2}m²) = ${sheets} sheets`,notes:`${sheets} sheets (6.0×2.4m nominal)`}));
     });
   }
   if(d.returnBars){
@@ -2982,7 +2982,7 @@ function renderShotWall(inst){
   let geom=`<div class="grid cols4">${LF("Wall length (mm)","length",d.length)}${LF("Wall height (mm)","height",d.height)}${F("Thickness (mm)",inpNum("thickness",d.thickness))}${coverField(inst)}</div>`;
   let conc=`<p class="small">Concrete = length × height × thickness, sprayed application (higher rebound/overspray waste than a formed pour).</p>
   <div class="grid cols3">${chk("xypex",d.xypex,"Penetron (Xypex) waterproofing additive","xypex")}</div>`;
-  let reo=`<div class="grid cols3">${F("Mesh type",selOpts("meshType",d.meshType,Object.keys(MESHTYPES).map(m=>[m,m]),true))}${F("Layers",inpNumR("meshLayers",d.meshLayers))}${chk("meshLap",d.meshLap,"Extra lap allowance (%)","meshLap")}</div>
+  let reo=`<div class="grid cols3">${F("Mesh type",selOpts("meshType",d.meshType,Object.keys(MESHTYPES).map(m=>[m,m]),true))}${F("Layers",inpNumR("meshLayers",d.meshLayers))}${chk("meshLap",d.meshLap,"Include lap allowance (%)","meshLap")}</div>
   ${layerTypeSelects(d,"meshLayers","meshType","meshLayerTypes",(f,v)=>selOpts(f,v,Object.keys(MESHTYPES).map(m=>[m,m])),"mesh type")}
   <p class="small">Central mesh layer(s) across the full wall face — sprayed walls are typically single-face-mesh, not two independent faces like a formed wall.</p>`;
   let conns=`${chk("starters",d.starters,"Starter bars / dowels in (from footing or pier below)","starters")}
@@ -3002,9 +3002,9 @@ function computeShotWall(inst,def){
   let meshLapPct=d.meshLap?MESH_LAP_PCT:0;
   layerTypeCounts(d,"meshLayers","meshType","meshLayerTypes").forEach((n,type)=>{
     let layeredArea=area*n;
-    let wastedArea=withWasteLap(layeredArea,REO_WASTE_PCT,MESH_LAP_PCT+meshLapPct);
+    let wastedArea=withWasteLap(layeredArea,REO_WASTE_PCT,meshLapPct);
     let sheets=Math.ceil(wastedArea/MESH_SHEET_AREA_M2);
-    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:type,spec:`Central mesh sheets ×${n} layer(s)`,qty:layeredArea,unit:"m²",waste:REO_WASTE_PCT,lap:MESH_LAP_PCT+meshLapPct,finalQty:wastedArea,sheets,formula:`area(${fmt(area,1)}) × ${n} layer(s) (+5% waste, +5% laps${meshLapPct?`, +${meshLapPct}% extra lap`:''}) → ceil(/${MESH_SHEET_AREA_M2}m²) = ${sheets} sheets`,notes:`${sheets} sheets (6.0×2.4m nominal)`}));
+    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:type,spec:`Central mesh sheets ×${n} layer(s)`,qty:layeredArea,unit:"m²",waste:REO_WASTE_PCT,lap:meshLapPct,finalQty:wastedArea,sheets,formula:`area(${fmt(area,1)}) × ${n} layer(s) (+${REO_WASTE_PCT}% waste${meshLapPct?`, +${meshLapPct}% lap`:''}) → ceil(/${MESH_SHEET_AREA_M2}m²) = ${sheets} sheets`,notes:`${sheets} sheets (6.0×2.4m nominal)`}));
   });
   if(d.starters && num(d.connQty)>0){
     let dia=barDiaOf(d.connDia); let len=(num(d.connEmbed)+num(d.connProj))/1000;
@@ -3057,7 +3057,7 @@ function renderStairs(inst){
   <div class="sechead">Distribution Reinforcement</div>
   <div class="grid cols3">${F("Type",selOpts("distReoType",d.distReoType,[["bars","Bars"],["mesh","Mesh sheet"]]))}</div>
   <div class="subsec ${d.distReoType=='bars'?'':'hidden'}" data-show-if="distReoType_bars"><div class="grid cols3">${F("Dia",barSizeSel("distDia",d.distDia))}${F("Spacing (mm)",inpNum("distSpacing",d.distSpacing))}${chk("distLap",d.distLap,"Lap %","distLap")}</div></div>
-  <div class="subsec ${d.distReoType=='mesh'?'':'hidden'}" data-show-if="distReoType_mesh"><div class="grid cols3">${F("Mesh type",selOpts("distMeshType",d.distMeshType,Object.keys(MESHTYPES).map(m=>[m,m]),true))}${F("Layers",inpNumR("distMeshLayers",d.distMeshLayers))}${chk("distMeshLap",d.distMeshLap,"Extra lap allowance (%)","distMeshLap")}</div>
+  <div class="subsec ${d.distReoType=='mesh'?'':'hidden'}" data-show-if="distReoType_mesh"><div class="grid cols3">${F("Mesh type",selOpts("distMeshType",d.distMeshType,Object.keys(MESHTYPES).map(m=>[m,m]),true))}${F("Layers",inpNumR("distMeshLayers",d.distMeshLayers))}${chk("distMeshLap",d.distMeshLap,"Include lap allowance (%)","distMeshLap")}</div>
   ${layerTypeSelects(d,"distMeshLayers","distMeshType","distMeshLayerTypes",(f,v)=>selOpts(f,v,Object.keys(MESHTYPES).map(m=>[m,m])),"mesh type")}</div>`;
   let conns=`${chk("starters",d.starters,"Starter bars into supporting slab/landing","starters")}
   <div class="subsec ${d.starters?'':'hidden'}" data-show-if="starters"><div class="grid cols4">${F("Connects to",targetSelect("connTarget",d.connTarget,inst.id))}${F("Qty",inpNum("connQty",d.connQty))}${F("Dia",barSizeSel("connDia",d.connDia))}${F("Embedment",inpNum("connEmbed",d.connEmbed))}${F("Projection",inpNum("connProj",d.connProj))}</div></div>`;
@@ -3087,9 +3087,9 @@ function computeStairs(inst,def){
     let distMeshLapPct=d.distMeshLap?MESH_LAP_PCT:0;
     layerTypeCounts(d,"distMeshLayers","distMeshType","distMeshLayerTypes").forEach((n,type)=>{
       let area=flightLen*w*n;
-      let wastedArea=withWasteLap(area,REO_WASTE_PCT,MESH_LAP_PCT+distMeshLapPct);
+      let wastedArea=withWasteLap(area,REO_WASTE_PCT,distMeshLapPct);
       let sheets=Math.ceil(wastedArea/MESH_SHEET_AREA_M2);
-      lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:type,spec:`Distribution — mesh sheets ×${n} layer(s)`,qty:area,unit:"m²",waste:REO_WASTE_PCT,lap:MESH_LAP_PCT+distMeshLapPct,finalQty:wastedArea,sheets,formula:`flight length × width × ${n} layer(s) (+5% waste, +5% laps${distMeshLapPct?`, +${distMeshLapPct}% extra lap`:''}) → ceil(/${MESH_SHEET_AREA_M2}m²) = ${sheets} sheets`,notes:`${sheets} sheets (6.0×2.4m nominal)`}));
+      lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:type,spec:`Distribution — mesh sheets ×${n} layer(s)`,qty:area,unit:"m²",waste:REO_WASTE_PCT,lap:distMeshLapPct,finalQty:wastedArea,sheets,formula:`flight length × width × ${n} layer(s) (+${REO_WASTE_PCT}% waste${distMeshLapPct?`, +${distMeshLapPct}% lap`:''}) → ceil(/${MESH_SHEET_AREA_M2}m²) = ${sheets} sheets`,notes:`${sheets} sheets (6.0×2.4m nominal)`}));
     });
   } else {
     let dDia=barDiaOf(d.distDia); let dCount=Math.floor(flightLen*1000/num(d.distSpacing))+1;
@@ -3273,7 +3273,7 @@ function computeTankbox(inst,def){
     lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.wallVertDia,spec:"Wall vertical bars (both faces)",qty:wallVLen,unit:"m",waste:PROJECT.reoWaste,lap:wallVLapPct,finalQty:withWasteLap(wallVLen,PROJECT.reoWaste,wallVLapPct),formula:"perimeter/spacing × (depth+lap into base)",notes:`${fmt(wallVLen*massPerM(barDiaOf(d.wallVertDia)),1)} kg`}));
   } else {
     let baseMeshLapPct=d.baseXLap?MESH_LAP_PCT:0;
-    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.baseXDia,spec:"Base radial/mesh bars (circular — priced as mesh-equivalent)",qty:N*baseArea,unit:"m²",waste:REO_WASTE_PCT,lap:MESH_LAP_PCT+baseMeshLapPct,finalQty:withWasteLap(N*baseArea,REO_WASTE_PCT,MESH_LAP_PCT+baseMeshLapPct),formula:`plan area (+5% waste, +5% laps${baseMeshLapPct?`, +${baseMeshLapPct}% extra lap`:''})`}));
+    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.baseXDia,spec:"Base radial/mesh bars (circular — priced as mesh-equivalent)",qty:N*baseArea,unit:"m²",waste:REO_WASTE_PCT,lap:baseMeshLapPct,finalQty:withWasteLap(N*baseArea,REO_WASTE_PCT,baseMeshLapPct),formula:`plan area (+${REO_WASTE_PCT}% waste${baseMeshLapPct?`, +${baseMeshLapPct}% lap`:''})`}));
     let wallVLen=N*Math.ceil(perim*1000/num(d.wallVertSpacing))*(depth+0.4);
     lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.wallVertDia,spec:"Wall vertical bars (circumferential lap)",qty:wallVLen,unit:"m",waste:PROJECT.reoWaste,lap:wallVLapPct,finalQty:withWasteLap(wallVLen,PROJECT.reoWaste,wallVLapPct),formula:"circumference/spacing × (depth+lap)",notes:`${fmt(wallVLen*massPerM(barDiaOf(d.wallVertDia)),1)} kg`}));
   }
