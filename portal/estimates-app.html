@@ -997,10 +997,38 @@ const TRENCH_MESH_TYPES = [
 ];
 // Trench reinforcement can be a named L-series trench mesh OR a square-mesh
 // (SL/RL) sheet cut/laid as trench strips — both offered in one dropdown.
-function trenchMeshTypeSel(field,val){
+function trenchMeshTypeSel(field,val,rerender){
   let tm=TRENCH_MESH_TYPES.map(t=>`<option value="${t[0]}" ${String(val)===t[0]?'selected':''}>${t[0]}</option>`).join('');
   let sq=Object.keys(MESHTYPES).map(m=>`<option value="${m}" ${String(val)===m?'selected':''}>${m} (mesh strip)</option>`).join('');
-  return `<select data-field="${field}"><optgroup label="Trench mesh (L-series)">${tm}</optgroup><optgroup label="Square mesh laid as trench strips">${sq}</optgroup></select>`;
+  return `<select data-field="${field}" ${rerender?'data-rerender="true"':''}><optgroup label="Trench mesh (L-series)">${tm}</optgroup><optgroup label="Square mesh laid as trench strips">${sq}</optgroup></select>`;
+}
+/* ---- Per-layer reinforcement materials ----
+   A multi-layer mesh / trench-mesh setup can use a DIFFERENT product per
+   layer (e.g. SL92 top, SL82 bottom) instead of one type applied to every
+   layer. Layer 1 keeps the element's main type select; each further layer
+   gets its own select stored under <store>.<layerNo> (defaulting to layer
+   1's type until changed). layerTypeCounts() resolves the choices into
+   {type -> how many layers use it} so the compute emits ONE register line
+   per distinct material — a single-type stack prices exactly as before. */
+function inpNumR(field,val,step){ return `<input type="number" step="${step||'any'}" data-field="${field}" data-rerender="true" value="${val===undefined?'':val}">`; }
+function layerTypeSelects(d,layersField,typeField,storeField,selFn,label){
+  let layers=Math.max(1,Math.round(num(d[layersField],1)));
+  if(layers<2) return "";
+  let out="";
+  for(let i=2;i<=layers;i++){
+    let cur=(d[storeField]&&d[storeField][i])||d[typeField];
+    out+=F(`Layer ${i} ${label}`,selFn(`${storeField}.${i}`,cur));
+  }
+  return `<div class="grid cols3" style="margin-top:6px;">${out}</div><p class="small">Layer 1 uses the type selected above — every further layer can be a different product; they are quantified separately in the register.</p>`;
+}
+function layerTypeCounts(d,layersField,typeField,storeField){
+  let layers=Math.max(1,Math.round(num(d[layersField],1)));
+  let counts=new Map();
+  for(let i=1;i<=layers;i++){
+    let t=i===1? d[typeField] : ((d[storeField]&&d[storeField][i])||d[typeField]);
+    counts.set(t,(counts.get(t)||0)+1);
+  }
+  return counts;
 }
 function trenchMeshMassPerM(type){ let t=TRENCH_MESH_TYPES.find(t=>t[0]===type); return (t? t[1]:21.8)/6; }
 // kg per lineal metre of trench reinforcement: L-series has a fixed kg/6m;
@@ -1933,8 +1961,9 @@ function renderStripFooting(inst){
   <div class="subsec ${d.topLong?'':'hidden'}" data-show-if="topLong"><div class="grid cols3">${F("Qty",inpNum("topLongQty",d.topLongQty))}${F("Dia",barSizeSel("topLongDia",d.topLongDia))}${chk("topLongLap",d.topLongLap,"Lap %","topLongLap")}</div></div>
   <div class="grid cols4">${chk("cross",d.cross,"Cross bars / ligatures","cross")}${chk("trenchMesh",d.trenchMesh,"Trench mesh instead","trenchMesh")}</div>
   <div class="subsec ${d.cross?'':'hidden'}" data-show-if="cross"><div class="grid cols3">${F("Dia",barSizeSel("crossDia",d.crossDia))}${F("Spacing (mm)",inpNum("crossSpacing",d.crossSpacing))}${chk("crossLap",d.crossLap,"Lap %","crossLap")}</div></div>
-  <div class="subsec ${d.trenchMesh?'':'hidden'}" data-show-if="trenchMesh"><div class="grid cols3">${F("Trench mesh type",trenchMeshTypeSel("trenchMeshType",d.trenchMeshType))}${F("Layers",inpNum("trenchMeshLayers",d.trenchMeshLayers===undefined?1:d.trenchMeshLayers))}${chk("trenchMeshLap",d.trenchMeshLap,"Include lap allowance (%)","trenchMeshLap")}</div>
-  <p class="small">Trench mesh is priced and ordered by the metre (a welded strip of longitudinal bars run the length of the trench), not by sheet area — this counts it the same way as any other run of bars. Same named types as Quotes' own Trench Mesh catalog. Layers &gt; 1 stacks that many identical mesh strips (e.g. a doubled-up trench mesh mat on a heavier footing) — steel quantity multiplies accordingly. Lap allowance is off by default (a single continuous mesh strip laid the trench's own run length usually needs none) — turn it on if this run is spliced from more than one length and needs the project's lap % (Defaults &amp; Rules) added.</p></div>`;
+  <div class="subsec ${d.trenchMesh?'':'hidden'}" data-show-if="trenchMesh"><div class="grid cols3">${F("Trench mesh type",trenchMeshTypeSel("trenchMeshType",d.trenchMeshType,true))}${F("Layers",inpNumR("trenchMeshLayers",d.trenchMeshLayers===undefined?1:d.trenchMeshLayers))}${chk("trenchMeshLap",d.trenchMeshLap,"Include lap allowance (%)","trenchMeshLap")}</div>
+  ${layerTypeSelects(d,"trenchMeshLayers","trenchMeshType","trenchMeshLayerTypes",trenchMeshTypeSel,"trench mesh type")}
+  <p class="small">Trench mesh is priced and ordered by the metre (a welded strip of longitudinal bars run the length of the trench), not by sheet area — this counts it the same way as any other run of bars. Same named types as Quotes' own Trench Mesh catalog. Layers &gt; 1 stacks that many mesh strips — each layer can be its own product, and steel quantities follow per material. Lap allowance is off by default (a single continuous mesh strip laid the trench's own run length usually needs none) — turn it on if this run is spliced from more than one length and needs the project's lap % (Defaults &amp; Rules) added.</p></div>`;
   let conns=`${chk("starters",d.starters,"Starter bars / dowels up (to wall or column)","starters")}
   <div class="subsec ${d.starters?'':'hidden'}" data-show-if="starters"><div class="grid cols4">
    ${F("Connects to",targetSelect("connTarget",d.connTarget,inst.id))}${F("Qty",inpNum("connQty",d.connQty))}${F("Dia",barSizeSel("connDia",d.connDia))}${F("Embedment (mm)",inpNum("connEmbed",d.connEmbed))}${F("Projection (mm)",inpNum("connProj",d.connProj))}
@@ -1992,12 +2021,14 @@ function computeStripFooting(inst,def){
     lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.crossDia,spec:"Cross bars",qty:totLen,unit:"m",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,lapPct),formula:`count(${count})×len×${N}`,notes:`${fmt(wt,1)} kg`}));
   }
   if(d.trenchMesh){
-    let layers=Math.max(1,Math.round(num(d.trenchMeshLayers,1)));
-    let mpm=trenchReoMassPerM(d.trenchMeshType,d.width);
-    let totLen=N*layers*Lm; let wt=totLen*mpm;
-    let layerNote=layers>1?` × ${layers} layers`:"";
+    // one line per DISTINCT layer material — different layers can be different products
     let lapPct=d.trenchMeshLap?PROJECT.lapPct:0;
-    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.trenchMeshType,spec:`Trench mesh${layerNote}`,qty:totLen,unit:"lm",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,lapPct),massPerUnit:mpm,formula:`${N}×${layers}L×${Lm}`,notes:`${fmt(wt,1)} kg`}));
+    layerTypeCounts(d,"trenchMeshLayers","trenchMeshType","trenchMeshLayerTypes").forEach((n,type)=>{
+      let mpm=trenchReoMassPerM(type,d.width);
+      let totLen=N*n*Lm; let wt=totLen*mpm;
+      let layerNote=n>1?` × ${n} layers`:"";
+      lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:type,spec:`Trench mesh${layerNote}`,qty:totLen,unit:"lm",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,lapPct),massPerUnit:mpm,formula:`${N}×${n}L×${Lm}`,notes:`${fmt(wt,1)} kg`}));
+    });
   }
   if(d.starters){
     let bd=barDiaOf(d.connDia); let len=(num(d.connEmbed)+num(d.connProj))/1000;
@@ -2055,7 +2086,8 @@ function renderPadFooting(inst){
    ${chk("botX",d.botX,"Bottom X bars")}${F("Dia",barSizeSel("botXDia",d.botXDia))}${F("Spacing",inpNum("botXSpacing",d.botXSpacing))}${chk("botXLap",d.botXLap,"Lap %","botXLap")}
    ${chk("botY",d.botY,"Bottom Y bars")}${F("Dia",barSizeSel("botYDia",d.botYDia))}${F("Spacing",inpNum("botYSpacing",d.botYSpacing))}${chk("botYLap",d.botYLap,"Lap %","botYLap")}
   </div></div>
-  <div class="subsec ${d.botReoType=='mesh'?'':'hidden'}" data-show-if="botReoType_mesh"><div class="grid cols3">${F("Mesh type",selOpts("botMeshType",d.botMeshType,Object.keys(MESHTYPES).map(m=>[m,m])))}${F("Layers",inpNum("botMeshLayers",d.botMeshLayers))}${chk("botMeshLap",d.botMeshLap,"Extra lap allowance (%)","botMeshLap")}</div></div>
+  <div class="subsec ${d.botReoType=='mesh'?'':'hidden'}" data-show-if="botReoType_mesh"><div class="grid cols3">${F("Mesh type",selOpts("botMeshType",d.botMeshType,Object.keys(MESHTYPES).map(m=>[m,m]),true))}${F("Layers",inpNumR("botMeshLayers",d.botMeshLayers))}${chk("botMeshLap",d.botMeshLap,"Extra lap allowance (%)","botMeshLap")}</div>
+  ${layerTypeSelects(d,"botMeshLayers","botMeshType","botMeshLayerTypes",(f,v)=>selOpts(f,v,Object.keys(MESHTYPES).map(m=>[m,m])),"mesh type")}</div>
   <div class="sechead">Ligatures / Starter-cage Ties</div>
   ${chk("ligs",d.ligs,"Ligatures around the column starter cage / pedestal","ligs")}
   <div class="subsec ${d.ligs?'':'hidden'}" data-show-if="ligs"><div class="grid cols4">
@@ -2116,12 +2148,14 @@ function computePadFooting(inst,def){
     lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:diaName,spec:label+" (circular mat)",qty:totLen,unit:"m",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,lapPct),formula:`π(Ø-2c)²/4 ÷ spacing ×${N}`,notes:`${fmt(wt,1)} kg`}));
   }
   if(d.botReoType==="mesh"){
-    let layers=num(d.botMeshLayers,1);
-    let area=N*planArea*layers;
+    // one line per DISTINCT layer material — layers can be different products
     let meshLapPct=d.botMeshLap?PROJECT.lapPct:0;
-    let wastedArea=withWasteLap(area,10,meshLapPct);
-    let sheets=Math.ceil(wastedArea/MESH_SHEET_AREA_M2);
-    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.botMeshType,spec:`Bottom mat — mesh sheets ×${layers} layer(s)`,qty:area,unit:"m²",waste:10,lap:meshLapPct,finalQty:wastedArea,sheets,formula:`N×${round?'π×Ø²/4':'L×W'}×${layers} layer(s) (+10% base laps${meshLapPct?`, +${meshLapPct}% extra lap`:''}) → ceil(/${MESH_SHEET_AREA_M2}m²) = ${sheets} sheets`,notes:`${sheets} sheets (6.0×2.4m nominal)`}));
+    layerTypeCounts(d,"botMeshLayers","botMeshType","botMeshLayerTypes").forEach((n,type)=>{
+      let area=N*planArea*n;
+      let wastedArea=withWasteLap(area,10,meshLapPct);
+      let sheets=Math.ceil(wastedArea/MESH_SHEET_AREA_M2);
+      lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:type,spec:`Bottom mat — mesh sheets ×${n} layer(s)`,qty:area,unit:"m²",waste:10,lap:meshLapPct,finalQty:wastedArea,sheets,formula:`N×${round?'π×Ø²/4':'L×W'}×${n} layer(s) (+10% base laps${meshLapPct?`, +${meshLapPct}% extra lap`:''}) → ceil(/${MESH_SHEET_AREA_M2}m²) = ${sheets} sheets`,notes:`${sheets} sheets (6.0×2.4m nominal)`}));
+    });
   } else if(round){
     matRound(d.botX,d.botXDia,d.botXSpacing,"Bottom X bars",d.botXLap);
     matRound(d.botY,d.botYDia,d.botYSpacing,"Bottom Y bars",d.botYLap);
@@ -2191,8 +2225,9 @@ function renderBeam(inst,def){
   let form=`<div class="grid cols3">${chk("formLeft",d.formLeft,"Left face")}${chk("formRight",d.formRight,"Right face")}${chk("formSoffit",d.formSoffit,"Soffit")}${chk("formTop",d.formTop,"Top")}${chk("formStart",d.formStart,"Start end")}${chk("formFinish",d.formFinish,"Finish end")}</div>`;
   let reo=`<div class="sechead">Longitudinal Reinforcement</div>
   <div class="grid cols3">${chk("trenchMesh",d.trenchMesh,"Trench mesh instead","trenchMesh")}</div>
-  <div class="subsec ${d.trenchMesh?'':'hidden'}" data-show-if="trenchMesh"><div class="grid cols3">${F("Trench mesh type",trenchMeshTypeSel("trenchMeshType",d.trenchMeshType))}${F("Layers",inpNum("trenchMeshLayers",d.trenchMeshLayers===undefined?1:d.trenchMeshLayers))}${chk("trenchMeshLap",d.trenchMeshLap,"Include lap allowance (%)","trenchMeshLap")}</div>
-  <p class="small">Trench mesh is priced and ordered by the metre (a welded strip of longitudinal bars run the length of the beam), not by sheet area — this counts it the same way as any other run of bars. Same named types as Strip Footing and Quotes' own Trench Mesh catalog, for a ground beam reinforced the same way. Layers &gt; 1 stacks that many identical mesh strips — steel quantity multiplies accordingly. Lap allowance is off by default — turn it on if this beam's run is spliced from more than one length and needs the project's lap % added.</p></div>
+  <div class="subsec ${d.trenchMesh?'':'hidden'}" data-show-if="trenchMesh"><div class="grid cols3">${F("Trench mesh type",trenchMeshTypeSel("trenchMeshType",d.trenchMeshType,true))}${F("Layers",inpNumR("trenchMeshLayers",d.trenchMeshLayers===undefined?1:d.trenchMeshLayers))}${chk("trenchMeshLap",d.trenchMeshLap,"Include lap allowance (%)","trenchMeshLap")}</div>
+  ${layerTypeSelects(d,"trenchMeshLayers","trenchMeshType","trenchMeshLayerTypes",trenchMeshTypeSel,"trench mesh type")}
+  <p class="small">Trench mesh is priced and ordered by the metre (a welded strip of longitudinal bars run the length of the beam), not by sheet area — this counts it the same way as any other run of bars. Same named types as Strip Footing and Quotes' own Trench Mesh catalog, for a ground beam reinforced the same way. Layers &gt; 1 stacks that many mesh strips — each layer can be its own product, and steel quantities follow per material. Lap allowance is off by default — turn it on if this beam's run is spliced from more than one length and needs the project's lap % added.</p></div>
   <div class="subsec ${d.trenchMesh?'hidden':''}" data-show-if="trenchMesh_off">
   <p class="small">Layers &gt; 1 stacks that many identical bar sets in the same position (e.g. 2 layers of 4N28 bottom, common on heavily loaded transfer/cap beams) — steel quantity multiplies accordingly.</p>
   <table class="rows" id="reoRows_${inst.id}"><thead><tr><th>Position</th><th>Qty/layer</th><th>Size</th><th>Layers</th><th>Start anchorage</th><th>End anchorage</th><th>Lap %</th><th></th></tr></thead>
@@ -2260,12 +2295,14 @@ function computeBeam(inst,def){
   if(d.formFinish){ let a=N*Wm*sideD; fArea+=a; fParts.push(`Finish ${fmt(a,2)}`); }
   if(fArea>0) lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Beam formwork",spec:"Selected faces",qty:fArea,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(fArea,PROJECT.formworkWaste),formula:fParts.join(" + ")}));
   if(d.trenchMesh){
-    let layers=Math.max(1,Math.round(num(d.trenchMeshLayers,1)));
-    let mpm=trenchReoMassPerM(d.trenchMeshType,d.width);
-    let totLen=N*layers*Lm; let wt=totLen*mpm;
-    let layerNote=layers>1?` × ${layers} layers`:"";
+    // one line per DISTINCT layer material — different layers can be different products
     let lapPct=d.trenchMeshLap?PROJECT.lapPct:0;
-    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.trenchMeshType,spec:`Trench mesh (longitudinal)${layerNote}`,qty:totLen,unit:"lm",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,lapPct),massPerUnit:mpm,formula:`${N}×${layers}L×${fmt(Lm,2)}`,notes:`${fmt(wt,1)} kg`}));
+    layerTypeCounts(d,"trenchMeshLayers","trenchMeshType","trenchMeshLayerTypes").forEach((n,type)=>{
+      let mpm=trenchReoMassPerM(type,d.width);
+      let totLen=N*n*Lm; let wt=totLen*mpm;
+      let layerNote=n>1?` × ${n} layers`:"";
+      lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:type,spec:`Trench mesh (longitudinal)${layerNote}`,qty:totLen,unit:"lm",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,lapPct),massPerUnit:mpm,formula:`${N}×${n}L×${fmt(Lm,2)}`,notes:`${fmt(wt,1)} kg`}));
+    });
   } else {
     d.reoRows.forEach(r=>{
       let bd=barDiaOf(r.dia);
@@ -2422,7 +2459,8 @@ function renderSlab(inst,def){
   let meshBlock = `<div class="sechead">Mesh</div><div class="grid cols4">
    ${chk("meshOn",d.meshOn,"Mesh reinforcement","meshOn")}
   </div>
-  <div class="subsec ${d.meshOn?'':'hidden'}" data-show-if="meshOn"><div class="grid cols3">${F("Mesh type",selOpts("meshType",d.meshType,Object.keys(MESHTYPES).map(m=>[m,m])))}${F("Layers",inpNum("meshLayers",d.meshLayers))}${chk("meshLap",d.meshLap,"Extra lap allowance (%)","meshLap")}</div></div>`;
+  <div class="subsec ${d.meshOn?'':'hidden'}" data-show-if="meshOn"><div class="grid cols3">${F("Mesh type",selOpts("meshType",d.meshType,Object.keys(MESHTYPES).map(m=>[m,m]),true))}${F("Layers",inpNumR("meshLayers",d.meshLayers))}${chk("meshLap",d.meshLap,"Extra lap allowance (%)","meshLap")}</div>
+  ${layerTypeSelects(d,"meshLayers","meshType","meshLayerTypes",(f,v)=>selOpts(f,v,Object.keys(MESHTYPES).map(m=>[m,m])),"mesh type")}</div>`;
   let stripReoBlock = `<div class="subsec ${d.beamStrips?'':'hidden'}" data-show-if="beamStrips"><div class="sechead">Beam Strip Reinforcement</div><div class="grid cols3">${chk("beamStripsReo",d.beamStripsReo,"Longitudinal reinforcement along the beam strips","beamStripsReo")}</div>
   <div class="subsec ${d.beamStripsReo?'':'hidden'}" data-show-if="beamStripsReo">
   <div class="grid cols3">${chk("beamStripsTrenchMesh",d.beamStripsTrenchMesh,"Trench mesh instead","beamStripsTrenchMesh",true)}</div>
@@ -2559,12 +2597,15 @@ function computeSlab(inst,def){
     // AND when bridged into Quotes' area-based Square Mesh costing) — the layer count
     // MUST multiply into that area, not just into an informational weight figure, or a
     // 2-layer mesh mat silently costs the same as a single layer.
-    let layers=num(d.meshLayers,1);
-    let layeredArea=netArea*layers;
+    // one line per DISTINCT layer material — a two-layer mat can be e.g. SL92
+    // top + SL82 bottom, each quantified (area AND sheets) separately
     let meshLapPct=d.meshLap?PROJECT.lapPct:0;
-    let wastedArea=withWasteLap(layeredArea,10,meshLapPct);
-    let sheets=Math.ceil(wastedArea/MESH_SHEET_AREA_M2);
-    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.meshType,spec:`Mesh sheets ×${layers} layer(s)`,qty:layeredArea,unit:"m²",waste:10,lap:meshLapPct,finalQty:wastedArea,sheets,formula:`net area × ${layers} layer(s) (+10% base laps${meshLapPct?`, +${meshLapPct}% extra lap`:''}) → ceil(/${MESH_SHEET_AREA_M2}m²) = ${sheets} sheets`,notes:`${sheets} sheets (6.0×2.4m nominal)`}));
+    layerTypeCounts(d,"meshLayers","meshType","meshLayerTypes").forEach((n,type)=>{
+      let layeredArea=netArea*n;
+      let wastedArea=withWasteLap(layeredArea,10,meshLapPct);
+      let sheets=Math.ceil(wastedArea/MESH_SHEET_AREA_M2);
+      lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:type,spec:`Mesh sheets ×${n} layer(s)`,qty:layeredArea,unit:"m²",waste:10,lap:meshLapPct,finalQty:wastedArea,sheets,formula:`net area × ${n} layer(s) (+10% base laps${meshLapPct?`, +${meshLapPct}% extra lap`:''}) → ceil(/${MESH_SHEET_AREA_M2}m²) = ${sheets} sheets`,notes:`${sheets} sheets (6.0×2.4m nominal)`}));
+    });
   }
   if(d.returnBars){
     let dia=barDiaOf(d.retDia);
@@ -2864,7 +2905,8 @@ function renderShotWall(inst){
   let geom=`<div class="grid cols4">${LF("Wall length (mm)","length",d.length)}${LF("Wall height (mm)","height",d.height)}${F("Thickness (mm)",inpNum("thickness",d.thickness))}${coverField(inst)}</div>`;
   let conc=`<p class="small">Concrete = length × height × thickness, sprayed application (higher rebound/overspray waste than a formed pour).</p>
   <div class="grid cols3">${chk("xypex",d.xypex,"Penetron (Xypex) waterproofing additive","xypex")}</div>`;
-  let reo=`<div class="grid cols3">${F("Mesh type",selOpts("meshType",d.meshType,Object.keys(MESHTYPES).map(m=>[m,m])))}${F("Layers",inpNum("meshLayers",d.meshLayers))}${chk("meshLap",d.meshLap,"Extra lap allowance (%)","meshLap")}</div>
+  let reo=`<div class="grid cols3">${F("Mesh type",selOpts("meshType",d.meshType,Object.keys(MESHTYPES).map(m=>[m,m]),true))}${F("Layers",inpNumR("meshLayers",d.meshLayers))}${chk("meshLap",d.meshLap,"Extra lap allowance (%)","meshLap")}</div>
+  ${layerTypeSelects(d,"meshLayers","meshType","meshLayerTypes",(f,v)=>selOpts(f,v,Object.keys(MESHTYPES).map(m=>[m,m])),"mesh type")}
   <p class="small">Central mesh layer(s) across the full wall face — sprayed walls are typically single-face-mesh, not two independent faces like a formed wall.</p>`;
   let conns=`${chk("starters",d.starters,"Starter bars / dowels in (from footing or pier below)","starters")}
   <div class="subsec ${d.starters?'':'hidden'}" data-show-if="starters"><div class="grid cols4">${F("Connects to",targetSelect("connTarget",d.connTarget,inst.id))}${F("Qty",inpNum("connQty",d.connQty))}${F("Dia",barSizeSel("connDia",d.connDia))}${F("Embedment (mm)",inpNum("connEmbed",d.connEmbed))}${F("Projection (mm)",inpNum("connProj",d.connProj))}</div></div>
@@ -2879,12 +2921,14 @@ function computeShotWall(inst,def){
   let area=Lm*Hm, vol=area*Tm;
   lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete (shotcrete)`,spec:`${d.thickness}mm thick, sprayed`,qty:vol,unit:"m³",waste:20,finalQty:withWaste(vol,20),formula:`${fmt(Lm,1)}×${fmt(Hm,1)}×${fmt(Tm,2)} (+20% overspray/rebound)`}));
   if(d.xypex) lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:"Penetron (Xypex) additive",spec:"Waterproofing admixture",qty:vol,unit:"m³",waste:0,finalQty:vol,formula:"same volume as shotcrete"}));
-  let layers=num(d.meshLayers,1);
-  let layeredArea=area*layers;
+  // one line per DISTINCT layer material — layers can be different products
   let meshLapPct=d.meshLap?PROJECT.lapPct:0;
-  let wastedArea=withWasteLap(layeredArea,10,meshLapPct);
-  let sheets=Math.ceil(wastedArea/MESH_SHEET_AREA_M2);
-  lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.meshType,spec:`Central mesh sheets ×${layers} layer(s)`,qty:layeredArea,unit:"m²",waste:10,lap:meshLapPct,finalQty:wastedArea,sheets,formula:`area(${fmt(area,1)}) × ${layers} layer(s) (+10% base laps${meshLapPct?`, +${meshLapPct}% extra lap`:''}) → ceil(/${MESH_SHEET_AREA_M2}m²) = ${sheets} sheets`,notes:`${sheets} sheets (6.0×2.4m nominal)`}));
+  layerTypeCounts(d,"meshLayers","meshType","meshLayerTypes").forEach((n,type)=>{
+    let layeredArea=area*n;
+    let wastedArea=withWasteLap(layeredArea,10,meshLapPct);
+    let sheets=Math.ceil(wastedArea/MESH_SHEET_AREA_M2);
+    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:type,spec:`Central mesh sheets ×${n} layer(s)`,qty:layeredArea,unit:"m²",waste:10,lap:meshLapPct,finalQty:wastedArea,sheets,formula:`area(${fmt(area,1)}) × ${n} layer(s) (+10% base laps${meshLapPct?`, +${meshLapPct}% extra lap`:''}) → ceil(/${MESH_SHEET_AREA_M2}m²) = ${sheets} sheets`,notes:`${sheets} sheets (6.0×2.4m nominal)`}));
+  });
   if(d.starters && num(d.connQty)>0){
     let dia=barDiaOf(d.connDia); let len=(num(d.connEmbed)+num(d.connProj))/1000;
     let totLen=num(d.connQty)*len; let wt2=totLen*massPerM(dia);
@@ -2936,7 +2980,8 @@ function renderStairs(inst){
   <div class="sechead">Distribution Reinforcement</div>
   <div class="grid cols3">${F("Type",selOpts("distReoType",d.distReoType,[["bars","Bars"],["mesh","Mesh sheet"]]))}</div>
   <div class="subsec ${d.distReoType=='bars'?'':'hidden'}" data-show-if="distReoType_bars"><div class="grid cols3">${F("Dia",barSizeSel("distDia",d.distDia))}${F("Spacing (mm)",inpNum("distSpacing",d.distSpacing))}${chk("distLap",d.distLap,"Lap %","distLap")}</div></div>
-  <div class="subsec ${d.distReoType=='mesh'?'':'hidden'}" data-show-if="distReoType_mesh"><div class="grid cols3">${F("Mesh type",selOpts("distMeshType",d.distMeshType,Object.keys(MESHTYPES).map(m=>[m,m])))}${F("Layers",inpNum("distMeshLayers",d.distMeshLayers))}${chk("distMeshLap",d.distMeshLap,"Extra lap allowance (%)","distMeshLap")}</div></div>`;
+  <div class="subsec ${d.distReoType=='mesh'?'':'hidden'}" data-show-if="distReoType_mesh"><div class="grid cols3">${F("Mesh type",selOpts("distMeshType",d.distMeshType,Object.keys(MESHTYPES).map(m=>[m,m]),true))}${F("Layers",inpNumR("distMeshLayers",d.distMeshLayers))}${chk("distMeshLap",d.distMeshLap,"Extra lap allowance (%)","distMeshLap")}</div>
+  ${layerTypeSelects(d,"distMeshLayers","distMeshType","distMeshLayerTypes",(f,v)=>selOpts(f,v,Object.keys(MESHTYPES).map(m=>[m,m])),"mesh type")}</div>`;
   let conns=`${chk("starters",d.starters,"Starter bars into supporting slab/landing","starters")}
   <div class="subsec ${d.starters?'':'hidden'}" data-show-if="starters"><div class="grid cols4">${F("Connects to",targetSelect("connTarget",d.connTarget,inst.id))}${F("Qty",inpNum("connQty",d.connQty))}${F("Dia",barSizeSel("connDia",d.connDia))}${F("Embedment",inpNum("connEmbed",d.connEmbed))}${F("Projection",inpNum("connProj",d.connProj))}</div></div>`;
   return {geom,conc:concSection(d,"<p class='small'>Concrete = triangular step volumes + waist slab + landing (or manual override for irregular stairs)</p>"),reo,conns};
@@ -2961,12 +3006,14 @@ function computeStairs(inst,def){
   let mainLapPct=d.mainLap?PROJECT.lapPct:0;
   lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.mainDia,spec:"Main flight bars",qty:mLen,unit:"m",waste:PROJECT.reoWaste,lap:mainLapPct,finalQty:withWasteLap(mLen,PROJECT.reoWaste,mainLapPct),formula:"count × flight length",notes:`${fmt(mWt,1)} kg`}));
   if(d.distReoType==="mesh"){
-    let layers=num(d.distMeshLayers,1);
-    let area=flightLen*w*layers;
+    // one line per DISTINCT layer material — layers can be different products
     let distMeshLapPct=d.distMeshLap?PROJECT.lapPct:0;
-    let wastedArea=withWasteLap(area,10,distMeshLapPct);
-    let sheets=Math.ceil(wastedArea/MESH_SHEET_AREA_M2);
-    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.distMeshType,spec:`Distribution — mesh sheets ×${layers} layer(s)`,qty:area,unit:"m²",waste:10,lap:distMeshLapPct,finalQty:wastedArea,sheets,formula:`flight length × width × ${layers} layer(s) (+10% base laps${distMeshLapPct?`, +${distMeshLapPct}% extra lap`:''}) → ceil(/${MESH_SHEET_AREA_M2}m²) = ${sheets} sheets`,notes:`${sheets} sheets (6.0×2.4m nominal)`}));
+    layerTypeCounts(d,"distMeshLayers","distMeshType","distMeshLayerTypes").forEach((n,type)=>{
+      let area=flightLen*w*n;
+      let wastedArea=withWasteLap(area,10,distMeshLapPct);
+      let sheets=Math.ceil(wastedArea/MESH_SHEET_AREA_M2);
+      lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:type,spec:`Distribution — mesh sheets ×${n} layer(s)`,qty:area,unit:"m²",waste:10,lap:distMeshLapPct,finalQty:wastedArea,sheets,formula:`flight length × width × ${n} layer(s) (+10% base laps${distMeshLapPct?`, +${distMeshLapPct}% extra lap`:''}) → ceil(/${MESH_SHEET_AREA_M2}m²) = ${sheets} sheets`,notes:`${sheets} sheets (6.0×2.4m nominal)`}));
+    });
   } else {
     let dDia=barDiaOf(d.distDia); let dCount=Math.floor(flightLen*1000/num(d.distSpacing))+1;
     let dLen=dCount*w; let dWt=dLen*massPerM(dDia);
