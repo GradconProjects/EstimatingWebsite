@@ -1712,7 +1712,7 @@ function pierDefaults(){ return {
   qty:1, dia:600, depth:6000, cutoff:0, founding:0, underream:false, underDia:900, underDepth:600, socketDepth:0, extraPct:0,
   cover:PROJECT.cover, grade:PROJECT.grade,
   cage:true, vBars:8, vDia:"N20", cageLenAuto:true, cageLen:0, topProj:600, botAnchor:"straight", botCustom:0, topAnchor:"straight", topCustom:0, lap:false, lapLen:0, coupler:false,
-  ligs:true, ligDia:"N10", genSpacing:200, topZone:600, topSpacing:100, botZone:600, botSpacing:100, hookDeg:135,
+  ligs:true, ligDia:"N10", genSpacing:200, topZone:600, topSpacing:100, botZone:600, botSpacing:100, hookDeg:135, ligLap:false,
   starters:true, connTarget:"", connQty:8, connDia:"N20", connEmbed:800, connProj:900, connHook:"straight", connLap:1200, connCoupler:false
 };}
 function renderPier(inst){
@@ -1755,6 +1755,7 @@ function renderPier(inst){
      ${F("Ligature size",barSizeSel("ligDia",d.ligDia))}
      ${F("General spacing (mm)",inpNum("genSpacing",d.genSpacing))}
      ${F("Hook angle (°)",selOpts("hookDeg",d.hookDeg,[[90,'90°'],[135,'135°'],[180,'180°']]))}
+     ${chk("ligLap",d.ligLap,"Include lap allowance (%)","ligLap")}
    </div>
    <div class="grid cols4">
      ${F("Top confinement zone (mm)",inpNum("topZone",d.topZone))}
@@ -1819,7 +1820,8 @@ function computePier(inst,def){
       let totalCount=(topCount+botCount+midCount)*N;
       let totalLigLen = totalCount*ligLen;
       let ligWt = totalLigLen*massPerM(ligDia);
-      lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.ligDia,spec:"Circular ligatures (top+mid+bottom zones)",qty:totalCount,unit:"no.",waste:0,finalQty:totalCount,massPerUnit:(totalCount? ligWt/totalCount:0),lengthM:totalLigLen,formula:`(top ${topCount}+mid ${midCount}+bot ${botCount})×${N} piers`,notes:`${fmt(totalLigLen,1)}m, ${fmt(ligWt,1)} kg`}));
+      let ligLapPct=d.ligLap?PROJECT.lapPct:0;
+      lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.ligDia,spec:"Circular ligatures (top+mid+bottom zones)",qty:totalCount,unit:"no.",waste:PROJECT.reoWaste,lap:ligLapPct,finalQty:Math.ceil(withWasteLap(totalCount,PROJECT.reoWaste,ligLapPct)),massPerUnit:(totalCount? ligWt/totalCount:0),lengthM:withWasteLap(totalLigLen,PROJECT.reoWaste,ligLapPct),formula:`(top ${topCount}+mid ${midCount}+bot ${botCount})×${N} piers (+${PROJECT.reoWaste}% waste${ligLapPct?`, +${ligLapPct}% lap`:''})`,notes:`${fmt(totalLigLen,1)}m, ${fmt(ligWt,1)} kg`}));
     }
   }
   if(d.starters){
@@ -1864,16 +1866,16 @@ function renderPileCap(inst){
    ${isBeam?`<div class="tip"><span class="ico">🏗️</span><div>A cap/strap beam usually picks up <b>several different piers</b> along its run, not one repeated group — this box only links one. Use <b>Additional Connections</b> on the Connections tab to add each remaining pier (and any columns that land on the beam) individually, with its own bar count and position — that section exists for exactly this "not a single repeated group" case.</div></div>`:""}
   </div>`;
   let reo=`<div class="sechead">${isBeam?"Bottom Longitudinal (X = across width, Y = along length)":"Bottom Mat"}</div><div class="grid cols4">
-   ${chk("botX",d.botX,isBeam?"Transverse bars (across width)":"Bottom X bars")}${F("Dia",barSizeSel("botXDia",d.botXDia))}${F("Spacing (mm)",inpNum("botXSpacing",d.botXSpacing))}${chk("botXLap",d.botXLap,"Lap %","botXLap")}
-   ${chk("botY",d.botY,isBeam?"Longitudinal bars (along length)":"Bottom Y bars")}${F("Dia",barSizeSel("botYDia",d.botYDia))}${F("Spacing (mm)",inpNum("botYSpacing",d.botYSpacing))}${chk("botYLap",d.botYLap,"Lap %","botYLap")}
+   ${chk("botX",d.botX,isBeam?"Transverse bars (across width)":"Bottom X bars")}${F("Dia",barSizeSel("botXDia",d.botXDia))}${F("Spacing (mm)",inpNum("botXSpacing",d.botXSpacing))}${chk("botXLap",d.botXLap,"Include lap allowance (%)","botXLap")}
+   ${chk("botY",d.botY,isBeam?"Longitudinal bars (along length)":"Bottom Y bars")}${F("Dia",barSizeSel("botYDia",d.botYDia))}${F("Spacing (mm)",inpNum("botYSpacing",d.botYSpacing))}${chk("botYLap",d.botYLap,"Include lap allowance (%)","botYLap")}
   </div>
   <div class="sechead">${isBeam?"Top Longitudinal":"Top Mat"}</div><div class="grid cols4">
-   ${chk("topX",d.topX,isBeam?"Transverse bars (across width)":"Top X bars")}${F("Dia",barSizeSel("topXDia",d.topXDia))}${F("Spacing (mm)",inpNum("topXSpacing",d.topXSpacing))}${chk("topXLap",d.topXLap,"Lap %","topXLap")}
-   ${chk("topY",d.topY,isBeam?"Longitudinal bars (along length)":"Top Y bars")}${F("Dia",barSizeSel("topYDia",d.topYDia))}${F("Spacing (mm)",inpNum("topYSpacing",d.topYSpacing))}${chk("topYLap",d.topYLap,"Lap %","topYLap")}
+   ${chk("topX",d.topX,isBeam?"Transverse bars (across width)":"Top X bars")}${F("Dia",barSizeSel("topXDia",d.topXDia))}${F("Spacing (mm)",inpNum("topXSpacing",d.topXSpacing))}${chk("topXLap",d.topXLap,"Include lap allowance (%)","topXLap")}
+   ${chk("topY",d.topY,isBeam?"Longitudinal bars (along length)":"Top Y bars")}${F("Dia",barSizeSel("topYDia",d.topYDia))}${F("Spacing (mm)",inpNum("topYSpacing",d.topYSpacing))}${chk("topYLap",d.topYLap,"Include lap allowance (%)","topYLap")}
   </div>
   <div class="sechead">Side Bars / Ligatures</div>
   ${chk("sideBars",d.sideBars,isBeam?"Ligatures / stirrups along the beam":"Side face bars (perimeter)","sideBars")}
-  <div class="subsec ${d.sideBars?'':'hidden'}" data-show-if="sideBars"><div class="grid cols3">${F("Dia",barSizeSel("sideDia",d.sideDia))}${F("Spacing (mm)",inpNum("sideSpacing",d.sideSpacing))}${isBeam?"":chk("sideLap",d.sideLap,"Lap %","sideLap")}</div>
+  <div class="subsec ${d.sideBars?'':'hidden'}" data-show-if="sideBars"><div class="grid cols3">${F("Dia",barSizeSel("sideDia",d.sideDia))}${F("Spacing (mm)",inpNum("sideSpacing",d.sideSpacing))}${chk("sideLap",d.sideLap,"Include lap allowance (%)","sideLap")}</div>
   ${isBeam?`<p class="small">Closed stirrups at the entered spacing along the full beam length — perimeter taken from the beam's width × depth less cover.</p>`:`<p class="small">Horizontal bars running the cap's full perimeter, spaced vertically over the depth — the crack-control bars on deep caps that never appear in the top/bottom mat schedule.</p>`}</div>`;
   let conns=`${chk("colStarters",d.colStarters,"Column starters (out)","colStarters")}
   <div class="subsec ${d.colStarters?'':'hidden'}" data-show-if="colStarters"><div class="grid cols4">
@@ -1919,7 +1921,8 @@ function computePileCap(inst,def){
       let count=(Math.floor((num(d.L)-2*cover)/sp)+1)*N;
       let perim=2*(((num(d.W)-2*cover)+(num(d.D)-2*cover))/1000);
       let totLen=count*perim; let wt=totLen*massPerM(sDia);
-      lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.sideDia,spec:"Ligatures / stirrups",qty:count,unit:"no.",waste:0,finalQty:count,massPerUnit:(count? wt/count:0),lengthM:totLen,formula:`(beam L−2c)/spacing+1 ×${N}`,notes:`${fmt(totLen,1)}m, ${fmt(wt,1)} kg`}));
+      let sLapPct=d.sideLap?PROJECT.lapPct:0;
+      lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.sideDia,spec:"Ligatures / stirrups",qty:count,unit:"no.",waste:PROJECT.reoWaste,lap:sLapPct,finalQty:Math.ceil(withWasteLap(count,PROJECT.reoWaste,sLapPct)),massPerUnit:(count? wt/count:0),lengthM:withWasteLap(totLen,PROJECT.reoWaste,sLapPct),formula:`(beam L−2c)/spacing+1 ×${N} (+${PROJECT.reoWaste}% waste${sLapPct?`, +${sLapPct}% lap`:''})`,notes:`${fmt(totLen,1)}m, ${fmt(wt,1)} kg`}));
     } else {
       // Perimeter side-face bars spaced vertically over the cap depth.
       let count=(Math.floor((num(d.D)-2*cover)/sp)+1);
@@ -1984,10 +1987,10 @@ function renderStripFooting(inst){
   let reo=`<div class="grid cols4">
     ${chk("botLong",d.botLong,"Bottom longitudinal bars","botLong")}${chk("topLong",d.topLong,"Top longitudinal bars","topLong")}
   </div>
-  <div class="subsec ${d.botLong?'':'hidden'}" data-show-if="botLong"><div class="grid cols3">${F("Qty",inpNum("botLongQty",d.botLongQty))}${F("Dia",barSizeSel("botLongDia",d.botLongDia))}${chk("botLongLap",d.botLongLap,"Lap %","botLongLap")}</div></div>
-  <div class="subsec ${d.topLong?'':'hidden'}" data-show-if="topLong"><div class="grid cols3">${F("Qty",inpNum("topLongQty",d.topLongQty))}${F("Dia",barSizeSel("topLongDia",d.topLongDia))}${chk("topLongLap",d.topLongLap,"Lap %","topLongLap")}</div></div>
+  <div class="subsec ${d.botLong?'':'hidden'}" data-show-if="botLong"><div class="grid cols3">${F("Qty",inpNum("botLongQty",d.botLongQty))}${F("Dia",barSizeSel("botLongDia",d.botLongDia))}${chk("botLongLap",d.botLongLap,"Include lap allowance (%)","botLongLap")}</div></div>
+  <div class="subsec ${d.topLong?'':'hidden'}" data-show-if="topLong"><div class="grid cols3">${F("Qty",inpNum("topLongQty",d.topLongQty))}${F("Dia",barSizeSel("topLongDia",d.topLongDia))}${chk("topLongLap",d.topLongLap,"Include lap allowance (%)","topLongLap")}</div></div>
   <div class="grid cols4">${chk("cross",d.cross,"Cross bars / ligatures","cross")}${chk("trenchMesh",d.trenchMesh,"Trench mesh instead","trenchMesh")}</div>
-  <div class="subsec ${d.cross?'':'hidden'}" data-show-if="cross"><div class="grid cols3">${F("Dia",barSizeSel("crossDia",d.crossDia))}${F("Spacing (mm)",inpNum("crossSpacing",d.crossSpacing))}${chk("crossLap",d.crossLap,"Lap %","crossLap")}</div></div>
+  <div class="subsec ${d.cross?'':'hidden'}" data-show-if="cross"><div class="grid cols3">${F("Dia",barSizeSel("crossDia",d.crossDia))}${F("Spacing (mm)",inpNum("crossSpacing",d.crossSpacing))}${chk("crossLap",d.crossLap,"Include lap allowance (%)","crossLap")}</div></div>
   <div class="subsec ${d.trenchMesh?'':'hidden'}" data-show-if="trenchMesh"><div class="grid cols3">${F("Trench mesh type",trenchMeshTypeSel("trenchMeshType",d.trenchMeshType,true))}${F("Layers",inpNumR("trenchMeshLayers",d.trenchMeshLayers===undefined?1:d.trenchMeshLayers))}${chk("trenchMeshLap",d.trenchMeshLap,"Include lap allowance (%)","trenchMeshLap")}</div>
   ${layerTypeSelects(d,"trenchMeshLayers","trenchMeshType","trenchMeshLayerTypes",trenchMeshTypeSel,"trench mesh type")}
   <p class="small">Trench mesh is priced and ordered by the metre (a welded strip of longitudinal bars run the length of the trench), not by sheet area — this counts it the same way as any other run of bars. Same named types as Quotes' own Trench Mesh catalog. Layers &gt; 1 stacks that many mesh strips — each layer can be its own product, and steel quantities follow per material. Lap allowance is off by default (a single continuous mesh strip laid the trench's own run length usually needs none) — turn it on if this run is spliced from more than one length and needs the project's lap % (Defaults &amp; Rules) added.</p></div>`;
@@ -2075,7 +2078,7 @@ function padFootingDefaults(kind){
     qty:10, shape:"rect", length:500, width:500, diameter:450, depth:300, cover:PROJECT.cover, grade:PROJECT.grade,
     oversize:100, excDepth:350, blinding:0, blindingMaterial:"compacted", vapourMembrane:false, pedestal:false, pedH:0, pedW:0, pedD:0, sloping:false,
     botReoType:"bars", botX:true, botXDia:"N12", botXSpacing:150, botXLap:false, botY:true, botYDia:"N12", botYSpacing:150, botYLap:false, botMeshType:"SL82", botMeshLayers:1, botMeshLap:false,
-    ligs:false, ligDia:"N10", ligSpacing:200, ligW:200, ligD:200,
+    ligs:false, ligDia:"N10", ligSpacing:200, ligW:200, ligD:200, ligLap:false,
     starters:false, connTarget:"", connQty:1, connDia:"N12", connEmbed:250, connProj:300, connHook:"straight",
     castins:false, anchorBolts:false, holdDown:false, ferrules:false, plates:false, boltTemplate:false,
     formA:false, formB:false, formC:false, formD:false, formRound:false
@@ -2084,7 +2087,7 @@ function padFootingDefaults(kind){
   qty:4, shape:"rect", length:1500, width:1500, diameter:1200, depth:500, cover:PROJECT.cover, grade:PROJECT.grade,
   oversize:150, excDepth:550, blinding:50, blindingMaterial:"concrete", vapourMembrane:false, pedestal:false, pedH:0, pedW:0, pedD:0, sloping:false,
   botReoType:"bars", botX:true, botXDia:"N16", botXSpacing:200, botXLap:false, botY:true, botYDia:"N16", botYSpacing:200, botYLap:false, botMeshType:"SL82", botMeshLayers:1, botMeshLap:false,
-  ligs:false, ligDia:"N10", ligSpacing:200, ligW:300, ligD:300,
+  ligs:false, ligDia:"N10", ligSpacing:200, ligW:300, ligD:300, ligLap:false,
   starters:true, connTarget:"", connQty:4, connDia:"N20", connEmbed:600, connProj:900, connHook:"straight",
   castins:false, anchorBolts:false, holdDown:false, ferrules:false, plates:false, boltTemplate:false,
   formA:false, formB:false, formC:false, formD:false, formRound:false
@@ -2110,8 +2113,8 @@ function renderPadFooting(inst){
   let reo=`<div class="sechead">Bottom Mat</div>
   <div class="grid cols3">${F("Reinforcement type",selOpts("botReoType",d.botReoType,[["bars","Bars (X+Y)"],["mesh","Mesh sheet"]]))}</div>
   <div class="subsec ${d.botReoType=='bars'?'':'hidden'}" data-show-if="botReoType_bars"><div class="grid cols4">
-   ${chk("botX",d.botX,"Bottom X bars")}${F("Dia",barSizeSel("botXDia",d.botXDia))}${F("Spacing",inpNum("botXSpacing",d.botXSpacing))}${chk("botXLap",d.botXLap,"Lap %","botXLap")}
-   ${chk("botY",d.botY,"Bottom Y bars")}${F("Dia",barSizeSel("botYDia",d.botYDia))}${F("Spacing",inpNum("botYSpacing",d.botYSpacing))}${chk("botYLap",d.botYLap,"Lap %","botYLap")}
+   ${chk("botX",d.botX,"Bottom X bars")}${F("Dia",barSizeSel("botXDia",d.botXDia))}${F("Spacing",inpNum("botXSpacing",d.botXSpacing))}${chk("botXLap",d.botXLap,"Include lap allowance (%)","botXLap")}
+   ${chk("botY",d.botY,"Bottom Y bars")}${F("Dia",barSizeSel("botYDia",d.botYDia))}${F("Spacing",inpNum("botYSpacing",d.botYSpacing))}${chk("botYLap",d.botYLap,"Include lap allowance (%)","botYLap")}
   </div></div>
   <div class="subsec ${d.botReoType=='mesh'?'':'hidden'}" data-show-if="botReoType_mesh"><div class="grid cols3">${F("Mesh type",selOpts("botMeshType",d.botMeshType,Object.keys(MESHTYPES).map(m=>[m,m]),true))}${F("Layers",inpNumR("botMeshLayers",d.botMeshLayers))}${chk("botMeshLap",d.botMeshLap,"Include lap allowance (%)","botMeshLap")}</div>
   ${layerTypeSelects(d,"botMeshLayers","botMeshType","botMeshLayerTypes",(f,v)=>selOpts(f,v,Object.keys(MESHTYPES).map(m=>[m,m])),"mesh type")}</div>
@@ -2119,6 +2122,7 @@ function renderPadFooting(inst){
   ${chk("ligs",d.ligs,"Ligatures around the column starter cage / pedestal","ligs")}
   <div class="subsec ${d.ligs?'':'hidden'}" data-show-if="ligs"><div class="grid cols4">
    ${F("Tie dia",barSizeSel("ligDia",d.ligDia))}${F("Spacing (mm)",inpNum("ligSpacing",d.ligSpacing))}${F("Tie width (mm)",inpNum("ligW",d.ligW))}${F("Tie depth (mm)",inpNum("ligD",d.ligD))}
+   ${chk("ligLap",d.ligLap,"Include lap allowance (%)","ligLap")}
   </div>
   <div class="tip"><span class="ico">🏗️</span><div>The starter bars projecting from a pad footing into a column (and any pedestal) are tied into a cage with ligatures over the footing depth${'+'}pedestal height — the item most often missed because it appears only in the column base detail, not the footing schedule. Tie width/depth is the cage's cross-section (typically column size − 2×cover).</div></div></div>`;
   let cast=`<div class="sechead">Side Formwork</div><p class="small">None (cast against ground/oversized excavation) up to fully formed.</p>
@@ -2196,7 +2200,8 @@ function computePadFooting(inst,def){
     let count=(Math.floor(cageH/Math.max(1,num(d.ligSpacing,200)))+1)*N;
     let ligPerim=2*((num(d.ligW)+num(d.ligD))/1000);
     let totLen=count*ligPerim; let wt=totLen*massPerM(ligDia);
-    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.ligDia,spec:"Starter-cage ligatures / ties",qty:count,unit:"no.",waste:0,finalQty:count,massPerUnit:(count? wt/count:0),lengthM:totLen,formula:`(footing D${d.pedestal?'+pedestal H':''} / spacing +1)×${N}`,notes:`${fmt(totLen,1)}m, ${fmt(wt,1)} kg`}));
+    let scLapPct=d.ligLap?PROJECT.lapPct:0;
+    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.ligDia,spec:"Starter-cage ligatures / ties",qty:count,unit:"no.",waste:PROJECT.reoWaste,lap:scLapPct,finalQty:Math.ceil(withWasteLap(count,PROJECT.reoWaste,scLapPct)),massPerUnit:(count? wt/count:0),lengthM:withWasteLap(totLen,PROJECT.reoWaste,scLapPct),formula:`(footing D${d.pedestal?'+pedestal H':''} / spacing +1)×${N} (+${PROJECT.reoWaste}% waste${scLapPct?`, +${scLapPct}% lap`:''})`,notes:`${fmt(totLen,1)}m, ${fmt(wt,1)} kg`}));
   }
   if(round){
     if(d.formRound){
@@ -2231,7 +2236,7 @@ function beamDefaults(cat){ return {
   formLeft:true, formRight:true, formSoffit:true, formTop:false, formStart:true, formFinish:true,
   reoRows:[{position:"Top continuous",qty:3,dia:"N24",layers:1,startA:"column",endA:"column"},{position:"Bottom continuous",qty:4,dia:"N28",layers:1,startA:"column",endA:"column"}],
   trenchMesh:false, trenchMeshType:"4 Bar-L12TM", trenchMeshLayers:1, trenchMeshLap:false,
-  ligZones:[{zone:"Left support",length:1200,dia:"N10",spacing:100},{zone:"Midspan",length:0,dia:"N10",spacing:200,auto:true},{zone:"Right support",length:1200,dia:"N10",spacing:100}],
+  ligZones:[{zone:"Left support",length:1200,dia:"N10",spacing:100},{zone:"Midspan",length:0,dia:"N10",spacing:200,auto:true},{zone:"Right support",length:1200,dia:"N10",spacing:100}], ligZonesLap:false,
   starters:false, connTarget:"", connQty:4, connDia:"N20", connEmbed:600, connProj:600,
   stepdown:false, sdLength:6, sdDepth:150, sdDia:"N12", sdSpacing:300, sdProj1:300, sdProj2:300
 };}
@@ -2265,6 +2270,7 @@ function renderBeam(inst,def){
   <table class="rows"><thead><tr><th>Zone</th><th>Length (mm, 0=auto midspan)</th><th>Size</th><th>Spacing (mm)</th><th></th></tr></thead>
   <tbody>${d.ligZones.map((r,i)=>ligRowHtml(inst.id,r,i)).join('')}</tbody></table>
   <button class="btn small" data-action="addRow" data-target="ligZones">+ Add zone</button>
+  <div class="grid cols3" style="margin-top:6px;">${chk("ligZonesLap",d.ligZonesLap,"Include lap allowance (%)","ligZonesLap")}</div>
   <p class="small">Diagram below is to scale along the beam length — a fast visual check that support/midspan zones and ligature counts look right.</p>
   <div class="ligDiagHost">${ligDiagramFor(inst)}</div>`;
   let conns=`${chk("starters",d.starters,"Dowels / continuity bars to column or wall below","starters")}
@@ -2358,7 +2364,8 @@ function computeBeam(inst,def){
     let hookExt=anchorLen("hook135",bd,0)/1000;
     let ligPerimeter=(2*(Wm-2*cover)+2*(sideD-2*cover))+2*hookExt;
     let totLen=N*count*ligPerimeter; let wt=totLen*massPerM(bd);
-    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:z.dia,spec:`Ligatures — ${z.zone}`,qty:totLen,unit:"m",waste:0,finalQty:totLen,formula:`${count}×${N} ligs × (perim ${fmt(ligPerimeter-2*hookExt,2)}m + 2×135° hooks ${fmt(2*hookExt,2)}m)`,notes:`${count*N} no., ${fmt(wt,1)} kg`}));
+    let zLapPct=d.ligZonesLap?PROJECT.lapPct:0;
+    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:z.dia,spec:`Ligatures — ${z.zone}`,qty:totLen,unit:"m",waste:PROJECT.reoWaste,lap:zLapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,zLapPct),formula:`${count}×${N} ligs × (perim ${fmt(ligPerimeter-2*hookExt,2)}m + 2×135° hooks ${fmt(2*hookExt,2)}m) (+${PROJECT.reoWaste}% waste${zLapPct?`, +${zLapPct}% lap`:''})`,notes:`${count*N} no., ${fmt(wt,1)} kg`}));
   });
   if(d.starters){
     let bd=barDiaOf(d.connDia); let len=(num(d.connEmbed)+num(d.connProj))/1000;
@@ -2393,7 +2400,7 @@ function slabDefaults(cat,suspended){ return {
   topX:!!suspended,topXDia:"N12",topXMethod:"spacing",topXSpacing:200,topXQty:0,topXBars:[],topXLap:false, topY:!!suspended,topYDia:"N12",topYMethod:"spacing",topYSpacing:200,topYQty:0,topYBars:[],topYLap:false,
   cover:PROJECT.cover, grade:PROJECT.grade,
   returnBars:false, retDia:"N12", retSpacing:200, retTurndown:150, retLeg:300, retEdges:"perimeter", retLap:false,
-  reentrantOn:false, reentrantQty:"", reentrantMode:"bars", reentrantDia:"N12", reentrantPer:2, reentrantLen:1200, reentrantStripType:"4 Bar-L12TM", reentrantStripW:300,
+  reentrantOn:false, reentrantQty:"", reentrantMode:"bars", reentrantDia:"N12", reentrantPer:2, reentrantLen:1200, reentrantStripType:"4 Bar-L12TM", reentrantStripW:300, reentrantLap:false,
   joints:true, jointSpacing:6, dowels:false, dowelDia:"N16", dowelSpacing:300, dowelLength:500,
   starters:false, connTarget:"", connQty:0, connDia:"N12", connEmbed:400, connProj:400,
   stepdown:false, sdLength:6, sdDepth:150, sdDia:"N12", sdSpacing:300, sdProj1:300, sdProj2:300,
@@ -2521,6 +2528,7 @@ function renderSlab(inst,def){
       ? F("Strip type",trenchMeshTypeSel("reentrantStripType",d.reentrantStripType||"4 Bar-L12TM"))+F("Strip width (mm)",inpNum("reentrantStripW",d.reentrantStripW===undefined?300:d.reentrantStripW))
       : F("Bar size",barSizeSel("reentrantDia",d.reentrantDia))+F("Bars per corner",inpNum("reentrantPer",d.reentrantPer===undefined?2:d.reentrantPer))}
     ${F((d.reentrantMode||"bars")==="strip"?"Strip length per corner (mm)":"Bar length (mm)",inpNum("reentrantLen",d.reentrantLen===undefined?1200:d.reentrantLen))}
+    ${chk("reentrantLap",d.reentrantLap,"Include lap allowance (%)","reentrantLap")}
    </div>
    <div class="tip"><span class="ico">🎓</span><div>Every internal (re-entrant) corner of an L-, T- or U-shaped slab concentrates shrinkage stress and cracks diagonally from the corner — standard practice lays diagonal bars (typically 2×N12×1200 top) or a short mesh/trench strip at 45° across each one. Leave the count blank to use the sketched outline's own re-entrant corner count where one is drawn.</div></div></div></div>
    <div class="subsec"><div class="sechead">Joints &amp; Dowels</div><div class="grid cols4">
@@ -2683,12 +2691,14 @@ function computeSlab(inst,def){
         let type=d.reentrantStripType||"4 Bar-L12TM";
         let mpm=trenchReoMassPerM(type,num(d.reentrantStripW,300));
         let totLen=corners*lenM; let wt=totLen*mpm;
-        lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:type,spec:`Re-entrant corner strips (diagonal, ${corners} corner(s))`,qty:totLen,unit:"lm",waste:PROJECT.reoWaste,lap:0,finalQty:withWaste(totLen,PROJECT.reoWaste),massPerUnit:mpm,formula:`${corners} corners × ${fmt(lenM,2)}m strip`,notes:`${fmt(wt,1)} kg`}));
+        let reLap=d.reentrantLap?MESH_LAP_PCT:0;
+        lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:type,spec:`Re-entrant corner strips (diagonal, ${corners} corner(s))`,qty:totLen,unit:"lm",waste:PROJECT.reoWaste,lap:reLap,finalQty:withWasteLap(totLen,PROJECT.reoWaste,reLap),massPerUnit:mpm,formula:`${corners} corners × ${fmt(lenM,2)}m strip (+${PROJECT.reoWaste}% waste${reLap?`, +${reLap}% lap`:''})`,notes:`${fmt(wt,1)} kg`}));
       } else {
         let dia=barDiaOf(d.reentrantDia);
         let per=Math.max(1,Math.round(num(d.reentrantPer,2)));
         let totLen=corners*per*lenM; let wt=totLen*massPerM(dia);
-        lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.reentrantDia,spec:`Re-entrant corner bars (diagonal, ${corners} corner(s))`,qty:totLen,unit:"m",waste:PROJECT.reoWaste,lap:0,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`${corners} corners × ${per} bars × ${fmt(lenM,2)}m`,notes:`${corners*per} bars, ${fmt(wt,1)} kg`}));
+        let reLap=d.reentrantLap?PROJECT.lapPct:0;
+        lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.reentrantDia,spec:`Re-entrant corner bars (diagonal, ${corners} corner(s))`,qty:totLen,unit:"m",waste:PROJECT.reoWaste,lap:reLap,finalQty:withWasteLap(totLen,PROJECT.reoWaste,reLap),formula:`${corners} corners × ${per} bars × ${fmt(lenM,2)}m (+${PROJECT.reoWaste}% waste${reLap?`, +${reLap}% lap`:''})`,notes:`${corners*per} bars, ${fmt(wt,1)} kg`}));
       }
     }
   }
@@ -2729,7 +2739,7 @@ function columnDefaults(){ return {
   qty:1, shape:"rect", width:400, depth:400, dia:450, height:3200, grade:PROJECT.grade, cover:PROJECT.cover,
   formA:true, formB:true, formC:true, formD:true,
   vBars:8, vDia:"N24", vLap:false, ligDia:"N10", ligSpacing:200, topZone:600, topSpacing:100, botZone:600, botSpacing:100,
-  crossTies:false, ctQty:2, ctDia:"N10",
+  crossTies:false, ctQty:2, ctDia:"N10", ctLap:false, ligLap:false,
   startersIn:"", dowelsOut:"", connQty:8, connDia:"N24", connEmbed:600, connProj:900, lapType:"lap"
 };}
 function renderColumn(inst){
@@ -2744,8 +2754,9 @@ function renderColumn(inst){
   let reo=`<div class="grid cols4">${F("Vertical bars (no.)",inpNum("vBars",d.vBars))}${F("Bar dia",barSizeSel("vDia",d.vDia))}${F("Ligature dia",barSizeSel("ligDia",d.ligDia))}${F("General spacing (mm)",inpNum("ligSpacing",d.ligSpacing))}</div>
   <div class="grid cols3">${chk("vLap",d.vLap,"Include lap allowance (%) on vertical bars","vLap")}</div>
   <div class="grid cols4">${F("Top confinement zone (mm)",inpNum("topZone",d.topZone))}${F("Top spacing (mm)",inpNum("topSpacing",d.topSpacing))}${F("Bottom confinement zone (mm)",inpNum("botZone",d.botZone))}${F("Bottom spacing (mm)",inpNum("botSpacing",d.botSpacing))}</div>
+  <div class="grid cols3">${chk("ligLap",d.ligLap,"Include lap allowance (%) on ligatures","ligLap")}</div>
   <div class="grid cols3">${chk("crossTies",d.crossTies,"Cross ties","crossTies")}</div>
-  <div class="subsec ${d.crossTies?'':'hidden'}" data-show-if="crossTies"><div class="grid cols3">${F("Qty per set",inpNum("ctQty",d.ctQty))}${F("Dia",barSizeSel("ctDia",d.ctDia))}</div></div>
+  <div class="subsec ${d.crossTies?'':'hidden'}" data-show-if="crossTies"><div class="grid cols3">${F("Qty per set",inpNum("ctQty",d.ctQty))}${F("Dia",barSizeSel("ctDia",d.ctDia))}${chk("ctLap",d.ctLap,"Include lap allowance (%)","ctLap")}</div></div>
   <p class="small">To-scale check of top/mid/bottom confinement zones and ligature counts.</p>
   <div class="ligDiagHost">${ligDiagramFor(inst)}</div>`;
   let conns=`<div class="grid cols4">${F("Receives starters from (below)",targetSelect("startersIn",d.startersIn,inst.id))}${F("Continues to (above, dowels/coupler/lap)",targetSelect("dowelsOut",d.dowelsOut,inst.id))}${F("Lap/coupler at top",selOpts("lapType",d.lapType,[["lap","Lap"],["coupler","Coupler"],["starter","Starter for next lift"]]))}</div>
@@ -2778,10 +2789,12 @@ function computeColumn(inst,def){
   let midCount=Math.floor(midLen/num(d.ligSpacing))+1;
   let ligCount=(topCount+midCount+botCount)*N;
   let ligLen=ligCount*perim; let ligWt=ligLen*massPerM(ligDia);
-  lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.ligDia,spec:"Ligatures (top/mid/bottom zones)",qty:ligCount,unit:"no.",waste:0,finalQty:ligCount,massPerUnit:(ligCount? ligWt/ligCount:0),lengthM:ligLen,formula:`(top ${topCount}+mid ${midCount}+bot ${botCount})×${N}`,notes:`${fmt(ligLen,1)}m, ${fmt(ligWt,1)} kg`}));
+  let colLigLapPct=d.ligLap?PROJECT.lapPct:0;
+  lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.ligDia,spec:"Ligatures (top/mid/bottom zones)",qty:ligCount,unit:"no.",waste:PROJECT.reoWaste,lap:colLigLapPct,finalQty:Math.ceil(withWasteLap(ligCount,PROJECT.reoWaste,colLigLapPct)),massPerUnit:(ligCount? ligWt/ligCount:0),lengthM:withWasteLap(ligLen,PROJECT.reoWaste,colLigLapPct),formula:`(top ${topCount}+mid ${midCount}+bot ${botCount})×${N} (+${PROJECT.reoWaste}% waste${colLigLapPct?`, +${colLigLapPct}% lap`:''})`,notes:`${fmt(ligLen,1)}m, ${fmt(ligWt,1)} kg`}));
   if(d.crossTies){
     let ctDia=barDiaOf(d.ctDia); let ctLen=ligCount*num(d.ctQty)*((num(d.width)||num(d.dia))-2*cover)/1000; let ctWt=ctLen*massPerM(ctDia);
-    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.ctDia,spec:"Cross ties",qty:ctLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(ctLen,PROJECT.reoWaste),formula:"tie sets × qty × width",notes:`${fmt(ctWt,1)} kg`}));
+    let ctLapPct=d.ctLap?PROJECT.lapPct:0;
+    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.ctDia,spec:"Cross ties",qty:ctLen,unit:"m",waste:PROJECT.reoWaste,lap:ctLapPct,finalQty:withWasteLap(ctLen,PROJECT.reoWaste,ctLapPct),formula:`tie sets × qty × width (+${PROJECT.reoWaste}% waste${ctLapPct?`, +${ctLapPct}% lap`:''})`,notes:`${fmt(ctWt,1)} kg`}));
   }
   let tgtOut=targetLabelOf(d.dowelsOut);
   if(tgtOut){
@@ -2811,8 +2824,8 @@ function renderWall(inst){
   <tbody>${d.openings.map((r,i)=>openRowHtml(i,r)).join('')}</tbody></table>
   <button class="btn small" data-action="addRow" data-target="openings">+ Add opening</button></div>`;
   let form=`<div class="grid cols4">${chk("formA",d.formA,"Face A")}${chk("formB",d.formB,"Face B")}${chk("formEnds",d.formEnds,"Ends")}${chk("formTop",d.formTop,"Top")}${chk("cjStopEnds",d.cjStopEnds,"Construction joint stop ends")}${chk("waterstop",d.waterstop,"Waterstop at joints")}</div>`;
-  let reo=`<div class="sechead">Face A</div><div class="grid cols4">${chk("vertA",d.vertA,"Vertical")}${F("Dia",barSizeSel("vertADia",d.vertADia))}${F("Spacing",inpNum("vertASpacing",d.vertASpacing))}${chk("vertALap",d.vertALap,"Lap %","vertALap")}${chk("horA",d.horA,"Horizontal")}${F("Dia",barSizeSel("horADia",d.horADia))}${F("Spacing",inpNum("horASpacing",d.horASpacing))}${chk("horALap",d.horALap,"Lap %","horALap")}</div>
-  <div class="sechead">Face B</div><div class="grid cols4">${chk("vertB",d.vertB,"Vertical")}${F("Dia",barSizeSel("vertBDia",d.vertBDia))}${F("Spacing",inpNum("vertBSpacing",d.vertBSpacing))}${chk("vertBLap",d.vertBLap,"Lap %","vertBLap")}${chk("horB",d.horB,"Horizontal")}${F("Dia",barSizeSel("horBDia",d.horBDia))}${F("Spacing",inpNum("horBSpacing",d.horBSpacing))}${chk("horBLap",d.horBLap,"Lap %","horBLap")}</div>`;
+  let reo=`<div class="sechead">Face A</div><div class="grid cols4">${chk("vertA",d.vertA,"Vertical")}${F("Dia",barSizeSel("vertADia",d.vertADia))}${F("Spacing",inpNum("vertASpacing",d.vertASpacing))}${chk("vertALap",d.vertALap,"Include lap allowance (%)","vertALap")}${chk("horA",d.horA,"Horizontal")}${F("Dia",barSizeSel("horADia",d.horADia))}${F("Spacing",inpNum("horASpacing",d.horASpacing))}${chk("horALap",d.horALap,"Include lap allowance (%)","horALap")}</div>
+  <div class="sechead">Face B</div><div class="grid cols4">${chk("vertB",d.vertB,"Vertical")}${F("Dia",barSizeSel("vertBDia",d.vertBDia))}${F("Spacing",inpNum("vertBSpacing",d.vertBSpacing))}${chk("vertBLap",d.vertBLap,"Include lap allowance (%)","vertBLap")}${chk("horB",d.horB,"Horizontal")}${F("Dia",barSizeSel("horBDia",d.horBDia))}${F("Spacing",inpNum("horBSpacing",d.horBSpacing))}${chk("horBLap",d.horBLap,"Include lap allowance (%)","horBLap")}</div>`;
   let conns=`${chk("starters",d.starters,"Starter bars in (from footing below)","starters")}
   <div class="subsec ${d.starters?'':'hidden'}" data-show-if="starters"><div class="grid cols4">${F("Connects to",targetSelect("connTarget",d.connTarget,inst.id))}${F("Dia",barSizeSel("connDia",d.connDia))}${F("Spacing (mm)",inpNum("connSpacing",d.connSpacing))}${F("Embedment (mm)",inpNum("connEmbed",d.connEmbed))}${F("Projection (mm)",inpNum("connProj",d.connProj))}</div></div>
   <div class="subsec"><div class="sechead">Dowels out (to slab above)</div><div class="grid cols4">${F("Connects to",targetSelect("dowelsOut",d.dowelsOut,inst.id))}${F("Qty",inpNum("outQty",d.outQty))}${F("Dia",barSizeSel("outDia",d.outDia))}${F("Embedment (mm)",inpNum("outEmbed",d.outEmbed))}${F("Projection (mm)",inpNum("outProj",d.outProj))}</div></div>
@@ -3053,10 +3066,10 @@ function renderStairs(inst){
   <div class="grid cols4">${F("Number of risers",inpNum("risers",d.risers))}${F("Riser height (mm)",inpNum("riserH",d.riserH))}${F("Tread depth (mm)",inpNum("treadD",d.treadD))}${F("Width (mm)",inpNum("width",d.width))}${F("Waist thickness (mm)",inpNum("waistT",d.waistT))}</div>
   <div class="grid cols3">${chk("landing",d.landing,"Include landing","landing")}</div>
   <div class="subsec ${d.landing?'':'hidden'}" data-show-if="landing"><div class="grid cols3">${F("Landing length (mm)",inpNum("landL",d.landL))}${F("Landing width (mm)",inpNum("landW",d.landW))}${F("Landing depth (mm)",inpNum("landD",d.landD))}</div></div>`;
-  let reo=`<div class="grid cols4">${F("Main flight bar dia",barSizeSel("mainDia",d.mainDia))}${F("Spacing (mm)",inpNum("mainSpacing",d.mainSpacing))}${chk("mainLap",d.mainLap,"Lap %","mainLap")}</div>
+  let reo=`<div class="grid cols4">${F("Main flight bar dia",barSizeSel("mainDia",d.mainDia))}${F("Spacing (mm)",inpNum("mainSpacing",d.mainSpacing))}${chk("mainLap",d.mainLap,"Include lap allowance (%)","mainLap")}</div>
   <div class="sechead">Distribution Reinforcement</div>
   <div class="grid cols3">${F("Type",selOpts("distReoType",d.distReoType,[["bars","Bars"],["mesh","Mesh sheet"]]))}</div>
-  <div class="subsec ${d.distReoType=='bars'?'':'hidden'}" data-show-if="distReoType_bars"><div class="grid cols3">${F("Dia",barSizeSel("distDia",d.distDia))}${F("Spacing (mm)",inpNum("distSpacing",d.distSpacing))}${chk("distLap",d.distLap,"Lap %","distLap")}</div></div>
+  <div class="subsec ${d.distReoType=='bars'?'':'hidden'}" data-show-if="distReoType_bars"><div class="grid cols3">${F("Dia",barSizeSel("distDia",d.distDia))}${F("Spacing (mm)",inpNum("distSpacing",d.distSpacing))}${chk("distLap",d.distLap,"Include lap allowance (%)","distLap")}</div></div>
   <div class="subsec ${d.distReoType=='mesh'?'':'hidden'}" data-show-if="distReoType_mesh"><div class="grid cols3">${F("Mesh type",selOpts("distMeshType",d.distMeshType,Object.keys(MESHTYPES).map(m=>[m,m]),true))}${F("Layers",inpNumR("distMeshLayers",d.distMeshLayers))}${chk("distMeshLap",d.distMeshLap,"Include lap allowance (%)","distMeshLap")}</div>
   ${layerTypeSelects(d,"distMeshLayers","distMeshType","distMeshLayerTypes",(f,v)=>selOpts(f,v,Object.keys(MESHTYPES).map(m=>[m,m])),"mesh type")}</div>`;
   let conns=`${chk("starters",d.starters,"Starter bars into supporting slab/landing","starters")}
