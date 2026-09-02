@@ -235,6 +235,9 @@ const GLOBAL = {
   concretePumpHr: 260, concretePourRateM3PerHr: 12,
   // Reinforcement wastage standardised at 5% across mesh, bar and processed
   wasteSteelMesh: 0.05, wasteSteelBar: 0.05, wasteSteelProcessed: 0.05,
+  // Takeoff allowances READ LIVE by the Estimates app on every recompute —
+  // whole percents. Edit them here anytime and every element re-prices.
+  reoWastePct: 5, barLapPct: 8, meshLapPct: 5,
   wasteConcrete: 0.03, wasteFormwork: 0.10, wasteGeneral: 0.05,
   overheadsPct: 0.12, marginPct: 0.15, subbieMarginPct: 0.12,
   // Escalation defaults to 0% — Gradcon's own established rates (below,
@@ -757,7 +760,14 @@ function renderApp(){
   let reoBody = `<p class="hint">$/unit established rate per product — Trench Mesh, Square Mesh and Stock Bar from AKZ Reinforcing's current Gradcon quote; Processed Bar uniform $1925/t converted to $/m by weight. Every diameter is independently editable.</p>` +
     `<div class="panel-block"><h3>Reinforcing steel delivery fee</h3>
      <p class="hint">AKZ Reinforcing's delivered-to-site fee, applied on top of every established rate to the left, proportional to each product's own weight.</p>
-     <table class="kv-table"><tbody><tr><td>Delivery ($/tonne)</td><td><input type="number" step="any" id="g_reodelivery" value="${state.global.reinforcementDeliveryPerTonne}"></td></tr></tbody></table></div>`;
+     <table class="kv-table"><tbody><tr><td>Delivery ($/tonne)</td><td><input type="number" step="any" id="g_reodelivery" value="${state.global.reinforcementDeliveryPerTonne}"></td></tr></tbody></table></div>
+     <div class="panel-block" style="margin-top:10px;"><h3>Reinforcement takeoff allowances</h3>
+     <p class="hint">Read LIVE by the Estimates takeoff on every recompute — change them here anytime and every element re-prices. Wastage applies to all reinforcement; the bar lap applies to bar laps, the sheet/trench lap to mesh sheets and trench mesh.</p>
+     <table class="kv-table"><tbody>
+      <tr><td>Reinforcement wastage (%)</td><td><input type="number" step="any" id="g_reowaste" value="${state.global.reoWastePct??5}"></td></tr>
+      <tr><td>Lap allowance — bars (%)</td><td><input type="number" step="any" id="g_barlap" value="${state.global.barLapPct??8}"></td></tr>
+      <tr><td>Lap allowance — mesh sheets &amp; trench (%)</td><td><input type="number" step="any" id="g_meshlap" value="${state.global.meshLapPct??5}"></td></tr>
+     </tbody></table></div>`;
   const reoMapFor = {"Trench mesh":"trenchMesh","Square Mesh":"squareMesh","Stock Bar":"stockBar","Processed Bar":"processedBar"};
   Object.keys(REINFORCEMENT_ITEMS).forEach(group=>{
     const g = REINFORCEMENT_ITEMS[group];
@@ -931,6 +941,9 @@ function wireInputs(){
   };
   bind("surcharge", ["global","concreteSurchargePerM3"]);
   bind("g_reodelivery", ["global","reinforcementDeliveryPerTonne"]);
+  bind("g_reowaste", ["global","reoWastePct"]);
+  bind("g_barlap", ["global","barLapPct"]);
+  bind("g_meshlap", ["global","meshLapPct"]);
   bind("cl_placing", ["concreteLabour","placingHrsPerM3"]);
   bind("cl_finishing", ["concreteLabour","finishingHrsPerM3"]);
   bind("cl_curing", ["concreteLabour","curingRate"]);

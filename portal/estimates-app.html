@@ -370,11 +370,21 @@ let PROJECT = {
   barStock:12000, concreteWaste:5, reoWaste:5, formworkWaste:0, lapPct:8, bulking:15, revision:"Rev A", measurementRule:"gross",
   estimateSessionId: newEstimateSessionId(),
 };
-/* Hardcoded reinforcement allowances (Gradcon standard, not per-project):
-   wastage 5% on ALL reinforcement; lap allowance 8% for BARS, 5% for mesh
-   SHEETS and TRENCH mesh. PROJECT.reoWaste/lapPct are coerced to these on
-   every recompute so saved projects and preferences can't drift them. */
-const REO_WASTE_PCT=5, BAR_LAP_PCT=8, MESH_LAP_PCT=5;
+/* Reinforcement allowances — ONE company-wide set, edited in the RATES
+   LIBRARY app (Reinforcement → "Reinforcement takeoff allowances", stored
+   under gradcon-rates-library's global block, shared localStorage) and read
+   LIVE here on every recompute: wastage on ALL reinforcement (default 5%),
+   lap allowance for BARS (default 8%) and for mesh SHEETS / TRENCH mesh
+   (default 5%). Not per-project — change them in the Rates Library anytime
+   and every element re-prices. */
+let REO_WASTE_PCT=5, BAR_LAP_PCT=8, MESH_LAP_PCT=5;
+function refreshReoAllowances(){
+  let g={};
+  try{ g=(JSON.parse(localStorage.getItem("gradcon-rates-library"))||{}).global||{}; }catch(e){}
+  const pick=(v,fb)=> (v!==undefined && v!==null && v!=="" && isFinite(+v))? +v : fb;
+  REO_WASTE_PCT=pick(g.reoWastePct,5); BAR_LAP_PCT=pick(g.barLapPct,8); MESH_LAP_PCT=pick(g.meshLapPct,5);
+  PROJECT.reoWaste=REO_WASTE_PCT; PROJECT.lapPct=BAR_LAP_PCT;
+}
 // Portal-wide Settings (portal-shell.html's Settings modal, stored under
 // "gradcon-preferences" — same origin as this blob:-embedded app) can
 // override the fresh-project defaults above. Applied here, BEFORE
@@ -3912,7 +3922,7 @@ function pillClass(g){
 function refreshAllDiagramsReferencing(){ /* label changes affect target dropdown labels; simplest = full rerender */ document.querySelectorAll('.card').forEach(c=>{ /* no-op, labels resolved live via targetLabelOf at compute time */ }); }
 
 function computeAllAndRefresh(){
-  PROJECT.reoWaste=REO_WASTE_PCT; PROJECT.lapPct=BAR_LAP_PCT; // hardcoded — see constants above
+  refreshReoAllowances(); // live from the Rates Library — see constants above
   INSTANCES.forEach(inst=>{ inst.results = computeInstance(inst); });
   renderRegister();
   renderExportSummary();
@@ -3942,13 +3952,13 @@ function renderDefaultsForm(){
   f.innerHTML = [
     F("Fallback cover (mm) — used only where an element has no type default",inpNum("cover",PROJECT.cover)),
     F("Default concrete grade (MPa)",inpNum("grade",PROJECT.grade)),
-    F("Reinforcement lap allowance — FIXED: 8% bars · 5% mesh sheets & trench",`<input type="number" value="8" disabled title="Hardcoded company standard — 8% bar laps, 5% sheet/trench laps">`),
+    F(`Reinforcement lap allowance — from Rates Library: ${BAR_LAP_PCT}% bars · ${MESH_LAP_PCT}% mesh sheets & trench`,`<input type="number" value="${BAR_LAP_PCT}" disabled title="Edited in the Rates Library app (Reinforcement → takeoff allowances) — applies live across every element">`),
     F("Reinforcement standard",inpText("reoStandard",PROJECT.reoStandard)),
     F("Default lap methodology",inpText("lapMethod",PROJECT.lapMethod)),
     F("Anchorage methodology",inpText("anchorMethod",PROJECT.anchorMethod)),
     F("Bar stock length (mm)",inpNum("barStock",PROJECT.barStock)),
     F("Concrete waste (%)",inpNum("concreteWaste",PROJECT.concreteWaste)),
-    F("Reinforcement waste — FIXED at 5%",`<input type="number" value="5" disabled title="Hardcoded company standard">`),
+    F(`Reinforcement waste — from Rates Library: ${REO_WASTE_PCT}%`,`<input type="number" value="${REO_WASTE_PCT}" disabled title="Edited in the Rates Library app (Reinforcement → takeoff allowances) — applies live across every element">`),
     F("Formwork waste (%)",inpNum("formworkWaste",PROJECT.formworkWaste)),
     F("Excavation bulking factor (%)",inpNum("bulking",PROJECT.bulking)),
     F("Preferred input unit for overall lengths/heights (beam/wall/column/pier/kerb runs)",selOpts("units_len_pref",PROJECT.units_len_pref,[["mm","Millimetres (mm)"],["m","Metres (m)"]])),
