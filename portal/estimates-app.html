@@ -367,9 +367,14 @@ let PROJECT = {
   name:"", jobNumber:"", client:"", units_len:"mm/m", units_conc:"m3", units_form:"m2", units_reo:"kg", units_exc:"m3",
   units_len_pref:"m", // "mm" or "m" — preferred input unit for overall lengths/heights (beam, wall, column, pier, kerb runs). Metres by default: a 7.2m beam is typed as 7.2, not 7200 (cross-sections stay mm).
   cover:40, grade:32, reoStandard:"Australian D500N", lapMethod:"Project-defined", anchorMethod:"Project-defined",
-  barStock:12000, concreteWaste:5, reoWaste:3, formworkWaste:0, lapPct:5, bulking:15, revision:"Rev A", measurementRule:"gross",
+  barStock:12000, concreteWaste:5, reoWaste:5, formworkWaste:0, lapPct:8, bulking:15, revision:"Rev A", measurementRule:"gross",
   estimateSessionId: newEstimateSessionId(),
 };
+/* Hardcoded reinforcement allowances (Gradcon standard, not per-project):
+   wastage 5% on ALL reinforcement; lap allowance 8% for BARS, 5% for mesh
+   SHEETS and TRENCH mesh. PROJECT.reoWaste/lapPct are coerced to these on
+   every recompute so saved projects and preferences can't drift them. */
+const REO_WASTE_PCT=5, BAR_LAP_PCT=8, MESH_LAP_PCT=5;
 // Portal-wide Settings (portal-shell.html's Settings modal, stored under
 // "gradcon-preferences" — same origin as this blob:-embedded app) can
 // override the fresh-project defaults above. Applied here, BEFORE
@@ -380,8 +385,10 @@ let PROJECT = {
 (function(){
   try{
     var prefs = JSON.parse(localStorage.getItem("gradcon-preferences")) || {};
+    // reoWaste/lapPct are HARDCODED (5% waste, 8% bar lap) — deliberately
+    // absent from this preference map so Settings can't override them.
     var map = { estCover:"cover", estGrade:"grade", estBarStock:"barStock", estConcreteWaste:"concreteWaste",
-                estReoWaste:"reoWaste", estFormworkWaste:"formworkWaste", estLapPct:"lapPct", estBulking:"bulking" };
+                estFormworkWaste:"formworkWaste", estBulking:"bulking" };
     Object.keys(map).forEach(function(k){
       if(typeof prefs[k] === "number" && isFinite(prefs[k])) PROJECT[map[k]] = prefs[k];
     });
@@ -2032,7 +2039,7 @@ function computeStripFooting(inst,def){
   }
   if(d.trenchMesh){
     // one line per DISTINCT layer material — different layers can be different products
-    let lapPct=d.trenchMeshLap?PROJECT.lapPct:0;
+    let lapPct=d.trenchMeshLap?MESH_LAP_PCT:0;
     layerTypeCounts(d,"trenchMeshLayers","trenchMeshType","trenchMeshLayerTypes").forEach((n,type)=>{
       let mpm=trenchReoMassPerM(type,d.width);
       let totLen=N*n*Lm; let wt=totLen*mpm;
@@ -2159,12 +2166,12 @@ function computePadFooting(inst,def){
   }
   if(d.botReoType==="mesh"){
     // one line per DISTINCT layer material — layers can be different products
-    let meshLapPct=d.botMeshLap?PROJECT.lapPct:0;
+    let meshLapPct=d.botMeshLap?MESH_LAP_PCT:0;
     layerTypeCounts(d,"botMeshLayers","botMeshType","botMeshLayerTypes").forEach((n,type)=>{
       let area=N*planArea*n;
-      let wastedArea=withWasteLap(area,10,meshLapPct);
+      let wastedArea=withWasteLap(area,REO_WASTE_PCT,MESH_LAP_PCT+meshLapPct);
       let sheets=Math.ceil(wastedArea/MESH_SHEET_AREA_M2);
-      lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:type,spec:`Bottom mat — mesh sheets ×${n} layer(s)`,qty:area,unit:"m²",waste:10,lap:meshLapPct,finalQty:wastedArea,sheets,formula:`N×${round?'π×Ø²/4':'L×W'}×${n} layer(s) (+10% base laps${meshLapPct?`, +${meshLapPct}% extra lap`:''}) → ceil(/${MESH_SHEET_AREA_M2}m²) = ${sheets} sheets`,notes:`${sheets} sheets (6.0×2.4m nominal)`}));
+      lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:type,spec:`Bottom mat — mesh sheets ×${n} layer(s)`,qty:area,unit:"m²",waste:REO_WASTE_PCT,lap:MESH_LAP_PCT+meshLapPct,finalQty:wastedArea,sheets,formula:`N×${round?'π×Ø²/4':'L×W'}×${n} layer(s) (+5% waste, +5% laps${meshLapPct?`, +${meshLapPct}% extra lap`:''}) → ceil(/${MESH_SHEET_AREA_M2}m²) = ${sheets} sheets`,notes:`${sheets} sheets (6.0×2.4m nominal)`}));
     });
   } else if(round){
     matRound(d.botX,d.botXDia,d.botXSpacing,"Bottom X bars",d.botXLap);
@@ -2306,7 +2313,7 @@ function computeBeam(inst,def){
   if(fArea>0) lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Beam formwork",spec:"Selected faces",qty:fArea,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(fArea,PROJECT.formworkWaste),formula:fParts.join(" + ")}));
   if(d.trenchMesh){
     // one line per DISTINCT layer material — different layers can be different products
-    let lapPct=d.trenchMeshLap?PROJECT.lapPct:0;
+    let lapPct=d.trenchMeshLap?MESH_LAP_PCT:0;
     layerTypeCounts(d,"trenchMeshLayers","trenchMeshType","trenchMeshLayerTypes").forEach((n,type)=>{
       let mpm=trenchReoMassPerM(type,d.width);
       let totLen=N*n*Lm; let wt=totLen*mpm;
@@ -2578,7 +2585,8 @@ function computeSlab(inst,def){
       let layers=Math.max(1,Math.round(num(d.beamStripsLayers,1)));
       let runLen=num(d.beamStripsLength);
       let layerNote=layers>1?` × ${layers} layers`:"";
-      let lapPct=d.beamStripsLap?PROJECT.lapPct:0;
+      // trench-mesh strips lap at 5%, longitudinal bars at the 8% bar lap
+      let lapPct=d.beamStripsLap?(d.beamStripsTrenchMesh?MESH_LAP_PCT:PROJECT.lapPct):0;
       if(d.beamStripsTrenchMesh){
         let mpm=trenchReoMassPerM(d.beamStripsTrenchType,d.beamStripsWidth);
         let totLen=runLen*layers; let wt=totLen*mpm;
@@ -2625,18 +2633,18 @@ function computeSlab(inst,def){
     // 2-layer mesh mat silently costs the same as a single layer.
     // one line per DISTINCT layer material — a two-layer mat can be e.g. SL92
     // top + SL82 bottom, each quantified (area AND sheets) separately
-    let meshLapPct=d.meshLap?PROJECT.lapPct:0;
+    let meshLapPct=d.meshLap?MESH_LAP_PCT:0;
     layerTypeCounts(d,"meshLayers","meshType","meshLayerTypes").forEach((n,type)=>{
       let layeredArea=netArea*n;
-      let wastedArea=withWasteLap(layeredArea,10,meshLapPct);
+      let wastedArea=withWasteLap(layeredArea,REO_WASTE_PCT,MESH_LAP_PCT+meshLapPct);
       let sheets=Math.ceil(wastedArea/MESH_SHEET_AREA_M2);
-      lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:type,spec:`Mesh sheets ×${n} layer(s)`,qty:layeredArea,unit:"m²",waste:10,lap:meshLapPct,finalQty:wastedArea,sheets,formula:`net area × ${n} layer(s) (+10% base laps${meshLapPct?`, +${meshLapPct}% extra lap`:''}) → ceil(/${MESH_SHEET_AREA_M2}m²) = ${sheets} sheets`,notes:`${sheets} sheets (6.0×2.4m nominal)`}));
+      lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:type,spec:`Mesh sheets ×${n} layer(s)`,qty:layeredArea,unit:"m²",waste:REO_WASTE_PCT,lap:MESH_LAP_PCT+meshLapPct,finalQty:wastedArea,sheets,formula:`net area × ${n} layer(s) (+5% waste, +5% laps${meshLapPct?`, +${meshLapPct}% extra lap`:''}) → ceil(/${MESH_SHEET_AREA_M2}m²) = ${sheets} sheets`,notes:`${sheets} sheets (6.0×2.4m nominal)`}));
     });
   }
   if(d.returnBars){
-    let retLapPct=d.retLap?PROJECT.lapPct:0;
     let girthMm=num(d.retTurndown)*2+num(d.retLeg);
     if((d.retMode||"bars")==="strip"){
+      let retLapPct=d.retLap?MESH_LAP_PCT:0; // mesh/trench strip laps at 5%
       // A bent trench-mesh / mesh strip run along the edge instead of
       // individual U-bars: quantity is the perimeter run in lineal metres;
       // the bent girth (2×turndown+leg) is a square-mesh strip's effective
@@ -2646,6 +2654,7 @@ function computeSlab(inst,def){
       let totLen=perim; let wt=totLen*mpm;
       lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:type,spec:`Edge return / turn-down strip (bent, girth ${girthMm}mm)`,qty:totLen,unit:"lm",waste:PROJECT.reoWaste,lap:retLapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,retLapPct),massPerUnit:mpm,formula:`perimeter run ${fmt(perim,1)}m`,notes:`${fmt(wt,1)} kg`}));
     } else {
+      let retLapPct=d.retLap?PROJECT.lapPct:0; // bar laps at 8%
       let dia=barDiaOf(d.retDia);
       let count=Math.floor(perim*1000/num(d.retSpacing))+1;
       let barLen=girthMm/1000;
@@ -2980,12 +2989,12 @@ function computeShotWall(inst,def){
   lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete (shotcrete)`,spec:`${d.thickness}mm thick, sprayed`,qty:vol,unit:"m³",waste:20,finalQty:withWaste(vol,20),formula:`${fmt(Lm,1)}×${fmt(Hm,1)}×${fmt(Tm,2)} (+20% overspray/rebound)`}));
   if(d.xypex) lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:"Penetron (Xypex) additive",spec:"Waterproofing admixture",qty:vol,unit:"m³",waste:0,finalQty:vol,formula:"same volume as shotcrete"}));
   // one line per DISTINCT layer material — layers can be different products
-  let meshLapPct=d.meshLap?PROJECT.lapPct:0;
+  let meshLapPct=d.meshLap?MESH_LAP_PCT:0;
   layerTypeCounts(d,"meshLayers","meshType","meshLayerTypes").forEach((n,type)=>{
     let layeredArea=area*n;
-    let wastedArea=withWasteLap(layeredArea,10,meshLapPct);
+    let wastedArea=withWasteLap(layeredArea,REO_WASTE_PCT,MESH_LAP_PCT+meshLapPct);
     let sheets=Math.ceil(wastedArea/MESH_SHEET_AREA_M2);
-    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:type,spec:`Central mesh sheets ×${n} layer(s)`,qty:layeredArea,unit:"m²",waste:10,lap:meshLapPct,finalQty:wastedArea,sheets,formula:`area(${fmt(area,1)}) × ${n} layer(s) (+10% base laps${meshLapPct?`, +${meshLapPct}% extra lap`:''}) → ceil(/${MESH_SHEET_AREA_M2}m²) = ${sheets} sheets`,notes:`${sheets} sheets (6.0×2.4m nominal)`}));
+    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:type,spec:`Central mesh sheets ×${n} layer(s)`,qty:layeredArea,unit:"m²",waste:REO_WASTE_PCT,lap:MESH_LAP_PCT+meshLapPct,finalQty:wastedArea,sheets,formula:`area(${fmt(area,1)}) × ${n} layer(s) (+5% waste, +5% laps${meshLapPct?`, +${meshLapPct}% extra lap`:''}) → ceil(/${MESH_SHEET_AREA_M2}m²) = ${sheets} sheets`,notes:`${sheets} sheets (6.0×2.4m nominal)`}));
   });
   if(d.starters && num(d.connQty)>0){
     let dia=barDiaOf(d.connDia); let len=(num(d.connEmbed)+num(d.connProj))/1000;
@@ -3065,12 +3074,12 @@ function computeStairs(inst,def){
   lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.mainDia,spec:"Main flight bars",qty:mLen,unit:"m",waste:PROJECT.reoWaste,lap:mainLapPct,finalQty:withWasteLap(mLen,PROJECT.reoWaste,mainLapPct),formula:"count × flight length",notes:`${fmt(mWt,1)} kg`}));
   if(d.distReoType==="mesh"){
     // one line per DISTINCT layer material — layers can be different products
-    let distMeshLapPct=d.distMeshLap?PROJECT.lapPct:0;
+    let distMeshLapPct=d.distMeshLap?MESH_LAP_PCT:0;
     layerTypeCounts(d,"distMeshLayers","distMeshType","distMeshLayerTypes").forEach((n,type)=>{
       let area=flightLen*w*n;
-      let wastedArea=withWasteLap(area,10,distMeshLapPct);
+      let wastedArea=withWasteLap(area,REO_WASTE_PCT,MESH_LAP_PCT+distMeshLapPct);
       let sheets=Math.ceil(wastedArea/MESH_SHEET_AREA_M2);
-      lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:type,spec:`Distribution — mesh sheets ×${n} layer(s)`,qty:area,unit:"m²",waste:10,lap:distMeshLapPct,finalQty:wastedArea,sheets,formula:`flight length × width × ${n} layer(s) (+10% base laps${distMeshLapPct?`, +${distMeshLapPct}% extra lap`:''}) → ceil(/${MESH_SHEET_AREA_M2}m²) = ${sheets} sheets`,notes:`${sheets} sheets (6.0×2.4m nominal)`}));
+      lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:type,spec:`Distribution — mesh sheets ×${n} layer(s)`,qty:area,unit:"m²",waste:REO_WASTE_PCT,lap:MESH_LAP_PCT+distMeshLapPct,finalQty:wastedArea,sheets,formula:`flight length × width × ${n} layer(s) (+5% waste, +5% laps${distMeshLapPct?`, +${distMeshLapPct}% extra lap`:''}) → ceil(/${MESH_SHEET_AREA_M2}m²) = ${sheets} sheets`,notes:`${sheets} sheets (6.0×2.4m nominal)`}));
     });
   } else {
     let dDia=barDiaOf(d.distDia); let dCount=Math.floor(flightLen*1000/num(d.distSpacing))+1;
@@ -3253,8 +3262,8 @@ function computeTankbox(inst,def){
     let wallVLen=N*Math.ceil(perim*1000/num(d.wallVertSpacing))*(depth+0.4);
     lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.wallVertDia,spec:"Wall vertical bars (both faces)",qty:wallVLen,unit:"m",waste:PROJECT.reoWaste,lap:wallVLapPct,finalQty:withWasteLap(wallVLen,PROJECT.reoWaste,wallVLapPct),formula:"perimeter/spacing × (depth+lap into base)",notes:`${fmt(wallVLen*massPerM(barDiaOf(d.wallVertDia)),1)} kg`}));
   } else {
-    let baseMeshLapPct=d.baseXLap?PROJECT.lapPct:0;
-    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.baseXDia,spec:"Base radial/mesh bars (circular — priced as mesh-equivalent)",qty:N*baseArea,unit:"m²",waste:10,lap:baseMeshLapPct,finalQty:withWasteLap(N*baseArea,10,baseMeshLapPct),formula:`plan area (+10% base laps${baseMeshLapPct?`, +${baseMeshLapPct}% extra lap`:''})`}));
+    let baseMeshLapPct=d.baseXLap?MESH_LAP_PCT:0;
+    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.baseXDia,spec:"Base radial/mesh bars (circular — priced as mesh-equivalent)",qty:N*baseArea,unit:"m²",waste:REO_WASTE_PCT,lap:MESH_LAP_PCT+baseMeshLapPct,finalQty:withWasteLap(N*baseArea,REO_WASTE_PCT,MESH_LAP_PCT+baseMeshLapPct),formula:`plan area (+5% waste, +5% laps${baseMeshLapPct?`, +${baseMeshLapPct}% extra lap`:''})`}));
     let wallVLen=N*Math.ceil(perim*1000/num(d.wallVertSpacing))*(depth+0.4);
     lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.wallVertDia,spec:"Wall vertical bars (circumferential lap)",qty:wallVLen,unit:"m",waste:PROJECT.reoWaste,lap:wallVLapPct,finalQty:withWasteLap(wallVLen,PROJECT.reoWaste,wallVLapPct),formula:"circumference/spacing × (depth+lap)",notes:`${fmt(wallVLen*massPerM(barDiaOf(d.wallVertDia)),1)} kg`}));
   }
@@ -3903,6 +3912,7 @@ function pillClass(g){
 function refreshAllDiagramsReferencing(){ /* label changes affect target dropdown labels; simplest = full rerender */ document.querySelectorAll('.card').forEach(c=>{ /* no-op, labels resolved live via targetLabelOf at compute time */ }); }
 
 function computeAllAndRefresh(){
+  PROJECT.reoWaste=REO_WASTE_PCT; PROJECT.lapPct=BAR_LAP_PCT; // hardcoded — see constants above
   INSTANCES.forEach(inst=>{ inst.results = computeInstance(inst); });
   renderRegister();
   renderExportSummary();
@@ -3932,13 +3942,13 @@ function renderDefaultsForm(){
   f.innerHTML = [
     F("Fallback cover (mm) — used only where an element has no type default",inpNum("cover",PROJECT.cover)),
     F("Default concrete grade (MPa)",inpNum("grade",PROJECT.grade)),
-    F("Reinforcement lap allowance (%) — separate from waste",inpNum("lapPct",PROJECT.lapPct)),
+    F("Reinforcement lap allowance — FIXED: 8% bars · 5% mesh sheets & trench",`<input type="number" value="8" disabled title="Hardcoded company standard — 8% bar laps, 5% sheet/trench laps">`),
     F("Reinforcement standard",inpText("reoStandard",PROJECT.reoStandard)),
     F("Default lap methodology",inpText("lapMethod",PROJECT.lapMethod)),
     F("Anchorage methodology",inpText("anchorMethod",PROJECT.anchorMethod)),
     F("Bar stock length (mm)",inpNum("barStock",PROJECT.barStock)),
     F("Concrete waste (%)",inpNum("concreteWaste",PROJECT.concreteWaste)),
-    F("Reinforcement waste (%)",inpNum("reoWaste",PROJECT.reoWaste)),
+    F("Reinforcement waste — FIXED at 5%",`<input type="number" value="5" disabled title="Hardcoded company standard">`),
     F("Formwork waste (%)",inpNum("formworkWaste",PROJECT.formworkWaste)),
     F("Excavation bulking factor (%)",inpNum("bulking",PROJECT.bulking)),
     F("Preferred input unit for overall lengths/heights (beam/wall/column/pier/kerb runs)",selOpts("units_len_pref",PROJECT.units_len_pref,[["mm","Millimetres (mm)"],["m","Metres (m)"]])),

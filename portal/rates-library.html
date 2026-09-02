@@ -233,7 +233,8 @@ tr.row-outofscope input, tr.row-outofscope select{background:#eef0f2;color:#9aa5
 const GLOBAL = {
   labourSteelFixer: 68, labourConcreter: 65, labourFormworker: 70, labourGeneral: 58,
   concretePumpHr: 260, concretePourRateM3PerHr: 12,
-  wasteSteelMesh: 0.05, wasteSteelBar: 0.08, wasteSteelProcessed: 0.03,
+  // Reinforcement wastage standardised at 5% across mesh, bar and processed
+  wasteSteelMesh: 0.05, wasteSteelBar: 0.05, wasteSteelProcessed: 0.05,
   wasteConcrete: 0.03, wasteFormwork: 0.10, wasteGeneral: 0.05,
   overheadsPct: 0.12, marginPct: 0.15, subbieMarginPct: 0.12,
   // Escalation defaults to 0% — Gradcon's own established rates (below,
@@ -622,6 +623,17 @@ function loadRates(){
 }
 let state = backfill(loadRates() || {}, freshRates());
 if(!state.ratesVersion) state.ratesVersion = RATES_VERSION;
+// Reinforcement wastage is standardised at 5% — coerce any stored steel
+// entry still carrying an old default (8% bar / 3% processed) once on load,
+// so saved rate blobs can't keep the retired figures alive. Runs on every
+// load but only rewrites entries that differ.
+(function(){
+  try{
+    Object.keys(state.steel||{}).forEach(function(k){
+      if(state.steel[k] && typeof state.steel[k].waste==="number" && (state.steel[k].waste===0.08 || state.steel[k].waste===0.03)) state.steel[k].waste=0.05;
+    });
+  }catch(e){}
+})();
 
 // Pulls whatever another device last saved, if it's newer than what this browser has —
 // on load, when the tab regains focus, and on a slow poll as a background safety net.
