@@ -367,7 +367,7 @@ let PROJECT = {
   name:"", jobNumber:"", client:"", units_len:"mm/m", units_conc:"m3", units_form:"m2", units_reo:"kg", units_exc:"m3",
   units_len_pref:"m", // "mm" or "m" — preferred input unit for overall lengths/heights (beam, wall, column, pier, kerb runs). Metres by default: a 7.2m beam is typed as 7.2, not 7200 (cross-sections stay mm).
   cover:40, grade:32, reoStandard:"Australian D500N", lapMethod:"Project-defined", anchorMethod:"Project-defined",
-  barStock:12000, concreteWaste:5, reoWaste:5, formworkWaste:5, lapPct:8, bulking:15, revision:"Rev A", measurementRule:"gross",
+  barStock:12000, concreteWaste:20, reoWaste:5, formworkWaste:5, lapPct:8, bulking:15, revision:"Rev A", measurementRule:"gross",
   estimateSessionId: newEstimateSessionId(),
 };
 /* Reinforcement allowances — ONE company-wide set, edited in the RATES
@@ -2408,7 +2408,8 @@ function raftBeamLigTable(inst,zones,arr){
  * remaining run) around the group's own cross-section with two 135°
  * fitment hooks, and an optional trench excavation + bulked spoil. */
 function raftBeamGroupLines(inst,def,lines,d,g){
-  let cvr=num(d.cover,40);
+  // per-group cover choice — blank falls back to the element's own cover
+  let cvr = (g.coverMm!==undefined && g.coverMm!=="" && num(g.coverMm)>0)? num(g.coverMm) : num(d.cover,40);
   if(g.reoOn){
     if(g.trench){
       let lapPct=g.trenchLap?MESH_LAP_PCT:0;
@@ -2557,6 +2558,7 @@ function slabDefaults(cat,suspended){ return {
   starters:false, connTarget:"", connQty:0, connDia:"N12", connEmbed:400, connProj:400,
   stepdown:false, sdLength:6, sdDepth:150, sdDia:"N12", sdSpacing:300, sdProj1:300, sdProj2:300,
   edgeThicken:false, edgeThickenWidth:300, edgeThickenExtraDepth:150,
+  edgeBeamOn:false, edgeBeamLen:"", edgeBeamWidth:300, edgeBeamExtraDepth:300, edgeBeamDepthMode:"extra", edgeBeamCover:"", beamStripsCover:"",
   edgeBeamReo:false, edgeBeamTrenchMesh:false, edgeBeamBars:4, edgeBeamDia:"N16", edgeBeamTrenchType:"4 Bar-L12TM", edgeBeamLayers:1, edgeBeamLap:false,
   edgeBeamLigs:false, edgeBeamLigDia:"N10", edgeBeamLigSpacing:300, edgeBeamLigLap:false,
   beamStrips:false, beamStripsLength:0, beamStripsWidth:300, beamStripsExtraDepth:150,
@@ -2670,14 +2672,17 @@ function renderSlab(inst,def){
   <div class="subsec ${d.beamStripsExc?'':'hidden'}" data-show-if="beamStripsExc"><div class="grid cols3">${F("Trench width (mm)",inpNum("beamStripsTrenchWidth",d.beamStripsTrenchWidth===undefined?(num(d.beamStripsWidth,300)+50):d.beamStripsTrenchWidth))}${F("Excavation depth below prepared level (mm)",inpNum("beamStripsExcDepth",d.beamStripsExcDepth===undefined?num(d.beamStripsExtraDepth,150):d.beamStripsExcDepth))}</div>
   <p class="small">Same as a Ground Beam's trench: dug volume + a bulked spoil-disposal line, along the combined run. Off by default so existing takeoffs don't change.</p></div>
   </div>`;
-  let edgeBeamGeom = `<div class="subsec"><div class="sechead">Edge Beams / Thickened Perimeter</div><div class="grid cols3">${chk("edgeThicken",d.edgeThicken,"Edge beams — thickened strip around the perimeter","edgeThicken")}</div>
+  let edgeThickenGeom = `<div class="subsec"><div class="sechead">⚠ Edge Thickening</div><div class="grid cols3">${chk("edgeThicken",d.edgeThicken,"<b>Edge thickening</b> — simple thickened strip, follows the slab perimeter automatically","edgeThicken")}</div>
   <div class="subsec ${d.edgeThicken?'':'hidden'}" data-show-if="edgeThicken"><div class="grid cols3">${F("Thickened strip width (mm)",inpNum("edgeThickenWidth",d.edgeThickenWidth))}${F("Extra depth below slab thickness (mm)",inpNum("edgeThickenExtraDepth",d.edgeThickenExtraDepth))}</div>
-  <div class="tip"><span class="ico">🏗️</span><div>A thickened edge (footing-like strip under the slab perimeter, or wherever a line load lands) is extra concrete beyond the flat slab thickness already counted on Geometry — costed as perimeter × strip width × extra depth, on top of the main slab volume, not instead of it. Everything for the edge beam — geometry, longitudinal steel, ligature zones, trench excavation — lives on this tab, so it's never a separate element.</div></div></div></div>`;
+  <div class="tip"><span class="ico">🏗️</span><div><b>Edge thickening is NOT an edge beam.</b> This is a simple thickening of the slab edge — extra concrete only, costed as slab perimeter × strip width × extra depth on top of the flat slab volume, with no cage of its own (the slab mats run through it). A detailed edge BEAM — with its own manually measured run, bar sets, ligatures and excavation — lives on the <b>Edge Beams</b> tab. Don't tick both for the same edge or the concrete double-counts.</div></div></div></div>`;
+  let edgeBeamGeom = `<div class="subsec"><div class="sechead">Edge Beams (dedicated beams at the slab edge)</div><div class="grid cols3">${chk("edgeBeamOn",d.edgeBeamOn,"Edge beams — full beam takeoff, manual run length","edgeBeamOn")}</div>
+  <div class="subsec ${d.edgeBeamOn?'':'hidden'}" data-show-if="edgeBeamOn"><div class="grid cols4">${F("Total edge beam run length (m) — manual, from the drawing",inpNum("edgeBeamLen",d.edgeBeamLen))}${F("Beam width (mm)",inpNum("edgeBeamWidth",d.edgeBeamWidth===undefined?300:d.edgeBeamWidth))}${F("Depth entered as",selOpts("edgeBeamDepthMode",d.edgeBeamDepthMode||"extra",[["extra","Extra depth below slab (drop)"],["overall","Overall beam depth (incl. slab)"]],true))}${F((d.edgeBeamDepthMode||"extra")==="overall"?"Overall beam depth (mm)":"Extra depth below slab thickness (mm)",inpNum("edgeBeamExtraDepth",d.edgeBeamExtraDepth===undefined?300:d.edgeBeamExtraDepth))}${F("Cover (mm, blank = element cover)",inpNum("edgeBeamCover",d.edgeBeamCover))}</div>
+  <div class="tip"><span class="ico">🏗️</span><div>A REAL BEAM, not a thickening: the run length is entered MANUALLY off the drawing (it does not follow the slab perimeter — the beam may run under only part of it), the depth can be entered as the drawing's overall beam depth (the slab-thickness portion is deducted from the extra concrete so nothing double-counts, while ligatures size to the full section) or as the drop below the slab, and it carries the full standalone-Ground-Beam parameter set below — bar-set rows with anchorages, trench mesh with per-layer products, ligature zones sized to this beam's own cross-section and cover, and optional trench excavation. All folded into this one raft element. The simple perimeter Edge Thickening lives on the Geometry tab.</div></div></div></div>`;
   let stripGeom = `<div class="subsec"><div class="sechead">Internal Beam Strips / Ribs (e.g. raft foundation load-bearing lines)</div><div class="grid cols3">${chk("beamStrips",d.beamStrips,"Internal thickened beam strips within the slab","beamStrips")}</div>
-  <div class="subsec ${d.beamStrips?'':'hidden'}" data-show-if="beamStrips"><div class="grid cols3">${F("Total beam run length (m)",inpNum("beamStripsLength",d.beamStripsLength))}${F("Strip width (mm)",inpNum("beamStripsWidth",d.beamStripsWidth))}${F("Extra depth below slab thickness (mm)",inpNum("beamStripsExtraDepth",d.beamStripsExtraDepth))}</div>
+  <div class="subsec ${d.beamStrips?'':'hidden'}" data-show-if="beamStrips"><div class="grid cols4">${F("Total beam run length (m) — manual, from the drawing",inpNum("beamStripsLength",d.beamStripsLength))}${F("Strip width (mm)",inpNum("beamStripsWidth",d.beamStripsWidth))}${F("Extra depth below slab thickness (mm)",inpNum("beamStripsExtraDepth",d.beamStripsExtraDepth))}${F("Cover (mm, blank = element cover)",inpNum("beamStripsCover",d.beamStripsCover))}</div>
   <div class="tip"><span class="ico">🏗️</span><div>A raft foundation's internal beams (the thickened ribs that run under load-bearing walls, not just the perimeter) are easy to miss because they're not their own drawing callout — they're a detail cut through the slab. Total the combined length of every internal beam run from the drawing (not the perimeter — that's the Edge Beams tab) and it's costed as run length × strip width × extra depth, added on top of the flat slab volume. Everything for the ribs — geometry, longitudinal steel, ligature zones, trench excavation — lives on this tab, folded into this one element; don't also take the same beams off as a separate Ground Beam element.</div></div>
   </div></div>`;
-  let edgeBeamReoBlock = `<div class="subsec ${d.edgeThicken?'':'hidden'}" data-show-if="edgeThicken"><div class="sechead">Edge Beam Reinforcement (thickened perimeter)</div>
+  let edgeBeamReoBlock = `<div class="subsec ${d.edgeBeamOn?'':'hidden'}" data-show-if="edgeBeamOn"><div class="sechead">Edge Beam Reinforcement</div>
   <div class="grid cols3">${chk("edgeBeamReo",d.edgeBeamReo,"Longitudinal reinforcement along the edge beam","edgeBeamReo")}</div>
   <div class="subsec ${d.edgeBeamReo?'':'hidden'}" data-show-if="edgeBeamReo">
   <div class="grid cols3">${chk("edgeBeamTrenchMesh",d.edgeBeamTrenchMesh,"Trench mesh instead","edgeBeamTrenchMesh",true)}</div>
@@ -2693,7 +2698,7 @@ function renderSlab(inst,def){
   <div class="grid cols3">${chk("edgeBeamLigLap",d.edgeBeamLigLap,"Include lap allowance (%)","edgeBeamLigLap")}</div>
   <p class="small">Ligature zones exactly as on a standalone Ground Beam — closed stirrups around the edge beam's cross-section (strip width × slab thickness + extra depth, less cover, plus two 135° fitment hooks). Zone length 0 spreads over the remaining perimeter, so one "General" zone covers the whole run; add support zones with tighter spacing as needed.</p></div>
   <div class="grid cols3">${chk("edgeBeamExc",d.edgeBeamExc,"Trench excavation for the edge beam (below prepared level)","edgeBeamExc")}</div>
-  <div class="subsec ${d.edgeBeamExc?'':'hidden'}" data-show-if="edgeBeamExc"><div class="grid cols3">${F("Trench width (mm)",inpNum("edgeBeamTrenchWidth",d.edgeBeamTrenchWidth===undefined?(num(d.edgeThickenWidth,300)+50):d.edgeBeamTrenchWidth))}${F("Excavation depth below prepared level (mm)",inpNum("edgeBeamExcDepth",d.edgeBeamExcDepth===undefined?num(d.edgeThickenExtraDepth,150):d.edgeBeamExcDepth))}</div>
+  <div class="subsec ${d.edgeBeamExc?'':'hidden'}" data-show-if="edgeBeamExc"><div class="grid cols3">${F("Trench width (mm)",inpNum("edgeBeamTrenchWidth",d.edgeBeamTrenchWidth===undefined?(num(d.edgeBeamWidth,300)+50):d.edgeBeamTrenchWidth))}${F("Excavation depth below prepared level (mm)",inpNum("edgeBeamExcDepth",d.edgeBeamExcDepth===undefined?num(d.edgeBeamExtraDepth,300):d.edgeBeamExcDepth))}</div>
   <p class="small">Same as a Ground Beam's trench: dug volume + a bulked spoil-disposal line, along the perimeter. Off by default so existing takeoffs don't change.</p></div>
   </div>`;
   let reo = meshBlock + barBlock("botX","Bottom X bars")+barBlock("botY","Bottom Y bars")+barBlock("topX","Top X bars")+barBlock("topY","Top Y bars")
@@ -2735,7 +2740,7 @@ function renderSlab(inst,def){
    ${F("Total step-down length (m)",inpNum("sdLength",d.sdLength))}${F("Step depth (mm)",inpNum("sdDepth",d.sdDepth))}${F("Dowel size",barSizeSel("sdDia",d.sdDia))}${F("Spacing (mm)",inpNum("sdSpacing",d.sdSpacing))}
   </div>${sdBarShapeUI(d,num(d.sdProj1)+num(d.sdProj2))}${sdSetupFields(d)}<div class="tip"><span class="ico">🏗️</span><div>Split-level slabs (a sunken wet area, a stepped car park deck) need dowels across the step or the two pours act independently under load. Size and space dowels the same way you'd detail a construction joint — this is the item estimators most often forget because it's buried in a section detail, not called up on the reinforcement schedule.</div></div></div>`;
   let concExtras = `<div class="subsec"><div class="sechead">Pour Details</div><div class="grid cols4">${chk("drops",d.drops,"Drops")}${chk("setdowns",d.setdowns,"Setdowns / recesses")}${chk("upstands",d.upstands,"Upstands")}</div></div>`;
-  return {geom,conc:concSection(d,"<p class='small'>Concrete = area × thickness (area = L×W unless manually entered)</p>")+concExtras,reo:reo+steps,
+  return {geom: geom + edgeThickenGeom, conc:concSection(d,"<p class='small'>Concrete = area × thickness (area = L×W unless manually entered)</p>")+concExtras,reo:reo+steps,
    edgebeams: edgeBeamGeom + edgeBeamReoBlock,
    intbeams: stripGeom + stripReoBlock,
    form,
@@ -2782,23 +2787,41 @@ function computeSlab(inst,def){
     lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Opening reveals",spec:`${d.thickness}mm high reveal`,qty:revLm,unit:"m",waste:PROJECT.formworkWaste,finalQty:withWaste(revLm,PROJECT.formworkWaste),formula:"Σ 2×(w+h)×qty"}));
   }
   if(d.edgeThicken){
+    // EDGE THICKENING — a simple thickening of the slab edge, concrete
+    // only, following the slab perimeter automatically. Distinct from the
+    // Edge Beams below (real beams, manual run, own cage).
     let ew=num(d.edgeThickenWidth)/1000, ed=num(d.edgeThickenExtraDepth)/1000;
     let edgeVol=perim*ew*ed;
-    lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:"Edge beam (thickened perimeter strip)",qty:edgeVol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(edgeVol,concWastePct(d)),formula:`perimeter(${fmt(perim,1)})×width(${d.edgeThickenWidth}mm)×extra depth(${d.edgeThickenExtraDepth}mm)`}));
-    // Edge beam — the FULL standalone-Ground-Beam parameter set, run over
-    // the slab perimeter, taken off HERE with the slab: per-row bar sets
-    // with anchorages, trench mesh with per-layer products, ligature
-    // zones, and optional trench excavation + spoil.
-    raftBeamGroupLines(inst,def,lines,d,{
-      label:"Edge beam", runM:perim, widthMm:num(d.edgeThickenWidth,300),
-      secDepthMm:num(d.thickness,150)+num(d.edgeThickenExtraDepth,150),
-      reoOn:d.edgeBeamReo, trench:d.edgeBeamTrenchMesh, trenchLap:d.edgeBeamLap,
-      layersField:"edgeBeamLayers", typeField:"edgeBeamTrenchType", layerTypesField:"edgeBeamLayerTypes",
-      rows:d.edgeBeamRows||[{position:"Bottom continuous",qty:num(d.edgeBeamBars,4),dia:d.edgeBeamDia||"N16",layers:Math.max(1,Math.round(num(d.edgeBeamLayers,1))),startA:"straight",endA:"straight",lap:!!d.edgeBeamLap}],
-      ligsOn:d.edgeBeamLigs, ligLap:d.edgeBeamLigLap,
-      ligZones:d.edgeBeamLigZones||[{zone:"General",length:0,dia:d.edgeBeamLigDia||"N10",spacing:num(d.edgeBeamLigSpacing,300)}],
-      excOn:d.edgeBeamExc, trenchWidthMm:d.edgeBeamTrenchWidth===undefined?(num(d.edgeThickenWidth,300)+50):num(d.edgeBeamTrenchWidth), excDepthMm:d.edgeBeamExcDepth===undefined?num(d.edgeThickenExtraDepth,150):num(d.edgeBeamExcDepth),
-    });
+    if(edgeVol>0) lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:"Edge thickening (perimeter strip)",qty:edgeVol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(edgeVol,concWastePct(d)),formula:`perimeter(${fmt(perim,1)}m)×width(${d.edgeThickenWidth}mm)×extra depth(${d.edgeThickenExtraDepth}mm)`}));
+  }
+  {
+    // EDGE BEAMS — treated as real beams: manual run length off the drawing
+    // (never the perimeter), own width, depth entered as either the overall
+    // beam depth (slab-thickness portion deducted from the extra concrete)
+    // or the drop below the slab, own cover, and the full Ground-Beam
+    // parameter set. Saves from before the dedicated section existed (edge
+    // reo hung off Edge Thickening) keep pricing off the thickening fields.
+    let legacy = d.edgeBeamOn===undefined && !!(d.edgeThicken && (d.edgeBeamReo||d.edgeBeamLigs||d.edgeBeamExc));
+    let ebOn = d.edgeBeamOn!==undefined? !!d.edgeBeamOn : legacy;
+    let ebRun = legacy? (d.edgeBeamLen===undefined? perim : num(d.edgeBeamLen)) : num(d.edgeBeamLen);
+    if(ebOn && ebRun>0){
+      let ebW = legacy? num(d.edgeThickenWidth,300) : num(d.edgeBeamWidth,300);
+      let mode = d.edgeBeamDepthMode||"extra";
+      let entered = legacy? num(d.edgeThickenExtraDepth,150) : num(d.edgeBeamExtraDepth,300);
+      let extraMm = mode==="overall"? Math.max(0, entered-num(d.thickness,150)) : entered;
+      let secD = mode==="overall"? entered : num(d.thickness,150)+entered;
+      let vol=ebRun*(ebW/1000)*(extraMm/1000);
+      if(vol>0 && !legacy) lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:"Edge beam",qty:vol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(vol,concWastePct(d)),formula:`run(${fmt(ebRun,1)}m)×width(${ebW}mm)×${mode==="overall"?`(overall ${entered}−slab ${num(d.thickness,150)})`:`extra depth(${extraMm}mm)`} below slab`}));
+      raftBeamGroupLines(inst,def,lines,d,{
+        label:"Edge beam", runM:ebRun, widthMm:ebW, coverMm:d.edgeBeamCover, secDepthMm:secD,
+        reoOn:d.edgeBeamReo, trench:d.edgeBeamTrenchMesh, trenchLap:d.edgeBeamLap,
+        layersField:"edgeBeamLayers", typeField:"edgeBeamTrenchType", layerTypesField:"edgeBeamLayerTypes",
+        rows:d.edgeBeamRows||[{position:"Bottom continuous",qty:num(d.edgeBeamBars,4),dia:d.edgeBeamDia||"N16",layers:Math.max(1,Math.round(num(d.edgeBeamLayers,1))),startA:"straight",endA:"straight",lap:!!d.edgeBeamLap}],
+        ligsOn:d.edgeBeamLigs, ligLap:d.edgeBeamLigLap,
+        ligZones:d.edgeBeamLigZones||[{zone:"General",length:0,dia:d.edgeBeamLigDia||"N10",spacing:num(d.edgeBeamLigSpacing,300)}],
+        excOn:d.edgeBeamExc, trenchWidthMm:d.edgeBeamTrenchWidth===undefined?(ebW+50):num(d.edgeBeamTrenchWidth), excDepthMm:d.edgeBeamExcDepth===undefined?extraMm:num(d.edgeBeamExcDepth),
+      });
+    }
   }
   if(d.beamStrips && num(d.beamStripsLength)>0){
     let bw=num(d.beamStripsWidth)/1000, bd=num(d.beamStripsExtraDepth)/1000;
@@ -2808,7 +2831,7 @@ function computeSlab(inst,def){
     // the combined run: per-row bar sets with anchorages, trench mesh with
     // per-layer products, ligature zones, optional trench excavation.
     raftBeamGroupLines(inst,def,lines,d,{
-      label:"Beam strips", runM:num(d.beamStripsLength), widthMm:num(d.beamStripsWidth,300),
+      label:"Beam strips", runM:num(d.beamStripsLength), widthMm:num(d.beamStripsWidth,300), coverMm:d.beamStripsCover,
       secDepthMm:num(d.thickness,150)+num(d.beamStripsExtraDepth,150),
       reoOn:d.beamStripsReo, trench:d.beamStripsTrenchMesh, trenchLap:d.beamStripsLap,
       layersField:"beamStripsLayers", typeField:"beamStripsTrenchType", layerTypesField:"beamStripsLayerTypes",
