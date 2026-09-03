@@ -1678,27 +1678,42 @@ function polylineSVG(dirs,lens,label){
     <path d="${path}" fill="none" stroke="var(--danger)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>${labels}</svg>
    <div class="small">lengths in mm · ${label||"one bar"} = <b>${Math.round(tot)}mm</b></div>`;
 }
-/* Edge-thickening RUN sketch: draw the thickened-edge run in plan (an open
- * polyline, same machinery as the step bar), type each segment's true
- * length in mm — the segments summed = the thickening run. */
+/* Edge-thickening SECTION sketch: draw the thickening's CROSS-SECTION
+ * profile off the section detail (an open polyline, same machinery as the
+ * step bar), type each segment's true length in mm — the shape is closed
+ * back to its start automatically and its enclosed AREA × the run drives
+ * the concrete, replacing the simple width × extra-depth rectangle. */
+function etSectionAreaM2(d){
+  if(!(Array.isArray(d.etDirs)&&d.etDirs.length>=2&&(d.etLens||[]).length)) return 0;
+  // rebuild the section's vertices from segment directions + typed lengths,
+  // close back to the origin, shoelace the polygon
+  let pts=[{x:0,y:0}];
+  for(let i=0;i<d.etDirs.length;i++){
+    let p=pts[i], L=Math.max(0,num((d.etLens||[])[i]));
+    pts.push({x:p.x+Math.cos(d.etDirs[i])*L, y:p.y+Math.sin(d.etDirs[i])*L});
+  }
+  let a=0;
+  for(let i=0;i<pts.length;i++){ let p=pts[i], q=pts[(i+1)%pts.length]; a+=p.x*q.y-q.x*p.y; }
+  return Math.abs(a)/2/1e6; // mm² → m²
+}
 function etRunShapeUI(d){
   let has=Array.isArray(d.etDirs)&&d.etDirs.length;
-  return `<div class="subsec"><div class="sechead">Thickened-Edge Run Shape</div>
+  let area=etSectionAreaM2(d);
+  return `<div class="subsec"><div class="sechead">Thickened-Edge Section Shape</div>
    <div class="toolbar" style="margin-bottom:8px;">
-    <button class="btn small primary" data-action="sketchEtRun" type="button">✏️ ${has?'Re-sketch':'Sketch'} the run in plan (draw it off the drawing)</button>
-    ${has? `<button class="btn small ghost" data-action="clearEtRun" type="button">Use perimeter / manual length instead</button>`:""}
+    <button class="btn small primary" data-action="sketchEtRun" type="button">✏️ ${has?'Re-sketch':'Sketch'} the SECTION profile (draw it off the section detail)</button>
+    ${has? `<button class="btn small ghost" data-action="clearEtRun" type="button">Use width × extra depth instead</button>`:""}
    </div>
    ${has? `<div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start;">
      <div style="flex:1;min-width:200px;"><table class="rows"><thead><tr><th>Segment</th><th>Length (mm)</th></tr></thead>
-      <tbody>${d.etDirs.map((a,i)=>`<tr><td><b>${String.fromCharCode(65+i)}</b></td><td style="width:130px">${inpNum(`etLens.${i}`,(d.etLens||[])[i])}</td></tr>`).join('')}</tbody></table>
-      <p class="small">The sketch was straightened into segments <b>A–${String.fromCharCode(64+d.etDirs.length)}</b>. Type each segment's TRUE length in mm off the drawing — the thickening run is the segments summed, overriding the perimeter and any manual figure.</p></div>
-     <div style="flex:1;min-width:200px;">${polylineSVG(d.etDirs,d.etLens||[],"run")}</div>
+      <tbody>${d.etDirs.map((a2,i)=>`<tr><td><b>${String.fromCharCode(65+i)}</b></td><td style="width:130px">${inpNum(`etLens.${i}`,(d.etLens||[])[i])}</td></tr>`).join('')}</tbody></table>
+      <p class="small">The sketch was straightened into segments <b>A–${String.fromCharCode(64+d.etDirs.length)}</b>. Type each segment's TRUE length in mm off the section detail — the profile closes back to its start automatically, and its enclosed area (<b>${area>0?fmt(area,3):'0'} m²</b>) × the thickening run replaces the simple width × extra-depth rectangle.</p></div>
+     <div style="flex:1;min-width:200px;">${polylineSVG(d.etDirs,d.etLens||[],"section girth")}</div>
     </div>`
-   : `<p class="small">No sketch — the run uses the manual override above, or the slab perimeter when that's blank.</p>`}
+   : `<p class="small">No section sketch — the thickening prices as a simple rectangle: strip width × extra depth × run. Sketch the section for a tapered / L-shaped / non-rectangular thickened edge.</p>`}
   </div>`;
 }
 function etRunM(d,perim){
-  if(Array.isArray(d.etDirs)&&d.etDirs.length&&(d.etLens||[]).length) return (d.etLens||[]).reduce((s,v)=>s+num(v),0)/1000;
   if(num(d.edgeThickenLenOverride)>0) return num(d.edgeThickenLenOverride);
   return perim;
 }
@@ -2855,10 +2870,11 @@ function computeSlab(inst,def){
     // only, following the slab perimeter automatically. Distinct from the
     // Edge Beams below (real beams, manual run, own cage).
     let etRun=etRunM(d,perim);
-    let etSrc=(Array.isArray(d.etDirs)&&d.etDirs.length)? "sketched run" : (num(d.edgeThickenLenOverride)>0? "manual run" : "perimeter");
+    let runSrc=num(d.edgeThickenLenOverride)>0? "manual run" : "perimeter";
+    let secArea=etSectionAreaM2(d);
     let ew=num(d.edgeThickenWidth)/1000, ed=num(d.edgeThickenExtraDepth)/1000;
-    let edgeVol=etRun*ew*ed;
-    if(edgeVol>0) lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:"Edge thickening (perimeter strip)",qty:edgeVol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(edgeVol,concWastePct(d)),formula:`${etSrc}(${fmt(etRun,1)}m)×width(${d.edgeThickenWidth}mm)×extra depth(${d.edgeThickenExtraDepth}mm)`}));
+    let edgeVol=secArea>0? etRun*secArea : etRun*ew*ed;
+    if(edgeVol>0) lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:"Edge thickening (perimeter strip)",qty:edgeVol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(edgeVol,concWastePct(d)),formula:secArea>0?`${runSrc}(${fmt(etRun,1)}m)×sketched section(${fmt(secArea,3)}m²)`:`${runSrc}(${fmt(etRun,1)}m)×width(${d.edgeThickenWidth}mm)×extra depth(${d.edgeThickenExtraDepth}mm)`}));
   }
   {
     // EDGE BEAMS — treated as real beams: manual run length off the drawing
@@ -5162,11 +5178,10 @@ function ensureSketchPad(){
         else { mdirs.push(bdirs[i]); mlens.push(blens[i]); }
       }
       if(mdirs.length<1){ div.querySelector("#sketchHint").textContent="Couldn't read a bar shape from that stroke — try again."; return; }
-      // seed mm lengths keeping sketch proportions — longest leg 600mm for a
-      // bar, 6000mm for a plan run (typed over with true figures either way)
+      // seed mm lengths keeping sketch proportions, longest leg = 600mm
+      // (typed over with the drawing's true figures either way)
       let bmax=Math.max(...mlens)||1;
-      let seedMax=isEt?6000:600;
-      let bseed=mlens.map(L=>Math.max(50,Math.round(L/bmax*seedMax/10)*10));
+      let bseed=mlens.map(L=>Math.max(50,Math.round(L/bmax*600/10)*10));
       let bd=SKETCH.inst.data;
       if(isEt){ bd.etDirs=mdirs; bd.etLens=bseed; }
       else { bd.sdBarDirs=mdirs; bd.sdBarLens=bseed; }
@@ -5227,8 +5242,8 @@ function openSketchPad(inst,card,mode){
     div.querySelector("#sketchTitle").textContent="Sketch the dowel / step bar shape";
     div.querySelector("#sketchCopy").textContent="Draw the bar's profile in one stroke, straight off the drawing — down, across, down for a Z-bar; two strokes of an L become one stroke with a corner. It's straightened into segments A, B, C… and you type each segment's true length in mm.";
   } else if(SKETCH.mode==="etrun"){
-    div.querySelector("#sketchTitle").textContent="Sketch the thickened-edge run (plan)";
-    div.querySelector("#sketchCopy").textContent="Draw the thickened edge's run in one stroke off the plan — just the edges that are thickened, corners included. It's straightened into segments A, B, C… and you type each segment's true length in mm; the run is the segments summed.";
+    div.querySelector("#sketchTitle").textContent="Sketch the thickened-edge SECTION";
+    div.querySelector("#sketchCopy").textContent="Draw the thickening's cross-section profile in one stroke off the section detail — down, across, back up for a rectangular rebate; slope the legs for a tapered edge. It's straightened into segments A, B, C…, you type each segment's true length in mm, the shape closes back to its start automatically, and its enclosed AREA × the run prices the concrete.";
   } else {
     div.querySelector("#sketchTitle").textContent="Sketch the slab outline";
     div.querySelector("#sketchCopy").textContent="Draw the shape roughly in one stroke — corners don't need to be neat. The app straightens it into sides labelled A, B, C…; you then type the true length of each side, and can adjust any corner's angle afterwards.";

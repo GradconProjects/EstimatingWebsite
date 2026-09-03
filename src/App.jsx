@@ -16,6 +16,7 @@ import PlannerView from "./components/PlannerView.jsx";
 import ProjectFolderView from "./components/ProjectFolderView.jsx";
 import PrintQuoteReport from "./components/PrintQuoteReport.jsx";
 import ExternalQuoteReport from "./components/ExternalQuoteReport.jsx";
+import TenderQuoteReport from "./components/TenderQuoteReport.jsx";
 import ExportExcelModal from "./components/ExportExcelModal.jsx";
 import ImportFlagsBanner from "./components/ImportFlagsBanner.jsx";
 import ManageElementTypesModal from "./components/ManageElementTypesModal.jsx";
@@ -369,6 +370,7 @@ function ProjectEditor({ project, rates, setRates, ratesStatus, saveProjectsNow,
   const [elementTypesOpen, setElementTypesOpen] = useState(false);
   const [printPreviewOpen, setPrintPreviewOpen] = useState(false);
   const [externalQuoteOpen, setExternalQuoteOpen] = useState(false);
+  const [tenderQuoteOpen, setTenderQuoteOpen] = useState(false);
   // Only one of the two printable reports' `hidden print:block` copies should
   // ever be in the DOM at once — otherwise Ctrl+P/window.print() would print
   // both concatenated together. Whichever button was last clicked wins.
@@ -493,6 +495,16 @@ function ProjectEditor({ project, rates, setRates, ratesStatus, saveProjectsNow,
             <Printer size={16} /> External Quote
           </button>
           <button
+            onClick={() => {
+              setPrintTarget("tender");
+              setTenderQuoteOpen(true);
+            }}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-900 hover:bg-blue-800 text-sm font-medium transition-colors flex-none"
+            title="The full tender quotation document — Gradcon's real quotation layout, every line item and section editable, seeded from this quote and its estimating quantities, with a print preview. Never includes markup drawings."
+          >
+            <Printer size={16} /> Tender Quote
+          </button>
+          <button
             onClick={exportExcel}
             className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-900 hover:bg-blue-800 text-sm font-medium transition-colors flex-none"
             title="Export as a formatted spreadsheet (opens in Excel)"
@@ -610,6 +622,16 @@ function ProjectEditor({ project, rates, setRates, ratesStatus, saveProjectsNow,
         onClose={() => setExternalQuoteOpen(false)}
         onChange={(externalQuote) => setQuote((q) => ({ ...q, externalQuote }))}
         isPrintTarget={printTarget === "external"}
+      />
+
+      <TenderQuoteReport
+        quote={quote}
+        items={items}
+        rates={rates}
+        visible={tenderQuoteOpen}
+        onClose={() => setTenderQuoteOpen(false)}
+        onChange={(tenderQuote) => setQuote((q) => ({ ...q, tenderQuote }))}
+        isPrintTarget={printTarget === "tender"}
       />
 
       {exportCsv && (
