@@ -4820,10 +4820,35 @@ document.getElementById("loadFile").addEventListener("change",e=>{
 /* estimateSessionId (set once on PROJECT, see its declaration above) travels in every
  * payload so Quotes/Cost Planner can recognise a re-publish of THIS SAME project and
  * refresh it in place, instead of spawning a new duplicate project every time. */
+/* The TAKEOFF's own geometric measures per element, for Quotes' benchmark
+ * unit-rate panels ($/lm · $/m² · $/m³) — Quotes can't derive a strip
+ * footing's run or a slab's true plan area from catalog quantities alone
+ * (mesh coverage carries lap, formwork lm may not be entered), but this
+ * tool knows them exactly, so every publish sends them along:
+ *  - runM: strip footings and every beam type — count × length, metres;
+ *  - areaM2: the element's plan/surface footprint, straight from the same
+ *    fields the compute already derives for insulation/blinding
+ *    (_autoInsArea for slabs, _autoBlindArea for beams/footings) — call
+ *    only AFTER computeAllAndRefresh so they're current. */
+function instanceMeasures(inst){
+  const def = LIB_INDEX[inst.typeKey] || {};
+  const d = inst.data || {};
+  const out = {};
+  if(def.calc==="stripfooting" || def.calc==="beam"){
+    const r = (num(d.qty,1) * num(d.length)) / 1000 || 0;
+    if(r>0) out.runM = Math.round(r*100)/100;
+  }
+  const a = num(d._autoInsArea) || num(d._autoBlindArea) || 0;
+  if(a>0) out.areaM2 = Math.round(a*100)/100;
+  return out;
+}
 function buildEstimateExportPayload(){
+  const elementMeasures = {};
+  INSTANCES.forEach(inst=>{ const m=instanceMeasures(inst); if(Object.keys(m).length) elementMeasures[inst.id]=m; });
   return {
     project: {name:PROJECT.name, jobNumber:PROJECT.jobNumber, client:PROJECT.client, revision:PROJECT.revision, estimateSessionId:PROJECT.estimateSessionId},
     lines: allLines(),
+    elementMeasures,
   };
 }
 /* Writes both shared localStorage channels Quotes/Cost Planner read from. Used by both

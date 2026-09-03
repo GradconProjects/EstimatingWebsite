@@ -841,12 +841,48 @@ check("System unit rates: all-in $/measure; slab+level beams show slab m³ / bea
   strip.qtys[rateKey("FORMWORK", "Edgeform", "m")] = 60;
   assert.deepEqual(computeElementUnitRates(strip, rates, [strip]).map((l) => l.unit), ["lm", "m³"], "strip footing leads with $/lm then $/m³");
 
+  // The takeoff's own measures beat the catalog-derived fallbacks: a recorded
+  // run length (measureLm) replaces the formwork-m sum, and a recorded plan
+  // area (measureM2) replaces lap-inflated mesh coverage.
+  strip.measureLm = 45; // the strips' true total length off the takeoff
+  assert.equal(computeElementUnitRates(strip, rates, [strip])[0].qty, 45, "measureLm is the $/lm denominator");
+  slab.measureM2 = 180;
+  assert.equal(computeElementUnitRates(slab, rates, [slab]).find((l) => l.unit === "m²").qty, 180, "measureM2 is the $/m² denominator");
+  delete slab.measureM2;
+
   // Trench mesh must NOT create (or inflate) an lm denominator
   slab.qtys[rateKey("TRENCH MESH", "4 Bar-L12TM", "length")] = 20;
   assert.equal(computeElementUnitRates(slab, rates, [slab]).find((l) => l.unit === "lm").qty, 90, "lm stays the formwork run only");
 
   // Nothing entered → no lines (never a divide-by-zero)
   assert.deepEqual(computeElementUnitRates(newElementItem(ELEMENT_TYPES[0]), rates, []), []);
+});
+
+check("Import: takeoff measures (runM/areaM2) land as measureLm/measureM2 and sum when same-type elements combine", () => {
+  const { quote } = buildImportFromEstimate({
+    project: {},
+    lines: [
+      estLine({ category: "Strip Footing", element: "Strip A", elementId: "S1", material: "N25 concrete", finalQty: 6 }),
+      estLine({ category: "Strip Footing", element: "Strip B", elementId: "S2", material: "N25 concrete", finalQty: 4 }),
+      estLine({ category: "Slab on Ground", element: "GF Slab", elementId: "SL1", material: "N25 concrete", finalQty: 20 }),
+    ],
+    elementMeasures: { S1: { runM: 42.5, areaM2: 25.5 }, S2: { runM: 17.5, areaM2: 10.5 }, SL1: { areaM2: 180 } },
+  });
+  const strip = quote.items.find((it) => it.typeId === "strip_footings");
+  assert.equal(strip.measureLm, 60, "combined strips carry the summed run length");
+  assert.equal(strip.measureM2, 36, "combined strips carry the summed footprint area");
+  const slab = quote.items.find((it) => /slab/i.test(it.typeId));
+  assert.equal(slab.measureM2, 180, "the slab carries the takeoff's true plan area");
+  // and the rates engine reads them straight off the imported items
+  const stripRates = computeElementUnitRates(strip, defaultRates(), quote.items);
+  assert.equal(stripRates[0].unit, "lm");
+  assert.equal(stripRates[0].qty, 60);
+  // an export from before elementMeasures existed still imports cleanly
+  const { quote: legacy } = buildImportFromEstimate({
+    project: {},
+    lines: [estLine({ category: "Strip Footing", element: "Strip A", elementId: "S1", material: "N25 concrete", finalQty: 6 })],
+  });
+  assert.equal(legacy.items[0].measureLm, undefined);
 });
 
 const { computeTenderProjectSum, parseTenderPrice } = await import("../src/lib/tenderQuoteDefaults.js");

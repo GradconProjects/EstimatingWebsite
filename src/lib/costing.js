@@ -393,15 +393,39 @@ const PAD_ELEMENT_MATCH = /pad footing|pile cap|column base/i;
  * deliberately NOT derived from trench mesh (layers would inflate a run). */
 function elementMeasures(item, rates) {
   const lq = labourQuantities(item, rates);
-  let lm = 0;
-  FULL_CATALOG.forEach((cat) => {
-    if (cat.key !== "FORMWORK") return;
-    cat.products.forEach((p) => {
-      if (p.unit !== "m") return;
-      lm += Number(item.qtys[rateKey(cat.key, p.name, p.unit)]) || 0;
+  // The element's own recorded run length (item.measureLm — set by the
+  // Estimates publish from the takeoff's count × length for strip footings
+  // and beams, and editable on the card's rates panel) is the true $/lm
+  // denominator; the lineal-metre formwork rows are only the fallback for
+  // elements that never got one.
+  let lm = Number(item.measureLm) || 0;
+  if (lm <= 0) {
+    FULL_CATALOG.forEach((cat) => {
+      if (cat.key !== "FORMWORK") return;
+      cat.products.forEach((p) => {
+        if (p.unit !== "m") return;
+        lm += Number(item.qtys[rateKey(cat.key, p.name, p.unit)]) || 0;
+      });
     });
-  });
-  return { m2: lq.finishM2 > 0 ? lq.finishM2 : lq.formworkM2, m3: lq.concreteM3, lm };
+  }
+  // Likewise the takeoff's true plan/surface area (item.measureM2) beats the
+  // mesh-coverage fallback, which is inflated by lap allowance.
+  const m2 = Number(item.measureM2) > 0 ? Number(item.measureM2)
+    : lq.finishM2 > 0 ? lq.finishM2 : lq.formworkM2;
+  return { m2, m3: lq.concreteM3, lm };
+}
+
+/** How an element's benchmark rates read: "run" (beams, strip footings —
+ * $/lm leads), "pad" ($/m³ then surface m²), "slab" (system rates), or
+ * "other" ($/m² when measured in m²). The estimator's row label outranks
+ * the created type. */
+export function elementRateKind(item) {
+  const label = String(item.label || "");
+  const kind = `${label} ${item.section || ""} ${item.typeId || ""}`;
+  if (RUN_ELEMENT_MATCH.test(label) || (!SLAB_ELEMENT_MATCH.test(label) && !PAD_ELEMENT_MATCH.test(label) && RUN_ELEMENT_MATCH.test(kind))) return "run";
+  if (PAD_ELEMENT_MATCH.test(label) || (!SLAB_ELEMENT_MATCH.test(label) && PAD_ELEMENT_MATCH.test(kind))) return "pad";
+  if (SLAB_ELEMENT_MATCH.test(kind)) return "slab";
+  return "other";
 }
 
 /** Benchmark unit rates — the "$/m² · $/m³ · $/lm" box on each element
@@ -425,14 +449,10 @@ export function computeElementUnitRates(item, rates, allItems = []) {
   const { total } = computeElementCost(item, rates);
   if (total <= 0) return [];
   const me = elementMeasures(item, rates);
-  // What the estimator NAMED the row wins over what type it was created
-  // from ("Pad Footings" renamed from a slab card is a pad); the
-  // section/typeId only classify when the label itself decides nothing.
-  const label = String(item.label || "");
-  const kind = `${label} ${item.section || ""} ${item.typeId || ""}`;
-  const isRun = RUN_ELEMENT_MATCH.test(label) || (!SLAB_ELEMENT_MATCH.test(label) && !PAD_ELEMENT_MATCH.test(label) && RUN_ELEMENT_MATCH.test(kind));
-  const isPad = !isRun && (PAD_ELEMENT_MATCH.test(label) || (!SLAB_ELEMENT_MATCH.test(label) && PAD_ELEMENT_MATCH.test(kind)));
-  const isSlab = !isRun && !isPad && SLAB_ELEMENT_MATCH.test(kind);
+  const rateKind = elementRateKind(item);
+  const isRun = rateKind === "run";
+  const isPad = rateKind === "pad";
+  const isSlab = rateKind === "slab";
   const line = (unit, qty, cost, lbl = "") => ({ unit, qty: round2(qty), rate: cost / qty, label: lbl });
   const lines = [];
   const push = (order) => order.forEach(([unit, qty]) => { if (qty > 0) lines.push(line(unit, qty, total)); });

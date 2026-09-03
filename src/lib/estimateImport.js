@@ -149,6 +149,10 @@ export function buildImportFromEstimate(estimateExport) {
   // Workspace but not filled in) shouldn't create a flag or a phantom quantity.
   const lines = (Array.isArray(estimateExport?.lines) ? estimateExport.lines : [])
     .filter((l) => (Number(l.finalQty) || 0) > 0);
+  // Per-element takeoff measures ({runM, areaM2}, keyed by elementId) — the
+  // benchmark-rate denominators Quotes can't derive from catalog quantities.
+  // Absent entirely in exports from before this field existed.
+  const elementMeasures = estimateExport?.elementMeasures || {};
 
   const flags = [];
   const items = [];
@@ -195,6 +199,15 @@ export function buildImportFromEstimate(estimateExport) {
     // fromEstimate items wholesale but leaves the estimator's manually added
     // cards on the same project untouched (see the merge in App.jsx).
     item.fromEstimate = true;
+    // The takeoff's own measures — run length (strip footings/beams:
+    // count × length) and true plan/surface area — become the benchmark
+    // rates' denominators, which catalog quantities alone can't provide
+    // (mesh coverage carries lap). Editable later on the card's rates panel.
+    const meta = elementMeasures[elementId] || {};
+    const runM = Number(meta.runM) || 0;
+    if (runM > 0) item.measureLm = Math.round(runM * 100) / 100;
+    const areaM2 = Number(meta.areaM2) || 0;
+    if (areaM2 > 0) item.measureM2 = Math.round(areaM2 * 100) / 100;
 
     // `handled` tracks exactly which lines ended up EITHER mapped into
     // item.qtys OR explicitly flagged, so the final sweep below can catch
@@ -397,6 +410,11 @@ export function buildImportFromEstimate(estimateExport) {
     }
     Object.entries(item.qtys).forEach(([key, qty]) => {
       prior.item.qtys[key] = (Number(prior.item.qtys[key]) || 0) + (Number(qty) || 0);
+    });
+    // Three strips combined = one card whose $/lm run is the strips' total
+    // length (and likewise the combined plan/surface area for $/m²).
+    ["measureLm", "measureM2"].forEach((k) => {
+      if (Number(item[k]) > 0) prior.item[k] = Math.round(((Number(prior.item[k]) || 0) + Number(item[k])) * 100) / 100;
     });
     prior.labels.push(item.label);
     const typeName = QUOTES_TYPE_BY_ID[item.typeId]?.name || prior.labels[0];
