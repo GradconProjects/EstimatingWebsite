@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Plus, Trash2, ArrowRight, LayoutDashboard, Loader2 } from "lucide-react";
 import { QUOTE_STATUSES, QUOTE_STATUS_STYLES } from "../data/catalog.js";
-import { computeGrandTotal, computeMarginLadder, money, money2, getDefaultMargin, getMarginSteps } from "../lib/costing.js";
+import { computeGrandTotal, computeMarginLadder, money, getDefaultMargin, getMarginSteps } from "../lib/costing.js";
 import { readQuotes, writeQuote } from "../lib/projects.js";
 import { dashboardDueLabel } from "../lib/planner.js";
 
@@ -239,10 +239,8 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete 
               <th className="text-left px-3 py-2 font-medium">Deadline</th>
               <th className="text-left px-3 py-2 font-medium">Status</th>
               <th className="text-right px-3 py-2 font-medium">Elements</th>
-              <th className="text-right px-3 py-2 font-medium">GFA</th>
               <th className="text-right px-3 py-2 font-medium">Direct cost</th>
               <th className="text-right px-3 py-2 font-medium">Sell ({Math.round(getDefaultMargin() * 100)}%, ex GST)</th>
-              <th className="text-right px-3 py-2 font-medium">$/m²</th>
               <th className="px-3 py-2" />
             </tr>
           </thead>
@@ -290,12 +288,10 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete 
                   </select>
                 </td>
                 <td className="px-3 py-2.5 text-right font-mono tabular-nums text-neutral-400 text-xs">{s.elementCount}</td>
-                <td className="px-3 py-2.5 text-right font-mono tabular-nums text-neutral-400 text-xs">{s.gfa ? `${s.gfa} m²` : "—"}</td>
                 <td className="px-3 py-2.5 text-right font-mono tabular-nums text-neutral-500">{money(s.directCost)}</td>
                 <td className="px-3 py-2.5 text-right font-mono tabular-nums text-orange-600 font-semibold">
                   {money(s.sellExGst)}
                 </td>
-                <td className="px-3 py-2.5 text-right font-mono tabular-nums">{s.perM2 > 0 ? money2(s.perM2) : "—"}</td>
                 <td className="px-3 py-2.5 text-right">
                   <div className="flex items-center justify-end gap-2">
                     <button
@@ -338,21 +334,21 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete 
             ))}
             {summaries.length === 0 && loading && (
               <tr>
-                <td colSpan={12} className="text-center py-12 text-neutral-400">
+                <td colSpan={10} className="text-center py-12 text-neutral-400">
                   <Loader2 size={16} className="inline animate-spin mr-1.5" /> Loading projects…
                 </td>
               </tr>
             )}
             {summaries.length === 0 && !loading && (
               <tr>
-                <td colSpan={12} className="text-center py-12 text-neutral-400">
+                <td colSpan={10} className="text-center py-12 text-neutral-400">
                   No projects yet — click &quot;New project&quot; to start your first quote.
                 </td>
               </tr>
             )}
             {summaries.length > 0 && visibleSummaries.length === 0 && (
               <tr>
-                <td colSpan={12} className="text-center py-12 text-neutral-400">
+                <td colSpan={10} className="text-center py-12 text-neutral-400">
                   No projects match the current search/filter.
                 </td>
               </tr>
@@ -378,10 +374,9 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete 
                   {filtering ? `Filtered projects (${visibleSummaries.length} of ${summaries.length})` : "All projects"}
                 </td>
                 <td className="px-3 py-2.5 text-right font-mono tabular-nums">{ft.elementCount}</td>
-                <td className="px-3 py-2.5 text-right font-mono tabular-nums">{ft.gfa.toLocaleString("en-AU")} m²</td>
                 <td className="px-3 py-2.5 text-right font-mono tabular-nums">{money(ft.directCost)}</td>
                 <td className="px-3 py-2.5 text-right font-mono tabular-nums text-orange-600">{money(ft.sellExGst)}</td>
-                <td colSpan={2} />
+                <td />
               </tr>
             </tfoot>
             );
