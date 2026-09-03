@@ -42,6 +42,7 @@ export const RESOURCE_COLS = [
   { key: "labourer_day", name: "General Labour Crew", unit: "man-day", rate: 400, crew: true, men: 3 },
   { key: "excavator_day", name: "Excavator", unit: "day", rate: 900 },
   { key: "bobcat_day", name: "Bobcat", unit: "day", rate: 900 },
+  { key: "truck_day", name: "Trucks", unit: "day", rate: 900 },
   { key: "pump_hr", name: "Pump", unit: "hr", rate: 250 },
   { key: "pump_m3", name: "Pump", unit: "m³", rate: 10 },
   { key: "crane_day", name: "Crane", unit: "day", rate: 1600 },

@@ -72,10 +72,12 @@ check("12 material categories, 130 products (incl. INSULATION, N10 Ligatures, Bo
   assert.ok(insul.products.some((p) => /Kooltherm/.test(p.name)), "specified insulation products present");
 });
 
-check("9 crew-sheet resource columns (both Pump hr and Pump m3, Formwork crew, General Labour crew, no Factory column)", () => {
-  assert.equal(RESOURCE_COLS.length, 9);
+check("10 crew-sheet resource columns (both Pump hr and Pump m3, Formwork crew, General Labour crew, Trucks, no Factory column)", () => {
+  assert.equal(RESOURCE_COLS.length, 10);
   assert.ok(!RESOURCE_COLS.some((r) => r.key === "factory_hr"), "Factory labour column removed");
   assert.ok(RESOURCE_COLS.some((r) => r.key === "labourer_day"), "General Labour column present");
+  const truck = RESOURCE_COLS.find((r) => r.key === "truck_day");
+  assert.ok(truck && truck.name === "Trucks" && truck.unit === "day" && !truck.crew, "Trucks plant column present (day rate, not a crew)");
   const fw = RESOURCE_COLS.find((r) => r.key === "formwork_day");
   assert.ok(fw && fw.crew, "Formwork crew column present");
   // the engine must NEVER auto-fill the formwork crew column — manual only
@@ -228,10 +230,10 @@ check("Labour rolls up: 8 Concrete Crew days + 20 Pump hrs on one task = $17,000
   const type = ELEMENT_TYPES.find((t) => t.id === "strip_footings");
   const item = newElementItem(type);
   const pourTask = item.tasks.find((t) => t.name === "Pour / place / vibrate concrete");
-  pourTask.qtys["concreter_day"] = 8; // 8 crew-days * $1500 (a 3-man crew's day)
+  pourTask.qtys["concreter_day"] = 8; // rows default PER PERSON: 8 man-days × $500
   pourTask.qtys["pump_hr"] = 20; // 20 * $250
   const cost = computeElementCost(item, rates);
-  assert.equal(cost.labourTotal, 8 * 1500 + 20 * 250);
+  assert.equal(cost.labourTotal, 8 * 500 + 20 * 250);
   assert.equal(cost.total, cost.materialsTotal + cost.labourTotal + cost.additionalTotal);
 });
 
@@ -259,9 +261,16 @@ check("Auto labour: crew-days from crew-day blocks with decimals kept (10 m³/cr
   const pourTask = item.tasks.find((t) => t.name === "Pour / place / vibrate concrete");
   const tieTask = item.tasks.find((t) => t.name === "Tie reinforcement");
 
+  // rows default PER PERSON, so suggestions land as man-days: crews × men
   const suggestions = suggestedLabourPrefill(item, rates);
-  assert.equal(suggestions[pourTask.id].concreter_day, 5);
-  assert.equal(suggestions[tieTask.id].steelfixer_day, 3.2);
+  assert.equal(suggestions[pourTask.id].concreter_day, 15); // 5 crew-days × 3 men
+  assert.equal(suggestions[tieTask.id].steelfixer_day, 16); // 3.2 crew-days × 5 men
+  // switched to per crew, the same rows suggest raw crew-days
+  pourTask.crewMode = "crew"; tieTask.crewMode = "crew";
+  const crewSug = suggestedLabourPrefill(item, rates);
+  assert.equal(crewSug[pourTask.id].concreter_day, 5);
+  assert.equal(crewSug[tieTask.id].steelfixer_day, 3.2);
+  pourTask.crewMode = undefined; tieTask.crewMode = undefined;
   // a pour books the pump: flat 6 hrs plus the true m³ pumped (never rounded)
   assert.equal(suggestions[pourTask.id].pump_hr, 6);
   assert.equal(suggestions[pourTask.id].pump_m3, 50);
@@ -272,7 +281,7 @@ check("Auto labour: crew-days from crew-day blocks with decimals kept (10 m³/cr
   const suggestions2 = suggestedLabourPrefill(item, rates);
   assert.equal(suggestions2[pourTask.id].concreter_day, undefined, "must not suggest a value for an already-filled cell");
   assert.equal(suggestions2[pourTask.id].pump_hr, 6); // other cells on the row still auto
-  assert.equal(suggestions2[tieTask.id].steelfixer_day, 3.2); // unrelated task/resource still suggested
+  assert.equal(suggestions2[tieTask.id].steelfixer_day, 16); // unrelated task/resource still suggested
 });
 
 check("Fractional crew-days: tiny quantities stay fractional (no ceiling, no minimum whole crew), cost = days × men × man-day rate", () => {
@@ -284,17 +293,17 @@ check("Fractional crew-days: tiny quantities stay fractional (no ceiling, no min
   item.qtys[rateKey("PROCESSED BAR", "N12", "m")] = 146; // 146 m × 0.888 kg/m ≈ 0.13 t
   const tieTask = item.tasks.find((t) => t.name === "Tie reinforcement");
   const sug = suggestedLabourPrefill(item, rates);
-  near(sug[tieTask.id].steelfixer_day, 0.13);
+  near(sug[tieTask.id].steelfixer_day, 0.65); // 0.13 crew-days × 5 men (per-person default)
   const shown = taskRowMeta(tieTask.name, labourQuantities(item, rates)).autoQty;
   assert.ok(Math.abs(shown - 0.13) < 0.005, `Qty column must display the true tonnage (~0.13), got ${shown}`);
   near(computeElementCost(item, rates).resourceCosts.steelfixer_day, 0.13 * 5 * 650);
 
-  // 4 m³ of concrete -> 0.4 Concrete Crew days, pump still 6 hrs + true 4 m³.
+  // 4 m³ of concrete -> 0.4 Concrete Crew days = 1.2 man-days, pump 6 hrs + true 4 m³.
   const small = newElementItem(type);
   small.qtys[rateKey("CONCRETE", "25 mpa", "m3")] = 4;
   const pourTask = small.tasks.find((t) => t.name === "Pour / place / vibrate concrete");
   const sug2 = suggestedLabourPrefill(small, rates);
-  near(sug2[pourTask.id].concreter_day, 0.4);
+  near(sug2[pourTask.id].concreter_day, 1.2);
   assert.equal(sug2[pourTask.id].pump_hr, 6);
   assert.equal(sug2[pourTask.id].pump_m3, 4);
 });
@@ -306,13 +315,16 @@ check("Per-row crew flexibility: per-crew rows cost days × own men × man-day r
   const item = newElementItem(type);
   item.labourAuto = false;
   const pourTask = item.tasks.find((t) => t.name === "Pour / place / vibrate concrete");
-  pourTask.qtys.concreter_day = 2; // 2 crew-days
-  // default: per-crew at the column default (3 men) × $500 man-day
+  pourTask.qtys.concreter_day = 2;
+  // default: PER PERSON — 2 man-days costed directly at the $500 day rate
+  near(computeElementCost(item, rates).resourceCosts.concreter_day, 2 * 500);
+  // switched to per crew: cells become crew-days × the column default (3 men)
+  pourTask.crewMode = "crew";
   near(computeElementCost(item, rates).resourceCosts.concreter_day, 2 * 3 * 500);
   // this row's own crew is 4 men — no blanket crew size
   pourTask.crewSize = 4;
   near(computeElementCost(item, rates).resourceCosts.concreter_day, 2 * 4 * 500);
-  // toggled to per person: the cells are man-days, costed directly
+  // back to per person: man-days again, crewSize ignored
   pourTask.crewMode = "person";
   near(computeElementCost(item, rates).resourceCosts.concreter_day, 2 * 500);
   // fractional cells survive untouched (no whole-crew rounding)
@@ -336,15 +348,16 @@ check("Seamless labour: computeElementCost costs the auto crew days live (no wri
   const item = newElementItem(type);
   assert.equal(item.labourAuto, true, "new elements default to auto labour");
   item.qtys[rateKey("CONCRETE", "25 mpa", "m3")] = 50;
-  // pour 50 m³ -> 5 Concrete Crew days × 3 men × $500; washout 50/60 ->
-  // 0.83 General Labour Crew days × 3 × $400; pump 6 hr @ $250 + 50 m³ @ $10.
+  // rows default PER PERSON: pour 50 m³ -> 5 crew-days × 3 men = 15 man-days
+  // × $500; washout 50/60 = 0.83 crews × 3 = 2.49 man-days × $400; pump
+  // 6 hr @ $250 + 50 m³ @ $10.
   const near = (a, b) => assert.ok(Math.abs(a - b) < 1e-6, `${a} !~= ${b}`);
   const cost = computeElementCost(item, rates);
-  assert.equal(cost.resourceTotals.concreter_day, 5);
-  near(cost.resourceTotals.labourer_day, 0.83);
+  assert.equal(cost.resourceTotals.concreter_day, 15);
+  near(cost.resourceTotals.labourer_day, 2.49);
   assert.equal(cost.resourceTotals.pump_hr, 6);
   assert.equal(cost.resourceTotals.pump_m3, 50);
-  near(cost.labourTotal, 5 * 3 * 500 + 0.83 * 3 * 400 + 6 * 250 + 50 * 10);
+  near(cost.labourTotal, 15 * 500 + 2.49 * 400 + 6 * 250 + 50 * 10);
   // tasks were NOT written to — the derivation is live
   assert.ok(item.tasks.every((t) => Object.keys(t.qtys).length === 0), "auto labour must not write into tasks");
   // a typed cell wins over the engine
@@ -354,7 +367,7 @@ check("Seamless labour: computeElementCost costs the auto crew days live (no wri
   // quantities changing flow straight through (the old one-shot prefill went stale here)
   pourTask.qtys.concreter_day = undefined;
   item.qtys[rateKey("CONCRETE", "25 mpa", "m3")] = 100;
-  assert.equal(computeElementCost(item, rates).resourceTotals.concreter_day, 10);
+  assert.equal(computeElementCost(item, rates).resourceTotals.concreter_day, 30); // 10 crews × 3 men (per-person default)
   // auto off = fully manual matrix
   item.labourAuto = false;
   assert.equal(computeElementCost(item, rates).resourceTotals.concreter_day, 0);
@@ -368,14 +381,14 @@ check("Crew sheet: Finish row draws mesh m², a typed row Qty overrides the draw
   item.qtys[rateKey("SQUARE MESH", "SL82", "m2")] = 200; // finish area drawn from mesh coverage
   const finishTask = item.tasks.find((t) => t.name === "Finish concrete surfaces");
   const sug = suggestedLabourPrefill(item, rates);
-  assert.equal(sug[finishTask.id].concreter_day, 0.67); // 200/300 m² crew-days, decimals kept
+  assert.equal(sug[finishTask.id].concreter_day, 2.01); // 200/300 = 0.67 crew-days × 3 men (per-person default)
   const pourTask = item.tasks.find((t) => t.name === "Pour / place / vibrate concrete");
-  assert.equal(sug[pourTask.id].concreter_day, 3.6); // 36/10 crew-days — finishing on its own row
+  assert.equal(sug[pourTask.id].concreter_day, 10.8); // 36/10 = 3.6 crew-days × 3 men — finishing on its own row
 
   // typing a row Qty overrides what the row draws on
   pourTask.qty = 20;
   const sug2 = suggestedLabourPrefill(item, rates);
-  assert.equal(sug2[pourTask.id].concreter_day, 2); // 20/10
+  assert.equal(sug2[pourTask.id].concreter_day, 6); // 20/10 = 2 crew-days × 3 men
   assert.equal(sug2[pourTask.id].pump_m3, 20); // pump volume follows the override too
 
   // an element saved before the crew sheet keeps auto on its old task names
@@ -392,7 +405,7 @@ check("Crew sheet: Finish row draws mesh m², a typed row Qty overrides the draw
   // the Qty column still shows the drawn formwork m² as a guide
   assert.equal(sug3["L1"], undefined, "formwork/prop & form crew cells must stay blank");
   assert.equal(taskRowMeta("Formwork / box out", labourQuantities(legacy, rates)).autoQty, 100);
-  assert.equal(sug3["L2"].concreter_day, 4); // 40/10
+  assert.equal(sug3["L2"].concreter_day, 12); // 40/10 = 4 crew-days × 3 men
   assert.equal(sug3["L2"].pump_m3, 40); // legacy pump task still pumps the true volume
   assert.equal(sug3["L2"].pump_hr, 6); // whole-pour pump booking
 });
@@ -406,7 +419,7 @@ check("Suspended slab 2.99 t of steel is 2.99 Steel Crew days (decimals kept), a
   item.qtys[rateKey("PROCESSED BAR", "N16", "m")] = 1868; // 1.6 kg/m -> 2.9888 t, shown as 2.99
   const tie = item.tasks.find((t) => /tie/i.test(t.name));
   assert.equal(taskRowMeta(tie.name, labourQuantities(item, rates)).autoQty, 2.99);
-  near(suggestedLabourPrefill(item, rates)[tie.id].steelfixer_day, 2.99); // no whole-crew ceiling any more
+  near(suggestedLabourPrefill(item, rates)[tie.id].steelfixer_day, 14.95); // 2.99 crews × 5 men, no whole-crew ceiling
   near(computeElementCost(item, rates).resourceCosts.steelfixer_day, 2.99 * 5 * 650);
 });
 
@@ -427,7 +440,7 @@ check("Fractional crew cells kept as typed (0.5 stays 0.5, 1.2 stays 1.2); plant
   near(cost.resourceTotals.steelfixer_day, 0.5);
   assert.equal(cost.resourceTotals.excavator_day, 1);
   assert.equal(cost.resourceTotals.pump_m3, 36.5);
-  near(cost.labourTotal, 1.2 * 3 * 500 + 0.5 * 5 * 650 + 1 * 900 + 36.5 * 10);
+  near(cost.labourTotal, 1.2 * 500 + 0.5 * 650 + 1 * 900 + 36.5 * 10); // per-person default: man-days × day rate
 });
 
 check("Excavate row: Qty prefills from the Soil removal (m³) line, but excavator/crew cells stay blank for manual entry", () => {

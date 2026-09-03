@@ -367,7 +367,7 @@ let PROJECT = {
   name:"", jobNumber:"", client:"", units_len:"mm/m", units_conc:"m3", units_form:"m2", units_reo:"kg", units_exc:"m3",
   units_len_pref:"m", // "mm" or "m" — preferred input unit for overall lengths/heights (beam, wall, column, pier, kerb runs). Metres by default: a 7.2m beam is typed as 7.2, not 7200 (cross-sections stay mm).
   cover:40, grade:32, reoStandard:"Australian D500N", lapMethod:"Project-defined", anchorMethod:"Project-defined",
-  barStock:12000, concreteWaste:5, reoWaste:5, formworkWaste:0, lapPct:8, bulking:15, revision:"Rev A", measurementRule:"gross",
+  barStock:12000, concreteWaste:5, reoWaste:5, formworkWaste:5, lapPct:8, bulking:15, revision:"Rev A", measurementRule:"gross",
   estimateSessionId: newEstimateSessionId(),
 };
 /* Reinforcement allowances — ONE company-wide set, edited in the RATES
@@ -377,13 +377,14 @@ let PROJECT = {
    lap allowance for BARS (default 8%) and for mesh SHEETS / TRENCH mesh
    (default 5%). Not per-project — change them in the Rates Library anytime
    and every element re-prices. */
-let REO_WASTE_PCT=5, BAR_LAP_PCT=8, MESH_LAP_PCT=5;
+let REO_WASTE_PCT=5, BAR_LAP_PCT=8, MESH_LAP_PCT=5, FORM_WASTE_PCT=5;
 function refreshReoAllowances(){
   let g={};
   try{ g=(JSON.parse(localStorage.getItem("gradcon-rates-library"))||{}).global||{}; }catch(e){}
   const pick=(v,fb)=> (v!==undefined && v!==null && v!=="" && isFinite(+v))? +v : fb;
   REO_WASTE_PCT=pick(g.reoWastePct,5); BAR_LAP_PCT=pick(g.barLapPct,8); MESH_LAP_PCT=pick(g.meshLapPct,5);
-  PROJECT.reoWaste=REO_WASTE_PCT; PROJECT.lapPct=BAR_LAP_PCT;
+  FORM_WASTE_PCT=pick(g.formworkWastePct,5);
+  PROJECT.reoWaste=REO_WASTE_PCT; PROJECT.lapPct=BAR_LAP_PCT; PROJECT.formworkWaste=FORM_WASTE_PCT;
 }
 // Portal-wide Settings (portal-shell.html's Settings modal, stored under
 // "gradcon-preferences" — same origin as this blob:-embedded app) can
@@ -1663,7 +1664,7 @@ function concSection(d,note){
 }
 function vapourMembraneLine(inst,def,area,type,lapPct){
   let lap=lapPct===undefined?10:num(lapPct,10);
-  return baseLine(inst,def,{materialGroup:"Base/Blinding",material:`Vapour barrier — ${type||"200um polyethylene"}`,spec:`incl. ${lap}% laps/upturns`,qty:area,unit:"m²",waste:lap,finalQty:withWaste(area,lap),formula:`area (+${lap}% laps)`});
+  return baseLine(inst,def,{materialGroup:"Vapour Barrier",material:`Vapour barrier — ${type||"200um polyethylene"}`,spec:`incl. ${lap}% laps/upturns`,qty:area,unit:"m²",waste:lap,finalQty:withWaste(area,lap),formula:`area (+${lap}% laps)`});
 }
 /* ---- Blinding & Vapour Barrier: ONE full section shared by every element
    that blinds its base (strip/pad/stump footings, pile caps), so every
@@ -1999,7 +2000,7 @@ function stripFootingDefaults(){ return {
   formLeft:true, formRight:true, formStart:true, formFinish:true,
   botLong:true, botLongQty:4, botLongDia:"N16", botLongLap:false, topLong:false, topLongQty:2, topLongDia:"N12", topLongLap:false,
   cross:true, crossDia:"N12", crossSpacing:300, crossLap:false, topCross:false, topCrossDia:"N12", topCrossSpacing:300, topCrossLap:false, trenchMesh:false, trenchMeshType:"4 Bar-L12TM", trenchMeshLayers:1, trenchMeshLap:false,
-  ligs:false, ligDia:"N10", ligSpacing:300,
+  ligs:false, ligDia:"N10", ligSpacing:300, ligLap:false,
   starters:false, connTarget:"", connQty:2, connDia:"N16", connEmbed:500, connProj:600,
   stepdown:false, sdLength:3, sdDepth:300, sdDia:"N12", sdSpacing:300, sdProj1:500, sdProj2:500
 };}
@@ -2016,9 +2017,11 @@ function renderStripFooting(inst){
   </div>
   <div class="subsec ${d.botLong?'':'hidden'}" data-show-if="botLong"><div class="grid cols3">${F("Qty",inpNum("botLongQty",d.botLongQty))}${F("Dia",barSizeSel("botLongDia",d.botLongDia))}${chk("botLongLap",d.botLongLap,"Include lap allowance (%)","botLongLap")}</div></div>
   <div class="subsec ${d.topLong?'':'hidden'}" data-show-if="topLong"><div class="grid cols3">${F("Qty",inpNum("topLongQty",d.topLongQty))}${F("Dia",barSizeSel("topLongDia",d.topLongDia))}${chk("topLongLap",d.topLongLap,"Include lap allowance (%)","topLongLap")}</div></div>
-  <div class="grid cols4">${chk("cross",d.cross,"Bottom cross bars / ligatures","cross")}${chk("topCross",d.topCross,"Top cross bars (top+bottom both ways)","topCross")}${chk("trenchMesh",d.trenchMesh,"Trench mesh instead","trenchMesh")}</div>
+  <div class="grid cols4">${chk("cross",d.cross,"Bottom cross bars","cross")}${chk("topCross",d.topCross,"Top cross bars (top+bottom both ways)","topCross")}${chk("ligs",d.ligs,"Ligatures / stirrups (closed ties)","ligs")}${chk("trenchMesh",d.trenchMesh,"Trench mesh instead","trenchMesh")}</div>
   <div class="subsec ${d.cross?'':'hidden'}" data-show-if="cross"><div class="grid cols3">${F("Dia",barSizeSel("crossDia",d.crossDia))}${F("Spacing (mm)",inpNum("crossSpacing",d.crossSpacing))}${chk("crossLap",d.crossLap,"Include lap allowance (%)","crossLap")}</div></div>
   <div class="subsec ${d.topCross?'':'hidden'}" data-show-if="topCross"><div class="grid cols3">${F("Top cross dia",barSizeSel("topCrossDia",d.topCrossDia||"N12"))}${F("Spacing (mm)",inpNum("topCrossSpacing",d.topCrossSpacing===undefined?300:d.topCrossSpacing))}${chk("topCrossLap",d.topCrossLap,"Include lap allowance (%)","topCrossLap")}</div></div>
+  <div class="subsec ${d.ligs?'':'hidden'}" data-show-if="ligs"><div class="grid cols3">${F("Ligature dia",barSizeSel("ligDia",d.ligDia||"N10"))}${F("Spacing (mm)",inpNum("ligSpacing",d.ligSpacing===undefined?300:d.ligSpacing))}${chk("ligLap",d.ligLap,"Include lap allowance (%)","ligLap")}</div>
+  <p class="small">Closed stirrups around the footing cage — perimeter of the footing cross-section less cover, plus two 135° fitment hooks, at the entered spacing along the full run. Separate from cross bars: tick either or both.</p></div>
   <div class="subsec ${d.trenchMesh?'':'hidden'}" data-show-if="trenchMesh"><div class="grid cols3">${F("Trench mesh type",trenchMeshTypeSel("trenchMeshType",d.trenchMeshType,true))}${F("Layers",inpNumR("trenchMeshLayers",d.trenchMeshLayers===undefined?1:d.trenchMeshLayers))}${chk("trenchMeshLap",d.trenchMeshLap,"Include lap allowance (%)","trenchMeshLap")}</div>
   ${layerTypeSelects(d,"trenchMeshLayers","trenchMeshType","trenchMeshLayerTypes",trenchMeshTypeSel,"trench mesh type")}
   <p class="small">Trench mesh is priced and ordered by the metre (a welded strip of longitudinal bars run the length of the trench), not by sheet area — this counts it the same way as any other run of bars. Same named types as Quotes' own Trench Mesh catalog. Layers &gt; 1 stacks that many mesh strips — each layer can be its own product, and steel quantities follow per material. Lap allowance is off by default (a single continuous mesh strip laid the trench's own run length usually needs none) — turn it on if this run is spliced from more than one length and needs the project's lap % (Defaults &amp; Rules) added.</p></div>`;
@@ -2085,6 +2088,17 @@ function computeStripFooting(inst,def){
     let totLen=N*count*barLen; let wt=totLen*massPerM(bd);
     let lapPct=d.topCrossLap?PROJECT.lapPct:0;
     lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.topCrossDia||"N12",spec:"Top cross bars",qty:totLen,unit:"m",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,lapPct),formula:`count(${count})×len×${N}`,notes:`${fmt(wt,1)} kg`}));
+  }
+  if(d.ligs){
+    // Closed stirrups around the footing cage: cross-section perimeter less
+    // cover plus two 135° fitment hooks, at the entered spacing along the run.
+    let bd=barDiaOf(d.ligDia||"N10");
+    let count=Math.floor(num(d.length)/num(d.ligSpacing,300))+1;
+    let hookExt=anchorLen("hook135",bd,0)/1000;
+    let ligPerim=(2*((num(d.width)-2*cover)+(num(d.depth)-2*cover))/1000)+2*hookExt;
+    let totLen=N*count*ligPerim; let wt=totLen*massPerM(bd);
+    let lapPct=d.ligLap?PROJECT.lapPct:0;
+    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.ligDia||"N10",spec:"Ligatures / stirrups",qty:totLen,unit:"m",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,lapPct),formula:`${count}×${N} ligs × (perim ${fmt(ligPerim-2*hookExt,2)}m + 2×135° hooks ${fmt(2*hookExt,2)}m)`,notes:`${count*N} no., ${fmt(wt,1)} kg`}));
   }
   if(d.trenchMesh){
     // one line per DISTINCT layer material — different layers can be different products
@@ -3376,7 +3390,7 @@ function computeTankbox(inst,def){
   lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:`${d.kind} — base+walls`,qty:totVol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(totVol,concWastePct(d)),formula:`${N}×(base area×${d.baseThickness} + perimeter×${d.wallThickness}×${d.depth})`}));
   let formArea=N*perim*depth*2;
   lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Wall formwork (inner+outer)",spec:"",qty:formArea,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(formArea,PROJECT.formworkWaste),formula:"perimeter × depth × 2 faces"}));
-  if(d.membrane) lines.push(baseLine(inst,def,{materialGroup:"Base/Blinding",material:"Waterproof membrane",spec:"base + walls, incl. laps",qty:N*(baseArea+perim*depth),unit:"m²",waste:10,finalQty:withWaste(N*(baseArea+perim*depth),10),formula:"(base area + wall area) incl. 10% laps"}));
+  if(d.membrane) lines.push(baseLine(inst,def,{materialGroup:"Vapour Barrier",material:"Waterproof membrane",spec:"base + walls, incl. laps",qty:N*(baseArea+perim*depth),unit:"m²",waste:10,finalQty:withWaste(N*(baseArea+perim*depth),10),formula:"(base area + wall area) incl. 10% laps"}));
   if(d.waterstop) lines.push(baseLine(inst,def,{materialGroup:"Joints",material:"PVC waterstop",spec:"base/wall construction joint",qty:N*perim,unit:"m",waste:5,finalQty:withWaste(N*perim,5),formula:"perimeter"}));
   if(d.coping){ let copeVol=N*perim*(num(d.copingWidth)/1000)*0.15; lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:"Coping / capping beam",spec:`${d.copingWidth}mm wide`,qty:copeVol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(copeVol,concWastePct(d)),formula:"perimeter × coping width × 150mm nominal"})); }
   if(d.lid){ let lidVol=N*baseArea*baseT; lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:"Lid slab",spec:`${d.baseThickness}mm`,qty:lidVol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(lidVol,concWastePct(d)),formula:"plan area × base thickness"})); }
@@ -3476,8 +3490,15 @@ function diagStripFooting(inst){ let d=inst.data;
    <line x1="${x+4}" y1="${y+h-6}" x2="${x+w-4}" y2="${y+h-6}" stroke="${DWG.bar}" stroke-width="1.1"/>
    ${dimH(x,x+w,y-8,`${d.length||10000}`)}
    ${dimV(y,y+h,x+w+16,`${d.depth||400}`)}
-   ${specLine(x,y+h+16,`${d.width||600}W · CONT. ${d.botLongQty||4}${d.botLongDia||'N16'}${d.cross?` · X ${d.crossDia||'N12'}@${d.crossSpacing||300}`:''}`)}`;
-  return sheetFrame(inst, "Strip Footing", [300,150], content);
+   ${specLine(x,y+h+16,
+     d.trenchMesh
+       ? `${d.width||600}W · TRENCH MESH ${d.trenchMeshType||'4 Bar-L12TM'}${num(d.trenchMeshLayers,1)>1?` ×${d.trenchMeshLayers} LAYERS`:''}`
+       : `${d.width||600}W · CONT. ${d.botLongQty||4}${d.botLongDia||'N16'} BTM${d.topLong?` · ${d.topLongQty||2}${d.topLongDia||'N12'} TOP`:''}`)}
+   ${!d.trenchMesh && (d.cross||d.topCross||d.ligs)? specLine(x,y+h+30,
+     [d.ligs?`LIGS ${d.ligDia||'N10'}@${d.ligSpacing===undefined?300:d.ligSpacing}`:'',
+      d.cross?`X-BARS ${d.crossDia||'N12'}@${d.crossSpacing||300} BTM`:'',
+      d.topCross?`X-BARS ${d.topCrossDia||'N12'}@${d.topCrossSpacing===undefined?300:d.topCrossSpacing} TOP`:''].filter(Boolean).join(' · ')) : ''}`;
+  return sheetFrame(inst, "Strip Footing", [300,164], content);
 }
 function diagPadFooting(inst){ let d=inst.data;
   let x=60,y=60,w=140,h=110;
@@ -3909,7 +3930,7 @@ function computeInstance(inst){
   // derived (beams set _autoBlindArea, slabs _autoInsArea). Calculators that
   // already emit Base/Blinding lines (footings, pile caps, ground slabs)
   // are left alone so nothing double-counts.
-  if(!(out.lines||[]).some(l=>l.materialGroup==="Base/Blinding")){
+  if(!(out.lines||[]).some(l=>l.materialGroup==="Base/Blinding"||l.materialGroup==="Vapour Barrier")){
     let bArea = num(d.blindArea)>0? num(d.blindArea) : (num(d._autoBlindArea)||num(d._autoInsArea)||0);
     if(bArea>0){
       if(blindingEnabled(d) && num(d.blinding)>0){
@@ -3974,11 +3995,13 @@ function reoTypeBreakdownStr(lines){
    quantities read as zero in every totals row despite their register lines
    computing correctly. */
 function blindingVapourTotals(lines){
+  // Blinding/base layers (their own "Base/Blinding" group, m³) and vapour
+  // barriers/membranes (their own "Vapour Barrier" group, m²) are separate
+  // register groups now — never lumped into one figure.
   let blind=0,vap=0;
   lines.forEach(l=>{
-    if(l.materialGroup!=="Base/Blinding") return;
-    if(/vapour|membrane/i.test(l.material)) vap+=l.finalQty||0;
-    else blind+=l.finalQty||0;
+    if(l.materialGroup==="Base/Blinding") blind+=l.finalQty||0;
+    else if(l.materialGroup==="Vapour Barrier") vap+=l.finalQty||0;
   });
   return {blind,vap};
 }
@@ -4046,7 +4069,7 @@ function refreshCardResults(card,inst){
 }
 function pillClass(g){
   if(g==="Concrete") return "concrete"; if(g==="Reinforcement") return "reo"; if(g==="Formwork") return "form";
-  if(g==="Excavation"||g==="Base/Blinding") return "exc"; return "acc";
+  if(g==="Excavation"||g==="Base/Blinding"||g==="Vapour Barrier") return "exc"; return "acc";
 }
 function refreshAllDiagramsReferencing(){ /* label changes affect target dropdown labels; simplest = full rerender */ document.querySelectorAll('.card').forEach(c=>{ /* no-op, labels resolved live via targetLabelOf at compute time */ }); }
 
@@ -4088,7 +4111,7 @@ function renderDefaultsForm(){
     F("Bar stock length (mm)",inpNum("barStock",PROJECT.barStock)),
     F("Concrete waste (%)",inpNum("concreteWaste",PROJECT.concreteWaste)),
     F(`Reinforcement waste — from Rates Library: ${REO_WASTE_PCT}%`,`<input type="number" value="${REO_WASTE_PCT}" disabled title="Edited in the Rates Library app (Reinforcement → takeoff allowances) — applies live across every element">`),
-    F("Formwork waste (%)",inpNum("formworkWaste",PROJECT.formworkWaste)),
+    F(`Formwork waste — from Rates Library: ${FORM_WASTE_PCT}%`,`<input type="number" value="${FORM_WASTE_PCT}" disabled title="Edited in the Rates Library app (takeoff allowances) — applies live to every formwork line">`),
     F("Excavation bulking factor (%)",inpNum("bulking",PROJECT.bulking)),
     F("Preferred input unit for overall lengths/heights (beam/wall/column/pier/kerb runs)",selOpts("units_len_pref",PROJECT.units_len_pref,[["mm","Millimetres (mm)"],["m","Metres (m)"]])),
   ].join('');
@@ -4289,9 +4312,9 @@ function renderOrderSchedule(){
   let kg=inc.reduce((s,r)=>s+r.kg,0);
   let sheets=inc.reduce((s,r)=>s+r.sheets,0);
   let totals=document.getElementById("orderScheduleTotals");
-  // Base/Blinding included rows summed individually — blinding/base (m³) vs vapour barrier (m²)
-  let obBlind=inc.filter(r=>r.group==="Base/Blinding" && !/vapour|membrane/i.test(r.material)).reduce((s,r)=>s+r.qty,0);
-  let obVap=inc.filter(r=>r.group==="Base/Blinding" && /vapour|membrane/i.test(r.material)).reduce((s,r)=>s+r.qty,0);
+  // Blinding/base (m³) and vapour barrier (m²) are separate groups
+  let obBlind=inc.filter(r=>r.group==="Base/Blinding").reduce((s,r)=>s+r.qty,0);
+  let obVap=inc.filter(r=>r.group==="Vapour Barrier").reduce((s,r)=>s+r.qty,0);
   // Excavation included rows likewise — dug volume vs bulked spoil disposal
   let obExc=inc.filter(r=>r.group==="Excavation" && !/spoil disposal/i.test(r.material)).reduce((s,r)=>s+r.qty,0);
   let obSpoil=inc.filter(r=>r.group==="Excavation" && /spoil disposal/i.test(r.material)).reduce((s,r)=>s+r.qty,0);
@@ -4389,7 +4412,7 @@ function sheetLines(kind){
     case "concrete": return lines.filter(l=>l.materialGroup==="Concrete");
     case "reinforcement": return lines.filter(l=>l.materialGroup==="Reinforcement");
     case "formwork": return lines.filter(l=>l.materialGroup==="Formwork");
-    case "excavation": return lines.filter(l=>l.materialGroup==="Excavation"||l.materialGroup==="Base/Blinding");
+    case "excavation": return lines.filter(l=>l.materialGroup==="Excavation"||l.materialGroup==="Base/Blinding"||l.materialGroup==="Vapour Barrier");
     case "connections": return lines.filter(l=>l.materialGroup==="Connections"||l.materialGroup==="Joints");
     default: return lines;
   }

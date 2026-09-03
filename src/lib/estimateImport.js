@@ -345,7 +345,7 @@ export function buildImportFromEstimate(estimateExport) {
     // --- Vapour barrier: Estimates' Base/Blinding membrane lines (m², laps
     // included in finalQty) land on the dedicated OTHER ACCESSORIES "Vapour
     // barrier" product — distinct from Insulation. ---
-    group.filter((l) => l.materialGroup === "Base/Blinding" && /vapour|membrane/i.test(l.material || "") && (l.unit === "m²" || l.unit === "m2")).forEach((l) => {
+    group.filter((l) => (l.materialGroup === "Base/Blinding" || l.materialGroup === "Vapour Barrier") && /vapour|membrane/i.test(l.material || "") && (l.unit === "m²" || l.unit === "m2")).forEach((l) => {
       map(l, rateKey("OTHER ACCESSORIES", "Vapour barrier", "m2"), Number(l.finalQty) || 0);
     });
 

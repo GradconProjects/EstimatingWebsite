@@ -360,9 +360,10 @@ export function labourResourceRate(rates, res) {
   return lookupRate(rates, rateKey("LABOUR", res.name, res.unit), { unitCost: res.rate }).unitCost;
 }
 
-/** Which mode a crew-sheet row is in: "crew" (cells are crew-days, the
- * default) or "person" (cells are man-days). */
-export const taskCrewMode = (task) => (task && task.crewMode === "person" ? "person" : "crew");
+/** Which mode a crew-sheet row is in: "person" (cells are man-days — the
+ * default, until the estimator switches the row) or "crew" (cells are
+ * crew-days × that row's own men-per-crew). */
+export const taskCrewMode = (task) => (task && task.crewMode === "crew" ? "crew" : "person");
 
 /** The per-person multiplier a row's cells carry in a given column: a
  * per-crew row on a crew column multiplies by that row's own men-per-crew
@@ -414,12 +415,12 @@ export function autoLabourQtys(item, rates) {
   const put = (task, key, qty) => {
     if (qty <= 0) return;
     if (task.qtys[key] !== undefined && task.qtys[key] !== "") return; // typed cells win
-    // a row switched to per-person shows man-days: the same crew booking
+    // a per-person row (the default) shows man-days: the same crew booking
     // expressed as crews × that row's men (crewSize, blank → column default)
     const res = colByKey[key];
     if (res && res.crew && taskCrewMode(task) === "person") {
       const n = Number(task.crewSize);
-      qty = qty * (Number.isFinite(n) && n >= 1 ? Math.round(n) : res.men || 1);
+      qty = round2(qty * (Number.isFinite(n) && n >= 1 ? Math.round(n) : res.men || 1));
     }
     (suggestions[task.id] = suggestions[task.id] || {})[key] = key === "pump_m3" ? round2(qty) : qty;
   };

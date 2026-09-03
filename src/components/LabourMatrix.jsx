@@ -41,7 +41,7 @@ export default function LabourMatrix({
         </label>
         <p className="text-[11px] text-amber-800/80 leading-snug m-0 flex-1">
           {labourAuto
-            ? "Crew figures draw live from the entered quantities (every 10 m³ of concrete or 1 t of steel = one crew-day, pump 6 hrs + the m³ pumped) and keep their decimals — 3.6 crew-days stays 3.6. Each row picks per crew or per person: a per-crew row costs days × its own men-per-crew × the per-person day rate (men blank = 3, Steel Crew 5); a per-person row's cells are man-days costed directly. Type over any cell to override; clear it to hand it back."
+            ? "Figures draw live from the entered quantities (every 10 m³ of concrete or 1 t of steel = one crew's day, pump 6 hrs + the m³ pumped) and keep their decimals. Every row starts PER PERSON — cells are man-days costed straight at the day rate — and stays that way until you switch it to per crew, where cells become crew-days costed days × that row's own men-per-crew (blank = 3, Steel Crew 5). Type over any cell to override; clear it to hand it back."
             : "Off — every cell is manual. Turn auto back on to draw Qty and crew days live from the entered quantities again (typed cells keep their values)."}
         </p>
         <button
@@ -88,14 +88,14 @@ export default function LabourMatrix({
                       (× its own men-per-crew) or straight man-days. */}
                   <div className="flex items-center gap-1 mt-0.5">
                     <select
-                      value={task.crewMode === "person" ? "person" : "crew"}
+                      value={task.crewMode === "crew" ? "crew" : "person"}
                       onChange={(e) => onTaskMetaChange(task.id, "crewMode", e.target.value)}
                       className="text-[10px] border border-amber-300 rounded px-1 py-0.5 text-amber-900 bg-amber-50 focus:outline-none focus:border-amber-500"
                     >
-                      <option value="crew">per crew</option>
                       <option value="person">per person</option>
+                      <option value="crew">per crew</option>
                     </select>
-                    {task.crewMode !== "person" && (
+                    {task.crewMode === "crew" && (
                       <>
                         <span className="text-[10px] text-neutral-400">×</span>
                         <input
