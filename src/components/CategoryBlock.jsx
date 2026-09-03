@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronRight } from "lucide-react";
-import { rateKey, money2, lookupRate, computeRowTotal, autoSmallLoadCharge } from "../lib/costing.js";
+import { rateKey, money2, lookupRate, computeRowTotal, autoSmallLoadCharge, autoConcreteSurcharge } from "../lib/costing.js";
 import { NumInput } from "./atoms.jsx";
 
 /**
@@ -16,6 +16,9 @@ export default function CategoryBlock({ cat, item, rates, onQtyChange, onRateCha
   // Loads under 30 m³ auto-apply the Small load charge (amber ghost on its
   // row, like the crew sheet) — typing a Qty there takes the row manual.
   const smallLoad = cat.key === "CONCRETE" ? autoSmallLoadCharge(item, rates) : null;
+  // The production & transport surcharge auto-applies per m³ to the whole
+  // poured volume ($2.59/m³ default) — same amber-ghost treatment.
+  const surcharge = cat.key === "CONCRETE" ? autoConcreteSurcharge(item, rates) : null;
   return (
     <div className="border border-neutral-200 rounded-lg overflow-hidden bg-white">
       <button
@@ -57,20 +60,23 @@ export default function CategoryBlock({ cat, item, rates, onQtyChange, onRateCha
                   ? ((sheets != null ? sheets : bars != null ? bars : qty) * rate.unitWeight) / 1000
                   : null;
                 const isAutoSlc = smallLoad && smallLoad.key === qKey;
-                const rowTotal = isAutoSlc ? smallLoad.total : computeRowTotal(cat, rate, qty);
-                const filled = qty > 0 || isAutoSlc;
+                const isAutoSur = surcharge && surcharge.key === qKey;
+                const autoRow = isAutoSlc ? smallLoad : isAutoSur ? surcharge : null;
+                const rowTotal = autoRow ? autoRow.total : computeRowTotal(cat, rate, qty);
+                const filled = qty > 0 || !!autoRow;
                 return (
                   <tr key={qKey} className={`border-t border-neutral-100 ${filled ? "bg-orange-50/40" : ""}`}>
                     <td className="px-3 py-1 text-neutral-700">
                       {p.name}
                       {isAutoSlc && <span className="ml-1.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700">auto — load under 30 m³</span>}
+                      {isAutoSur && <span className="ml-1.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700">auto — per m³ of concrete</span>}
                     </td>
                     <td className="px-2 py-1 text-neutral-400">{p.unit}</td>
                     <td className="px-2 py-1">
                       <NumInput
                         value={item.qtys[qKey]}
-                        placeholder={isAutoSlc ? String(smallLoad.qty) : undefined}
-                        className={isAutoSlc ? "placeholder:text-amber-800 placeholder:opacity-100 placeholder:font-semibold border-amber-400" : ""}
+                        placeholder={autoRow ? String(autoRow.qty) : undefined}
+                        className={autoRow ? "placeholder:text-amber-800 placeholder:opacity-100 placeholder:font-semibold border-amber-400" : ""}
                         onChange={(v) => onQtyChange(qKey, v)}
                       />
                     </td>
@@ -102,7 +108,7 @@ export default function CategoryBlock({ cat, item, rates, onQtyChange, onRateCha
                           price IS the quote received, so the estimator types
                           the quoted amount straight onto the row (qty 1 books
                           the whole quote). */}
-                      {onRateChange && ((cat.key === "CONCRETE" && /small load/i.test(p.name)) || p.unit === "quote") ? (
+                      {onRateChange && ((cat.key === "CONCRETE" && (/small load/i.test(p.name) || /transport surcharge/i.test(p.name))) || p.unit === "quote") ? (
                         <NumInput
                           step={p.unit === "quote" ? "50" : "0.25"}
                           value={rate.unitCost}

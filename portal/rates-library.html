@@ -251,7 +251,7 @@ const GLOBAL = {
   // own editable field, not baked into the concrete base rates, since it goes
   // stale every two weeks and needs updating here on its own — check Holcim's
   // fortnightly notice and update this number, not the grade rates above.
-  concreteSurchargePerM3: 2.59,
+  concreteSurchargePerM3: 9.17,
   // AKZ Reinforcing's delivered-to-site fee for reinforcing steel supply —
   // applied per tonne on top of every established reinforcement rate below
   // (Trench Mesh, Square Mesh, Stock Bar, Processed Bar), proportional to
@@ -635,6 +635,10 @@ if(!state.ratesVersion) state.ratesVersion = RATES_VERSION;
     Object.keys(state.steel||{}).forEach(function(k){
       if(state.steel[k] && typeof state.steel[k].waste==="number" && (state.steel[k].waste===0.08 || state.steel[k].waste===0.03)) state.steel[k].waste=0.05;
     });
+    // Holcim production & transport surcharge is now $9.17/m³ — lift any
+    // stored blob still on the retired $2.59 seed (a deliberately edited
+    // figure other than 2.59 is left alone).
+    if(state.global && state.global.concreteSurchargePerM3===2.59) state.global.concreteSurchargePerM3=9.17;
   }catch(e){}
 })();
 
@@ -664,6 +668,7 @@ async function syncFromCloud(){
     if(localSyncedAt && row.updated_at <= localSyncedAt) return;
     state = backfill(row.value || {}, freshRates());
     if(!state.ratesVersion) state.ratesVersion = RATES_VERSION;
+    try{ if(state.global && state.global.concreteSurchargePerM3===2.59) state.global.concreteSurchargePerM3=9.17; }catch(e){}
     try{
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       localStorage.setItem(STORAGE_KEY+"__syncedAt", row.updated_at);

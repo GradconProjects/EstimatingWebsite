@@ -177,7 +177,7 @@ export const FULL_CATALOG = [
   { key: "CONCRETE", weightBasis: false, products: [
     ["25 mpa Agilia", "m3", null, 310.5], ["32 mpa Agilia", "m3", null, 322.5], ["40 mpa Agilia", "m3", null, 334.5], ["40 mpa Agilia (walls)", "m3", null, 342.5],
     ["15 mpa", "m3", null, 196.5], ["20 mpa", "m3", null, 207.5], ["25 mpa", "m3", null, 212.5], ["32 mpa", "m3", null, 221.5], ["40 mpa", "m3", null, 233.5],
-    ["50 mpa", "m3", null, 252.5], ["Exposed Agg", "m3", null, 400], ["Small load charge", "m3", null, 47.25], ["Penetron (Xypex) additive", "m3", null, 100],
+    ["50 mpa", "m3", null, 252.5], ["Exposed Agg", "m3", null, 400], ["Small load charge", "m3", null, 47.25], ["Production & transport surcharge", "m3", null, 9.17], ["Penetron (Xypex) additive", "m3", null, 100],
     // Blinding is normally a low-strength unreinforced mix — seeded at the same rate as 15 mpa
     // (the lowest plain mix already in this catalog) rather than inventing a new price point.
     ["Blinding concrete", "m3", null, 196.5],

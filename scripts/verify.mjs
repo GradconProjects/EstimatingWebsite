@@ -16,7 +16,7 @@ import * as catalogAll from "../src/data/catalog.js";
 import {
   computeElementCost, computeGrandTotal, computeMarginLadder,
   defaultRates, newElementItem, rateKey, suggestedLabourPrefill, computeExternalScopeLines,
-  labourResourceRate, taskRowMeta, labourQuantities, autoSmallLoadCharge,
+  labourResourceRate, taskRowMeta, labourQuantities, autoSmallLoadCharge, autoConcreteSurcharge,
 } from "../src/lib/costing.js";
 import { buildImportFromEstimate } from "../src/lib/estimateImport.js";
 
@@ -52,10 +52,12 @@ check("every element type has both a category and a section", () => {
   });
 });
 
-check("12 material categories, 130 products (incl. INSULATION, N10 Ligatures, Bored Piers subcontract, Vapour barrier accessory)", () => {
+check("12 material categories, 131 products (incl. INSULATION, N10 Ligatures, Bored Piers subcontract, Vapour barrier accessory, concrete surcharge)", () => {
   assert.equal(FULL_CATALOG.length, 12);
   const total = FULL_CATALOG.reduce((s, c) => s + c.products.length, 0);
-  assert.equal(total, 130);
+  assert.equal(total, 131);
+  const conc = FULL_CATALOG.find((c) => c.key === "CONCRETE");
+  assert.ok(conc.products.some((p) => p.name === "Production & transport surcharge" && p.unit === "m3" && p.unitCost === 9.17), "concrete surcharge product seeded at $9.17/m³");
   // Vapour barrier is its own OTHER ACCESSORIES product, distinct from Insulation
   const acc = FULL_CATALOG.find((c) => c.key === "OTHER ACCESSORIES");
   assert.ok(acc.products.some((p) => p.name === "Vapour barrier" && p.unit === "m2"), "Vapour barrier accessory present");
@@ -173,6 +175,7 @@ check("Small load charge auto-applies to concrete loads under 30 m³ (per m³), 
   const type = ELEMENT_TYPES.find((t) => t.id === "slab_on_ground");
   const item = newElementItem(type);
   item.labourAuto = false; // pin the materials maths
+  item.qtys[rateKey("CONCRETE", "Production & transport surcharge", "m3")] = 0; // typed 0 disables the auto surcharge — this check pins small-load maths
   item.qtys[rateKey("CONCRETE", "25 mpa", "m3")] = 15;
   item.qtys[rateKey("CONCRETE", "Blinding concrete", "m3")] = 5; // real poured volume counts
   item.qtys[rateKey("CONCRETE", "Penetron (Xypex) additive", "m3")] = 15; // additive m³ mirrors the mix — must NOT count
@@ -198,6 +201,31 @@ check("Small load charge auto-applies to concrete loads under 30 m³ (per m³), 
   delete item.qtys[rateKey("CONCRETE", "Small load charge", "m3")];
   rates[rateKey("CONCRETE", "Small load charge", "m3")] = { unitCost: 60 };
   assert.equal(autoSmallLoadCharge(item, rates).total, 20 * 60);
+});
+
+check("Production & transport surcharge auto-applies per m³ to the WHOLE poured volume ($9.17), typed qty takes over, rate editable", () => {
+  const near = (a, b) => assert.ok(Math.abs(a - b) < 1e-6, `${a} !~= ${b}`);
+  const rates = defaultRates();
+  const item = newElementItem(ELEMENT_TYPES.find((t) => t.id === "slab_on_ground"));
+  item.labourAuto = false;
+  item.qtys[rateKey("CONCRETE", "Small load charge", "m3")] = 0; // isolate the surcharge
+  item.qtys[rateKey("CONCRETE", "25 mpa", "m3")] = 50; // 50 ≥ 30: no small-load, but the surcharge still applies
+  const surKey = rateKey("CONCRETE", "Production & transport surcharge", "m3");
+  const sur = autoConcreteSurcharge(item, rates);
+  assert.equal(sur.qty, 50);
+  near(sur.total, 50 * 9.17);
+  const cost = computeElementCost(item, rates);
+  near(cost.materialsTotal, 50 * 212.5 + 50 * 9.17);
+  assert.equal(cost.concreteQty, 50, "the surcharge fee must not inflate poured volume");
+  near(labourQuantities(item, rates).concreteM3, 50, "nor the labour engine's concrete m³");
+  // a typed qty on the surcharge row switches it fully manual (no double-charge)
+  item.qtys[surKey] = 10;
+  assert.equal(autoConcreteSurcharge(item, rates), null);
+  near(computeElementCost(item, rates).materialsTotal, 50 * 212.5 + 10 * 9.17);
+  // the rate honours a rates-library override — editable in place, the Rates modal, everywhere
+  delete item.qtys[surKey];
+  rates[surKey] = { unitCost: 12.5 };
+  near(autoConcreteSurcharge(item, rates).total, 50 * 12.5);
 });
 
 check("Quote statuses: 'Completed Estimating' sits between Estimating and Quoting, with a style entry", () => {
@@ -479,10 +507,12 @@ check("computeExternalScopeLines: per-element sell allocation sums exactly to th
   a.labourAuto = false;
   a.qtys[rateKey("CONCRETE", "25 mpa", "m3")] = 10; // $2125 direct
   a.qtys[rateKey("CONCRETE", "Small load charge", "m3")] = 0; // typed 0 disables the auto small-load charge — this check pins the allocation maths
+  a.qtys[rateKey("CONCRETE", "Production & transport surcharge", "m3")] = 0; // and the auto surcharge
   const b = newElementItem(ELEMENT_TYPES.find((t) => t.id === "capping_beam"));
   b.labourAuto = false;
   b.qtys[rateKey("CONCRETE", "32 mpa", "m3")] = 5; // $1107.50 direct
   b.qtys[rateKey("CONCRETE", "Small load charge", "m3")] = 0;
+  b.qtys[rateKey("CONCRETE", "Production & transport surcharge", "m3")] = 0;
   const c = newElementItem(ELEMENT_TYPES.find((t) => t.id === "pool_wall")); // no qty entered — must be dropped
   const { lines, totalExGst } = computeExternalScopeLines([a, b, c], rates, 0.08, 0.05, 0.3);
 
@@ -513,6 +543,7 @@ check("A rates override changes cost; a MISSING key falls back to catalog defaul
   const key = rateKey("CONCRETE", "32 mpa", "m3");
   item.qtys[key] = 10;
   item.qtys[rateKey("CONCRETE", "Small load charge", "m3")] = 0; // typed 0 disables the auto charge — this check pins override/fallback maths
+  item.qtys[rateKey("CONCRETE", "Production & transport surcharge", "m3")] = 0;
 
   const before = computeElementCost(item, rates).materialsTotal;
   assert.equal(before, 10 * 221.5);
@@ -533,10 +564,12 @@ check("Grand total sums every element's total across the whole quote", () => {
   a.labourAuto = false; // this check pins the MATERIALS maths; auto labour has its own checks
   a.qtys[rateKey("CONCRETE", "25 mpa", "m3")] = 10; // $2125
   a.qtys[rateKey("CONCRETE", "Small load charge", "m3")] = 0; // typed 0 disables the auto charge
+  a.qtys[rateKey("CONCRETE", "Production & transport surcharge", "m3")] = 0;
   const b = newElementItem(ELEMENT_TYPES.find((t) => t.id === "capping_beam"));
   b.labourAuto = false;
   b.qtys[rateKey("CONCRETE", "32 mpa", "m3")] = 5; // $1107.50
   b.qtys[rateKey("CONCRETE", "Small load charge", "m3")] = 0;
+  b.qtys[rateKey("CONCRETE", "Production & transport surcharge", "m3")] = 0;
   const total = computeGrandTotal([a, b], rates);
   assert.equal(total, 10 * 212.5 + 5 * 221.5);
 });

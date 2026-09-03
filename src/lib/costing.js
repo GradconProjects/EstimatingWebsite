@@ -117,6 +117,9 @@ export function computeRowTotal(cat, rate, qty) {
 }
 
 const SMALL_LOAD_PRODUCT_MATCH = /small load/i;
+// The supplier's production & transport surcharge — applied per m³ to EVERY
+// delivered load (unlike the small-load charge's under-30m³ trigger).
+const SURCHARGE_PRODUCT_MATCH = /transport surcharge/i;
 
 /**
  * Automatic small-load charge: a concrete order under
@@ -140,11 +143,34 @@ export function autoSmallLoadCharge(item, rates) {
   if (typed !== undefined && typed !== "") return null; // the estimator's own entry wins
   let vol = 0;
   cat.products.forEach((p) => {
-    if (SMALL_LOAD_PRODUCT_MATCH.test(p.name) || /additive/i.test(p.name)) return;
+    if (SMALL_LOAD_PRODUCT_MATCH.test(p.name) || SURCHARGE_PRODUCT_MATCH.test(p.name) || /additive/i.test(p.name)) return;
     vol += Number(item.qtys[rateKey(cat.key, p.name, p.unit)]) || 0;
   });
   if (!(vol > 0 && vol < SMALL_LOAD_THRESHOLD_M3)) return null;
   const rate = lookupRate(rates, key, { unitCost: slc.unitCost ?? 0 });
+  return { key, qty: vol, unitCost: rate.unitCost ?? 0, total: vol * (rate.unitCost ?? 0) };
+}
+
+/**
+ * The concrete production & transport surcharge, applied automatically PER
+ * m³ to the element's whole poured volume ($2.59/m³ catalog default,
+ * editable in place / the Rates modal like any rate). Typed values on the
+ * surcharge row always win — a typed Qty takes the row fully manual.
+ */
+export function autoConcreteSurcharge(item, rates) {
+  const cat = FULL_CATALOG.find((c) => c.key === "CONCRETE");
+  const sur = cat && cat.products.find((p) => SURCHARGE_PRODUCT_MATCH.test(p.name));
+  if (!sur) return null;
+  const key = rateKey(cat.key, sur.name, sur.unit);
+  const typed = item.qtys[key];
+  if (typed !== undefined && typed !== "") return null; // the estimator's own entry wins
+  let vol = 0;
+  cat.products.forEach((p) => {
+    if (SMALL_LOAD_PRODUCT_MATCH.test(p.name) || SURCHARGE_PRODUCT_MATCH.test(p.name) || /additive/i.test(p.name)) return;
+    vol += Number(item.qtys[rateKey(cat.key, p.name, p.unit)]) || 0;
+  });
+  if (!(vol > 0)) return null;
+  const rate = lookupRate(rates, key, { unitCost: sur.unitCost ?? 0 });
   return { key, qty: vol, unitCost: rate.unitCost ?? 0, total: vol * (rate.unitCost ?? 0) };
 }
 
@@ -210,7 +236,7 @@ export function computeElementCost(item, rates) {
         const rate = lookupRate(rates, qKey, { unitCost: p.unitCost ?? 0, unitWeight: p.unitWeight, sheetArea: p.sheetArea });
         const rowTotal = computeRowTotal(cat, rate, qty);
         catTotal += rowTotal;
-        if (cat.key === "CONCRETE") concreteQty += qty;
+        if (cat.key === "CONCRETE" && !SURCHARGE_PRODUCT_MATCH.test(p.name)) concreteQty += qty; // surcharge is a fee per m³, not poured volume
       }
     });
     categoryTotals[cat.key] = catTotal;
@@ -224,6 +250,14 @@ export function computeElementCost(item, rates) {
   if (smallLoad) {
     categoryTotals["CONCRETE"] = (categoryTotals["CONCRETE"] || 0) + smallLoad.total;
     materialsTotal += smallLoad.total;
+  }
+
+  // The production & transport surcharge applies automatically per m³ to the
+  // WHOLE poured volume ($2.59/m³ default) — see autoConcreteSurcharge.
+  const surcharge = autoConcreteSurcharge(item, rates);
+  if (surcharge) {
+    categoryTotals["CONCRETE"] = (categoryTotals["CONCRETE"] || 0) + surcharge.total;
+    materialsTotal += surcharge.total;
   }
 
   // Seamless labour: with labourAuto on, empty matrix cells are driven live
@@ -326,7 +360,7 @@ export function labourQuantities(item, rates) {
     cat.products.forEach((p) => {
       const qty = Number(item.qtys[rateKey(cat.key, p.name, p.unit)]) || 0;
       if (qty <= 0) return;
-      if (cat.key === "CONCRETE") concreteM3 += qty;
+      if (cat.key === "CONCRETE" && !SURCHARGE_PRODUCT_MATCH.test(p.name)) concreteM3 += qty; // the surcharge row is a fee, not poured volume
       else if (cat.key === "FORMWORK" && p.unit === "m2") formworkM2 += qty;
       else if (cat.key === "SQUARE MESH") finishM2 += qty;
       else if (cat.key === "OTHER ALLOWANCES" && /soil removal/i.test(p.name)) excavationM3 += qty; // spoil volume ≈ excavation m³
