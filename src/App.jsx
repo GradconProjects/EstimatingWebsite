@@ -581,7 +581,6 @@ function ProjectEditor({ project, rates, setRates, ratesStatus, saveProjectsNow,
               key={item.id}
               item={item}
               rates={rates}
-              allItems={items}
               onChange={(next) => updateItem(item.id, next)}
               onRemove={() => removeItem(item.id)}
               onDuplicate={() => duplicateItem(item.id)}

@@ -1,13 +1,13 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { ChevronDown, ChevronRight, Copy, Trash2, Paperclip, X, RotateCw, ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
 import { FULL_CATALOG, LABOUR_TEMPLATES } from "../data/catalog.js";
-import { uid, money2, computeElementCost, computeElementUnitRates, elementRateKind, autoLabourQtys, labourQuantities } from "../lib/costing.js";
+import { uid, money2, computeElementCost, autoLabourQtys, labourQuantities } from "../lib/costing.js";
 import { pdfToJpegPages } from "../lib/pdfToImages.js";
 import CategoryBlock from "./CategoryBlock.jsx";
 import LabourMatrix from "./LabourMatrix.jsx";
 import AdditionalItems from "./AdditionalItems.jsx";
 
-export default function ElementCard({ item, rates, allItems, onChange, onRemove, onDuplicate, onLabourRateChange, onMaterialRateChange }) {
+export default function ElementCard({ item, rates, onChange, onRemove, onDuplicate, onLabourRateChange, onMaterialRateChange }) {
   // Every material category starts collapsed — only Labour/Equipment starts
   // expanded (it's still collapsible too, just defaults open).
   const [openCats, setOpenCats] = useState({});
@@ -25,10 +25,6 @@ export default function ElementCard({ item, rates, allItems, onChange, onRemove,
   });
 
   const cost = useMemo(() => computeElementCost(item, rates), [item, rates]);
-  // The header's benchmark-rates box ($/m² · $/m³ · $/lm) — shown folded or
-  // open. System rates, not element rates: a slab row reads its level's beam
-  // elements too, so allItems is a real dependency.
-  const unitRates = useMemo(() => computeElementUnitRates(item, rates, allItems || []), [item, rates, allItems]);
 
   const patch = (fn) => onChange(fn(item));
 
@@ -229,8 +225,7 @@ export default function ElementCard({ item, rates, allItems, onChange, onRemove,
   const viewerMarkup = markups.find((m) => m.id === viewerId) || null;
 
   return (
-    <div className="flex items-stretch gap-2">
-    <div className="rounded-xl border border-neutral-200 bg-white shadow-sm overflow-hidden flex-1 min-w-0">
+    <div className="rounded-xl border border-neutral-200 bg-white shadow-sm overflow-hidden">
       <div className="bg-blue-950 text-white px-4 py-3 flex items-center gap-3">
         <button onClick={() => setCardOpen(!cardOpen)} className="text-blue-300 hover:text-white transition-colors flex-none">
           {cardOpen ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
@@ -457,53 +452,6 @@ export default function ElementCard({ item, rates, allItems, onChange, onRemove,
           onRotate={() => rotateMarkup(viewerMarkup.id)}
         />
       )}
-    </div>
-
-    {unitRates.length > 0 && (
-      <div
-        className="hidden md:flex w-60 flex-none rounded-xl border-2 border-blue-950 bg-white shadow-sm flex-col justify-center gap-1 px-3 py-2"
-        title="Benchmark unit rates, ALL-IN (concrete + rebar + formwork + labour + custom items) over the measure shown beside each rate. A slab with beam elements on its building level shows the whole system: the slab's $/m³, the beams' combined $/lm, and the full setup (slab + beams) as $/m² over the slab area. A slab with no beams reads $/m² all-in; beams and strip footings lead with $/lm; pads read $/m³ then $/m² of surface (formwork) area."
-      >
-        {unitRates.map((u, i) => (
-          <div key={`${u.unit}-${i}`} className="font-mono tabular-nums whitespace-nowrap leading-5">
-            {u.label && <span className="text-[10px] font-sans font-bold uppercase tracking-wide text-blue-950 mr-1.5">{u.label}</span>}
-            <span className="text-[15px] font-bold text-orange-600">{money2(u.rate)}</span>
-            <span className="text-[11px] font-semibold text-neutral-500"> /{u.unit} · {u.qty.toLocaleString("en-AU")} {u.unit}</span>
-          </div>
-        ))}
-        {elementRateKind(item) === "run" ? (
-          <label
-            className="flex items-center gap-1.5 mt-0.5 text-[10px] font-semibold text-neutral-500 whitespace-nowrap"
-            title="Total length of the strips/beams — the $/lm denominator. Filled automatically from the takeoff (count × length) when the element is published from Estimates; type it here to set or correct it."
-          >
-            Total run
-            <input
-              type="number"
-              value={item.measureLm ?? ""}
-              onChange={(e) => patch((it) => ({ ...it, measureLm: e.target.value }))}
-              placeholder="lm"
-              className="w-16 border border-neutral-300 rounded px-1 py-0.5 text-right font-mono tabular-nums text-[11px] text-neutral-800"
-            />
-            lm
-          </label>
-        ) : (
-          <label
-            className="flex items-center gap-1.5 mt-0.5 text-[10px] font-semibold text-neutral-500 whitespace-nowrap"
-            title="Plan/surface area — the $/m² denominator. Filled automatically from the takeoff's own plan area when the element is published from Estimates (mesh coverage, which carries lap, is only the fallback); type it here to set or correct it."
-          >
-            Area
-            <input
-              type="number"
-              value={item.measureM2 ?? ""}
-              onChange={(e) => patch((it) => ({ ...it, measureM2: e.target.value }))}
-              placeholder="auto"
-              className="w-16 border border-neutral-300 rounded px-1 py-0.5 text-right font-mono tabular-nums text-[11px] text-neutral-800"
-            />
-            m²
-          </label>
-        )}
-      </div>
-    )}
     </div>
   );
 }

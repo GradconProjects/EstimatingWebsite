@@ -17,7 +17,6 @@ import {
   computeElementCost, computeGrandTotal, computeMarginLadder,
   defaultRates, newElementItem, rateKey, suggestedLabourPrefill, computeExternalScopeLines,
   labourResourceRate, taskRowMeta, labourQuantities, autoSmallLoadCharge, autoConcreteSurcharge,
-  computeElementUnitRates,
 } from "../src/lib/costing.js";
 import { buildImportFromEstimate } from "../src/lib/estimateImport.js";
 
@@ -782,107 +781,6 @@ check("Import: a count-only reinforcement line (no length, e.g. ligatures) is fl
   // just the bare bar count) shows up somewhere in the flags.
   assert.ok(flags.some((f) => f.includes("39.00") && f.includes("no.")), `expected the bar count to be flagged, got: ${flags.join(" | ")}`);
   assert.ok(flags.some((f) => f.includes("40.01") && f.includes("kg")), `expected the actual weight to be flagged too, got: ${flags.join(" | ")}`);
-});
-
-check("System unit rates: all-in $/measure; slab+level beams show slab m³ / beams lm / setup m²; slab alone leads $/m²; pads lead $/m³; trench mesh never makes lm", () => {
-  const rates = defaultRates();
-  const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-6, `${msg || ""} ${a} !== ${b}`);
-  const noFees = (it) => {
-    it.labourAuto = false; // fixtures: materials only, so expected rates are exact
-    it.qtys[rateKey("CONCRETE", "Small load charge", "m3")] = 0;
-    it.qtys[rateKey("CONCRETE", "Production & transport surcharge", "m3")] = 0;
-    return it;
-  };
-
-  // A slab WITHOUT beams: all-in $/m² leads, then $/m³, then its own lm
-  const slab = noFees(newElementItem(ELEMENT_TYPES.find((t) => t.id === "slab_on_ground")));
-  slab.label = "Ground Floor - Slab on Ground";
-  slab.qtys[rateKey("CONCRETE", "25 mpa", "m3")] = 50;      // 50 × 212.50 = 10,625
-  slab.qtys[rateKey("SQUARE MESH", "SL82", "m2")] = 200;    // ceil(200/14.4)=14 sheets × 98.12 = 1,373.68
-  slab.qtys[rateKey("FORMWORK", "Edgeform", "m")] = 90;     // 90 × 8 = 720
-  const slabTotal = 10625 + 1373.68 + 720;
-  const alone = computeElementUnitRates(slab, rates, [slab]);
-  assert.deepEqual(alone.map((l) => l.unit), ["m²", "m³", "lm"], "beam-less slab leads with all-in $/m²");
-  near(alone[0].rate, slabTotal / 200, "all-in $/m² (concrete+mesh+formwork over the slab area)");
-
-  // Add a beam element on the SAME level → the slab row reads the system
-  const beam = noFees(newElementItem(ELEMENT_TYPES.find((t) => t.id === "slab_on_ground")));
-  beam.label = "Ground Floor - Edge Beam";
-  beam.qtys[rateKey("CONCRETE", "25 mpa", "m3")] = 8;                       // 8 × 212.50 = 1,700
-  beam.qtys[rateKey("FORMWORK", "Beam/fold sides <400mm d", "m")] = 40;     // 40 × 100 = 4,000
-  const beamTotal = 1700 + 4000;
-  const sys = computeElementUnitRates(slab, rates, [slab, beam]);
-  assert.deepEqual(sys.map((l) => `${l.label}/${l.unit}`), ["slab/m³", "beams/lm", "setup/m²"], "system order");
-  near(sys[0].rate, slabTotal / 50, "slab $/m³ is the slab's own all-in rate");
-  near(sys[1].rate, beamTotal / 40, "beams $/lm is the beams' all-in cost over their run");
-  near(sys[2].rate, (slabTotal + beamTotal) / 200, "setup $/m² is slab+beams over the slab area");
-
-  // A beam on a DIFFERENT level does not join the system
-  const fbeam = { ...beam, id: "other", label: "First Floor - Edge Beam" };
-  assert.equal(computeElementUnitRates(slab, rates, [slab, fbeam])[0].unit, "m²", "level mismatch → plain slab box");
-
-  // The beam element's own row leads with its $/lm
-  const beamLines = computeElementUnitRates(beam, rates, [slab, beam]);
-  assert.equal(beamLines[0].unit, "lm");
-  near(beamLines[0].rate, beamTotal / 40);
-
-  // Pads lead with $/m³ then the surface (formwork) area
-  const pad = noFees(newElementItem(ELEMENT_TYPES.find((t) => /pad footing/i.test(t.label)) || ELEMENT_TYPES[0]));
-  pad.label = "Pad Footings";
-  pad.qtys[rateKey("CONCRETE", "25 mpa", "m3")] = 12;
-  pad.qtys[rateKey("FORMWORK", "Conventional", "m2")] = 30;
-  const padLines = computeElementUnitRates(pad, rates, [pad]);
-  assert.deepEqual(padLines.map((l) => l.unit), ["m³", "m²"], "pad order is m³ then surface m²");
-
-  // Strip footings are run elements: $/lm leads, then $/m³
-  const strip = noFees(newElementItem(ELEMENT_TYPES.find((t) => t.id === "slab_on_ground")));
-  strip.label = "Strip Footings";
-  strip.qtys[rateKey("CONCRETE", "25 mpa", "m3")] = 10;
-  strip.qtys[rateKey("FORMWORK", "Edgeform", "m")] = 60;
-  assert.deepEqual(computeElementUnitRates(strip, rates, [strip]).map((l) => l.unit), ["lm", "m³"], "strip footing leads with $/lm then $/m³");
-
-  // The takeoff's own measures beat the catalog-derived fallbacks: a recorded
-  // run length (measureLm) replaces the formwork-m sum, and a recorded plan
-  // area (measureM2) replaces lap-inflated mesh coverage.
-  strip.measureLm = 45; // the strips' true total length off the takeoff
-  assert.equal(computeElementUnitRates(strip, rates, [strip])[0].qty, 45, "measureLm is the $/lm denominator");
-  slab.measureM2 = 180;
-  assert.equal(computeElementUnitRates(slab, rates, [slab]).find((l) => l.unit === "m²").qty, 180, "measureM2 is the $/m² denominator");
-  delete slab.measureM2;
-
-  // Trench mesh must NOT create (or inflate) an lm denominator
-  slab.qtys[rateKey("TRENCH MESH", "4 Bar-L12TM", "length")] = 20;
-  assert.equal(computeElementUnitRates(slab, rates, [slab]).find((l) => l.unit === "lm").qty, 90, "lm stays the formwork run only");
-
-  // Nothing entered → no lines (never a divide-by-zero)
-  assert.deepEqual(computeElementUnitRates(newElementItem(ELEMENT_TYPES[0]), rates, []), []);
-});
-
-check("Import: takeoff measures (runM/areaM2) land as measureLm/measureM2 and sum when same-type elements combine", () => {
-  const { quote } = buildImportFromEstimate({
-    project: {},
-    lines: [
-      estLine({ category: "Strip Footing", element: "Strip A", elementId: "S1", material: "N25 concrete", finalQty: 6 }),
-      estLine({ category: "Strip Footing", element: "Strip B", elementId: "S2", material: "N25 concrete", finalQty: 4 }),
-      estLine({ category: "Slab on Ground", element: "GF Slab", elementId: "SL1", material: "N25 concrete", finalQty: 20 }),
-    ],
-    elementMeasures: { S1: { runM: 42.5, areaM2: 25.5 }, S2: { runM: 17.5, areaM2: 10.5 }, SL1: { areaM2: 180 } },
-  });
-  const strip = quote.items.find((it) => it.typeId === "strip_footings");
-  assert.equal(strip.measureLm, 60, "combined strips carry the summed run length");
-  assert.equal(strip.measureM2, 36, "combined strips carry the summed footprint area");
-  const slab = quote.items.find((it) => /slab/i.test(it.typeId));
-  assert.equal(slab.measureM2, 180, "the slab carries the takeoff's true plan area");
-  // and the rates engine reads them straight off the imported items
-  const stripRates = computeElementUnitRates(strip, defaultRates(), quote.items);
-  assert.equal(stripRates[0].unit, "lm");
-  assert.equal(stripRates[0].qty, 60);
-  // an export from before elementMeasures existed still imports cleanly
-  const { quote: legacy } = buildImportFromEstimate({
-    project: {},
-    lines: [estLine({ category: "Strip Footing", element: "Strip A", elementId: "S1", material: "N25 concrete", finalQty: 6 })],
-  });
-  assert.equal(legacy.items[0].measureLm, undefined);
 });
 
 const { computeTenderProjectSum, parseTenderPrice } = await import("../src/lib/tenderQuoteDefaults.js");
