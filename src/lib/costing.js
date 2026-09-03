@@ -369,6 +369,97 @@ export function labourQuantities(item, rates) {
   return { concreteM3, formworkM2, finishM2, excavationM3, reinfTonnes: computeElementReinforcementTonnes(item, rates) };
 }
 
+/** Building-level prefix used to pair elements into one SYSTEM ("Ground
+ * Floor - Slab on Ground" + "Ground Floor - Edge Beam") — the same
+ * recogniser the tender quote's level grouping uses (tenderQuoteDefaults
+ * imports it from here). Elements with no level word share the "" key, so
+ * an unprefixed "Raft Slab" still pairs with an unprefixed "Edge Beam". */
+export const LEVEL_PREFIX = /^(lower ground floor|lower ground|basement|ground floor|ground|first floor|second floor|third floor|fourth floor|fifth floor|first|second|third|fourth|fifth|level\s*\d+|l\d+\b|mezzanine|podium|rooftop|roof)/i;
+const elementLevelKey = (item) => {
+  const m = String(item.label || "").trim().match(LEVEL_PREFIX);
+  return m ? m[0].trim().toLowerCase() : "";
+};
+const BEAM_ELEMENT_MATCH = /beam/i;
+const SLAB_ELEMENT_MATCH = /slab|raft/i;
+const PAD_ELEMENT_MATCH = /pad footing|pile cap|column base/i;
+
+/** The measures an element's unit rates can divide by, read straight from
+ * its entered quantities: m² = mesh coverage (≈ plan/finished area), else
+ * formwork m²; m³ = poured concrete (fee rows excluded, as ever); lm = the
+ * lineal-metre FORMWORK runs entered (edgeform, beam/fold sides…) —
+ * deliberately NOT derived from trench mesh (layers would inflate a run). */
+function elementMeasures(item, rates) {
+  const lq = labourQuantities(item, rates);
+  let lm = 0;
+  FULL_CATALOG.forEach((cat) => {
+    if (cat.key !== "FORMWORK") return;
+    cat.products.forEach((p) => {
+      if (p.unit !== "m") return;
+      lm += Number(item.qtys[rateKey(cat.key, p.name, p.unit)]) || 0;
+    });
+  });
+  return { m2: lq.finishM2 > 0 ? lq.finishM2 : lq.formworkM2, m3: lq.concreteM3, lm };
+}
+
+/** Benchmark unit rates — the "$/m² · $/m³ · $/lm" box on each element
+ * card header. Every rate is ALL-IN: the whole cost (concrete + rebar +
+ * formwork + labour + custom items) over the measure named beside it, so
+ * a slab's $/m² is the complete supply-and-install rate for that slab,
+ * not a materials-only figure. The lines describe the SYSTEM the element
+ * belongs to, not just the row:
+ *  - a SLAB with beam elements on its building level (paired by
+ *    LEVEL_PREFIX) shows the slab's own $/m³, the beams' combined all-in
+ *    $/lm, and the whole setup (slab + beams cost) as $/m² over the slab
+ *    area;
+ *  - a SLAB with no beams shows its all-in $/m² first (then m³/lm);
+ *  - a BEAM element leads with its $/lm;
+ *  - a PAD/pile cap leads with $/m³ then $/m² over its surface (formwork)
+ *    area;
+ *  - everything else leads with $/m² when it's measured in m².
+ * Only lines whose measure exists are returned; `label` marks the system
+ * lines ("slab" / "beams" / "setup"). */
+export function computeElementUnitRates(item, rates, allItems = []) {
+  const { total } = computeElementCost(item, rates);
+  if (total <= 0) return [];
+  const me = elementMeasures(item, rates);
+  // What the estimator NAMED the row wins over what type it was created
+  // from ("Pad Footings" renamed from a slab card is a pad); the
+  // section/typeId only classify when the label itself decides nothing.
+  const label = String(item.label || "");
+  const kind = `${label} ${item.section || ""} ${item.typeId || ""}`;
+  const isBeam = BEAM_ELEMENT_MATCH.test(label);
+  const isPad = !isBeam && (PAD_ELEMENT_MATCH.test(label) || (!SLAB_ELEMENT_MATCH.test(label) && PAD_ELEMENT_MATCH.test(kind)));
+  const isSlab = !isBeam && !isPad && SLAB_ELEMENT_MATCH.test(kind);
+  const line = (unit, qty, cost, lbl = "") => ({ unit, qty: round2(qty), rate: cost / qty, label: lbl });
+  const lines = [];
+  const push = (order) => order.forEach(([unit, qty]) => { if (qty > 0) lines.push(line(unit, qty, total)); });
+
+  if (isSlab) {
+    const lvl = elementLevelKey(item);
+    const beams = allItems.filter((o) => o.id !== item.id && BEAM_ELEMENT_MATCH.test(o.label || "") && elementLevelKey(o) === lvl);
+    if (beams.length && me.m3 > 0) {
+      const beamCost = beams.reduce((s, b) => s + computeElementCost(b, rates).total, 0);
+      const beamLm = beams.reduce((s, b) => s + elementMeasures(b, rates).lm, 0);
+      lines.push(line("m³", me.m3, total, "slab"));
+      if (beamLm > 0 && beamCost > 0) lines.push(line("lm", beamLm, beamCost, "beams"));
+      if (me.m2 > 0) lines.push(line("m²", me.m2, total + beamCost, "setup"));
+      return lines;
+    }
+    push([["m²", me.m2], ["m³", me.m3], ["lm", me.lm]]);
+    return lines;
+  }
+  if (isBeam) {
+    push([["lm", me.lm], ["m³", me.m3], ["m²", me.m2]]);
+    return lines;
+  }
+  if (isPad) {
+    push([["m³", me.m3], ["m²", me.m2], ["lm", me.lm]]);
+    return lines;
+  }
+  push([["m²", me.m2], ["m³", me.m3], ["lm", me.lm]]);
+  return lines;
+}
+
 /** Crew-sheet row metadata: the unit each task is measured in and which
  * element quantity fills its Qty column automatically. Excavation draws its
  * volume from the element's "Soil removal" (m³) line. */

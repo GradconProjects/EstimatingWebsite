@@ -55,6 +55,7 @@ const prefStatus = () => {
 
 const blankQuote = () => ({
   projectName: "",
+  clientName: "", // the project's owner/client — shown on the Dashboard so owners are easy to spot
   projectDate: new Date().toISOString().slice(0, 10),
   gfa: undefined,
   overheadPct: prefPct("overheadPct", 0.08),
@@ -464,6 +465,13 @@ function ProjectEditor({ project, rates, setRates, ratesStatus, saveProjectsNow,
               placeholder="Project name — click to edit"
               className="bg-transparent border-0 text-white font-semibold text-base w-full focus:outline-none focus:underline decoration-orange-400 placeholder:text-blue-400"
             />
+            <input
+              value={quote.clientName || ""}
+              onChange={(e) => setQuote((q) => ({ ...q, clientName: e.target.value }))}
+              placeholder="Client / owner — click to edit"
+              className="bg-transparent border-0 text-blue-200 text-xs w-full focus:outline-none focus:underline decoration-orange-400 placeholder:text-blue-500"
+              title="Who this project belongs to — shown on the Projects Dashboard under the project name"
+            />
           </div>
           <div className="text-right flex-none">
             <div className="text-[10px] uppercase tracking-widest text-blue-300">Live Quote Total (ex GST)</div>
@@ -571,6 +579,7 @@ function ProjectEditor({ project, rates, setRates, ratesStatus, saveProjectsNow,
               key={item.id}
               item={item}
               rates={rates}
+              allItems={items}
               onChange={(next) => updateItem(item.id, next)}
               onRemove={() => removeItem(item.id)}
               onDuplicate={() => duplicateItem(item.id)}

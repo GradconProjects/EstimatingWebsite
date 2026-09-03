@@ -13,7 +13,7 @@
  * came across from the Estimates tab). Reseeding never runs over a tender
  * the estimator has already edited unless they ask for it.
  */
-import { uid, computeElementCost, labourQuantities, computeExternalScopeLines, getDefaultMargin } from "./costing.js";
+import { uid, computeElementCost, labourQuantities, computeExternalScopeLines, getDefaultMargin, LEVEL_PREFIX } from "./costing.js";
 
 export const TENDER_INCLUSIONS = [
   "All detailed excavation.",
@@ -136,7 +136,9 @@ export const TENDER_DEFAULT_OPTIONS = [
  * point per element (up to 4 — extras roll into the fourth) drawn from its
  * published estimating quantities. Elements without a level prefix group by
  * their broad category instead. Every field is editable afterwards. */
-const LEVEL_PREFIX = /^(lower ground floor|lower ground|basement|ground floor|ground|first floor|second floor|third floor|fourth floor|fifth floor|first|second|third|fourth|fifth|level\s*\d+|l\d+\b|mezzanine|podium|rooftop|roof)/i;
+// LEVEL_PREFIX (the building-level recogniser) lives in costing.js now —
+// the element cards' system unit rates pair slabs with their beams by the
+// same prefix, so both features always agree on what a "level" is.
 const titleCase = (s) => s.replace(/\w\S*/g, (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
 
 export function seedTenderItems(quote, items, rates) {

@@ -116,6 +116,7 @@ const ITEM_COLS = 6; // #, Element / Line, Qty, Unit, Rate ($), Total ($)
 function buildMetaTable(quote) {
   const rows = [
     ["Project", esc(quote.projectName || "Untitled project")],
+    ["Client", esc(quote.clientName || "—")],
     ["Date", esc(quote.projectDate || "")],
     ["GFA", quote.gfa ? `${esc(quote.gfa)} m²` : "—"],
     ["Overheads", `${Math.round((Number(quote.overheadPct) || 0) * 100)}%`],
@@ -289,6 +290,7 @@ export function buildQuoteCsv(quote, items, rates, categoryOrder = CATEGORY_ORDE
   const lines = [];
   lines.push(csvRow("GRADCON CONCRETE CONSTRUCTIONS"));
   lines.push(csvRow("Project", quote.projectName || "Untitled project"));
+  lines.push(csvRow("Client", quote.clientName || ""));
   lines.push(csvRow("Date", quote.projectDate || ""));
   lines.push(csvRow("GFA", quote.gfa ? `${quote.gfa} m²` : ""));
   lines.push(csvRow("Overheads", `${Math.round((Number(quote.overheadPct) || 0) * 100)}%`));

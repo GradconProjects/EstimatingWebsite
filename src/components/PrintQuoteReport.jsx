@@ -88,6 +88,7 @@ function ReportContent({ quote, items, rates, categoryOrder, sectionOrder }) {
       <div className="border-b-2 border-black pb-2 mb-3">
         <img src={GRADCON_LOGO_DATA_URI} alt="Gradcon Concrete Constructions" className="h-8 mb-1.5" />
         <div className="text-xl font-bold">{quote.projectName || "Untitled project"}</div>
+        {quote.clientName && <div className="text-neutral-700">Client: {quote.clientName}</div>}
         <div className="text-neutral-600">Date: {quote.projectDate}</div>
       </div>
 

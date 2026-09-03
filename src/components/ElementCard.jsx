@@ -1,13 +1,13 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { ChevronDown, ChevronRight, Copy, Trash2, Paperclip, X, RotateCw, ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
 import { FULL_CATALOG, LABOUR_TEMPLATES } from "../data/catalog.js";
-import { uid, money2, computeElementCost, autoLabourQtys, labourQuantities } from "../lib/costing.js";
+import { uid, money2, computeElementCost, computeElementUnitRates, autoLabourQtys, labourQuantities } from "../lib/costing.js";
 import { pdfToJpegPages } from "../lib/pdfToImages.js";
 import CategoryBlock from "./CategoryBlock.jsx";
 import LabourMatrix from "./LabourMatrix.jsx";
 import AdditionalItems from "./AdditionalItems.jsx";
 
-export default function ElementCard({ item, rates, onChange, onRemove, onDuplicate, onLabourRateChange, onMaterialRateChange }) {
+export default function ElementCard({ item, rates, allItems, onChange, onRemove, onDuplicate, onLabourRateChange, onMaterialRateChange }) {
   // Every material category starts collapsed — only Labour/Equipment starts
   // expanded (it's still collapsible too, just defaults open).
   const [openCats, setOpenCats] = useState({});
@@ -25,6 +25,10 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
   });
 
   const cost = useMemo(() => computeElementCost(item, rates), [item, rates]);
+  // The header's benchmark-rates box ($/m² · $/m³ · $/lm) — shown folded or
+  // open. System rates, not element rates: a slab row reads its level's beam
+  // elements too, so allItems is a real dependency.
+  const unitRates = useMemo(() => computeElementUnitRates(item, rates, allItems || []), [item, rates, allItems]);
 
   const patch = (fn) => onChange(fn(item));
 
@@ -245,6 +249,20 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
             className="w-full bg-transparent border-0 text-white font-semibold text-[15px] focus:outline-none focus:underline decoration-orange-400"
           />
         </div>
+        {unitRates.length > 0 && (
+          <div
+            className="hidden sm:block text-right flex-none border border-blue-700 rounded-lg px-2.5 py-1 bg-blue-900/50"
+            title="Benchmark unit rates, ALL-IN (concrete + rebar + formwork + labour + custom items) over the measure shown beside each rate. A slab with beam elements on its building level shows the whole system: the slab's $/m³, the beams' combined $/lm, and the full setup (slab + beams) as $/m² over the slab area. A slab with no beams reads $/m² all-in; beams read $/lm; pads read $/m³ then $/m² of surface (formwork) area."
+          >
+            {unitRates.map((u, i) => (
+              <div key={`${u.unit}-${i}`} className="text-[10px] font-mono tabular-nums leading-4 whitespace-nowrap">
+                {u.label && <span className="text-blue-300">{u.label} </span>}
+                <span className="text-orange-300 font-semibold">{money2(u.rate)}</span>
+                <span className="text-blue-300"> /{u.unit} · {u.qty.toLocaleString("en-AU")} {u.unit}</span>
+              </div>
+            ))}
+          </div>
+        )}
         <div className="text-right flex-none">
           <div className="text-[10px] uppercase tracking-widest text-blue-300">Total</div>
           <div className="font-mono tabular-nums text-lg font-bold text-orange-400">{money2(cost.total)}</div>
