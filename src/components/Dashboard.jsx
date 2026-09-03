@@ -142,6 +142,17 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete 
     writeQuote(project.storageKey, updated);
   };
 
+  // The project's client/owner is edited HERE, beside the project name —
+  // the dashboard is where projects get scanned by who they belong to, so
+  // it isn't duplicated in the project editor's own header. Same
+  // optimistic-local-then-write path as the status dropdown above.
+  const changeClient = (project, clientName) => {
+    const quote = quotesByKey[project.storageKey] || {};
+    const updated = { ...quote, clientName };
+    setQuotesByKey((m) => ({ ...m, [project.storageKey]: updated }));
+    writeQuote(project.storageKey, updated);
+  };
+
   const totals = useMemo(
     () =>
       summaries.reduce(
@@ -223,6 +234,7 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete 
             <tr className="bg-neutral-50 text-neutral-500 text-[11px] uppercase tracking-wide">
               <th className="px-3 py-2" />
               <th className="text-left px-4 py-2 font-medium">Project</th>
+              <th className="text-left px-3 py-2 font-medium">Client</th>
               <th className="text-left px-3 py-2 font-medium">Date</th>
               <th className="text-left px-3 py-2 font-medium">Deadline</th>
               <th className="text-left px-3 py-2 font-medium">Status</th>
@@ -247,11 +259,16 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete 
                     title={s.status}
                   />
                 </td>
-                <td className="px-4 py-3">
-                  <div className="flex items-baseline gap-2 min-w-0">
-                    <span className="font-semibold text-[15px] text-neutral-900">{s.name}</span>
-                    {s.client && <span className="text-xs text-neutral-400 truncate">{s.client}</span>}
-                  </div>
+                <td className="px-4 py-3 font-semibold text-[15px] text-neutral-900">{s.name}</td>
+                <td className="px-3 py-2.5">
+                  <input
+                    value={s.client}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={(e) => changeClient(project, e.target.value)}
+                    placeholder="+ client"
+                    title="Client / owner — click to edit"
+                    className="w-full bg-transparent border-0 text-sm text-neutral-600 focus:outline-none focus:underline decoration-orange-400 placeholder:text-neutral-300"
+                  />
                 </td>
                 <td className="px-3 py-2.5 text-neutral-400 text-xs">{s.date || "—"}</td>
                 <td className="px-3 py-2.5 text-xs">
@@ -321,21 +338,21 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete 
             ))}
             {summaries.length === 0 && loading && (
               <tr>
-                <td colSpan={11} className="text-center py-12 text-neutral-400">
+                <td colSpan={12} className="text-center py-12 text-neutral-400">
                   <Loader2 size={16} className="inline animate-spin mr-1.5" /> Loading projects…
                 </td>
               </tr>
             )}
             {summaries.length === 0 && !loading && (
               <tr>
-                <td colSpan={11} className="text-center py-12 text-neutral-400">
+                <td colSpan={12} className="text-center py-12 text-neutral-400">
                   No projects yet — click &quot;New project&quot; to start your first quote.
                 </td>
               </tr>
             )}
             {summaries.length > 0 && visibleSummaries.length === 0 && (
               <tr>
-                <td colSpan={11} className="text-center py-12 text-neutral-400">
+                <td colSpan={12} className="text-center py-12 text-neutral-400">
                   No projects match the current search/filter.
                 </td>
               </tr>
@@ -357,7 +374,7 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete 
             return (
             <tfoot>
               <tr className="border-t-2 border-neutral-200 bg-neutral-50 font-semibold">
-                <td className="px-4 py-2.5" colSpan={5}>
+                <td className="px-4 py-2.5" colSpan={6}>
                   {filtering ? `Filtered projects (${visibleSummaries.length} of ${summaries.length})` : "All projects"}
                 </td>
                 <td className="px-3 py-2.5 text-right font-mono tabular-nums">{ft.elementCount}</td>
