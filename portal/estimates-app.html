@@ -2612,13 +2612,6 @@ function renderSlab(inst,def){
     <div style="flex:1;min-width:260px;" class="outlineHost">${slabOutlineSVG(d)}</div>
    </div>
   </div>
-  <div class="subsec"><div class="sechead">Edge Beams / Thickened Perimeter</div><div class="grid cols3">${chk("edgeThicken",d.edgeThicken,"Edge beams — thickened strip around the perimeter","edgeThicken")}</div>
-  <div class="subsec ${d.edgeThicken?'':'hidden'}" data-show-if="edgeThicken"><div class="grid cols3">${F("Thickened strip width (mm)",inpNum("edgeThickenWidth",d.edgeThickenWidth))}${F("Extra depth below slab thickness (mm)",inpNum("edgeThickenExtraDepth",d.edgeThickenExtraDepth))}</div>
-  <div class="tip"><span class="ico">🏗️</span><div>A thickened edge (footing-like strip under the slab perimeter, or wherever a line load lands) is extra concrete beyond the flat slab thickness already counted above — it's costed here as perimeter × strip width × extra depth, on top of the main slab volume, not instead of it.</div></div></div></div>
-  <div class="subsec"><div class="sechead">Internal Beam Strips / Ribs (e.g. raft foundation load-bearing lines)</div><div class="grid cols3">${chk("beamStrips",d.beamStrips,"Internal thickened beam strips within the slab","beamStrips")}</div>
-  <div class="subsec ${d.beamStrips?'':'hidden'}" data-show-if="beamStrips"><div class="grid cols3">${F("Total beam run length (m)",inpNum("beamStripsLength",d.beamStripsLength))}${F("Strip width (mm)",inpNum("beamStripsWidth",d.beamStripsWidth))}${F("Extra depth below slab thickness (mm)",inpNum("beamStripsExtraDepth",d.beamStripsExtraDepth))}</div>
-  <div class="tip"><span class="ico">🏗️</span><div>A raft foundation's internal beams (the thickened ribs that run under load-bearing walls, not just the perimeter) are easy to miss because they're not their own drawing callout — they're a detail cut through the slab. Turn this on to fold them into this raft as one composite element: total the combined length of every internal beam run from the drawing (not the perimeter — that's Edge Thickening above) and it's costed as run length × strip width × extra depth, added on top of the flat slab volume. Leave it off and take the beams off separately as their own Ground Beam element instead if you'd rather price and schedule them apart from the slab — either way, don't double up and count the same beam in both places.</div></div>
-  </div></div>
   <div class="subsec"><div class="sechead">Openings / Penetrations</div>
   <table class="rows"><thead><tr><th>Label</th><th>Width (mm)</th><th>Height/Length (mm)</th><th>Qty</th><th></th></tr></thead>
   <tbody>${d.openings.map((r,i)=>openRowHtml(i,r)).join('')}</tbody></table>
@@ -2677,6 +2670,13 @@ function renderSlab(inst,def){
   <div class="subsec ${d.beamStripsExc?'':'hidden'}" data-show-if="beamStripsExc"><div class="grid cols3">${F("Trench width (mm)",inpNum("beamStripsTrenchWidth",d.beamStripsTrenchWidth===undefined?(num(d.beamStripsWidth,300)+50):d.beamStripsTrenchWidth))}${F("Excavation depth below prepared level (mm)",inpNum("beamStripsExcDepth",d.beamStripsExcDepth===undefined?num(d.beamStripsExtraDepth,150):d.beamStripsExcDepth))}</div>
   <p class="small">Same as a Ground Beam's trench: dug volume + a bulked spoil-disposal line, along the combined run. Off by default so existing takeoffs don't change.</p></div>
   </div>`;
+  let edgeBeamGeom = `<div class="subsec"><div class="sechead">Edge Beams / Thickened Perimeter</div><div class="grid cols3">${chk("edgeThicken",d.edgeThicken,"Edge beams — thickened strip around the perimeter","edgeThicken")}</div>
+  <div class="subsec ${d.edgeThicken?'':'hidden'}" data-show-if="edgeThicken"><div class="grid cols3">${F("Thickened strip width (mm)",inpNum("edgeThickenWidth",d.edgeThickenWidth))}${F("Extra depth below slab thickness (mm)",inpNum("edgeThickenExtraDepth",d.edgeThickenExtraDepth))}</div>
+  <div class="tip"><span class="ico">🏗️</span><div>A thickened edge (footing-like strip under the slab perimeter, or wherever a line load lands) is extra concrete beyond the flat slab thickness already counted on Geometry — costed as perimeter × strip width × extra depth, on top of the main slab volume, not instead of it. Everything for the edge beam — geometry, longitudinal steel, ligature zones, trench excavation — lives on this tab, so it's never a separate element.</div></div></div></div>`;
+  let stripGeom = `<div class="subsec"><div class="sechead">Internal Beam Strips / Ribs (e.g. raft foundation load-bearing lines)</div><div class="grid cols3">${chk("beamStrips",d.beamStrips,"Internal thickened beam strips within the slab","beamStrips")}</div>
+  <div class="subsec ${d.beamStrips?'':'hidden'}" data-show-if="beamStrips"><div class="grid cols3">${F("Total beam run length (m)",inpNum("beamStripsLength",d.beamStripsLength))}${F("Strip width (mm)",inpNum("beamStripsWidth",d.beamStripsWidth))}${F("Extra depth below slab thickness (mm)",inpNum("beamStripsExtraDepth",d.beamStripsExtraDepth))}</div>
+  <div class="tip"><span class="ico">🏗️</span><div>A raft foundation's internal beams (the thickened ribs that run under load-bearing walls, not just the perimeter) are easy to miss because they're not their own drawing callout — they're a detail cut through the slab. Total the combined length of every internal beam run from the drawing (not the perimeter — that's the Edge Beams tab) and it's costed as run length × strip width × extra depth, added on top of the flat slab volume. Everything for the ribs — geometry, longitudinal steel, ligature zones, trench excavation — lives on this tab, folded into this one element; don't also take the same beams off as a separate Ground Beam element.</div></div>
+  </div></div>`;
   let edgeBeamReoBlock = `<div class="subsec ${d.edgeThicken?'':'hidden'}" data-show-if="edgeThicken"><div class="sechead">Edge Beam Reinforcement (thickened perimeter)</div>
   <div class="grid cols3">${chk("edgeBeamReo",d.edgeBeamReo,"Longitudinal reinforcement along the edge beam","edgeBeamReo")}</div>
   <div class="subsec ${d.edgeBeamReo?'':'hidden'}" data-show-if="edgeBeamReo">
@@ -2724,8 +2724,7 @@ function renderSlab(inst,def){
     ${chk("joints",d.joints,"Construction/control joints")}${F("Joint spacing (m)",inpNum("jointSpacing",d.jointSpacing))}
     ${chk("dowels",d.dowels,"Joint dowels","dowels")}
    </div>
-   <div class="subsec ${d.dowels?'':'hidden'}" data-show-if="dowels"><div class="grid cols3">${F("Dowel size",barSizeSel("dowelDia",d.dowelDia))}${F("Spacing (mm)",inpNum("dowelSpacing",d.dowelSpacing))}${F("Total dowel length (mm, both sides of joint)",inpNum("dowelLength",d.dowelLength))}</div></div></div>`
-   + edgeBeamReoBlock + stripReoBlock;
+   <div class="subsec ${d.dowels?'':'hidden'}" data-show-if="dowels"><div class="grid cols3">${F("Dowel size",barSizeSel("dowelDia",d.dowelDia))}${F("Spacing (mm)",inpNum("dowelSpacing",d.dowelSpacing))}${F("Total dowel length (mm, both sides of joint)",inpNum("dowelLength",d.dowelLength))}</div></div></div>`;
   let conns=`${chk("starters",d.starters,"Starter bars in from footing/wall below","starters")}
   <div class="subsec ${d.starters?'':'hidden'}" data-show-if="starters"><div class="grid cols4">
    ${F("Connects to",targetSelect("connTarget",d.connTarget,inst.id))}${F("Qty",inpNum("connQty",d.connQty))}${F("Dia",barSizeSel("connDia",d.connDia))}${F("Embedment (mm)",inpNum("connEmbed",d.connEmbed))}${F("Projection (mm)",inpNum("connProj",d.connProj))}
@@ -2736,7 +2735,10 @@ function renderSlab(inst,def){
    ${F("Total step-down length (m)",inpNum("sdLength",d.sdLength))}${F("Step depth (mm)",inpNum("sdDepth",d.sdDepth))}${F("Dowel size",barSizeSel("sdDia",d.sdDia))}${F("Spacing (mm)",inpNum("sdSpacing",d.sdSpacing))}
   </div>${sdBarShapeUI(d,num(d.sdProj1)+num(d.sdProj2))}${sdSetupFields(d)}<div class="tip"><span class="ico">🏗️</span><div>Split-level slabs (a sunken wet area, a stepped car park deck) need dowels across the step or the two pours act independently under load. Size and space dowels the same way you'd detail a construction joint — this is the item estimators most often forget because it's buried in a section detail, not called up on the reinforcement schedule.</div></div></div>`;
   let concExtras = `<div class="subsec"><div class="sechead">Pour Details</div><div class="grid cols4">${chk("drops",d.drops,"Drops")}${chk("setdowns",d.setdowns,"Setdowns / recesses")}${chk("upstands",d.upstands,"Upstands")}</div></div>`;
-  return {geom,conc:concSection(d,"<p class='small'>Concrete = area × thickness (area = L×W unless manually entered)</p>")+concExtras,reo:reo+steps,form,
+  return {geom,conc:concSection(d,"<p class='small'>Concrete = area × thickness (area = L×W unless manually entered)</p>")+concExtras,reo:reo+steps,
+   edgebeams: edgeBeamGeom + edgeBeamReoBlock,
+   intbeams: stripGeom + stripReoBlock,
+   form,
    blind: d.suspended? undefined : `<div class="sechead">Base Course</div><div class="grid cols3">${F("Base thickness (mm)",inpNum("baseThickness",d.baseThickness))}${F("Base material",selOpts("baseMaterialState",d.baseMaterialState,[["compacted","Compacted"],["loose","Loose"]]))}</div>${vapourSubsection(d,"Vapour barrier / membrane under slab")}`,
    conns};
 }
@@ -3761,7 +3763,7 @@ function duplicateInstance(id){
   renderWorkspace(); computeAllAndRefresh();
 }
 
-const TABS=[["geom","Geometry"],["conc","Concrete"],["reo","Reinforcement"],["form","Formwork"],["exc","Excavation"],["blind","Blinding / Insulation"],["conns","Connections / Dowels"],["results","Results"]];
+const TABS=[["geom","Geometry"],["conc","Concrete"],["reo","Reinforcement"],["edgebeams","Edge Beams"],["intbeams","Internal Beams"],["form","Formwork"],["exc","Excavation"],["blind","Blinding / Insulation"],["conns","Connections / Dowels"],["results","Results"]];
 
 function renderWorkspace(){
   let host=document.getElementById("cardsHost");
