@@ -129,31 +129,62 @@ export const TENDER_DEFAULT_OPTIONS = [
   { text: "Blinding Contingency", price: "$365.00/m3 + GST" },
 ];
 
-/** One tender line item per quote element: the price seeded from that
- * element's share of the REAL sell price, the dot points (up to 4) from its
- * published estimating quantities. Every field is editable afterwards. */
+/** Tender line items are BUILDING LEVELS, not elements: elements are grouped
+ * by the level named at the start of their label ("Basement - …",
+ * "Ground Floor Raft", "First floor columns …"), each level priced as the
+ * SUM of its elements' shares of the real sell price, with one summary dot
+ * point per element (up to 4 — extras roll into the fourth) drawn from its
+ * published estimating quantities. Elements without a level prefix group by
+ * their broad category instead. Every field is editable afterwards. */
+const LEVEL_PREFIX = /^(lower ground floor|lower ground|basement|ground floor|ground|first floor|second floor|third floor|fourth floor|fifth floor|first|second|third|fourth|fifth|level\s*\d+|l\d+\b|mezzanine|podium|rooftop|roof)/i;
+const titleCase = (s) => s.replace(/\w\S*/g, (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+
 export function seedTenderItems(quote, items, rates) {
   const { lines } = computeExternalScopeLines(items, rates, quote.overheadPct, quote.contingencyPct, getDefaultMargin());
   const sellById = {};
   lines.forEach((l) => { sellById[l.id] = l.sellExGst; });
   const fmt = (n, dp = 2) => Number(n).toLocaleString("en-AU", { maximumFractionDigits: dp });
-  return items.map((item) => {
+
+  // one short summary point per element — name + its most telling figure
+  const summarize = (item) => {
     const cost = computeElementCost(item, rates);
     const lq = labourQuantities(item, rates);
-    const points = [];
-    if ((item.description || "").trim()) points.push(item.description.trim());
-    if (cost.concreteQty > 0) points.push(`Concrete — approx. ${fmt(cost.concreteQty)} m³`);
-    if (lq.reinfTonnes > 0.005) points.push(`Reinforcement — approx. ${fmt(lq.reinfTonnes)} t`);
-    if (lq.formworkM2 > 0) points.push(`Formwork — approx. ${fmt(lq.formworkM2)} m²`);
-    if (lq.finishM2 > 0 && points.length < 4) points.push(`Mesh coverage — approx. ${fmt(lq.finishM2)} m²`);
-    if (lq.excavationM3 > 0 && points.length < 4) points.push(`Excavation / spoil — approx. ${fmt(lq.excavationM3)} m³`);
+    const m = (item.label || "").match(LEVEL_PREFIX);
+    let name = item.label || "Element";
+    if (m) name = name.slice(m[0].length).replace(/^[\s\-–:]+/, "") || name;
+    const figs = [];
+    if (lq.finishM2 > 0) figs.push(`approx. ${fmt(lq.finishM2)} m²`);
+    if (cost.concreteQty > 0) figs.push(`approx. ${fmt(cost.concreteQty)} m³ concrete`);
+    if (!figs.length && lq.formworkM2 > 0) figs.push(`approx. ${fmt(lq.formworkM2)} m² formwork`);
+    if (!figs.length && lq.reinfTonnes > 0.005) figs.push(`approx. ${fmt(lq.reinfTonnes)} t reinforcement`);
+    return { text: figs.length ? `${name} — ${figs.slice(0, 2).join(" / ")}` : name, concreteM3: cost.concreteQty || 0, sell: sellById[item.id] || 0 };
+  };
+
+  // group elements by building level (label prefix), else broad category
+  const groups = []; // [{key, title, members:[summaries]}] in first-seen order
+  const byKey = {};
+  items.forEach((item) => {
+    const m = (item.label || "").match(LEVEL_PREFIX);
+    const key = m ? m[0].trim().toLowerCase() : `cat:${item.category || "general"}`;
+    const title = m ? titleCase(m[0].trim()) : titleCase(String(item.category || "General works").toLowerCase());
+    if (!byKey[key]) { byKey[key] = { key, title, members: [] }; groups.push(byKey[key]); }
+    byKey[key].members.push(summarize(item));
+  });
+
+  return groups.map((g) => {
+    const sell = g.members.reduce((s, mm) => s + mm.sell, 0);
+    let points = g.members.map((mm) => mm.text);
+    if (points.length > 4) {
+      const extra = g.members.slice(3);
+      const extraM3 = extra.reduce((s, mm) => s + mm.concreteM3, 0);
+      points = points.slice(0, 3).concat(`plus ${extra.length} further items${extraM3 > 0 ? ` — approx. ${fmt(extraM3)} m³ concrete combined` : ""}`);
+    }
     while (points.length < 4) points.push("");
-    const sell = sellById[item.id];
     return {
       id: uid(),
-      elementId: item.id,
-      title: item.label,
-      price: sell ? `$${sell.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} + GST` : "",
+      elementId: null,
+      title: g.title,
+      price: sell > 0 ? `$${sell.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} + GST` : "",
       points: points.slice(0, 4),
     };
   });

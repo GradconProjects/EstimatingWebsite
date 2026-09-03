@@ -57,8 +57,9 @@ export default function TenderQuoteReport({ quote, items, rates, visible, onClos
           <div className="bg-white rounded-xl max-w-5xl w-full max-h-[92vh] flex flex-col shadow-2xl">
             <div className="flex items-center justify-between gap-4 px-5 py-3 border-b border-neutral-200 bg-amber-50 rounded-t-xl">
               <div className="text-[13px] text-neutral-800">
-                <b>Tender Quote — fully editable.</b> Line items seeded from this quote (prices from the real sell
-                allocation, dot points from the estimating quantities) — edit anything, add or remove items, then check
+                <b>Tender Quote — fully editable.</b> Line items are BUILDING LEVELS: elements grouped by the level
+                named at the start of their label ("Ground Floor - …"), each priced as that level's share of the real
+                sell price, dot points summarising the elements at that level from the estimating quantities — edit anything, add or remove items, then check
                 the preview below and use <kbd className="px-1 py-0.5 bg-white border border-neutral-300 rounded text-[11px]">Ctrl+P</kbd> / <kbd className="px-1 py-0.5 bg-white border border-neutral-300 rounded text-[11px]">Cmd+P</kbd> → "Save as PDF". No markup drawings are ever included.
               </div>
               <div className="flex items-center gap-2 flex-none">
