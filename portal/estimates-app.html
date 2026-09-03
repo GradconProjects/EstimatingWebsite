@@ -243,6 +243,12 @@ footer.note{color:var(--muted);font-size:11px;text-align:center;padding:20px;}
     <div class="grid cols4" id="projectForm"></div>
   </div>
   <div class="panel">
+    <h2>Project Geometry</h2>
+    <p class="small">The measured <b>length and area</b> behind every element on this takeoff — the strip/beam runs and the slab, pad and footprint areas. Each cell is filled automatically from the element's own dimensions; type over it wherever the drawing gives you a different measured figure. These travel to <b>Quotes</b> on every publish, where they become the divisors for each element's <b>$/lm</b>, <b>$/m²</b> and <b>$/m³</b> rates.</p>
+    <div id="geometryForm"></div>
+    <div class="tip"><span class="ico">📐</span><div>Concrete volume is never entered here — it always comes from the takeoff's own calculated m³, so the <b>$/m³</b> rate can't drift from the quantities being priced. Only the two figures the volume can't imply — the total run of the strips/beams, and the plan/footprint area — are recorded here.</div></div>
+  </div>
+  <div class="panel">
     <h2>Defaults &amp; Rules</h2>
     <p class="small">These are project-wide defaults. Every element can override cover, grade, laps and anchorage individually.</p>
     <div class="grid cols4" id="defaultsForm"></div>
@@ -420,7 +426,7 @@ function freshProjectState(){
   ["boredpier","pilecap","groundbeam","suspslab","column"].forEach(id=>SELECTED_TYPES[id]=true);
 }
 function rerenderAllPages(){
-  renderProjectForm(); renderDefaultsForm(); renderLibrary(); renderAddToolbar(); renderWorkspace(); computeAllAndRefresh(); renderTakeoffsBar();
+  renderProjectForm(); renderDefaultsForm(); renderGeometryForm(); renderLibrary(); renderAddToolbar(); renderWorkspace(); computeAllAndRefresh(); renderTakeoffsBar();
   if(document.getElementById("page-orderschedule").classList.contains("active")) renderOrderSchedule();
 }
 // Boot-time registry setup: seed the index with the historical single-blob
@@ -869,7 +875,7 @@ async function syncFromCloud(){
       localStorage.setItem(keyAtStart, JSON.stringify({ ...estimateStateSnapshot(), savedAt: new Date().toISOString() }));
       localStorage.setItem(keyAtStart+"__syncedAt", row.updated_at);
     }catch(e){}
-    renderProjectForm(); renderDefaultsForm(); renderLibrary(); renderAddToolbar(); renderWorkspace(); computeAllAndRefresh();
+    renderProjectForm(); renderDefaultsForm(); renderGeometryForm(); renderLibrary(); renderAddToolbar(); renderWorkspace(); computeAllAndRefresh();
   } finally {
     syncingFromCloud = false;
   }
@@ -4329,10 +4335,91 @@ function computeAllAndRefresh(){
   INSTANCES.forEach(inst=>{ inst.results = computeInstance(inst); });
   renderRegister();
   renderExportSummary();
+  refreshGeometryForm();
   scheduleAutoPublish();
   // skipHistory: this fires on every edit — only DELIBERATE saves (💾 Save,
   // switching/creating takeoffs, imports) become save-history entries.
   saveEstimateState(true);
+}
+
+/* ============================= PROJECT GEOMETRY =============================
+ * The measured length/area behind each element, recorded once here and
+ * published to Quotes, where they divide the element's cost into $/lm and
+ * $/m² benchmark rates ($/m³ needs nothing recorded — it comes from the
+ * takeoff's own concrete volume).
+ *
+ * Both figures are DERIVED from the element's own takeoff dimensions by
+ * default and only stored when the estimator types over them, so an
+ * untouched takeoff still publishes correct geometry, and a drawing that
+ * disagrees with the derived figure can always be entered by hand.
+ */
+function autoGeometry(inst){
+  const def = LIB_INDEX[inst.typeKey] || {};
+  const d = inst.data || {};
+  // Run: strip footings and every beam type measure count × length.
+  const runM = (def.calc==="stripfooting" || def.calc==="beam")
+    ? (num(d.qty,1) * num(d.length)) / 1000
+    : 0;
+  // Area: the plan/footprint figure the compute already derives for the
+  // insulation (slabs) and blinding (footings, beams) bolt-ons.
+  const areaM2 = num(d._autoInsArea) || num(d._autoBlindArea) || 0;
+  const r2 = (n)=>Math.round(n*100)/100;
+  return { runM: runM>0? r2(runM):0, areaM2: areaM2>0? r2(areaM2):0 };
+}
+/* The figures actually published: a typed override wins, else the derived value. */
+function elementGeometry(inst){
+  const auto = autoGeometry(inst);
+  const d = inst.data || {};
+  const pick = (override, fallback) => {
+    const v = parseFloat(override);
+    return (override!=="" && override!==undefined && override!==null && !isNaN(v) && v>0) ? Math.round(v*100)/100 : fallback;
+  };
+  return { runM: pick(d.geomRunM, auto.runM), areaM2: pick(d.geomAreaM2, auto.areaM2) };
+}
+/* Re-render the geometry table as quantities change, but never while the
+ * estimator is typing in one of its own cells (that would drop the caret). */
+function refreshGeometryForm(){
+  const host = document.getElementById("geometryForm");
+  if(!host || host.contains(document.activeElement)) return;
+  renderGeometryForm();
+}
+function renderGeometryForm(){
+  const host = document.getElementById("geometryForm");
+  if(!host) return;
+  if(INSTANCES.length===0){
+    host.innerHTML = `<p class="small">No elements yet — add them in the Workspace and their measured lengths and areas appear here.</p>`;
+    return;
+  }
+  const rows = INSTANCES.map(inst=>{
+    const def = LIB_INDEX[inst.typeKey] || {};
+    const auto = autoGeometry(inst);
+    const d = inst.data || {};
+    const cell = (field, autoVal, unit) => `<input type="number" step="any" data-geom="${field}" data-inst="${inst.id}"
+      value="${d[field]===undefined||d[field]===null?"":d[field]}"
+      placeholder="${autoVal>0? fmt(autoVal,2) : "—"}"
+      title="${autoVal>0? `From the takeoff: ${fmt(autoVal,2)} ${unit}. Type to override.` : `Not derived for this element type — type the measured ${unit} if it applies.`}"
+      style="width:100%;text-align:right;">`;
+    return `<tr>
+      <td>${inst.label||def.label||"Element"} <span class="proj-meta">${def.label||""}</span></td>
+      <td>${cell("geomRunM",auto.runM,"m")}</td>
+      <td>${cell("geomAreaM2",auto.areaM2,"m²")}</td>
+    </tr>`;
+  }).join("");
+  const tot = INSTANCES.reduce((a,inst)=>{ const g=elementGeometry(inst); return {runM:a.runM+g.runM, areaM2:a.areaM2+g.areaM2}; },{runM:0,areaM2:0});
+  host.innerHTML = `<div style="overflow-x:auto;"><table class="results">
+    <thead><tr><th style="text-align:left;">Element</th><th style="text-align:right;width:180px;">Total length (lm)</th><th style="text-align:right;width:180px;">Total area (m²)</th></tr></thead>
+    <tbody>${rows}</tbody>
+    <tfoot><tr><th style="text-align:left;">Project total</th><th style="text-align:right;">${fmt(tot.runM,2)} lm</th><th style="text-align:right;">${fmt(tot.areaM2,2)} m²</th></tr></tfoot>
+  </table></div>`;
+  // oninput (not addEventListener) for the same stacked-listener reason as
+  // renderProjectForm; the row is NOT re-rendered on edit, so the caret stays
+  // where it is while typing (only the footer total would change).
+  host.oninput = (e)=>{
+    const field = e.target.dataset.geom; if(!field) return;
+    const inst = INSTANCES.find(i=>i.id===e.target.dataset.inst); if(!inst) return;
+    inst.data[field] = e.target.value;
+    computeAllAndRefresh();
+  };
 }
 
 /* ============================= PROJECT SETUP / DEFAULTS ============================= */
@@ -4824,6 +4911,9 @@ function buildEstimateExportPayload(){
   return {
     project: {name:PROJECT.name, jobNumber:PROJECT.jobNumber, client:PROJECT.client, revision:PROJECT.revision, estimateSessionId:PROJECT.estimateSessionId},
     lines: allLines(),
+    // The Project Geometry table's measured length/area per element — Quotes
+    // divides each element's cost by these for its $/lm and $/m² rates.
+    elementGeometry: INSTANCES.reduce((acc,inst)=>{ acc[inst.id]=elementGeometry(inst); return acc; },{}),
   };
 }
 /* Writes both shared localStorage channels Quotes/Cost Planner read from. Used by both
@@ -5276,6 +5366,7 @@ document.querySelectorAll('.tabs button').forEach(b=>b.addEventListener('click',
   document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));
   b.classList.add('active');
   document.getElementById('page-'+b.dataset.page).classList.add('active');
+  if(b.dataset.page==="setup") renderGeometryForm();
   if(b.dataset.page==="register") renderRegister();
   if(b.dataset.page==="export") renderExportSummary();
   if(b.dataset.page==="orderschedule") renderOrderSchedule();
@@ -5295,6 +5386,7 @@ awaitingCloudLoad = !restoredFromSave;
 renderTakeoffsBar();
 renderProjectForm();
 renderDefaultsForm();
+renderGeometryForm();
 renderLibrary();
 renderAddToolbar();
 renderWorkspace();

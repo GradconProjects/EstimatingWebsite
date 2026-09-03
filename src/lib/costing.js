@@ -369,6 +369,36 @@ export function labourQuantities(item, rates) {
   return { concreteM3, formworkM2, finishM2, excavationM3, reinfTonnes: computeElementReinforcementTonnes(item, rates) };
 }
 
+/**
+ * Benchmark unit rates for one element — the "$/lm · $/m² · $/m³" summary
+ * shown beside its row. Each is the element's WHOLE cost (materials +
+ * labour/plant + custom items) over one measure, so a strip footing's $/lm
+ * is genuinely everything that footing costs divided by the total length of
+ * the strips.
+ *
+ * The two measures a price list can't imply — the total run and the
+ * plan/footprint area — are measured in the Estimates app's Project
+ * Geometry table and travel here on publish (item.measureLm /
+ * item.measureM2, see lib/estimateImport.js). The third, m³, is the
+ * element's own poured concrete volume, so it never needs recording.
+ *
+ * There is deliberately NO per-element-type logic here: a line appears if
+ * and only if its measure exists, in the fixed order lm → m² → m³. An
+ * element with no recorded geometry and no concrete simply has no rates.
+ */
+export function computeElementUnitRates(item, rates) {
+  const { total, concreteQty } = computeElementCost(item, rates);
+  if (total <= 0) return [];
+  const measures = [
+    ["lm", Number(item.measureLm) || 0],
+    ["m²", Number(item.measureM2) || 0],
+    ["m³", concreteQty],
+  ];
+  return measures
+    .filter(([, qty]) => qty > 0)
+    .map(([unit, qty]) => ({ unit, qty: round2(qty), rate: total / qty }));
+}
+
 /** Crew-sheet row metadata: the unit each task is measured in and which
  * element quantity fills its Qty column automatically. Excavation draws its
  * volume from the element's "Soil removal" (m³) line. */

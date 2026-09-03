@@ -17,6 +17,7 @@ import {
   computeElementCost, computeGrandTotal, computeMarginLadder,
   defaultRates, newElementItem, rateKey, suggestedLabourPrefill, computeExternalScopeLines,
   labourResourceRate, taskRowMeta, labourQuantities, autoSmallLoadCharge, autoConcreteSurcharge,
+  computeElementUnitRates,
 } from "../src/lib/costing.js";
 import { buildImportFromEstimate } from "../src/lib/estimateImport.js";
 
@@ -818,6 +819,80 @@ check("Tender Project Sum: line-item '$… + GST' prices sum ex-GST; override re
   // price-string parsing survives commas, $ and the "+ GST" suffix
   assert.equal(parseTenderPrice("$1,234,567.89 + GST"), 1234567.89);
   assert.equal(parseTenderPrice("no digits here"), 0);
+});
+
+check("Benchmark rates: whole cost over the geometry measured in Estimates — $/lm, $/m², $/m³, in that order, only where the measure exists", () => {
+  const rates = defaultRates();
+  const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-6, `${msg || ""} ${a} !== ${b}`);
+
+  const strip = newElementItem(ELEMENT_TYPES.find((t) => t.id === "strip_footings"));
+  strip.labourAuto = false; // materials only, so the expected rates are exact
+  strip.qtys[rateKey("CONCRETE", "Small load charge", "m3")] = 0;
+  strip.qtys[rateKey("CONCRETE", "Production & transport surcharge", "m3")] = 0;
+  strip.qtys[rateKey("CONCRETE", "25 mpa", "m3")] = 10;            // 10 × 212.50 = 2,125
+  strip.qtys[rateKey("PROCESSED BAR", "N12", "m")] = 400;          // 400 × 0.91kg = 0.364t × 1925 = 700.70
+  const stripTotal = 2125 + 700.7;
+
+  // No geometry recorded yet → only the concrete volume can be divided by
+  assert.deepEqual(computeElementUnitRates(strip, rates).map((l) => l.unit), ["m³"], "no measures = just $/m³");
+
+  // The Estimates Project Geometry table supplies the run (and footprint)
+  strip.measureLm = 60;
+  strip.measureM2 = 27;
+  const lines = computeElementUnitRates(strip, rates);
+  assert.deepEqual(lines.map((l) => l.unit), ["lm", "m²", "m³"], "fixed order lm → m² → m³");
+  near(lines[0].rate, stripTotal / 60, "$/lm is the whole cost over the total strip length");
+  near(lines[1].rate, stripTotal / 27, "$/m² is the whole cost over the measured area");
+  near(lines[2].rate, stripTotal / 10, "$/m³ is the whole cost over the poured volume");
+  assert.equal(lines[0].qty, 60);
+
+  // Labour belongs in the numerator: the same element with the crew engine
+  // on must price HIGHER per lineal metre, never lower.
+  const withLabour = { ...strip, labourAuto: true };
+  assert.ok(computeElementUnitRates(withLabour, rates)[0].rate > lines[0].rate, "rates are all-in, labour included");
+
+  // An area-only element (a slab with no run recorded) skips the lm line
+  const slab = newElementItem(ELEMENT_TYPES.find((t) => t.id === "slab_on_ground"));
+  slab.labourAuto = false;
+  slab.qtys[rateKey("CONCRETE", "Small load charge", "m3")] = 0;
+  slab.qtys[rateKey("CONCRETE", "Production & transport surcharge", "m3")] = 0;
+  slab.qtys[rateKey("CONCRETE", "25 mpa", "m3")] = 20;
+  slab.measureM2 = 180;
+  assert.deepEqual(computeElementUnitRates(slab, rates).map((l) => l.unit), ["m²", "m³"], "slab shows m² then m³");
+  near(computeElementUnitRates(slab, rates)[0].rate, (20 * 212.5) / 180);
+
+  // Nothing entered at all → no rates, never a divide-by-zero
+  assert.deepEqual(computeElementUnitRates(newElementItem(ELEMENT_TYPES[0]), rates), []);
+});
+
+check("Import: the Project Geometry table's runM/areaM2 land on the items and SUM when same-type elements combine", () => {
+  const { quote } = buildImportFromEstimate({
+    project: {},
+    lines: [
+      estLine({ category: "Strip Footing", element: "Strip A", elementId: "S1", material: "N25 concrete", finalQty: 6 }),
+      estLine({ category: "Strip Footing", element: "Strip B", elementId: "S2", material: "N25 concrete", finalQty: 4 }),
+      estLine({ category: "Slab on Ground", element: "GF Slab", elementId: "SL1", material: "N25 concrete", finalQty: 20 }),
+    ],
+    elementGeometry: { S1: { runM: 37.5, areaM2: 16.88 }, S2: { runM: 22.5, areaM2: 10.12 }, SL1: { runM: 0, areaM2: 180 } },
+  });
+  const strip = quote.items.find((it) => it.typeId === "strip_footings");
+  assert.equal(strip.measureLm, 60, "the two strips' runs sum on the combined card");
+  assert.equal(strip.measureM2, 27, "their areas sum too");
+  const slab = quote.items.find((it) => /slab/i.test(it.typeId));
+  assert.equal(slab.measureM2, 180);
+  assert.equal(slab.measureLm, undefined, "a zero run is not recorded");
+  // and the rates engine reads them straight off the imported item
+  const l = computeElementUnitRates(strip, defaultRates());
+  assert.equal(l[0].unit, "lm");
+  assert.equal(l[0].qty, 60);
+
+  // an export published before the geometry table existed still imports fine
+  const { quote: legacy } = buildImportFromEstimate({
+    project: {},
+    lines: [estLine({ category: "Strip Footing", element: "Strip A", elementId: "S1", material: "N25 concrete", finalQty: 6 })],
+  });
+  assert.equal(legacy.items[0].measureLm, undefined);
+  assert.equal(legacy.items[0].measureM2, undefined);
 });
 
 console.log(`\n${passed} check(s) passed.`);

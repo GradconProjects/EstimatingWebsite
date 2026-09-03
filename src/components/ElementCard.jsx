@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { ChevronDown, ChevronRight, Copy, Trash2, Paperclip, X, RotateCw, ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
 import { FULL_CATALOG, LABOUR_TEMPLATES } from "../data/catalog.js";
-import { uid, money2, computeElementCost, autoLabourQtys, labourQuantities } from "../lib/costing.js";
+import { uid, money2, computeElementCost, computeElementUnitRates, autoLabourQtys, labourQuantities } from "../lib/costing.js";
 import { pdfToJpegPages } from "../lib/pdfToImages.js";
 import CategoryBlock from "./CategoryBlock.jsx";
 import LabourMatrix from "./LabourMatrix.jsx";
@@ -25,6 +25,9 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
   });
 
   const cost = useMemo(() => computeElementCost(item, rates), [item, rates]);
+  // Benchmark rates for the panel beside this row — $/lm and $/m² over the
+  // geometry measured in Estimates, $/m³ over this element's own concrete.
+  const unitRates = useMemo(() => computeElementUnitRates(item, rates), [item, rates]);
 
   const patch = (fn) => onChange(fn(item));
 
@@ -225,7 +228,8 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
   const viewerMarkup = markups.find((m) => m.id === viewerId) || null;
 
   return (
-    <div className="rounded-xl border border-neutral-200 bg-white shadow-sm overflow-hidden">
+    <div className="flex items-stretch gap-2">
+    <div className="rounded-xl border border-neutral-200 bg-white shadow-sm overflow-hidden flex-1 min-w-0">
       <div className="bg-blue-950 text-white px-4 py-3 flex items-center gap-3">
         <button onClick={() => setCardOpen(!cardOpen)} className="text-blue-300 hover:text-white transition-colors flex-none">
           {cardOpen ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
@@ -452,6 +456,22 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
           onRotate={() => rotateMarkup(viewerMarkup.id)}
         />
       )}
+    </div>
+
+    {unitRates.length > 0 && (
+      <div
+        className="hidden md:flex w-56 flex-none rounded-xl border-2 border-blue-950 bg-white shadow-sm flex-col justify-center gap-1 px-3 py-2"
+        title="Benchmark unit rates: this element's WHOLE cost (concrete + reinforcement + formwork + labour/plant + custom items) divided by each measure beside it. The lengths and areas are the ones measured on the Project Geometry table in Estimates; the m³ is this element's own poured concrete volume."
+      >
+        {unitRates.map((u) => (
+          <div key={u.unit} className="font-mono tabular-nums whitespace-nowrap leading-5">
+            <span className="text-[15px] font-bold text-orange-600">{money2(u.rate)}</span>
+            <span className="text-[11px] font-semibold text-neutral-500"> /{u.unit}</span>
+            <span className="text-[10px] text-neutral-400"> · {u.qty.toLocaleString("en-AU")} {u.unit}</span>
+          </div>
+        ))}
+      </div>
+    )}
     </div>
   );
 }

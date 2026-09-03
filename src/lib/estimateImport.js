@@ -149,6 +149,10 @@ export function buildImportFromEstimate(estimateExport) {
   // Workspace but not filled in) shouldn't create a flag or a phantom quantity.
   const lines = (Array.isArray(estimateExport?.lines) ? estimateExport.lines : [])
     .filter((l) => (Number(l.finalQty) || 0) > 0);
+  // The Estimates "Project Geometry" table, keyed by elementId:
+  // {runM, areaM2} per element. Absent in exports published before that
+  // table existed — those elements simply carry no benchmark divisors.
+  const elementGeometry = estimateExport?.elementGeometry || {};
 
   const flags = [];
   const items = [];
@@ -191,6 +195,11 @@ export function buildImportFromEstimate(estimateExport) {
 
     const item = newElementItem(type);
     item.label = elementLabel;
+    // Measured geometry from the takeoff's Project Geometry table — the
+    // divisors behind this element's $/lm and $/m² benchmark rates.
+    const geom = elementGeometry[elementId] || {};
+    if (Number(geom.runM) > 0) item.measureLm = Number(geom.runM);
+    if (Number(geom.areaM2) > 0) item.measureM2 = Number(geom.areaM2);
     // Marks this card as owned by the Estimates bridge: a re-publish replaces
     // fromEstimate items wholesale but leaves the estimator's manually added
     // cards on the same project untouched (see the merge in App.jsx).
@@ -397,6 +406,13 @@ export function buildImportFromEstimate(estimateExport) {
     }
     Object.entries(item.qtys).forEach(([key, qty]) => {
       prior.item.qtys[key] = (Number(prior.item.qtys[key]) || 0) + (Number(qty) || 0);
+    });
+    // Quantities combine, so their geometry must too: three strip footings
+    // merged into one card divide by the three strips' TOTAL length/area.
+    ["measureLm", "measureM2"].forEach((k) => {
+      if (Number(item[k]) > 0) {
+        prior.item[k] = Math.round(((Number(prior.item[k]) || 0) + Number(item[k])) * 100) / 100;
+      }
     });
     prior.labels.push(item.label);
     const typeName = QUOTES_TYPE_BY_ID[item.typeId]?.name || prior.labels[0];
