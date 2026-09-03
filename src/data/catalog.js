@@ -25,13 +25,21 @@
 // lib/costing.js. Typed values on the Small load charge row always win.
 export const SMALL_LOAD_THRESHOLD_M3 = 30;
 
+// Crew columns are priced PER PERSON per day ("man-day" unit — a fresh key
+// that retires both the original per-person "day" overrides and the
+// crew-era "crew-day" ones). Each crew-sheet ROW chooses its own mode:
+// per-crew cells are crew-days costed as cells × that row's men-per-crew ×
+// this man-day rate (row's men blank → the column's `men` default below);
+// per-person cells are man-days costed directly. Defaults reproduce the
+// old crew pricing exactly (3 × $500 = $1,500 concrete crew-day, 5 × $650
+// = $3,250 steel crew-day, …).
 export const RESOURCE_COLS = [
-  { key: "concreter_day", name: "Concrete Crew", unit: "crew-day", rate: 1500, crew: true, men: 3 },
-  { key: "steelfixer_day", name: "Steel Crew", unit: "crew-day", rate: 3250, crew: true, men: 5 },
+  { key: "concreter_day", name: "Concrete Crew", unit: "man-day", rate: 500, crew: true, men: 3 },
+  { key: "steelfixer_day", name: "Steel Crew", unit: "man-day", rate: 650, crew: true, men: 5 },
   // Formwork crew-days are always entered MANUALLY — the engine never
   // auto-fills this column (propping effort varies too much by system).
-  { key: "formwork_day", name: "Formwork Crew", unit: "crew-day", rate: 1500, crew: true, men: 3 },
-  { key: "labourer_day", name: "General Labour Crew", unit: "crew-day", rate: 1200, crew: true, men: 3 },
+  { key: "formwork_day", name: "Formwork Crew", unit: "man-day", rate: 500, crew: true, men: 3 },
+  { key: "labourer_day", name: "General Labour Crew", unit: "man-day", rate: 400, crew: true, men: 3 },
   { key: "excavator_day", name: "Excavator", unit: "day", rate: 900 },
   { key: "bobcat_day", name: "Bobcat", unit: "day", rate: 900 },
   { key: "pump_hr", name: "Pump", unit: "hr", rate: 250 },

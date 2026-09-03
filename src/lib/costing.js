@@ -230,19 +230,27 @@ export function computeElementCost(item, rates) {
   // by the rate-of-work engine (autoLabourQtys) — quantities entered above
   // flow straight into crew days at the rates-library production rates. A
   // typed cell always wins; nothing is ever written back into the tasks.
-  // Every labour figure is a WHOLE number of crews/days/hours — a typed 0.5
-  // or 1.2 crew-days books 1 or 2 whole crews (fractional crews don't
-  // exist). The one exception is pump m³: a real measured volume, priced
-  // per m³ pumped, never rounded.
+  // Crew columns price PER PERSON per day; each ROW carries its own
+  // per-crew / per-person toggle and its own men-per-crew (taskCrewMen):
+  // a per-crew row's cells are crew-days costed as cells × men × man-day
+  // rate, a per-person row's cells are man-days costed directly. Plant
+  // columns ignore the toggle. resourceTotals stays the raw cell sum for
+  // display; the weighting only enters the cost.
   const autoQtys = item.labourAuto !== false ? autoLabourQtys(item, rates) : null;
   const resourceTotals = {};
-  RESOURCE_COLS.forEach((res) => { resourceTotals[res.key] = 0; });
+  const resourceManDays = {};
+  RESOURCE_COLS.forEach((res) => { resourceTotals[res.key] = 0; resourceManDays[res.key] = 0; });
   item.tasks.forEach((task) => {
     RESOURCE_COLS.forEach((res) => {
       const manual = task.qtys[res.key];
       const eff = manual !== undefined && manual !== "" ? Number(manual) || 0
         : (autoQtys && autoQtys[task.id] && autoQtys[task.id][res.key]) || 0;
-      resourceTotals[res.key] += res.key === "pump_m3" ? eff : Math.ceil(eff - 1e-9);
+      // Crew columns keep their decimals (0.5 crew-days is half a day's
+      // crew, not a booked whole crew — the whole-crew rounding is gone);
+      // plant days/hours still book whole, pump m³ is a measured volume.
+      const cell = res.crew || res.key === "pump_m3" ? eff : Math.ceil(eff - 1e-9);
+      resourceTotals[res.key] += cell;
+      resourceManDays[res.key] += cell * taskCrewMen(task, res);
     });
   });
 
@@ -250,7 +258,7 @@ export function computeElementCost(item, rates) {
   const resourceCosts = {};
   RESOURCE_COLS.forEach((res) => {
     const rate = labourResourceRate(rates, res);
-    const cost = resourceTotals[res.key] * rate;
+    const cost = resourceManDays[res.key] * rate;
     resourceCosts[res.key] = cost;
     labourTotal += cost;
   });
@@ -343,29 +351,41 @@ const prodRate = (rates, name, unit, fallback) =>
   lookupRate(rates, rateKey("PRODUCTION", name, unit), { unitCost: fallback }).unitCost;
 const round2 = (v) => Math.round(v * 100) / 100;
 
-/** Labour rate for a resource column — always the crew/plant rate saved in
- * the rates library, falling back to the catalog default (CLAUDE.md rule 6).
- * The crew columns' unit is "crew-day", deliberately different from the old
- * per-person "day" keys so stale per-person overrides no longer apply. */
+/** Labour rate for a resource column — always the rate saved in the rates
+ * library, falling back to the catalog default (CLAUDE.md rule 6). Crew
+ * columns price PER PERSON per day under a "man-day" unit key — deliberately
+ * different from both the original per-person "day" keys and the crew-era
+ * "crew-day" keys, so neither generation of stale overrides applies. */
 export function labourResourceRate(rates, res) {
   return lookupRate(rates, rateKey("LABOUR", res.name, res.unit), { unitCost: res.rate }).unitCost;
 }
 
+/** Which mode a crew-sheet row is in: "crew" (cells are crew-days, the
+ * default) or "person" (cells are man-days). */
+export const taskCrewMode = (task) => (task && task.crewMode === "person" ? "person" : "crew");
+
+/** The per-person multiplier a row's cells carry in a given column: a
+ * per-crew row on a crew column multiplies by that row's own men-per-crew
+ * (its crewSize, blank → the column's catalog default `men`); a per-person
+ * row, and every plant column, multiplies by 1. */
+export function taskCrewMen(task, res) {
+  if (!res.crew || taskCrewMode(task) === "person") return 1;
+  const n = Number(task && task.crewSize);
+  return Number.isFinite(n) && n >= 1 ? Math.round(n) : res.men || 1;
+}
+
 /**
- * The seamless labour engine — whole-CREW mathematics, one row per
- * crew-sheet task. Each row's Qty draws DIRECTLY from the element's entered
- * line items (concrete m³, reinforcement t, finish m²); the engine then
- * books whole crews, never fractional people:
+ * The seamless labour engine — one row per crew-sheet task. Each row's Qty
+ * draws DIRECTLY from the element's entered line items (concrete m³,
+ * reinforcement t, finish m²); crew-days follow as
  *
- *   crew-days = ceil( ceil(qty) / block )   — minimum 1 whole crew-day
+ *   crew-days = qty / block   (decimals kept — 36 m³ at 10 m³/day is 3.6)
  *
  * where `block` is how much ONE crew-day covers (rates library
- * PRODUCTION_RATES: 1 t of steel = a 5-man Steel Crew for a day, every
- * 10 m³ of concrete = a 3-man Concrete Crew day, …). The quantity is
- * rounded UP to a whole unit in the background first — 0.13 t books a full
- * tonne's crew — but the Qty column keeps DISPLAYING the true 0.13
- * (taskRowMeta, untouched here). Pump m³ stays the real measured volume
- * (it's priced per m³ pumped), and pump hours book a flat whole-pour
+ * PRODUCTION_RATES). Each ROW carries its own per-crew / per-person toggle
+ * and men-per-crew (see taskCrewMen): a per-person row's suggestions are
+ * converted to man-days (crews × men). Pump m³ stays the real measured
+ * volume (priced per m³ pumped), and pump hours book a flat whole-pour
  * booking (6 hrs) whenever concrete is poured.
  *
  * Typing into a row's Qty cell overrides what that row draws on; typing
@@ -381,17 +401,26 @@ export function autoLabourQtys(item, rates) {
   const generalM3Block = prodRate(rates, "General labour — m³ per crew-day", "m³/day", 60);
   const pumpHrsPour = prodRate(rates, "Concrete pump — hours per pour", "hrs", 6);
 
-  // qty → whole crew-days: round the quantity itself up to a whole unit,
-  // then divide by the crew-day block, rounding up again — any quantity at
-  // all books at least one whole crew (the crew IS the minimum: 3+ men).
+  // qty → crew-days, decimals kept: 36 m³ at 10 m³/crew-day is 3.6
+  // crew-days, 2.99 t of steel is 2.99 — the old whole-crew rounding
+  // (ceil + minimum one crew) is gone; the estimator rounds if they want.
   const crewDays = (qty, block) =>
-    qty > 0 ? Math.max(1, Math.ceil(Math.ceil(qty - 1e-9) / Math.max(block, 1e-9))) : 0;
+    qty > 0 ? round2(qty / Math.max(block, 1e-9)) : 0;
 
   const hasFinishTask = (item.tasks || []).some((t) => FINISH_TASK_MATCH.test(t.name));
+  const colByKey = {};
+  RESOURCE_COLS.forEach((r) => { colByKey[r.key] = r; });
   const suggestions = {};
   const put = (task, key, qty) => {
     if (qty <= 0) return;
     if (task.qtys[key] !== undefined && task.qtys[key] !== "") return; // typed cells win
+    // a row switched to per-person shows man-days: the same crew booking
+    // expressed as crews × that row's men (crewSize, blank → column default)
+    const res = colByKey[key];
+    if (res && res.crew && taskCrewMode(task) === "person") {
+      const n = Number(task.crewSize);
+      qty = qty * (Number.isFinite(n) && n >= 1 ? Math.round(n) : res.men || 1);
+    }
     (suggestions[task.id] = suggestions[task.id] || {})[key] = key === "pump_m3" ? round2(qty) : qty;
   };
   (item.tasks || []).forEach((task) => {

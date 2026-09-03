@@ -114,7 +114,29 @@ export default function CategoryBlock({ cat, item, rates, onQtyChange, onRateCha
                       )}
                     </td>
                     <td className={`px-3 py-1 text-right font-mono tabular-nums font-medium ${filled ? "text-neutral-900" : "text-neutral-300"}`}>
-                      {money2(rowTotal)}
+                      {/* Subcontract "quote" rows: the TOTAL itself is where
+                          the received quote lands — type the contractor's
+                          figure straight in (qty books as 1, the rate becomes
+                          the quote); clear it to zero the row again. */}
+                      {p.unit === "quote" && onRateChange ? (
+                        <NumInput
+                          step="50"
+                          value={qty > 0 ? rowTotal : undefined}
+                          placeholder="quote $"
+                          onChange={(v) => {
+                            const n = Number(v);
+                            if (v === undefined || v === "" || !Number.isFinite(n)) {
+                              onQtyChange(qKey, undefined);
+                            } else {
+                              const q = qty > 0 ? qty : 1;
+                              if (!(qty > 0)) onQtyChange(qKey, 1);
+                              onRateChange(qKey, n / q, p.unitCost ?? 0);
+                            }
+                          }}
+                        />
+                      ) : (
+                        money2(rowTotal)
+                      )}
                     </td>
                   </tr>
                 );

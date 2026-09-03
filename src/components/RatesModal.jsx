@@ -120,7 +120,7 @@ export default function RatesModal({ rates, setRates, onClose }) {
           <div>
             <div className="text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-1">
               CREW WORK RATES
-              <span className="normal-case font-normal text-neutral-400"> — how much work one whole crew-day covers (1 t of steel = a 5-man crew's day, every 10 m³ poured = a 3-man crew's day, …). The crew sheet books whole crews from these blocks; quantities round up to whole units behind the scenes.</span>
+              <span className="normal-case font-normal text-neutral-400"> — how much work one crew-day covers (1 t of steel, 10 m³ poured, …). The crew sheet derives crew-days from these blocks with decimals kept (36 m³ = 3.6 crew-days); each row sets per crew / per person and its own men-per-crew, and crew columns price per person per man-day.</span>
             </div>
             <table className="w-full text-[13px]">
               <tbody>
