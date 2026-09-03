@@ -2485,8 +2485,11 @@ function slabDefaults(cat,suspended){ return {
   starters:false, connTarget:"", connQty:0, connDia:"N12", connEmbed:400, connProj:400,
   stepdown:false, sdLength:6, sdDepth:150, sdDia:"N12", sdSpacing:300, sdProj1:300, sdProj2:300,
   edgeThicken:false, edgeThickenWidth:300, edgeThickenExtraDepth:150,
+  edgeBeamReo:false, edgeBeamTrenchMesh:false, edgeBeamBars:4, edgeBeamDia:"N16", edgeBeamTrenchType:"4 Bar-L12TM", edgeBeamLayers:1, edgeBeamLap:false,
+  edgeBeamLigs:false, edgeBeamLigDia:"N10", edgeBeamLigSpacing:300, edgeBeamLigLap:false,
   beamStrips:false, beamStripsLength:0, beamStripsWidth:300, beamStripsExtraDepth:150,
-  beamStripsReo:false, beamStripsTrenchMesh:false, beamStripsBars:4, beamStripsDia:"N16", beamStripsTrenchType:"4 Bar-L12TM", beamStripsLayers:1, beamStripsLap:false
+  beamStripsReo:false, beamStripsTrenchMesh:false, beamStripsBars:4, beamStripsDia:"N16", beamStripsTrenchType:"4 Bar-L12TM", beamStripsLayers:1, beamStripsLap:false,
+  beamStripsLigs:false, beamStripsLigDia:"N10", beamStripsLigSpacing:300, beamStripsLigLap:false
 };}
 function renderSlab(inst,def){
   let d=inst.data;
@@ -2529,7 +2532,7 @@ function renderSlab(inst,def){
     <div style="flex:1;min-width:260px;" class="outlineHost">${slabOutlineSVG(d)}</div>
    </div>
   </div>
-  <div class="subsec"><div class="sechead">Edge Thickening</div><div class="grid cols3">${chk("edgeThicken",d.edgeThicken,"Thickened edge strip around perimeter","edgeThicken")}</div>
+  <div class="subsec"><div class="sechead">Edge Beams / Thickened Perimeter</div><div class="grid cols3">${chk("edgeThicken",d.edgeThicken,"Edge beams — thickened strip around the perimeter","edgeThicken")}</div>
   <div class="subsec ${d.edgeThicken?'':'hidden'}" data-show-if="edgeThicken"><div class="grid cols3">${F("Thickened strip width (mm)",inpNum("edgeThickenWidth",d.edgeThickenWidth))}${F("Extra depth below slab thickness (mm)",inpNum("edgeThickenExtraDepth",d.edgeThickenExtraDepth))}</div>
   <div class="tip"><span class="ico">🏗️</span><div>A thickened edge (footing-like strip under the slab perimeter, or wherever a line load lands) is extra concrete beyond the flat slab thickness already counted above — it's costed here as perimeter × strip width × extra depth, on top of the main slab volume, not instead of it.</div></div></div></div>
   <div class="subsec"><div class="sechead">Internal Beam Strips / Ribs (e.g. raft foundation load-bearing lines)</div><div class="grid cols3">${chk("beamStrips",d.beamStrips,"Internal thickened beam strips within the slab","beamStrips")}</div>
@@ -2585,8 +2588,28 @@ function renderSlab(inst,def){
      : F("Longitudinal bars (no.)",inpNum("beamStripsBars",d.beamStripsBars))+F("Bar diameter",barSizeSel("beamStripsDia",d.beamStripsDia))}
    ${F("Layers",inpNum("beamStripsLayers",d.beamStripsLayers===undefined?1:d.beamStripsLayers))}${chk("beamStripsLap",d.beamStripsLap,"Include lap allowance (%)","beamStripsLap")}
   </div>
-  <p class="small">Same reinforcement options as the standalone Ground Beam element — individual deformed bars or a named trench mesh type (same list as Quotes' own Trench Mesh catalog), run the full combined beam length entered on Geometry (Internal Beam Strips). Layers &gt; 1 stacks that many identical bar sets/mesh strips. Lap allowance is off by default. Ligatures/stirrups for these ribs aren't counted here; add them as their own custom line, or take the beam off separately as a Ground Beam element.</p>
-  </div></div>`;
+  <p class="small">Same reinforcement options as the standalone Ground Beam element — individual deformed bars or a named trench mesh type (same list as Quotes' own Trench Mesh catalog), run the full combined beam length entered on Geometry (Internal Beam Strips). Layers &gt; 1 stacks that many identical bar sets/mesh strips. Lap allowance is off by default.</p>
+  </div>
+  <div class="grid cols3">${chk("beamStripsLigs",d.beamStripsLigs,"Ligatures / stirrups on the internal beams","beamStripsLigs")}</div>
+  <div class="subsec ${d.beamStripsLigs?'':'hidden'}" data-show-if="beamStripsLigs"><div class="grid cols3">${F("Ligature dia",barSizeSel("beamStripsLigDia",d.beamStripsLigDia||"N10"))}${F("Spacing (mm)",inpNum("beamStripsLigSpacing",d.beamStripsLigSpacing===undefined?300:d.beamStripsLigSpacing))}${chk("beamStripsLigLap",d.beamStripsLigLap,"Include lap allowance (%)","beamStripsLigLap")}</div>
+  <p class="small">Closed stirrups around each rib — cross-section = strip width × (slab thickness + extra depth) less cover, plus two 135° fitment hooks, at the entered spacing along the combined run.</p></div>
+  </div>`;
+  let edgeBeamReoBlock = `<div class="subsec ${d.edgeThicken?'':'hidden'}" data-show-if="edgeThicken"><div class="sechead">Edge Beam Reinforcement (thickened perimeter)</div>
+  <div class="grid cols3">${chk("edgeBeamReo",d.edgeBeamReo,"Longitudinal reinforcement along the edge beam","edgeBeamReo")}</div>
+  <div class="subsec ${d.edgeBeamReo?'':'hidden'}" data-show-if="edgeBeamReo">
+  <div class="grid cols3">${chk("edgeBeamTrenchMesh",d.edgeBeamTrenchMesh,"Trench mesh instead","edgeBeamTrenchMesh",true)}</div>
+  <div class="grid cols3">
+   ${d.edgeBeamTrenchMesh
+     ? F("Trench mesh type",trenchMeshTypeSel("edgeBeamTrenchType",d.edgeBeamTrenchType||"4 Bar-L12TM"))
+     : F("Longitudinal bars (no.)",inpNum("edgeBeamBars",d.edgeBeamBars===undefined?4:d.edgeBeamBars))+F("Bar diameter",barSizeSel("edgeBeamDia",d.edgeBeamDia||"N16"))}
+   ${F("Layers",inpNum("edgeBeamLayers",d.edgeBeamLayers===undefined?1:d.edgeBeamLayers))}${chk("edgeBeamLap",d.edgeBeamLap,"Include lap allowance (%)","edgeBeamLap")}
+  </div>
+  <p class="small">Runs the slab perimeter (the Edge Beams length on Geometry) — bars or a named trench mesh type, so the raft's edge beam is taken off here with the slab rather than as a separate Ground Beam element.</p>
+  </div>
+  <div class="grid cols3">${chk("edgeBeamLigs",d.edgeBeamLigs,"Ligatures / stirrups on the edge beam","edgeBeamLigs")}</div>
+  <div class="subsec ${d.edgeBeamLigs?'':'hidden'}" data-show-if="edgeBeamLigs"><div class="grid cols3">${F("Ligature dia",barSizeSel("edgeBeamLigDia",d.edgeBeamLigDia||"N10"))}${F("Spacing (mm)",inpNum("edgeBeamLigSpacing",d.edgeBeamLigSpacing===undefined?300:d.edgeBeamLigSpacing))}${chk("edgeBeamLigLap",d.edgeBeamLigLap,"Include lap allowance (%)","edgeBeamLigLap")}</div>
+  <p class="small">Closed stirrups around the edge beam — cross-section = strip width × (slab thickness + extra depth) less cover, plus two 135° fitment hooks, at the entered spacing around the perimeter.</p></div>
+  </div>`;
   let reo = meshBlock + barBlock("botX","Bottom X bars")+barBlock("botY","Bottom Y bars")+barBlock("topX","Top X bars")+barBlock("topY","Top Y bars")
    + `<div class="subsec"><div class="sechead">Edge Return / Turn-down Bars</div>
    ${chk("returnBars",d.returnBars,"Return bars at slab edges (U-bar turn-down)","returnBars")}
@@ -2616,7 +2639,7 @@ function renderSlab(inst,def){
     ${chk("dowels",d.dowels,"Joint dowels","dowels")}
    </div>
    <div class="subsec ${d.dowels?'':'hidden'}" data-show-if="dowels"><div class="grid cols3">${F("Dowel size",barSizeSel("dowelDia",d.dowelDia))}${F("Spacing (mm)",inpNum("dowelSpacing",d.dowelSpacing))}${F("Total dowel length (mm, both sides of joint)",inpNum("dowelLength",d.dowelLength))}</div></div></div>`
-   + stripReoBlock;
+   + edgeBeamReoBlock + stripReoBlock;
   let conns=`${chk("starters",d.starters,"Starter bars in from footing/wall below","starters")}
   <div class="subsec ${d.starters?'':'hidden'}" data-show-if="starters"><div class="grid cols4">
    ${F("Connects to",targetSelect("connTarget",d.connTarget,inst.id))}${F("Qty",inpNum("connQty",d.connQty))}${F("Dia",barSizeSel("connDia",d.connDia))}${F("Embedment (mm)",inpNum("connEmbed",d.connEmbed))}${F("Projection (mm)",inpNum("connProj",d.connProj))}
@@ -2673,7 +2696,37 @@ function computeSlab(inst,def){
   if(d.edgeThicken){
     let ew=num(d.edgeThickenWidth)/1000, ed=num(d.edgeThickenExtraDepth)/1000;
     let edgeVol=perim*ew*ed;
-    lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:"Edge thickening (perimeter strip)",qty:edgeVol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(edgeVol,concWastePct(d)),formula:`perimeter(${fmt(perim,1)})×width(${d.edgeThickenWidth}mm)×extra depth(${d.edgeThickenExtraDepth}mm)`}));
+    lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:"Edge beam (thickened perimeter strip)",qty:edgeVol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(edgeVol,concWastePct(d)),formula:`perimeter(${fmt(perim,1)})×width(${d.edgeThickenWidth}mm)×extra depth(${d.edgeThickenExtraDepth}mm)`}));
+    // Edge beam reinforcement — the raft's perimeter beam is taken off HERE
+    // with the slab (own longitudinal steel + ligatures), never as a
+    // separate Ground Beam element.
+    if(d.edgeBeamReo){
+      let layers=Math.max(1,Math.round(num(d.edgeBeamLayers,1)));
+      let layerNote=layers>1?` × ${layers} layers`:"";
+      let lapPct=d.edgeBeamLap?(d.edgeBeamTrenchMesh?MESH_LAP_PCT:PROJECT.lapPct):0;
+      if(d.edgeBeamTrenchMesh){
+        let type=d.edgeBeamTrenchType||"4 Bar-L12TM";
+        let mpm=trenchReoMassPerM(type,num(d.edgeThickenWidth,300));
+        let totLen=perim*layers; let wt=totLen*mpm;
+        lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:type,spec:`Edge beam — trench mesh (longitudinal)${layerNote}`,qty:totLen,unit:"lm",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,lapPct),massPerUnit:mpm,formula:`${layers}L×perimeter ${fmt(perim,1)}m`,notes:`${fmt(wt,1)} kg`}));
+      } else if(num(d.edgeBeamBars,4)>0){
+        let bd=barDiaOf(d.edgeBeamDia||"N16");
+        let bars=Math.max(1,Math.round(num(d.edgeBeamBars,4)));
+        let totLen=bars*layers*perim; let wt=totLen*massPerM(bd);
+        lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.edgeBeamDia||"N16",spec:`Edge beam — longitudinal bars${layerNote}`,qty:totLen,unit:"m",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,lapPct),formula:`${bars}×${layers}L×perimeter ${fmt(perim,1)}m`,notes:`${fmt(wt,1)} kg`}));
+      }
+    }
+    if(d.edgeBeamLigs){
+      let cvr=num(d.cover,40);
+      let bd=barDiaOf(d.edgeBeamLigDia||"N10");
+      let count=Math.floor(perim*1000/num(d.edgeBeamLigSpacing,300))+1;
+      let hookExt=anchorLen("hook135",bd,0)/1000;
+      let secD=num(d.thickness,150)+num(d.edgeThickenExtraDepth,150);
+      let ligPerim=(2*((num(d.edgeThickenWidth,300)-2*cvr)+(secD-2*cvr))/1000)+2*hookExt;
+      let totLen=count*ligPerim; let wt=totLen*massPerM(bd);
+      let lapPct=d.edgeBeamLigLap?PROJECT.lapPct:0;
+      lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.edgeBeamLigDia||"N10",spec:"Edge beam — ligatures / stirrups",qty:totLen,unit:"m",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,lapPct),formula:`${count} ligs × (perim ${fmt(ligPerim-2*hookExt,2)}m + 2×135° hooks ${fmt(2*hookExt,2)}m)`,notes:`${count} no., ${fmt(wt,1)} kg`}));
+    }
   }
   if(d.beamStrips && num(d.beamStripsLength)>0){
     let bw=num(d.beamStripsWidth)/1000, bd=num(d.beamStripsExtraDepth)/1000;
@@ -2694,6 +2747,18 @@ function computeSlab(inst,def){
         let totLen=num(d.beamStripsBars)*layers*runLen; let wt=totLen*massPerM(bd);
         lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.beamStripsDia,spec:`Beam strips — longitudinal bars${layerNote}`,qty:totLen,unit:"m",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,lapPct),formula:`${d.beamStripsBars}×${layers}L×${fmt(runLen,1)}`,notes:`${fmt(wt,1)} kg`}));
       }
+    }
+    if(d.beamStripsLigs){
+      let cvr=num(d.cover,40);
+      let ligBd=barDiaOf(d.beamStripsLigDia||"N10");
+      let runLenL=num(d.beamStripsLength);
+      let count=Math.floor(runLenL*1000/num(d.beamStripsLigSpacing,300))+1;
+      let hookExt=anchorLen("hook135",ligBd,0)/1000;
+      let secD=num(d.thickness,150)+num(d.beamStripsExtraDepth,150);
+      let ligPerim=(2*((num(d.beamStripsWidth,300)-2*cvr)+(secD-2*cvr))/1000)+2*hookExt;
+      let totLen=count*ligPerim; let wt=totLen*massPerM(ligBd);
+      let lapPct=d.beamStripsLigLap?PROJECT.lapPct:0;
+      lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.beamStripsLigDia||"N10",spec:"Beam strips — ligatures / stirrups",qty:totLen,unit:"m",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,lapPct),formula:`${count} ligs × (perim ${fmt(ligPerim-2*hookExt,2)}m + 2×135° hooks ${fmt(2*hookExt,2)}m)`,notes:`${count} no., ${fmt(wt,1)} kg`}));
     }
   }
   function barCalc(prefix,label,perpDim){
