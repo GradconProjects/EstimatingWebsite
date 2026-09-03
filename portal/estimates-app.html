@@ -1660,8 +1660,8 @@ function sdBarLenMm(d, legacyMm){
   if(d.sdBarLen!==undefined && d.sdBarLen!=="") return num(d.sdBarLen);
   return legacyMm;
 }
-function stepBarSVG(d){
-  let dirs=d.sdBarDirs||[], lens=d.sdBarLens||[];
+function stepBarSVG(d){ return polylineSVG(d.sdBarDirs||[], d.sdBarLens||[], "one bar"); }
+function polylineSVG(dirs,lens,label){
   if(!dirs.length) return "";
   let pts=[{x:0,y:0}];
   for(let i=0;i<dirs.length;i++){ let p=pts[i], L=Math.max(1,num(lens[i])); pts.push({x:p.x+Math.cos(dirs[i])*L, y:p.y+Math.sin(dirs[i])*L}); }
@@ -1676,7 +1676,31 @@ function stepBarSVG(d){
   let tot=lens.reduce((s,v)=>s+num(v),0);
   return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:240px;background:var(--input);border:1px solid var(--line);border-radius:8px;">
     <path d="${path}" fill="none" stroke="var(--danger)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>${labels}</svg>
-   <div class="small">bar shape — lengths in mm · one bar = <b>${Math.round(tot)}mm</b></div>`;
+   <div class="small">lengths in mm · ${label||"one bar"} = <b>${Math.round(tot)}mm</b></div>`;
+}
+/* Edge-thickening RUN sketch: draw the thickened-edge run in plan (an open
+ * polyline, same machinery as the step bar), type each segment's true
+ * length in mm — the segments summed = the thickening run. */
+function etRunShapeUI(d){
+  let has=Array.isArray(d.etDirs)&&d.etDirs.length;
+  return `<div class="subsec"><div class="sechead">Thickened-Edge Run Shape</div>
+   <div class="toolbar" style="margin-bottom:8px;">
+    <button class="btn small primary" data-action="sketchEtRun" type="button">✏️ ${has?'Re-sketch':'Sketch'} the run in plan (draw it off the drawing)</button>
+    ${has? `<button class="btn small ghost" data-action="clearEtRun" type="button">Use perimeter / manual length instead</button>`:""}
+   </div>
+   ${has? `<div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start;">
+     <div style="flex:1;min-width:200px;"><table class="rows"><thead><tr><th>Segment</th><th>Length (mm)</th></tr></thead>
+      <tbody>${d.etDirs.map((a,i)=>`<tr><td><b>${String.fromCharCode(65+i)}</b></td><td style="width:130px">${inpNum(`etLens.${i}`,(d.etLens||[])[i])}</td></tr>`).join('')}</tbody></table>
+      <p class="small">The sketch was straightened into segments <b>A–${String.fromCharCode(64+d.etDirs.length)}</b>. Type each segment's TRUE length in mm off the drawing — the thickening run is the segments summed, overriding the perimeter and any manual figure.</p></div>
+     <div style="flex:1;min-width:200px;">${polylineSVG(d.etDirs,d.etLens||[],"run")}</div>
+    </div>`
+   : `<p class="small">No sketch — the run uses the manual override above, or the slab perimeter when that's blank.</p>`}
+  </div>`;
+}
+function etRunM(d,perim){
+  if(Array.isArray(d.etDirs)&&d.etDirs.length&&(d.etLens||[]).length) return (d.etLens||[]).reduce((s,v)=>s+num(v),0)/1000;
+  if(num(d.edgeThickenLenOverride)>0) return num(d.edgeThickenLenOverride);
+  return perim;
 }
 function sdBarShapeUI(d, legacyMm){
   let has=Array.isArray(d.sdBarDirs)&&d.sdBarDirs.length;
@@ -2596,7 +2620,7 @@ function slabDefaults(cat,suspended){ return {
   joints:true, jointSpacing:6, dowels:false, dowelDia:"N16", dowelSpacing:300, dowelLength:500,
   starters:false, connTarget:"", connQty:0, connDia:"N12", connEmbed:400, connProj:400,
   stepdown:false, sdLength:6, sdDepth:150, sdDia:"N12", sdSpacing:300, sdProj1:300, sdProj2:300,
-  edgeThicken:false, edgeThickenWidth:300, edgeThickenExtraDepth:150,
+  edgeThicken:false, edgeThickenWidth:300, edgeThickenExtraDepth:150, edgeThickenLenOverride:"",
   edgeBeamOn:false, edgeBeamLen:"", edgeBeamWidth:300, edgeBeamExtraDepth:300, edgeBeamDepthMode:"extra", edgeBeamCover:"", beamStripsCover:"",
   edgeBeamReo:false, edgeBeamTrenchMesh:false, edgeBeamBars:4, edgeBeamDia:"N16", edgeBeamTrenchType:"4 Bar-L12TM", edgeBeamLayers:1, edgeBeamLap:false,
   edgeBeamLigs:false, edgeBeamLigDia:"N10", edgeBeamLigSpacing:300, edgeBeamLigLap:false,
@@ -2712,8 +2736,9 @@ function renderSlab(inst,def){
   <p class="small">Same as a Ground Beam's trench: dug volume + a bulked spoil-disposal line, along the combined run. Off by default so existing takeoffs don't change.</p></div>
   </div>`;
   let edgeThickenGeom = `<div class="subsec"><div class="sechead">⚠ Edge Thickening</div><div class="grid cols3">${chk("edgeThicken",d.edgeThicken,"<b>Edge thickening</b> — simple thickened strip, follows the slab perimeter automatically","edgeThicken")}</div>
-  <div class="subsec ${d.edgeThicken?'':'hidden'}" data-show-if="edgeThicken"><div class="grid cols3">${F("Thickened strip width (mm)",inpNum("edgeThickenWidth",d.edgeThickenWidth))}${F("Extra depth below slab thickness (mm)",inpNum("edgeThickenExtraDepth",d.edgeThickenExtraDepth))}</div>
-  <div class="tip"><span class="ico">🏗️</span><div><b>Edge thickening is NOT an edge beam.</b> This is a simple thickening of the slab edge — extra concrete only, costed as slab perimeter × strip width × extra depth on top of the flat slab volume, with no cage of its own (the slab mats run through it). A detailed edge BEAM — with its own manually measured run, bar sets, ligatures and excavation — lives on the <b>Edge Beams</b> tab. Don't tick both for the same edge or the concrete double-counts.</div></div></div></div>`;
+  <div class="subsec ${d.edgeThicken?'':'hidden'}" data-show-if="edgeThicken"><div class="grid cols3">${F("Thickened strip width (mm)",inpNum("edgeThickenWidth",d.edgeThickenWidth))}${F("Extra depth below slab thickness (mm)",inpNum("edgeThickenExtraDepth",d.edgeThickenExtraDepth))}${F("Run length override (m, blank = slab perimeter)",inpNum("edgeThickenLenOverride",d.edgeThickenLenOverride))}</div>
+  ${etRunShapeUI(d)}
+  <div class="tip"><span class="ico">🏗️</span><div><b>Edge thickening is NOT an edge beam.</b> This is a simple thickening of the slab edge — extra concrete only, costed as run × strip width × extra depth on top of the flat slab volume, with no cage of its own (the slab mats run through it). The run follows the slab perimeter by default; type a manual override, or SKETCH the run's shape off the plan and type each segment's true length — the sketch wins over both. A detailed edge BEAM — with its own manually measured run, bar sets, ligatures and excavation — lives on the <b>Edge Beams</b> tab. Don't tick both for the same edge or the concrete double-counts.</div></div></div></div>`;
   let edgeBeamGeom = `<div class="subsec"><div class="sechead">Edge Beams (dedicated beams at the slab edge)</div><div class="grid cols3">${chk("edgeBeamOn",d.edgeBeamOn,"Edge beams — full beam takeoff, manual run length","edgeBeamOn")}</div>
   <div class="subsec ${d.edgeBeamOn?'':'hidden'}" data-show-if="edgeBeamOn"><div class="grid cols4">${F("Total edge beam run length (m) — manual, from the drawing",inpNum("edgeBeamLen",d.edgeBeamLen))}${F("Beam width (mm)",inpNum("edgeBeamWidth",d.edgeBeamWidth===undefined?300:d.edgeBeamWidth))}${F("Depth entered as",selOpts("edgeBeamDepthMode",d.edgeBeamDepthMode||"extra",[["extra","Extra depth below slab (drop)"],["overall","Overall beam depth (incl. slab)"]],true))}${F((d.edgeBeamDepthMode||"extra")==="overall"?"Overall beam depth (mm)":"Extra depth below slab thickness (mm)",inpNum("edgeBeamExtraDepth",d.edgeBeamExtraDepth===undefined?300:d.edgeBeamExtraDepth))}${F("Cover (mm, blank = element cover)",inpNum("edgeBeamCover",d.edgeBeamCover))}</div>
   <div class="tip"><span class="ico">🏗️</span><div>A REAL BEAM, not a thickening: the run length is entered MANUALLY off the drawing (it does not follow the slab perimeter — the beam may run under only part of it), the depth can be entered as the drawing's overall beam depth (the slab-thickness portion is deducted from the extra concrete so nothing double-counts, while ligatures size to the full section) or as the drop below the slab, and it carries the full standalone-Ground-Beam parameter set below — bar-set rows with anchorages, trench mesh with per-layer products, ligature zones sized to this beam's own cross-section and cover, and optional trench excavation. All folded into this one raft element. The simple perimeter Edge Thickening lives on the Geometry tab.</div></div></div></div>`;
@@ -2829,9 +2854,11 @@ function computeSlab(inst,def){
     // EDGE THICKENING — a simple thickening of the slab edge, concrete
     // only, following the slab perimeter automatically. Distinct from the
     // Edge Beams below (real beams, manual run, own cage).
+    let etRun=etRunM(d,perim);
+    let etSrc=(Array.isArray(d.etDirs)&&d.etDirs.length)? "sketched run" : (num(d.edgeThickenLenOverride)>0? "manual run" : "perimeter");
     let ew=num(d.edgeThickenWidth)/1000, ed=num(d.edgeThickenExtraDepth)/1000;
-    let edgeVol=perim*ew*ed;
-    if(edgeVol>0) lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:"Edge thickening (perimeter strip)",qty:edgeVol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(edgeVol,concWastePct(d)),formula:`perimeter(${fmt(perim,1)}m)×width(${d.edgeThickenWidth}mm)×extra depth(${d.edgeThickenExtraDepth}mm)`}));
+    let edgeVol=etRun*ew*ed;
+    if(edgeVol>0) lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:"Edge thickening (perimeter strip)",qty:edgeVol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(edgeVol,concWastePct(d)),formula:`${etSrc}(${fmt(etRun,1)}m)×width(${d.edgeThickenWidth}mm)×extra depth(${d.edgeThickenExtraDepth}mm)`}));
   }
   {
     // EDGE BEAMS — treated as real beams: manual run length off the drawing
@@ -4059,6 +4086,11 @@ function attachCardEvents(card,inst){
     } else if(act==="clearStepBar"){
       delete inst.data.sdBarDirs; delete inst.data.sdBarLens;
       computeAllAndRefresh(); rerenderCardKeepTab(card,inst);
+    } else if(act==="sketchEtRun"){
+      openSketchPad(inst,card,"etrun");
+    } else if(act==="clearEtRun"){
+      delete inst.data.etDirs; delete inst.data.etLens;
+      computeAllAndRefresh(); rerenderCardKeepTab(card,inst);
     } else if(act==="sketchOutline"){
       openSketchPad(inst,card);
     } else if(act==="outlineToPoints"){
@@ -5107,13 +5139,14 @@ function ensureSketchPad(){
   div.querySelector("#sketchClear").onclick=()=>{ SKETCH.stroke=[]; redraw(); };
   div.querySelector("#sketchCancel").onclick=()=>{ div.style.display="none"; };
   div.querySelector("#sketchUse").onclick=()=>{
-    if(SKETCH.mode==="stepbar"){
-      // OPEN polyline: the bar's profile, not a closed outline. Straighten,
-      // snap (90° default), merge wobble, label segments A, B, C… — true
-      // lengths in mm are typed on the card afterwards.
+    if(SKETCH.mode==="stepbar" || SKETCH.mode==="etrun"){
+      // OPEN polyline: a bar's profile or the thickened-edge run in plan —
+      // not a closed outline. Straighten, snap (90° default), merge wobble,
+      // label segments A, B, C… — true lengths in mm typed on the card.
+      let isEt=SKETCH.mode==="etrun";
       let simp=rdpSimplify(SKETCH.stroke,14);
       if(simp.length>9) simp=rdpSimplify(SKETCH.stroke,26).slice(0,9);
-      if(simp.length<2){ div.querySelector("#sketchHint").textContent="Draw the bar's profile as one stroke (e.g. down, across, down)."; return; }
+      if(simp.length<2){ div.querySelector("#sketchHint").textContent=isEt?"Draw the thickened edge's run as one stroke off the plan.":"Draw the bar's profile as one stroke (e.g. down, across, down)."; return; }
       let bpts=simp.map(p=>({x:p.x, y:-p.y}));
       let bsq=div.querySelector("#sketchSquare").checked;
       let bsnap=bsq? Math.PI/2 : Math.PI/12;
@@ -5129,11 +5162,14 @@ function ensureSketchPad(){
         else { mdirs.push(bdirs[i]); mlens.push(blens[i]); }
       }
       if(mdirs.length<1){ div.querySelector("#sketchHint").textContent="Couldn't read a bar shape from that stroke — try again."; return; }
-      // seed mm lengths keeping sketch proportions, longest leg = 600mm
+      // seed mm lengths keeping sketch proportions — longest leg 600mm for a
+      // bar, 6000mm for a plan run (typed over with true figures either way)
       let bmax=Math.max(...mlens)||1;
-      let bseed=mlens.map(L=>Math.max(50,Math.round(L/bmax*600/10)*10));
+      let seedMax=isEt?6000:600;
+      let bseed=mlens.map(L=>Math.max(50,Math.round(L/bmax*seedMax/10)*10));
       let bd=SKETCH.inst.data;
-      bd.sdBarDirs=mdirs; bd.sdBarLens=bseed;
+      if(isEt){ bd.etDirs=mdirs; bd.etLens=bseed; }
+      else { bd.sdBarDirs=mdirs; bd.sdBarLens=bseed; }
       div.style.display="none";
       computeAllAndRefresh();
       rerenderCardKeepTab(SKETCH.card,SKETCH.inst);
@@ -5190,6 +5226,9 @@ function openSketchPad(inst,card,mode){
   if(SKETCH.mode==="stepbar"){
     div.querySelector("#sketchTitle").textContent="Sketch the dowel / step bar shape";
     div.querySelector("#sketchCopy").textContent="Draw the bar's profile in one stroke, straight off the drawing — down, across, down for a Z-bar; two strokes of an L become one stroke with a corner. It's straightened into segments A, B, C… and you type each segment's true length in mm.";
+  } else if(SKETCH.mode==="etrun"){
+    div.querySelector("#sketchTitle").textContent="Sketch the thickened-edge run (plan)";
+    div.querySelector("#sketchCopy").textContent="Draw the thickened edge's run in one stroke off the plan — just the edges that are thickened, corners included. It's straightened into segments A, B, C… and you type each segment's true length in mm; the run is the segments summed.";
   } else {
     div.querySelector("#sketchTitle").textContent="Sketch the slab outline";
     div.querySelector("#sketchCopy").textContent="Draw the shape roughly in one stroke — corners don't need to be neat. The app straightens it into sides labelled A, B, C…; you then type the true length of each side, and can adjust any corner's angle afterwards.";
