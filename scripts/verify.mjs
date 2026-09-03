@@ -783,6 +783,43 @@ check("Import: a count-only reinforcement line (no length, e.g. ligatures) is fl
   assert.ok(flags.some((f) => f.includes("40.01") && f.includes("kg")), `expected the actual weight to be flagged too, got: ${flags.join(" | ")}`);
 });
 
+const { computeTenderProjectSum, parseTenderPrice } = await import("../src/lib/tenderQuoteDefaults.js");
+
+check("Tender Project Sum: line-item '$… + GST' prices sum ex-GST; override replaces; markup is a whole %; GST added last and only when on", () => {
+  const items = [
+    { id: "a", price: "$46,050.47 + GST" },
+    { id: "b", price: "$3,949.53 + GST" },
+    { id: "c", price: "" }, // an unpriced item contributes $0, never NaN
+  ];
+  // plain sum, GST on (the defaults for a legacy tenderQuote with none of the new fields)
+  let ps = computeTenderProjectSum({ items });
+  assert.equal(ps.itemsSum.toFixed(2), "50000.00");
+  assert.equal(ps.exGst.toFixed(2), "50000.00");
+  assert.ok(ps.gstOn && !ps.markupOn);
+  assert.equal(ps.gst.toFixed(2), "5000.00");
+  assert.equal(ps.incGst.toFixed(2), "55000.00");
+  // markup: 10 means 10%, applied ex-GST, before GST
+  ps = computeTenderProjectSum({ items, markupOn: true, markupPct: "10" });
+  assert.equal(ps.markupAmt.toFixed(2), "5000.00");
+  assert.equal(ps.exGst.toFixed(2), "55000.00");
+  assert.equal(ps.incGst.toFixed(2), "60500.00");
+  // markup ticked but blank % — no NaN, no markup line
+  ps = computeTenderProjectSum({ items, markupOn: true, markupPct: "" });
+  assert.ok(!ps.markupOn && ps.exGst.toFixed(2) === "50000.00");
+  // override replaces the items sum entirely (and markup applies to IT)
+  ps = computeTenderProjectSum({ items, projectSumOverride: "$48,000.00", markupOn: true, markupPct: 5 });
+  assert.ok(ps.hasOverride);
+  assert.equal(ps.base.toFixed(2), "48000.00");
+  assert.equal(ps.exGst.toFixed(2), "50400.00");
+  // GST off: ex-GST figure is the whole story
+  ps = computeTenderProjectSum({ items, gstOn: false });
+  assert.ok(!ps.gstOn && ps.gst === 0);
+  assert.equal(ps.incGst.toFixed(2), ps.exGst.toFixed(2));
+  // price-string parsing survives commas, $ and the "+ GST" suffix
+  assert.equal(parseTenderPrice("$1,234,567.89 + GST"), 1234567.89);
+  assert.equal(parseTenderPrice("no digits here"), 0);
+});
+
 console.log(`\n${passed} check(s) passed.`);
 if (process.exitCode) {
   console.error("\nSome checks FAILED — see above.");

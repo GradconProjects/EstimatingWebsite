@@ -1,7 +1,9 @@
 import { useEffect } from "react";
-import { uid } from "../lib/costing.js";
+import { uid, getGstRate } from "../lib/costing.js";
 import { GRADCON_LOGO_DATA_URI } from "../lib/logo.js";
-import { newTenderQuote, seedTenderItems } from "../lib/tenderQuoteDefaults.js";
+import { newTenderQuote, seedTenderItems, computeTenderProjectSum } from "../lib/tenderQuoteDefaults.js";
+
+const fmtMoney = (n) => `$${(n || 0).toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 /**
  * The TENDER QUOTE — a direct copy of Gradcon's real quotation document
@@ -134,6 +136,8 @@ export default function TenderQuoteReport({ quote, items, rates, visible, onClos
                 </div>
               </div>
 
+              <ProjectSumEditor tq={tq} set={set} />
+
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Additional Options</span>
@@ -208,6 +212,70 @@ export default function TenderQuoteReport({ quote, items, rates, visible, onClos
 const inputCls = "w-full border border-neutral-300 rounded px-2 py-1.5 text-sm";
 const textareaCls = "w-full border border-neutral-300 rounded px-2 py-1.5 text-sm";
 
+/** The Project Sum controls: show/hide the block, override the sum, bolt an
+ * extra markup on top, and choose whether GST + incl-GST lines print. The
+ * numbers preview live here exactly as they'll print. */
+function ProjectSumEditor({ tq, set }) {
+  const gstRate = getGstRate();
+  const ps = computeTenderProjectSum(tq, gstRate);
+  return (
+    <div className="border border-neutral-200 rounded-lg p-3 bg-neutral-50">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Project Sum</span>
+        <label className="flex items-center gap-1.5 text-xs text-neutral-700">
+          <input type="checkbox" checked={tq.showProjectSum !== false} onChange={(e) => set("showProjectSum", e.target.checked)} />
+          Show on the document
+        </label>
+      </div>
+      <div className="grid grid-cols-2 gap-3 items-end">
+        <Field label={`Project sum override ($ ex GST — blank = sum of the line items, ${fmtMoney(ps.itemsSum)})`}>
+          <input
+            value={tq.projectSumOverride ?? ""}
+            onChange={(e) => set("projectSumOverride", e.target.value)}
+            className={`${inputCls} text-right font-mono`}
+            placeholder={fmtMoney(ps.itemsSum)}
+          />
+        </Field>
+        <div className="flex items-end gap-3">
+          <label className="flex items-center gap-1.5 text-xs text-neutral-700 pb-2 flex-none">
+            <input type="checkbox" checked={!!tq.markupOn} onChange={(e) => set("markupOn", e.target.checked)} />
+            Include markup
+          </label>
+          <Field label="Markup label">
+            <input value={tq.markupLabel ?? "Markup"} onChange={(e) => set("markupLabel", e.target.value)} className={inputCls} disabled={!tq.markupOn} />
+          </Field>
+          <Field label="Markup %">
+            <input
+              type="number" step="0.5"
+              value={tq.markupPct ?? ""}
+              onChange={(e) => set("markupPct", e.target.value)}
+              className={`${inputCls} w-24 text-right font-mono`}
+              placeholder="e.g. 10"
+              disabled={!tq.markupOn}
+            />
+          </Field>
+        </div>
+      </div>
+      <div className="flex items-center justify-between mt-2">
+        <label className="flex items-center gap-1.5 text-xs text-neutral-700">
+          <input type="checkbox" checked={tq.gstOn !== false} onChange={(e) => set("gstOn", e.target.checked)} />
+          Add GST — print GST ({(gstRate * 100).toLocaleString("en-AU", { maximumFractionDigits: 2 })}%) and TOTAL incl. GST lines
+        </label>
+        <div className="text-[12px] font-mono tabular-nums text-neutral-700">
+          {ps.markupOn && <>sub {fmtMoney(ps.base)} + {ps.markupPct}% markup {fmtMoney(ps.markupAmt)} → </>}
+          <b>PROJECT SUM {fmtMoney(ps.exGst)} ex GST</b>
+          {ps.gstOn && <> · GST {fmtMoney(ps.gst)} · <b>incl. GST {fmtMoney(ps.incGst)}</b></>}
+        </div>
+      </div>
+      <p className="text-[11px] text-neutral-500 mt-1.5">
+        The sum adds up the line-item prices above (each read as its ex-GST figure) — type an override to replace it
+        with a negotiated round figure. Markup here is an <b>extra</b> document-level markup: the seeded prices already
+        carry Gradcon's margin from the sell allocation, so leave it off unless you mean to add more on top.
+      </p>
+    </div>
+  );
+}
+
 function Field({ label, children }) {
   return (
     <label className="block">
@@ -232,6 +300,9 @@ function Bullets({ text }) {
 function ReportContent({ quote, tq }) {
   const lineItems = tq.items || [];
   const addr = (tq.projectAddress || "").split("\n").map((l) => l.trim()).filter(Boolean);
+  const gstRate = getGstRate();
+  const ps = computeTenderProjectSum(tq, gstRate);
+  const gstPctLabel = (gstRate * 100).toLocaleString("en-AU", { maximumFractionDigits: 2 });
   return (
     <>
       <div className="flex items-start justify-between mb-4">
@@ -269,6 +340,38 @@ function ReportContent({ quote, tq }) {
             </li>
           ))}
         </ol>
+        {tq.showProjectSum !== false && (
+          <div className="mt-3 ml-auto w-80 break-inside-avoid">
+            {ps.markupOn && (
+              <>
+                <div className="flex justify-between py-0.5">
+                  <span>Sub Total (ex GST)</span>
+                  <span className="font-mono tabular-nums">{fmtMoney(ps.base)}</span>
+                </div>
+                <div className="flex justify-between py-0.5">
+                  <span>{tq.markupLabel || "Markup"} ({ps.markupPct}%)</span>
+                  <span className="font-mono tabular-nums">{fmtMoney(ps.markupAmt)}</span>
+                </div>
+              </>
+            )}
+            <div className="flex justify-between py-0.5 font-bold border-t-2 border-black">
+              <span>PROJECT SUM {ps.gstOn ? "(ex GST)" : ""}</span>
+              <span className="font-mono tabular-nums">{fmtMoney(ps.exGst)}{ps.gstOn ? "" : " + GST"}</span>
+            </div>
+            {ps.gstOn && (
+              <>
+                <div className="flex justify-between py-0.5">
+                  <span>GST ({gstPctLabel}%)</span>
+                  <span className="font-mono tabular-nums">{fmtMoney(ps.gst)}</span>
+                </div>
+                <div className="flex justify-between py-0.5 font-bold border-t border-black">
+                  <span>TOTAL (incl. GST)</span>
+                  <span className="font-mono tabular-nums">{fmtMoney(ps.incGst)}</span>
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       {(tq.additionalOptions || []).some((o) => (o.text || "").trim()) && (

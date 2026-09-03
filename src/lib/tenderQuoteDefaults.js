@@ -190,6 +190,35 @@ export function seedTenderItems(quote, items, rates) {
   });
 }
 
+/** Pull the first number out of a tender price string like
+ * "$46,050.47 + GST" or "46050.47". Anything without a digit is $0. */
+export const parseTenderPrice = (s) => {
+  const m = String(s ?? "").replace(/,/g, "").match(/-?\d+(?:\.\d+)?/);
+  return m ? parseFloat(m[0]) : 0;
+};
+
+/** The Project Sum block's numbers, all ex-GST until GST is added last —
+ * the line-item prices are "+ GST" figures, so the sum of them is ex-GST
+ * too. A typed projectSumOverride replaces the items sum entirely (the
+ * estimator's negotiated round figure); markup is an EXTRA document-level
+ * markup entered as a whole % (10 = 10%) on top of prices that already
+ * carry Gradcon's margin from the sell allocation, so it defaults OFF.
+ * gstOn defaults ON (tenders normally print the GST and incl-GST lines);
+ * legacy tenderQuote objects saved before these fields existed get the
+ * same defaults via the `!== false` / falsy checks here. */
+export function computeTenderProjectSum(tq, gstRate = 0.1) {
+  const itemsSum = (tq.items || []).reduce((s, l) => s + parseTenderPrice(l.price), 0);
+  const hasOverride = String(tq.projectSumOverride ?? "").trim() !== "";
+  const base = hasOverride ? parseTenderPrice(tq.projectSumOverride) : itemsSum;
+  const pct = Number(tq.markupPct);
+  const markupOn = !!tq.markupOn && Number.isFinite(pct) && pct !== 0;
+  const markupAmt = markupOn ? base * (pct / 100) : 0;
+  const exGst = base + markupAmt;
+  const gstOn = tq.gstOn !== false;
+  const gst = gstOn ? exGst * gstRate : 0;
+  return { itemsSum, hasOverride, base, markupOn, markupPct: markupOn ? pct : 0, markupAmt, exGst, gstOn, gst, incGst: exGst + gst };
+}
+
 export function newTenderQuote() {
   return {
     rev: "Rev.1",
@@ -199,6 +228,12 @@ export function newTenderQuote() {
     projectTitle: "",      // e.g. "New residence"
     projectAddress: "",    // one line per address line
     items: null,           // null = seed from the quote on first open
+    showProjectSum: true,  // print the Project Sum block under the line items
+    projectSumOverride: "", // blank = sum of the line items; typed $ replaces it
+    markupOn: false,       // extra document-level markup (prices already carry margin)
+    markupPct: "",         // whole %, e.g. 10 for 10%
+    markupLabel: "Markup",
+    gstOn: true,           // print GST and TOTAL incl. GST lines
     additionalOptions: TENDER_DEFAULT_OPTIONS.map((o) => ({ id: uid(), ...o })),
     drawingsArchitect: "",
     drawingsStructural: "",
