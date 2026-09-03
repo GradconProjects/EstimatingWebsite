@@ -229,7 +229,8 @@ export default function ElementCard({ item, rates, allItems, onChange, onRemove,
   const viewerMarkup = markups.find((m) => m.id === viewerId) || null;
 
   return (
-    <div className="rounded-xl border border-neutral-200 bg-white shadow-sm overflow-hidden">
+    <div className="flex items-stretch gap-2">
+    <div className="rounded-xl border border-neutral-200 bg-white shadow-sm overflow-hidden flex-1 min-w-0">
       <div className="bg-blue-950 text-white px-4 py-3 flex items-center gap-3">
         <button onClick={() => setCardOpen(!cardOpen)} className="text-blue-300 hover:text-white transition-colors flex-none">
           {cardOpen ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
@@ -249,20 +250,6 @@ export default function ElementCard({ item, rates, allItems, onChange, onRemove,
             className="w-full bg-transparent border-0 text-white font-semibold text-[15px] focus:outline-none focus:underline decoration-orange-400"
           />
         </div>
-        {unitRates.length > 0 && (
-          <div
-            className="hidden sm:block text-right flex-none border border-blue-700 rounded-lg px-2.5 py-1 bg-blue-900/50"
-            title="Benchmark unit rates, ALL-IN (concrete + rebar + formwork + labour + custom items) over the measure shown beside each rate. A slab with beam elements on its building level shows the whole system: the slab's $/m³, the beams' combined $/lm, and the full setup (slab + beams) as $/m² over the slab area. A slab with no beams reads $/m² all-in; beams read $/lm; pads read $/m³ then $/m² of surface (formwork) area."
-          >
-            {unitRates.map((u, i) => (
-              <div key={`${u.unit}-${i}`} className="text-[10px] font-mono tabular-nums leading-4 whitespace-nowrap">
-                {u.label && <span className="text-blue-300">{u.label} </span>}
-                <span className="text-orange-300 font-semibold">{money2(u.rate)}</span>
-                <span className="text-blue-300"> /{u.unit} · {u.qty.toLocaleString("en-AU")} {u.unit}</span>
-              </div>
-            ))}
-          </div>
-        )}
         <div className="text-right flex-none">
           <div className="text-[10px] uppercase tracking-widest text-blue-300">Total</div>
           <div className="font-mono tabular-nums text-lg font-bold text-orange-400">{money2(cost.total)}</div>
@@ -470,6 +457,22 @@ export default function ElementCard({ item, rates, allItems, onChange, onRemove,
           onRotate={() => rotateMarkup(viewerMarkup.id)}
         />
       )}
+    </div>
+
+    {unitRates.length > 0 && (
+      <div
+        className="hidden md:flex w-60 flex-none rounded-xl border-2 border-blue-950 bg-white shadow-sm flex-col justify-center gap-1 px-3 py-2"
+        title="Benchmark unit rates, ALL-IN (concrete + rebar + formwork + labour + custom items) over the measure shown beside each rate. A slab with beam elements on its building level shows the whole system: the slab's $/m³, the beams' combined $/lm, and the full setup (slab + beams) as $/m² over the slab area. A slab with no beams reads $/m² all-in; beams and strip footings lead with $/lm; pads read $/m³ then $/m² of surface (formwork) area."
+      >
+        {unitRates.map((u, i) => (
+          <div key={`${u.unit}-${i}`} className="font-mono tabular-nums whitespace-nowrap leading-5">
+            {u.label && <span className="text-[10px] font-sans font-bold uppercase tracking-wide text-blue-950 mr-1.5">{u.label}</span>}
+            <span className="text-[15px] font-bold text-orange-600">{money2(u.rate)}</span>
+            <span className="text-[11px] font-semibold text-neutral-500"> /{u.unit} · {u.qty.toLocaleString("en-AU")} {u.unit}</span>
+          </div>
+        ))}
+      </div>
+    )}
     </div>
   );
 }

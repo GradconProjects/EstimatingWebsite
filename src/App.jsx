@@ -459,19 +459,21 @@ function ProjectEditor({ project, rates, setRates, ratesStatus, saveProjectsNow,
           </button>
           <div className="flex-1 min-w-0">
             <div className="text-[10px] uppercase tracking-widest text-blue-300 font-semibold">Gradcon Concrete Constructions</div>
-            <input
-              value={quote.projectName}
-              onChange={(e) => setQuote((q) => ({ ...q, projectName: e.target.value }))}
-              placeholder="Project name — click to edit"
-              className="bg-transparent border-0 text-white font-semibold text-base w-full focus:outline-none focus:underline decoration-orange-400 placeholder:text-blue-400"
-            />
-            <input
-              value={quote.clientName || ""}
-              onChange={(e) => setQuote((q) => ({ ...q, clientName: e.target.value }))}
-              placeholder="Client / owner — click to edit"
-              className="bg-transparent border-0 text-blue-200 text-xs w-full focus:outline-none focus:underline decoration-orange-400 placeholder:text-blue-500"
-              title="Who this project belongs to — shown on the Projects Dashboard under the project name"
-            />
+            <div className="flex items-baseline gap-3">
+              <input
+                value={quote.projectName}
+                onChange={(e) => setQuote((q) => ({ ...q, projectName: e.target.value }))}
+                placeholder="Project name — click to edit"
+                className="bg-transparent border-0 text-white font-semibold text-base flex-[3] min-w-0 focus:outline-none focus:underline decoration-orange-400 placeholder:text-blue-400"
+              />
+              <input
+                value={quote.clientName || ""}
+                onChange={(e) => setQuote((q) => ({ ...q, clientName: e.target.value }))}
+                placeholder="Client / owner"
+                className="bg-transparent border-0 text-blue-200 text-sm flex-[2] min-w-0 text-right focus:outline-none focus:underline decoration-orange-400 placeholder:text-blue-500"
+                title="Who this project belongs to — shown beside the project name on the Projects Dashboard"
+              />
+            </div>
           </div>
           <div className="text-right flex-none">
             <div className="text-[10px] uppercase tracking-widest text-blue-300">Live Quote Total (ex GST)</div>

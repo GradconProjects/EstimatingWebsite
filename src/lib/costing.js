@@ -380,6 +380,9 @@ const elementLevelKey = (item) => {
   return m ? m[0].trim().toLowerCase() : "";
 };
 const BEAM_ELEMENT_MATCH = /beam/i;
+// Run-measured elements — priced per lineal metre first. Beams pair into a
+// slab's system (see below); strip footings/ground beams just lead with $/lm.
+const RUN_ELEMENT_MATCH = /beam|strip footing/i;
 const SLAB_ELEMENT_MATCH = /slab|raft/i;
 const PAD_ELEMENT_MATCH = /pad footing|pile cap|column base/i;
 
@@ -427,9 +430,9 @@ export function computeElementUnitRates(item, rates, allItems = []) {
   // section/typeId only classify when the label itself decides nothing.
   const label = String(item.label || "");
   const kind = `${label} ${item.section || ""} ${item.typeId || ""}`;
-  const isBeam = BEAM_ELEMENT_MATCH.test(label);
-  const isPad = !isBeam && (PAD_ELEMENT_MATCH.test(label) || (!SLAB_ELEMENT_MATCH.test(label) && PAD_ELEMENT_MATCH.test(kind)));
-  const isSlab = !isBeam && !isPad && SLAB_ELEMENT_MATCH.test(kind);
+  const isRun = RUN_ELEMENT_MATCH.test(label) || (!SLAB_ELEMENT_MATCH.test(label) && !PAD_ELEMENT_MATCH.test(label) && RUN_ELEMENT_MATCH.test(kind));
+  const isPad = !isRun && (PAD_ELEMENT_MATCH.test(label) || (!SLAB_ELEMENT_MATCH.test(label) && PAD_ELEMENT_MATCH.test(kind)));
+  const isSlab = !isRun && !isPad && SLAB_ELEMENT_MATCH.test(kind);
   const line = (unit, qty, cost, lbl = "") => ({ unit, qty: round2(qty), rate: cost / qty, label: lbl });
   const lines = [];
   const push = (order) => order.forEach(([unit, qty]) => { if (qty > 0) lines.push(line(unit, qty, total)); });
@@ -448,7 +451,7 @@ export function computeElementUnitRates(item, rates, allItems = []) {
     push([["m²", me.m2], ["m³", me.m3], ["lm", me.lm]]);
     return lines;
   }
-  if (isBeam) {
+  if (isRun) {
     push([["lm", me.lm], ["m³", me.m3], ["m²", me.m2]]);
     return lines;
   }

@@ -834,6 +834,13 @@ check("System unit rates: all-in $/measure; slab+level beams show slab m³ / bea
   const padLines = computeElementUnitRates(pad, rates, [pad]);
   assert.deepEqual(padLines.map((l) => l.unit), ["m³", "m²"], "pad order is m³ then surface m²");
 
+  // Strip footings are run elements: $/lm leads, then $/m³
+  const strip = noFees(newElementItem(ELEMENT_TYPES.find((t) => t.id === "slab_on_ground")));
+  strip.label = "Strip Footings";
+  strip.qtys[rateKey("CONCRETE", "25 mpa", "m3")] = 10;
+  strip.qtys[rateKey("FORMWORK", "Edgeform", "m")] = 60;
+  assert.deepEqual(computeElementUnitRates(strip, rates, [strip]).map((l) => l.unit), ["lm", "m³"], "strip footing leads with $/lm then $/m³");
+
   // Trench mesh must NOT create (or inflate) an lm denominator
   slab.qtys[rateKey("TRENCH MESH", "4 Bar-L12TM", "length")] = 20;
   assert.equal(computeElementUnitRates(slab, rates, [slab]).find((l) => l.unit === "lm").qty, 90, "lm stays the formwork run only");

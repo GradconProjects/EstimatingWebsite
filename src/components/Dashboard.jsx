@@ -248,8 +248,10 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete 
                   />
                 </td>
                 <td className="px-4 py-3">
-                  <div className="font-semibold text-[15px] text-neutral-900">{s.name}</div>
-                  {s.client && <div className="text-[11px] text-neutral-400">{s.client}</div>}
+                  <div className="flex items-baseline gap-2 min-w-0">
+                    <span className="font-semibold text-[15px] text-neutral-900">{s.name}</span>
+                    {s.client && <span className="text-xs text-neutral-400 truncate">{s.client}</span>}
+                  </div>
                 </td>
                 <td className="px-3 py-2.5 text-neutral-400 text-xs">{s.date || "—"}</td>
                 <td className="px-3 py-2.5 text-xs">
