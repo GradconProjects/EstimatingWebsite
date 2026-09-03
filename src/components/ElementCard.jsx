@@ -460,8 +460,8 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
 
     {unitRates.length > 0 && (
       <div
-        className="hidden md:flex w-56 flex-none rounded-xl border-2 border-blue-950 bg-white shadow-sm flex-col justify-center gap-1 px-3 py-2"
-        title="Benchmark unit rates: this element's WHOLE cost (concrete + reinforcement + formwork + labour/plant + custom items) divided by each measure beside it. The lengths and areas are the ones measured on the Project Geometry table in Estimates; the m³ is this element's own poured concrete volume."
+        className="hidden md:flex w-56 flex-none rounded-xl border border-neutral-200 bg-white shadow-sm flex-col justify-center gap-1 px-3 py-2"
+        title="Benchmark unit rates: this element's WHOLE cost (concrete + reinforcement + formwork + labour/plant + custom items) divided by each measure beside it. Lengths and areas come from the Project Geometry table below (auto-filled from the Estimates takeoff, editable there); the m³ is this element's own poured concrete volume."
       >
         {unitRates.map((u) => (
           <div key={u.unit} className="font-mono tabular-nums whitespace-nowrap leading-5">

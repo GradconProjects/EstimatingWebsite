@@ -20,6 +20,7 @@ import TenderQuoteReport from "./components/TenderQuoteReport.jsx";
 import ExportExcelModal from "./components/ExportExcelModal.jsx";
 import ImportFlagsBanner from "./components/ImportFlagsBanner.jsx";
 import ManageElementTypesModal from "./components/ManageElementTypesModal.jsx";
+import ProjectGeometryPanel from "./components/ProjectGeometryPanel.jsx";
 
 const OFFICE_COMMS_KEY = "gradcon-office-communications";
 const INITIAL_VIEW_KEY = "gradcon-quotes-initial-view";
@@ -582,6 +583,11 @@ function ProjectEditor({ project, rates, setRates, ratesStatus, saveProjectsNow,
               onMaterialRateChange={setMaterialRate}
             />
           ))}
+          <ProjectGeometryPanel
+            items={items}
+            estimateGeometry={quote.estimateGeometry}
+            onChangeItem={updateItem}
+          />
           {items.length === 0 && (
             <div className="text-center py-16 text-neutral-400 border-2 border-dashed border-neutral-200 rounded-xl">
               Pick an element above to add it — every applicable material, reo, formwork and labour line for that

@@ -19,7 +19,7 @@ import {
   labourResourceRate, taskRowMeta, labourQuantities, autoSmallLoadCharge, autoConcreteSurcharge,
   computeElementUnitRates,
 } from "../src/lib/costing.js";
-import { buildImportFromEstimate } from "../src/lib/estimateImport.js";
+import { buildImportFromEstimate, normalizeElementName, geometryForLabel } from "../src/lib/estimateImport.js";
 
 let passed = 0;
 const check = (name, fn) => {
@@ -893,6 +893,49 @@ check("Import: the Project Geometry table's runM/areaM2 land on the items and SU
   });
   assert.equal(legacy.items[0].measureLm, undefined);
   assert.equal(legacy.items[0].measureM2, undefined);
+});
+
+check("Geometry name-matching: a Quotes card sums EVERY takeoff element whose name matches it (all strips into one Strip Footings card)", () => {
+  // instance numbers, plurals and the merge's "(x2 combined)" suffix all
+  // reduce to the same key
+  assert.equal(normalizeElementName("Strip Footing 2"), normalizeElementName("Strip Footings"));
+  assert.equal(normalizeElementName("Strip Footings (×2 combined)"), normalizeElementName("Strip Footing"));
+  assert.notEqual(normalizeElementName("Strip Footing"), normalizeElementName("Pad Footing"));
+
+  const takeoff = [
+    { name: "Strip Footing 1", runM: 37.5, areaM2: 16.88 },
+    { name: "Strip Footing 2", runM: 22.5, areaM2: 10.12 },
+    { name: "Slab on Ground 1", runM: 0, areaM2: 180 },
+    { name: "Pad Footing 1", runM: 0, areaM2: 9 },
+  ];
+  const strips = geometryForLabel("Strip Footings", takeoff);
+  assert.equal(strips.runM, 60, "the strips' runs sum — and ONLY the strips'");
+  assert.equal(strips.areaM2, 27);
+  assert.equal(strips.matched.length, 2);
+
+  // a renamed card still matches: either name may contain the other
+  assert.equal(geometryForLabel("Ground Floor - Slab on Ground", takeoff).areaM2, 180);
+  // pads don't get dragged in by the footing word
+  assert.equal(geometryForLabel("Pad Footings", takeoff).areaM2, 9);
+  // nothing matching -> null, never a bogus zero
+  assert.equal(geometryForLabel("Retaining Wall", takeoff), null);
+  assert.equal(geometryForLabel("", takeoff), null);
+});
+
+check("Import keeps each takeoff element's geometry WITH its name, so Quotes can re-match after a rename", () => {
+  const { quote } = buildImportFromEstimate({
+    project: {},
+    lines: [
+      estLine({ category: "Strip Footing", element: "Strip Footing 1", elementId: "S1", material: "N25 concrete", finalQty: 6 }),
+      estLine({ category: "Strip Footing", element: "Strip Footing 2", elementId: "S2", material: "N25 concrete", finalQty: 4 }),
+    ],
+    elementGeometry: { S1: { runM: 37.5, areaM2: 16.88 }, S2: { runM: 22.5, areaM2: 10.12 } },
+  });
+  assert.equal(quote.estimateGeometry.length, 2, "both takeoff elements are recorded by name");
+  assert.deepEqual(quote.estimateGeometry.map((g) => g.name).sort(), ["Strip Footing 1", "Strip Footing 2"]);
+  // renaming the merged card and re-matching still lands the full 60 lm
+  const renamed = geometryForLabel("Ground Floor Strip Footings", quote.estimateGeometry);
+  assert.equal(renamed.runM, 60);
 });
 
 console.log(`\n${passed} check(s) passed.`);

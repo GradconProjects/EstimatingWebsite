@@ -143,6 +143,44 @@ function findConventionalFormworkProduct() {
  * unit, finalQty, ...}, ...] } — i.e. exactly what the Estimates tool's own
  * allLines() produces, plus its PROJECT metadata.
  */
+/**
+ * Element names normalised for matching a Quotes card against the Estimates
+ * elements behind it: case, punctuation, instance numbers ("Strip Footing
+ * 1"), the "(x3 combined)" suffix the merge adds, and a trailing plural all
+ * drop out, so "Strip Footing 2", "Strip Footings" and "Strip Footings (x2
+ * combined)" all reduce to the same key.
+ */
+export function normalizeElementName(name) {
+  return String(name || "")
+    .toLowerCase()
+    .replace(/\([^)]*\)/g, " ")     // "(x2 combined)"
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\b\d+\b/g, " ")       // instance numbers
+    .trim()
+    .replace(/s\b/g, "")            // footings -> footing
+    .replace(/\s+/g, "");
+}
+
+/**
+ * The measured length/area behind a Quotes element, summed across EVERY
+ * Estimates element whose name matches it — so a single "Strip Footings"
+ * card picks up all the strip footing instances on the takeoff and divides
+ * by their combined length. Either name may contain the other (a Quotes
+ * card called "Ground Floor - Slab on Ground" still matches the takeoff's
+ * "Slab on Ground 1"), which is what lets renamed cards keep matching.
+ */
+export function geometryForLabel(label, estimateGeometry) {
+  const want = normalizeElementName(label);
+  if (!want || !Array.isArray(estimateGeometry)) return null;
+  const hits = estimateGeometry.filter((g) => {
+    const have = normalizeElementName(g.name);
+    return have && (have === want || have.includes(want) || want.includes(have));
+  });
+  if (hits.length === 0) return null;
+  const sum = (k) => Math.round(hits.reduce((s, g) => s + (Number(g[k]) || 0), 0) * 100) / 100;
+  return { runM: sum("runM"), areaM2: sum("areaM2"), matched: hits.map((h) => h.name) };
+}
+
 export function buildImportFromEstimate(estimateExport) {
   const project = estimateExport?.project || {};
   // Only actually-used rows — a line with no quantity yet (an element added to the
@@ -434,6 +472,15 @@ export function buildImportFromEstimate(estimateExport) {
       importedAt: new Date().toISOString(),
     },
     importFlags: flags,
+    // Every takeoff element's measured geometry WITH its name, kept so the
+    // Quotes project can re-match by name later (see geometryForLabel) —
+    // after a card is renamed, added by hand, or split.
+    estimateGeometry: Object.entries(elementGeometry).map(([id, g]) => ({
+      id,
+      name: (lines.find((l) => l.elementId === id) || {}).element || "",
+      runM: Number(g.runM) || 0,
+      areaM2: Number(g.areaM2) || 0,
+    })).filter((g) => g.name && (g.runM > 0 || g.areaM2 > 0)),
   };
 
   return { quote, flags };
