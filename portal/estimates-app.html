@@ -1606,7 +1606,44 @@ function sdSetupFields(d){
    </div>
    <div style="text-align:center;">${stepProfileSVG(d.sdRisers)}<div class="small">step profile</div></div>
   </div>
-  <p class="small">Pick the preset profile that matches the drawing (each riser gets its own dowel row and face formwork) and how many layers of dowels each step carries — top and bottom mats tied across = 2 legs. For an irregular multi-level layout, enter the combined length of ALL steps in the total-length field above and keep the profile at the per-location shape.</p>`;
+  <p class="small">Pick the preset profile that matches the drawing (each riser gets its own dowel row and face formwork) and how many layers of dowels each step carries — top and bottom mats tied across = 2 legs. For an irregular multi-level layout, enter the combined length of ALL steps in the total-length field above and keep the profile at the per-location shape.</p>
+  <div class="sechead" style="margin-top:10px;">Additional Step Reinforcement</div>
+  <table class="rows"><thead><tr><th>Orientation</th><th>Size</th><th>Spacing (mm)</th><th>Bar length / extra (mm)</th><th></th></tr></thead>
+  <tbody>${(d.sdExtraBars||[]).map((r,i)=>`<tr data-row="sdExtraBars.${i}">
+    <td>${selOpts(`sdExtraBars.${i}.orient`,r.orient||"vertical",[["vertical","Vertical — across the step"],["horizontal","Horizontal — along the step face"]])}</td>
+    <td style="width:80px">${barSizeSel(`sdExtraBars.${i}.dia`,r.dia)}</td>
+    <td style="width:90px">${inpNum(`sdExtraBars.${i}.spacing`,r.spacing)}</td>
+    <td style="width:110px">${inpNum(`sdExtraBars.${i}.len`,r.len)}</td>
+    <td><button class="btn small danger" data-action="delRow" data-target="sdExtraBars" data-idx="${i}">✕</button></td>
+   </tr>`).join('')}</tbody></table>
+  <button class="btn small" data-action="addRow" data-target="sdExtraBars">+ Add reinforcement set</button>
+  <p class="small">Add as many sets as the step detail shows, all at this same step — the main dowel set above stays as-is. <b>Vertical</b> bars run ACROSS the step, spaced along the step length (the mm figure is one bar's total length incl. projections). <b>Horizontal</b> bars run continuously ALONG the step face, spaced over the step depth (the mm figure is EXTRA length per bar for anchorage/laps on top of the step run).</p>`;
+}
+/* Additional step reinforcement sets — vertical bars across the step and/or
+ * horizontal bars along the step face, any number of sets at the same step,
+ * shared by every element with a step-down (strip footing, ground beam,
+ * slab, wall). */
+function sdExtraBarLines(inst,def,lines,d,runM,mult){
+  if(!(runM>0)) return;
+  let sdf=sdFactors(d);
+  mult=Math.max(1,mult||1);
+  (d.sdExtraBars||[]).forEach(r=>{
+    let bd=barDiaOf(r.dia||"N12"); let sp=Math.max(1,num(r.spacing,300));
+    let totLen,spec,formula,np;
+    if(r.orient==="horizontal"){
+      np=(Math.floor(num(d.sdDepth,150)/sp)+1)*sdf.risers*mult;
+      totLen=np*(runM+num(r.len,0)/1000);
+      spec="Step-down — horizontal bars (along step face)";
+      formula=`(step depth ${num(d.sdDepth,150)}/${sp}+1)×${sdf.risers} riser(s)${mult>1?`×${mult}`:''} × (run ${fmt(runM,1)}m${num(r.len,0)?` + ${num(r.len,0)}mm`:''})`;
+    } else {
+      np=(Math.floor(runM*1000/sp)+1)*sdf.risers*sdf.legs*mult;
+      totLen=np*num(r.len,600)/1000;
+      spec="Step-down — vertical bars (across the step)";
+      formula=`count(${np}=${fmt(runM,1)}m/${sp}mm+1 ×${sdf.risers} riser(s)×${sdf.legs} leg(s)${mult>1?`×${mult}`:''})×${num(r.len,600)}mm`;
+    }
+    let wt=totLen*massPerM(bd);
+    lines.push(baseLine(inst,def,{materialGroup:"Connections",material:r.dia||"N12",spec,qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula,notes:`${np} bars, ${fmt(wt,1)} kg`}));
+  });
 }
 function sdFactors(d){
   return { risers: Math.max(1,Math.round(num(d.sdRisers,1)||1)), legs: Math.max(1,Math.round(num(d.sdLegs,1)||1)) };
@@ -2069,6 +2106,7 @@ function computeStripFooting(inst,def){
       let len=sdBarLenMm(d, num(d.sdProj1,500)+num(d.sdProj2,500))/1000;
       let totLen=count*len; let wt=totLen*massPerM(bd);
       lines.push(baseLine(inst,def,{materialGroup:"Connections",material:d.sdDia,spec:"Stepped footing — step dowels",qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`count(${count}=${fmt(sdRunM,1)}m/${d.sdSpacing}mm+1 ×${sdf.risers} riser(s) ×${sdf.legs} leg(s))×(proj1+proj2)/1000`,notes:`${count} dowels, ${fmt(wt,1)} kg`}));
+      sdExtraBarLines(inst,def,lines,d,sdRunM,1);
       let fLm=sdRunM*sdf.risers;
       lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Step-down face formwork",spec:`${d.sdDepth}mm deep steps ×${sdf.risers} riser(s)`,qty:fLm,unit:"m",waste:PROJECT.formworkWaste,finalQty:withWaste(fLm,PROJECT.formworkWaste),formula:`step length ${fmt(sdRunM,1)}m ×${sdf.risers}`}));
     }
@@ -2540,6 +2578,7 @@ function computeBeam(inst,def){
     let len=sdBarLenMm(d, num(d.sdProj1)+num(d.sdProj2))/1000;
     let totLen=N*count*len; let wt=totLen*massPerM(bd);
     lines.push(baseLine(inst,def,{materialGroup:"Connections",material:d.sdDia,spec:"Step-down connecting dowels",qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`count(${count})×(proj1 ${d.sdProj1}+proj2 ${d.sdProj2})/1000×${N}`,notes:`${count} dowels over ${fmt((d.sdLength!==undefined?num(d.sdLength):num(d.length)/1000),1)}m, ${fmt(wt,1)} kg`}));
+    sdExtraBarLines(inst,def,lines,d,sdRunM,N);
   }
   return {lines,warnings:[]};
 }
@@ -2955,6 +2994,7 @@ function computeSlab(inst,def){
     let len=sdBarLenMm(d, num(d.sdProj1)+num(d.sdProj2))/1000;
     let totLen=count*len; let wt=totLen*massPerM(dia);
     lines.push(baseLine(inst,def,{materialGroup:"Connections",material:d.sdDia,spec:"Step-down connecting dowels",qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`count(${count})×(proj1+proj2)/1000`,notes:`${count} dowels, ${fmt(wt,1)} kg`}));
+    sdExtraBarLines(inst,def,lines,d,sdRunM,1);
   }
   return {lines,warnings:[]};
 }
@@ -3118,6 +3158,7 @@ function computeWall(inst,def){
     let len=sdBarLenMm(d, 2*num(d.sdProj1))/1000;
     let totLen=N*count*len; let wt=totLen*massPerM(dia);
     lines.push(baseLine(inst,def,{materialGroup:"Connections",material:d.sdDia,spec:"Step-down connecting dowels",qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`count(${count})×2×proj/1000×${N}`,notes:`${count} dowels, ${fmt(wt,1)} kg`}));
+    sdExtraBarLines(inst,def,lines,d,sdRunM,N);
   }
   return {lines,warnings:[]};
 }
@@ -4002,7 +4043,7 @@ function attachCardEvents(card,inst){
     if(act==="addRow"){
       let target=e.target.dataset.target;
       let arr=inst.data[target]||(inst.data[target]=[]);
-      let template = target==="openings"? {label:"Opening",w:600,h:2100,qty:1} : /Rows$/.test(target)? {position:"Additional",qty:2,dia:"N16",layers:1,startA:"straight",endA:"straight"} : target==="extraConn"? {target:"",role:"Dowel",qty:4,dia:"N16",embed:400,proj:400,hook:"straight"} : target.endsWith("Bars")? {mark:"Section "+((arr.length)+1),dia:"N12",span:1,spacing:200,len:1} : target==="outlinePts"? {x:0,y:0} : {zone:"Zone",length:1000,dia:"N10",spacing:200};
+      let template = target==="openings"? {label:"Opening",w:600,h:2100,qty:1} : /Rows$/.test(target)? {position:"Additional",qty:2,dia:"N16",layers:1,startA:"straight",endA:"straight"} : target==="extraConn"? {target:"",role:"Dowel",qty:4,dia:"N16",embed:400,proj:400,hook:"straight"} : target==="sdExtraBars"? {orient:"vertical",dia:"N12",spacing:300,len:600} : target.endsWith("Bars")? {mark:"Section "+((arr.length)+1),dia:"N12",span:1,spacing:200,len:1} : target==="outlinePts"? {x:0,y:0} : {zone:"Zone",length:1000,dia:"N10",spacing:200};
       arr.push(template);
       rerenderCardKeepTab(card,inst);
     } else if(act==="delRow"){
