@@ -573,6 +573,7 @@ function ProjectEditor({ project, rates, setRates, ratesStatus, saveProjectsNow,
           <AddElementBar onAdd={addElement} elementTypes={elementTypes} categoryOrder={categoryOrder} />
           <ProjectGeometryPanel
             items={items}
+            rates={rates}
             estimateGeometry={quote.estimateGeometry}
             onChangeItem={updateItem}
           />

@@ -399,6 +399,28 @@ export function computeElementUnitRates(item, rates) {
     .map(([unit, qty]) => ({ unit, qty: round2(qty), rate: total / qty }));
 }
 
+/**
+ * The same benchmark rates for the WHOLE project: every element's cost over
+ * the project's total run, area and poured concrete. Same shape and same
+ * fixed lm -> m² -> m³ order as computeElementUnitRates, so the Project
+ * Geometry header can print the project's $/lm, $/m² and $/m³ beside its
+ * measured totals.
+ */
+export function computeProjectUnitRates(items, rates) {
+  let cost = 0, lm = 0, m2 = 0, m3 = 0;
+  (items || []).forEach((item) => {
+    const c = computeElementCost(item, rates);
+    cost += c.total;
+    m3 += c.concreteQty;
+    lm += Number(item.measureLm) || 0;
+    m2 += Number(item.measureM2) || 0;
+  });
+  if (cost <= 0) return [];
+  return [["lm", lm], ["m²", m2], ["m³", m3]]
+    .filter(([, qty]) => qty > 0)
+    .map(([unit, qty]) => ({ unit, qty: round2(qty), rate: cost / qty }));
+}
+
 /** Crew-sheet row metadata: the unit each task is measured in and which
  * element quantity fills its Qty column automatically. Excavation draws its
  * volume from the element's "Soil removal" (m³) line. */

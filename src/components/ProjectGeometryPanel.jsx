@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { ChevronDown, ChevronRight, Wand2 } from "lucide-react";
 import { geometryForLabel } from "../lib/estimateImport.js";
+import { computeProjectUnitRates, money2 } from "../lib/costing.js";
 
 /**
  * The one place a Quotes project records the LENGTH and AREA behind each of
@@ -17,7 +18,7 @@ import { geometryForLabel } from "../lib/estimateImport.js";
  * That name match is also what keeps a renamed or hand-added card working.
  * Everything stays typeable: the estimator's own figure always wins.
  */
-export default function ProjectGeometryPanel({ items, estimateGeometry, onChangeItem }) {
+export default function ProjectGeometryPanel({ items, rates, estimateGeometry, onChangeItem }) {
   // Elements still waiting on a length or an area — until every element has
   // one the table opens itself, so the figures are asked for rather than
   // hidden behind a fold nobody thinks to open.
@@ -31,6 +32,11 @@ export default function ProjectGeometryPanel({ items, estimateGeometry, onChange
   // it's open the estimator closes it by hand, and it only re-opens if a new
   // unmeasured element turns up.
   useEffect(() => { if (hasMissing) setOpen(true); }, [hasMissing]);
+
+  // The whole project's cost over each of its measured totals — the same
+  // $/lm · $/m² · $/m³ each row shows, taken across every element (the m³
+  // comes from the elements' own concrete, so it needs nothing recorded).
+  const projectRates = useMemo(() => computeProjectUnitRates(items, rates), [items, rates]);
 
   const totals = useMemo(
     () =>
@@ -72,6 +78,7 @@ export default function ProjectGeometryPanel({ items, estimateGeometry, onChange
   if (items.length === 0) return null;
 
   const fmt = (n) => (n > 0 ? n.toLocaleString("en-AU", { maximumFractionDigits: 2 }) : "—");
+  const m3Total = (projectRates.find((r) => r.unit === "m³") || {}).qty || 0;
 
   return (
     <div className="rounded-xl border border-neutral-200 bg-white shadow-sm overflow-hidden">
@@ -88,8 +95,13 @@ export default function ProjectGeometryPanel({ items, estimateGeometry, onChange
             {missing > 0 ? `${missing} element${missing === 1 ? "" : "s"} to measure` : "Project total"}
           </div>
           <div className="font-mono tabular-nums text-sm font-bold text-orange-400">
-            {fmt(totals.lm)} lm · {fmt(totals.m2)} m²
+            {fmt(totals.lm)} lm · {fmt(totals.m2)} m² · {fmt(m3Total)} m³
           </div>
+          {projectRates.length > 0 && (
+            <div className="font-mono tabular-nums text-[11px] text-blue-300">
+              {projectRates.map((r) => `${money2(r.rate)}/${r.unit}`).join(" · ")}
+            </div>
+          )}
         </div>
       </div>
 

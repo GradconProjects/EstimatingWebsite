@@ -17,7 +17,7 @@ import {
   computeElementCost, computeGrandTotal, computeMarginLadder,
   defaultRates, newElementItem, rateKey, suggestedLabourPrefill, computeExternalScopeLines,
   labourResourceRate, taskRowMeta, labourQuantities, autoSmallLoadCharge, autoConcreteSurcharge,
-  computeElementUnitRates,
+  computeElementUnitRates, computeProjectUnitRates,
 } from "../src/lib/costing.js";
 import { buildImportFromEstimate, normalizeElementName, geometryForLabel } from "../src/lib/estimateImport.js";
 
@@ -936,6 +936,41 @@ check("Import keeps each takeoff element's geometry WITH its name, so Quotes can
   // renaming the merged card and re-matching still lands the full 60 lm
   const renamed = geometryForLabel("Ground Floor Strip Footings", quote.estimateGeometry);
   assert.equal(renamed.runM, 60);
+});
+
+check("Project unit rates: the whole quote's cost over the project's total run, area and concrete — including $/m³", () => {
+  const rates = defaultRates();
+  const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-6, `${msg || ""} ${a} !== ${b}`);
+  const noFees = (it) => {
+    it.labourAuto = false;
+    it.qtys[rateKey("CONCRETE", "Small load charge", "m3")] = 0;
+    it.qtys[rateKey("CONCRETE", "Production & transport surcharge", "m3")] = 0;
+    return it;
+  };
+
+  const strip = noFees(newElementItem(ELEMENT_TYPES.find((t) => t.id === "strip_footings")));
+  strip.qtys[rateKey("CONCRETE", "25 mpa", "m3")] = 10;   // 2,125
+  strip.measureLm = 60;
+
+  const slab = noFees(newElementItem(ELEMENT_TYPES.find((t) => t.id === "slab_on_ground")));
+  slab.qtys[rateKey("CONCRETE", "25 mpa", "m3")] = 20;    // 4,250
+  slab.measureM2 = 250;
+
+  const items = [strip, slab];
+  const total = 2125 + 4250;
+  const lines = computeProjectUnitRates(items, rates);
+  assert.deepEqual(lines.map((l) => l.unit), ["lm", "m²", "m³"], "same fixed lm -> m² -> m³ order as a row");
+  near(lines[0].rate, total / 60, "project $/lm over the project's total run");
+  near(lines[1].rate, total / 250, "project $/m² over the project's total area");
+  near(lines[2].rate, total / 30, "project $/m³ over ALL the project's concrete");
+  assert.equal(lines[2].qty, 30, "the m³ total sums every element's concrete");
+
+  // measures that nobody recorded simply don't appear
+  const bare = noFees(newElementItem(ELEMENT_TYPES.find((t) => t.id === "slab_on_ground")));
+  bare.qtys[rateKey("CONCRETE", "25 mpa", "m3")] = 5;
+  assert.deepEqual(computeProjectUnitRates([bare], rates).map((l) => l.unit), ["m³"]);
+  // an empty/zero-cost quote gives nothing rather than dividing by zero
+  assert.deepEqual(computeProjectUnitRates([], rates), []);
 });
 
 console.log(`\n${passed} check(s) passed.`);
