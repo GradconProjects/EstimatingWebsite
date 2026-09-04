@@ -344,7 +344,7 @@ function ProjectEditor({ project, rates, setRates, ratesStatus, saveProjectsNow,
     setRates({ ...rates, [key]: { ...(rates[key] || {}), unitCost: v === undefined || v === "" ? res.rate : Number(v) } });
   };
   // Same one-library principle for material rates edited in place on a
-  // category row (currently the Small load charge): the edit lands on the
+  // category row (the Holcim service fees): the edit lands on the
   // exact key the Rates modal shows; clearing restores the catalog default.
   const setMaterialRate = (key, v, fallback) => {
     setRates({ ...rates, [key]: { ...(rates[key] || {}), unitCost: v === undefined || v === "" ? fallback : Number(v) } });

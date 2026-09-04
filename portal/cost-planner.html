@@ -446,7 +446,7 @@ const BCI_REFERENCE = [
 // truth for this exact same product.
 // Real current Holcim rates ex GST (GRADCON_Melb_Metro_Peninsula_Quote, quote 00025199,
 // fixed until 30/06/2026) applied wherever the product code confidently matches — plain
-// N-grades and the Agilia range. "Exposed Agg", "Small load charge" and "Penetron"
+// N-grades and the Agilia range. "Exposed Agg", the Holcim service fees and "Penetron"
 // have no confident single-SKU match in Holcim's quote (dozens of named exposed
 // finishes, a differently-structured minimum-cartage fee, no waterproofing additive
 // line) so are left as-is rather than guessed. The Production & Transport Surcharge
@@ -465,7 +465,8 @@ const CONCRETE_GRADE_ITEMS = [
   {p:"40 mpa",u:"m3",cost:225},
   {p:"50 mpa",u:"m3",cost:264.2},
   {p:"Exposed Agg",u:"m3",cost:400,note:"Prov. Sum"},
-  {p:"Small load charge",u:"m3",cost:47.25},
+  {p:"Minimum cartage (load under 4 m3)",u:"m3",cost:80},
+  {p:"Environment levy",u:"m3",cost:2.8},
   {p:"Penetron (Xypex) additive",u:"m3",cost:100},
 ];
 

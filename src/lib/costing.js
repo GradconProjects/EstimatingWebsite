@@ -5,7 +5,7 @@
  *
  * Read CLAUDE.md → "Costing rules" before editing computeElementCost.
  */
-import { FULL_CATALOG, RESOURCE_COLS, LABOUR_TEMPLATES, GST_RATE, PRODUCTION_RATES, DEFAULT_MARGIN, MARGIN_STEPS, SMALL_LOAD_THRESHOLD_M3 } from "../data/catalog.js";
+import { FULL_CATALOG, RESOURCE_COLS, LABOUR_TEMPLATES, GST_RATE, PRODUCTION_RATES, DEFAULT_MARGIN, MARGIN_STEPS, MIN_CARTAGE_THRESHOLD_M3, TRUCK_LOAD_M3 } from "../data/catalog.js";
 
 // Shared with portal-shell.html's Settings modal (same localStorage key, same
 // origin — the portal embeds this app via a blob: URL created from its own
@@ -73,7 +73,7 @@ export function defaultRates() {
   const r = {};
   FULL_CATALOG.forEach((cat) => {
     cat.products.forEach((p) => {
-      r[rateKey(cat.key, p.name, p.unit)] = { unitCost: p.unitCost ?? 0, unitWeight: p.unitWeight, sheetArea: p.sheetArea, barLength: p.barLength };
+      r[rateKey(cat.key, p.name, p.unit)] = { unitCost: p.unitCost ?? 0, unitWeight: p.unitWeight, sheetArea: p.sheetArea, barLength: p.barLength, minQty: p.minQty };
     });
   });
   RESOURCE_COLS.forEach((res) => {
@@ -104,6 +104,10 @@ export function lookupRate(rates, key, fallback) {
  * weightBasis comment above FULL_CATALOG in data/catalog.js.
  */
 export function computeRowTotal(cat, rate, qty) {
+  // Contract MINIMUMS (a "4 hour min" pump bills 4 hours for a 1-hour job).
+  // Applied first so every basis below prices the billed quantity, and only
+  // to a row that has a quantity — a blank row still costs nothing.
+  if (qty > 0 && rate.minQty > 0 && qty < rate.minQty) qty = rate.minQty;
   if (cat.weightBasis && rate.unitWeight) {
     return ((qty * rate.unitWeight) / 1000) * rate.unitCost;
   }
@@ -116,62 +120,89 @@ export function computeRowTotal(cat, rate, qty) {
   return qty * rate.unitCost;
 }
 
-const SMALL_LOAD_PRODUCT_MATCH = /small load/i;
-// The supplier's production & transport surcharge — applied per m³ to EVERY
-// delivered load (unlike the small-load charge's under-30m³ trigger).
+const MIN_CARTAGE_PRODUCT_MATCH = /minimum cartage|small load/i;   // legacy name still matches
+// Per-m³ fees charged on EVERY delivered m³, with no threshold.
 const SURCHARGE_PRODUCT_MATCH = /transport surcharge/i;
+const LEVY_PRODUCT_MATCH = /environment levy/i;
+/** Rows that are FEES on the concrete rather than concrete itself — never
+ * counted as poured volume, and never charged on each other. */
+const CONCRETE_CHARGE_MATCH = (name) =>
+  MIN_CARTAGE_PRODUCT_MATCH.test(name) || SURCHARGE_PRODUCT_MATCH.test(name) ||
+  LEVY_PRODUCT_MATCH.test(name);
+/** …plus additives, whose m³ mirrors the mix and would double-count volume. */
+const CONCRETE_FEE_MATCH = (name) => CONCRETE_CHARGE_MATCH(name) || /additive/i.test(name);
 
-/**
- * Automatic small-load charge: a concrete order under
- * SMALL_LOAD_THRESHOLD_M3 (30 m³) per element attracts the catalog's
- * "Small load charge" ($/m³, editable in the Rates modal and on the row
- * itself) on every m³ of the load — without the estimator having to
- * remember it. The volume counted is the element's real concrete rows
- * (mixes + blinding), excluding additives (their m³ mirrors the mix volume)
- * and the charge row itself. Typing anything into the Small load charge
- * row's Qty switches the row fully manual and disables the auto.
- * Returns { key, qty, unitCost, total } or null — the ONE implementation
- * used by computeElementCost, CategoryBlock and PrintQuoteReport, so the
- * three can never disagree.
- */
-export function autoSmallLoadCharge(item, rates) {
+/** The element's real poured volume: concrete mixes and blinding, with the
+ * fee rows and additives (whose m³ mirrors the mix) excluded. */
+function pouredVolume(item) {
   const cat = FULL_CATALOG.find((c) => c.key === "CONCRETE");
-  const slc = cat && cat.products.find((p) => SMALL_LOAD_PRODUCT_MATCH.test(p.name));
-  if (!slc) return null;
-  const key = rateKey(cat.key, slc.name, slc.unit);
-  const typed = item.qtys[key];
-  if (typed !== undefined && typed !== "") return null; // the estimator's own entry wins
   let vol = 0;
   cat.products.forEach((p) => {
-    if (SMALL_LOAD_PRODUCT_MATCH.test(p.name) || SURCHARGE_PRODUCT_MATCH.test(p.name) || /additive/i.test(p.name)) return;
+    if (CONCRETE_FEE_MATCH(p.name)) return;
     vol += Number(item.qtys[rateKey(cat.key, p.name, p.unit)]) || 0;
   });
-  if (!(vol > 0 && vol < SMALL_LOAD_THRESHOLD_M3)) return null;
-  const rate = lookupRate(rates, key, { unitCost: slc.unitCost ?? 0 });
-  return { key, qty: vol, unitCost: rate.unitCost ?? 0, total: vol * (rate.unitCost ?? 0) };
+  return vol;
 }
 
 /**
- * The concrete production & transport surcharge, applied automatically PER
- * m³ to the element's whole poured volume ($2.59/m³ catalog default,
- * editable in place / the Rates modal like any rate). Typed values on the
- * surcharge row always win — a typed Qty takes the row fully manual.
+ * Holcim MINIMUM CARTAGE, applied automatically. The fee is charged where a
+ * DELIVERED LOAD is under MIN_CARTAGE_THRESHOLD_M3 (4 m³), on the
+ * undelivered part of that load — (4 − load) × $80/m³ — per truck, NOT on
+ * the order total. A quote holds a total volume rather than a delivery
+ * schedule, so the volume is split into whole truck loads (the editable
+ * "Concrete truck load size" production rate, 8 m³ by default) and the
+ * shortfall is charged on the last, part load: 11 m³ delivered 8+3 is 1 m³
+ * short, so $80. A pour that divides evenly, or whose last load already
+ * reaches 4 m³, attracts nothing.
+ *
+ * Typing anything into the Minimum cartage row's Qty takes the row fully
+ * manual — that's how a known delivery split (7+4, say) is priced exactly.
+ * Returns { key, qty (m³ short), unitCost ($/m³ short), total, loads,
+ * lastLoad } or null.
  */
-export function autoConcreteSurcharge(item, rates) {
+export function autoMinimumCartage(item, rates) {
   const cat = FULL_CATALOG.find((c) => c.key === "CONCRETE");
-  const sur = cat && cat.products.find((p) => SURCHARGE_PRODUCT_MATCH.test(p.name));
-  if (!sur) return null;
-  const key = rateKey(cat.key, sur.name, sur.unit);
+  const mc = cat && cat.products.find((p) => MIN_CARTAGE_PRODUCT_MATCH.test(p.name));
+  if (!mc) return null;
+  const key = rateKey(cat.key, mc.name, mc.unit);
   const typed = item.qtys[key];
   if (typed !== undefined && typed !== "") return null; // the estimator's own entry wins
-  let vol = 0;
-  cat.products.forEach((p) => {
-    if (SMALL_LOAD_PRODUCT_MATCH.test(p.name) || SURCHARGE_PRODUCT_MATCH.test(p.name) || /additive/i.test(p.name)) return;
-    vol += Number(item.qtys[rateKey(cat.key, p.name, p.unit)]) || 0;
-  });
+  const vol = pouredVolume(item);
   if (!(vol > 0)) return null;
-  const rate = lookupRate(rates, key, { unitCost: sur.unitCost ?? 0 });
+  const capacity = prodRate(rates, "Concrete truck load size", "m³/load", TRUCK_LOAD_M3);
+  if (!(capacity > 0)) return null;
+  const loads = Math.ceil(vol / capacity - 1e-9);
+  const lastLoad = vol - (loads - 1) * capacity;
+  const short = round2(Math.max(0, MIN_CARTAGE_THRESHOLD_M3 - lastLoad));
+  if (!(short > 0)) return null;
+  const rate = lookupRate(rates, key, { unitCost: mc.unitCost ?? 0 });
+  return { key, qty: short, unitCost: rate.unitCost ?? 0, total: short * (rate.unitCost ?? 0), loads, lastLoad: round2(lastLoad) };
+}
+/** Kept so older imports keep working. */
+export const autoSmallLoadCharge = autoMinimumCartage;
+
+/** A per-m³ concrete fee charged on the WHOLE poured volume with no
+ * threshold (the production & transport surcharge and the environment
+ * levy both work this way). A typed Qty on the row takes it fully manual. */
+function autoConcreteFee(item, rates, match) {
+  const cat = FULL_CATALOG.find((c) => c.key === "CONCRETE");
+  const fee = cat && cat.products.find((p) => match.test(p.name));
+  if (!fee) return null;
+  const key = rateKey(cat.key, fee.name, fee.unit);
+  const typed = item.qtys[key];
+  if (typed !== undefined && typed !== "") return null;
+  const vol = pouredVolume(item);
+  if (!(vol > 0)) return null;
+  const rate = lookupRate(rates, key, { unitCost: fee.unitCost ?? 0 });
   return { key, qty: vol, unitCost: rate.unitCost ?? 0, total: vol * (rate.unitCost ?? 0) };
+}
+/** Holcim production & transport surcharge — $/m³ on every delivered m³. */
+export function autoConcreteSurcharge(item, rates) {
+  return autoConcreteFee(item, rates, SURCHARGE_PRODUCT_MATCH);
+}
+/** Holcim environment levy — $/m³ on every delivered m³. */
+export function autoEnvironmentLevy(item, rates) {
+  return autoConcreteFee(item, rates, LEVY_PRODUCT_MATCH);
 }
 
 /** Creates a fresh quote line item for the given element type. */
@@ -236,29 +267,24 @@ export function computeElementCost(item, rates) {
         const rate = lookupRate(rates, qKey, { unitCost: p.unitCost ?? 0, unitWeight: p.unitWeight, sheetArea: p.sheetArea });
         const rowTotal = computeRowTotal(cat, rate, qty);
         catTotal += rowTotal;
-        if (cat.key === "CONCRETE" && !SURCHARGE_PRODUCT_MATCH.test(p.name)) concreteQty += qty; // surcharge is a fee per m³, not poured volume
+        if (cat.key === "CONCRETE" && !CONCRETE_CHARGE_MATCH(p.name)) concreteQty += qty; // the delivery fees are $/m³ charges, not poured volume
       }
     });
     categoryTotals[cat.key] = catTotal;
     materialsTotal += catTotal;
   });
 
-  // Loads under 30 m³ attract the small load charge automatically (per m³
-  // of the load) — see autoSmallLoadCharge. Not added to concreteQty: it's
-  // a delivery fee, not poured volume.
-  const smallLoad = autoSmallLoadCharge(item, rates);
-  if (smallLoad) {
-    categoryTotals["CONCRETE"] = (categoryTotals["CONCRETE"] || 0) + smallLoad.total;
-    materialsTotal += smallLoad.total;
-  }
-
-  // The production & transport surcharge applies automatically per m³ to the
-  // WHOLE poured volume ($2.59/m³ default) — see autoConcreteSurcharge.
-  const surcharge = autoConcreteSurcharge(item, rates);
-  if (surcharge) {
-    categoryTotals["CONCRETE"] = (categoryTotals["CONCRETE"] || 0) + surcharge.total;
-    materialsTotal += surcharge.total;
-  }
+  // Holcim service fees, applied automatically to the poured volume:
+  // minimum cartage on a last load under 4 m³, then the per-m³ production &
+  // transport surcharge and environment levy. None of them count as poured
+  // volume (concreteQty), and a typed Qty on any of their rows takes that
+  // row manual — see the auto* functions above.
+  [autoMinimumCartage(item, rates), autoConcreteSurcharge(item, rates), autoEnvironmentLevy(item, rates)]
+    .forEach((fee) => {
+      if (!fee) return;
+      categoryTotals["CONCRETE"] = (categoryTotals["CONCRETE"] || 0) + fee.total;
+      materialsTotal += fee.total;
+    });
 
   // Seamless labour: with labourAuto on, empty matrix cells are driven live
   // by the rate-of-work engine (autoLabourQtys) — quantities entered above

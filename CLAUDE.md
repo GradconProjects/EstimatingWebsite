@@ -121,7 +121,30 @@ safety net silently. Keep all cost arithmetic in `lib/costing.js`.
    render blank/undefined pricing. `verify.mjs` has a test for this
    ("falls back to catalog default rather than $0") — keep it passing.
 
-7. **GST is hardcoded at 10%** (`GST_RATE` in `catalog.js`). This is an
+7. **Concrete delivery fees are auto-applied, per the Holcim schedule.**
+   Three CONCRETE rows cost themselves from the element's poured volume
+   rather than being typed: **Minimum cartage** (a delivered load under
+   `MIN_CARTAGE_THRESHOLD_M3` = 4 m³ is charged $80 per m³ SHORT of 4 —
+   *per truck*, so the volume is split into `TRUCK_LOAD_M3` (8 m³) loads
+   and only the last, part load can be short), the **production &
+   transport surcharge** and the **environment levy** (both flat $/m³ on
+   every delivered m³). Typing a Qty on any of those rows takes that row
+   fully manual — that's how a known delivery split is priced exactly.
+   None of the three count towards `concreteQty` (they're fees, not
+   poured volume), and none is charged on the others. See
+   `autoMinimumCartage` / `autoConcreteSurcharge` / `autoEnvironmentLevy`
+   in `costing.js` — each has exactly ONE implementation, called by
+   `computeElementCost`, `CategoryBlock.jsx` and `PrintQuoteReport.jsx`.
+
+8. **Contract minimums bill through `computeRowTotal`.** A product can
+   carry a `minQty` (the 7th field in its catalog row) — a "4 hour min"
+   pump bills 4 hours for a 1-hour job. `computeRowTotal` raises the
+   quantity to `minQty` before any weight/area/length basis applies, and
+   only when the row has a quantity at all (a blank row still costs
+   nothing). Every CONCRETE PUMPING rate and minimum comes from the
+   supplier's schedule and is editable in the Rates modal.
+
+9. **GST is hardcoded at 10%** (`GST_RATE` in `catalog.js`). This is an
    Australian tool. If this is ever adapted for another market, that's
    the one place to change — but check every place `GST_RATE` or `* 1.1`
    is used (currently just `computeMarginLadder`).

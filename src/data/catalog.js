@@ -21,9 +21,24 @@
 // name+"day" keys, and the changed unit retires those stale overrides —
 // lookupRate falls back to these new catalog defaults (CLAUDE.md rule 6).
 // A concrete order under this volume (per element/pour) attracts the
-// catalog's "Small load charge" automatically — see autoSmallLoadCharge in
-// lib/costing.js. Typed values on the Small load charge row always win.
-export const SMALL_LOAD_THRESHOLD_M3 = 30;
+// catalog's "Minimum cartage" automatically — see autoMinimumCartage in
+// lib/costing.js. Typed values on the Minimum cartage row always win.
+//
+// Holcim (Melbourne Metro & Mornington Peninsula) service-fee schedule,
+// effective 1 May 2026: the fee applies where a DELIVERED LOAD is under
+// 4.0 m³, and is charged on the undelivered part of that load — i.e.
+// (4.0 - load) x $80/m³, per truck, not on the order total. An 11 m³ order
+// delivered 7+4 attracts nothing; delivered 8+3 the second truck is 1 m³
+// short, so $80. Quotes hold a total volume rather than a delivery
+// schedule, so the engine splits it into whole truck loads of
+// TRUCK_LOAD_M3 and charges the shortfall on the last (part) load — the
+// realistic worst case. Both figures are editable (the truck size in the
+// Rates modal, the $/m³ on the row itself), and typing a quantity on the
+// row takes it fully manual for a known delivery split.
+export const MIN_CARTAGE_THRESHOLD_M3 = 4;
+// Kept as an alias so saved code/tests referring to the old name still read.
+export const SMALL_LOAD_THRESHOLD_M3 = MIN_CARTAGE_THRESHOLD_M3;
+export const TRUCK_LOAD_M3 = 8;
 
 // Crew columns are priced PER PERSON per day ("man-day" unit — a fresh key
 // that retires both the original per-person "day" overrides and the
@@ -73,6 +88,9 @@ export const PRODUCTION_RATES = [
   // auto-derived (propping effort varies by system, excavator days by ground
   // conditions) — entered manually, always. Their Qty columns still prefill.
   { key: "pump_hrs_pour", name: "Concrete pump — hours per pour", unit: "hrs", rate: 6 },
+  // The agitator size the minimum-cartage split assumes — edit here if the
+  // supplier runs smaller/larger trucks on a job.
+  { key: "truck_load_m3", name: "Concrete truck load size", unit: "m³/load", rate: 8 },
 ];
 
 /* ---------- Labour task templates, keyed by the element's `labour` field ---------- */
@@ -177,10 +195,38 @@ export const FULL_CATALOG = [
   { key: "CONCRETE", weightBasis: false, products: [
     ["25 mpa Agilia", "m3", null, 310.5], ["32 mpa Agilia", "m3", null, 322.5], ["40 mpa Agilia", "m3", null, 334.5], ["40 mpa Agilia (walls)", "m3", null, 342.5],
     ["15 mpa", "m3", null, 196.5], ["20 mpa", "m3", null, 207.5], ["25 mpa", "m3", null, 212.5], ["32 mpa", "m3", null, 221.5], ["40 mpa", "m3", null, 233.5],
-    ["50 mpa", "m3", null, 252.5], ["Exposed Agg", "m3", null, 400], ["Small load charge", "m3", null, 47.25], ["Production & transport surcharge", "m3", null, 9.17], ["Penetron (Xypex) additive", "m3", null, 100],
+    ["50 mpa", "m3", null, 252.5], ["Exposed Agg", "m3", null, 400],
+    // Holcim service fees. Minimum cartage is $/m³ SHORT of a 4 m³ load (see
+    // MIN_CARTAGE_THRESHOLD_M3); the levy and surcharge are $/m³ delivered.
+    ["Minimum cartage (load under 4 m3)", "m3", null, 80],
+    ["Production & transport surcharge", "m3", null, 9.17],
+    ["Environment levy", "m3", null, 2.8],
+    ["Penetron (Xypex) additive", "m3", null, 100],
     // Blinding is normally a low-strength unreinforced mix — seeded at the same rate as 15 mpa
     // (the lowest plain mix already in this catalog) rather than inventing a new price point.
     ["Blinding concrete", "m3", null, 196.5],
+  ]},
+  /* J. King concrete pumping schedule. `minQty` is the contract MINIMUM
+   * billed quantity — a 4-hour-minimum pump costs 4 hours even if it's on
+   * site for one, so computeRowTotal bills max(qty, minQty). Every rate and
+   * every minimum is editable in the Rates modal like any other product.
+   * The two "quote only" lines carry no rate: price them from the supplier's
+   * quote by typing the total on the row. */
+  { key: "CONCRETE PUMPING", weightBasis: false, products: [
+    ["Line pump — up to 70m of line (4 hr min)", "hr", null, 200, null, null, 4],
+    ["Line pump — 70-90m of line (4 hr min)", "hr", null, 240, null, null, 4],
+    ["Line pump — over 90m of line (quote only)", "quote", null, 0],
+    ["Boom pump — 28-32m boom (4 hr min)", "hr", null, 220, null, null, 4],
+    ["Boom pump — 37m boom (4 hr min)", "hr", null, 230, null, null, 4],
+    ["Boom pump — 42m boom (4 hr min)", "hr", null, 240, null, null, 4],
+    ["Boom pump — 47m boom and above (quote only)", "quote", null, 0],
+    ["Travel charge (1 hr min, at the pump's hourly rate)", "hr", null, 220, null, null, 1],
+    ["Pumped volume", "m3", null, 10],
+    ["Washout bag", "each", null, 200],
+    ["Offsite washout", "each", null, 250],
+    ["Extra labourer / hose hand (6 hr min)", "hr", null, 100, null, null, 6],
+    ["Saturday work (6 hr min, at the pump's hourly rate)", "hr", null, 220, null, null, 6],
+    ["Cancellation (5 hr min, at the pump's hourly rate)", "hr", null, 220, null, null, 5],
   ]},
   { key: "RATE ITEMS", weightBasis: false, products: [
     ["Hobbs", "m", null, 105], ["Plinths", "m2", null, 610], ["0-50mm set downs", "m", null, 20], ["51-100mm set downs", "m", null, 45],
@@ -232,7 +278,7 @@ export const FULL_CATALOG = [
 ].map((c) => ({
   ...c,
   label: c.label || c.key,
-  products: c.products.map(([name, unit, unitWeight, unitCost, sheetArea, barLength]) => ({ name, unit, unitWeight, unitCost, sheetArea, barLength })),
+  products: c.products.map(([name, unit, unitWeight, unitCost, sheetArea, barLength, minQty]) => ({ name, unit, unitWeight, unitCost, sheetArea, barLength, minQty })),
 }));
 
 /* ---------- Element types ----------

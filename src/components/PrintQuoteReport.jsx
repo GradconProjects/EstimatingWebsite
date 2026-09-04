@@ -2,7 +2,7 @@ import {
   CATEGORY_ORDER, SECTION_ORDER, FULL_CATALOG, RESOURCE_COLS,
 } from "../data/catalog.js";
 import {
-  computeElementCost, computeGrandTotal, computeMarginLadder, rateKey, lookupRate, computeRowTotal, money, money2, getDefaultMargin, getMarginSteps, autoSmallLoadCharge, autoConcreteSurcharge,
+  computeElementCost, computeGrandTotal, computeMarginLadder, rateKey, lookupRate, computeRowTotal, money, money2, getDefaultMargin, getMarginSteps, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy,
 } from "../lib/costing.js";
 import { GRADCON_LOGO_DATA_URI } from "../lib/logo.js";
 
@@ -185,9 +185,13 @@ function ElementReportBlock({ item, rates }) {
 
   // the auto small-load charge is real money in the totals, so the report
   // must show the line even though its Qty cell on screen is only a ghost
-  const smallLoad = autoSmallLoadCharge(item, rates);
-  if (smallLoad) {
-    materialLines.push({ key: `${smallLoad.key}::auto`, label: "Small load charge (CONCRETE — auto, load under 30 m³)", qty: smallLoad.qty, unit: "m3", total: smallLoad.total });
+  const minCartage = autoMinimumCartage(item, rates);
+  if (minCartage) {
+    materialLines.push({ key: `${minCartage.key}::auto`, label: `Minimum cartage (CONCRETE — auto, last load ${minCartage.lastLoad} m³, ${minCartage.qty} m³ short of 4 m³)`, qty: minCartage.qty, unit: "m3", total: minCartage.total });
+  }
+  const levy = autoEnvironmentLevy(item, rates);
+  if (levy) {
+    materialLines.push({ key: `${levy.key}::auto`, label: "Environment levy (CONCRETE — auto, per m³)", qty: levy.qty, unit: "m3", total: levy.total });
   }
   const surcharge = autoConcreteSurcharge(item, rates);
   if (surcharge) {
