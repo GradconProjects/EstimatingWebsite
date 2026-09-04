@@ -229,8 +229,12 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
 
   return (
     <div className="flex items-stretch gap-2">
-    <div className="rounded-xl border border-neutral-200 bg-white shadow-sm overflow-hidden flex-1 min-w-0">
-      <div className="bg-blue-950 text-white px-4 py-3 flex items-center gap-3">
+    <div
+      className={`rounded-xl border border-neutral-200 shadow-sm overflow-hidden flex-1 min-w-0 flex flex-col ${
+        cardOpen ? "bg-white" : "bg-blue-950"
+      }`}
+    >
+      <div className="bg-blue-950 text-white px-4 py-3 flex flex-1 items-center gap-3">
         <button onClick={() => setCardOpen(!cardOpen)} className="text-blue-300 hover:text-white transition-colors flex-none">
           {cardOpen ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
         </button>
@@ -463,14 +467,14 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
         own natural height beside the row's header. */}
     {unitRates.length > 0 && (
       <div
-        className={`hidden md:flex w-56 flex-none rounded-xl border border-neutral-200 bg-blue-950 shadow-sm flex-col justify-center gap-1 px-3 py-2 ${cardOpen ? "self-start" : "self-stretch"}`}
+        className={`hidden md:flex w-56 flex-none rounded-xl border border-amber-900 bg-amber-900 shadow-sm flex-col justify-center gap-1 px-3 py-2 ${cardOpen ? "self-start" : "self-stretch"}`}
         title="Benchmark unit rates: this element's WHOLE cost (concrete + reinforcement + formwork + labour/plant + custom items) divided by each measure beside it. Lengths and areas come from the Project Geometry table below (auto-filled from the Estimates takeoff, editable there); the m³ is this element's own poured concrete volume."
       >
         {unitRates.map((u) => (
           <div key={u.unit} className="font-mono tabular-nums whitespace-nowrap leading-5">
-            <span className="text-[15px] font-bold text-orange-400">{money2(u.rate)}</span>
-            <span className="text-[11px] font-semibold text-blue-300"> /{u.unit}</span>
-            <span className="text-[10px] text-blue-400"> · {u.qty.toLocaleString("en-AU")} {u.unit}</span>
+            <span className="text-[15px] font-bold text-orange-300">{money2(u.rate)}</span>
+            <span className="text-[11px] font-semibold text-amber-200"> /{u.unit}</span>
+            <span className="text-[10px] text-amber-300"> · {u.qty.toLocaleString("en-AU")} {u.unit}</span>
           </div>
         ))}
       </div>

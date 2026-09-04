@@ -82,23 +82,23 @@ export default function ProjectGeometryPanel({ items, rates, estimateGeometry, o
 
   return (
     <div className="rounded-xl border border-neutral-200 bg-white shadow-sm overflow-hidden">
-      <div className="bg-blue-950 text-white px-4 py-3 flex items-center gap-3">
-        <button onClick={() => setOpen(!open)} className="text-blue-300 hover:text-white transition-colors flex-none">
+      <div className="bg-amber-900 text-white px-4 py-3 flex items-center gap-3">
+        <button onClick={() => setOpen(!open)} className="text-amber-200 hover:text-white transition-colors flex-none">
           {open ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
         </button>
         <div className="flex-1 min-w-0">
           <div className="font-semibold text-[15px]">Project Geometry — lengths &amp; areas</div>
-          <div className="text-[11px] text-blue-300">Enter each slab&apos;s area and each strip/beam run&apos;s length here</div>
+          <div className="text-[11px] text-amber-200">Enter each slab&apos;s area and each strip/beam run&apos;s length here</div>
         </div>
         <div className="text-right flex-none">
-          <div className="text-[10px] uppercase tracking-widest text-blue-300">
+          <div className="text-[10px] uppercase tracking-widest text-amber-200">
             {missing > 0 ? `${missing} element${missing === 1 ? "" : "s"} to measure` : "Project total"}
           </div>
-          <div className="font-mono tabular-nums text-sm font-bold text-orange-400">
+          <div className="font-mono tabular-nums text-sm font-bold text-orange-300">
             {fmt(totals.lm)} lm · {fmt(totals.m2)} m² · {fmt(m3Total)} m³
           </div>
           {projectRates.length > 0 && (
-            <div className="font-mono tabular-nums text-[11px] text-blue-300">
+            <div className="font-mono tabular-nums text-[11px] text-amber-200">
               {projectRates.map((r) => `${money2(r.rate)}/${r.unit}`).join(" · ")}
             </div>
           )}
@@ -116,7 +116,7 @@ export default function ProjectGeometryPanel({ items, rates, estimateGeometry, o
             {suggestionCount > 0 && (
               <button
                 onClick={fillAll}
-                className="flex-none flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-blue-950 hover:bg-blue-900 text-white text-[11px] font-semibold"
+                className="flex-none flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-amber-900 hover:bg-amber-800 text-white text-[11px] font-semibold"
                 title="Match every element to the takeoff BY NAME and fill its length and area — all matching takeoff elements are summed into one card (every strip footing into the Strip Footings card, for example)."
               >
                 <Wand2 size={13} /> Fill from Estimates ({suggestionCount})
