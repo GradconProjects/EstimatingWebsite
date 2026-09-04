@@ -571,6 +571,11 @@ function ProjectEditor({ project, rates, setRates, ratesStatus, saveProjectsNow,
             onDismiss={() => setQuote((q) => ({ ...q, importFlags: undefined }))}
           />
           <AddElementBar onAdd={addElement} elementTypes={elementTypes} categoryOrder={categoryOrder} />
+          <ProjectGeometryPanel
+            items={items}
+            estimateGeometry={quote.estimateGeometry}
+            onChangeItem={updateItem}
+          />
           {items.map((item) => (
             <ElementCard
               key={item.id}
@@ -583,11 +588,6 @@ function ProjectEditor({ project, rates, setRates, ratesStatus, saveProjectsNow,
               onMaterialRateChange={setMaterialRate}
             />
           ))}
-          <ProjectGeometryPanel
-            items={items}
-            estimateGeometry={quote.estimateGeometry}
-            onChangeItem={updateItem}
-          />
           {items.length === 0 && (
             <div className="text-center py-16 text-neutral-400 border-2 border-dashed border-neutral-200 rounded-xl">
               Pick an element above to add it — every applicable material, reo, formwork and labour line for that

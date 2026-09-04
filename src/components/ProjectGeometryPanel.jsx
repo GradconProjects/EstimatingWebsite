@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { ChevronDown, ChevronRight, Wand2 } from "lucide-react";
 import { geometryForLabel } from "../lib/estimateImport.js";
 
@@ -18,7 +18,19 @@ import { geometryForLabel } from "../lib/estimateImport.js";
  * Everything stays typeable: the estimator's own figure always wins.
  */
 export default function ProjectGeometryPanel({ items, estimateGeometry, onChangeItem }) {
+  // Elements still waiting on a length or an area — until every element has
+  // one the table opens itself, so the figures are asked for rather than
+  // hidden behind a fold nobody thinks to open.
+  const missing = items.filter(
+    (it) => !(Number(it.measureLm) > 0) && !(Number(it.measureM2) > 0)
+  ).length;
+  const hasMissing = missing > 0;
   const [open, setOpen] = useState(false);
+  // Opens itself the moment something is unmeasured, and then STAYS open —
+  // filling in the last cell must never fold the table away mid-edit. Once
+  // it's open the estimator closes it by hand, and it only re-opens if a new
+  // unmeasured element turns up.
+  useEffect(() => { if (hasMissing) setOpen(true); }, [hasMissing]);
 
   const totals = useMemo(
     () =>
@@ -69,9 +81,12 @@ export default function ProjectGeometryPanel({ items, estimateGeometry, onChange
         </button>
         <div className="flex-1 min-w-0">
           <div className="font-semibold text-[15px]">Project Geometry — lengths &amp; areas</div>
+          <div className="text-[11px] text-blue-300">Enter each slab&apos;s area and each strip/beam run&apos;s length here</div>
         </div>
         <div className="text-right flex-none">
-          <div className="text-[10px] uppercase tracking-widest text-blue-300">Project total</div>
+          <div className="text-[10px] uppercase tracking-widest text-blue-300">
+            {missing > 0 ? `${missing} element${missing === 1 ? "" : "s"} to measure` : "Project total"}
+          </div>
           <div className="font-mono tabular-nums text-sm font-bold text-orange-400">
             {fmt(totals.lm)} lm · {fmt(totals.m2)} m²
           </div>
