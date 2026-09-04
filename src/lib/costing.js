@@ -103,11 +103,17 @@ export function lookupRate(rates, key, fallback) {
  * silently disagree. See CLAUDE.md "Costing rules" and the areaBasis/
  * weightBasis comment above FULL_CATALOG in data/catalog.js.
  */
-export function computeRowTotal(cat, rate, qty) {
+export function computeRowTotal(cat, rate, qty, ctx) {
   // Contract MINIMUMS (a "4 hour min" pump bills 4 hours for a 1-hour job).
   // Applied first so every basis below prices the billed quantity, and only
   // to a row that has a quantity — a blank row still costs nothing.
   if (qty > 0 && rate.minQty > 0 && qty < rate.minQty) qty = rate.minQty;
+  // Reinforcement entered as a RATE: qty is kg of steel per m³ of concrete,
+  // so the tonnage comes from the element's own poured volume (carried in
+  // ctx, built by rowContext). No concrete entered = no steel, no cost.
+  if (cat.volumeRateBasis) {
+    return ((qty * ((ctx && ctx.concreteM3) || 0)) / 1000) * rate.unitCost;
+  }
   if (cat.weightBasis && rate.unitWeight) {
     return ((qty * rate.unitWeight) / 1000) * rate.unitCost;
   }
@@ -142,6 +148,18 @@ function pouredVolume(item) {
     vol += Number(item.qtys[rateKey(cat.key, p.name, p.unit)]) || 0;
   });
   return vol;
+}
+
+/**
+ * The per-element context computeRowTotal needs for any basis that depends on
+ * quantities OUTSIDE the row's own category — currently just volumeRateBasis
+ * (REINFORCEMENT BY RATE), which prices kg/m³ against the element's poured
+ * concrete. Build it once per element and pass it to every computeRowTotal
+ * call, so all four callers (computeElementCost, CategoryBlock,
+ * PrintQuoteReport, exportQuote) read the same volume.
+ */
+export function rowContext(item) {
+  return { concreteM3: pouredVolume(item) };
 }
 
 /**
@@ -240,6 +258,10 @@ export function newElementItem(type) {
  *  - lengthBasis categories (currently only STOCK BAR) cost as
  *    ceil(qty / barLength) * unitCost — qty is metres of bar needed, bars
  *    are bought whole (fixed stock lengths) so the count always rounds up.
+ *  - volumeRateBasis categories (currently only REINFORCEMENT BY RATE) cost
+ *    as (qty * concreteM3 / 1000) * unitCost — qty is kg of steel per m³ and
+ *    the volume is this element's own poured concrete (rowContext), so these
+ *    rows are free until concrete is entered.
  *  - All other categories cost as qty * unitCost directly, even if the
  *    product also carries a unitWeight (Trench Mesh shows tonnage for
  *    information only — do not switch it to weight-based costing, its
@@ -257,6 +279,7 @@ export function computeElementCost(item, rates) {
   const categoryTotals = {};
   let materialsTotal = 0;
   let concreteQty = 0;
+  const ctx = rowContext(item); // poured m³, for the kg/m³ reinforcement rows
 
   FULL_CATALOG.forEach((cat) => {
     let catTotal = 0;
@@ -265,7 +288,7 @@ export function computeElementCost(item, rates) {
       const qty = Number(item.qtys[qKey]) || 0;
       if (qty > 0) {
         const rate = lookupRate(rates, qKey, { unitCost: p.unitCost ?? 0, unitWeight: p.unitWeight, sheetArea: p.sheetArea });
-        const rowTotal = computeRowTotal(cat, rate, qty);
+        const rowTotal = computeRowTotal(cat, rate, qty, ctx);
         catTotal += rowTotal;
         if (cat.key === "CONCRETE" && !CONCRETE_CHARGE_MATCH(p.name)) concreteQty += qty; // the delivery fees are $/m³ charges, not poured volume
       }
@@ -349,8 +372,17 @@ export function computeElementCost(item, rates) {
  */
 export function computeElementReinforcementTonnes(item, rates) {
   let totalKg = 0;
+  const ctx = rowContext(item);
   FULL_CATALOG.forEach((cat) => {
     cat.products.forEach((p) => {
+      // Reinforcement entered as kg/m³ carries no unitWeight — its tonnage is
+      // the rate against the poured volume. Counted here so a rate-priced
+      // element still drives steel-fixing crew days like a bar-listed one.
+      if (cat.volumeRateBasis) {
+        const q = Number(item.qtys[rateKey(cat.key, p.name, p.unit)]) || 0;
+        if (q > 0) totalKg += q * ctx.concreteM3;
+        return;
+      }
       if (p.unitWeight == null) return;
       const qKey = rateKey(cat.key, p.name, p.unit);
       const qty = Number(item.qtys[qKey]) || 0;

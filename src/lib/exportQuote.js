@@ -19,7 +19,7 @@
  *   can't accept the HTML clipboard format still gets usable text).
  */
 import { FULL_CATALOG, RESOURCE_COLS, CATEGORY_ORDER, SECTION_ORDER } from "../data/catalog.js";
-import { computeElementCost, computeGrandTotal, computeMarginLadder, rateKey, lookupRate, computeRowTotal, getDefaultMargin, getMarginSteps } from "./costing.js";
+import { computeElementCost, computeGrandTotal, computeMarginLadder, rateKey, lookupRate, computeRowTotal, rowContext, getDefaultMargin, getMarginSteps } from "./costing.js";
 import { GRADCON_LOGO_DATA_URI } from "./logo.js";
 
 /** Rate ($/unit) backed out from the line's own total ÷ qty — always exactly
@@ -30,6 +30,7 @@ const rateOf = (total, qty) => (qty ? total / qty : 0);
 /** Every line (material/labour/custom) actually filled in for one element, plus its total. */
 function buildElementLines(item, rates) {
   const materialLines = [];
+  const ctx = rowContext(item);
   FULL_CATALOG.forEach((cat) => {
     cat.products.forEach((p) => {
       const qKey = rateKey(cat.key, p.name, p.unit);
@@ -38,7 +39,7 @@ function buildElementLines(item, rates) {
         const rate = lookupRate(rates, qKey, {
           unitCost: p.unitCost ?? 0, unitWeight: p.unitWeight, sheetArea: p.sheetArea, barLength: p.barLength,
         });
-        const rowTotal = computeRowTotal(cat, rate, qty);
+        const rowTotal = computeRowTotal(cat, rate, qty, ctx);
         materialLines.push({ label: `${p.name} (${cat.key})`, qty, unit: p.unit, total: rowTotal });
       }
     });

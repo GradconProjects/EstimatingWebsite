@@ -144,7 +144,26 @@ safety net silently. Keep all cost arithmetic in `lib/costing.js`.
    nothing). Every CONCRETE PUMPING rate and minimum comes from the
    supplier's schedule and is editable in the Rates modal.
 
-9. **GST is hardcoded at 10%** (`GST_RATE` in `catalog.js`). This is an
+9. **Reinforcement can be priced off a RATE instead of a schedule.**
+   `REINFORCEMENT BY RATE` is the only `volumeRateBasis: true` category: its
+   Qty is entered as **kg of steel per m³ of concrete** and it costs as
+   `(qty * concreteM3 / 1000) * unitCost` (`unitCost` is $/tonne, as for
+   Processed Bar in rule 2). This is the one basis whose cost depends on
+   *another* category's quantities — the element's own CONCRETE rows — so
+   `computeRowTotal` takes a 4th `ctx` argument that every caller builds with
+   **`rowContext(item)`**. If you add a `computeRowTotal` call, pass that ctx;
+   omitting it silently prices every rate row at $0 (it degrades to zero
+   rather than `NaN`, so nothing crashes — it just quietly costs nothing).
+   The delivery-fee rows are not poured volume (`pouredVolume` excludes
+   them), so the levy and surcharge never inflate the steel.
+   `computeElementReinforcementTonnes` counts these rows too, so a
+   rate-priced element still drives steel-fixing crew days like a bar-listed
+   one. These rows are an **alternative** to bar-listing, not an addition —
+   an element carrying both a schedule and a rate buys its steel twice. That
+   isn't enforced (a blank row costs nothing, exactly like every other row);
+   the category label says so on its face instead.
+
+10. **GST is hardcoded at 10%** (`GST_RATE` in `catalog.js`). This is an
    Australian tool. If this is ever adapted for another market, that's
    the one place to change — but check every place `GST_RATE` or `* 1.1`
    is used (currently just `computeMarginLadder`).

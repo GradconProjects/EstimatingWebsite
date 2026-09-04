@@ -17,7 +17,7 @@ import {
   computeElementCost, computeGrandTotal, computeMarginLadder,
   defaultRates, newElementItem, rateKey, suggestedLabourPrefill, computeExternalScopeLines,
   labourResourceRate, taskRowMeta, labourQuantities, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, computeRowTotal,
-  computeElementUnitRates, computeProjectUnitRates,
+  computeElementUnitRates, computeProjectUnitRates, rowContext, computeElementReinforcementTonnes,
 } from "../src/lib/costing.js";
 import { buildImportFromEstimate, normalizeElementName, geometryForLabel } from "../src/lib/estimateImport.js";
 
@@ -53,10 +53,10 @@ check("every element type has both a category and a section", () => {
   });
 });
 
-check("13 material categories, 146 products (incl. CONCRETE PUMPING, INSULATION, Bored Piers subcontract, minimum cartage, levy, surcharge)", () => {
-  assert.equal(FULL_CATALOG.length, 13);
+check("14 material categories, 149 products (incl. CONCRETE PUMPING, REINFORCEMENT BY RATE, INSULATION, Bored Piers subcontract, minimum cartage, levy, surcharge)", () => {
+  assert.equal(FULL_CATALOG.length, 14);
   const total = FULL_CATALOG.reduce((s, c) => s + c.products.length, 0);
-  assert.equal(total, 146);
+  assert.equal(total, 149);
   const conc = FULL_CATALOG.find((c) => c.key === "CONCRETE");
   assert.ok(conc.products.some((p) => p.name === "Production & transport surcharge" && p.unit === "m3" && p.unitCost === 9.17), "concrete surcharge product seeded at $9.17/m³");
   // Vapour barrier is its own OTHER ACCESSORIES product, distinct from Insulation
@@ -1060,6 +1060,106 @@ check("Project unit rates: the whole quote's cost over the project's total run, 
   assert.deepEqual(computeProjectUnitRates([bare], rates).map((l) => l.unit), ["m³"]);
   // an empty/zero-cost quote gives nothing rather than dividing by zero
   assert.deepEqual(computeProjectUnitRates([], rates), []);
+});
+
+/* ---------- reinforcement priced as kg per m³ of concrete ---------- */
+check("REINFORCEMENT BY RATE: kg/m³ × the element's poured concrete × $/tonne", () => {
+  const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-6, `${a} !~= ${b}${msg ? " — " + msg : ""}`);
+  const rates = defaultRates();
+  const RATE_CAT = "REINFORCEMENT BY RATE";
+  const cat = FULL_CATALOG.find((c) => c.key === RATE_CAT);
+  assert.ok(cat, "the category exists");
+  assert.equal(cat.volumeRateBasis, true, "it is the volumeRateBasis category");
+  assert.equal(cat.weightBasis, false, "and NOT weightBasis — it has no unitWeight to cost off");
+  // it is the ONLY one, the same way Processed Bar owns weightBasis
+  assert.deepEqual(
+    FULL_CATALOG.filter((c) => c.volumeRateBasis).map((c) => c.key), [RATE_CAT],
+    "only REINFORCEMENT BY RATE is volume-rate priced",
+  );
+
+  const item = newElementItem(ELEMENT_TYPES.find((t) => t.id === "slab_on_ground"));
+  item.labourAuto = false;
+  const rateRow = rateKey(RATE_CAT, "Reinforcement rate — processed bar (cut & bent)", "kg/m3");
+
+  // 90 kg/m³ with no concrete entered yet buys nothing — the rate has no
+  // volume to apply to, so the row is free rather than guessing one.
+  item.qtys[rateRow] = 90;
+  assert.equal(computeElementCost(item, rates).categoryTotals[RATE_CAT], 0,
+    "a rate with no concrete costs nothing");
+
+  // 20 m³ of 25 mpa at 90 kg/m³ = 1.8 t at $1925/t = $3,465
+  item.qtys[rateKey("CONCRETE", "25 mpa", "m3")] = 20;
+  const cost = computeElementCost(item, rates);
+  near(cost.categoryTotals[RATE_CAT], 3465, "90 kg/m³ over 20 m³ = 1.8 t at $1925/t");
+  // and it is real money in the element total, not a display-only figure
+  near(cost.total, cost.materialsTotal, "no labour/custom items in this fixture");
+  assert.ok(cost.materialsTotal > 3465, "the steel sits on top of the concrete cost");
+
+  // raising the pour raises the steel with it — that's the whole point
+  item.qtys[rateKey("CONCRETE", "25 mpa", "m3")] = 40;
+  near(computeElementCost(item, rates).categoryTotals[RATE_CAT], 6930, "double the concrete, double the steel");
+
+  // the delivery FEE rows are not poured volume, so they never inflate the steel
+  item.qtys[rateKey("CONCRETE", "Environment levy", "m3")] = 40;
+  item.qtys[rateKey("CONCRETE", "Production & transport surcharge", "m3")] = 40;
+  near(computeElementCost(item, rates).categoryTotals[RATE_CAT], 6930,
+    "the levy and surcharge m³ are fees, not concrete — the steel rate ignores them");
+
+  // computeRowTotal is still the ONE implementation; it just takes the volume
+  near(computeRowTotal(cat, { unitCost: 1925 }, 90, { concreteM3: 20 }), 3465, "computeRowTotal owns the rule");
+  assert.equal(computeRowTotal(cat, { unitCost: 1925 }, 90, undefined), 0,
+    "a missing ctx degrades to zero rather than NaN");
+  near(rowContext(item).concreteM3, 40, "rowContext reports the element's poured volume");
+
+  // stock-bar rate line prices off its own cheaper $/tonne
+  const stockRow = rateKey(RATE_CAT, "Reinforcement rate — stock bar (straight lengths)", "kg/m3");
+  const item2 = newElementItem(ELEMENT_TYPES.find((t) => t.id === "slab_on_ground"));
+  item2.labourAuto = false;
+  item2.qtys[rateKey("CONCRETE", "25 mpa", "m3")] = 10;
+  item2.qtys[stockRow] = 100;
+  near(computeElementCost(item2, rates).categoryTotals[RATE_CAT], 1825, "100 kg/m³ over 10 m³ = 1 t at $1825/t");
+});
+
+check("a kg/m³ rate drives steel-fixing crew days just like a bar schedule", () => {
+  const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-6, `${a} !~= ${b}${msg ? " — " + msg : ""}`);
+  const rates = defaultRates();
+  const rateRow = rateKey("REINFORCEMENT BY RATE", "Reinforcement rate — processed bar (cut & bent)", "kg/m3");
+  const item = newElementItem(ELEMENT_TYPES.find((t) => t.id === "slab_on_ground"));
+  item.qtys[rateKey("CONCRETE", "25 mpa", "m3")] = 25;
+  item.qtys[rateRow] = 80; // 25 × 80 = 2000 kg = 2 t
+  near(computeElementReinforcementTonnes(item, rates), 2, "the rate's tonnage is counted");
+  assert.equal(labourQuantities(item, rates).reinfTonnes, 2, "and reaches the labour engine");
+  // 2 t at the 1 t/crew-day production rate = 2 crew-days on the steel row
+  const tie = item.tasks.find((t) => /tie (steel|reinforcement)/i.test(t.name));
+  assert.ok(tie, "the crew sheet has a steel-fixing row");
+  assert.equal(taskRowMeta(tie.name, labourQuantities(item, rates)).autoQty, 2, "its Qty prefills to 2 t");
+  const sug = suggestedLabourPrefill(item, rates)[tie.id];
+  assert.ok(sug && sug.steelfixer_day > 0, "and it books steel-fixing crew");
+
+  // a rate-priced element with NO concrete books no steel labour either
+  const bare = newElementItem(ELEMENT_TYPES.find((t) => t.id === "slab_on_ground"));
+  bare.qtys[rateRow] = 80;
+  assert.equal(computeElementReinforcementTonnes(bare, rates), 0, "no concrete, no tonnage");
+});
+
+check("the kg/m³ rows fall back to the catalog rate, and stay editable", () => {
+  const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-6, `${a} !~= ${b}${msg ? " — " + msg : ""}`);
+  const RATE_CAT = "REINFORCEMENT BY RATE";
+  const rateRow = rateKey(RATE_CAT, "Reinforcement rate — processed bar (cut & bent)", "kg/m3");
+  // CLAUDE.md rule 6: a saved rates blob predating this category must not
+  // render the row at $0 — it degrades to the catalog default.
+  const stale = defaultRates();
+  delete stale[rateRow];
+  const item = newElementItem(ELEMENT_TYPES.find((t) => t.id === "slab_on_ground"));
+  item.labourAuto = false;
+  item.qtys[rateKey("CONCRETE", "25 mpa", "m3")] = 20;
+  item.qtys[rateRow] = 90;
+  near(computeElementCost(item, stale).categoryTotals[RATE_CAT], 3465,
+    "falls back to the catalog's $1925/t rather than $0");
+  // an edited steel rate flows straight through
+  const edited = defaultRates();
+  edited[rateRow] = { ...edited[rateRow], unitCost: 2100 };
+  near(computeElementCost(item, edited).categoryTotals[RATE_CAT], 1.8 * 2100, "an edited $/tonne is used");
 });
 
 console.log(`\n${passed} check(s) passed.`);

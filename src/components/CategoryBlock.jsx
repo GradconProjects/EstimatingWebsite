@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronRight } from "lucide-react";
-import { rateKey, money2, lookupRate, computeRowTotal, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy } from "../lib/costing.js";
+import { rateKey, money2, lookupRate, computeRowTotal, rowContext, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy } from "../lib/costing.js";
 import { NumInput } from "./atoms.jsx";
 
 /**
@@ -13,6 +13,10 @@ export default function CategoryBlock({ cat, item, rates, onQtyChange, onRateCha
   const hasWeight = cat.products.some((p) => p.unitWeight != null);
   const hasArea = !!cat.areaBasis;
   const hasLength = !!cat.lengthBasis;
+  // Reinforcement priced in kg/m³ needs the element's poured volume, both to
+  // cost the row and to show the estimator the tonnage the rate works out to.
+  const hasVolumeRate = !!cat.volumeRateBasis;
+  const ctx = rowContext(item);
   // A last delivered load under 4 m³ auto-applies Minimum cartage (amber ghost on its
   // row, like the crew sheet) — typing a Qty there takes the row manual.
   const minCartage = cat.key === "CONCRETE" ? autoMinimumCartage(item, rates) : null;
@@ -44,6 +48,8 @@ export default function CategoryBlock({ cat, item, rates, onQtyChange, onRateCha
                 <th className="text-right px-2 py-1.5 font-medium w-24">Qty</th>
                 {hasArea && <th className="text-right px-2 py-1.5 font-medium w-20">Sheets</th>}
                 {hasLength && <th className="text-right px-2 py-1.5 font-medium w-20">Bars</th>}
+                {hasVolumeRate && <th className="text-right px-2 py-1.5 font-medium w-20">On m³</th>}
+                {hasVolumeRate && <th className="text-right px-2 py-1.5 font-medium w-20">Steel (t)</th>}
                 {hasWeight && <th className="text-right px-2 py-1.5 font-medium w-20">Wt (kg)</th>}
                 {hasWeight && <th className="text-right px-2 py-1.5 font-medium w-20">Total (t)</th>}
                 <th className="text-right px-2 py-1.5 font-medium w-24">Unit $</th>
@@ -64,7 +70,9 @@ export default function CategoryBlock({ cat, item, rates, onQtyChange, onRateCha
                 const isAutoSur = surcharge && surcharge.key === qKey;
                 const isAutoLevy = levy && levy.key === qKey;
                 const autoRow = isAutoCartage ? minCartage : isAutoSur ? surcharge : isAutoLevy ? levy : null;
-                const rowTotal = autoRow ? autoRow.total : computeRowTotal(cat, rate, qty);
+                const rowTotal = autoRow ? autoRow.total : computeRowTotal(cat, rate, qty, ctx);
+                // kg/m³ × the element's poured m³ — the tonnage this rate buys
+                const rateTonnes = hasVolumeRate ? (qty * ctx.concreteM3) / 1000 : null;
                 const filled = qty > 0 || !!autoRow;
                 return (
                   <tr key={qKey} className={`border-t border-neutral-100 ${filled ? "bg-orange-50/40" : ""}`}>
@@ -100,6 +108,19 @@ export default function CategoryBlock({ cat, item, rates, onQtyChange, onRateCha
                         {bars != null && qty > 0 ? bars : "—"}
                       </td>
                     )}
+                    {hasVolumeRate && (
+                      <td className="px-2 py-1 text-right font-mono text-neutral-400 tabular-nums">
+                        {ctx.concreteM3 > 0 ? ctx.concreteM3.toLocaleString("en-AU") : "—"}
+                      </td>
+                    )}
+                    {hasVolumeRate && (
+                      <td
+                        className="px-2 py-1 text-right font-mono text-neutral-400 tabular-nums"
+                        title={qty > 0 && !(ctx.concreteM3 > 0) ? "No concrete entered on this element yet — the rate costs nothing until there is a volume to apply it to." : undefined}
+                      >
+                        {rateTonnes != null && qty > 0 ? rateTonnes.toFixed(3) : "—"}
+                      </td>
+                    )}
                     {hasWeight && (
                       <td className="px-2 py-1 text-right font-mono text-neutral-400 tabular-nums">
                         {rate.unitWeight != null ? rate.unitWeight : "—"}
@@ -118,9 +139,13 @@ export default function CategoryBlock({ cat, item, rates, onQtyChange, onRateCha
                           price IS the quote received, so the estimator types
                           the quoted amount straight onto the row (qty 1 books
                           the whole quote). */}
-                      {onRateChange && ((cat.key === "CONCRETE" && (/minimum cartage|small load/i.test(p.name) || /transport surcharge/i.test(p.name) || /environment levy/i.test(p.name))) || p.unit === "quote") ? (
+                      {/* The kg/m³ reinforcement rows price at $/tonne — the
+                          steel rate moves with the market often enough that
+                          it's worth editing on the row rather than only in the
+                          Rates modal. Same key either way, so one figure. */}
+                      {onRateChange && ((cat.key === "CONCRETE" && (/minimum cartage|small load/i.test(p.name) || /transport surcharge/i.test(p.name) || /environment levy/i.test(p.name))) || p.unit === "quote" || cat.volumeRateBasis) ? (
                         <NumInput
-                          step={p.unit === "quote" ? "50" : "0.25"}
+                          step={p.unit === "quote" ? "50" : cat.volumeRateBasis ? "25" : "0.25"}
                           value={rate.unitCost}
                           placeholder={p.unit === "quote" ? "quote $" : undefined}
                           onChange={(v) => onRateChange(qKey, v, p.unitCost ?? 0)}

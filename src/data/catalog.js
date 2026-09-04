@@ -141,6 +141,15 @@ export const LABOUR_TEMPLATES = {
  *              the tool works out how many whole bars that requires, the
  *              same idea as areaBasis/SQUARE MESH but by length instead of
  *              area.
+ * volumeRateBasis: true means Qty is entered as a REINFORCEMENT RATE in
+ *              kg of steel per m³ of concrete, and Total Cost =
+ *              (Qty * the element's poured m³ / 1000) * Unit Cost (Unit Cost
+ *              is $/tonne, as for weightBasis). This is the one basis whose
+ *              cost depends on ANOTHER category's quantities — the concrete
+ *              rows — so computeRowTotal takes a 4th `ctx` argument
+ *              ({concreteM3}) that every caller builds with rowContext(item).
+ *              Only REINFORCEMENT BY RATE works this way. An element with no
+ *              concrete entered costs nothing here, however high the rate.
  * See CLAUDE.md → "Costing rules" before changing any of these flags on any
  * category, and lib/costing.js → computeRowTotal, the ONE place that
  * implements this — never recompute a row total inline elsewhere.
@@ -178,6 +187,24 @@ export const FULL_CATALOG = [
   { key: "PROCESSED BAR", label: "PROCESSED BAR (unit cost $/tonne, applied to Total Weight)", weightBasis: true, products: [
     ["N10", "m", 0.632, 1925], ["N12", "m", 0.91, 1925], ["N16", "m", 1.6, 1925], ["N20", "m", 2.532, 1925], ["N24", "m", 3.639, 1925],
     ["N28", "m", 4.951, 1925], ["N32", "m", 6.468, 1925], ["N36", "m", 8.19, 1925], ["N40", "m", 10.107, 1925],
+  ]},
+  /* Reinforcement priced off a RATE rather than a schedule — the way a job is
+   * costed before anyone has bar-listed it ("call it 90 kg/m³"). Qty is the
+   * rate in kg per m³ of concrete; the tonnage follows from the concrete rows
+   * entered on this same element, so raising the pour raises the steel with
+   * it. Unit cost is $/tonne, the same real steel rates the schedule
+   * categories above are built from ($1925/t processed, $1825/t stock), and
+   * editable in the Rates modal like any other product.
+   *
+   * These rows are an ALTERNATIVE to bar-listing, not an addition to it — an
+   * element with both a schedule and a rate entered is buying its steel
+   * twice. Left as the estimator's call (blank costs nothing, exactly like
+   * every other row) rather than being enforced, but that's why the rate
+   * lines say so on their face. */
+  { key: "REINFORCEMENT BY RATE", label: "REINFORCEMENT BY RATE (kg per m³ of concrete — use INSTEAD OF a bar schedule)", weightBasis: false, volumeRateBasis: true, products: [
+    ["Reinforcement rate — processed bar (cut & bent)", "kg/m3", null, 1925],
+    ["Reinforcement rate — stock bar (straight lengths)", "kg/m3", null, 1825],
+    ["Reinforcement rate — mesh & bar combined", "kg/m3", null, 1925],
   ]},
   { key: "REINFORCING ACCESSORIES", weightBasis: false, products: [
     ["Delivery fee", "each", null, 300], ["Poly", "roll", null, 89.4],
