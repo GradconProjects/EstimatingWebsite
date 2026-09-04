@@ -458,9 +458,12 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
       )}
     </div>
 
+    {/* Folded, the panel stretches to the row's exact height so the two line
+        up; expanded, it must NOT grow with the opened card — it stays at its
+        own natural height beside the row's header. */}
     {unitRates.length > 0 && (
       <div
-        className="hidden md:flex w-56 flex-none rounded-xl border border-neutral-200 bg-white shadow-sm flex-col justify-center gap-1 px-3 py-2"
+        className={`hidden md:flex w-56 flex-none rounded-xl border border-neutral-200 bg-white shadow-sm flex-col justify-center gap-1 px-3 py-2 ${cardOpen ? "self-start" : "self-stretch"}`}
         title="Benchmark unit rates: this element's WHOLE cost (concrete + reinforcement + formwork + labour/plant + custom items) divided by each measure beside it. Lengths and areas come from the Project Geometry table below (auto-filled from the Estimates takeoff, editable there); the m³ is this element's own poured concrete volume."
       >
         {unitRates.map((u) => (

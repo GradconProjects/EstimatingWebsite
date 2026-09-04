@@ -68,7 +68,6 @@ export default function ProjectGeometryPanel({ items, estimateGeometry, onChange
           {open ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
         </button>
         <div className="flex-1 min-w-0">
-          <div className="text-[10px] uppercase tracking-widest text-blue-300 font-semibold">Benchmark rates</div>
           <div className="font-semibold text-[15px]">Project Geometry — lengths &amp; areas</div>
         </div>
         <div className="text-right flex-none">
