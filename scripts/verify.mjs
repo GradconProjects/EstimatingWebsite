@@ -53,10 +53,10 @@ check("every element type has both a category and a section", () => {
   });
 });
 
-check("14 material categories, 149 products (incl. CONCRETE PUMPING, REINFORCEMENT BY RATE, INSULATION, Bored Piers subcontract, minimum cartage, levy, surcharge)", () => {
+check("14 material categories, 171 products (incl. CONCRETE PUMPING, REINFORCEMENT BY RATE, the 32-board INSULATION range, Bored Piers subcontract, minimum cartage, levy, surcharge)", () => {
   assert.equal(FULL_CATALOG.length, 14);
   const total = FULL_CATALOG.reduce((s, c) => s + c.products.length, 0);
-  assert.equal(total, 149);
+  assert.equal(total, 171);
   const conc = FULL_CATALOG.find((c) => c.key === "CONCRETE");
   assert.ok(conc.products.some((p) => p.name === "Production & transport surcharge" && p.unit === "m3" && p.unitCost === 9.17), "concrete surcharge product seeded at $9.17/m³");
   // Vapour barrier is its own OTHER ACCESSORIES product, distinct from Insulation
@@ -1160,6 +1160,68 @@ check("the kg/m³ rows fall back to the catalog rate, and stay editable", () => 
   const edited = defaultRates();
   edited[rateRow] = { ...edited[rateRow], unitCost: 2100 };
   near(computeElementCost(item, edited).categoryTotals[RATE_CAT], 1.8 * 2100, "an edited $/tonne is used");
+});
+
+/* ---------- insulation: every board is its own priced thickness ---------- */
+check("INSULATION: rigid foam under-slab by compressive grade, and every family carries thicknesses", () => {
+  const cat = FULL_CATALOG.find((c) => c.key === "INSULATION");
+  const names = cat.products.map((p) => p.name);
+  // the grade the request named, in its full thickness range
+  [25, 50, 75, 100].forEach((t) =>
+    assert.ok(names.includes(`Rigid foam under-slab 50 kPa — ${t}mm`), `50 kPa ${t}mm present`));
+  // and the heavier grades, for loaded slabs
+  [100, 200, 300].forEach((g) =>
+    [50, 75, 100].forEach((t) =>
+      assert.ok(names.includes(`Rigid foam under-slab ${g} kPa — ${t}mm`), `${g} kPa ${t}mm present`)));
+
+  // each family offers more than one thickness, so thickness is a real choice
+  const families = [
+    [/^Rigid foam under-slab 50 kPa/, 4], [/^Rigid foam under-slab 100 kPa/, 3],
+    [/^Rigid foam under-slab 200 kPa/, 3], [/^Rigid foam under-slab 300 kPa/, 3],
+    [/^Kooltherm K3 Floorboard/, 4], [/^XPS rigid board/, 4],
+    [/^EPS board M-grade/, 3], [/^Foilboard rigid panel/, 3],
+    [/^Slab edge insulation/, 2], [/^Thermal break strip/, 2],
+  ];
+  families.forEach(([re, n]) =>
+    assert.equal(names.filter((x) => re.test(x)).length, n, `${re} offers ${n} thicknesses`));
+
+  // a thicker board of the same material always costs more — that's the whole
+  // point of pricing per thickness rather than typing one onto a single SKU
+  const priceOf = (n) => cat.products.find((p) => p.name === n).unitCost;
+  [["Rigid foam under-slab 50 kPa — 25mm", "Rigid foam under-slab 50 kPa — 100mm"],
+   ["XPS rigid board 30mm (R0.88)", "XPS rigid board 100mm (R2.94)"],
+   ["EPS board M-grade 50mm (R1.19)", "EPS board M-grade 100mm (R2.38)"],
+   ["Kooltherm K3 Floorboard 50mm (R2.25)", "Kooltherm K3 Floorboard 100mm (R4.50)"],
+  ].forEach(([thin, thick]) => assert.ok(priceOf(thick) > priceOf(thin), `${thick} costs more than ${thin}`));
+
+  // and a stronger board costs more than a weaker one at the same thickness
+  assert.ok(priceOf("Rigid foam under-slab 300 kPa — 50mm") > priceOf("Rigid foam under-slab 50 kPa — 50mm"),
+    "300 kPa costs more than 50 kPa at the same thickness");
+
+  // strip products stay per-metre, boards stay per-m²
+  cat.products.forEach((p) => {
+    const perM = /^Slab edge insulation|^Thermal break strip/.test(p.name);
+    assert.equal(p.unit, perM ? "m" : "m2", `${p.name} unit`);
+    assert.ok(p.unitCost > 0, `${p.name} is priced`);
+  });
+});
+
+check("insulation boards are ordinary qty × unit-cost rows (no weight/area/rate basis)", () => {
+  const rates = defaultRates();
+  const cat = FULL_CATALOG.find((c) => c.key === "INSULATION");
+  assert.ok(!cat.weightBasis && !cat.areaBasis && !cat.lengthBasis && !cat.volumeRateBasis,
+    "INSULATION carries no special basis flag");
+  const item = newElementItem(ELEMENT_TYPES.find((t) => t.id === "slab_on_ground"));
+  item.labourAuto = false;
+  const key = rateKey("INSULATION", "Rigid foam under-slab 50 kPa — 100mm", "m2");
+  item.qtys[key] = 250;
+  const cost = computeElementCost(item, rates);
+  assert.equal(cost.categoryTotals["INSULATION"], 250 * 27, "250 m² at $27/m² = $6,750");
+  // a missing saved key still falls back to the catalog rate (CLAUDE.md rule 6)
+  const stale = defaultRates();
+  delete stale[key];
+  assert.equal(computeElementCost(item, stale).categoryTotals["INSULATION"], 250 * 27,
+    "falls back to the catalog default rather than $0");
 });
 
 console.log(`\n${passed} check(s) passed.`);

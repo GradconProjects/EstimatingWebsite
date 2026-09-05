@@ -1561,36 +1561,77 @@ function formworkSystemSelect(d){
 // Exactly the Quotes INSULATION catalog products (names match verbatim so
 // the publish bridge maps straight onto the priced product). Strip products
 // are per METRE — the quantity field swaps to a length for those.
-const INSULATION_TYPES=[
-  ["kool50","Kooltherm K3 Floorboard 50mm (R2.25)","m²"],
-  ["kool60","Kooltherm K3 Floorboard 60mm (R2.70)","m²"],
-  ["xps30","XPS rigid board 30mm (R0.88)","m²"],
-  ["xps50","XPS rigid board 50mm (R1.47)","m²"],
-  ["eps50","EPS board M-grade 50mm (R1.19)","m²"],
-  ["eps75","EPS board M-grade 75mm (R1.79)","m²"],
-  ["foilboard","Foilboard rigid panel 25mm","m²"],
-  ["edge300","Slab edge insulation — 30mm XPS 300mm strip","m"],
-  ["thermalbreak","Thermal break strip 10mm","m"],
-  ["insother","Insulation (other — specify in description)","m²"],
+/* Insulation is chosen as a MATERIAL plus a THICKNESS, because that pair is
+ * what sets the price — an under-slab board is specified on its compressive
+ * strength (50 kPa for a domestic slab on good ground, up to 300 kPa under a
+ * heavily loaded industrial slab) and then on how thick it is.
+ *
+ * Each family lists the thicknesses it is made in, and `name` builds the
+ * product name for a given thickness. Those names are the Quotes catalog's
+ * INSULATION product names VERBATIM, which is what lets an import land the
+ * area straight on the right priced board — if you change one, change the
+ * other (there is a check for this in the batch-69 browser suite).
+ */
+const INSULATION_FAMILIES=[
+  ["rigid50","Rigid foam under-slab — 50 kPa","m²",[25,50,75,100],(t)=>`Rigid foam under-slab 50 kPa — ${t}mm`],
+  ["rigid100","Rigid foam under-slab — 100 kPa","m²",[50,75,100],(t)=>`Rigid foam under-slab 100 kPa — ${t}mm`],
+  ["rigid200","Rigid foam under-slab — 200 kPa","m²",[50,75,100],(t)=>`Rigid foam under-slab 200 kPa — ${t}mm`],
+  ["rigid300","Rigid foam under-slab — 300 kPa","m²",[50,75,100],(t)=>`Rigid foam under-slab 300 kPa — ${t}mm`],
+  ["kool","Kooltherm K3 Floorboard","m²",[50,60,80,100],(t)=>`Kooltherm K3 Floorboard ${t}mm (${({50:"R2.25",60:"R2.70",80:"R3.60",100:"R4.50"})[t]})`],
+  ["xps","XPS rigid board","m²",[30,50,75,100],(t)=>`XPS rigid board ${t}mm (${({30:"R0.88",50:"R1.47",75:"R2.20",100:"R2.94"})[t]})`],
+  ["eps","EPS board M-grade","m²",[50,75,100],(t)=>`EPS board M-grade ${t}mm (${({50:"R1.19",75:"R1.79",100:"R2.38"})[t]})`],
+  ["foilboard","Foilboard rigid panel","m²",[25,30,50],(t)=>`Foilboard rigid panel ${t}mm`],
+  ["edge","Slab edge insulation (XPS strip, per m)","m",[30,50],(t)=>`Slab edge insulation — ${t}mm XPS 300mm strip`],
+  ["thermalbreak","Thermal break strip (per m)","m",[10,20],(t)=>`Thermal break strip ${t}mm`],
+  ["insother","Insulation (other — specify in description)","m²",[0],()=>`Insulation (other — specify in description)`],
 ];
-// keys from the first release of this section resolve to the closest catalog product
-const INSULATION_LEGACY={ xps75:"xps50", eps100:"eps75", pir:"foilboard", edge:"edge300" };
-function insulationType(v){
+const insFamily=(k)=>INSULATION_FAMILIES.find(f=>f[0]===k)||INSULATION_FAMILIES[0];
+/** Every priced insulation product, family × thickness — the flat list the
+ * legacy single-select and the import checks both read. */
+const INSULATION_TYPES=INSULATION_FAMILIES.flatMap(([k,,unit,ths,name])=>
+  ths.map(t=>[`${k}:${t}`,name(t),unit]));
+/* Keys from earlier releases, when a product WAS the choice, resolve to the
+ * family:thickness pair that names the same board — so a saved takeoff keeps
+ * the insulation it had. */
+const INSULATION_LEGACY={
+  kool50:"kool:50", kool60:"kool:60", xps30:"xps:30", xps50:"xps:50",
+  eps50:"eps:50", eps75:"eps:75", foilboard:"foilboard:25",
+  edge300:"edge:30", thermalbreak:"thermalbreak:10", insother:"insother:0",
+  xps75:"xps:75", eps100:"eps:100", pir:"foilboard:25", edge:"edge:30",
+};
+/** The family key and thickness a card is on, from either the new fields or a
+ * legacy `insType`. Falls back to the family's first thickness if the saved
+ * one is not one this family is made in. */
+function insSelection(d){
+  let raw=d.insType||"", mapped=INSULATION_LEGACY[raw]||raw;
+  let [fk,ft]=String(mapped).split(":");
+  let fam=insFamily(d.insFamily||fk||"rigid50");
+  let want=Number(d.insThickness!==undefined&&d.insThickness!==""?d.insThickness:ft);
+  let th=fam[3].includes(want)? want : fam[3][0];
+  return {family:fam, thickness:th};
+}
+function insulationType(v,d){
+  // d given: read the card's family+thickness. Otherwise resolve a flat key.
+  if(d){ let s=insSelection(d); return {name:s.family[4](s.thickness), unit:s.family[2], thickness:s.thickness}; }
   let key = INSULATION_LEGACY[v] || v;
   let m=INSULATION_TYPES.find(s=>s[0]===key);
   return m? {name:m[1], unit:m[2]} : {name:"Insulation", unit:"m²"};
 }
 function insulationTypeName(v){ return insulationType(v).name; }
 function insulationSubsection(d){
-  let t=insulationType(d.insType||"xps50");
+  let sel=insSelection(d), fam=sel.family, t=insulationType(null,d);
   let qtyLabel = t.unit==="m" ? "Length (m, blank = element perimeter)" : "Area (m², blank = element area)";
+  let single = fam[3].length===1 && fam[3][0]===0; // "other" carries no thickness
   return `<div class="subsec"><div class="sechead">Insulation</div>
   ${chk("insulationOn",d.insulationOn,"Under-slab / edge insulation","insulationOn")}
-  <div class="subsec ${d.insulationOn?'':'hidden'}" data-show-if="insulationOn"><div class="grid cols3">
-   ${F("Insulation type (Quotes catalog products)",selOpts("insType",d.insType||"xps50",INSULATION_TYPES.map(x=>[x[0],x[1]]),true))}
+  <div class="subsec ${d.insulationOn?'':'hidden'}" data-show-if="insulationOn"><div class="grid cols4">
+   ${F("Insulation type",selOpts("insFamily",fam[0],INSULATION_FAMILIES.map(x=>[x[0],x[1]]),true))}
+   ${single? "" : F("Thickness (mm)",selOpts("insThickness",String(sel.thickness),fam[3].map(x=>[String(x),`${x}mm`]),true))}
    ${F(qtyLabel,inpNum("insArea",d.insArea))}
    ${F("Waste %",inpNum("insWaste",d.insWaste===undefined?5:d.insWaste))}
-  </div></div></div>`;
+  </div>
+  <p class="small">Priced as <b>${t.name}</b> — the Quotes catalog product this lands on when the takeoff is published. Every thickness is its own board with its own rate, so changing the thickness reprices the line rather than just relabelling it.</p>
+  </div></div>`;
 }
 /* ---- Step-down setup shared by beams, slabs, walls and stepped strip
    footings: a PRESET step profile (1/2/3 risers, drawn live so the chosen
@@ -4876,13 +4917,17 @@ function computeInstance(inst){
   // falling back to the element's own computed plan area (slabs set
   // _autoInsArea during compute).
   if(d.insulationOn){
-    let t = insulationType(d.insType||"xps50");
+    let t = insulationType(null,d); // family + thickness off the card
     // sheet products cover the element's plan area; strip products run its perimeter
     let auto = t.unit==="m" ? num(d._autoInsPerim) : num(d._autoInsArea);
     let qty = num(d.insArea)>0? num(d.insArea) : auto;
     let waste = d.insWaste===undefined||d.insWaste===""? 5 : num(d.insWaste);
     if(qty>0){
-      out.lines.push(baseLine(inst,def,{materialGroup:"Insulation",material:t.name,spec:t.unit==="m"?"Edge / strip insulation":"Under-slab / under-element insulation",qty,unit:t.unit,waste,finalQty:withWaste(qty,waste),formula:num(d.insArea)>0?"entered":"from element"}));
+      // the thickness rides on the spec as well as in the product name, so it
+      // is readable on the register without decoding the board's title
+      let base = t.unit==="m"? "Edge / strip insulation" : "Under-slab / under-element insulation";
+      let spec = t.thickness>0? `${base} — ${t.thickness}mm` : base;
+      out.lines.push(baseLine(inst,def,{materialGroup:"Insulation",material:t.name,spec,qty,unit:t.unit,waste,finalQty:withWaste(qty,waste),formula:num(d.insArea)>0?"entered":"from element"}));
     }
   }
   return out;

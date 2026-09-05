@@ -272,16 +272,50 @@ export const FULL_CATALOG = [
   // like everything else. The old generic "Insulation" row stays in OTHER
   // ACCESSORIES below because its rateKey may already carry quantities in
   // saved quotes — removing/renaming it would silently drop those from totals.
+  /* Insulation is bought by BOARD, and a board's price is set by its material,
+   * its compressive strength grade and its thickness together — so every
+   * thickness is its own priced product rather than one product with a typed
+   * thickness, which could only ever be priced wrong. The Estimates app picks
+   * a material and a thickness and emits these names VERBATIM (see
+   * INSULATION_FAMILIES there), so an import lands the area straight on the
+   * right board; if you rename a product here, rename it there too.
+   *
+   * The rigid-foam grades are quoted by compressive strength because that is
+   * what an under-slab board is specified on — 50 kPa for a domestic slab on
+   * good ground, up to 300 kPa under heavily loaded industrial slabs. */
   { key: "INSULATION", weightBasis: false, products: [
+    // Rigid foam under-slab, by compressive strength grade then thickness
+    ["Rigid foam under-slab 50 kPa — 25mm", "m2", null, 9],
+    ["Rigid foam under-slab 50 kPa — 50mm", "m2", null, 15],
+    ["Rigid foam under-slab 50 kPa — 75mm", "m2", null, 21],
+    ["Rigid foam under-slab 50 kPa — 100mm", "m2", null, 27],
+    ["Rigid foam under-slab 100 kPa — 50mm", "m2", null, 19],
+    ["Rigid foam under-slab 100 kPa — 75mm", "m2", null, 27],
+    ["Rigid foam under-slab 100 kPa — 100mm", "m2", null, 34],
+    ["Rigid foam under-slab 200 kPa — 50mm", "m2", null, 28],
+    ["Rigid foam under-slab 200 kPa — 75mm", "m2", null, 40],
+    ["Rigid foam under-slab 200 kPa — 100mm", "m2", null, 51],
+    ["Rigid foam under-slab 300 kPa — 50mm", "m2", null, 36],
+    ["Rigid foam under-slab 300 kPa — 75mm", "m2", null, 52],
+    ["Rigid foam under-slab 300 kPa — 100mm", "m2", null, 67],
     ["Kooltherm K3 Floorboard 50mm (R2.25)", "m2", null, 42],
     ["Kooltherm K3 Floorboard 60mm (R2.70)", "m2", null, 50],
+    ["Kooltherm K3 Floorboard 80mm (R3.60)", "m2", null, 66],
+    ["Kooltherm K3 Floorboard 100mm (R4.50)", "m2", null, 82],
     ["XPS rigid board 30mm (R0.88)", "m2", null, 18],
     ["XPS rigid board 50mm (R1.47)", "m2", null, 26],
+    ["XPS rigid board 75mm (R2.20)", "m2", null, 36],
+    ["XPS rigid board 100mm (R2.94)", "m2", null, 46],
     ["EPS board M-grade 50mm (R1.19)", "m2", null, 12],
     ["EPS board M-grade 75mm (R1.79)", "m2", null, 16],
+    ["EPS board M-grade 100mm (R2.38)", "m2", null, 20],
     ["Foilboard rigid panel 25mm", "m2", null, 15],
+    ["Foilboard rigid panel 30mm", "m2", null, 17],
+    ["Foilboard rigid panel 50mm", "m2", null, 26],
     ["Slab edge insulation — 30mm XPS 300mm strip", "m", null, 9],
+    ["Slab edge insulation — 50mm XPS 300mm strip", "m", null, 13],
     ["Thermal break strip 10mm", "m", null, 6],
+    ["Thermal break strip 20mm", "m", null, 9],
     ["Insulation (other — specify in description)", "m2", null, 25],
   ]},
   { key: "OTHER ACCESSORIES", weightBasis: false, products: [
