@@ -1794,9 +1794,198 @@ function blindingAndVapourLines(inst,def,d,footArea,excArea,defaultExtent){
   return out;
 }
 
+/* ---- PILE TYPES AND SECTION SHAPES ----
+ * A pile element covers both families the trade actually meets: CAST IN SITU
+ * (bored/CFA — concrete poured against ground, with a cage, generating spoil)
+ * and SUPPLIED-AND-DRIVEN (precast concrete, steel, timber, screw), which
+ * buys a pile by the metre and installs it, producing no bored spoil and no
+ * cast concrete at all. `pileType` picks the family; `pileShape` picks the
+ * cross-section, and the two are independent — a precast pile is commonly
+ * square or octagonal, a bored pile circular, a barrette rectangular.
+ *
+ * Only the "Piles" element type shows these (see renderPier): a Bored Pier is
+ * cast-in-situ circular by definition, so it keeps the plain form it has
+ * always had. Saved takeoffs carry no pileType, which reads as "bored" — so
+ * every existing pile and pier card computes exactly as it did before.
+ */
+const PILE_TYPES = [
+  ["bored",   "Bored / CFA — cast in situ"],
+  ["precast", "Precast concrete — driven"],
+  ["steel",   "Steel section — driven"],
+  ["screw",   "Screw / helical"],
+  ["timber",  "Timber — driven"],
+  ["micro",   "Micropile / grouted bar"],
+];
+/** Cast in situ (concrete poured on site) vs supplied by the metre and driven. */
+function isCastInSitu(d){ let t=d.pileType||"bored"; return t==="bored"||t==="micro"; }
+const PILE_SHAPES = [
+  ["circular",   "Circular / round"],
+  ["square",     "Square"],
+  ["rect",       "Rectangular / barrette"],
+  ["octagonal",  "Octagonal"],
+  ["hexagonal",  "Hexagonal"],
+  ["chs",        "Hollow circular (spun pile / CHS / tube)"],
+  ["shs",        "Hollow square or rectangular (SHS / RHS)"],
+  ["hsection",   "H-pile / UB / UC"],
+  ["cruciform",  "Cruciform / X-section"],
+  ["sheet",      "Sheet pile (Z / U section)"],
+];
+/* Which sections each family is actually made in. A bored pile is formed by
+ * the auger or the grab, so it's solid — round, or rectangular where it's a
+ * barrette. A precast concrete pile is cast in a mould, so it comes square,
+ * octagonal, hexagonal, round, or hollow round where it's spun. Steel comes
+ * as tube, box, H, cruciform or sheet. Every shape stays fully editable
+ * within its family — this only keeps a card from offering a combination
+ * nobody manufactures, like a bored H-pile. */
+const PILE_SHAPES_BY_TYPE = {
+  bored:   ["circular","square","rect","octagonal","hexagonal"],
+  precast: ["square","octagonal","hexagonal","circular","chs","rect"],
+  steel:   ["chs","shs","hsection","cruciform","sheet"],
+  screw:   ["chs","shs","hsection"],
+  timber:  ["circular","square"],
+  micro:   ["circular","chs"],
+};
+const pileShapesFor = (type) => PILE_SHAPES.filter((s) => (PILE_SHAPES_BY_TYPE[type||"bored"]||PILE_SHAPES.map((x)=>x[0])).includes(s[0]));
+/** The card's EFFECTIVE section: what's saved, unless the pile type doesn't
+ * come in that section (the estimator switched type), in which case it falls
+ * to that family's first shape. Render and compute both read the shape
+ * through here, so what's drawn and what's costed can never disagree. */
+function pileShapeOf(d){
+  let type=d.pileType||"bored", allowed=PILE_SHAPES_BY_TYPE[type]||PILE_SHAPES.map((x)=>x[0]);
+  let saved=d.pileShape||"circular";
+  return allowed.includes(saved)? saved : allowed[0];
+}
+/** Gross cross-sectional area in m² — the OUTSIDE of the section, i.e. the
+ * concrete a solid pile displaces, or the ground a hollow one occupies.
+ * `dia` doubles as the outside diameter for circular and CHS so a saved
+ * circular pile keeps costing off the field it always used. Regular
+ * polygons are measured ACROSS THE FLATS, the way a precast pile is
+ * specified. An H-pile has no meaningful gross area, so it returns 0 and is
+ * taken off by mass instead (see pileSteelKgPerM). */
+function pileGrossAreaM2(d){
+  let shape=pileShapeOf(d);
+  let D=num(d.dia)/1000, W=num(d.pileW)/1000, B=num(d.pileB)/1000;
+  switch(shape){
+    case "square":    return W*W;
+    case "rect":      return W*B;
+    case "octagonal": return 2*(Math.SQRT2-1)*W*W;      // regular octagon, across flats
+    case "hexagonal": return (Math.sqrt(3)/2)*W*W;      // regular hexagon, across flats
+    case "shs":       return W*B;
+    case "cruciform": { let t=num(d.pileWall)/1000; return Math.max(0,2*W*t-t*t); }
+    case "hsection":
+    case "sheet":     return 0;                          // by mass, not by area
+    case "chs":
+    case "circular":
+    default:          return (Math.PI/4)*D*D;
+  }
+}
+/** The VOID inside a hollow section — what a concrete infill fills. Solid
+ * shapes have none. */
+function pileVoidAreaM2(d){
+  let shape=pileShapeOf(d), t=num(d.pileWall)/1000;
+  if(!(t>0)) return 0;
+  if(shape==="chs"){ let di=num(d.dia)/1000-2*t; return di>0? (Math.PI/4)*di*di : 0; }
+  if(shape==="shs"){ let wi=num(d.pileW)/1000-2*t, bi=num(d.pileB)/1000-2*t; return (wi>0&&bi>0)? wi*bi : 0; }
+  return 0;
+}
+/** Steel mass per metre: the entered nominal mass wins (that's how an H-pile
+ * or a catalogue CHS is specified), otherwise it's derived from the wall
+ * thickness at 7850 kg/m³. */
+function pileSteelKgPerM(d){
+  let entered=num(d.pileMassKgM);
+  if(entered>0) return entered;
+  let solid=pileGrossAreaM2(d), voidA=pileVoidAreaM2(d);
+  let steelArea=Math.max(0,solid-voidA);
+  return steelArea>0? steelArea*7850 : 0;
+}
+/** How the section reads on a takeoff line — the estimator's own text if they
+ * typed one, else a description built from the shape's own dimensions. */
+function pileSectionLabel(d){
+  if((d.pileSection||"").trim()) return d.pileSection.trim();
+  let shape=pileShapeOf(d), W=num(d.pileW), B=num(d.pileB), D=num(d.dia), t=num(d.pileWall);
+  switch(shape){
+    case "square":    return `${W}×${W} square`;
+    case "rect":      return `${W}×${B} rectangular`;
+    case "octagonal": return `${W} octagonal`;
+    case "hexagonal": return `${W} hexagonal`;
+    case "chs":       return `${D}×${t} CHS`;
+    case "shs":       return `${W}×${B}×${t} SHS/RHS`;
+    case "cruciform": return `${W}×${t} cruciform`;
+    case "sheet":     return `Sheet pile ${num(d.pileMassKgM)}kg/m`;
+    case "hsection":  return `H-pile ${num(d.pileMassKgM)}kg/m`;
+    default:          return `${D}mm dia`;
+  }
+}
+const pileTypeLabel = (d) => (PILE_TYPES.find((p)=>p[0]===(d.pileType||"bored"))||PILE_TYPES[0])[1];
+/** One ligature's run in mm, around the section less cover and the tie's own
+ * bar. For a circular pile this is π×(D−2·cover−2·ligDia), exactly the length
+ * the cage maths always used — the other shapes are their own perimeters, so
+ * a square or barrette pile doesn't get billed a circular tie. */
+function pileTiePerimeterMM(d,cover,ligDia){
+  let shape=pileShapeOf(d), inset=2*cover+2*ligDia;
+  let D=Math.max(0,num(d.dia)-inset), W=Math.max(0,num(d.pileW)-inset), B=Math.max(0,num(d.pileB)-inset);
+  switch(shape){
+    case "square":                return 4*W;
+    case "rect": case "shs":      return 2*(W+B);
+    case "octagonal":             return 8*(Math.SQRT2-1)*W;   // 8 sides, side = A(√2−1)
+    case "hexagonal":             return (6/Math.sqrt(3))*W;   // 6 sides, side = A/√3
+    default:                      return Math.PI*D;
+  }
+}
+/** What the tie is called on the line — a square pile's ties aren't circular. */
+function pileTieLabel(d){
+  let shape=pileShapeOf(d);
+  if(shape==="circular"||shape==="chs") return "Circular ligatures";
+  if(shape==="rect"||shape==="shs") return "Rectangular ligatures";
+  return "Ligatures";
+}
+
+/** The pile type + cross-section block at the top of a Piles card's Geometry
+ * tab. Both selects re-render the card, because which dimension fields are
+ * even meaningful changes with the shape (a CHS needs a wall thickness, an
+ * H-pile needs a mass per metre, a square needs one width, a barrette two). */
+function pileTypeSection(inst){
+  let d=inst.data, type=d.pileType||"bored", shape=pileShapeOf(d);
+  let dims="";
+  if(shape==="square"||shape==="octagonal"||shape==="hexagonal") dims=F("Width across flats (mm)",inpNum("pileW",d.pileW));
+  else if(shape==="rect") dims=F("Width (mm)",inpNum("pileW",d.pileW))+F("Length (mm)",inpNum("pileB",d.pileB));
+  else if(shape==="shs") dims=F("Width (mm)",inpNum("pileW",d.pileW))+F("Depth (mm)",inpNum("pileB",d.pileB))+F("Wall thickness (mm)",inpNum("pileWall",d.pileWall));
+  else if(shape==="chs") dims=F("Wall thickness (mm)",inpNum("pileWall",d.pileWall));
+  else if(shape==="cruciform") dims=F("Leg width (mm)",inpNum("pileW",d.pileW))+F("Plate thickness (mm)",inpNum("pileWall",d.pileWall));
+  else if(shape==="hsection"||shape==="sheet") dims=F("Nominal mass (kg/m)",inpNum("pileMassKgM",d.pileMassKgM));
+  let steelish = shape==="chs"||shape==="shs"||shape==="hsection"||shape==="cruciform"||shape==="sheet"||type==="steel"||type==="screw";
+  return `<div class="sechead">Pile type &amp; section</div>
+  <div class="grid cols4">
+   ${F("Pile type",selOpts("pileType",type,PILE_TYPES,true))}
+   ${F("Cross-section",selOpts("pileShape",shape,pileShapesFor(type),true))}
+   ${dims}
+   ${F("Section description (optional)",inpText("pileSection",d.pileSection))}
+   ${steelish&&shape!=="hsection"&&shape!=="sheet"? F("Nominal mass (kg/m, 0 = from section)",inpNum("pileMassKgM",d.pileMassKgM)) : ""}
+  </div>
+  ${isCastInSitu(d)? `<p class="small">Cast in situ — concrete is poured against the ground, so the takeoff carries the concrete, the cage and the spoil. Section: <b>${pileSectionLabel(d)}</b>.</p>`
+  : `<p class="small">Supplied and driven — the pile is bought by the metre and installed, so there is no bored spoil and no cast concrete. Section: <b>${pileSectionLabel(d)}</b>${pileSteelKgPerM(d)>0?` · ${fmt(pileSteelKgPerM(d),1)} kg/m`:""}.</p>
+  <div class="grid cols4">
+   ${F("Supplied length each (mm, 0 = depth + cut-off)",inpNum("pileLenEach",d.pileLenEach))}
+   ${F("Cut-off allowance each (mm)",inpNum("pileCutoffAllow",d.pileCutoffAllow))}
+   ${F("Splices per pile (no.)",inpNum("pileSplicesPer",d.pileSplicesPer))}
+   ${type==="screw"? F("Helix plates per pile (no.)",inpNum("pileHelix",d.pileHelix)) : ""}
+  </div>
+  <div class="grid cols3">
+   ${chk("pileShoes",d.pileShoes,"Driving shoes / points")}
+   ${chk("pileSplices",d.pileSplices,"Splices required","pileSplices")}
+   ${chk("pileTrim",d.pileTrim===undefined?true:d.pileTrim,"Cut off and trim to level")}
+  </div>
+  ${pileVoidAreaM2(d)>0? `<div class="subsec">${chk("pileFill",d.pileFill,"Concrete infill to hollow section","pileFill")}
+   <div class="subsec ${d.pileFill?'':'hidden'}" data-show-if="pileFill"><div class="grid cols3">${F("Infill grade (N, 0 = project)",inpNum("pileFillGrade",d.pileFillGrade))}</div></div></div>` : ""}`}
+  ${type==="micro"? `<div class="grid cols3">${F("Grout hole diameter (mm)",inpNum("groutDia",d.groutDia))}${F("Central bar",barSizeSel("microBarDia",d.microBarDia||"N32"))}</div>` : ""}`;
+}
+
 /* ---- PIER ---- */
 function pierDefaults(){ return {
   qty:1, dia:600, depth:6000, cutoff:0, founding:0, underream:false, underDia:900, underDepth:600, socketDepth:0, extraPct:0,
+  pileType:"bored", pileShape:"circular", pileW:300, pileB:300, pileWall:9.5, pileSection:"", pileMassKgM:0,
+  pileLenEach:0, pileCutoffAllow:150, pileShoes:false, pileSplices:false, pileSplicesPer:1, pileTrim:true,
+  pileFill:false, pileFillGrade:0, pileHelix:1, groutDia:0, microBarDia:"N32",
   cover:PROJECT.cover, grade:PROJECT.grade,
   cage:true, vBars:8, vDia:"N20", cageLenAuto:true, cageLen:0, topProj:600, botAnchor:"straight", botCustom:0, topAnchor:"straight", topCustom:0, lap:false, lapLen:0, coupler:false,
   ligs:true, ligDia:"N10", genSpacing:200, topZone:600, topSpacing:100, botZone:600, botSpacing:100, hookDeg:135, ligLap:false,
@@ -1805,20 +1994,25 @@ function pierDefaults(){ return {
 };}
 function renderPier(inst){
   let d=inst.data;
-  let geom = `<div class="grid cols4">
-   ${F("Number of piers",inpNum("qty",d.qty))}
-   ${F("Pier diameter (mm)",inpNum("dia",d.dia))}
-   ${LF("Pier depth (mm)","depth",d.depth)}
-   ${coverField(inst)}
+  // Only the Piles element offers the type/shape choice — a Bored Pier is
+  // cast-in-situ and circular by definition and keeps its original form.
+  let isPile = (LIB_INDEX[inst.typeKey]||{}).kind === "pile";
+  let cast = isCastInSitu(d), shape = pileShapeOf(d);
+  let showDia = !isPile || shape==="circular" || shape==="chs";
+  let geom = (isPile? pileTypeSection(inst) : "") + `<div class="grid cols4">
+   ${F(isPile?"Number of piles":"Number of piers",inpNum("qty",d.qty))}
+   ${showDia? F(shape==="chs"?"Outside diameter (mm)":"Pile diameter (mm)",inpNum("dia",d.dia)) : ""}
+   ${LF(isPile?"Pile depth (mm)":"Pier depth (mm)","depth",d.depth)}
+   ${cast? coverField(inst) : ""}
    ${F("Cut-off level (mm, optional)",inpNum("cutoff",d.cutoff))}
    ${F("Founding level (mm, optional)",inpNum("founding",d.founding))}
    ${F("Socket depth (mm, optional)",inpNum("socketDepth",d.socketDepth))}
-   ${F("Extra concrete allowance (%)",inpNum("extraPct",d.extraPct))}
+   ${cast? F("Extra concrete allowance (%)",inpNum("extraPct",d.extraPct)) : ""}
   </div>
-  <div class="subsec">${chk("underream",d.underream,"Underream (belled base)","underream")}</div>
+  ${(d.pileType||"bored")==="bored" && shape==="circular" ? `<div class="subsec">${chk("underream",d.underream,"Underream (belled base)","underream")}</div>
   <div class="subsec ${d.underream?'':'hidden'}" data-show-if="underream">
    <div class="grid cols3">${F("Underream diameter (mm)",inpNum("underDia",d.underDia))}${F("Underream depth (mm)",inpNum("underDepth",d.underDepth))}</div>
-  </div>`;
+  </div>` : ""}`;
   let conc = concSection(d);
   let reo = `${chk("cage",d.cage,"Reinforcement cage","cage")}
   <div class="subsec ${d.cage?'':'hidden'}" data-show-if="cage">
@@ -1857,19 +2051,63 @@ function renderPier(inst){
   // Starter bars are no longer rendered here — startersSection() supplies the
   // same block, with the same field names, to EVERY element's Connections tab
   // (see buildCard). Removed rather than duplicated so the two can't drift.
+  // A supplied-and-driven pile casts nothing and bores nothing, so the
+  // cast-in-situ tabs would only invite entries that never reach the takeoff.
+  // They say so instead of silently accepting input — except the infill,
+  // which is real concrete and stays on the Concrete tab.
+  if(isPile && !cast){
+    let voidA = pileVoidAreaM2(d);
+    return {geom,
+      conc: voidA>0
+        ? `<p class="small">A driven pile is cast off site — the only concrete here is the infill to the hollow section, switched on with the rest of the pile options on the Geometry tab.</p>${concSection(d)}`
+        : `<p class="small">A ${pileTypeLabel(d).toLowerCase()} pile is supplied ready-made, so there is no concrete to pour on site. Switch the pile type back to <b>Bored / CFA</b> on the Geometry tab to cast in situ.</p>`,
+      reo: `<p class="small">A driven pile arrives already reinforced, so there is no cage to detail here. Starter bars out of the pile into its cap are on the <b>Connections</b> tab, and the cap's own steel is on the <b>Pile Cap</b> tab.</p>`,
+      pilecap: renderPileCapTab(inst),
+      form: `<p class="small">No formwork — the pile is cast off site (or is a steel/timber section) and driven.</p>`,
+      exc: `<p class="small">Driving displaces the ground rather than removing it, so there is no bored spoil to cart. Any pile-cap excavation is taken off on the <b>Pile Cap</b> tab.</p>`};
+  }
   return {geom,conc,reo,pilecap:renderPileCapTab(inst),form:`<p class="small">Bored piers cast against ground — no formwork typically required. Toggle if temporary casing/formwork used.</p>${chk('formworkReq',d.formworkReq,'Temporary casing / formwork required','formworkReq')}<div class="subsec ${d.formworkReq?'':'hidden'}" data-show-if="formworkReq">${F('Casing area override (m², 0=auto perimeter×depth)',inpNum('casingArea',d.casingArea||0))}</div>`, exc:`<div class="grid cols3">${F("Spoil factor (bulking %, 0=project default)",inpNum("bulkOverride",d.bulkOverride||0))}</div>`};
 }
 function computePier(inst,def){
   let d=inst.data, lines=[], warnings=[];
   let N=num(d.qty,1), D=num(d.dia), H=num(d.depth), cover=num(d.cover,PROJECT.cover);
-  let baseVol = N*(Math.PI/4)*Math.pow(D/1000,2)*(H/1000);
+  // A supplied-and-driven pile (precast, steel, screw, timber) is bought by
+  // the metre and installed — it casts no concrete and bores no spoil, so it
+  // takes a wholly different line set. Cast-in-situ falls through to the
+  // original maths below. A saved card with no pileType reads as bored.
+  let isPile = (def||{}).kind === "pile";
+  let pileType = isPile ? (d.pileType||"bored") : "bored";
+  if(isPile && !isCastInSitu(d)){
+    lines.push(...drivenPileLines(inst,def,N,H));
+    if(d.capOn) lines.push(...pileCapTabLines(inst,def,N));
+    return {lines,warnings};
+  }
+  // Gross section area — π/4·D² for a circular pile, exactly as before, and
+  // the polygon's own area for a square/octagonal/barrette bored pile.
+  let areaM2 = pileGrossAreaM2(d);
+  let sectionDesc = isPile && pileShapeOf(d)!=="circular" ? pileSectionLabel(d) : `${D}mm dia`;
+  let baseVol = N*areaM2*(H/1000);
   let underVol=0;
   if(d.underream){
     let D1=D/1000, D2=num(d.underDia)/1000, hf=num(d.underDepth)/1000;
     underVol = N*(Math.PI/12)*hf*(D1*D1+D1*D2+D2*D2);
   }
+  if(pileType==="micro"){
+    // A micropile is a drilled hole filled with grout around a central bar —
+    // the grout hole, not the bar, sets the volume.
+    let gd=num(d.groutDia)>0? num(d.groutDia) : D;
+    let gvol = N*(Math.PI/4)*Math.pow(gd/1000,2)*(H/1000);
+    lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:"Cementitious grout",spec:`Micropile — ${gd}mm hole x ${H}mm deep`,qty:gvol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(gvol,concWastePct(d)),formula:`${N}×π/4×(${gd}/1000)²×(${H}/1000)`}));
+    let mdia=barDiaOf(d.microBarDia||"N32"), mlen=N*(H+num(d.topProj))/1000;
+    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.microBarDia||"N32",spec:"Micropile central bar",qty:mlen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(mlen,PROJECT.reoWaste),formula:`${N}×(${H}+${num(d.topProj)})/1000`,notes:`${fmt(mlen*massPerM(mdia),1)} kg`}));
+    let mbulk = num(d.bulkOverride)||PROJECT.bulking;
+    lines.push(baseLine(inst,def,{materialGroup:"Excavation",material:"Drilled spoil",spec:"In-situ to loose",qty:gvol,unit:"m³",waste:0,finalQty:gvol,formula:"= drilled volume"}));
+    lines.push(baseLine(inst,def,{materialGroup:"Excavation",material:"Spoil disposal (loose, bulked)",spec:`Bulking ${mbulk}%`,qty:gvol*(1+mbulk/100),unit:"m³",waste:0,finalQty:gvol*(1+mbulk/100),formula:`drilled vol × (1+${mbulk}%)`}));
+    if(d.capOn) lines.push(...pileCapTabLines(inst,def,N));
+    return {lines,warnings};
+  }
   let totalVol = (baseVol+underVol)*(1+num(d.extraPct)/100);
-  lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:`${D}mm dia x ${H}mm deep${d.underream?` + underream ${d.underDia}mm`:''}`,qty:totalVol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(totalVol,concWastePct(d)),formula:`${N}×π/4×(${D}/1000)²×(${H}/1000)${d.underream?' + underream frustum':''}`}));
+  lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:`${sectionDesc} x ${H}mm deep${d.underream?` + underream ${d.underDia}mm`:''}`,qty:totalVol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(totalVol,concWastePct(d)),formula:`${N}×${fmt(areaM2,4)}m²×(${H}/1000)${d.underream?' + underream frustum':''}`}));
   // excavation / spoil
   let bulk = num(d.bulkOverride)||PROJECT.bulking;
   lines.push(baseLine(inst,def,{materialGroup:"Excavation",material:"Bored spoil",spec:"In-situ to loose",qty:baseVol+underVol,unit:"m³",waste:0,finalQty:baseVol+underVol,formula:"= bored volume"}));
@@ -1887,9 +2125,8 @@ function computePier(inst,def){
     lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.vDia,spec:"Vertical cage bars",qty:totalLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totalLen,PROJECT.reoWaste),formula:`${vBars}×${N}×(cage ${fmt(cageLen,0)}+bot ${fmt(botLen,0)}+top ${fmt(topLen,0)}+lap ${fmt(lapLen,0)})/1000`,notes:`${fmt(wt,1)} kg`}));
     if(d.ligs){
       let ligDia=barDiaOf(d.ligDia);
-      let cageDia = D-2*cover;
       let hookExt = anchorLen(d.hookDeg==180?"hook180":d.hookDeg==90?"hook90":"hook135",ligDia,0);
-      let ligLen = (Math.PI*(cageDia-2*ligDia)/1000) + 2*hookExt/1000;
+      let ligLen = pileTiePerimeterMM(d,cover,ligDia)/1000 + 2*hookExt/1000;
       let topCount = Math.floor(num(d.topZone)/num(d.topSpacing))+1;
       let botCount = Math.floor(num(d.botZone)/num(d.botSpacing))+1;
       let midLen = Math.max(0,H-num(d.topZone)-num(d.botZone));
@@ -1898,7 +2135,7 @@ function computePier(inst,def){
       let totalLigLen = totalCount*ligLen;
       let ligWt = totalLigLen*massPerM(ligDia);
       let ligLapPct=d.ligLap?PROJECT.lapPct:0;
-      lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.ligDia,spec:"Circular ligatures (top+mid+bottom zones)",qty:totalCount,unit:"no.",waste:PROJECT.reoWaste,lap:ligLapPct,finalQty:Math.ceil(withWasteLap(totalCount,PROJECT.reoWaste,ligLapPct)),massPerUnit:(totalCount? ligWt/totalCount:0),lengthM:withWasteLap(totalLigLen,PROJECT.reoWaste,ligLapPct),formula:`(top ${topCount}+mid ${midCount}+bot ${botCount})×${N} piers (+${PROJECT.reoWaste}% waste${ligLapPct?`, +${ligLapPct}% lap`:''})`,notes:`${fmt(totalLigLen,1)}m, ${fmt(ligWt,1)} kg`}));
+      lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.ligDia,spec:`${pileTieLabel(d)} (top+mid+bottom zones)`,qty:totalCount,unit:"no.",waste:PROJECT.reoWaste,lap:ligLapPct,finalQty:Math.ceil(withWasteLap(totalCount,PROJECT.reoWaste,ligLapPct)),massPerUnit:(totalCount? ligWt/totalCount:0),lengthM:withWasteLap(totalLigLen,PROJECT.reoWaste,ligLapPct),formula:`(top ${topCount}+mid ${midCount}+bot ${botCount})×${N} piers (+${PROJECT.reoWaste}% waste${ligLapPct?`, +${ligLapPct}% lap`:''})`,notes:`${fmt(totalLigLen,1)}m, ${fmt(ligWt,1)} kg`}));
     }
   }
   // Starter bars are costed centrally now (starterBarLines in
@@ -1909,6 +2146,54 @@ function computePier(inst,def){
     lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Casing / temporary formwork",spec:"Perimeter × depth",qty:area,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(area,PROJECT.formworkWaste),formula:`${N}×π×D×H`}));
   }
   return {lines,warnings};
+}
+
+/* ---- SUPPLIED-AND-DRIVEN PILES ----
+ * Precast concrete, steel, timber and screw piles are bought by the metre and
+ * installed, so the takeoff is a supply length plus the installation items —
+ * driving, shoes, splices, cut-off — not concrete and spoil. Lines go out
+ * under a "Piling" material group; Quotes has no catalog SKU for them, so
+ * they arrive on import as plain-English flags to be priced against a
+ * subcontract quote rather than being silently dropped (see
+ * lib/estimateImport.js).
+ */
+function drivenPileLines(inst,def,N,H){
+  let d=inst.data, lines=[], type=d.pileType||"precast";
+  if(!(N>0&&H>0)) return lines;
+  let section=pileSectionLabel(d), kgm=pileSteelKgPerM(d);
+  let cutoff=num(d.pileCutoffAllow);
+  // supplied length: the estimator's own figure, else driven depth + cut-off
+  let lenEach = num(d.pileLenEach)>0 ? num(d.pileLenEach) : H+cutoff;
+  let supplyM = N*lenEach/1000, drivenM = N*H/1000;
+  let matName = type==="precast" ? `Precast concrete pile ${section}`
+    : type==="timber" ? `Timber pile ${section}`
+    : type==="screw" ? `Screw pile ${section}`
+    : `Steel pile ${section}`;
+  lines.push(baseLine(inst,def,{materialGroup:"Piling",material:matName,spec:`${pileTypeLabel(d)} — supply`,qty:supplyM,unit:"m",waste:0,finalQty:supplyM,formula:`${N}×${lenEach}/1000`,notes:kgm>0?`${fmt(supplyM*kgm/1000,2)} t at ${fmt(kgm,1)} kg/m`:""}));
+  lines.push(baseLine(inst,def,{materialGroup:"Piling",material:type==="screw"?"Screwing / installation":"Pile driving",spec:`${N} piles × ${H}mm driven`,qty:drivenM,unit:"m",waste:0,finalQty:drivenM,formula:`${N}×${H}/1000`}));
+  if(d.pileShoes) lines.push(baseLine(inst,def,{materialGroup:"Piling",material:"Driving shoe / point",spec:`To suit ${section}`,qty:N,unit:"no.",waste:0,finalQty:N,formula:`${N} piles × 1`}));
+  if(d.pileSplices){
+    let sp=N*Math.max(0,num(d.pileSplicesPer));
+    if(sp>0) lines.push(baseLine(inst,def,{materialGroup:"Piling",material:"Pile splice",spec:`To suit ${section}`,qty:sp,unit:"no.",waste:0,finalQty:sp,formula:`${N} piles × ${num(d.pileSplicesPer)}`}));
+  }
+  if(type==="screw"){
+    let hx=N*Math.max(0,num(d.pileHelix));
+    if(hx>0) lines.push(baseLine(inst,def,{materialGroup:"Piling",material:"Helix plate",spec:`To suit ${section}`,qty:hx,unit:"no.",waste:0,finalQty:hx,formula:`${N} piles × ${num(d.pileHelix)}`}));
+  }
+  if(d.pileTrim===undefined||d.pileTrim){
+    lines.push(baseLine(inst,def,{materialGroup:"Piling",material:"Cut off and trim to level",spec:`${section}`,qty:N,unit:"no.",waste:0,finalQty:N,formula:`${N} piles`}));
+    let offcut=N*Math.max(0,lenEach-H)/1000;
+    if(offcut>0) lines.push(baseLine(inst,def,{materialGroup:"Piling",material:"Offcut disposal",spec:"Cut-off lengths removed from site",qty:offcut,unit:"m",waste:0,finalQty:offcut,formula:`${N}×(${lenEach}−${H})/1000`}));
+  }
+  // A hollow driven section can be filled — that IS cast concrete, so it goes
+  // out under Concrete where the rest of the tool expects to find it.
+  let voidA=pileVoidAreaM2(d);
+  if(d.pileFill&&voidA>0){
+    let grade=num(d.pileFillGrade)>0?num(d.pileFillGrade):PROJECT.grade;
+    let vol=N*voidA*(H/1000);
+    lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${grade} concrete`,spec:`Infill to ${section}`,qty:vol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(vol,concWastePct(d)),formula:`${N}×${fmt(voidA,4)}m²×(${H}/1000)`}));
+  }
+  return lines;
 }
 
 /* ---- PILE CAP AS A TAB ON THE PILE ELEMENT ----
