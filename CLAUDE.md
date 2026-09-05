@@ -123,12 +123,15 @@ safety net silently. Keep all cost arithmetic in `lib/costing.js`.
 
 7. **Concrete delivery fees are auto-applied, per the Holcim schedule.**
    Three CONCRETE rows cost themselves from the element's poured volume
-   rather than being typed: **Minimum cartage** (a delivered load under
-   `MIN_CARTAGE_THRESHOLD_M3` = 4 m³ is charged $80 per m³ SHORT of 4 —
-   *per truck*, so the volume is split into `TRUCK_LOAD_M3` (8 m³) loads
-   and only the last, part load can be short), the **production &
-   transport surcharge** and the **environment levy** (both flat $/m³ on
-   every delivered m³). Typing a Qty on any of those rows takes that row
+   rather than being typed: **Minimum cartage** (the poured volume is
+   divided by `MIN_CARTAGE_THRESHOLD_M3` = 4 m³ into whole loads, and the
+   REMAINDER of that division — a part load — is charged $80 per m³ it is
+   short of 4; a volume that divides evenly leaves no remainder and costs
+   nothing, so 11 m³ → 2 loads + 3 m³ → 1 m³ short → $80, while 12 m³ →
+   nothing), the **production & transport surcharge** and the
+   **environment levy** (both flat $/m³ on every delivered m³).
+   `TRUCK_LOAD_M3` and the "Concrete truck load size" production rate no
+   longer feed minimum cartage — the divisor is the 4 m³ minimum itself. Typing a Qty on any of those rows takes that row
    fully manual — that's how a known delivery split is priced exactly.
    None of the three count towards `concreteQty` (they're fees, not
    poured volume), and none is charged on the others. See

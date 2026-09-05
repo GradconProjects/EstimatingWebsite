@@ -163,20 +163,29 @@ export function rowContext(item) {
 }
 
 /**
- * Holcim MINIMUM CARTAGE, applied automatically. The fee is charged where a
- * DELIVERED LOAD is under MIN_CARTAGE_THRESHOLD_M3 (4 m³), on the
- * undelivered part of that load — (4 − load) × $80/m³ — per truck, NOT on
- * the order total. A quote holds a total volume rather than a delivery
- * schedule, so the volume is split into whole truck loads (the editable
- * "Concrete truck load size" production rate, 8 m³ by default) and the
- * shortfall is charged on the last, part load: 11 m³ delivered 8+3 is 1 m³
- * short, so $80. A pour that divides evenly, or whose last load already
- * reaches 4 m³, attracts nothing.
+ * MINIMUM CARTAGE, applied automatically. The poured volume is divided by
+ * MIN_CARTAGE_THRESHOLD_M3 (4 m³) into whole loads, and the minimum-cartage
+ * rule is applied to the REMAINDER of that division: a remainder is a part
+ * load, so it is charged (4 − remainder) × $80/m³ for the concrete it is
+ * short of a full 4 m³. A volume that divides evenly by 4 leaves no remainder
+ * and attracts nothing.
+ *
+ *   11 m³ → 2 × 4 = 8, remainder 3 → 1 m³ short → $80
+ *   12 m³ → 3 × 4 = 12, remainder 0 → nothing
+ *    5 m³ → 1 × 4 = 4, remainder 1 → 3 m³ short → $240
+ *    3 m³ → 0 × 4 = 0, remainder 3 → 1 m³ short → $80
+ *
+ * This replaces the earlier reading, which split the volume into 8 m³ TRUCK
+ * loads and charged only the last part load — that left anything whose final
+ * truck already carried 4 m³ or more (5 m³ in one load, say) with no charge
+ * at all. Dividing by 4 charges every part load, which is the rule Grady
+ * asked for; TRUCK_LOAD_M3 and the "Concrete truck load size" production rate
+ * no longer feed this calculation.
  *
  * Typing anything into the Minimum cartage row's Qty takes the row fully
- * manual — that's how a known delivery split (7+4, say) is priced exactly.
+ * manual — that's how a known delivery split is priced exactly.
  * Returns { key, qty (m³ short), unitCost ($/m³ short), total, loads,
- * lastLoad } or null.
+ * remainder, lastLoad } or null.
  */
 export function autoMinimumCartage(item, rates) {
   const cat = FULL_CATALOG.find((c) => c.key === "CONCRETE");
@@ -187,14 +196,18 @@ export function autoMinimumCartage(item, rates) {
   if (typed !== undefined && typed !== "") return null; // the estimator's own entry wins
   const vol = pouredVolume(item);
   if (!(vol > 0)) return null;
-  const capacity = prodRate(rates, "Concrete truck load size", "m³/load", TRUCK_LOAD_M3);
-  if (!(capacity > 0)) return null;
-  const loads = Math.ceil(vol / capacity - 1e-9);
-  const lastLoad = vol - (loads - 1) * capacity;
-  const short = round2(Math.max(0, MIN_CARTAGE_THRESHOLD_M3 - lastLoad));
+  const threshold = MIN_CARTAGE_THRESHOLD_M3;
+  if (!(threshold > 0)) return null;
+  const wholeLoads = Math.floor(vol / threshold + 1e-9);
+  const remainder = round2(Math.max(0, vol - wholeLoads * threshold));
+  if (!(remainder > 0)) return null; // divides evenly — every load is a full one
+  const short = round2(threshold - remainder);
   if (!(short > 0)) return null;
   const rate = lookupRate(rates, key, { unitCost: mc.unitCost ?? 0 });
-  return { key, qty: short, unitCost: rate.unitCost ?? 0, total: short * (rate.unitCost ?? 0), loads, lastLoad: round2(lastLoad) };
+  return {
+    key, qty: short, unitCost: rate.unitCost ?? 0, total: short * (rate.unitCost ?? 0),
+    loads: wholeLoads + 1, remainder, lastLoad: remainder,
+  };
 }
 /** Kept so older imports keep working. */
 export const autoSmallLoadCharge = autoMinimumCartage;

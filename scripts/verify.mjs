@@ -171,7 +171,7 @@ check("Every product listed with zero qty contributes $0 (full catalog is 'free'
 });
 
 /* ---------- automatic small-load charge ---------- */
-check("Minimum cartage: charged per DELIVERED LOAD on the shortfall under 4 m³, matching Holcim's own table", () => {
+check("Minimum cartage: volume ÷ 4, the rule applied to the REMAINDER of that division", () => {
   const rates = defaultRates();
   const type = ELEMENT_TYPES.find((t) => t.id === "slab_on_ground");
   const mk = (vol) => {
@@ -187,8 +187,8 @@ check("Minimum cartage: charged per DELIVERED LOAD on the shortfall under 4 m³,
     return r ? Math.round(r.total * 100) / 100 : 0;
   };
 
-  // Holcim's published table, load by load: (4 − load) × $80
-  assert.equal(charge(4), 0);
+  // A part load under 4 m³ is charged (4 − load) × $80 — the rule itself
+  assert.equal(charge(4), 0, "exactly 4 m³ is a full load");
   assert.equal(charge(3.5), 40);
   assert.equal(charge(3), 80);
   assert.equal(charge(2.5), 120);
@@ -196,28 +196,39 @@ check("Minimum cartage: charged per DELIVERED LOAD on the shortfall under 4 m³,
   assert.equal(charge(1.5), 200);
   assert.equal(charge(1), 240);
 
-  // PER LOAD, not per order: 8 m³ trucks, so 11 m³ arrives 8 + 3 and only the
-  // 1 m³ short on that second truck is charged. 12 m³ splits 8 + 4: nothing.
+  // …and it is applied to the REMAINDER after dividing the pour by 4.
   const eleven = autoMinimumCartage(mk(11), rates);
-  assert.equal(eleven.loads, 2);
-  assert.equal(eleven.lastLoad, 3);
-  assert.equal(eleven.total, 80);
-  assert.equal(charge(12), 0);
-  assert.equal(charge(16), 0, "two full loads, nothing short");
-  assert.equal(charge(30), 0, "a big pour is never charged — the old 30 m³ rule is gone");
+  assert.equal(eleven.loads, 3, "11 m³ = 2 full 4 m³ loads + a part load");
+  assert.equal(eleven.remainder, 3, "remainder of 11 ÷ 4 is 3");
+  assert.equal(eleven.total, 80, "3 m³ remainder is 1 m³ short = $80");
+
+  // anything that divides evenly by 4 leaves no remainder and costs nothing
+  [4, 8, 12, 16, 20, 32, 100].forEach((v) =>
+    assert.equal(charge(v), 0, `${v} m³ divides evenly by 4`));
+
+  // and every remainder is charged, however big the pour — this is the change
+  // from the old truck-load reading, which let a final load of 4 m³ or more
+  // (5 m³ in one 8 m³ truck, say) escape the charge entirely
+  assert.equal(charge(5), 240, "5 ÷ 4 leaves 1 m³ — 3 m³ short");
+  assert.equal(charge(13), 240, "13 ÷ 4 leaves 1 m³ — 3 m³ short");
+  assert.equal(charge(30), 160, "30 ÷ 4 leaves 2 m³ — 2 m³ short");
+  assert.equal(charge(46.5), 120, "46.5 ÷ 4 = 11 loads + 2.5 m³ — 1.5 m³ short");
+  assert.equal(charge(47.5), 40, "47.5 ÷ 4 = 11 loads + 3.5 m³ — 0.5 m³ short");
 
   // the poured volume counts mixes + blinding, never the additive or the fees
   const mixed = mk(15);
-  mixed.qtys[rateKey("CONCRETE", "Blinding concrete", "m3")] = 5;      // 20 total -> 8+8+4, no charge
+  mixed.qtys[rateKey("CONCRETE", "Blinding concrete", "m3")] = 5;      // 20 total -> divides by 4, no charge
   mixed.qtys[rateKey("CONCRETE", "Penetron (Xypex) additive", "m3")] = 15;
-  assert.equal(autoMinimumCartage(mixed, rates), null);
+  assert.equal(autoMinimumCartage(mixed, rates), null, "20 m³ of real pour divides evenly; the additive is not volume");
   assert.equal(computeElementCost(mixed, rates).concreteQty, 35, "a fee never inflates poured volume"); // 15+5+15 entered rows
 
-  // truck size is editable — 6 m³ trucks split 11 as 6+5, still nothing short
+  // the truck-size production rate no longer feeds this — the divisor is the
+  // 4 m³ minimum itself, so changing truck size must not move the charge
   const small = { ...rates, [rateKey("PRODUCTION", "Concrete truck load size", "m³/load")]: { unitCost: 6 } };
-  assert.equal(autoMinimumCartage(mk(11), small), null);
+  assert.equal(charge(11), 80);
+  assert.equal(autoMinimumCartage(mk(11), small).total, 80, "truck size is irrelevant to the charge now");
 
-  // a typed qty takes the row fully manual (a known 7+4 delivery, say)
+  // a typed qty takes the row fully manual (a known delivery split, say)
   const typed = mk(11);
   typed.qtys[rateKey("CONCRETE", "Minimum cartage (load under 4 m3)", "m3")] = 0;
   assert.equal(autoMinimumCartage(typed, rates), null);
