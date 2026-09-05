@@ -1768,6 +1768,69 @@ function etRunM(d,perim){
   if(num(d.edgeThickenLenOverride)>0) return num(d.edgeThickenLenOverride);
   return perim;
 }
+
+/* ---- SHARED THICKENING / RIB CROSS-SECTION ----
+ * One shape system for every thickened run in a slab: the perimeter edge
+ * thickening, the edge beams, the internal ribs, and the thickening under a
+ * load-bearing wall. A thickened run is NOT always rectangular — most are a
+ * straight taper, some taper to a flat base (a trapezoid), some are curved,
+ * and an irregular detail is sketched off the section.
+ *
+ * `sides` says whether the taper falls on one side (an edge condition, where
+ * the outer face is vertical) or both (an internal rib, tapering away into
+ * the slab each way). For a SYMMETRIC section the area is the same either
+ * way — a triangle of base w and height d is w·d/2 whether it is right-angled
+ * or isoceles — so `sides` drives the description and the diagram, not the
+ * number. Where the two genuinely differ is the trapezoid, and there the base
+ * width is what carries it.
+ */
+const SECTION_SHAPES=[
+  ["rect","Rectangular"],
+  ["tri","Triangular — tapers out to nothing"],
+  ["trap","Trapezoidal — tapers to a flat base"],
+  ["concave","Concave taper (curves inward)"],
+  ["convex","Convex taper (bulges outward)"],
+  ["sketch","Sketched profile (draw the section)"],
+];
+const SECTION_SIDES=[
+  ["one","One side (edge — outer face vertical)"],
+  ["both","Both sides (internal rib — tapers each way)"],
+];
+/** Cross-sectional area in m² of a thickened run. w and d are the section's
+ * overall width and its EXTRA depth below the slab, in mm; baseW is the flat
+ * base width of a trapezoid (clamped to w). */
+function sectionAreaM2(shape,wMm,dMm,baseWMm,sketchArea){
+  let w=num(wMm)/1000, d=num(dMm)/1000;
+  if(!(w>0&&d>0) && shape!=="sketch") return 0;
+  switch(shape){
+    case "sketch":  return Math.max(0,num(sketchArea));
+    case "tri":     return w*d/2;
+    case "trap":    { let b=Math.max(0,Math.min(num(baseWMm)/1000,w)); return (w+b)*d/2; }
+    case "concave": return w*d/3;
+    case "convex":  return 2*w*d/3;
+    default:        return w*d;
+  }
+}
+/** How the section reads on a takeoff line, so the formula shows its working. */
+function sectionLabel(shape,wMm,dMm,baseWMm,sketchArea,sides){
+  let a=sectionAreaM2(shape,wMm,dMm,baseWMm,sketchArea);
+  if(shape==="sketch") return `sketched section(${fmt(a,3)}m²)`;
+  let names={rect:"rectangular",tri:"triangular",trap:"trapezoidal",concave:"concave",convex:"convex"};
+  let side = (shape==="rect"||shape==="sketch")? "" : `, ${sides==="both"?"both sides":"one side"}`;
+  let base = shape==="trap"? `/base ${num(baseWMm)}` : "";
+  return `${names[shape]||shape} section(${num(wMm)}${base}×${num(dMm)}mm${side} = ${fmt(a,3)}m²)`;
+}
+/** The shape controls for one thickened run. `p` prefixes every field name so
+ * the edge thickening, the edge beam, the ribs and the wall thickening each
+ * keep their own shape without colliding. */
+function sectionShapeFields(d,p,opts){
+  opts=opts||{};
+  let shape=d[p+"Shape"]||opts.dflt||"rect";
+  let sides=d[p+"Sides"]||"one";
+  return `${F("Section shape",selOpts(p+"Shape",shape,SECTION_SHAPES,true))}
+   ${shape==="rect"||shape==="sketch"? "" : F("Tapered on",selOpts(p+"Sides",sides,SECTION_SIDES,true))}
+   ${shape==="trap"? F("Flat base width (mm)",inpNum(p+"BaseW",d[p+"BaseW"]===undefined?0:d[p+"BaseW"])) : ""}`;
+}
 function sdBarShapeUI(d, legacyMm){
   let has=Array.isArray(d.sdBarDirs)&&d.sdBarDirs.length;
   return `<div class="subsec"><div class="sechead">Dowel / Step Bar Shape</div>
@@ -3292,7 +3355,15 @@ function slabDefaults(cat,suspended){ return {
   joints:true, jointSpacing:6, dowels:false, dowelDia:"N16", dowelSpacing:300, dowelLength:500,
   starters:false, connTarget:"", connQty:0, connDia:"N12", connEmbed:400, connProj:400,
   stepdown:false, sdLength:6, sdDepth:150, sdDia:"N12", sdSpacing:300, sdProj1:300, sdProj2:300,
-  edgeThicken:false, edgeThickenWidth:300, edgeThickenExtraDepth:150, edgeThickenLenOverride:"", etShape:"tri",
+  edgeThicken:false, edgeThickenWidth:300, edgeThickenExtraDepth:150, edgeThickenLenOverride:"", etShape:"tri", etSides:"one", etBaseW:0,
+  // section shape for the edge beams and the internal ribs (rectangular
+  // unless the section detail shows otherwise); ribs taper both ways
+  edgeBeamShape:"rect", edgeBeamSides:"one", edgeBeamBaseW:0,
+  beamStripsShape:"rect", beamStripsSides:"both", beamStripsBaseW:0,
+  // thickening under load-bearing walls — every slab type, off by default
+  wallThickenOn:false, wallThickenRun:"", wallThickenWidth:400, wallThickenDepth:150,
+  wallThickenShape:"rect", wallThickenSides:"both", wallThickenBaseW:0,
+  wallThickenReo:false, wallThickenBars:2, wallThickenDia:"N12", wallThickenLap:false,
   edgeBeamOn:false, edgeBeamLen:"", edgeBeamWidth:300, edgeBeamExtraDepth:300, edgeBeamDepthMode:"extra", edgeBeamCover:"", beamStripsCover:"",
   edgeBeamReo:false, edgeBeamTrenchMesh:false, edgeBeamBars:4, edgeBeamDia:"N16", edgeBeamTrenchType:"4 Bar-L12TM", edgeBeamLayers:1, edgeBeamLap:false,
   edgeBeamLigs:false, edgeBeamLigDia:"N10", edgeBeamLigSpacing:300, edgeBeamLigLap:false,
@@ -3408,16 +3479,40 @@ function renderSlab(inst,def){
   <p class="small">Same as a Ground Beam's trench: dug volume + a bulked spoil-disposal line, along the combined run. Off by default so existing takeoffs don't change.</p></div>
   </div>`;
   let edgeThickenGeom = `<div class="subsec"><div class="sechead">⚠ Edge Thickening</div><div class="grid cols3">${chk("edgeThicken",d.edgeThicken,"<b>Edge thickening</b> — simple thickened strip, follows the slab perimeter automatically","edgeThicken")}</div>
-  <div class="subsec ${d.edgeThicken?'':'hidden'}" data-show-if="edgeThicken"><div class="grid cols4">${F("Thickened strip width (mm)",inpNum("edgeThickenWidth",d.edgeThickenWidth))}${F("Extra depth below slab thickness (mm)",inpNum("edgeThickenExtraDepth",d.edgeThickenExtraDepth))}${F("Run length override (m, blank = slab perimeter)",inpNum("edgeThickenLenOverride",d.edgeThickenLenOverride))}${F("Section shape",selOpts("etShape",d.etShape||((Array.isArray(d.etDirs)&&d.etDirs.length)?"sketch":"rect"),[["tri","Triangular (tapers out to nothing)"],["rect","Rectangular"],["concave","Concave taper (curves inward)"],["convex","Convex taper (bulges outward)"],["sketch","Sketched profile (draw it)"]],true))}</div>
+  <div class="subsec ${d.edgeThicken?'':'hidden'}" data-show-if="edgeThicken"><div class="grid cols4">${F("Thickened strip width (mm)",inpNum("edgeThickenWidth",d.edgeThickenWidth))}${F("Extra depth below slab thickness (mm)",inpNum("edgeThickenExtraDepth",d.edgeThickenExtraDepth))}${F("Run length override (m, blank = slab perimeter)",inpNum("edgeThickenLenOverride",d.edgeThickenLenOverride))}${F("Section shape",selOpts("etShape",d.etShape||((Array.isArray(d.etDirs)&&d.etDirs.length)?"sketch":"rect"),SECTION_SHAPES,true))}${(d.etShape==="rect"||d.etShape==="sketch"||!d.etShape)?"":F("Tapered on",selOpts("etSides",d.etSides||"one",SECTION_SIDES,true))}${d.etShape==="trap"?F("Flat base width (mm)",inpNum("etBaseW",d.etBaseW===undefined?0:d.etBaseW)):""}</div>
   ${(()=>{ let sh=d.etShape||((Array.isArray(d.etDirs)&&d.etDirs.length)?"sketch":"rect");
     return sh==="sketch"? etRunShapeUI(d) : `<p class="small">Section area = width × extra depth × ${sh==="rect"?"1 (full rectangle)":sh==="tri"?"½ (straight triangular taper)":sh==="concave"?"⅓ (parabolic concave taper)":"⅔ (parabolic convex bulge)"}.</p>
     <div style="margin:4px 0 8px;"><button class="btn small primary" data-action="sketchEtRun" type="button">✏️ Sketch the SECTION profile instead (draw it off the section detail)</button></div>`; })()}
   <div class="tip"><span class="ico">🏗️</span><div><b>Edge thickening is NOT an edge beam.</b> This is a simple thickening of the slab edge — extra concrete only, costed as run × section area on top of the flat slab volume, with no cage of its own (the slab mats run through it). The run follows the slab perimeter by default (type a manual override to change it); the SECTION comes from the shape preset — triangular by default — or SKETCH the section profile off the section detail with the ✏️ button. A detailed edge BEAM — with its own manually measured run, bar sets, ligatures and excavation — lives on the <b>Edge Beams</b> tab. Don't tick both for the same edge or the concrete double-counts.</div></div></div></div>`;
   let edgeBeamGeom = `<div class="subsec"><div class="sechead">Edge Beams (dedicated beams at the slab edge)</div><div class="grid cols3">${chk("edgeBeamOn",d.edgeBeamOn,"Edge beams — full beam takeoff, manual run length","edgeBeamOn")}</div>
   <div class="subsec ${d.edgeBeamOn?'':'hidden'}" data-show-if="edgeBeamOn"><div class="grid cols4">${F("Total edge beam run length (m) — manual, from the drawing",inpNum("edgeBeamLen",d.edgeBeamLen))}${F("Beam width (mm)",inpNum("edgeBeamWidth",d.edgeBeamWidth===undefined?300:d.edgeBeamWidth))}${F("Depth entered as",selOpts("edgeBeamDepthMode",d.edgeBeamDepthMode||"extra",[["extra","Extra depth below slab (drop)"],["overall","Overall beam depth (incl. slab)"]],true))}${F((d.edgeBeamDepthMode||"extra")==="overall"?"Overall beam depth (mm)":"Extra depth below slab thickness (mm)",inpNum("edgeBeamExtraDepth",d.edgeBeamExtraDepth===undefined?300:d.edgeBeamExtraDepth))}${F("Cover (mm, blank = element cover)",inpNum("edgeBeamCover",d.edgeBeamCover))}</div>
+  <div class="grid cols4">${sectionShapeFields(d,"edgeBeam",{dflt:"rect"})}</div>
+  <p class="small">The beam's cross-section: rectangular by default, or a taper / trapezoid / curved face where the drawing shows one. The concrete is run × section area, so a triangular beam prices at half a rectangular one of the same width and depth. Pick <b>Sketched profile</b> and use the ✏️ section sketch on the Geometry tab for a section none of the presets describes.</p>
   <div class="tip"><span class="ico">🏗️</span><div>A REAL BEAM, not a thickening: the run length is entered MANUALLY off the drawing (it does not follow the slab perimeter — the beam may run under only part of it), the depth can be entered as the drawing's overall beam depth (the slab-thickness portion is deducted from the extra concrete so nothing double-counts, while ligatures size to the full section) or as the drop below the slab, and it carries the full standalone-Ground-Beam parameter set below — bar-set rows with anchorages, trench mesh with per-layer products, ligature zones sized to this beam's own cross-section and cover, and optional trench excavation. All folded into this one raft element. The simple perimeter Edge Thickening lives on the Geometry tab.</div></div></div></div>`;
+  /* Thickening under load-bearing walls — a thickened band cast into the slab
+   * where an internal wall lands, on EVERY slab type rather than only the
+   * raft's ribs. Its run is measured off the drawing (the total of every
+   * load-bearing wall line), and it carries the same section shapes. */
+  let wallThickenGeom = `<div class="subsec"><div class="sechead">Thickening Under Load-Bearing Walls</div><div class="grid cols3">${chk("wallThickenOn",d.wallThickenOn,"Thicken the slab under load-bearing walls","wallThickenOn",true)}</div>
+  <div class="subsec ${d.wallThickenOn?'':'hidden'}" data-show-if="wallThickenOn"><div class="grid cols4">
+   ${F("Total wall run length (m) — from the drawing",inpNum("wallThickenRun",d.wallThickenRun))}
+   ${F("Thickened band width (mm)",inpNum("wallThickenWidth",d.wallThickenWidth===undefined?400:d.wallThickenWidth))}
+   ${F("Extra depth below slab thickness (mm)",inpNum("wallThickenDepth",d.wallThickenDepth===undefined?150:d.wallThickenDepth))}
+  </div>
+  <div class="grid cols4">${sectionShapeFields(d,"wallThicken",{dflt:"rect"})}</div>
+  <p class="small">Total every load-bearing wall line on the slab and enter the combined run. The concrete is run × section area on top of the flat slab, the same way the edge thickening works — so a band tapering both sides prices at what it actually is rather than as a full rectangle.</p>
+  ${chk("wallThickenReo",d.wallThickenReo,"Trimmer bars along the thickening","wallThickenReo")}
+  <div class="subsec ${d.wallThickenReo?'':'hidden'}" data-show-if="wallThickenReo"><div class="grid cols3">
+   ${F("Bars per run (no.)",inpNum("wallThickenBars",d.wallThickenBars===undefined?2:d.wallThickenBars))}
+   ${F("Diameter",barSizeSel("wallThickenDia",d.wallThickenDia||"N12"))}
+   ${chk("wallThickenLap",d.wallThickenLap,"Include lap allowance (%)","wallThickenLap")}
+  </div></div>
+  <div class="tip"><span class="ico">🏗️</span><div>This is the local thickening under an internal load-bearing wall — a band of extra concrete, not a beam with its own cage. On a raft, the ribs on the <b>Internal Beams</b> tab already do this job with full reinforcement detailing; use one or the other for the same wall line, not both.</div></div>
+  </div></div>`;
   let stripGeom = `<div class="subsec"><div class="sechead">Internal Beam Strips / Ribs (e.g. raft foundation load-bearing lines)</div><div class="grid cols3">${chk("beamStrips",d.beamStrips,"Internal thickened beam strips within the slab","beamStrips")}</div>
   <div class="subsec ${d.beamStrips?'':'hidden'}" data-show-if="beamStrips"><div class="grid cols4">${F("Total beam run length (m) — manual, from the drawing",inpNum("beamStripsLength",d.beamStripsLength))}${F("Strip width (mm)",inpNum("beamStripsWidth",d.beamStripsWidth))}${F("Extra depth below slab thickness (mm)",inpNum("beamStripsExtraDepth",d.beamStripsExtraDepth))}${F("Cover (mm, blank = element cover)",inpNum("beamStripsCover",d.beamStripsCover))}</div>
+  <div class="grid cols4">${sectionShapeFields(d,"beamStrips",{dflt:"rect"})}</div>
+  <p class="small">An internal rib usually falls away into the slab on BOTH sides rather than having a vertical face, so pick the taper that matches the section detail — the concrete is run × section area, and a triangular rib prices at half a rectangular one of the same width and depth.</p>
   <div class="tip"><span class="ico">🏗️</span><div>A raft foundation's internal beams (the thickened ribs that run under load-bearing walls, not just the perimeter) are easy to miss because they're not their own drawing callout — they're a detail cut through the slab. Total the combined length of every internal beam run from the drawing (not the perimeter — that's the Edge Beams tab) and it's costed as run length × strip width × extra depth, added on top of the flat slab volume. Everything for the ribs — geometry, longitudinal steel, ligature zones, trench excavation — lives on this tab, folded into this one element; don't also take the same beams off as a separate Ground Beam element.</div></div>
   </div></div>`;
   let edgeBeamReoBlock = `<div class="subsec ${d.edgeBeamOn?'':'hidden'}" data-show-if="edgeBeamOn"><div class="sechead">Edge Beam Reinforcement</div>
@@ -3478,7 +3573,7 @@ function renderSlab(inst,def){
    ${F("Total step-down length (m)",inpNum("sdLength",d.sdLength))}${F("Step depth (mm)",inpNum("sdDepth",d.sdDepth))}${F("Dowel size",barSizeSel("sdDia",d.sdDia))}${F("Spacing (mm)",inpNum("sdSpacing",d.sdSpacing))}
   </div>${sdBarShapeUI(d,num(d.sdProj1)+num(d.sdProj2))}${sdSetupFields(d)}<div class="tip"><span class="ico">🏗️</span><div>Split-level slabs (a sunken wet area, a stepped car park deck) need dowels across the step or the two pours act independently under load. Size and space dowels the same way you'd detail a construction joint — this is the item estimators most often forget because it's buried in a section detail, not called up on the reinforcement schedule.</div></div></div>`;
   let concExtras = `<div class="subsec"><div class="sechead">Pour Details</div><div class="grid cols4">${chk("drops",d.drops,"Drops")}${chk("setdowns",d.setdowns,"Setdowns / recesses")}${chk("upstands",d.upstands,"Upstands")}</div></div>`;
-  return {geom: geom + edgeThickenGeom, conc:concSection(d,"<p class='small'>Concrete = area × thickness (area = L×W unless manually entered)</p>")+concExtras,reo:reo+steps,
+  return {geom: geom + edgeThickenGeom + wallThickenGeom, conc:concSection(d,"<p class='small'>Concrete = area × thickness (area = L×W unless manually entered)</p>")+concExtras,reo:reo+steps,
    edgebeams: edgeBeamGeom + edgeBeamReoBlock,
    intbeams: stripGeom + stripReoBlock,
    form,
@@ -3539,11 +3634,30 @@ function computeSlab(inst,def){
     let ew=num(d.edgeThickenWidth)/1000, ed=num(d.edgeThickenExtraDepth)/1000;
     let shape=d.etShape || ((Array.isArray(d.etDirs)&&d.etDirs.length)? "sketch" : "rect");
     let sketchArea=etSectionAreaM2(d);
-    let factor = shape==="rect"?1 : shape==="tri"?0.5 : shape==="concave"?1/3 : shape==="convex"?2/3 : null;
-    let secArea = shape==="sketch" ? sketchArea : ew*ed*factor;
-    let shapeLabel = shape==="sketch"? `sketched section(${fmt(sketchArea,3)}m²)` : `${shape==="rect"?"rectangular":shape==="tri"?"triangular":shape} section(${d.edgeThickenWidth}×${d.edgeThickenExtraDepth}mm×${factor===1?"1":factor===0.5?"½":factor===2/3?"⅔":"⅓"} = ${fmt(secArea,3)}m²)`;
+    let secArea = sectionAreaM2(shape,d.edgeThickenWidth,d.edgeThickenExtraDepth,d.etBaseW,sketchArea);
+    let shapeLabel = sectionLabel(shape,d.edgeThickenWidth,d.edgeThickenExtraDepth,d.etBaseW,sketchArea,d.etSides);
     let edgeVol=etRun*secArea;
     if(edgeVol>0) lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:"Edge thickening (perimeter strip)",qty:edgeVol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(edgeVol,concWastePct(d)),formula:`${runSrc}(${fmt(etRun,1)}m)×${shapeLabel}`}));
+  }
+  // THICKENING UNDER LOAD-BEARING WALLS — a band of extra concrete where an
+  // internal wall lands on the slab, on every slab type. Run is measured off
+  // the drawing; the section uses the same shape system as the edge.
+  if(d.wallThickenOn){
+    let wRun=num(d.wallThickenRun);
+    let wShape=d.wallThickenShape||"rect";
+    let wArea=sectionAreaM2(wShape,d.wallThickenWidth,d.wallThickenDepth,d.wallThickenBaseW,etSectionAreaM2(d));
+    let wVol=wRun*wArea;
+    if(wVol>0){
+      lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:"Thickening under load-bearing walls",qty:wVol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(wVol,concWastePct(d)),formula:`wall run(${fmt(wRun,1)}m)×${sectionLabel(wShape,d.wallThickenWidth,d.wallThickenDepth,d.wallThickenBaseW,etSectionAreaM2(d),d.wallThickenSides)}`}));
+    }
+    if(d.wallThickenReo && wRun>0){
+      let n=num(d.wallThickenBars,2), dia=d.wallThickenDia||"N12";
+      if(n>0){
+        let lapPct=d.wallThickenLap?PROJECT.lapPct:0;
+        let totLen=n*wRun, wt=totLen*massPerM(barDiaOf(dia));
+        lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:dia,spec:"Trimmer bars — thickening under load-bearing walls",qty:totLen,unit:"m",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,lapPct),formula:`${n} bars×${fmt(wRun,1)}m`,notes:`${fmt(wt,1)} kg`}));
+      }
+    }
   }
   {
     // EDGE BEAMS — treated as real beams: manual run length off the drawing
@@ -3561,8 +3675,12 @@ function computeSlab(inst,def){
       let entered = legacy? num(d.edgeThickenExtraDepth,150) : num(d.edgeBeamExtraDepth,300);
       let extraMm = mode==="overall"? Math.max(0, entered-num(d.thickness,150)) : entered;
       let secD = mode==="overall"? entered : num(d.thickness,150)+entered;
-      let vol=ebRun*(ebW/1000)*(extraMm/1000);
-      if(vol>0 && !legacy) lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:"Edge beam",qty:vol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(vol,concWastePct(d)),formula:`run(${fmt(ebRun,1)}m)×width(${ebW}mm)×${mode==="overall"?`(overall ${entered}−slab ${num(d.thickness,150)})`:`extra depth(${extraMm}mm)`} below slab`}));
+      // The beam's own cross-section — rectangular unless the drawing shows a
+      // taper, a trapezoid or something irregular (sketched off the section).
+      let ebShape=d.edgeBeamShape||"rect";
+      let ebArea=sectionAreaM2(ebShape,ebW,extraMm,d.edgeBeamBaseW,etSectionAreaM2(d));
+      let vol=ebRun*ebArea;
+      if(vol>0 && !legacy) lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:"Edge beam",qty:vol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(vol,concWastePct(d)),formula:`run(${fmt(ebRun,1)}m)×${sectionLabel(ebShape,ebW,extraMm,d.edgeBeamBaseW,etSectionAreaM2(d),d.edgeBeamSides)}${mode==="overall"?` (overall ${entered}−slab ${num(d.thickness,150)})`:""}`}));
       raftBeamGroupLines(inst,def,lines,d,{
         label:"Edge beam", runM:ebRun, widthMm:ebW, coverMm:d.edgeBeamCover, secDepthMm:secD,
         reoOn:d.edgeBeamReo, trench:d.edgeBeamTrenchMesh, trenchLap:d.edgeBeamLap,
@@ -3576,8 +3694,12 @@ function computeSlab(inst,def){
   }
   if(d.beamStrips && num(d.beamStripsLength)>0){
     let bw=num(d.beamStripsWidth)/1000, bd=num(d.beamStripsExtraDepth)/1000;
-    let beamVol=num(d.beamStripsLength)*bw*bd;
-    lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:"Internal beam strips (raft ribs)",qty:beamVol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(beamVol,concWastePct(d)),formula:`run length(${fmt(num(d.beamStripsLength),1)}m)×width(${d.beamStripsWidth}mm)×extra depth(${d.beamStripsExtraDepth}mm)`}));
+    // Ribs default to tapering on BOTH sides, because an internal rib falls
+    // away into the slab each way rather than having a vertical outer face.
+    let bsShape=d.beamStripsShape||"rect";
+    let bsArea=sectionAreaM2(bsShape,d.beamStripsWidth,d.beamStripsExtraDepth,d.beamStripsBaseW,etSectionAreaM2(d));
+    let beamVol=num(d.beamStripsLength)*bsArea;
+    lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:"Internal beam strips (raft ribs)",qty:beamVol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(beamVol,concWastePct(d)),formula:`run length(${fmt(num(d.beamStripsLength),1)}m)×${sectionLabel(bsShape,d.beamStripsWidth,d.beamStripsExtraDepth,d.beamStripsBaseW,etSectionAreaM2(d),d.beamStripsSides||"both")}`}));
     // Internal beams — the FULL standalone-Ground-Beam parameter set over
     // the combined run: per-row bar sets with anchorages, trench mesh with
     // per-layer products, ligature zones, optional trench excavation.
@@ -4539,7 +4661,62 @@ function duplicateInstance(id){
   renderWorkspace(); computeAllAndRefresh();
 }
 
-const TABS=[["geom","Geometry"],["conc","Concrete"],["reo","Reinforcement"],["pilecap","Pile Cap"],["edgebeams","Edge Beams"],["intbeams","Internal Beams"],["form","Formwork"],["exc","Excavation"],["blind","Blinding / Insulation"],["conns","Connections / Dowels"],["results","Results"]];
+/* ---- ADDITIONAL REINFORCEMENT / ELEMENTS ----
+ * The catch-all every element gets: anything the calculators have no obvious
+ * home for — a trimmer bar round a penetration, a starter nobody's tab owns,
+ * an extra pour, a one-off item — entered as free rows so it reaches the
+ * register instead of living in someone's head.
+ *
+ * Each row carries its own GEOMETRY: a count × a length each, an area, or a
+ * plain quantity, so a bar set is measured the way a bar set is measured
+ * rather than being pre-totalled by hand. Rows are off the takeoff until they
+ * have both a description and a quantity, so a half-typed row costs nothing.
+ */
+const ADDL_KINDS=[
+  ["Reinforcement","Reinforcement"],
+  ["Concrete","Concrete"],
+  ["Formwork","Formwork"],
+  ["Excavation","Excavation"],
+  ["Connections","Connections"],
+  ["Base/Blinding","Base / Blinding"],
+  ["Insulation","Insulation"],
+  ["","Other / uncategorised"],
+];
+const ADDL_UNITS=[["m","m (length)"],["m²","m² (area)"],["m³","m³ (volume)"],["no.","no. (count)"],["kg","kg"],["item","item / sum"]];
+/** One row's quantity from its geometry: count × length for a per-metre row,
+ * count × area for an area row, else the typed quantity. */
+function addlRowQty(r){
+  let n=num(r.count), L=num(r.lengthMm), a=num(r.area), q=num(r.qty);
+  if(r.unit==="m" && n>0 && L>0) return n*L/1000;
+  if((r.unit==="m²"||r.unit==="m³") && a>0) return (n>0? n:1)*a;
+  if(q>0) return q;
+  if(n>0 && r.unit==="no.") return n;
+  return 0;
+}
+function additionalItemsSection(inst){
+  let d=inst.data, rows=Array.isArray(d.addlRows)? d.addlRows : [];
+  let body=rows.map((r,i)=>`<tr>
+    <td>${inpText(`addlRows.${i}.desc`,r.desc||"")}</td>
+    <td>${selOpts(`addlRows.${i}.kind`,r.kind===undefined?"Reinforcement":r.kind,ADDL_KINDS)}</td>
+    <td>${barSizeSel(`addlRows.${i}.dia`,r.dia||"N12")}</td>
+    <td style="width:80px">${inpNum(`addlRows.${i}.count`,r.count)}</td>
+    <td style="width:100px">${inpNum(`addlRows.${i}.lengthMm`,r.lengthMm)}</td>
+    <td style="width:90px">${inpNum(`addlRows.${i}.area`,r.area)}</td>
+    <td style="width:90px">${inpNum(`addlRows.${i}.qty`,r.qty)}</td>
+    <td>${selOpts(`addlRows.${i}.unit`,r.unit||"m",ADDL_UNITS)}</td>
+    <td style="width:70px">${inpNum(`addlRows.${i}.waste`,r.waste)}</td>
+    <td class="small" style="white-space:nowrap">${fmt(addlRowQty(r),2)}</td>
+    <td><button class="btn small danger" data-action="addlDel" data-i="${i}" type="button">✕</button></td>
+   </tr>`).join('');
+  return `<div class="subsec"><div class="sechead">Additional Reinforcement / Elements</div>
+   <p class="small">Anything with no obvious home on the other tabs — a trimmer bar round a penetration, an extra pour, a one-off item. Give a row a <b>count × length each</b> for bars, an <b>area</b> for sheet items, or just a <b>quantity</b>; the unit decides which is used. A row needs a description and a quantity before it reaches the takeoff. Rows sized in metres against a bar diameter also report their mass.</p>
+   <div style="overflow-x:auto"><table class="rows"><thead><tr>
+     <th>Description</th><th>Goes under</th><th>Bar size</th><th>Count</th><th>Length each (mm)</th><th>Area (m²)</th><th>Qty</th><th>Unit</th><th>Waste %</th><th>Total</th><th></th>
+   </tr></thead><tbody>${body||`<tr><td colspan="11" class="small">No additional items yet.</td></tr>`}</tbody></table></div>
+   <div class="toolbar" style="margin-top:8px;"><button class="btn small primary" data-action="addlAdd" type="button">+ Add row</button></div>
+  </div>`;
+}
+const TABS=[["geom","Geometry"],["conc","Concrete"],["reo","Reinforcement"],["pilecap","Pile Cap"],["edgebeams","Edge Beams"],["intbeams","Internal Beams"],["form","Formwork"],["exc","Excavation"],["blind","Blinding / Insulation"],["conns","Connections / Dowels"],["addl","Additional Reo / Elements"],["results","Results"]];
 
 function renderWorkspace(){
   let host=document.getElementById("cardsHost");
@@ -4588,6 +4765,8 @@ function buildCard(inst){
     parts.blind = blindingSection(ad) + `<div class="grid cols3" style="margin-top:6px;">${F("Blinding / membrane area (m², 0 = element footprint where known)",inpNum("blindArea",ad.blindArea))}</div>`;
   }
   parts.blind = parts.blind + insulationSubsection(inst.data);
+  // EVERY element gets the additional reinforcement / elements catch-all.
+  if(parts.addl===undefined) parts.addl = additionalItemsSection(inst);
   let collapsed = inst._collapsed;
   // The active tab is remembered PER ELEMENT (by id, in CARD_TAB_MEMORY)
   // across every rebuild — autosave/cloud-sync refreshes re-render the whole
@@ -4818,6 +4997,15 @@ function attachCardEvents(card,inst){
     } else if(act==="clearStepBar"){
       delete inst.data.sdBarDirs; delete inst.data.sdBarLens;
       computeAllAndRefresh(); rerenderCardKeepTab(card,inst);
+    } else if(act==="addlAdd"){
+      let dd=inst.data;
+      if(!Array.isArray(dd.addlRows)) dd.addlRows=[];
+      dd.addlRows.push({desc:"",kind:"Reinforcement",dia:"N12",count:"",lengthMm:"",area:"",qty:"",unit:"m",waste:""});
+      computeAllAndRefresh(); rerenderCardKeepTab(card,inst); return;
+    } else if(act==="addlDel"){
+      let dd=inst.data, i=parseInt(e.target.dataset.i,10);
+      if(Array.isArray(dd.addlRows) && i>=0) dd.addlRows.splice(i,1);
+      computeAllAndRefresh(); rerenderCardKeepTab(card,inst); return;
     } else if(act==="sketchEtRun"){
       // The sketch button is offered on EVERY section shape — drawing a
       // profile is an implicit switch to the Sketched shape, so the sketched
@@ -4916,6 +5104,24 @@ function computeInstance(inst){
   // Insulation: its own line wherever it's ticked. Area = the entered value,
   // falling back to the element's own computed plan area (slabs set
   // _autoInsArea during compute).
+  // Additional reinforcement / elements — the catch-all rows, each priced on
+  // its own geometry. A row with no description or no quantity is a
+  // half-typed row, not a takeoff item, so it contributes nothing.
+  (Array.isArray(d.addlRows)? d.addlRows : []).forEach((r)=>{
+    let qty=addlRowQty(r);
+    let desc=(r.desc||"").trim();
+    if(!(qty>0) || !desc) return;
+    let unit=r.unit||"m";
+    let waste=r.waste===undefined||r.waste===""? 0 : num(r.waste);
+    let group=r.kind===undefined? "Reinforcement" : r.kind;
+    let isBar = group==="Reinforcement" && unit==="m" && r.dia;
+    let notes = isBar? `${fmt(qty*massPerM(barDiaOf(r.dia)),1)} kg` : "";
+    let formula = (unit==="m" && num(r.count)>0 && num(r.lengthMm)>0)
+      ? `${num(r.count)}×${num(r.lengthMm)}mm`
+      : ((unit==="m²"||unit==="m³") && num(r.area)>0 ? `${num(r.count)>0?num(r.count)+"×":""}${num(r.area)}` : "entered");
+    out.lines.push(baseLine(inst,def,{materialGroup:group,material:isBar? r.dia : desc,
+      spec:isBar? desc : "Additional item",qty,unit,waste,finalQty:withWaste(qty,waste),formula,notes}));
+  });
   if(d.insulationOn){
     let t = insulationType(null,d); // family + thickness off the card
     // sheet products cover the element's plan area; strip products run its perimeter
@@ -6009,6 +6215,20 @@ function ensureSketchPad(){
         else { mdirs.push(bdirs[i]); mlens.push(blens[i]); }
       }
       if(mdirs.length<1){ div.querySelector("#sketchHint").textContent="Couldn't read a bar shape from that stroke — try again."; return; }
+      // A SECTION is a CLOSED shape: append the closing leg from the last
+      // point back to the first, so the estimator sees and dimensions every
+      // side of the profile — including the one that shuts it — instead of
+      // an open run that the area maths silently closed behind them.
+      if(isEt && mdirs.length>=2){
+        let last=bpts[bpts.length-1], first=bpts[0];
+        let cl=Math.hypot(first.x-last.x, first.y-last.y);
+        if(cl>1e-6){
+          let cd=Math.round(Math.atan2(first.y-last.y,first.x-last.x)/bsnap)*bsnap;
+          // fold into the previous leg if the closing run is collinear with it
+          if(Math.abs(normTurn(cd-mdirs[mdirs.length-1]))<1e-9) mlens[mlens.length-1]+=cl;
+          else { mdirs.push(cd); mlens.push(cl); }
+        }
+      }
       // seed mm lengths keeping sketch proportions, longest leg = 600mm
       // (typed over with the drawing's true figures either way)
       let bmax=Math.max(...mlens)||1;
@@ -6074,7 +6294,7 @@ function openSketchPad(inst,card,mode){
     div.querySelector("#sketchCopy").textContent="Draw the bar's profile in one stroke, straight off the drawing — down, across, down for a Z-bar; two strokes of an L become one stroke with a corner. It's straightened into segments A, B, C… and you type each segment's true length in mm.";
   } else if(SKETCH.mode==="etrun"){
     div.querySelector("#sketchTitle").textContent="Sketch the thickened-edge SECTION";
-    div.querySelector("#sketchCopy").textContent="Draw the thickening's cross-section profile in one stroke off the section detail — down, across, back up for a rectangular rebate; slope the legs for a tapered edge. It's straightened into segments A, B, C…, you type each segment's true length in mm, the shape closes back to its start automatically, and its enclosed AREA × the run prices the concrete.";
+    div.querySelector("#sketchCopy").textContent="Draw the thickening's CLOSED cross-section in one stroke off the section detail — go right round the profile and finish near where you started. It's straightened into sides A, B, C… including the side that closes the shape, you type each side's true length in mm, and the enclosed AREA × the run prices the concrete.";
   } else {
     div.querySelector("#sketchTitle").textContent="Sketch the slab outline";
     div.querySelector("#sketchCopy").textContent="Draw the shape roughly in one stroke — corners don't need to be neat. The app straightens it into sides labelled A, B, C…; you then type the true length of each side, and can adjust any corner's angle afterwards.";
