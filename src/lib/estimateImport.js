@@ -34,6 +34,11 @@ export const ESTIMATE_TYPE_MAP = {
   "Pad Footing": "pile_caps_pad",
   "Stump Footing Pad": "stump_footings",
   "Bored Pier": "piles_bored",
+  // Estimates' generic "Piles" type (driven/screw/CFA, same circular
+  // calculator as Bored Pier) lands on the same Quotes bored-pile element —
+  // it's the only piling element Quotes prices by schedule, and Screw Piles
+  // is a subcontract line rather than a takeoff target.
+  "Piles": "piles_bored",
   "Pile Cap": "pile_caps_pad",
   "Ground Beam": null,
   "Column Base Plate / Grout Pad": "column_base_plate",

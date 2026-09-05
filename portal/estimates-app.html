@@ -1091,6 +1091,10 @@ const LIBRARY = [
    {id:"padfooting", label:"Pad Footing", calc:"padfooting"},
    {id:"stumpfooting", label:"Stump Footing Pad", calc:"padfooting", kind:"stump"},
    {id:"boredpier", label:"Bored Pier", calc:"pier"},
+   // Piles share the pier calculator (a circular concrete section with a cage
+   // and ligatures) and carry the same Pile Cap tab. Kept as its own type
+   // rather than folded into Bored Pier so a takeoff can say which it is.
+   {id:"piles", label:"Piles", calc:"pier", kind:"pile"},
    {id:"pilecap", label:"Pile Cap", calc:"pilecap"},
    {id:"groundbeam", label:"Ground Beam", calc:"beam", beamCategory:"Ground"},
    {id:"cappingbeam", label:"Capping Beam", calc:"beam", beamCategory:"Ground"},
@@ -1796,7 +1800,8 @@ function pierDefaults(){ return {
   cover:PROJECT.cover, grade:PROJECT.grade,
   cage:true, vBars:8, vDia:"N20", cageLenAuto:true, cageLen:0, topProj:600, botAnchor:"straight", botCustom:0, topAnchor:"straight", topCustom:0, lap:false, lapLen:0, coupler:false,
   ligs:true, ligDia:"N10", genSpacing:200, topZone:600, topSpacing:100, botZone:600, botSpacing:100, hookDeg:135, ligLap:false,
-  starters:true, connTarget:"", connQty:8, connDia:"N20", connEmbed:800, connProj:900, connHook:"straight", connLap:1200, connCoupler:false
+  starters:true, connTarget:"", connQty:8, connDia:"N20", connEmbed:800, connProj:900, connHook:"straight", connLap:1200, connCoupler:false,
+  ...pileCapTabDefaults()
 };}
 function renderPier(inst){
   let d=inst.data;
@@ -1849,21 +1854,10 @@ function renderPier(inst){
    <p class="small">The diagram below mirrors what you've entered — a quick visual check that zone lengths and spacings add up before you commit to a count.</p>
    <div class="ligDiagHost">${ligDiagramFor(inst)}</div>
   </div>`;
-  let conns = `${chk("starters",d.starters,"Starter bars to pile cap / footing above","starters")}
-  <div class="subsec ${d.starters?'':'hidden'}" data-show-if="starters">
-   <div class="grid cols4">
-    ${F("Connects to (target element)",targetSelect("connTarget",d.connTarget,inst.id))}
-    ${F("Quantity",inpNum("connQty",d.connQty))}
-    ${F("Diameter",barSizeSel("connDia",d.connDia))}
-    ${F("Embedment into pier (mm)",inpNum("connEmbed",d.connEmbed))}
-    ${F("Projection into cap (mm)",inpNum("connProj",d.connProj))}
-    ${F("Hook type",anchorSel("connHook",d.connHook))}
-    ${F("Lap (mm, 0=none)",inpNum("connLap",d.connLap))}
-    ${chk("connCoupler",d.connCoupler,"Coupler")}
-   </div>
-   <div class="tip"><span class="ico">🎓</span><div>Starter bars are a first-class element in this tool, not a footnote in a waste factor. Enter them once here, at the pier — pick the pile cap they connect to and the quantity flows through as "incoming" on the cap's Connections tab for visual continuity, but it is only ever costed once, at the source. This is the single most common double-counting error in a manual takeoff.</div></div>
-  </div>`;
-  return {geom,conc,reo,form:`<p class="small">Bored piers cast against ground — no formwork typically required. Toggle if temporary casing/formwork used.</p>${chk('formworkReq',d.formworkReq,'Temporary casing / formwork required','formworkReq')}<div class="subsec ${d.formworkReq?'':'hidden'}" data-show-if="formworkReq">${F('Casing area override (m², 0=auto perimeter×depth)',inpNum('casingArea',d.casingArea||0))}</div>`, exc:`<div class="grid cols3">${F("Spoil factor (bulking %, 0=project default)",inpNum("bulkOverride",d.bulkOverride||0))}</div>`};
+  // Starter bars are no longer rendered here — startersSection() supplies the
+  // same block, with the same field names, to EVERY element's Connections tab
+  // (see buildCard). Removed rather than duplicated so the two can't drift.
+  return {geom,conc,reo,pilecap:renderPileCapTab(inst),form:`<p class="small">Bored piers cast against ground — no formwork typically required. Toggle if temporary casing/formwork used.</p>${chk('formworkReq',d.formworkReq,'Temporary casing / formwork required','formworkReq')}<div class="subsec ${d.formworkReq?'':'hidden'}" data-show-if="formworkReq">${F('Casing area override (m², 0=auto perimeter×depth)',inpNum('casingArea',d.casingArea||0))}</div>`, exc:`<div class="grid cols3">${F("Spoil factor (bulking %, 0=project default)",inpNum("bulkOverride",d.bulkOverride||0))}</div>`};
 }
 function computePier(inst,def){
   let d=inst.data, lines=[], warnings=[];
@@ -1907,19 +1901,113 @@ function computePier(inst,def){
       lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.ligDia,spec:"Circular ligatures (top+mid+bottom zones)",qty:totalCount,unit:"no.",waste:PROJECT.reoWaste,lap:ligLapPct,finalQty:Math.ceil(withWasteLap(totalCount,PROJECT.reoWaste,ligLapPct)),massPerUnit:(totalCount? ligWt/totalCount:0),lengthM:withWasteLap(totalLigLen,PROJECT.reoWaste,ligLapPct),formula:`(top ${topCount}+mid ${midCount}+bot ${botCount})×${N} piers (+${PROJECT.reoWaste}% waste${ligLapPct?`, +${ligLapPct}% lap`:''})`,notes:`${fmt(totalLigLen,1)}m, ${fmt(ligWt,1)} kg`}));
     }
   }
-  if(d.starters){
-    let dia=barDiaOf(d.connDia);
-    let len=(num(d.connEmbed)+num(d.connProj)+anchorLen(d.connHook,dia,0)+num(d.connLap))/1000;
-    let totLen = num(d.connQty)*N*len;
-    let wt=totLen*massPerM(dia);
-    let targetLabel = targetLabelOf(d.connTarget);
-    lines.push(baseLine(inst,def,{materialGroup:"Connections",material:d.connDia,spec:"Starter bars → "+(targetLabel||"(unlinked)"),qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`${d.connQty}×${N}×(embed ${d.connEmbed}+proj ${d.connProj}+lap ${d.connLap})/1000`,linkedElement:targetLabel,notes:`${fmt(wt,1)} kg — counted once at source`}));
-  }
+  // Starter bars are costed centrally now (starterBarLines in
+  // computeInstance), for every element type rather than only this one.
+  if(d.capOn) lines.push(...pileCapTabLines(inst,def,N));
   if(d.formworkReq){
     let area = num(d.casingArea)>0? num(d.casingArea) : N*Math.PI*(D/1000)*(H/1000);
     lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Casing / temporary formwork",spec:"Perimeter × depth",qty:area,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(area,PROJECT.formworkWaste),formula:`${N}×π×D×H`}));
   }
   return {lines,warnings};
+}
+
+/* ---- PILE CAP AS A TAB ON THE PILE ELEMENT ----
+ * Piles and their caps are one operation on site, and most of the time the
+ * cap's size follows straight from the pile group — so the pile element
+ * carries a Pile Cap tab that takes the cap off with the piles, instead of
+ * forcing a second element and a link between them. The standalone Pile Cap
+ * foundation type stays exactly as it was, for caps taken off on their own
+ * (a cap over piles someone else installed, a strap beam picking up several
+ * different groups, a cap whose reinforcement warrants its own card).
+ *
+ * Every field here is cap-prefixed so nothing collides with the pile's own
+ * diameter/depth/cover/grade, and the whole tab is off until ticked.
+ */
+function pileCapTabDefaults(){ return {
+  capOn:false, capPilesPer:1, capQty:0,
+  capL:1800, capW:1800, capD:800, capCover:PROJECT.cover, capGrade:PROJECT.grade,
+  capOversize:150, capExc:true, capBlinding:50,
+  capBotX:true, capBotXDia:"N20", capBotXSpacing:150,
+  capBotY:true, capBotYDia:"N20", capBotYSpacing:150,
+  capTopX:true, capTopXDia:"N16", capTopXSpacing:200,
+  capTopY:true, capTopYDia:"N16", capTopYSpacing:200,
+};}
+/** Caps implied by this card: the entered override, else the pile count
+ * divided by how many piles share a cap (4 piles per cap over 12 piles = 3). */
+function pileCapCount(d,N){
+  let typed=num(d.capQty);
+  if(typed>0) return typed;
+  return Math.ceil(N/Math.max(1,num(d.capPilesPer,1)));
+}
+function renderPileCapTab(inst){
+  let d=inst.data, N=num(d.qty,1), caps=pileCapCount(d,N);
+  return `${chk("capOn",d.capOn,"Take the pile caps off with these piles","capOn")}
+  <div class="subsec ${d.capOn?'':'hidden'}" data-show-if="capOn">
+   <div class="grid cols4">
+    ${F("Piles per cap",inpNum("capPilesPer",d.capPilesPer===undefined?1:d.capPilesPer))}
+    ${F("Number of caps (0 = from piles per cap)",inpNum("capQty",d.capQty||0))}
+    ${F("Cap length (mm)",inpNum("capL",d.capL===undefined?1800:d.capL))}
+    ${F("Cap width (mm)",inpNum("capW",d.capW===undefined?1800:d.capW))}
+    ${F("Cap depth (mm)",inpNum("capD",d.capD===undefined?800:d.capD))}
+    ${F("Cover (mm)",inpNum("capCover",d.capCover===undefined?PROJECT.cover:d.capCover))}
+    ${F("Concrete grade (N)",inpNum("capGrade",d.capGrade===undefined?PROJECT.grade:d.capGrade))}
+    ${F("Excavation oversize (mm/side)",inpNum("capOversize",d.capOversize===undefined?150:d.capOversize))}
+   </div>
+   <p class="small">${caps} cap${caps===1?"":"s"} from ${N} pile${N===1?"":"s"} — concrete is caps × L × W × D, and the bar mats run each way less cover, the same maths the standalone Pile Cap element uses.</p>
+   <div class="sechead">Bottom Mat</div>
+   <div class="grid cols4">
+    ${chk("capBotX",d.capBotX===undefined?true:d.capBotX,"Bottom X bars")}${F("Dia",barSizeSel("capBotXDia",d.capBotXDia||"N20"))}${F("Spacing (mm)",inpNum("capBotXSpacing",d.capBotXSpacing===undefined?150:d.capBotXSpacing))}
+    ${chk("capBotY",d.capBotY===undefined?true:d.capBotY,"Bottom Y bars")}${F("Dia",barSizeSel("capBotYDia",d.capBotYDia||"N20"))}${F("Spacing (mm)",inpNum("capBotYSpacing",d.capBotYSpacing===undefined?150:d.capBotYSpacing))}
+   </div>
+   <div class="sechead">Top Mat</div>
+   <div class="grid cols4">
+    ${chk("capTopX",d.capTopX===undefined?true:d.capTopX,"Top X bars")}${F("Dia",barSizeSel("capTopXDia",d.capTopXDia||"N16"))}${F("Spacing (mm)",inpNum("capTopXSpacing",d.capTopXSpacing===undefined?200:d.capTopXSpacing))}
+    ${chk("capTopY",d.capTopY===undefined?true:d.capTopY,"Top Y bars")}${F("Dia",barSizeSel("capTopYDia",d.capTopYDia||"N16"))}${F("Spacing (mm)",inpNum("capTopYSpacing",d.capTopYSpacing===undefined?200:d.capTopYSpacing))}
+   </div>
+   <div class="sechead">Excavation &amp; Blinding</div>
+   ${chk("capExc",d.capExc===undefined?true:d.capExc,"Excavate and blind the caps","capExc")}
+   <div class="subsec ${(d.capExc===undefined?true:d.capExc)?'':'hidden'}" data-show-if="capExc"><div class="grid cols3">${F("Blinding thickness (mm, 0 = none)",inpNum("capBlinding",d.capBlinding===undefined?50:d.capBlinding))}</div></div>
+   <div class="tip"><span class="ico">🏗️</span><div>Use this tab when the caps follow the pile group and you'd rather keep them on one card. For a cap taken off on its own — one that picks up piles from several cards, or a strap beam running between groups — add the standalone <b>Pile Cap</b> element instead; it's still there, with its own strap-beam mode, mesh options, side bars and column starters. Don't do both for the same caps.</div></div>
+  </div>`;
+}
+/** The cap lines for the Pile Cap tab — concrete, both bar mats, and the
+ * oversized excavation/blinding. Deliberately mirrors computePileCap's
+ * arithmetic (same volume, same count = (dim−2×cover)/spacing + 1, same bar
+ * length less cover) so a cap costs the same whichever way it's taken off. */
+function pileCapTabLines(inst,def,N){
+  let d=inst.data, lines=[];
+  let caps=pileCapCount(d,N);
+  if(!(caps>0)) return lines;
+  let L=num(d.capL)/1000, W=num(d.capW)/1000, D=num(d.capD)/1000;
+  let cover=num(d.capCover,PROJECT.cover), grade=num(d.capGrade,PROJECT.grade);
+  if(!(L>0&&W>0&&D>0)) return lines;
+  let vol=caps*L*W*D;
+  lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${grade} concrete`,spec:`Pile caps ${num(d.capL)}x${num(d.capW)}x${num(d.capD)}`,qty:vol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(vol,concWastePct(d)),formula:`${caps} caps×${L}×${W}×${D}`}));
+  function capMat(flag,dia,sp,dim1,dim2,label){
+    if(!flag) return;
+    let barDia=barDiaOf(dia), spacing=Math.max(1,num(sp));
+    let count=Math.floor((num(dim1)-2*cover)/spacing)+1;
+    let barLen=(num(dim2)-2*cover)/1000;
+    if(!(count>0&&barLen>0)) return;
+    let totLen=count*barLen*caps, wt=totLen*massPerM(barDia);
+    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:dia,spec:`Pile cap — ${label}`,qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`count(${count})×len(${fmt(barLen,2)})×${caps} caps`,notes:`${fmt(wt,1)} kg, ${count} bars/cap`}));
+  }
+  capMat(d.capBotX===undefined?true:d.capBotX,d.capBotXDia||"N20",d.capBotXSpacing===undefined?150:d.capBotXSpacing,d.capW,d.capL,"Bottom X bars");
+  capMat(d.capBotY===undefined?true:d.capBotY,d.capBotYDia||"N20",d.capBotYSpacing===undefined?150:d.capBotYSpacing,d.capL,d.capW,"Bottom Y bars");
+  capMat(d.capTopX===undefined?true:d.capTopX,d.capTopXDia||"N16",d.capTopXSpacing===undefined?200:d.capTopXSpacing,d.capW,d.capL,"Top X bars");
+  capMat(d.capTopY===undefined?true:d.capTopY,d.capTopYDia||"N16",d.capTopYSpacing===undefined?200:d.capTopYSpacing,d.capL,d.capW,"Top Y bars");
+  if(d.capExc===undefined? true : d.capExc){
+    let os=num(d.capOversize,150)/1000, blind=num(d.capBlinding,50)/1000;
+    let excL=L+2*os, excW=W+2*os;
+    let exc=caps*excL*excW*(D+blind);
+    lines.push(baseLine(inst,def,{materialGroup:"Excavation",material:"Bulk excavation",spec:"Pile caps — oversized to cap+blinding",qty:exc,unit:"m³",waste:0,finalQty:exc,formula:`${caps}×(L+2os)×(W+2os)×(D+blind)`}));
+    lines.push(spoilLine(inst,def,exc));
+    if(blind>0){
+      let bvol=caps*excL*excW*blind;
+      lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:"Blinding concrete",spec:`Pile caps — ${num(d.capBlinding,50)}mm under cap`,qty:bvol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(bvol,concWastePct(d)),formula:`${caps}×(L+2os)×(W+2os)×${blind}`}));
+    }
+  }
+  return lines;
 }
 
 /* ---- PILE CAP ---- */
@@ -1978,7 +2066,12 @@ function renderPileCap(inst){
   <div class="subsec"><div class="sechead">Incoming from linked pier</div>${incomingStarters(d.linkTarget)}</div>`;
   let form=`<p class="small">Pick anywhere from none (fully cast against ground, oversized excavation) to all 4 sides (formed in open excavation with clearance).</p>
   ${faceRow([["formA","Face A (long side 1) — L×D"],["formB","Face B (long side 2) — L×D"],["formC","Face C (end 1) — W×D"],["formD","Face D (end 2) — W×D"]],d)}`;
-  return {geom,conc:concSection(d,`<p class="small">Concrete = L×W×D</p>`),reo,form,exc:`<p class="small">Excavation = (L+2×oversize)×(W+2×oversize)×(D+blinding)</p>`,blind:blindingSection(d)};
+  // Same omission the strip footing had: `conns` (column starters out, plus
+  // the incoming starters from the linked pier) was built and never returned,
+  // so the cap's own Connections detailing was unreachable while
+  // computePileCap costed d.colStarters. Returning it fixes that; colStarters
+  // defaults true but its quantity only bills what's entered, as before.
+  return {geom,conc:concSection(d,`<p class="small">Concrete = L×W×D</p>`),reo,form,exc:`<p class="small">Excavation = (L+2×oversize)×(W+2×oversize)×(D+blinding)</p>`,blind:blindingSection(d),conns};
 }
 function computePileCap(inst,def){
   let d=inst.data,lines=[];
@@ -2117,7 +2210,11 @@ function renderStripFooting(inst){
   <div class="subsec ${d.stepdown?'':'hidden'}" data-show-if="stepdown"><div class="grid cols4">
    ${F("Total step-down length (m)",inpNum("sdLength",d.sdLength))}${F("Step depth (mm)",inpNum("sdDepth",d.sdDepth))}${F("Dowel size",barSizeSel("sdDia",d.sdDia))}${F("Spacing (mm)",inpNum("sdSpacing",d.sdSpacing))}
   </div>${sdBarShapeUI(d,num(d.sdProj1,500)+num(d.sdProj2,500))}${sdSetupFields(d)}<div class="tip"><span class="ico">🏗️</span><div>Enter the TOTAL length of stepped footing (sum of every step run along the trench). Dowels are spaced over that length and the vertical step faces get their own formwork line — both the items a stepped strip footing adds over a level one.</div></div></div>`;
-  return {geom,conc:concSection(d,"<p class='small'>Concrete = length × width × depth</p>"),reo:reo+steps,form,exc:"<p class='small'>Excavation = length × trench width × excavation depth</p>",blind:blindingSection(d)};
+  // `conns` was built above but never returned — the strip footing's starter
+  // bars had no UI at all, even though computeStripFooting has always costed
+  // d.starters. Returning it makes the section reachable; the default stays
+  // false, so no existing takeoff changes.
+  return {geom,conc:concSection(d,"<p class='small'>Concrete = length × width × depth</p>"),reo:reo+steps,form,exc:"<p class='small'>Excavation = length × trench width × excavation depth</p>",blind:blindingSection(d),conns};
 }
 function computeStripFooting(inst,def){
   let d=inst.data, lines=[];
@@ -3888,7 +3985,7 @@ function duplicateInstance(id){
   renderWorkspace(); computeAllAndRefresh();
 }
 
-const TABS=[["geom","Geometry"],["conc","Concrete"],["reo","Reinforcement"],["edgebeams","Edge Beams"],["intbeams","Internal Beams"],["form","Formwork"],["exc","Excavation"],["blind","Blinding / Insulation"],["conns","Connections / Dowels"],["results","Results"]];
+const TABS=[["geom","Geometry"],["conc","Concrete"],["reo","Reinforcement"],["pilecap","Pile Cap"],["edgebeams","Edge Beams"],["intbeams","Internal Beams"],["form","Formwork"],["exc","Excavation"],["blind","Blinding / Insulation"],["conns","Connections / Dowels"],["results","Results"]];
 
 function renderWorkspace(){
   let host=document.getElementById("cardsHost");
@@ -3910,7 +4007,7 @@ function buildCard(inst){
   let def=LIB_INDEX[inst.typeKey];
   let calc=CALC[def.calc];
   let parts=calc.render(inst,def);
-  parts.conns = (parts.conns||"") + renderExtraConnRows(inst);
+  parts.conns = (parts.conns||"") + (usesSharedStarters(def)? startersSection(inst) : "") + renderExtraConnRows(inst);
   // Central additions available on EVERY element with the matching tab:
   // the formwork system/type choice heads every Formwork tab, and the
   // insulation section joins every Blinding / Insulation tab — no per-
@@ -3968,6 +4065,53 @@ function buildCard(inst){
   refreshCardResults(card,inst);
   return card;
 }
+/**
+ * Calculators that already render AND cost a starter-bar section of their
+ * own, each parameterised the way that element is actually detailed — strip
+ * footings, pad footings, beams, slabs, walls, shotcrete walls, stairs and
+ * tank/box elements by bar count; columns by their "continues to next
+ * element" dowels (which reuse the same conn* fields); pile caps by column
+ * starters out. The shared section below is added ONLY to the rest, so no
+ * element ever ends up with two starter sections writing to one set of
+ * fields and billing the bars twice.
+ *
+ * The effect is that EVERY element type now offers starters as a tick-box
+ * option: these ten through their own detailing, and the remainder (piles and
+ * bored piers, retaining walls, kerbs, and the generic element) through
+ * startersSection.
+ */
+const CALCS_WITH_OWN_STARTERS = new Set([
+  "stripfooting","padfooting","beam","slab","wall","shotwall","stairs","tankbox","column","pilecap",
+]);
+const usesSharedStarters = (def) => !CALCS_WITH_OWN_STARTERS.has(def.calc);
+
+/**
+ * Starter / dowel bars — the bars cast into this pour that project into
+ * whatever is built on top of it. Field names are the ones the bored pier has
+ * always used (starters, connQty, connDia, connEmbed, connProj, connHook,
+ * connLap), and the maths in computeInstance is the pier's own, so a takeoff
+ * saved before this section moved out of renderPier prices its piers
+ * identically. Off by default on everything else — an unticked section emits
+ * nothing, exactly like every other optional section here.
+ */
+function startersSection(inst){
+  let d=inst.data;
+  return `${chk("starters",d.starters,"Starter / dowel bars out of this element","starters")}
+  <div class="subsec ${d.starters?'':'hidden'}" data-show-if="starters">
+   <div class="grid cols4">
+    ${F("Connects to (target element)",targetSelect("connTarget",d.connTarget,inst.id))}
+    ${F("Quantity (bars per element)",inpNum("connQty",d.connQty===undefined?4:d.connQty))}
+    ${F("Diameter",barSizeSel("connDia",d.connDia||"N16"))}
+    ${F("Embedment into this element (mm)",inpNum("connEmbed",d.connEmbed===undefined?600:d.connEmbed))}
+    ${F("Projection into the element above (mm)",inpNum("connProj",d.connProj===undefined?900:d.connProj))}
+    ${F("Hook type",anchorSel("connHook",d.connHook||"straight"))}
+    ${F("Lap (mm, 0=none)",inpNum("connLap",d.connLap===undefined?0:d.connLap))}
+    ${chk("connCoupler",d.connCoupler,"Coupler")}
+   </div>
+   <div class="tip"><span class="ico">🎓</span><div>Starter bars are a first-class element in this tool, not a footnote in a waste factor. Enter them once at the element they're cast into — pick what they connect to and the quantity flows through as "incoming" on that element's Connections tab for visual continuity, but it is only ever costed once, at the source. This is the single most common double-counting error in a manual takeoff. Quantity is <b>per element</b>, so it multiplies by this card's own count.</div></div>
+  </div>`;
+}
+
 function renderExtraConnRows(inst){
   let rows = inst.data.extraConn || (inst.data.extraConn=[]);
   return `<div class="subsec"><div class="sechead">Additional Connections (any element, any quantity)</div>
@@ -4160,6 +4304,25 @@ function computeInstance(inst){
   let out=calc.compute(inst,def);
   computeExtraConnections(inst,def,out);
   let d=inst.data;
+  // Starter / dowel bars for the calculators that don't detail their own (see
+  // CALCS_WITH_OWN_STARTERS — the gate matters, because a column's dowels and
+  // a retaining wall's stem starters already use these same conn* fields and
+  // would otherwise be billed twice). Same maths the bored pier used when it
+  // owned this outright — quantity is bars PER element, multiplied by the
+  // card's own count — so a takeoff saved before this moved here prices its
+  // piers identically.
+  if(d.starters && usesSharedStarters(def)){
+    let N=num(d.qty,1);
+    let dia=barDiaOf(d.connDia||"N16");
+    let len=(num(d.connEmbed)+num(d.connProj)+anchorLen(d.connHook||"straight",dia,0)+num(d.connLap))/1000;
+    let totLen=num(d.connQty)*N*len;
+    if(totLen>0){
+      let wt=totLen*massPerM(dia);
+      let targetLabel=targetLabelOf(d.connTarget);
+      out.lines=out.lines||[];
+      out.lines.push(baseLine(inst,def,{materialGroup:"Connections",material:d.connDia||"N16",spec:"Starter bars → "+(targetLabel||"(unlinked)"),qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`${num(d.connQty)}×${N}×(embed ${num(d.connEmbed)}+proj ${num(d.connProj)}+lap ${num(d.connLap)})/1000`,linkedElement:targetLabel,notes:`${fmt(wt,1)} kg — counted once at source`}));
+    }
+  }
   // Generic formwork include/exclude: unticking "Include formwork" strips
   // every auto-emitted Formwork line; an entered area override replaces
   // them with one manual line. Untouched elements behave exactly as before.
@@ -5016,7 +5179,10 @@ const CSV_UNITS = {
 const CSV_TYPE_KEYWORDS = [
   [/pad\s*foot/i,"padfooting"], [/strip\s*foot|footing/i,"stripfooting"],
   [/grout\s*pad|base\s*plate/i,"columnbaseplate"],
+  // "pile cap" must be tested BEFORE the bare "pile" below, or every cap
+  // would import as a pile — first match wins in this list.
   [/bored\s*pier|caisson|drill(ed)?\s*shaft/i,"boredpier"], [/pile\s*cap/i,"pilecap"],
+  [/\bpiles?\b|screw\s*pile|driven\s*pile|cfa\b/i,"piles"],
   [/ground\s*beam/i,"groundbeam"], [/susp(ended)?\s*beam/i,"suspbeam"],
   [/raft/i,"raftslab"], [/waffle/i,"waffleslab"], [/industrial\s*slab/i,"industrialslab"],
   [/susp(ended)?\s*slab/i,"suspslab"], [/roof\s*slab/i,"roofslab"],
