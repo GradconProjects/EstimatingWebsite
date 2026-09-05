@@ -2208,15 +2208,37 @@ function drivenPileLines(inst,def,N,H){
  * Every field here is cap-prefixed so nothing collides with the pile's own
  * diameter/depth/cover/grade, and the whole tab is off until ticked.
  */
+const CAP_KINDS = [
+  ["cap",  "Pile caps (a pad over each pile group)"],
+  ["beam", "Capping beam (continuous over a line of piles)"],
+  ["both", "Both — caps and a capping beam"],
+];
+const capKindOf = (d) => (["cap","beam","both"].includes(d.capKind) ? d.capKind : "cap");
+const capHasPad  = (d) => capKindOf(d)!=="beam";
+const capHasBeam = (d) => capKindOf(d)!=="cap";
 function pileCapTabDefaults(){ return {
-  capOn:false, capPilesPer:1, capQty:0,
+  capOn:false, capKind:"cap", capPilesPer:1, capQty:0,
   capL:1800, capW:1800, capD:800, capCover:PROJECT.cover, capGrade:PROJECT.grade,
   capOversize:150, capExc:true, capBlinding:50,
   capBotX:true, capBotXDia:"N20", capBotXSpacing:150,
   capBotY:true, capBotYDia:"N20", capBotYSpacing:150,
   capTopX:true, capTopXDia:"N16", capTopXSpacing:200,
   capTopY:true, capTopYDia:"N16", capTopYSpacing:200,
+  // capping beam — a continuous beam capping a line of piles
+  capBeamW:600, capBeamD:800, capBeamLen:0, capBeamSpacing:1800,
+  capBeamTopN:4, capBeamTopDia:"N20", capBeamBotN:4, capBeamBotDia:"N20",
+  capBeamLig:true, capBeamLigDia:"N12", capBeamLigSpacing:200,
+  // starters and dowels out of the cap or beam
+  capColStarters:false, capColQty:8, capColDia:"N24", capColEmbed:600, capColProj:900, capColHook:"straight", capColLap:1200, capColTarget:"",
+  capDowels:false, capDowelQty:6, capDowelDia:"N16", capDowelEmbed:400, capDowelProj:600, capDowelHook:"straight", capDowelLap:0, capDowelTarget:"",
 };}
+/** Total capping-beam run in metres: the entered total, else one pile spacing
+ * per pile — the length a line of N piles at that spacing caps out at. */
+function capBeamLengthM(d,N){
+  let typed=num(d.capBeamLen);
+  if(typed>0) return typed/1000;
+  return N*num(d.capBeamSpacing,1800)/1000;
+}
 /** Caps implied by this card: the entered override, else the pile count
  * divided by how many piles share a cap (4 piles per cap over 12 piles = 3). */
 function pileCapCount(d,N){
@@ -2226,8 +2248,11 @@ function pileCapCount(d,N){
 }
 function renderPileCapTab(inst){
   let d=inst.data, N=num(d.qty,1), caps=pileCapCount(d,N);
-  return `${chk("capOn",d.capOn,"Take the pile caps off with these piles","capOn")}
+  let kind=capKindOf(d), pad=capHasPad(d), beam=capHasBeam(d);
+  return `${chk("capOn",d.capOn,"Take the pile caps / capping beams off with these piles","capOn")}
   <div class="subsec ${d.capOn?'':'hidden'}" data-show-if="capOn">
+   <div class="grid cols2">${F("What caps these piles",selOpts("capKind",kind,CAP_KINDS,true))}</div>
+   ${pad?`<div class="sechead">Pile Caps</div>
    <div class="grid cols4">
     ${F("Piles per cap",inpNum("capPilesPer",d.capPilesPer===undefined?1:d.capPilesPer))}
     ${F("Number of caps (0 = from piles per cap)",inpNum("capQty",d.capQty||0))}
@@ -2238,8 +2263,30 @@ function renderPileCapTab(inst){
     ${F("Concrete grade (N)",inpNum("capGrade",d.capGrade===undefined?PROJECT.grade:d.capGrade))}
     ${F("Excavation oversize (mm/side)",inpNum("capOversize",d.capOversize===undefined?150:d.capOversize))}
    </div>
-   <p class="small">${caps} cap${caps===1?"":"s"} from ${N} pile${N===1?"":"s"} — concrete is caps × L × W × D, and the bar mats run each way less cover, the same maths the standalone Pile Cap element uses.</p>
-   <div class="sechead">Bottom Mat</div>
+   <p class="small">${caps} cap${caps===1?"":"s"} from ${N} pile${N===1?"":"s"} — concrete is caps × L × W × D, and the bar mats run each way less cover, the same maths the standalone Pile Cap element uses.</p>`:`
+   <div class="grid cols4">
+    ${F("Cover (mm)",inpNum("capCover",d.capCover===undefined?PROJECT.cover:d.capCover))}
+    ${F("Concrete grade (N)",inpNum("capGrade",d.capGrade===undefined?PROJECT.grade:d.capGrade))}
+    ${F("Excavation oversize (mm/side)",inpNum("capOversize",d.capOversize===undefined?150:d.capOversize))}
+   </div>`}
+   ${beam?`<div class="sechead">Capping Beam</div>
+   <div class="grid cols4">
+    ${F("Beam width (mm)",inpNum("capBeamW",d.capBeamW===undefined?600:d.capBeamW))}
+    ${F("Beam depth (mm)",inpNum("capBeamD",d.capBeamD===undefined?800:d.capBeamD))}
+    ${F("Pile spacing along beam (mm)",inpNum("capBeamSpacing",d.capBeamSpacing===undefined?1800:d.capBeamSpacing))}
+    ${F("Total beam length (mm, 0 = piles × spacing)",inpNum("capBeamLen",d.capBeamLen||0))}
+   </div>
+   <p class="small">${fmt(capBeamLengthM(d,N),2)} m of capping beam — ${num(d.capBeamLen)>0?"as entered":`${N} pile${N===1?"":"s"} × ${num(d.capBeamSpacing,1800)}mm spacing`}. Concrete is length × width × depth; the longitudinal bars run the full length and the stirrups are closed links round the section less cover.</p>
+   <div class="grid cols4">
+    ${F("Top bars (no.)",inpNum("capBeamTopN",d.capBeamTopN===undefined?4:d.capBeamTopN))}${F("Top dia",barSizeSel("capBeamTopDia",d.capBeamTopDia||"N20"))}
+    ${F("Bottom bars (no.)",inpNum("capBeamBotN",d.capBeamBotN===undefined?4:d.capBeamBotN))}${F("Bottom dia",barSizeSel("capBeamBotDia",d.capBeamBotDia||"N20"))}
+   </div>
+   <div class="grid cols3">
+    ${chk("capBeamLig",d.capBeamLig===undefined?true:d.capBeamLig,"Stirrups / ligatures","capBeamLig")}
+    ${F("Stirrup dia",barSizeSel("capBeamLigDia",d.capBeamLigDia||"N12"))}
+    ${F("Stirrup spacing (mm)",inpNum("capBeamLigSpacing",d.capBeamLigSpacing===undefined?200:d.capBeamLigSpacing))}
+   </div>`:""}
+   ${pad?`<div class="sechead">Bottom Mat</div>
    <div class="grid cols4">
     ${chk("capBotX",d.capBotX===undefined?true:d.capBotX,"Bottom X bars")}${F("Dia",barSizeSel("capBotXDia",d.capBotXDia||"N20"))}${F("Spacing (mm)",inpNum("capBotXSpacing",d.capBotXSpacing===undefined?150:d.capBotXSpacing))}
     ${chk("capBotY",d.capBotY===undefined?true:d.capBotY,"Bottom Y bars")}${F("Dia",barSizeSel("capBotYDia",d.capBotYDia||"N20"))}${F("Spacing (mm)",inpNum("capBotYSpacing",d.capBotYSpacing===undefined?150:d.capBotYSpacing))}
@@ -2248,11 +2295,33 @@ function renderPileCapTab(inst){
    <div class="grid cols4">
     ${chk("capTopX",d.capTopX===undefined?true:d.capTopX,"Top X bars")}${F("Dia",barSizeSel("capTopXDia",d.capTopXDia||"N16"))}${F("Spacing (mm)",inpNum("capTopXSpacing",d.capTopXSpacing===undefined?200:d.capTopXSpacing))}
     ${chk("capTopY",d.capTopY===undefined?true:d.capTopY,"Top Y bars")}${F("Dia",barSizeSel("capTopYDia",d.capTopYDia||"N16"))}${F("Spacing (mm)",inpNum("capTopYSpacing",d.capTopYSpacing===undefined?200:d.capTopYSpacing))}
-   </div>
+   </div>`:""}
+   <div class="sechead">Starters &amp; Dowels</div>
+   ${chk("capColStarters",d.capColStarters,"Column starters out of the cap / beam","capColStarters")}
+   <div class="subsec ${d.capColStarters?'':'hidden'}" data-show-if="capColStarters"><div class="grid cols4">
+    ${F("Connects to (column)",targetSelect("capColTarget",d.capColTarget,inst.id))}
+    ${F("Starter bars (total no.)",inpNum("capColQty",d.capColQty===undefined?8:d.capColQty))}
+    ${F("Diameter",barSizeSel("capColDia",d.capColDia||"N24"))}
+    ${F("Embedment (mm)",inpNum("capColEmbed",d.capColEmbed===undefined?600:d.capColEmbed))}
+    ${F("Projection (mm)",inpNum("capColProj",d.capColProj===undefined?900:d.capColProj))}
+    ${F("Hook",anchorSel("capColHook",d.capColHook||"straight"))}
+    ${F("Lap (mm)",inpNum("capColLap",d.capColLap===undefined?1200:d.capColLap))}
+   </div></div>
+   ${chk("capDowels",d.capDowels,"Dowels into adjoining slab / ground beam","capDowels")}
+   <div class="subsec ${d.capDowels?'':'hidden'}" data-show-if="capDowels"><div class="grid cols4">
+    ${F("Connects to",targetSelect("capDowelTarget",d.capDowelTarget,inst.id))}
+    ${F("Dowels (total no.)",inpNum("capDowelQty",d.capDowelQty===undefined?6:d.capDowelQty))}
+    ${F("Diameter",barSizeSel("capDowelDia",d.capDowelDia||"N16"))}
+    ${F("Embedment (mm)",inpNum("capDowelEmbed",d.capDowelEmbed===undefined?400:d.capDowelEmbed))}
+    ${F("Projection (mm)",inpNum("capDowelProj",d.capDowelProj===undefined?600:d.capDowelProj))}
+    ${F("Hook",anchorSel("capDowelHook",d.capDowelHook||"straight"))}
+    ${F("Lap (mm)",inpNum("capDowelLap",d.capDowelLap||0))}
+   </div></div>
+   <p class="small">Both are entered as a TOTAL count for this card, not per cap — a line of caps rarely carries the same number of columns on each. The piles' own bars up into the cap stay on the <b>Connections</b> tab, so they can't be counted twice.</p>
    <div class="sechead">Excavation &amp; Blinding</div>
-   ${chk("capExc",d.capExc===undefined?true:d.capExc,"Excavate and blind the caps","capExc")}
+   ${chk("capExc",d.capExc===undefined?true:d.capExc,"Excavate and blind the caps / beam","capExc")}
    <div class="subsec ${(d.capExc===undefined?true:d.capExc)?'':'hidden'}" data-show-if="capExc"><div class="grid cols3">${F("Blinding thickness (mm, 0 = none)",inpNum("capBlinding",d.capBlinding===undefined?50:d.capBlinding))}</div></div>
-   <div class="tip"><span class="ico">🏗️</span><div>Use this tab when the caps follow the pile group and you'd rather keep them on one card. For a cap taken off on its own — one that picks up piles from several cards, or a strap beam running between groups — add the standalone <b>Pile Cap</b> element instead; it's still there, with its own strap-beam mode, mesh options, side bars and column starters. Don't do both for the same caps.</div></div>
+   <div class="tip"><span class="ico">🏗️</span><div>Use this tab when the caps or capping beam follow the pile group and you'd rather keep them on one card. For a cap taken off on its own — one that picks up piles from several cards, or a strap beam running between groups — add the standalone <b>Pile Cap</b> element instead; it's still there, with its own strap-beam mode, mesh options, side bars and column starters. The standalone <b>Capping Beam</b> element is also still there. Don't do both for the same concrete.</div></div>
   </div>`;
 }
 /** The cap lines for the Pile Cap tab — concrete, both bar mats, and the
@@ -2262,10 +2331,38 @@ function renderPileCapTab(inst){
 function pileCapTabLines(inst,def,N){
   let d=inst.data, lines=[];
   let caps=pileCapCount(d,N);
-  if(!(caps>0)) return lines;
   let L=num(d.capL)/1000, W=num(d.capW)/1000, D=num(d.capD)/1000;
   let cover=num(d.capCover,PROJECT.cover), grade=num(d.capGrade,PROJECT.grade);
-  if(!(L>0&&W>0&&D>0)) return lines;
+  let pad=capHasPad(d)&&caps>0&&L>0&&W>0&&D>0;
+  // ---- capping beam: a continuous beam over a line of piles ----
+  let beamLenM=0, bW=0, bD=0;
+  if(capHasBeam(d)){
+    beamLenM=capBeamLengthM(d,N); bW=num(d.capBeamW)/1000; bD=num(d.capBeamD)/1000;
+    if(beamLenM>0&&bW>0&&bD>0){
+      let bvol=beamLenM*bW*bD;
+      lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${grade} concrete`,spec:`Capping beam ${num(d.capBeamW)}x${num(d.capBeamD)}`,qty:bvol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(bvol,concWastePct(d)),formula:`${fmt(beamLenM,2)}m×${bW}×${bD}`}));
+      // longitudinal bars run the full beam, top and bottom
+      [["capBeamTopN","capBeamTopDia",4,"N20","Top bars"],["capBeamBotN","capBeamBotDia",4,"N20","Bottom bars"]].forEach(([nk,dk,dn,dd,label])=>{
+        let n=num(d[nk],dn), dia=d[dk]||dd;
+        if(!(n>0)) return;
+        let totLen=n*beamLenM, wt=totLen*massPerM(barDiaOf(dia));
+        lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:dia,spec:`Capping beam — ${label}`,qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`${n} bars×${fmt(beamLenM,2)}m`,notes:`${fmt(wt,1)} kg`}));
+      });
+      if(d.capBeamLig===undefined?true:d.capBeamLig){
+        let ligDia=barDiaOf(d.capBeamLigDia||"N12"), sp=Math.max(1,num(d.capBeamLigSpacing,200));
+        // closed link round the section less cover, plus two 135° hooks
+        let perim=2*((num(d.capBeamW)-2*cover)+(num(d.capBeamD)-2*cover));
+        let ligLen=(perim+2*anchorLen("hook135",ligDia,0))/1000;
+        let count=Math.floor(beamLenM*1000/sp)+1;
+        if(count>0&&ligLen>0){
+          let totLen=count*ligLen, wt=totLen*massPerM(ligDia);
+          lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.capBeamLigDia||"N12",spec:"Capping beam — stirrups",qty:count,unit:"no.",waste:PROJECT.reoWaste,finalQty:Math.ceil(withWaste(count,PROJECT.reoWaste)),massPerUnit:(count?wt/count:0),lengthM:withWaste(totLen,PROJECT.reoWaste),formula:`${fmt(beamLenM,2)}m/${sp}mm+1`,notes:`${fmt(totLen,1)}m, ${fmt(wt,1)} kg`}));
+        }
+      }
+    }
+  }
+  if(!pad&&!(beamLenM>0)) return lines;
+  if(!pad) return lines.concat(capStarterLines(inst,def), capCapExcLines(inst,def,0,0,0,0,beamLenM,bW,bD));
   let vol=caps*L*W*D;
   lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${grade} concrete`,spec:`Pile caps ${num(d.capL)}x${num(d.capW)}x${num(d.capD)}`,qty:vol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(vol,concWastePct(d)),formula:`${caps} caps×${L}×${W}×${D}`}));
   function capMat(flag,dia,sp,dim1,dim2,label){
@@ -2281,18 +2378,56 @@ function pileCapTabLines(inst,def,N){
   capMat(d.capBotY===undefined?true:d.capBotY,d.capBotYDia||"N20",d.capBotYSpacing===undefined?150:d.capBotYSpacing,d.capL,d.capW,"Bottom Y bars");
   capMat(d.capTopX===undefined?true:d.capTopX,d.capTopXDia||"N16",d.capTopXSpacing===undefined?200:d.capTopXSpacing,d.capW,d.capL,"Top X bars");
   capMat(d.capTopY===undefined?true:d.capTopY,d.capTopYDia||"N16",d.capTopYSpacing===undefined?200:d.capTopYSpacing,d.capL,d.capW,"Top Y bars");
-  if(d.capExc===undefined? true : d.capExc){
-    let os=num(d.capOversize,150)/1000, blind=num(d.capBlinding,50)/1000;
+  return lines.concat(capStarterLines(inst,def), capCapExcLines(inst,def,caps,L,W,D,beamLenM,bW,bD));
+}
+/** Column starters and dowels out of the cap or capping beam. Entered as a
+ * TOTAL for the card rather than per cap — a run of caps rarely carries the
+ * same number of columns on each. Cap-prefixed field names throughout, so
+ * nothing collides with the pile's own starters on the Connections tab (which
+ * is what stops the two being counted twice). Same length formula the
+ * standalone Pile Cap uses: embed + projection + hook + lap. */
+function capStarterLines(inst,def){
+  let d=inst.data, out=[];
+  const bars=(on,qtyK,diaK,embK,projK,hookK,lapK,tgtK,dDia,label)=>{
+    if(!on) return;
+    let qty=num(d[qtyK]); if(!(qty>0)) return;
+    let diaName=d[diaK]||dDia, dia=barDiaOf(diaName);
+    let len=(num(d[embK])+num(d[projK])+anchorLen(d[hookK]||"straight",dia,0)+num(d[lapK]))/1000;
+    if(!(len>0)) return;
+    let totLen=qty*len, wt=totLen*massPerM(dia), tgt=targetLabelOf(d[tgtK]);
+    out.push(baseLine(inst,def,{materialGroup:"Connections",material:diaName,spec:`${label} → ${tgt||"(unlinked)"}`,qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`${qty}×(embed+proj+hook+lap)/1000`,linkedElement:tgt,notes:`${fmt(wt,1)} kg`}));
+  };
+  bars(d.capColStarters,"capColQty","capColDia","capColEmbed","capColProj","capColHook","capColLap","capColTarget","N24","Pile cap — column starter bars");
+  bars(d.capDowels,"capDowelQty","capDowelDia","capDowelEmbed","capDowelProj","capDowelHook","capDowelLap","capDowelTarget","N16","Pile cap — dowels");
+  return out;
+}
+/** The oversized excavation and blinding under whatever this card caps with —
+ * the pads, the capping beam, or both. */
+function capCapExcLines(inst,def,caps,L,W,D,beamLenM,bW,bD){
+  let d=inst.data, out=[];
+  if(!(d.capExc===undefined? true : d.capExc)) return out;
+  let os=num(d.capOversize,150)/1000, blind=num(d.capBlinding,50)/1000;
+  let exc=0, bvol=0, parts=[];
+  if(caps>0&&L>0&&W>0&&D>0){
     let excL=L+2*os, excW=W+2*os;
-    let exc=caps*excL*excW*(D+blind);
-    lines.push(baseLine(inst,def,{materialGroup:"Excavation",material:"Bulk excavation",spec:"Pile caps — oversized to cap+blinding",qty:exc,unit:"m³",waste:0,finalQty:exc,formula:`${caps}×(L+2os)×(W+2os)×(D+blind)`}));
-    lines.push(spoilLine(inst,def,exc));
-    if(blind>0){
-      let bvol=caps*excL*excW*blind;
-      lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:"Blinding concrete",spec:`Pile caps — ${num(d.capBlinding,50)}mm under cap`,qty:bvol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(bvol,concWastePct(d)),formula:`${caps}×(L+2os)×(W+2os)×${blind}`}));
-    }
+    exc  += caps*excL*excW*(D+blind);
+    bvol += caps*excL*excW*blind;
+    parts.push("Pile caps");
   }
-  return lines;
+  if(beamLenM>0&&bW>0&&bD>0){
+    let excW2=bW+2*os;          // the beam is oversized on its sides, not its ends
+    exc  += beamLenM*excW2*(bD+blind);
+    bvol += beamLenM*excW2*blind;
+    parts.push("capping beam");
+  }
+  if(!(exc>0)) return out;
+  let what=parts.join(" + ");
+  out.push(baseLine(inst,def,{materialGroup:"Excavation",material:"Bulk excavation",spec:`${what} — oversized to concrete+blinding`,qty:exc,unit:"m³",waste:0,finalQty:exc,formula:`(dim+2×${num(d.capOversize,150)}mm)×(depth+blinding)`}));
+  out.push(spoilLine(inst,def,exc));
+  if(blind>0&&bvol>0){
+    out.push(baseLine(inst,def,{materialGroup:"Concrete",material:"Blinding concrete",spec:`${what} — ${num(d.capBlinding,50)}mm under`,qty:bvol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(bvol,concWastePct(d)),formula:`oversized footprint × ${blind}`}));
+  }
+  return out;
 }
 
 /* ---- PILE CAP ---- */
