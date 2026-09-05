@@ -2063,10 +2063,16 @@ function renderPier(inst){
         : `<p class="small">A ${pileTypeLabel(d).toLowerCase()} pile is supplied ready-made, so there is no concrete to pour on site. Switch the pile type back to <b>Bored / CFA</b> on the Geometry tab to cast in situ.</p>`,
       reo: `<p class="small">A driven pile arrives already reinforced, so there is no cage to detail here. Starter bars out of the pile into its cap are on the <b>Connections</b> tab, and the cap's own steel is on the <b>Pile Cap</b> tab.</p>`,
       pilecap: renderPileCapTab(inst),
-      form: `<p class="small">No formwork — the pile is cast off site (or is a steel/timber section) and driven.</p>`,
+      // The pile itself needs no formwork, but its caps do — so the cap
+      // formwork picker still belongs here on a driven pile.
+      form: `<p class="small">No formwork to the pile itself — it is cast off site (or is a steel/timber section) and driven.</p>${capFormworkSection(inst)}`,
+      blind: capBlindingSection(inst),
       exc: `<p class="small">Driving displaces the ground rather than removing it, so there is no bored spoil to cart. Any pile-cap excavation is taken off on the <b>Pile Cap</b> tab.</p>`};
   }
-  return {geom,conc,reo,pilecap:renderPileCapTab(inst),form:`<p class="small">Bored piers cast against ground — no formwork typically required. Toggle if temporary casing/formwork used.</p>${chk('formworkReq',d.formworkReq,'Temporary casing / formwork required','formworkReq')}<div class="subsec ${d.formworkReq?'':'hidden'}" data-show-if="formworkReq">${F('Casing area override (m², 0=auto perimeter×depth)',inpNum('casingArea',d.casingArea||0))}</div>`, exc:`<div class="grid cols3">${F("Spoil factor (bulking %, 0=project default)",inpNum("bulkOverride",d.bulkOverride||0))}</div>`};
+  return {geom,conc,reo,pilecap:renderPileCapTab(inst),
+    form:`<p class="small">Bored piers cast against ground — no formwork typically required. Toggle if temporary casing/formwork used.</p>${chk('formworkReq',d.formworkReq,'Temporary casing / formwork required','formworkReq')}<div class="subsec ${d.formworkReq?'':'hidden'}" data-show-if="formworkReq">${F('Casing area override (m², 0=auto perimeter×depth)',inpNum('casingArea',d.casingArea||0))}</div>${capFormworkSection(inst)}`,
+    blind: capBlindingSection(inst),
+    exc:`<div class="grid cols3">${F("Spoil factor (bulking %, 0=project default)",inpNum("bulkOverride",d.bulkOverride||0))}</div>`};
 }
 function computePier(inst,def){
   let d=inst.data, lines=[], warnings=[];
@@ -2231,6 +2237,17 @@ function pileCapTabDefaults(){ return {
   // starters and dowels out of the cap or beam
   capColStarters:false, capColQty:8, capColDia:"N24", capColEmbed:600, capColProj:900, capColHook:"straight", capColLap:1200, capColTarget:"",
   capDowels:false, capDowelQty:6, capDowelDia:"N16", capDowelEmbed:400, capDowelProj:600, capDowelHook:"straight", capDowelLap:0, capDowelTarget:"",
+  // Side formwork to the caps / beam. On by default on a NEW card, for the
+  // same reason capExc is: the tab already assumes 150mm/side of working room
+  // round the concrete, which is clearance to form in. A saved card carries
+  // none of these keys, so it reads as false and its quantities don't move.
+  capFormA:true, capFormB:true, capFormC:true, capFormD:true,
+  capBeamFormSides:true, capBeamFormEnds:false,
+  // Blinding and vapour barrier under the caps / beam. Same choices every
+  // other blinded element gets, and the same line builders, so a blinded cap
+  // reads identically wherever it was taken off.
+  capBlindingMaterial:"concrete", capBlindingGrade:20,
+  capVapour:false, capVmType:"200um polyethylene", capVmLap:10,
 };}
 /** Total capping-beam run in metres: the entered total, else one pile spacing
  * per pile — the length a line of N piles at that spacing caps out at. */
@@ -2318,9 +2335,9 @@ function renderPileCapTab(inst){
     ${F("Lap (mm)",inpNum("capDowelLap",d.capDowelLap||0))}
    </div></div>
    <p class="small">Both are entered as a TOTAL count for this card, not per cap — a line of caps rarely carries the same number of columns on each. The piles' own bars up into the cap stay on the <b>Connections</b> tab, so they can't be counted twice.</p>
-   <div class="sechead">Excavation &amp; Blinding</div>
-   ${chk("capExc",d.capExc===undefined?true:d.capExc,"Excavate and blind the caps / beam","capExc")}
-   <div class="subsec ${(d.capExc===undefined?true:d.capExc)?'':'hidden'}" data-show-if="capExc"><div class="grid cols3">${F("Blinding thickness (mm, 0 = none)",inpNum("capBlinding",d.capBlinding===undefined?50:d.capBlinding))}</div></div>
+   <div class="sechead">Excavation</div>
+   ${chk("capExc",d.capExc===undefined?true:d.capExc,"Excavate the caps / beam","capExc")}
+   <p class="small">Blinding, its material and grade, and the vapour barrier under the caps are on this card's <b>Blinding / Insulation</b> tab; the formed faces are on its <b>Formwork</b> tab.</p>
    <div class="tip"><span class="ico">🏗️</span><div>Use this tab when the caps or capping beam follow the pile group and you'd rather keep them on one card. For a cap taken off on its own — one that picks up piles from several cards, or a strap beam running between groups — add the standalone <b>Pile Cap</b> element instead; it's still there, with its own strap-beam mode, mesh options, side bars and column starters. The standalone <b>Capping Beam</b> element is also still there. Don't do both for the same concrete.</div></div>
   </div>`;
 }
@@ -2362,7 +2379,7 @@ function pileCapTabLines(inst,def,N){
     }
   }
   if(!pad&&!(beamLenM>0)) return lines;
-  if(!pad) return lines.concat(capStarterLines(inst,def), capCapExcLines(inst,def,0,0,0,0,beamLenM,bW,bD));
+  if(!pad) return lines.concat(capStarterLines(inst,def), capFormworkLines(inst,def,0,0,0,0,beamLenM,bW,bD), capCapExcLines(inst,def,0,0,0,0,beamLenM,bW,bD));
   let vol=caps*L*W*D;
   lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${grade} concrete`,spec:`Pile caps ${num(d.capL)}x${num(d.capW)}x${num(d.capD)}`,qty:vol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(vol,concWastePct(d)),formula:`${caps} caps×${L}×${W}×${D}`}));
   function capMat(flag,dia,sp,dim1,dim2,label){
@@ -2378,7 +2395,69 @@ function pileCapTabLines(inst,def,N){
   capMat(d.capBotY===undefined?true:d.capBotY,d.capBotYDia||"N20",d.capBotYSpacing===undefined?150:d.capBotYSpacing,d.capL,d.capW,"Bottom Y bars");
   capMat(d.capTopX===undefined?true:d.capTopX,d.capTopXDia||"N16",d.capTopXSpacing===undefined?200:d.capTopXSpacing,d.capW,d.capL,"Top X bars");
   capMat(d.capTopY===undefined?true:d.capTopY,d.capTopYDia||"N16",d.capTopYSpacing===undefined?200:d.capTopYSpacing,d.capL,d.capW,"Top Y bars");
-  return lines.concat(capStarterLines(inst,def), capCapExcLines(inst,def,caps,L,W,D,beamLenM,bW,bD));
+  return lines.concat(capStarterLines(inst,def), capFormworkLines(inst,def,caps,L,W,D,beamLenM,bW,bD), capCapExcLines(inst,def,caps,L,W,D,beamLenM,bW,bD));
+}
+/** Side formwork to the caps and/or the capping beam — the faces picked on
+ * the pile card's Formwork tab. Same face-by-face arithmetic the standalone
+ * Pile Cap uses (each long face is L×D, each end W×D, times the number of
+ * caps), so a formed cap costs the same whichever way it's taken off. The
+ * beam is formed on its two sides over the full run, and optionally on its
+ * two ends. Anything not ticked is cast against the excavation face. */
+function capFormworkLines(inst,def,caps,L,W,D,beamLenM,bW,bD){
+  let d=inst.data, out=[], area=0, capFaces=[], beamFaces=[];
+  if(caps>0&&L>0&&W>0&&D>0){
+    if(d.capFormA){ area+=caps*L*D; capFaces.push("cap A"); }
+    if(d.capFormB){ area+=caps*L*D; capFaces.push("cap B"); }
+    if(d.capFormC){ area+=caps*W*D; capFaces.push("cap C"); }
+    if(d.capFormD){ area+=caps*W*D; capFaces.push("cap D"); }
+  }
+  if(beamLenM>0&&bW>0&&bD>0){
+    if(d.capBeamFormSides){ area+=2*beamLenM*bD; beamFaces.push("sides"); }
+    if(d.capBeamFormEnds){ area+=2*bW*bD; beamFaces.push("ends"); }
+  }
+  if(!(area>0)) return out;
+  // Name only what is actually formed — a beam-only card must not read
+  // "Pile caps" on its formwork line, and vice versa.
+  let what=capFaces.length ? (beamFaces.length? "Pile caps + capping beam" : "Pile caps") : "Capping beam";
+  // "beam sides" only needs the qualifier when cap faces share the line
+  let faces=capFaces.concat(beamFaces.map((f)=>capFaces.length? `beam ${f}` : f));
+  out.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Side formwork",spec:`${what} — ${faces.join(", ")}`,qty:area,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(area,PROJECT.formworkWaste),formula:`selected faces × depth`}));
+  return out;
+}
+/** The cap/beam blinding and vapour barrier, on the pile card's Blinding /
+ * Insulation tab. Cap-prefixed fields (the pile itself blinds nothing), but
+ * the same choices and the same line builders every other blinded element
+ * gets. Blinding is measured on the OVERSIZED footprint, because that's the
+ * hole it's poured into. */
+function capBlindingSection(inst){
+  let d=inst.data;
+  if(!d.capOn) return `<p class="small">A bored or driven pile has no blinding of its own. Switch the caps on in the <b>Pile Cap</b> tab and the blinding and vapour barrier under them appear here.</p>`;
+  let thick=num(d.capBlinding,50);
+  return `<div class="sechead">Blinding &amp; Vapour Barrier — pile caps / capping beam</div>
+  <div class="grid cols4">
+   ${F("Blinding thickness (mm, 0 = none)",inpNum("capBlinding",d.capBlinding===undefined?50:d.capBlinding))}
+   ${F("Blinding type",selOpts("capBlindingMaterial",d.capBlindingMaterial||"concrete",[["concrete","Concrete blinding"],["mudslab","Mud slab / lean-mix screed"],["sand","Sand blinding"],["crushedrock","Crushed rock"],["compacted","Base material — compacted"],["loose","Base material — loose"]]))}
+   ${F("Blinding concrete grade (N)",inpNum("capBlindingGrade",d.capBlindingGrade===undefined?20:d.capBlindingGrade))}
+  </div>
+  <p class="small">${thick>0?`${thick}mm`:"No blinding"} over the oversized excavation footprint — the hole it's actually poured into, not the cap's own plan area. Turning the caps' excavation off on the Pile Cap tab removes the blinding with it.</p>
+  ${chk("capVapour",d.capVapour,"Vapour barrier / membrane under the caps","capVapour")}
+  <div class="subsec ${d.capVapour?'':'hidden'}" data-show-if="capVapour"><div class="grid cols3">
+   ${F("Membrane type",selOpts("capVmType",d.capVmType||"200um polyethylene",[["200um polyethylene","200µm polyethylene (standard)"],["300um polyethylene","300µm polyethylene (heavy duty)"],["Fortecon 200um","Fortecon 200µm"],["Damp-proof membrane","Damp-proof membrane (other)"]]))}
+   ${F("Laps &amp; upturns allowance (%)",inpNum("capVmLap",d.capVmLap===undefined?10:d.capVmLap))}
+  </div></div>`;
+}
+/** The cap/beam formwork picker, shown on the pile card's Formwork tab
+ * whenever this card is taking its caps off — the caps need forming whether
+ * the piles themselves are bored or driven. */
+function capFormworkSection(inst){
+  let d=inst.data;
+  if(!d.capOn) return "";
+  let pad=capHasPad(d), beam=capHasBeam(d);
+  return `<div class="sechead">Pile Cap / Capping Beam Formwork</div>
+  ${pad?`<p class="small">Pick the cap faces that are formed — anywhere from none (cast against the excavation face) to all four sides. Each long face is L×D, each end W×D, times ${pileCapCount(d,num(d.qty,1))} cap${pileCapCount(d,num(d.qty,1))===1?"":"s"}.</p>
+  ${faceRow([["capFormA","Cap face A (long side 1) — L×D"],["capFormB","Cap face B (long side 2) — L×D"],["capFormC","Cap face C (end 1) — W×D"],["capFormD","Cap face D (end 2) — W×D"]],d)}`:""}
+  ${beam?`<p class="small">The capping beam is formed down both sides over its full ${fmt(capBeamLengthM(d,num(d.qty,1)),2)} m run; tick the ends as well if they're formed rather than run into adjoining concrete.</p>
+  <div class="grid cols3">${chk("capBeamFormSides",d.capBeamFormSides,"Beam sides (2 × length × depth)")}${chk("capBeamFormEnds",d.capBeamFormEnds,"Beam ends (2 × width × depth)")}</div>`:""}`;
 }
 /** Column starters and dowels out of the cap or capping beam. Entered as a
  * TOTAL for the card rather than per cap — a run of caps rarely carries the
@@ -2407,25 +2486,31 @@ function capCapExcLines(inst,def,caps,L,W,D,beamLenM,bW,bD){
   let d=inst.data, out=[];
   if(!(d.capExc===undefined? true : d.capExc)) return out;
   let os=num(d.capOversize,150)/1000, blind=num(d.capBlinding,50)/1000;
-  let exc=0, bvol=0, parts=[];
+  let exc=0, blindArea=0, parts=[];
   if(caps>0&&L>0&&W>0&&D>0){
     let excL=L+2*os, excW=W+2*os;
-    exc  += caps*excL*excW*(D+blind);
-    bvol += caps*excL*excW*blind;
+    exc       += caps*excL*excW*(D+blind);
+    blindArea += caps*excL*excW;
     parts.push("Pile caps");
   }
   if(beamLenM>0&&bW>0&&bD>0){
     let excW2=bW+2*os;          // the beam is oversized on its sides, not its ends
-    exc  += beamLenM*excW2*(bD+blind);
-    bvol += beamLenM*excW2*blind;
+    exc       += beamLenM*excW2*(bD+blind);
+    blindArea += beamLenM*excW2;
     parts.push("capping beam");
   }
   if(!(exc>0)) return out;
   let what=parts.join(" + ");
   out.push(baseLine(inst,def,{materialGroup:"Excavation",material:"Bulk excavation",spec:`${what} — oversized to concrete+blinding`,qty:exc,unit:"m³",waste:0,finalQty:exc,formula:`(dim+2×${num(d.capOversize,150)}mm)×(depth+blinding)`}));
   out.push(spoilLine(inst,def,exc));
-  if(blind>0&&bvol>0){
-    out.push(baseLine(inst,def,{materialGroup:"Concrete",material:"Blinding concrete",spec:`${what} — ${num(d.capBlinding,50)}mm under`,qty:bvol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(bvol,concWastePct(d)),formula:`oversized footprint × ${blind}`}));
+  // Same builders every other blinded element uses, so the cap's blinding
+  // picks up the material naming (concrete / mud slab / sand / crushed rock)
+  // and the membrane its lap allowance, rather than a second implementation.
+  if(blind>0&&blindArea>0){
+    out.push(blindingLine(inst,def,blindArea,num(d.capBlinding,50),d.capBlindingMaterial||"concrete",num(d.capBlindingGrade,20)));
+  }
+  if(d.capVapour&&blindArea>0){
+    out.push(vapourMembraneLine(inst,def,blindArea,d.capVmType,d.capVmLap));
   }
   return out;
 }
