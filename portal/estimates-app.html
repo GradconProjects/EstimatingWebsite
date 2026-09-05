@@ -2066,12 +2066,16 @@ function renderPier(inst){
       // The pile itself needs no formwork, but its caps do — so the cap
       // formwork picker still belongs here on a driven pile.
       form: `<p class="small">No formwork to the pile itself — it is cast off site (or is a steel/timber section) and driven.</p>${capFormworkSection(inst)}`,
-      blind: capBlindingSection(inst),
+      // Caps on: the cap-specific blinding. Caps off: leave it undefined so
+      // buildCard supplies the generic element-level Blinding & Vapour Barrier
+      // section every other element gets — a capless pile card keeps exactly
+      // the control it had before the cap section existed.
+      blind: d.capOn ? capBlindingSection(inst) : undefined,
       exc: `<p class="small">Driving displaces the ground rather than removing it, so there is no bored spoil to cart. Any pile-cap excavation is taken off on the <b>Pile Cap</b> tab.</p>`};
   }
   return {geom,conc,reo,pilecap:renderPileCapTab(inst),
     form:`<p class="small">Bored piers cast against ground — no formwork typically required. Toggle if temporary casing/formwork used.</p>${chk('formworkReq',d.formworkReq,'Temporary casing / formwork required','formworkReq')}<div class="subsec ${d.formworkReq?'':'hidden'}" data-show-if="formworkReq">${F('Casing area override (m², 0=auto perimeter×depth)',inpNum('casingArea',d.casingArea||0))}</div>${capFormworkSection(inst)}`,
-    blind: capBlindingSection(inst),
+    blind: d.capOn ? capBlindingSection(inst) : undefined,
     exc:`<div class="grid cols3">${F("Spoil factor (bulking %, 0=project default)",inpNum("bulkOverride",d.bulkOverride||0))}</div>`};
 }
 function computePier(inst,def){
@@ -2431,7 +2435,6 @@ function capFormworkLines(inst,def,caps,L,W,D,beamLenM,bW,bD){
  * hole it's poured into. */
 function capBlindingSection(inst){
   let d=inst.data;
-  if(!d.capOn) return `<p class="small">A bored or driven pile has no blinding of its own. Switch the caps on in the <b>Pile Cap</b> tab and the blinding and vapour barrier under them appear here.</p>`;
   let thick=num(d.capBlinding,50);
   return `<div class="sechead">Blinding &amp; Vapour Barrier — pile caps / capping beam</div>
   <div class="grid cols4">
