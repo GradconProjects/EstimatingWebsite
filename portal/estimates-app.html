@@ -2270,7 +2270,12 @@ function pileCapCount(d,N){
 function renderPileCapTab(inst){
   let d=inst.data, N=num(d.qty,1), caps=pileCapCount(d,N);
   let kind=capKindOf(d), pad=capHasPad(d), beam=capHasBeam(d);
-  return `${chk("capOn",d.capOn,"Take the pile caps / capping beams off with these piles","capOn")}
+  // rerender, not just data-toggle: switching the caps on has to REBUILD the
+  // card, because the cap sections on the Formwork and Blinding tabs are
+  // decided at render time. With only the in-place toggle, ticking this box
+  // revealed the cap fields here but left those two tabs empty until some
+  // other edit happened to redraw the card.
+  return `${chk("capOn",d.capOn,"Take the pile caps / capping beams off with these piles","capOn",true)}
   <div class="subsec ${d.capOn?'':'hidden'}" data-show-if="capOn">
    <div class="grid cols2">${F("What caps these piles",selOpts("capKind",kind,CAP_KINDS,true))}</div>
    ${pad?`<div class="sechead">Pile Caps</div>
