@@ -134,6 +134,19 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete 
     );
   }, [sortedSummaries, statusFilter, search]);
   const filtering = !!statusFilter || !!search.trim();
+  // One count per status, off the SEARCHED set rather than the fully filtered
+  // one — so the buttons show how many projects each status would give you
+  // right now, and a status with none reads as 0 instead of vanishing.
+  const statusCounts = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const searched = sortedSummaries.filter(
+      (s) => !q || s.name.toLowerCase().includes(q) || s.client.toLowerCase().includes(q)
+    );
+    const counts = { "": searched.length };
+    QUOTE_STATUSES.forEach((st) => { counts[st] = 0; });
+    searched.forEach((s) => { counts[s.status] = (counts[s.status] || 0) + 1; });
+    return counts;
+  }, [sortedSummaries, search]);
 
   const changeStatus = (project, status) => {
     const quote = quotesByKey[project.storageKey] || {};
@@ -184,19 +197,6 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete 
             className="border border-neutral-200 rounded px-2.5 py-1.5 text-xs w-44 focus:outline-none focus:ring-2 focus:ring-orange-400"
           />
           <div className="flex items-center gap-1.5 text-xs text-neutral-500">
-            <span>Status:</span>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="border border-neutral-200 rounded px-2 py-1 text-xs"
-            >
-              <option value="">All statuses</option>
-              {QUOTE_STATUSES.map((s) => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </select>
-          </div>
-          <div className="flex items-center gap-1.5 text-xs text-neutral-500">
             <span>Sort by:</span>
             <select
               value={sortBy}
@@ -215,6 +215,44 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete 
             <Plus size={16} /> New project
           </button>
         </div>
+      </div>
+
+      {/* Status filter buttons — one per status plus All projects, each with
+          its live count in this status's own colour. Clicking one filters the
+          table below to just those projects; clicking the active one again
+          clears back to all. A row of buttons rather than a dropdown so the
+          shape of the pipeline is readable at a glance. */}
+      <div className="flex flex-wrap gap-2">
+        {[["", "All projects"], ...QUOTE_STATUSES.map((s2) => [s2, s2])].map(([value, label]) => {
+          const active = statusFilter === value;
+          const style = QUOTE_STATUS_STYLES[value];
+          const count = statusCounts[value] || 0;
+          return (
+            <button
+              key={value || "__all"}
+              onClick={() => setStatusFilter(active ? "" : value)}
+              aria-pressed={active}
+              title={`${label} — ${count} project${count === 1 ? "" : "s"}`}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-colors ${
+                active
+                  ? "border-blue-950 bg-blue-950 text-white shadow-sm"
+                  : `border-neutral-200 bg-white hover:bg-neutral-50 ${style ? style.text : "text-neutral-700"}`
+              } ${!active && count === 0 ? "opacity-45" : ""}`}
+            >
+              {style && (
+                <span className={`inline-block w-2.5 h-2.5 rounded-full flex-none ${active ? "bg-white/80" : style.dot}`} />
+              )}
+              {label}
+              <span
+                className={`font-mono tabular-nums rounded-full px-1.5 py-0.5 text-[10px] ${
+                  active ? "bg-white/20 text-white" : "bg-neutral-100 text-neutral-600"
+                }`}
+              >
+                {count}
+              </span>
+            </button>
+          );
+        })}
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
