@@ -217,15 +217,26 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete 
         </div>
       </div>
 
-      {/* Status filter buttons — one per status plus All projects, each with
-          its live count in this status's own colour. Clicking one filters the
-          table below to just those projects; clicking the active one again
-          clears back to all. A row of buttons rather than a dropdown so the
-          shape of the pipeline is readable at a glance. */}
+      {/* Status filter tiles — one per status plus All projects. Each tile is
+          FILLED with its status's own solid colour (the same `bar` shade the
+          row dots use), not a white chip with coloured text, so the row reads
+          as the pipeline at a glance. The count is the tile's headline.
+          Clicking one filters the table below to just those projects;
+          clicking the active one again clears back to all. The active tile is
+          marked by a dark ring and shadow rather than by a colour change —
+          colour is spoken for by the status itself. */}
       <div className="flex flex-wrap gap-2">
         {[["", "All projects"], ...QUOTE_STATUSES.map((s2) => [s2, s2])].map(([value, label]) => {
           const active = statusFilter === value;
-          const style = QUOTE_STATUS_STYLES[value];
+          // "All projects" has no catalog status colour — give it the app's
+          // own navy so the row reads as one set rather than one odd tile.
+          const style = QUOTE_STATUS_STYLES[value] || {
+            bar: "bg-blue-950", dot: "bg-blue-950", text: "text-blue-900", bg: "bg-blue-50",
+          };
+          // Every status bar is dark enough to carry white text except On
+          // Hold's deliberately washed-out neutral — that one needs dark ink.
+          const light = style.bar === "bg-neutral-300";
+          const ink = light ? "text-neutral-800" : "text-white";
           const count = statusCounts[value] || 0;
           return (
             <button
@@ -233,23 +244,22 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete 
               onClick={() => setStatusFilter(active ? "" : value)}
               aria-pressed={active}
               title={`${label} — ${count} project${count === 1 ? "" : "s"}`}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-colors ${
+              className={`relative overflow-hidden flex-1 min-w-[112px] max-w-[168px] min-h-[92px] rounded-xl border border-transparent flex flex-col items-center justify-center gap-1.5 px-3 py-3 transition-all ${style.bar} ${ink} ${
                 active
-                  ? "border-blue-950 bg-blue-950 text-white shadow-sm"
-                  : `border-neutral-200 bg-white hover:bg-neutral-50 ${style ? style.text : "text-neutral-700"}`
-              } ${!active && count === 0 ? "opacity-45" : ""}`}
+                  ? "shadow-lg ring-2 ring-offset-2 ring-blue-950 scale-[1.03]"
+                  : `shadow-sm hover:brightness-110 hover:shadow-md ${count === 0 ? "opacity-50" : ""}`
+              }`}
             >
-              {style && (
-                <span className={`inline-block w-2.5 h-2.5 rounded-full flex-none ${active ? "bg-white/80" : style.dot}`} />
-              )}
-              {label}
+              {/* a soft wash behind the count, so the headline number reads as
+                  a badge rather than floating on the flat fill */}
               <span
-                className={`font-mono tabular-nums rounded-full px-1.5 py-0.5 text-[10px] ${
-                  active ? "bg-white/20 text-white" : "bg-neutral-100 text-neutral-600"
+                className={`inline-flex items-center justify-center min-w-[2.25rem] px-2 py-0.5 rounded-lg font-mono tabular-nums text-2xl font-bold leading-none ${
+                  light ? "bg-white/70" : "bg-black/20"
                 }`}
               >
                 {count}
               </span>
+              <span className="text-[11px] font-semibold leading-tight text-center">{label}</span>
             </button>
           );
         })}
