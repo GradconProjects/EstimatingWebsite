@@ -881,7 +881,37 @@ check("Import: a count-only reinforcement line (no length, e.g. ligatures) is fl
   assert.ok(flags.some((f) => f.includes("40.01") && f.includes("kg")), `expected the actual weight to be flagged too, got: ${flags.join(" | ")}`);
 });
 
-const { computeTenderProjectSum, parseTenderPrice } = await import("../src/lib/tenderQuoteDefaults.js");
+const { computeTenderProjectSum, parseTenderPrice, seedTenderItems } = await import("../src/lib/tenderQuoteDefaults.js");
+
+check("Tender quote prints the FLOOR AREA entered in the quote (measureM2), not the Square Mesh coverage", () => {
+  const raft = newElementItem(ELEMENT_TYPES.find((t) => t.id === "raft_foundation"));
+  raft.label = "Ground Floor Raft";
+  const rates = defaultRates();
+  const mesh = FULL_CATALOG.find((c) => c.key === "SQUARE MESH").products[0];
+  // 400 m² of floor reinforced with TWO layers of mesh = 800 m² of mesh
+  raft.qtys[rateKey("SQUARE MESH", mesh.name, mesh.unit)] = 800;
+  const quote = { overheadPct: 0.08, contingencyPct: 0.05 };
+
+  // unmeasured: nothing else to go on, so the mesh coverage still shows
+  let pts = seedTenderItems(quote, [raft], rates)[0].points.join(" | ");
+  assert.ok(/800/.test(pts), `unmeasured element falls back to the mesh area, got: ${pts}`);
+  assert.ok(labourQuantities(raft, rates).finishM2 === 800, "the mesh still drives finishM2 for the finishing crew");
+
+  // measured in the Quotes section's Project Geometry table — THAT is the
+  // floor area the tender quotes against
+  raft.measureM2 = 400;
+  pts = seedTenderItems(quote, [raft], rates)[0].points.join(" | ");
+  assert.ok(/approx\. 400 m²/.test(pts), `expected the entered 400 m² floor area, got: ${pts}`);
+  assert.ok(!/800 m²/.test(pts), `the 800 m² of mesh must not be quoted as floor area, got: ${pts}`);
+  // and the entered area is exactly what the element's $/m² benchmark divides by
+  const m2Rate = computeElementUnitRates(raft, rates).find((r) => r.unit === "m²");
+  assert.equal(m2Rate.qty, 400, "the tender area and the $/m² divisor are the same figure");
+
+  // a typed 0 / blank is "not measured", not "zero area"
+  raft.measureM2 = "";
+  assert.ok(/800/.test(seedTenderItems(quote, [raft], rates)[0].points.join(" | ")), "a blank area falls back rather than printing 0 m²");
+});
+
 
 check("Tender Project Sum: line-item '$… + GST' prices sum ex-GST; override replaces; markup is a whole %; GST added last and only when on", () => {
   const items = [

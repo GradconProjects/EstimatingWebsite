@@ -153,7 +153,17 @@ export function seedTenderItems(quote, items, rates) {
     let name = item.label || "Element";
     if (m) name = name.slice(m[0].length).replace(/^[\s\-–:]+/, "") || name;
     const figs = [];
-    if (lq.finishM2 > 0) figs.push(`approx. ${fmt(lq.finishM2)} m²`);
+    // The area a tender quotes against is the FLOOR AREA the estimator
+    // entered against that element in the Quotes section (the Project
+    // Geometry table's "Total area (m²)", item.measureM2) — the same figure
+    // its $/m² benchmark divides by. It is NOT the Square Mesh coverage in
+    // lq.finishM2: on a raft two layers of mesh over one floor is twice the
+    // area, and mesh often covers only part of a slab, so quoting the mesh
+    // m² prints a floor area the client can't reconcile with the drawing.
+    // finishM2 stays the fallback for an element nobody has measured yet
+    // (and stays untouched as the finishing crew-day driver in costing.js).
+    const areaM2 = Number(item.measureM2) > 0 ? Number(item.measureM2) : lq.finishM2;
+    if (areaM2 > 0) figs.push(`approx. ${fmt(areaM2)} m²`);
     if (cost.concreteQty > 0) figs.push(`approx. ${fmt(cost.concreteQty)} m³ concrete`);
     if (!figs.length && lq.formworkM2 > 0) figs.push(`approx. ${fmt(lq.formworkM2)} m² formwork`);
     if (!figs.length && lq.reinfTonnes > 0.005) figs.push(`approx. ${fmt(lq.reinfTonnes)} t reinforcement`);
