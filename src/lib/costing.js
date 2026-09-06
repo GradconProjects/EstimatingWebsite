@@ -49,13 +49,27 @@ export function getDefaultMargin() {
   return DEFAULT_MARGIN;
 }
 
-/** MARGIN_STEPS with the (possibly customised) default margin merged in,
- * sorted — so the ladder always contains a row for the default margin and
- * the Dashboard/QuoteSummary "default" highlight always has a row to hit. */
+/** The margin ladder's rungs, as fractions. The Settings preference
+ * `marginStepsPct` — a comma-separated list of whole percents, e.g.
+ * "10,20,30,40" — replaces the catalog's MARGIN_STEPS; anything unparseable,
+ * empty or out of range (0 to <95, so the divide-by-(1−margin) can never blow
+ * up) falls back to the catalog list. The default margin is always merged in
+ * and the result sorted, so the Dashboard/QuoteSummary "default" highlight
+ * always has a row to land on. */
 export function getMarginSteps() {
   const def = getDefaultMargin();
-  const steps = MARGIN_STEPS.includes(def) ? MARGIN_STEPS : [...MARGIN_STEPS, def];
-  return [...steps].sort((a, b) => a - b);
+  const p = readPrefs();
+  let steps = MARGIN_STEPS;
+  if (typeof p.marginStepsPct === "string" && p.marginStepsPct.trim()) {
+    const parsed = p.marginStepsPct
+      .split(",")
+      .map((x) => Number(String(x).trim()))
+      .filter((n) => Number.isFinite(n) && n >= 0 && n < 95)
+      .map((n) => n / 100);
+    if (parsed.length) steps = [...new Set(parsed)];
+  }
+  const withDef = steps.includes(def) ? steps : [...steps, def];
+  return [...withDef].sort((a, b) => a - b);
 }
 
 export const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
@@ -164,7 +178,8 @@ export function rowContext(item) {
 
 /**
  * MINIMUM CARTAGE, applied automatically. The poured volume is divided by
- * MIN_CARTAGE_THRESHOLD_M3 (4 m³) into whole loads, and the minimum-cartage
+ * the editable "Minimum cartage load size" production rate (4 m³ by default,
+ * MIN_CARTAGE_THRESHOLD_M3) into whole loads, and the minimum-cartage
  * rule is applied to the REMAINDER of that division: a remainder is a part
  * load, so it is charged (4 − remainder) × $80/m³ for the concrete it is
  * short of a full 4 m³. A volume that divides evenly by 4 leaves no remainder
@@ -196,7 +211,9 @@ export function autoMinimumCartage(item, rates) {
   if (typed !== undefined && typed !== "") return null; // the estimator's own entry wins
   const vol = pouredVolume(item);
   if (!(vol > 0)) return null;
-  const threshold = MIN_CARTAGE_THRESHOLD_M3;
+  // Editable in the Rates modal like every other production figure; the
+  // catalog constant is only the fallback when nothing is saved.
+  const threshold = prodRate(rates, "Minimum cartage load size", "m³/load", MIN_CARTAGE_THRESHOLD_M3);
   if (!(threshold > 0)) return null;
   const wholeLoads = Math.floor(vol / threshold + 1e-9);
   const remainder = round2(Math.max(0, vol - wholeLoads * threshold));
@@ -206,7 +223,7 @@ export function autoMinimumCartage(item, rates) {
   const rate = lookupRate(rates, key, { unitCost: mc.unitCost ?? 0 });
   return {
     key, qty: short, unitCost: rate.unitCost ?? 0, total: short * (rate.unitCost ?? 0),
-    loads: wholeLoads + 1, remainder, lastLoad: remainder,
+    loads: wholeLoads + 1, remainder, lastLoad: remainder, threshold,
   };
 }
 /** Kept so older imports keep working. */

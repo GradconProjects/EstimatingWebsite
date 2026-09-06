@@ -17,7 +17,7 @@ import {
   computeElementCost, computeGrandTotal, computeMarginLadder,
   defaultRates, newElementItem, rateKey, suggestedLabourPrefill, computeExternalScopeLines,
   labourResourceRate, taskRowMeta, labourQuantities, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, computeRowTotal,
-  computeElementUnitRates, computeProjectUnitRates, rowContext, computeElementReinforcementTonnes,
+  computeElementUnitRates, computeProjectUnitRates, rowContext, computeElementReinforcementTonnes, getMarginSteps,
 } from "../src/lib/costing.js";
 import { buildImportFromEstimate, normalizeElementName, geometryForLabel } from "../src/lib/estimateImport.js";
 
@@ -1233,6 +1233,83 @@ check("insulation boards are ordinary qty × unit-cost rows (no weight/area/rate
   delete stale[key];
   assert.equal(computeElementCost(item, stale).categoryTotals["INSULATION"], 250 * 27,
     "falls back to the catalog default rather than $0");
+});
+
+/* ---------- every costing figure is editable ---------- */
+check("Minimum cartage load size is an editable production rate, not a constant", () => {
+  const rates = defaultRates();
+  const type = ELEMENT_TYPES.find((t) => t.id === "slab_on_ground");
+  const mk = (vol) => {
+    const it = newElementItem(type);
+    it.labourAuto = false;
+    it.qtys[rateKey("CONCRETE", "Production & transport surcharge", "m3")] = 0;
+    it.qtys[rateKey("CONCRETE", "Environment levy", "m3")] = 0;
+    it.qtys[rateKey("CONCRETE", "25 mpa", "m3")] = vol;
+    return it;
+  };
+  const sizeKey = rateKey("PRODUCTION", "Minimum cartage load size", "m³/load");
+  assert.ok(rates[sizeKey], "the rate is seeded, so it appears in the Rates modal");
+  assert.equal(rates[sizeKey].unitCost, 4, "defaulting to the 4 m³ minimum");
+
+  // at the default 4 m³: 11 -> 2 loads + 3, 1 short, $80
+  assert.equal(autoMinimumCartage(mk(11), rates).total, 80);
+  assert.equal(autoMinimumCartage(mk(12), rates), null);
+
+  // a supplier working to a 6 m³ minimum: 11 -> 1 load + 5, 1 short, $80
+  const six = { ...rates, [sizeKey]: { unitCost: 6 } };
+  const r11 = autoMinimumCartage(mk(11), six);
+  assert.equal(r11.threshold, 6, "the result reports the load size it used");
+  assert.equal(r11.remainder, 5);
+  assert.equal(r11.total, 80, "6 − 5 = 1 m³ short");
+  assert.equal(autoMinimumCartage(mk(12), six), null, "12 ÷ 6 = 2 loads exactly, nothing over");
+  assert.equal(autoMinimumCartage(mk(13), six).total, 400, "13 -> 2 loads + 1, 5 m³ short of 6");
+
+  // a 2 m³ minimum makes far more pours divide evenly
+  const two = { ...rates, [sizeKey]: { unitCost: 2 } };
+  assert.equal(autoMinimumCartage(mk(11), two).total, 80, "11 -> 5 loads + 1, 1 m³ short");
+  assert.equal(autoMinimumCartage(mk(12), two), null, "12 divides evenly by 2");
+
+  // a nonsense load size degrades to no charge rather than dividing by zero
+  assert.equal(autoMinimumCartage(mk(11), { ...rates, [sizeKey]: { unitCost: 0 } }), null);
+});
+
+check("Margin ladder rungs are editable, and bad input falls back to the catalog list", () => {
+  const store = {};
+  const g = globalThis;
+  const had = Object.prototype.hasOwnProperty.call(g, "localStorage");
+  const prev = had ? g.localStorage : undefined;
+  g.localStorage = {
+    getItem: (k) => (k in store ? store[k] : null),
+    setItem: (k, v) => { store[k] = String(v); },
+  };
+  const setPrefs = (o) => { store["gradcon-preferences"] = JSON.stringify(o); };
+  try {
+    setPrefs({});
+    assert.deepEqual(getMarginSteps(), [...MARGIN_STEPS].sort((a, b) => a - b), "no preference = the catalog ladder");
+
+    setPrefs({ marginStepsPct: "10,20,30,45" });
+    assert.deepEqual(getMarginSteps(), [0.1, 0.2, 0.3, 0.45], "an entered ladder replaces it");
+
+    // the default margin is always represented, so the highlight has a row
+    setPrefs({ marginStepsPct: "10,20", defaultMarginPct: 33 });
+    assert.deepEqual(getMarginSteps(), [0.1, 0.2, 0.33]);
+
+    // junk, out-of-range and duplicate rungs are dropped
+    setPrefs({ marginStepsPct: "10, abc, 200, -5, 20, 20" });
+    assert.deepEqual(getMarginSteps(), [0.1, 0.2, 0.3], "junk dropped; default 30% merged in");
+
+    // nothing usable at all falls back rather than producing an empty ladder
+    setPrefs({ marginStepsPct: "abc, 300" });
+    assert.deepEqual(getMarginSteps(), [...MARGIN_STEPS].sort((a, b) => a - b));
+
+    // and the ladder still drives a real sell price
+    setPrefs({ marginStepsPct: "50" });
+    const { rows } = computeMarginLadder(1000, 0, 0, 0, getMarginSteps());
+    const fifty = rows.find((r) => Math.abs(r.margin - 0.5) < 1e-9);
+    assert.ok(fifty && Math.abs(fifty.sellExGst - 2000) < 1e-6, "50% margin on $1,000 sells at $2,000");
+  } finally {
+    if (had) g.localStorage = prev; else delete g.localStorage;
+  }
 });
 
 console.log(`\n${passed} check(s) passed.`);

@@ -24,17 +24,17 @@
 // catalog's "Minimum cartage" automatically — see autoMinimumCartage in
 // lib/costing.js. Typed values on the Minimum cartage row always win.
 //
-// Holcim (Melbourne Metro & Mornington Peninsula) service-fee schedule,
-// effective 1 May 2026: the fee applies where a DELIVERED LOAD is under
-// 4.0 m³, and is charged on the undelivered part of that load — i.e.
-// (4.0 - load) x $80/m³, per truck, not on the order total. An 11 m³ order
-// delivered 7+4 attracts nothing; delivered 8+3 the second truck is 1 m³
-// short, so $80. Quotes hold a total volume rather than a delivery
-// schedule, so the engine splits it into whole truck loads of
-// TRUCK_LOAD_M3 and charges the shortfall on the last (part) load — the
-// realistic worst case. Both figures are editable (the truck size in the
-// Rates modal, the $/m³ on the row itself), and typing a quantity on the
-// row takes it fully manual for a known delivery split.
+// MINIMUM CARTAGE. The poured volume is divided by this minimum load size
+// into whole loads and the REMAINDER of that division — a part load — is
+// charged $80 for every m³ it falls short of it: 11 m³ is 2 loads + 3 m³,
+// so 1 m³ short, $80; 12 m³ divides evenly and costs nothing. This figure
+// is BOTH the divisor and the minimum.
+//
+// It is only the fallback: the live value is the editable "Minimum cartage
+// load size" production rate (see PRODUCTION_RATES below), so a supplier
+// working to a different minimum is a rate edit, not a code change. The
+// $/m³ is editable on the row itself, and typing a quantity on the row
+// takes it fully manual for a known delivery split.
 export const MIN_CARTAGE_THRESHOLD_M3 = 4;
 // Kept as an alias so saved code/tests referring to the old name still read.
 export const SMALL_LOAD_THRESHOLD_M3 = MIN_CARTAGE_THRESHOLD_M3;
@@ -88,8 +88,15 @@ export const PRODUCTION_RATES = [
   // auto-derived (propping effort varies by system, excavator days by ground
   // conditions) — entered manually, always. Their Qty columns still prefill.
   { key: "pump_hrs_pour", name: "Concrete pump — hours per pour", unit: "hrs", rate: 6 },
-  // The agitator size the minimum-cartage split assumes — edit here if the
-  // supplier runs smaller/larger trucks on a job.
+  // The load size the minimum-cartage split divides by. The poured volume is
+  // divided by this into whole loads and the remainder is charged the
+  // minimum-cartage rate for every m³ it falls short of it — so this one
+  // figure is both the divisor and the minimum. Edit it if a supplier works
+  // to a different minimum load.
+  { key: "min_cartage_m3", name: "Minimum cartage load size", unit: "m³/load", rate: 4 },
+  // The agitator size. Informational since minimum cartage moved to dividing
+  // by the minimum itself — kept so no saved override is orphaned, and so a
+  // job that wants to reason about truck counts still has the figure.
   { key: "truck_load_m3", name: "Concrete truck load size", unit: "m³/load", rate: 8 },
 ];
 

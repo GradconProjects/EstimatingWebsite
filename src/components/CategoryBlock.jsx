@@ -81,9 +81,9 @@ export default function CategoryBlock({ cat, item, rates, onQtyChange, onRateCha
                       {isAutoCartage && (
                         <span
                           className="ml-1.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700"
-                          title={`The pour divides into ${minCartage.loads - 1} full 4 m³ load${minCartage.loads - 1 === 1 ? "" : "s"} with ${minCartage.remainder} m³ left over. That remainder is a part load, ${minCartage.qty} m³ short of the 4 m³ minimum. Type a quantity to price a known delivery split instead.`}
+                          title={`The pour divides into ${minCartage.loads - 1} full ${minCartage.threshold} m³ load${minCartage.loads - 1 === 1 ? "" : "s"} with ${minCartage.remainder} m³ left over. That remainder is a part load, ${minCartage.qty} m³ short of the ${minCartage.threshold} m³ minimum. The load size is editable in the Rates modal ("Minimum cartage load size"); type a quantity here to price a known delivery split instead.`}
                         >
-                          auto — {minCartage.remainder} m³ remainder, {minCartage.qty} m³ short of 4 m³
+                          auto — {minCartage.remainder} m³ remainder, {minCartage.qty} m³ short of {minCartage.threshold} m³
                         </span>
                       )}
                       {isAutoSur && <span className="ml-1.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700">auto — per m³ of concrete</span>}
