@@ -162,11 +162,24 @@ export const LABOUR_TEMPLATES = {
  * implements this — never recompute a row total inline elsewhere.
  */
 export const FULL_CATALOG = [
+  /* The full L-series trench mesh grid: every bar width from 3 to 8 in each
+   * of the four wire gauges, so a schedule calling up a 7 Bar-L11TM has a
+   * product to hit instead of forcing the nearest wrong size. Bars sit at
+   * 100mm centres, so bar count also reads as the strip width.
+   *
+   * The 3-6 bar L8/L11/L12 sizes and 7 Bar-L12TM / 3-4 Bar-L16TM are
+   * Gradcon's own supplier-confirmed prices and are untouched. The sizes
+   * added to complete the grid carry a mass extrapolated from that family's
+   * own per-bar increment (L8TM +2.4, L11TM +4.5, L12TM +5.5, L16TM +9.6 kg
+   * per 6m sheet) and a price at that family's own average $/kg — DERIVED,
+   * not quoted, so confirm them with the supplier before relying on one. As
+   * with every catalog price these are only what a fresh install seeds; the
+   * Rates modal overrides win (see lookupRate). */
   { key: "TRENCH MESH", weightBasis: false, products: [
-    ["3 Bar-L8TM", "length", 6.8, 14.39], ["4 Bar-L8TM", "length", 9.2, 18.58], ["5 Bar-L8TM", "length", 11.6, 25.87], ["6 Bar-L8TM", "length", 13.9, 31.05],
-    ["3 Bar-L11TM", "length", 13.3, 24.43], ["4 Bar-L11TM", "length", 17.7, 33.79], ["5 Bar-L11TM", "length", 22.3, 41.3], ["6 Bar-L11TM", "length", 26.8, 50.66],
-    ["3 Bar-L12TM", "length", 16.3, 30.07], ["4 Bar-L12TM", "length", 21.8, 41.19], ["5 Bar-L12TM", "length", 27.3, 50.66], ["6 Bar-L12TM", "length", 32.8, 61.84], ["7 Bar-L12TM", "length", 38.75, 103.5],
-    ["3 Bar-L16TM", "length", 28.9, 91.08], ["4 Bar-L16TM", "length", 38.5, 92.89],
+    ["3 Bar-L8TM", "length", 6.8, 14.39], ["4 Bar-L8TM", "length", 9.2, 18.58], ["5 Bar-L8TM", "length", 11.6, 25.87], ["6 Bar-L8TM", "length", 13.9, 31.05], ["7 Bar-L8TM", "length", 16.3, 35.05], ["8 Bar-L8TM", "length", 18.7, 40.21],
+    ["3 Bar-L11TM", "length", 13.3, 24.43], ["4 Bar-L11TM", "length", 17.7, 33.79], ["5 Bar-L11TM", "length", 22.3, 41.3], ["6 Bar-L11TM", "length", 26.8, 50.66], ["7 Bar-L11TM", "length", 31.3, 58.59], ["8 Bar-L11TM", "length", 35.8, 67.02],
+    ["3 Bar-L12TM", "length", 16.3, 30.07], ["4 Bar-L12TM", "length", 21.8, 41.19], ["5 Bar-L12TM", "length", 27.3, 50.66], ["6 Bar-L12TM", "length", 32.8, 61.84], ["7 Bar-L12TM", "length", 38.75, 103.5], ["8 Bar-L12TM", "length", 44.25, 82.7],
+    ["3 Bar-L16TM", "length", 28.9, 91.08], ["4 Bar-L16TM", "length", 38.5, 92.89], ["5 Bar-L16TM", "length", 48.1, 133.86], ["6 Bar-L16TM", "length", 57.7, 160.58], ["7 Bar-L16TM", "length", 67.3, 187.29], ["8 Bar-L16TM", "length", 76.9, 214.01],
   ]},
   /* areaBasis: qty is entered in m² of coverage, not sheet count — a
    * standard AU mesh sheet is 6.0m x 2.4m = 14.4m², so cost is

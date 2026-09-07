@@ -121,6 +121,20 @@ function ReportContent({ quote, items, rates, categoryOrder, sectionOrder }) {
         <span>{money2(grandTotal)}</span>
       </div>
 
+      {/* What the estimate assumed, recorded under Project Geometry. Printed
+          straight after the total so the figure and its qualifications are
+          never separated — a price without them is not defensible weeks on. */}
+      {(quote.assumptions || []).some((a) => (a.text || "").trim()) && (
+        <div className="mt-3 break-inside-avoid">
+          <div className="text-xs font-bold uppercase tracking-wide bg-blue-900 text-white px-2 py-1">Assumptions</div>
+          <ol className="px-4 py-1 list-decimal space-y-0.5">
+            {(quote.assumptions || [])
+              .filter((a) => (a.text || "").trim())
+              .map((a) => <li key={a.id}>{a.text}</li>)}
+          </ol>
+        </div>
+      )}
+
       <div className="mt-3 break-inside-avoid">
         <div className="text-xs font-bold uppercase tracking-wide bg-blue-900 text-white px-2 py-1">GFA &amp; On-Costs</div>
         <div className="px-2 py-1 flex justify-between">

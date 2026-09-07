@@ -576,6 +576,8 @@ function ProjectEditor({ project, rates, setRates, ratesStatus, saveProjectsNow,
             rates={rates}
             estimateGeometry={quote.estimateGeometry}
             onChangeItem={updateItem}
+            assumptions={quote.assumptions}
+            onChangeAssumptions={(assumptions) => setQuote((q) => ({ ...q, assumptions }))}
           />
           {items.map((item) => (
             <ElementCard

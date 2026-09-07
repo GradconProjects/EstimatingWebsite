@@ -53,10 +53,10 @@ check("every element type has both a category and a section", () => {
   });
 });
 
-check("14 material categories, 171 products (incl. CONCRETE PUMPING, REINFORCEMENT BY RATE, the 32-board INSULATION range, Bored Piers subcontract, minimum cartage, levy, surcharge)", () => {
+check("14 material categories, 180 products (incl. CONCRETE PUMPING, REINFORCEMENT BY RATE, the 32-board INSULATION range, the full 24-size TRENCH MESH grid, Bored Piers subcontract, minimum cartage, levy, surcharge)", () => {
   assert.equal(FULL_CATALOG.length, 14);
   const total = FULL_CATALOG.reduce((s, c) => s + c.products.length, 0);
-  assert.equal(total, 171);
+  assert.equal(total, 180);
   const conc = FULL_CATALOG.find((c) => c.key === "CONCRETE");
   assert.ok(conc.products.some((p) => p.name === "Production & transport surcharge" && p.unit === "m3" && p.unitCost === 9.17), "concrete surcharge product seeded at $9.17/m³");
   // Vapour barrier is its own OTHER ACCESSORIES product, distinct from Insulation
@@ -879,6 +879,45 @@ check("Import: a count-only reinforcement line (no length, e.g. ligatures) is fl
   // just the bare bar count) shows up somewhere in the flags.
   assert.ok(flags.some((f) => f.includes("39.00") && f.includes("no.")), `expected the bar count to be flagged, got: ${flags.join(" | ")}`);
   assert.ok(flags.some((f) => f.includes("40.01") && f.includes("kg")), `expected the actual weight to be flagged too, got: ${flags.join(" | ")}`);
+});
+
+check("TRENCH MESH covers every L-series size 3-8 bar, priced per length off its own catalog rate", () => {
+  const tm = FULL_CATALOG.find((c) => c.key === "TRENCH MESH");
+  assert.ok(tm, "TRENCH MESH category present");
+  const names = tm.products.map((p) => p.name);
+  const missing = [];
+  ["L8TM", "L11TM", "L12TM", "L16TM"].forEach((fam) => {
+    for (let bars = 3; bars <= 8; bars++) {
+      const n = `${bars} Bar-${fam}`;
+      if (!names.includes(n)) missing.push(n);
+    }
+  });
+  assert.equal(missing.length, 0, `missing trench mesh sizes: ${missing.join(", ")}`);
+  assert.equal(tm.products.length, 24, "3-8 bar x 4 gauges = 24 sizes, nothing duplicated");
+  // the one the estimator asked for by name
+  const l11x7 = tm.products.find((p) => p.name === "7 Bar-L11TM");
+  assert.ok(l11x7.unitCost > 0 && l11x7.unitWeight > 0, "7 Bar-L11TM carries a rate and a weight");
+  // masses rise with bar count within a family — a wider mesh is never lighter
+  ["L8TM", "L11TM", "L12TM", "L16TM"].forEach((fam) => {
+    const w = [];
+    for (let bars = 3; bars <= 8; bars++) w.push(tm.products.find((p) => p.name === `${bars} Bar-${fam}`).unitWeight);
+    for (let i = 1; i < w.length; i++) assert.ok(w[i] > w[i - 1], `${fam} mass falls from ${i + 2} to ${i + 3} bar`);
+  });
+  // TRENCH MESH is NOT weight- or area-priced: it costs qty x $/length (rule 2)
+  assert.ok(!tm.weightBasis && !tm.areaBasis, "trench mesh costs off its catalog $/length, not tonnage or area");
+  // straight through the one place all three bases live (rule 2)
+  assert.equal(computeRowTotal(tm, l11x7, 10), 10 * l11x7.unitCost, "10 lengths cost 10 x the $/length");
+  assert.equal(computeRowTotal(tm, l11x7, 0), 0, "a blank row costs nothing");
+  // its unitWeight is informational tonnage only, never the price basis
+  const l12x7 = tm.products.find((p) => p.name === "7 Bar-L12TM");
+  assert.ok(l11x7.unitWeight < l12x7.unitWeight && computeRowTotal(tm, l11x7, 1) < computeRowTotal(tm, l12x7, 1),
+    "the heavier gauge costs more, but off its own $/length, not off tonnage");
+  // every new size falls back to the catalog default when a saved rates blob predates it (rule 6)
+  const stale = defaultRates();
+  delete stale[rateKey("TRENCH MESH", "7 Bar-L11TM", l11x7.unit)];
+  const item = newElementItem(ELEMENT_TYPES.find((t) => t.id === "strip_footings"));
+  item.qtys[rateKey("TRENCH MESH", "7 Bar-L11TM", l11x7.unit)] = 10;
+  assert.ok(computeElementCost(item, stale).materialsTotal > 0, "a rates blob saved before these sizes existed still prices them");
 });
 
 const { computeTenderProjectSum, parseTenderPrice, seedTenderItems } = await import("../src/lib/tenderQuoteDefaults.js");
