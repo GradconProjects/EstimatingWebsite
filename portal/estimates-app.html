@@ -3313,8 +3313,6 @@ function extraBeamGroupBlock(inst,d,arrName,g,i){
     <p class="small">Sized to THIS beam's own section (${geo.widthMm||0} × ${geo.secDepthMm||0}mm less cover) plus two 135° fitment hooks. Zone length 0 spreads over whatever is left of this beam's run.</p>
    </div>`:""}
 
-   ${beamFormworkFields(g,base,"beam",geo.secDepthMm)}
-
    <div class="grid cols3">${chk(base+"exc",g.exc,"Trench excavation for this beam (below prepared level)",null,true)}</div>
    ${g.exc? `<div class="subsec"><div class="grid cols3">
     ${F("Trench width (mm)",inpNum(base+"trenchWidth",g.trenchWidth===""||g.trenchWidth===undefined?"":g.trenchWidth))}
@@ -3329,6 +3327,14 @@ function extraBeamGroupBlock(inst,d,arrName,g,i){
  * depth, which the formed depth defaults to. Unticked is a beam cast against
  * the trench face — no forms, and what every takeoff did before this existed.
  */
+/* The ONE beam-formwork formula: the whole run, both faces (or one), over
+ * the formed depth — the beam's full section unless overridden. Used by the
+ * compute and by the Formwork tab's live m² readout so the two can't drift. */
+function beamFormworkAreaM2(runM,secDepthMm,formDepthMm,sides){
+  let depthMm = num(formDepthMm)>0? num(formDepthMm) : num(secDepthMm);
+  let n = Number(sides)===1? 1 : 2;
+  return Math.max(0, num(runM)*(depthMm/1000)*n);
+}
 function beamFormworkFields(src,base,p,secDepthMm){
   let on=!!src[p+"OutOfGround"];
   let sides=Number(src[p+"FormSides"])===1?1:2;
@@ -3339,6 +3345,66 @@ function beamFormworkFields(src,base,p,secDepthMm){
   </div>
   <p class="small">Formwork = the <b>entire run</b> × ${src[p+"FormDepth"]>0? num(src[p+"FormDepth"]) : (secDepthMm||0)}mm × ${sides} face${sides===2?"s":""}. A beam standing proud of the ground has nothing holding the concrete, so it is formed over its whole length on ${sides===2?"both faces":"the formed face"} — not just at the ends.</p>
   <div class="tip"><span class="ico">🏗️</span><div>Leave this UNTICKED for a beam cast in a trench: the earth is the form, and adding side formwork to it prices something nobody builds. Tick it the moment the beam sits above the prepared level — a raft on a sloping site, a beam over a step, an edge beam on fill. If the slab's own perimeter <b>Edgeform</b> is already ticked on the Formwork tab, check you are not paying for the slab-thickness band twice: reduce the formed depth here to the drop below the slab.</div></div></div>`:""}`;
+}
+/* Every beam this slab carries, as the Formwork tab needs to list them: the
+ * primary edge beam, the primary rib, and each extra beam of either kind.
+ * `src` holds that beam's fields, `base`+`p` build its field names, and
+ * secDepthMm is the section the formed depth defaults to. */
+function slabBeamsForFormwork(d){
+  let out=[];
+  let ebLegacy = d.edgeBeamOn===undefined && !!(d.edgeThicken && (d.edgeBeamReo||d.edgeBeamLigs||d.edgeBeamExc));
+  if(d.edgeBeamOn!==undefined? !!d.edgeBeamOn : ebLegacy){
+    let mode=d.edgeBeamDepthMode||"extra";
+    out.push({ src:d, base:"", p:"edgeBeam", name:"Edge beam",
+      runM:num(d.edgeBeamLen),
+      secDepthMm: mode==="overall"? num(d.edgeBeamExtraDepth,300) : num(d.thickness,150)+num(d.edgeBeamExtraDepth,300),
+      where:"Edge Beams tab" });
+  }
+  if(d.beamStrips){
+    out.push({ src:d, base:"", p:"beamStrips", name:"Internal beam strips / ribs",
+      runM:num(d.beamStripsLength),
+      secDepthMm:num(d.thickness,150)+num(d.beamStripsExtraDepth,150),
+      where:"Internal Beams tab" });
+  }
+  [["edgeBeamGroups","Edge Beams tab"],["intBeamGroups","Internal Beams tab"]].forEach(([arrName,where])=>{
+    let k=extraBeamKind(arrName);
+    (d[arrName]||[]).forEach((g,i)=>{
+      let geo=extraBeamGeom(d,g);
+      out.push({ src:g, base:`${arrName}.${i}.`, p:"beam",
+        name:(g.name||"").trim()||`${k.noun} ${i+2}`, runM:geo.runM, secDepthMm:geo.secDepthMm, where });
+    });
+  });
+  return out;
+}
+/* Beam formwork, stated OUTRIGHT on the Formwork tab rather than buried on
+ * the beam tabs: every beam on the slab is listed by name with the one
+ * question that decides whether it is formed at all, and the m² it comes to.
+ * A beam missing from this list simply isn't switched on yet. */
+function slabBeamFormworkSection(inst,d){
+  let beams=slabBeamsForFormwork(d);
+  if(!beams.length){
+    return `<div class="subsec"><div class="sechead">Beam Formwork — edge beams &amp; internal beams</div>
+    <p class="small">No edge beams or internal beams are switched on for this slab yet. Turn one on under the <b>Edge Beams</b> or <b>Internal Beams</b> tab and it appears here to be formed.</p></div>`;
+  }
+  let total=0;
+  let blocks=beams.map(b=>{
+    let on=!!b.src[b.p+"OutOfGround"];
+    let area=on? beamFormworkAreaM2(b.runM,b.secDepthMm,b.src[b.p+"FormDepth"],b.src[b.p+"FormSides"]) : 0;
+    total+=area;
+    return `<div class="subsec" style="border-left:3px solid var(--accent,#b45309);padding-left:10px;">
+     <div class="sechead" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+      <span>${b.name}</span>
+      <span class="small" style="font-weight:600;">${b.runM>0? `${fmt(b.runM,1)}m run · ${b.secDepthMm}mm section` : "no run length entered"} → <b>${on? `${fmt(area,2)} m² formwork` : "cast against the ground — no formwork"}</b></span>
+     </div>
+     ${beamFormworkFields(b.src,b.base,b.p,b.secDepthMm)}
+    </div>`;
+  }).join('');
+  return `<div class="subsec"><div class="sechead">Beam Formwork — edge beams &amp; internal beams</div>
+  <p class="small">Every beam on this slab, and the one question that decides whether it is formed: is it cast in a trench, or does it stand out of the ground? Answer it here for each beam — the geometry and reinforcement stay on the <b>Edge Beams</b> and <b>Internal Beams</b> tabs.</p>
+  ${blocks}
+  <div class="sechead" style="margin-top:6px;">Beam formwork total: <b>${fmt(total,2)} m²</b></div>
+  <div class="tip"><span class="ico">🏗️</span><div>This is separate from the slab's own <b>Perimeter edge formwork</b> above, which forms the slab edge by the metre. If a beam here is formed over its full section depth AND the perimeter edgeform is ticked along the same line, the slab-thickness band is being paid for twice — drop this beam's formed depth to the depth below the slab.</div></div>
+  </div>`;
 }
 /* The whole repeatable list for one kind, appended under that kind's tab. */
 function extraBeamGroupsSection(inst,d,arrName){
@@ -3413,7 +3479,7 @@ function raftBeamGroupLines(inst,def,lines,d,g){
   if(g.formOn){
     let depthMm = num(g.formDepthMm)>0? num(g.formDepthMm) : g.secDepthMm;
     let sides = Number(g.formSides)===1? 1 : 2;
-    let area = g.runM*(depthMm/1000)*sides;
+    let area = beamFormworkAreaM2(g.runM,g.secDepthMm,g.formDepthMm,g.formSides);
     if(area>0){
       lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Beam formwork",spec:`${g.label} — founded out of the ground, ${sides===2?"both sides":"one side"} over the full run`,qty:area,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(area,PROJECT.formworkWaste),formula:`run ${fmt(g.runM,1)}m × ${depthMm}mm deep × ${sides} side${sides===2?"s":""}`}));
     }
@@ -3597,11 +3663,12 @@ function renderSlab(inst,def){
   <table class="rows"><thead><tr><th>Label</th><th>Width (mm)</th><th>Height/Length (mm)</th><th>Qty</th><th></th></tr></thead>
   <tbody>${d.openings.map((r,i)=>openRowHtml(i,r)).join('')}</tbody></table>
   <button class="btn small" data-action="addRow" data-target="openings">+ Add opening</button></div>`;
-  let form=`<div class="grid cols4">
+  let form=`<div class="subsec"><div class="sechead">Slab Formwork</div><div class="grid cols4">
    ${chk("edgeForms",d.edgeForms,"Perimeter edge formwork (by the metre)")}
    ${d.suspended? chk("soffit",d.soffit,"Soffit formwork"):""}
    ${chk("cjStopEnds",d.cjStopEnds,"Construction joint stop ends")}
-  </div>`;
+  </div></div>
+  ${slabBeamFormworkSection(inst,d)}`;
   function barBlock(prefix,label){
     let manual = d.manualArea;
     // Schedule mode is available on EVERY slab, not just irregular/manual-area
@@ -3647,7 +3714,6 @@ function renderSlab(inst,def){
   ${raftBeamLigTable(inst,d.beamStripsLigZones,"beamStripsLigZones")}
   <div class="grid cols3">${chk("beamStripsLigLap",d.beamStripsLigLap,"Include lap allowance (%)","beamStripsLigLap")}</div>
   <p class="small">Ligature zones exactly as on a standalone Ground Beam — closed stirrups around each rib's cross-section (strip width × slab thickness + extra depth, less cover, plus two 135° fitment hooks). Zone length 0 spreads over the remaining run.</p></div>
-  ${beamFormworkFields(d,"","beamStrips",num(d.thickness,150)+num(d.beamStripsExtraDepth,150))}
   <div class="grid cols3">${chk("beamStripsExc",d.beamStripsExc,"Trench excavation for the internal beams (below prepared level)","beamStripsExc")}</div>
   <div class="subsec ${d.beamStripsExc?'':'hidden'}" data-show-if="beamStripsExc"><div class="grid cols3">${F("Trench width (mm)",inpNum("beamStripsTrenchWidth",d.beamStripsTrenchWidth===undefined?(num(d.beamStripsWidth,300)+50):d.beamStripsTrenchWidth))}${F("Excavation depth below prepared level (mm)",inpNum("beamStripsExcDepth",d.beamStripsExcDepth===undefined?num(d.beamStripsExtraDepth,150):d.beamStripsExcDepth))}</div>
   <p class="small">Same as a Ground Beam's trench: dug volume + a bulked spoil-disposal line, along the combined run. Off by default so existing takeoffs don't change.</p></div>
@@ -3704,7 +3770,6 @@ function renderSlab(inst,def){
   ${raftBeamLigTable(inst,d.edgeBeamLigZones,"edgeBeamLigZones")}
   <div class="grid cols3">${chk("edgeBeamLigLap",d.edgeBeamLigLap,"Include lap allowance (%)","edgeBeamLigLap")}</div>
   <p class="small">Ligature zones exactly as on a standalone Ground Beam — closed stirrups around the edge beam's cross-section (strip width × slab thickness + extra depth, less cover, plus two 135° fitment hooks). Zone length 0 spreads over the remaining perimeter, so one "General" zone covers the whole run; add support zones with tighter spacing as needed.</p></div>
-  ${beamFormworkFields(d,"","edgeBeam",(d.edgeBeamDepthMode||"extra")==="overall"? num(d.edgeBeamExtraDepth,300) : num(d.thickness,150)+num(d.edgeBeamExtraDepth,300))}
   <div class="grid cols3">${chk("edgeBeamExc",d.edgeBeamExc,"Trench excavation for the edge beam (below prepared level)","edgeBeamExc")}</div>
   <div class="subsec ${d.edgeBeamExc?'':'hidden'}" data-show-if="edgeBeamExc"><div class="grid cols3">${F("Trench width (mm)",inpNum("edgeBeamTrenchWidth",d.edgeBeamTrenchWidth===undefined?(num(d.edgeBeamWidth,300)+50):d.edgeBeamTrenchWidth))}${F("Excavation depth below prepared level (mm)",inpNum("edgeBeamExcDepth",d.edgeBeamExcDepth===undefined?num(d.edgeBeamExtraDepth,300):d.edgeBeamExcDepth))}</div>
   <p class="small">Same as a Ground Beam's trench: dug volume + a bulked spoil-disposal line, along the perimeter. Off by default so existing takeoffs don't change.</p></div>
