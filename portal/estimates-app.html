@@ -1035,13 +1035,18 @@ function trenchMeshTypeSel(field,val,rerender){
    {type -> how many layers use it} so the compute emits ONE register line
    per distinct material — a single-type stack prices exactly as before. */
 function inpNumR(field,val,step){ return `<input type="number" step="${step||'any'}" data-field="${field}" data-rerender="true" value="${val===undefined?'':val}">`; }
-function layerTypeSelects(d,layersField,typeField,storeField,selFn,label){
+/* pathPrefix lets the same selects back onto an object nested inside the
+ * element's data (one of a raft's several edge beams, say): the VALUES are
+ * read from `d` as always, while the field names the inputs bind through get
+ * the prefix, e.g. "edgeBeamGroups.1.layerTypes.2". */
+function layerTypeSelects(d,layersField,typeField,storeField,selFn,label,pathPrefix){
+  pathPrefix=pathPrefix||"";
   let layers=Math.max(1,Math.round(num(d[layersField],1)));
   if(layers<2) return "";
   let out="";
   for(let i=2;i<=layers;i++){
     let cur=(d[storeField]&&d[storeField][i])||d[typeField];
-    out+=F(`Layer ${i} ${label}`,selFn(`${storeField}.${i}`,cur));
+    out+=F(`Layer ${i} ${label}`,selFn(`${pathPrefix}${storeField}.${i}`,cur));
   }
   return `<div class="grid cols3" style="margin-top:6px;">${out}</div><p class="small">Layer 1 uses the type selected above — every further layer can be a different product; they are quantified separately in the register.</p>`;
 }
@@ -1823,13 +1828,19 @@ function sectionLabel(shape,wMm,dMm,baseWMm,sketchArea,sides){
 /** The shape controls for one thickened run. `p` prefixes every field name so
  * the edge thickening, the edge beam, the ribs and the wall thickening each
  * keep their own shape without colliding. */
+/* opts.path prefixes the FIELD NAMES only (values still come from d[p+...]),
+ * so the same section-shape picker can back onto an object nested inside the
+ * element's data — one of a raft's several edge beams or ribs, each with its
+ * own cross-section. opts.dfltSides seeds the taper side for ribs, which fall
+ * away into the slab both ways rather than having one vertical face. */
 function sectionShapeFields(d,p,opts){
   opts=opts||{};
+  let path=opts.path||"";
   let shape=d[p+"Shape"]||opts.dflt||"rect";
-  let sides=d[p+"Sides"]||"one";
-  return `${F("Section shape",selOpts(p+"Shape",shape,SECTION_SHAPES,true))}
-   ${shape==="rect"||shape==="sketch"? "" : F("Tapered on",selOpts(p+"Sides",sides,SECTION_SIDES,true))}
-   ${shape==="trap"? F("Flat base width (mm)",inpNum(p+"BaseW",d[p+"BaseW"]===undefined?0:d[p+"BaseW"])) : ""}`;
+  let sides=d[p+"Sides"]||opts.dfltSides||"one";
+  return `${F("Section shape",selOpts(path+p+"Shape",shape,SECTION_SHAPES,true))}
+   ${shape==="rect"||shape==="sketch"? "" : F("Tapered on",selOpts(path+p+"Sides",sides,SECTION_SIDES,true))}
+   ${shape==="trap"? F("Flat base width (mm)",inpNum(path+p+"BaseW",d[p+"BaseW"]===undefined?0:d[p+"BaseW"])) : ""}`;
 }
 function sdBarShapeUI(d, legacyMm){
   let has=Array.isArray(d.sdBarDirs)&&d.sdBarDirs.length;
@@ -3198,6 +3209,122 @@ function raftBeamLigTable(inst,zones,arr){
   <tbody>${(zones||[]).map((r,i)=>ligRowHtml(inst.id,r,i,arr)).join('')}</tbody></table>
   <button class="btn small" data-action="addRow" data-target="${arr}">+ Add zone</button>`;
 }
+/* ---- Extra beam groups on a slab (edge beams AND internal beams/ribs) ----
+ *
+ * The Edge Beams and Internal Beams tabs each carry ONE primary beam in flat
+ * `edgeBeam*` / `beamStrips*` fields. A real raft rarely has just one section
+ * though — the north edge might be 300×600 where the east edge is 450×900,
+ * and the ribs under a party wall are deeper than the rest. So each tab also
+ * carries a LIST of extra beams, `edgeBeamGroups` / `intBeamGroups`, and
+ * every one of them is a complete beam in its own right: its own run length,
+ * width, depth, cross-section shape, cover, bar sets, trench mesh, ligature
+ * zones and trench excavation. They ADD to the primary beam, they don't
+ * replace it, and each is priced by the same raftBeamGroupLines() the primary
+ * one goes through, so nothing about the mathematics differs between them.
+ *
+ * The fields bind through paths ("edgeBeamGroups.1.width"), which is why the
+ * shared helpers above take a path prefix and why addRow/delRow resolve their
+ * target rather than indexing inst.data directly. */
+const EXTRA_BEAM_KINDS = {
+  edgeBeamGroups: { noun: "Edge beam", dfltShape: "rect", dfltSides: "one",  dfltWidth: 300, dfltDepth: 300, ribs: false },
+  intBeamGroups:  { noun: "Internal beam", dfltShape: "rect", dfltSides: "both", dfltWidth: 300, dfltDepth: 150, ribs: true },
+};
+function extraBeamKind(arrName){ return EXTRA_BEAM_KINDS[arrName] || EXTRA_BEAM_KINDS.edgeBeamGroups; }
+/* A new group starts as a copy of the kind's defaults — NOT of the primary
+ * beam, which would silently double a takeoff if the estimator only meant to
+ * add a second, different section. The name is what the register lines are
+ * labelled with, so it's worth typing ("North edge 450×900"). */
+function newExtraBeamGroup(d,arrName,idx){
+  let k=extraBeamKind(arrName);
+  return {
+    name:`${k.noun} ${idx+2}`,
+    len:"", width:k.dfltWidth, depthMode:"extra", extraDepth:k.dfltDepth, cover:"",
+    secShape:k.dfltShape, secSides:k.dfltSides, secBaseW:0,
+    reo:false, trenchMesh:false, trenchType:"4 Bar-L12TM", layers:1, lap:false, layerTypes:{},
+    edgeBeamRows:[{position:"Bottom continuous",qty:4,dia:"N16",layers:1,startA:"straight",endA:"straight",lap:false}],
+    ligs:false, ligLap:false,
+    edgeBeamLigZones:[{zone:"General",length:0,dia:"N10",spacing:300}],
+    exc:false, trenchWidth:"", excDepth:"",
+  };
+}
+/* The extra beam's cross-section as the compute side needs it: the concrete
+ * area counts only the depth BELOW the slab (the slab's own thickness is
+ * already in the flat slab volume), while ligatures wrap the FULL section. */
+function extraBeamGeom(d,g){
+  let mode=g.depthMode||"extra";
+  let entered=num(g.extraDepth,0);
+  let slabT=num(d.thickness,150);
+  return {
+    runM: num(g.len),
+    widthMm: num(g.width,300),
+    extraMm: mode==="overall"? Math.max(0, entered-slabT) : entered,
+    secDepthMm: mode==="overall"? entered : slabT+entered,
+    mode, entered, slabT,
+  };
+}
+/* One extra beam's full parameter set, rendered under the tab its kind
+ * belongs to. Every field name is prefixed with the group's own path, and
+ * every sub-section is revealed by a rebuild (data-rerender) rather than a
+ * data-toggle — toggles are matched card-wide by name, so N copies of the
+ * same block would show and hide each other's sections. */
+function extraBeamGroupBlock(inst,d,arrName,g,i){
+  let k=extraBeamKind(arrName);
+  let base=`${arrName}.${i}.`;
+  let geo=extraBeamGeom(d,g);
+  let title=(g.name||"").trim()||`${k.noun} ${i+2}`;
+  return `<div class="subsec" style="border-left:3px solid var(--accent,#b45309);padding-left:10px;">
+   <div class="sechead" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+    <span>${title}</span>
+    <button class="btn small danger" data-action="delRow" data-target="${arrName}" data-idx="${i}" type="button">✕ Remove this beam</button>
+   </div>
+   <div class="grid cols4">
+    ${F("Name (shown on every register line)",inpText(base+"name",g.name))}
+    ${F("Run length (m) — manual, from the drawing",inpNum(base+"len",g.len))}
+    ${F("Beam width (mm)",inpNum(base+"width",g.width))}
+    ${F("Cover (mm, blank = element cover)",inpNum(base+"cover",g.cover))}
+   </div>
+   <div class="grid cols4">
+    ${F("Depth entered as",selOpts(base+"depthMode",geo.mode,[["extra","Extra depth below slab (drop)"],["overall","Overall beam depth (incl. slab)"]],true))}
+    ${F(geo.mode==="overall"?"Overall beam depth (mm)":"Extra depth below slab thickness (mm)",inpNum(base+"extraDepth",g.extraDepth))}
+    ${sectionShapeFields(g,"sec",{dflt:k.dfltShape,dfltSides:k.dfltSides,path:base})}
+   </div>
+   <p class="small">Concrete = run × section area over the ${geo.extraMm||0}mm below the slab${geo.mode==="overall"?` (overall ${geo.entered}mm − slab ${geo.slabT}mm)`:""}; ligatures wrap the full ${geo.secDepthMm||0}mm section. Its cross-section is independent of every other beam on this slab — that is the whole point of adding it. (One exception: <b>Sketched profile</b> uses the single section sketch on the Geometry tab, so every beam picking it shares that one drawn section.)</p>
+
+   <div class="grid cols3">${chk(base+"reo",g.reo,"Longitudinal reinforcement along this beam",null,true)}</div>
+   ${g.reo? `<div class="subsec">
+    <div class="grid cols3">${chk(base+"trenchMesh",g.trenchMesh,"Trench mesh instead",null,true)}</div>
+    ${g.trenchMesh
+      ? `<div class="grid cols3">${F("Trench mesh type",trenchMeshTypeSel(base+"trenchType",g.trenchType||"4 Bar-L12TM",true))}${F("Layers",inpNumR(base+"layers",g.layers===undefined?1:g.layers))}${chk(base+"lap",g.lap,"Include lap allowance (%)")}</div>
+         ${layerTypeSelects(g,"layers","trenchType","layerTypes",trenchMeshTypeSel,"trench mesh type",base)}`
+      : raftBeamReoTable(inst,g.edgeBeamRows,base+"edgeBeamRows")}
+   </div>`:""}
+
+   <div class="grid cols3">${chk(base+"ligs",g.ligs,"Ligatures / stirrups on this beam",null,true)}</div>
+   ${g.ligs? `<div class="subsec">
+    ${raftBeamLigTable(inst,g.edgeBeamLigZones,base+"edgeBeamLigZones")}
+    <div class="grid cols3">${chk(base+"ligLap",g.ligLap,"Include lap allowance (%)")}</div>
+    <p class="small">Sized to THIS beam's own section (${geo.widthMm||0} × ${geo.secDepthMm||0}mm less cover) plus two 135° fitment hooks. Zone length 0 spreads over whatever is left of this beam's run.</p>
+   </div>`:""}
+
+   <div class="grid cols3">${chk(base+"exc",g.exc,"Trench excavation for this beam (below prepared level)",null,true)}</div>
+   ${g.exc? `<div class="subsec"><div class="grid cols3">
+    ${F("Trench width (mm)",inpNum(base+"trenchWidth",g.trenchWidth===""||g.trenchWidth===undefined?"":g.trenchWidth))}
+    ${F("Excavation depth below prepared level (mm)",inpNum(base+"excDepth",g.excDepth===""||g.excDepth===undefined?"":g.excDepth))}
+   </div><p class="small">Blank uses this beam's own width + 50mm and its drop below the slab. Dug volume plus a bulked spoil line, exactly as the primary beam.</p></div>`:""}
+  </div>`;
+}
+/* The whole repeatable list for one kind, appended under that kind's tab. */
+function extraBeamGroupsSection(inst,d,arrName){
+  let k=extraBeamKind(arrName);
+  let groups=d[arrName]||[];
+  return `<div class="subsec"><div class="sechead">Additional ${k.noun}s — different cross sections on the same slab</div>
+  ${groups.length? groups.map((g,i)=>extraBeamGroupBlock(inst,d,arrName,g,i)).join('') : `<p class="small">None yet. The beam above is this slab's ${k.noun.toLowerCase()} 1 — add another whenever the drawing shows a second ${k.noun.toLowerCase()} with a DIFFERENT section, and take each one off over its own run.</p>`}
+  <div style="margin-top:8px;"><button class="btn small primary" data-action="addRow" data-target="${arrName}" type="button">+ Add another ${k.noun.toLowerCase()}</button></div>
+  <div class="tip"><span class="ico">🏗️</span><div>${k.ribs
+    ? `A raft rarely has one rib section throughout — the ribs under a party wall or a point load are deeper than the general grid. Take the general ribs off above as the combined run, then add a beam here for each rib section that differs, with its own run length, section and cage. Each is priced exactly like the primary rib: concrete over the drop below the slab, bar sets with anchorages, ligature zones around its own section, optional trench.`
+    : `Edge beams change section around a building — deeper on the exposed side, wider where a column lands. Take the dominant edge beam off above, then add one here for each edge that differs, with its own run length, section and cage. Each is a complete beam: concrete, bar sets with anchorages, ligature zones around its own section, optional trench and spoil.`} Don't re-enter the same run twice — the runs ADD, so a length counted above and again here buys the concrete twice.</div></div>
+  </div>`;
+}
 /* Quantity lines for one raft beam group (edge beams / internal beam
  * strips) — identical mathematics to the standalone Ground Beam element:
  * per-row bar sets with start/end anchorages and per-row lap ticks, trench
@@ -3210,7 +3337,9 @@ function raftBeamGroupLines(inst,def,lines,d,g){
   if(g.reoOn){
     if(g.trench){
       let lapPct=g.trenchLap?MESH_LAP_PCT:0;
-      layerTypeCounts(d,g.layersField,g.typeField,g.layerTypesField).forEach((n,type)=>{
+      // g.src lets an extra beam keep its trench-mesh fields on its OWN object
+      // instead of the element data; the primary beams leave it unset.
+      layerTypeCounts(g.src||d,g.layersField,g.typeField,g.layerTypesField).forEach((n,type)=>{
         let mpm=trenchReoMassPerM(type,g.widthMm);
         let totLen=g.runM*n; let wt=totLen*mpm;
         let layerNote=n>1?` × ${n} layers`:"";
@@ -3369,7 +3498,10 @@ function slabDefaults(cat,suspended){ return {
   edgeBeamLigs:false, edgeBeamLigDia:"N10", edgeBeamLigSpacing:300, edgeBeamLigLap:false,
   beamStrips:false, beamStripsLength:0, beamStripsWidth:300, beamStripsExtraDepth:150,
   beamStripsReo:false, beamStripsTrenchMesh:false, beamStripsBars:4, beamStripsDia:"N16", beamStripsTrenchType:"4 Bar-L12TM", beamStripsLayers:1, beamStripsLap:false,
-  beamStripsLigs:false, beamStripsLigDia:"N10", beamStripsLigSpacing:300, beamStripsLigLap:false
+  beamStripsLigs:false, beamStripsLigDia:"N10", beamStripsLigSpacing:300, beamStripsLigLap:false,
+  // extra beams beyond the primary one on each tab — each a complete beam
+  // with its own cross-section (see EXTRA_BEAM_KINDS)
+  edgeBeamGroups:[], intBeamGroups:[]
 };}
 function renderSlab(inst,def){
   let d=inst.data;
@@ -3574,8 +3706,8 @@ function renderSlab(inst,def){
   </div>${sdBarShapeUI(d,num(d.sdProj1)+num(d.sdProj2))}${sdSetupFields(d)}<div class="tip"><span class="ico">🏗️</span><div>Split-level slabs (a sunken wet area, a stepped car park deck) need dowels across the step or the two pours act independently under load. Size and space dowels the same way you'd detail a construction joint — this is the item estimators most often forget because it's buried in a section detail, not called up on the reinforcement schedule.</div></div></div>`;
   let concExtras = `<div class="subsec"><div class="sechead">Pour Details</div><div class="grid cols4">${chk("drops",d.drops,"Drops")}${chk("setdowns",d.setdowns,"Setdowns / recesses")}${chk("upstands",d.upstands,"Upstands")}</div></div>`;
   return {geom: geom + edgeThickenGeom + wallThickenGeom, conc:concSection(d,"<p class='small'>Concrete = area × thickness (area = L×W unless manually entered)</p>")+concExtras,reo:reo+steps,
-   edgebeams: edgeBeamGeom + edgeBeamReoBlock,
-   intbeams: stripGeom + stripReoBlock,
+   edgebeams: edgeBeamGeom + edgeBeamReoBlock + extraBeamGroupsSection(inst,d,"edgeBeamGroups"),
+   intbeams: stripGeom + stripReoBlock + extraBeamGroupsSection(inst,d,"intBeamGroups"),
    form,
    blind: d.suspended? undefined : `<div class="sechead">Base Course</div><div class="grid cols3">${F("Base thickness (mm)",inpNum("baseThickness",d.baseThickness))}${F("Base material",selOpts("baseMaterialState",d.baseMaterialState,[["compacted","Compacted"],["loose","Loose"]]))}</div>${vapourSubsection(d,"Vapour barrier / membrane under slab")}`,
    conns};
@@ -3714,6 +3846,35 @@ function computeSlab(inst,def){
       excOn:d.beamStripsExc, trenchWidthMm:d.beamStripsTrenchWidth===undefined?(num(d.beamStripsWidth,300)+50):num(d.beamStripsTrenchWidth), excDepthMm:d.beamStripsExcDepth===undefined?num(d.beamStripsExtraDepth,150):num(d.beamStripsExcDepth),
     });
   }
+  // EXTRA BEAMS — every additional edge beam and internal rib the estimator
+  // added because its section differs from the primary one. Each is a full
+  // beam through the very same raftBeamGroupLines() the primary beams use, so
+  // a second section is priced no differently from the first; only its own
+  // geometry, cage and cover change. A group with no run length costs nothing.
+  ["edgeBeamGroups","intBeamGroups"].forEach(arrName=>{
+    let kind=extraBeamKind(arrName);
+    (d[arrName]||[]).forEach((g,i)=>{
+      let geo=extraBeamGeom(d,g);
+      if(!(geo.runM>0)) return;
+      let label=(g.name||"").trim()||`${kind.noun} ${i+2}`;
+      let shape=g.secShape||kind.dfltShape;
+      let sides=g.secSides||kind.dfltSides;
+      let area=sectionAreaM2(shape,geo.widthMm,geo.extraMm,g.secBaseW,etSectionAreaM2(d));
+      let vol=geo.runM*area;
+      if(vol>0) lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:label,qty:vol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(vol,concWastePct(d)),formula:`run(${fmt(geo.runM,1)}m)×${sectionLabel(shape,geo.widthMm,geo.extraMm,g.secBaseW,etSectionAreaM2(d),sides)}${geo.mode==="overall"?` (overall ${geo.entered}−slab ${geo.slabT})`:""}`}));
+      raftBeamGroupLines(inst,def,lines,d,{
+        src:g,
+        label, runM:geo.runM, widthMm:geo.widthMm, coverMm:g.cover, secDepthMm:geo.secDepthMm,
+        reoOn:g.reo, trench:g.trenchMesh, trenchLap:g.lap,
+        layersField:"layers", typeField:"trenchType", layerTypesField:"layerTypes",
+        rows:g.edgeBeamRows||[],
+        ligsOn:g.ligs, ligLap:g.ligLap, ligZones:g.edgeBeamLigZones||[],
+        excOn:g.exc,
+        trenchWidthMm:(g.trenchWidth===""||g.trenchWidth===undefined)?(geo.widthMm+50):num(g.trenchWidth),
+        excDepthMm:(g.excDepth===""||g.excDepth===undefined)?geo.extraMm:num(g.excDepth),
+      });
+    });
+  });
   function barCalc(prefix,label,perpDim){
     if(!d[prefix]) return;
     if(d.manualArea || d[prefix+"Sched"]){
@@ -4979,14 +5140,27 @@ function attachCardEvents(card,inst){
   card.addEventListener('click',e=>{
     let act=e.target.dataset.action;
     if(act==="addRow"){
+      // target is a PATH, not just a key — a raft's extra beams keep their own
+      // bar-set and ligature tables nested inside the group object
+      // ("edgeBeamGroups.1.edgeBeamRows"), so resolve it rather than indexing.
       let target=e.target.dataset.target;
-      let arr=inst.data[target]||(inst.data[target]=[]);
-      let template = target==="openings"? {label:"Opening",w:600,h:2100,qty:1} : /Rows$/.test(target)? {position:"Additional",qty:2,dia:"N16",layers:1,startA:"straight",endA:"straight"} : target==="extraConn"? {target:"",role:"Dowel",qty:4,dia:"N16",embed:400,proj:400,hook:"straight"} : target==="sdExtraBars"? {orient:"vertical",dia:"N12",spacing:300,len:600} : target.endsWith("Bars")? {mark:"Section "+((arr.length)+1),dia:"N12",span:1,spacing:200,len:1} : target==="outlinePts"? {x:0,y:0} : {zone:"Zone",length:1000,dia:"N10",spacing:200};
+      let arr=getPath(inst.data,target);
+      if(!Array.isArray(arr)){ arr=[]; setPath(inst.data,target,arr); }
+      let leaf=target.split('.').pop();
+      let template = leaf==="openings"? {label:"Opening",w:600,h:2100,qty:1}
+       : /Groups$/.test(leaf)? newExtraBeamGroup(inst.data,leaf,arr.length)
+       : /Rows$/.test(leaf)? {position:"Additional",qty:2,dia:"N16",layers:1,startA:"straight",endA:"straight"}
+       : leaf==="extraConn"? {target:"",role:"Dowel",qty:4,dia:"N16",embed:400,proj:400,hook:"straight"}
+       : leaf==="sdExtraBars"? {orient:"vertical",dia:"N12",spacing:300,len:600}
+       : leaf.endsWith("Bars")? {mark:"Section "+((arr.length)+1),dia:"N12",span:1,spacing:200,len:1}
+       : leaf==="outlinePts"? {x:0,y:0}
+       : {zone:"Zone",length:1000,dia:"N10",spacing:200};
       arr.push(template);
       rerenderCardKeepTab(card,inst);
     } else if(act==="delRow"){
       let target=e.target.dataset.target, idx=parseInt(e.target.dataset.idx);
-      inst.data[target].splice(idx,1);
+      let arr=getPath(inst.data,target);
+      if(Array.isArray(arr)) arr.splice(idx,1);
       rerenderCardKeepTab(card,inst);
     } else if(act==="facesAll" || act==="facesNone"){
       let fields=e.target.dataset.fields.split(',');
