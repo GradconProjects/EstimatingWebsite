@@ -2822,9 +2822,19 @@ function stripFootingDefaults(){ return {
   botLong:true, botLongQty:4, botLongDia:"N16", botLongLap:false, topLong:false, topLongQty:2, topLongDia:"N12", topLongLap:false,
   cross:true, crossDia:"N12", crossSpacing:300, crossLap:false, topCross:false, topCrossDia:"N12", topCrossSpacing:300, topCrossLap:false, trenchMesh:false, trenchMeshType:"4 Bar-L12TM", trenchMeshLayers:1, trenchMeshLap:false,
   ligs:false, ligDia:"N10", ligSpacing:300, ligLap:false,
-  starters:false, connTarget:"", connQty:2, connDia:"N16", connEmbed:500, connProj:600,
+  starters:false, connTarget:"", connMode:"count", connQty:2, connRunM:"", connSpacing:400, connRows:1, connDia:"N16", connEmbed:500, connProj:600,
   stepdown:false, sdLength:3, sdDepth:300, sdDia:"N12", sdSpacing:300, sdProj1:500, sdProj2:500
 };}
+/** Starters per footing. "count" is the total typed in; "spacing" sets them
+ * out along a run — the footing's own length unless a shorter run is given
+ * (a wall that only occupies part of the strip) — in one or two rows. */
+function stripStarterCount(d){
+  if((d.connMode||"count")!=="spacing") return num(d.connQty);
+  let runM = num(d.connRunM)>0 ? num(d.connRunM) : num(d.length)/1000;
+  let sp = num(d.connSpacing,400); if(!(sp>0)) sp=400;
+  return (Math.floor(runM*1000/sp)+1)*Math.max(1,Math.round(num(d.connRows,1)));
+}
+function stripStarterRunM(d){ return num(d.connRunM)>0 ? num(d.connRunM) : num(d.length)/1000; }
 function renderStripFooting(inst){
   let d=inst.data;
   let geom=`<div class="grid cols4">
@@ -2846,10 +2856,17 @@ function renderStripFooting(inst){
   <div class="subsec ${d.trenchMesh?'':'hidden'}" data-show-if="trenchMesh"><div class="grid cols3">${F("Trench mesh type",trenchMeshTypeSel("trenchMeshType",d.trenchMeshType,true))}${F("Layers",inpNumR("trenchMeshLayers",d.trenchMeshLayers===undefined?1:d.trenchMeshLayers))}${chk("trenchMeshLap",d.trenchMeshLap,"Include lap allowance (%)","trenchMeshLap")}</div>
   ${layerTypeSelects(d,"trenchMeshLayers","trenchMeshType","trenchMeshLayerTypes",trenchMeshTypeSel,"trench mesh type")}
   <p class="small">Trench mesh is priced and ordered by the metre (a welded strip of longitudinal bars run the length of the trench), not by sheet area — this counts it the same way as any other run of bars. Same named types as Quotes' own Trench Mesh catalog. Layers &gt; 1 stacks that many mesh strips — each layer can be its own product, and steel quantities follow per material. Lap allowance is off by default (a single continuous mesh strip laid the trench's own run length usually needs none) — turn it on if this run is spliced from more than one length and needs the project's lap % (Defaults &amp; Rules) added.</p></div>`;
+  let bySpacing=(d.connMode||"count")==="spacing";
+  let perFtg=stripStarterCount(d), runM=stripStarterRunM(d), rows=Math.max(1,Math.round(num(d.connRows,1)));
   let conns=`${chk("starters",d.starters,"Starter bars / dowels up (to wall or column)","starters")}
   <div class="subsec ${d.starters?'':'hidden'}" data-show-if="starters"><div class="grid cols4">
-   ${F("Connects to",targetSelect("connTarget",d.connTarget,inst.id))}${F("Qty",inpNum("connQty",d.connQty))}${F("Dia",barSizeSel("connDia",d.connDia))}${F("Embedment (mm)",inpNum("connEmbed",d.connEmbed))}${F("Projection (mm)",inpNum("connProj",d.connProj))}
-  </div></div>
+   ${F("Connects to",targetSelect("connTarget",d.connTarget,inst.id))}${F("How many",selOpts("connMode",d.connMode||"count",[["count","Total number"],["spacing","At a spacing along the run"]],true))}${F("Dia",barSizeSel("connDia",d.connDia))}${F("Embedment (mm)",inpNum("connEmbed",d.connEmbed))}${F("Projection (mm)",inpNum("connProj",d.connProj))}
+   ${bySpacing
+     ? `${F("Run of starters (m)",`<input type="number" step="any" data-field="connRunM" data-rerender="true" value="${d.connRunM===undefined?'':d.connRunM}" placeholder="= footing length ${fmt(num(d.length)/1000,2)} m">`)}${F("Spacing along run (mm)",inpNumR("connSpacing",d.connSpacing===undefined?400:d.connSpacing))}${F("Rows across the footing",selOpts("connRows",rows,[[1,"1 row (centre)"],[2,"2 rows (one each face)"]],true))}`
+     : F("Qty (per footing)",inpNum("connQty",d.connQty))}
+  </div>
+  ${bySpacing?`<p class="small">→ <b>${perFtg}</b> starters per footing: ${fmt(runM,2)} m run ÷ ${num(d.connSpacing,400)} mm + 1 end bar${rows>1?` × ${rows} rows`:''}${num(d.qty,1)>1?` · × ${num(d.qty,1)} footings = <b>${perFtg*num(d.qty,1)}</b>`:''}. Leave the run blank to set them out along the whole footing; enter a shorter run for a wall that only sits on part of the strip.</p>`:''}
+  </div>
   `;
   let steps=`<div class="sechead">Stepped Footing (step-downs on sloping ground)</div>
   ${chk("stepdown",d.stepdown,"Footing steps down along its run","stepdown")}
@@ -2938,9 +2955,13 @@ function computeStripFooting(inst,def){
   }
   if(d.starters){
     let bd=barDiaOf(d.connDia); let len=(num(d.connEmbed)+num(d.connProj))/1000;
-    let totLen=num(d.connQty)*N*len; let wt=totLen*massPerM(bd);
+    let perFtg=stripStarterCount(d);
+    let totLen=perFtg*N*len; let wt=totLen*massPerM(bd);
     let tgt=targetLabelOf(d.connTarget);
-    lines.push(baseLine(inst,def,{materialGroup:"Connections",material:d.connDia,spec:"Starter bars → "+(tgt||"(unlinked)"),qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`${d.connQty}×${N}×(embed+proj)/1000`,linkedElement:tgt,notes:`${fmt(wt,1)} kg`}));
+    let bySpacing=(d.connMode||"count")==="spacing";
+    let rows=Math.max(1,Math.round(num(d.connRows,1)));
+    let how=bySpacing?`@${num(d.connSpacing,400)} crs over ${fmt(stripStarterRunM(d),2)} m${rows>1?` × ${rows} rows`:''} = ${perFtg} no.`:`${perFtg} no.`;
+    lines.push(baseLine(inst,def,{materialGroup:"Connections",material:d.connDia,spec:`Starter bars ${how} → ${tgt||"(unlinked)"}`,qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:bySpacing?`(${fmt(stripStarterRunM(d),2)}m/${num(d.connSpacing,400)}+1)${rows>1?`×${rows}`:''}=${perFtg} × ${N} × (embed+proj)/1000`:`${perFtg}×${N}×(embed+proj)/1000`,linkedElement:tgt,notes:`${fmt(wt,1)} kg · ${perFtg*N} bars`}));
   }
   return {lines,warnings:[]};
 }
@@ -4785,24 +4806,66 @@ function diagPileCap(inst){ let d=inst.data;
    <text x="${x+w-4}" y="${y+h+30}" text-anchor="end" font-size="6.5" font-family="ui-monospace,Menlo,Consolas,monospace" fill="${DWG.txt}">BOT MAT ${d.botXDia||'N20'}@${d.botXSpacing||150} · D${d.D||800}mm${d.linkTarget?' → '+targetLabelOf(d.linkTarget):''}</text>`;
   return sheetFrame(inst, "Pile Cap", [300,196], content);
 }
+/** Strip footing: a dimensioned SECTION (trench, footing on its blinding,
+ * cover, bars, ligatures, starters) beside a dimensioned ELEVATION along the
+ * run with the starters set out at their spacing — every measurement the
+ * form asks for is drawn where it is measured, and it redraws as you type. */
 function diagStripFooting(inst){ let d=inst.data;
-  let x=30,y=70,w=240,h=40;
-  let content=`${groundLine(x-14,x+w+14,y-16)}
-   <rect x="${x}" y="${y}" width="${w}" height="${h}" fill="rgba(232,163,61,0.06)" stroke="${DWG.ink}" stroke-width="1.6"/>
-   ${Array.from({length:9}).map((_,i)=>`<line x1="${x+(w*(i+1))/10}" y1="${y+3}" x2="${x+(w*(i+1))/10}" y2="${y+h-3}" stroke="${DWG.bar}" stroke-width="0.6" opacity="0.5"/>`).join('')}
-   <line x1="${x+4}" y1="${y+6}" x2="${x+w-4}" y2="${y+6}" stroke="${DWG.bar}" stroke-width="1.1"/>
-   <line x1="${x+4}" y1="${y+h-6}" x2="${x+w-4}" y2="${y+h-6}" stroke="${DWG.bar}" stroke-width="1.1"/>
-   ${dimH(x,x+w,y-8,`${d.length||10000}`)}
-   ${dimV(y,y+h,x+w+16,`${d.depth||400}`)}
-   ${specLine(x,y+h+16,
-     d.trenchMesh
-       ? `${d.width||600}W · TRENCH MESH ${d.trenchMeshType||'4 Bar-L12TM'}${num(d.trenchMeshLayers,1)>1?` ×${d.trenchMeshLayers} LAYERS`:''}`
-       : `${d.width||600}W · CONT. ${d.botLongQty||4}${d.botLongDia||'N16'} BTM${d.topLong?` · ${d.topLongQty||2}${d.topLongDia||'N12'} TOP`:''}`)}
-   ${!d.trenchMesh && (d.cross||d.topCross||d.ligs)? specLine(x,y+h+30,
-     [d.ligs?`LIGS ${d.ligDia||'N10'}@${d.ligSpacing===undefined?300:d.ligSpacing}`:'',
-      d.cross?`X-BARS ${d.crossDia||'N12'}@${d.crossSpacing||300} BTM`:'',
-      d.topCross?`X-BARS ${d.topCrossDia||'N12'}@${d.topCrossSpacing===undefined?300:d.topCrossSpacing} TOP`:''].filter(Boolean).join(' · ')) : ''}`;
-  return sheetFrame(inst, "Strip Footing", [300,164], content);
+  const W=Math.max(1,num(d.width,600)), D=Math.max(1,num(d.depth,400));
+  const TW=Math.max(num(d.trenchWidth,650),W), ED=Math.max(num(d.excDepth,450),D), BL=Math.max(0,num(d.blinding,0));
+  const L=Math.max(1,num(d.length,10000)), cov=num(d.cover!==undefined&&d.cover!==""?d.cover:PROJECT.cover,50), N=num(d.qty,1);
+  /* ---- section (left) ---- */
+  const sx=64, sy=58, s=Math.min(118/TW, 76/Math.max(ED,D+BL));
+  const tw=TW*s, ed=Math.max(ED,D+BL)*s, w=W*s, dd=D*s, bl=BL*s, cv=Math.max(1.5,cov*s);
+  const fx=sx+(tw-w)/2, fy=sy+ed-bl-dd, right=sx+tw;
+  const nBot=Math.max(1,Math.min(8,num(d.botLongQty,4))), nTop=d.topLong?Math.max(1,Math.min(8,num(d.topLongQty,2))):0;
+  const barsAt=(n,yy)=>Array.from({length:n}).map((_,i)=>{const xx=n===1?fx+w/2:fx+cv+(w-2*cv)*i/(n-1);return `<circle cx="${xx}" cy="${yy}" r="1.6" fill="${DWG.bar}"/>`;}).join('');
+  const starters=!!d.starters, rows=Math.max(1,Math.round(num(d.connRows,1)));
+  const proj=Math.min(24,Math.max(8,num(d.connProj,600)*s)), emb=Math.min(dd-cv-2,Math.max(4,num(d.connEmbed,500)*s));
+  const starterXs=starters?(((d.connMode||"count")==="spacing"&&rows>1)?[fx+cv+2,fx+w-cv-2]:[fx+w/2]):[];
+  let section=`${groundLine(sx-16,right+40,sy)}
+   <path d="M${sx} ${sy} L${sx} ${sy+ed} L${right} ${sy+ed} L${right} ${sy}" fill="rgba(124,74,90,0.05)" stroke="${DWG.gl}" stroke-width="1" stroke-dasharray="3 2"/>
+   ${BL>0?`<rect x="${sx+1}" y="${sy+ed-bl}" width="${tw-2}" height="${bl}" fill="rgba(85,116,95,0.18)" stroke="${DWG.dim}" stroke-width="0.6"/>`:''}
+   <rect x="${fx}" y="${fy}" width="${w}" height="${dd}" fill="rgba(232,163,61,0.10)" stroke="${DWG.ink}" stroke-width="1.6"/>
+   ${(d.ligs&&!d.trenchMesh)?`<rect x="${fx+cv}" y="${fy+cv}" width="${w-2*cv}" height="${dd-2*cv}" rx="2" fill="none" stroke="${DWG.bar}" stroke-width="0.9"/>`:''}
+   ${d.trenchMesh?`<line x1="${fx+cv}" y1="${fy+dd-cv}" x2="${fx+w-cv}" y2="${fy+dd-cv}" stroke="${DWG.bar}" stroke-width="1.2"/>`:barsAt(nBot,fy+dd-cv)}
+   ${nTop?barsAt(nTop,fy+cv):''}
+   ${(d.cross&&!d.trenchMesh)?`<line x1="${fx+cv}" y1="${fy+dd-cv}" x2="${fx+w-cv}" y2="${fy+dd-cv}" stroke="${DWG.bar}" stroke-width="0.7" opacity="0.7"/>`:''}
+   ${starterXs.map(xx=>`<line x1="${xx}" y1="${fy+dd-emb}" x2="${xx}" y2="${fy-proj}" stroke="${DWG.bar}" stroke-width="1.4"/>`).join('')}
+   ${dimH(sx,right,20,`TRENCH ${TW}`)}
+   ${dimH(fx,fx+w,sy+ed+12,`W ${W}`)}
+   ${dimV(fy,fy+dd,right+12,`D ${D}`)}
+   ${dimV(sy,sy+ed,right+30,`EXC ${ED}`)}
+   ${BL>0?`<text x="${sx+2}" y="${sy+ed-bl-2}" font-size="6" font-family="ui-monospace,Menlo,Consolas,monospace" fill="${DWG.dim}">BLINDING ${BL}</text>`:''}
+   ${starters?dimV(fy-proj,fy,sx-14,`PROJ ${num(d.connProj,600)}`):''}
+   <text x="${fx+2}" y="${fy+dd-cv-3}" font-size="5.5" font-family="ui-monospace,Menlo,Consolas,monospace" fill="${DWG.dim}">c${cov}</text>`;
+  /* ---- elevation along the run (bottom) ---- */
+  const ex=24, ey=180, ew=252, eh=16;
+  const perFtg=starters?stripStarterCount(d):0;
+  const bySpacing=(d.connMode||"count")==="spacing";
+  const runM=stripStarterRunM(d), runW=Math.min(ew,ew*(runM*1000)/L);
+  let ticks="";
+  if(starters&&perFtg>0){
+    const perRow=Math.max(1,Math.round(perFtg/rows));
+    const nDraw=Math.min(perRow,60);
+    for(let i=0;i<nDraw;i++){
+      const xx=nDraw===1?ex+runW/2:ex+(runW*i)/(nDraw-1);
+      ticks+=`<line x1="${xx}" y1="${ey-9}" x2="${xx}" y2="${ey+2}" stroke="${DWG.bar}" stroke-width="${rows>1?1.6:1.1}"/>`;
+    }
+    if(runW<ew-4) ticks+=`${dimH(ex,ex+runW,ey-14,`RUN ${fmt(runM,2)} m`)}`;
+  }
+  const spec=d.trenchMesh
+    ? `TRENCH MESH ${d.trenchMeshType||'4 Bar-L12TM'}${num(d.trenchMeshLayers,1)>1?` ×${d.trenchMeshLayers}`:''}`
+    : `${nBot}${d.botLongDia||'N16'} BTM${d.topLong?` · ${num(d.topLongQty,2)}${d.topLongDia||'N12'} TOP`:''}${d.ligs?` · LIGS ${d.ligDia||'N10'}@${d.ligSpacing===undefined?300:d.ligSpacing}`:''}${d.cross?` · X ${d.crossDia||'N12'}@${d.crossSpacing||300}`:''}`;
+  const starterSpec=starters?(bySpacing?`${d.connDia||'N16'} STARTERS @${num(d.connSpacing,400)} CRS${rows>1?` × ${rows} ROWS`:''} = ${perFtg} NO.`:`${perFtg} NO. ${d.connDia||'N16'} STARTERS`)+`, EMB ${num(d.connEmbed,500)} / PROJ ${num(d.connProj,600)}`:'';
+  let elevation=`<rect x="${ex}" y="${ey}" width="${ew}" height="${eh}" fill="rgba(232,163,61,0.10)" stroke="${DWG.ink}" stroke-width="1.4"/>
+   <line x1="${ex+3}" y1="${ey+eh-4}" x2="${ex+ew-3}" y2="${ey+eh-4}" stroke="${DWG.bar}" stroke-width="1"/>
+   ${ticks}
+   ${dimH(ex,ex+ew,ey+eh+12,`L ${L}${N>1?` × ${N}`:''}`)}
+   ${d.stepdown?`<path d="M${ex+ew-40} ${ey} l0 -6 l40 0" fill="none" stroke="${DWG.ink}" stroke-width="1" stroke-dasharray="2 2"/>`:''}
+   ${specLine(ex,ey+eh+26,spec)}
+   ${starters?specLine(ex,ey+eh+37,starterSpec):''}`;
+  return sheetFrame(inst, "Strip Footing", [300,246], section+elevation);
 }
 function diagPadFooting(inst){ let d=inst.data;
   let x=60,y=60,w=140,h=110;
@@ -5073,7 +5136,7 @@ function buildCard(inst){
      <div class="card-tabs">${availTabs.map((t)=>`<button data-tab="${t[0]}" class="${t[0]===activeTab?'active':''}">${t[1]}</button>`).join('')}</div>
      <div class="card-panes">
        ${TABS.map((t)=>parts[t[0]]!==undefined?`<div class="pane ${t[0]===activeTab?'active':''}" data-pane="${t[0]}">
-          ${t[0]=="geom"? `<div style="display:flex;gap:16px;flex-wrap:wrap;"><div style="flex:2;min-width:280px;">${parts[t[0]]}</div><div style="flex:1;min-width:220px;">${calc.diagram(inst)}</div></div>` : parts[t[0]]}
+          <div style="display:flex;gap:16px;flex-wrap:wrap;"><div style="flex:2;min-width:280px;">${parts[t[0]]}</div><div class="diag-host" style="flex:1;min-width:220px;">${calc.diagram(inst)}</div></div>
         </div>`:'').join('')}
        <div class="pane ${activeTab==="results"?'active':''}" data-pane="results"><div class="resultsHost"></div></div>
      </div>
@@ -5333,10 +5396,15 @@ function rerenderCardKeepTab(card,inst){
   let btn=newCard.querySelector(`.card-tabs button[data-tab="${activeTab}"]`);
   if(btn) btn.click();
 }
+// The drawing sits beside EVERY tab (geometry, reinforcement, formwork,
+// connections…), not just Geometry, so whatever is being typed is seen
+// where it is measured. Redrawn on every input, in every pane.
 function updateDiagramPane(card,inst){
   let def=LIB_INDEX[inst.typeKey], calc=CALC[def.calc];
-  let host=card.querySelector('.pane[data-pane="geom"] > div > div:last-child');
-  if(host) host.innerHTML = calc.diagram(inst);
+  let hosts=card.querySelectorAll('.diag-host');
+  if(!hosts.length) return;
+  let svg=calc.diagram(inst);
+  hosts.forEach(h=>{ h.innerHTML = svg; });
 }
 function computeInstance(inst){
   let def=LIB_INDEX[inst.typeKey], calc=CALC[def.calc];
