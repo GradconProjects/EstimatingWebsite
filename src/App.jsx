@@ -106,15 +106,48 @@ export default function App() {
       else window.localStorage.removeItem(ACTIVE_PROJECT_KEY);
     } catch { /* best-effort */ }
   }, [activeId]);
-  // One-time formwork price corrections: Conventional $150 → $60/m² and
-  // Edgeform $50 → $8/lm. A stored rates blob carrying the OLD SEED value
-  // (any rates-modal save persisted the whole seeded object) gets the new
-  // figure once; any other stored figure is a deliberate edit — untouched.
+  /* Catalog price corrections, applied once to a stored rates blob.
+   *
+   * The Rates Library (portal/rates-library.html) is Gradcon's real price
+   * list and RULES: where the two disagreed, the catalog was wrong. Each
+   * entry is [key, the old seeded figure, the Rates Library figure]. A stored
+   * value still equal to the old seed was never touched by anyone, so it is
+   * corrected; ANY other figure is a deliberate edit and is left alone.
+   *
+   * This runs because a browser persists the WHOLE seeded rates object the
+   * first time it saves — without it, a corrected catalog price never reaches
+   * an install that has been used (see the drift banner in RatesModal, which
+   * catches the same problem for edits this table doesn't cover).
+   *
+   * NOTE: an earlier version of this effect ran the two formwork rows the
+   * WRONG WAY (150 → 60 and 50 → 8), which is what made conventional formwork
+   * price at well under half its real rate on the element cards while the
+   * Rates Library showed $150. The direction is the whole point of the table.
+   */
   useEffect(() => {
     if (ratesStatus === "loading") return;
     const fixes = [
-      [rateKey("FORMWORK", "Conventional", "m2"), 150, 60],
-      [rateKey("FORMWORK", "Edgeform", "m"), 50, 8],
+      [rateKey("FORMWORK", "Conventional", "m2"), 60, 150],
+      [rateKey("FORMWORK", "Edgeform", "m"), 8, 50],
+      [rateKey("CONCRETE", "15 mpa", "m3"), 196.5, 197],
+      [rateKey("CONCRETE", "20 mpa", "m3"), 207.5, 199],
+      [rateKey("CONCRETE", "25 mpa", "m3"), 212.5, 204],
+      [rateKey("CONCRETE", "32 mpa", "m3"), 221.5, 213],
+      [rateKey("CONCRETE", "40 mpa", "m3"), 233.5, 225],
+      [rateKey("CONCRETE", "50 mpa", "m3"), 252.5, 264.2],
+      [rateKey("CONCRETE", "25 mpa Agilia", "m3"), 310.5, 318],
+      [rateKey("CONCRETE", "32 mpa Agilia", "m3"), 322.5, 317],
+      [rateKey("CONCRETE", "40 mpa Agilia", "m3"), 334.5, 339],
+      [rateKey("CONCRETE", "40 mpa Agilia (walls)", "m3"), 342.5, 339],
+      [rateKey("REINFORCING ACCESSORIES", "CP 25/40 Bar chairs", "bag"), 16.2, 17.4],
+      [rateKey("REINFORCING ACCESSORIES", "CP 50/65 Bar chairs", "bag"), 17.4, 18],
+      [rateKey("REINFORCING ACCESSORIES", "CP 75/90 Bar chairs", "bag"), 21, 22.2],
+      [rateKey("REINFORCING ACCESSORIES", "CP 85/100 Bar chairs", "bag"), 24, 25.2],
+      [rateKey("REINFORCING ACCESSORIES", "BCPT 30 Bar chairs", "bag"), 19.2, 20.4],
+      [rateKey("REINFORCING ACCESSORIES", "BCPT 100 Bar chairs", "bag"), 45.6, 48],
+      [rateKey("REINFORCING ACCESSORIES", "Base 152", "bag"), 36.6, 38.4],
+      [rateKey("REINFORCING ACCESSORIES", "BP1.6 Tie wire", "roll"), 5.15, 4.8],
+      [rateKey("REINFORCING ACCESSORIES", "Duct Tape", "roll"), 4.5, 4.2],
     ];
     const stale = fixes.filter(([key, oldSeed]) => rates[key] && rates[key].unitCost === oldSeed);
     if (stale.length) {

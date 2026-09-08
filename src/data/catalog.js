@@ -234,15 +234,15 @@ export const FULL_CATALOG = [
     // rateKey-identified product a live quote could already have a quantity saved against;
     // renaming it would silently orphan that entry from the UI (see CLAUDE.md rule 6).
     ["Vapour Barrier / DPM membrane", "m2", null, 2.5],
-    ["Duct Tape", "roll", null, 4.5], ["Abelflex 100mm", "roll", null, 36],
-    ["Abelflex 150mm", "roll", null, 54], ["CP 25/40 Bar chairs", "bag", null, 16.2], ["CP 50/65 Bar chairs", "bag", null, 17.4],
-    ["CP 75/90 Bar chairs", "bag", null, 21], ["CP 85/100 Bar chairs", "bag", null, 24], ["BCPT 30 Bar chairs", "bag", null, 19.2],
-    ["BCPT 100 Bar chairs", "bag", null, 45.6], ["Base 152", "bag", null, 36.6], ["BP1.6 Tie wire", "roll", null, 5.15],
+    ["Duct Tape", "roll", null, 4.2], ["Abelflex 100mm", "roll", null, 36],
+    ["Abelflex 150mm", "roll", null, 54], ["CP 25/40 Bar chairs", "bag", null, 17.4], ["CP 50/65 Bar chairs", "bag", null, 18],
+    ["CP 75/90 Bar chairs", "bag", null, 22.2], ["CP 85/100 Bar chairs", "bag", null, 25.2], ["BCPT 30 Bar chairs", "bag", null, 20.4],
+    ["BCPT 100 Bar chairs", "bag", null, 48], ["Base 152", "bag", null, 38.4], ["BP1.6 Tie wire", "roll", null, 4.8],
   ]},
   { key: "CONCRETE", weightBasis: false, products: [
-    ["25 mpa Agilia", "m3", null, 310.5], ["32 mpa Agilia", "m3", null, 322.5], ["40 mpa Agilia", "m3", null, 334.5], ["40 mpa Agilia (walls)", "m3", null, 342.5],
-    ["15 mpa", "m3", null, 196.5], ["20 mpa", "m3", null, 207.5], ["25 mpa", "m3", null, 212.5], ["32 mpa", "m3", null, 221.5], ["40 mpa", "m3", null, 233.5],
-    ["50 mpa", "m3", null, 252.5], ["Exposed Agg", "m3", null, 400],
+    ["25 mpa Agilia", "m3", null, 318], ["32 mpa Agilia", "m3", null, 317], ["40 mpa Agilia", "m3", null, 339], ["40 mpa Agilia (walls)", "m3", null, 339],
+    ["15 mpa", "m3", null, 197], ["20 mpa", "m3", null, 199], ["25 mpa", "m3", null, 204], ["32 mpa", "m3", null, 213], ["40 mpa", "m3", null, 225],
+    ["50 mpa", "m3", null, 264.2], ["Exposed Agg", "m3", null, 400],
     // Holcim service fees. Minimum cartage is $/m³ SHORT of a 4 m³ load (see
     // MIN_CARTAGE_THRESHOLD_M3); the levy and surcharge are $/m³ delivered.
     ["Minimum cartage (load under 4 m3)", "m3", null, 80],
@@ -281,7 +281,7 @@ export const FULL_CATALOG = [
     ["Insitu Walls", "m2", null, 760], ["Stair (floor-floor)", "l/m risers", null, 682], ["Shotcrete", "m2", null, 300],
   ]},
   { key: "FORMWORK", weightBasis: false, products: [
-    ["Material", "unit", null, 400], ["Conventional", "m2", null, 60], ["Bondek", "m2", null, 125], ["Edgeform", "m", null, 8],
+    ["Material", "unit", null, 400], ["Conventional", "m2", null, 150], ["Bondek", "m2", null, 125], ["Edgeform", "m", null, 50],
     ["Beam/fold sides <400mm d", "m", null, 100], ["Beam/fold sides >400mm d", "m2", null, 250], ["Handrail", "m", null, 30],
     ["Walls", "m2", null, 250], ["Walls Curved", "m2", null, 350], ["Columns (eg 300x300)", "each", null, 1000],
     ["Oregon boards", "m2", null, 125], ["Crane Truck hire", "each", null, 1500], ["Scaffold Hire", "day", null, 175], ["Certification", "each", null, 400],

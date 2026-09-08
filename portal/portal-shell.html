@@ -86,6 +86,8 @@
   .field{ display:flex; flex-direction:column; gap:6px; margin-bottom:16px; }
   .field label{ font-size:11.5px; font-weight:600; letter-spacing:.03em; text-transform:uppercase; color:var(--muted); }
   .field .hint{ font-size:12px; line-height:1.45; color:var(--muted); margin-top:-1px; }
+  .build-stamp{ margin-top:14px; text-align:center; font-size:11px; letter-spacing:.04em; color:var(--muted); opacity:.75; }
+  .build-stamp b{ font-weight:600; font-variant-numeric:tabular-nums; }
   .field .hint b{ color:var(--text); font-weight:600; }
   .field input, .field select{
     background:var(--bg); border:1px solid var(--line); color:var(--text);
@@ -297,6 +299,7 @@
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
       <div>Preview build — sign in with a gradcon.com.au email and your PIN. New to this browser? Ask Grady or the office for the current PIN — each user can change theirs from the dashboard once signed in. Stored on this browser only until this is hosted with real auth.</div>
     </div>
+    <div class="build-stamp" title="Which build this browser is running. If it does not match the latest deploy, this tab is serving a cached copy — close every Gradcon tab and reopen, or load the site with ?v=1 on the end.">Build <b>__BUILD_STAMP__</b></div>
   </div>
 </div>
 
@@ -493,6 +496,7 @@
   <div class="pin-modal settings-modal">
     <h3>Settings</h3>
     <p class="sub">Preferences for the whole portal — appearance, Quotes pricing defaults, and Estimates takeoff defaults. Saved on this browser and applied everywhere.</p>
+    <p class="sub" style="margin-top:-6px;">Running build <b>__BUILD_STAMP__</b> — quote this when reporting anything, so it is clear whether the browser has the latest deploy.</p>
 
     <div class="settings-section">Appearance</div>
     <div class="field">

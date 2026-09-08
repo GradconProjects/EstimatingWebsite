@@ -219,11 +219,17 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
   const rotateMarkup = (id) =>
     patch((it) => ({ ...it, markups: (it.markups || []).map((m) => (m.id === id ? { ...m, rotation: ((m.rotation || 0) + 90) % 360 } : m)) }));
   const markups = item.markups || [];
-  // The drawings themselves must be easily seen, not hidden behind a click:
-  // when an element HAS markups, the section opens with the card and every
-  // drawing renders full-size inline. Only an element with no markups keeps
-  // the section as a slim collapsed header.
-  const [markupsOpen, setMarkupsOpen] = useState(() => (item.markups || []).length > 0);
+  // The drawings must be easily SEEN, not hidden behind a click, so an element
+  // that has markups opens the section by default and renders each drawing
+  // full-size inline. But a project with drawings on every element then runs
+  // for pages, so rolling one up has to STICK: the choice is stored on the
+  // item (like `collapsed` for the card itself) rather than in local state,
+  // which a re-render or a reload would throw away. Undefined = never touched,
+  // so the default-open behaviour still applies to existing quotes.
+  const markupsOpen = item.markupsCollapsed === undefined
+    ? (item.markups || []).length > 0
+    : !item.markupsCollapsed;
+  const setMarkupsOpen = (open) => patch((it) => ({ ...it, markupsCollapsed: !open }));
   const [viewerId, setViewerId] = useState(null); // markup id open in the zoom lightbox
   const viewerMarkup = markups.find((m) => m.id === viewerId) || null;
 

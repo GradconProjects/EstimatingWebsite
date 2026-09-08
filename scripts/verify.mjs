@@ -35,6 +35,14 @@ const check = (name, fn) => {
 
 console.log("Gradcon Estimator — costing engine checks\n");
 
+/* Concrete prices are Gradcon's real supplier rates and DO get corrected (they
+ * are synced from the Rates Library). A check that hardcodes one is really
+ * asserting a price, not a rule, and breaks every time the price moves — so
+ * read the rate the same way the app does and test the arithmetic around it. */
+const RATE = (cat, name, unit) => defaultRates()[rateKey(cat, name, unit)].unitCost;
+const C25 = RATE("CONCRETE", "25 mpa", "m3");
+const C32 = RATE("CONCRETE", "32 mpa", "m3");
+
 /* ---------- catalog shape ---------- */
 check("45 element types, 9 categories, 15 sections", () => {
   assert.equal(ELEMENT_TYPES.length, 45);
@@ -232,7 +240,7 @@ check("Minimum cartage: volume ÷ 4, the rule applied to the REMAINDER of that d
   const typed = mk(11);
   typed.qtys[rateKey("CONCRETE", "Minimum cartage (load under 4 m3)", "m3")] = 0;
   assert.equal(autoMinimumCartage(typed, rates), null);
-  assert.equal(computeElementCost(typed, rates).materialsTotal, 11 * 212.5);
+  assert.equal(computeElementCost(typed, rates).materialsTotal, 11 * C25);
 
   // and the $/m³ honours a rates override
   const dearer = { ...rates, [rateKey("CONCRETE", "Minimum cartage (load under 4 m3)", "m3")]: { unitCost: 100 } };
@@ -250,11 +258,11 @@ check("Environment levy auto-applies per m³ to the whole poured volume ($2.80),
   const levy = autoEnvironmentLevy(item, rates);
   assert.equal(levy.qty, 40);
   near(levy.total, 40 * 2.8);
-  near(computeElementCost(item, rates).materialsTotal, 40 * 212.5 + 40 * 2.8);
+  near(computeElementCost(item, rates).materialsTotal, 40 * C25 + 40 * 2.8);
   // typed wins
   item.qtys[rateKey("CONCRETE", "Environment levy", "m3")] = 0;
   assert.equal(autoEnvironmentLevy(item, rates), null);
-  near(computeElementCost(item, rates).materialsTotal, 40 * 212.5);
+  near(computeElementCost(item, rates).materialsTotal, 40 * C25);
 });
 
 check("Pumping: contract minimums bill the minimum hours, and every pump rate matches the J. King schedule", () => {
@@ -308,13 +316,13 @@ check("Production & transport surcharge auto-applies per m³ to the WHOLE poured
   assert.equal(sur.qty, 50);
   near(sur.total, 50 * 9.17);
   const cost = computeElementCost(item, rates);
-  near(cost.materialsTotal, 50 * 212.5 + 50 * 9.17);
+  near(cost.materialsTotal, 50 * C25 + 50 * 9.17);
   assert.equal(cost.concreteQty, 50, "the surcharge fee must not inflate poured volume");
   near(labourQuantities(item, rates).concreteM3, 50, "nor the labour engine's concrete m³");
   // a typed qty on the surcharge row switches it fully manual (no double-charge)
   item.qtys[surKey] = 10;
   assert.equal(autoConcreteSurcharge(item, rates), null);
-  near(computeElementCost(item, rates).materialsTotal, 50 * 212.5 + 10 * 9.17);
+  near(computeElementCost(item, rates).materialsTotal, 50 * C25 + 10 * 9.17);
   // the rate honours a rates-library override — editable in place, the Rates modal, everywhere
   delete item.qtys[surKey];
   rates[surKey] = { unitCost: 12.5 };
@@ -328,10 +336,19 @@ check("Quote statuses: 'Completed Estimating' sits between Estimating and Quotin
   QUOTE_STATUSES.forEach((s) => assert.ok(QUOTE_STATUS_STYLES[s], `every status needs a style entry (missing: ${s})`));
 });
 
-check("Formwork rates: Conventional seeds $60/m² and Edgeform $8/lm", () => {
+check("Formwork rates match the Rates Library: Conventional $150/m², Edgeform $50/lm", () => {
+  // These two seeded $60 and $8 while the Rates Library — Gradcon's actual
+  // price list — said $150 and $50, so an element card priced conventional
+  // formwork at well under half its real rate. The library rules; this check
+  // exists so the two can never drift apart again unnoticed.
   const rates = defaultRates();
-  assert.equal(rates[rateKey("FORMWORK", "Conventional", "m2")].unitCost, 60);
-  assert.equal(rates[rateKey("FORMWORK", "Edgeform", "m")].unitCost, 8);
+  assert.equal(rates[rateKey("FORMWORK", "Conventional", "m2")].unitCost, 150);
+  assert.equal(rates[rateKey("FORMWORK", "Edgeform", "m")].unitCost, 50);
+  // and the concrete grades the same drift affected
+  assert.equal(rates[rateKey("CONCRETE", "32 mpa", "m3")].unitCost, 213);
+  assert.equal(rates[rateKey("CONCRETE", "25 mpa", "m3")].unitCost, 204);
+  assert.equal(rates[rateKey("CONCRETE", "50 mpa", "m3")].unitCost, 264.2);
+  assert.equal(rates[rateKey("CONCRETE", "40 mpa Agilia", "m3")].unitCost, 339);
 });
 
 check("Subcontract 'quote' items: the received quote is entered as the rate — qty 1 books the whole quote", () => {
@@ -598,13 +615,13 @@ check("computeExternalScopeLines: per-element sell allocation sums exactly to th
   const rates = defaultRates();
   const a = newElementItem(ELEMENT_TYPES.find((t) => t.id === "strip_footings"));
   a.labourAuto = false;
-  a.qtys[rateKey("CONCRETE", "25 mpa", "m3")] = 10; // $2125 direct
+  a.qtys[rateKey("CONCRETE", "25 mpa", "m3")] = 10; // 10 × the catalog 25 mpa rate
   a.qtys[rateKey("CONCRETE", "Minimum cartage (load under 4 m3)", "m3")] = 0; // typed 0 disables the auto small-load charge — this check pins the allocation maths
   a.qtys[rateKey("CONCRETE", "Environment levy", "m3")] = 0;
   a.qtys[rateKey("CONCRETE", "Production & transport surcharge", "m3")] = 0; // and the auto surcharge
   const b = newElementItem(ELEMENT_TYPES.find((t) => t.id === "capping_beam"));
   b.labourAuto = false;
-  b.qtys[rateKey("CONCRETE", "32 mpa", "m3")] = 5; // $1107.50 direct
+  b.qtys[rateKey("CONCRETE", "32 mpa", "m3")] = 5;
   b.qtys[rateKey("CONCRETE", "Minimum cartage (load under 4 m3)", "m3")] = 0;
   b.qtys[rateKey("CONCRETE", "Environment levy", "m3")] = 0;
   b.qtys[rateKey("CONCRETE", "Production & transport surcharge", "m3")] = 0;
@@ -612,11 +629,11 @@ check("computeExternalScopeLines: per-element sell allocation sums exactly to th
   const { lines, totalExGst } = computeExternalScopeLines([a, b, c], rates, 0.08, 0.05, 0.3);
 
   assert.equal(lines.length, 2, "the zero-qty element must not produce a scope line");
-  const directTotal = 2125 + 1107.5;
+  const directTotal = 10 * C25 + 5 * C32;
   const expectedTotal = (directTotal * 1.13) / 0.7; // matches computeMarginLadder's own formula
   near(totalExGst, expectedTotal);
   near(lines.reduce((s, l) => s + l.sellExGst, 0), totalExGst);
-  near(lines[0].sellExGst, (2125 / directTotal) * expectedTotal);
+  near(lines[0].sellExGst, ((10 * C25) / directTotal) * expectedTotal);
 });
 
 /* ---------- custom / one-off items ---------- */
@@ -642,7 +659,7 @@ check("A rates override changes cost; a MISSING key falls back to catalog defaul
   item.qtys[rateKey("CONCRETE", "Production & transport surcharge", "m3")] = 0;
 
   const before = computeElementCost(item, rates).materialsTotal;
-  assert.equal(before, 10 * 221.5);
+  assert.equal(before, 10 * C32);
 
   rates[key] = { unitCost: 300, unitWeight: null };
   const after = computeElementCost(item, rates).materialsTotal;
@@ -650,7 +667,7 @@ check("A rates override changes cost; a MISSING key falls back to catalog defaul
 
   delete rates[key]; // simulate an old saved rates blob missing this key
   const fallback = computeElementCost(item, rates).materialsTotal;
-  assert.equal(fallback, 10 * 221.5); // falls back to catalog default, not 0
+  assert.equal(fallback, 10 * C32); // falls back to catalog default, not 0
 });
 
 /* ---------- multi-element grand total ---------- */
@@ -658,7 +675,7 @@ check("Grand total sums every element's total across the whole quote", () => {
   const rates = defaultRates();
   const a = newElementItem(ELEMENT_TYPES.find((t) => t.id === "strip_footings"));
   a.labourAuto = false; // this check pins the MATERIALS maths; auto labour has its own checks
-  a.qtys[rateKey("CONCRETE", "25 mpa", "m3")] = 10; // $2125
+  a.qtys[rateKey("CONCRETE", "25 mpa", "m3")] = 10;
   a.qtys[rateKey("CONCRETE", "Minimum cartage (load under 4 m3)", "m3")] = 0; // typed 0 disables the auto charge
   a.qtys[rateKey("CONCRETE", "Environment levy", "m3")] = 0;
   a.qtys[rateKey("CONCRETE", "Production & transport surcharge", "m3")] = 0;
@@ -669,7 +686,7 @@ check("Grand total sums every element's total across the whole quote", () => {
   b.qtys[rateKey("CONCRETE", "Environment levy", "m3")] = 0;
   b.qtys[rateKey("CONCRETE", "Production & transport surcharge", "m3")] = 0;
   const total = computeGrandTotal([a, b], rates);
-  assert.equal(total, 10 * 212.5 + 5 * 221.5);
+  assert.equal(total, 10 * C25 + 5 * C32);
 });
 
 /* ---------- margin ladder ---------- */
@@ -1034,9 +1051,9 @@ check("Benchmark rates: whole cost over the geometry measured in Estimates — $
   strip.qtys[rateKey("CONCRETE", "Minimum cartage (load under 4 m3)", "m3")] = 0;
   strip.qtys[rateKey("CONCRETE", "Environment levy", "m3")] = 0;
   strip.qtys[rateKey("CONCRETE", "Production & transport surcharge", "m3")] = 0;
-  strip.qtys[rateKey("CONCRETE", "25 mpa", "m3")] = 10;            // 10 × 212.50 = 2,125
+  strip.qtys[rateKey("CONCRETE", "25 mpa", "m3")] = 10;            // 10 × the catalog 25 mpa rate
   strip.qtys[rateKey("PROCESSED BAR", "N12", "m")] = 400;          // 400 × 0.91kg = 0.364t × 1925 = 700.70
-  const stripTotal = 2125 + 700.7;
+  const stripTotal = 10 * C25 + 700.7;
 
   // No geometry recorded yet → only the concrete volume can be divided by
   assert.deepEqual(computeElementUnitRates(strip, rates).map((l) => l.unit), ["m³"], "no measures = just $/m³");
@@ -1065,7 +1082,7 @@ check("Benchmark rates: whole cost over the geometry measured in Estimates — $
   slab.qtys[rateKey("CONCRETE", "25 mpa", "m3")] = 20;
   slab.measureM2 = 180;
   assert.deepEqual(computeElementUnitRates(slab, rates).map((l) => l.unit), ["m²", "m³"], "slab shows m² then m³");
-  near(computeElementUnitRates(slab, rates)[0].rate, (20 * 212.5) / 180);
+  near(computeElementUnitRates(slab, rates)[0].rate, (20 * C25) / 180);
 
   // Nothing entered at all → no rates, never a divide-by-zero
   assert.deepEqual(computeElementUnitRates(newElementItem(ELEMENT_TYPES[0]), rates), []);
@@ -1160,11 +1177,11 @@ check("Project unit rates: the whole quote's cost over the project's total run, 
   strip.measureLm = 60;
 
   const slab = noFees(newElementItem(ELEMENT_TYPES.find((t) => t.id === "slab_on_ground")));
-  slab.qtys[rateKey("CONCRETE", "25 mpa", "m3")] = 20;    // 4,250
+  slab.qtys[rateKey("CONCRETE", "25 mpa", "m3")] = 20;
   slab.measureM2 = 250;
 
   const items = [strip, slab];
-  const total = 2125 + 4250;
+  const total = 10 * C25 + 20 * C25;
   const lines = computeProjectUnitRates(items, rates);
   assert.deepEqual(lines.map((l) => l.unit), ["lm", "m²", "m³"], "same fixed lm -> m² -> m³ order as a row");
   near(lines[0].rate, total / 60, "project $/lm over the project's total run");

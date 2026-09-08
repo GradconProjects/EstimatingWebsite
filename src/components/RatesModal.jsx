@@ -1,3 +1,4 @@
+import { useMemo, useState } from "react";
 import { X } from "lucide-react";
 import { FULL_CATALOG, RESOURCE_COLS, PRODUCTION_RATES } from "../data/catalog.js";
 import { rateKey } from "../lib/costing.js";
@@ -6,6 +7,43 @@ import { NumInput } from "./atoms.jsx";
 export default function RatesModal({ rates, setRates, onClose }) {
   const update = (key, field, value) =>
     setRates((r) => ({ ...r, [key]: { ...r[key], [field]: value === "" ? null : Number(value) } }));
+
+  // Every stored price that no longer matches the catalog it came from. A
+  // browser seeds `gradcon-rates` with the WHOLE catalog on first save, so a
+  // price corrected in catalog.js afterwards is invisible here until it is
+  // restored — this is what makes that visible and fixable rather than a
+  // silent disagreement between the element cards and the Rates Library.
+  // Labour and production rates are included: they drift the same way.
+  const drift = useMemo(() => {
+    const out = [];
+    FULL_CATALOG.forEach((cat) => cat.products.forEach((p) => {
+      if (p.unitCost == null) return;
+      const k = rateKey(cat.key, p.name, p.unit);
+      const cur = rates[k] && rates[k].unitCost;
+      if (cur != null && Number(cur) !== Number(p.unitCost)) out.push({ k, was: Number(cur), now: p.unitCost });
+    }));
+    RESOURCE_COLS.forEach((res) => {
+      const k = rateKey("LABOUR", res.name, res.unit);
+      const cur = rates[k] && rates[k].unitCost;
+      if (cur != null && Number(cur) !== Number(res.rate)) out.push({ k, was: Number(cur), now: res.rate });
+    });
+    PRODUCTION_RATES.forEach((pr) => {
+      const k = rateKey("PRODUCTION", pr.name, pr.unit);
+      const cur = rates[k] && rates[k].unitCost;
+      if (cur != null && Number(cur) !== Number(pr.rate)) out.push({ k, was: Number(cur), now: pr.rate });
+    });
+    return out;
+  }, [rates]);
+
+  // Two-click arm-then-confirm rather than window.confirm() — this overwrites
+  // deliberate price edits, so it should never happen on one stray click.
+  const [armed, setArmed] = useState(false);
+  const restoreAll = () =>
+    setRates((r) => {
+      const next = { ...r };
+      drift.forEach((d) => { next[d.k] = { ...(next[d.k] || {}), unitCost: d.now }; });
+      return next;
+    });
 
   // Weight/area/length-basis categories price by tonne/sheet/bar (see CLAUDE.md rule 2),
   // not by the unit the estimator actually types into the quote (m, m², m) — this backs
@@ -56,6 +94,30 @@ export default function RatesModal({ rates, setRates, onClose }) {
           <h2 className="font-semibold text-neutral-800">Rates — edit the Gradcon catalog</h2>
           <button onClick={onClose} className="text-neutral-400 hover:text-neutral-700"><X size={20} /></button>
         </div>
+        {/* A browser that has saved its rates keeps every price it saved, so a
+            corrected catalog price never reaches it on its own (see
+            CLAUDE.md "Change default prices"). Say so plainly, count the rows
+            that differ, and offer one click to take the catalog's prices —
+            that is how a corrected rate actually lands on an existing install. */}
+        {drift.length > 0 && (
+          <div className="px-5 py-2.5 bg-amber-50 border-b border-amber-200 flex items-center justify-between gap-4">
+            <div className="text-[12px] text-amber-900">
+              <b>{drift.length} rate{drift.length === 1 ? "" : "s"} differ from the Gradcon catalog.</b>{" "}
+              Prices you have edited stay until you restore them. Use ↺ on a row for one, or restore them all.
+            </div>
+            <button
+              onClick={() => {
+                if (armed) { restoreAll(); setArmed(false); }
+                else { setArmed(true); }
+              }}
+              className={`flex-none px-2.5 py-1.5 rounded-lg text-[11px] font-semibold ${
+                armed ? "bg-red-600 hover:bg-red-700 text-white" : "bg-amber-800 hover:bg-amber-900 text-white"
+              }`}
+            >
+              {armed ? `Confirm — overwrite ${drift.length}` : "Restore catalog prices"}
+            </button>
+          </div>
+        )}
         <div className="overflow-y-auto p-4 space-y-4">
           {FULL_CATALOG.map((cat) => (
             <div key={cat.key}>
@@ -98,7 +160,18 @@ export default function RatesModal({ rates, setRates, onClose }) {
                           </td>
                         ) : <td className="w-28"></td>}
                         <td className="py-1 pr-2 w-28">
-                          <NumInput value={r.unitCost} onChange={(v) => update(k, "unitCost", v)} />
+                          <div className="flex items-center gap-1">
+                            <NumInput value={r.unitCost} onChange={(v) => update(k, "unitCost", v)} />
+                            {p.unitCost != null && Number(r.unitCost) !== Number(p.unitCost) && (
+                              <button
+                                onClick={() => update(k, "unitCost", p.unitCost)}
+                                title={`Catalog price is $${p.unitCost} — click to restore it`}
+                                className="flex-none text-[11px] leading-none px-1 py-1 rounded text-amber-700 hover:bg-amber-100"
+                              >
+                                ↺
+                              </button>
+                            )}
+                          </div>
                         </td>
                         {unitRateLabel(cat) && (
                           <td className="py-1 pr-2 w-28">

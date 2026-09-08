@@ -9,6 +9,7 @@
  * the full combined portal (login → Cost Planner / Quotes / Estimates tabs)
  * instead of just the bare Quotes SPA vite build produces on its own.
  */
+import { execSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -68,12 +69,26 @@ const estimatesB64 = Buffer.from(estimatesHtml, "utf8").toString("base64");
 const costPlannerB64 = Buffer.from(costPlannerHtml, "utf8").toString("base64");
 const ratesLibraryB64 = Buffer.from(ratesLibraryHtml, "utf8").toString("base64");
 
+/* A visible build stamp. Without one, "am I on the latest version?" is
+ * unanswerable from the browser — the portal is one 5 MB HTML file whose apps
+ * are base64 payloads, so nothing on screen reveals which build is running and
+ * a stale tab looks exactly like a fresh one. Vercel exposes the commit it
+ * built from; locally, fall back to asking git. */
+function buildStamp() {
+  const sha = (process.env.VERCEL_GIT_COMMIT_SHA || "").slice(0, 7)
+    || (() => { try { return execSync("git rev-parse --short HEAD", { stdio: ["ignore", "pipe", "ignore"] }).toString().trim(); } catch { return "local"; } })();
+  return `${sha} · ${new Date().toISOString().slice(0, 16).replace("T", " ")} UTC`;
+}
+const stamp = buildStamp();
+
 let shell = fs.readFileSync(shellPath, "utf8");
 shell = shell
   .replace("__QUOTES_B64__", quotesB64)
   .replace("__ESTIMATES_B64__", estimatesB64)
   .replace("__COSTPLANNER_B64__", costPlannerB64)
-  .replace("__RATESLIBRARY_B64__", ratesLibraryB64);
+  .replace("__RATESLIBRARY_B64__", ratesLibraryB64)
+  .replaceAll("__BUILD_STAMP__", stamp);
 
 fs.writeFileSync(outPath, shell);
+console.log("Build stamp:", stamp);
 console.log("Assembled combined portal at", outPath, "-", (fs.statSync(outPath).size / 1024 / 1024).toFixed(2), "MB");
