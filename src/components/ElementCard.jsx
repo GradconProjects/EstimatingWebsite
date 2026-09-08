@@ -219,17 +219,14 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
   const rotateMarkup = (id) =>
     patch((it) => ({ ...it, markups: (it.markups || []).map((m) => (m.id === id ? { ...m, rotation: ((m.rotation || 0) + 90) % 360 } : m)) }));
   const markups = item.markups || [];
-  // The drawings must be easily SEEN, not hidden behind a click, so an element
-  // that has markups opens the section by default and renders each drawing
-  // full-size inline. But a project with drawings on every element then runs
-  // for pages, so rolling one up has to STICK: the choice is stored on the
-  // item (like `collapsed` for the card itself) rather than in local state,
-  // which a re-render or a reload would throw away. Undefined = never touched,
-  // so the default-open behaviour still applies to existing quotes.
-  const markupsOpen = item.markupsCollapsed === undefined
-    ? (item.markups || []).length > 0
-    : !item.markupsCollapsed;
-  const setMarkupsOpen = (open) => patch((it) => ({ ...it, markupsCollapsed: !open }));
+  // Rolled up like everything else on the card, and — like every other
+  // section here (openCats, labourOpen, AdditionalItems) — the open/closed
+  // state is LOCAL, not written into the item. It used to persist
+  // `markupsCollapsed`, which meant an element sprang open on every future
+  // load just because a drawing had once been uploaded to it; a project with
+  // a markup on every element then ran for pages. Opening is a per-session
+  // act now: the blue bar carries the count so nothing is hidden.
+  const [markupsOpen, setMarkupsOpen] = useState(false);
   const [viewerId, setViewerId] = useState(null); // markup id open in the zoom lightbox
   const viewerMarkup = markups.find((m) => m.id === viewerId) || null;
 

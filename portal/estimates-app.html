@@ -829,10 +829,21 @@ document.addEventListener("visibilitychange", function(){ if(document.visibility
 
 // Shared by loadEstimateState() (localStorage, on boot) and syncFromCloud() (Supabase,
 // live) so the two never drift on how a loaded blob becomes real app state.
+/* Every element arrives ROLLED UP. A takeoff with twenty elements opened flat
+ * is pages of scrolling before you find the one you want, so the workspace
+ * always opens as a list of headings — the same rule new elements have always
+ * followed (addInstance), now applied to loaded ones too, which is where
+ * saved sessions were coming back expanded. An explicit Settings opt-out
+ * (estNewCollapsed === false) still adds and loads them open. */
+function collapseAllInstances(list){
+  if(portalPref("estNewCollapsed")===false) return list;
+  (list||[]).forEach(inst=>{ if(inst) inst._collapsed = true; });
+  return list;
+}
 function applyLoadedEstimateState(parsed){
   if(parsed.project) PROJECT = Object.assign({}, PROJECT, parsed.project);
   if(parsed.selectedTypes) SELECTED_TYPES = parsed.selectedTypes;
-  if(Array.isArray(parsed.instances)) INSTANCES = parsed.instances;
+  if(Array.isArray(parsed.instances)) INSTANCES = collapseAllInstances(parsed.instances);
   if(parsed.idCounter) ID_COUNTER = parsed.idCounter;
 }
 function loadEstimateState(){
@@ -6087,7 +6098,7 @@ document.getElementById("loadFile").addEventListener("change",e=>{
       // is applied there and saved under its own key immediately.
       newTakeoff();
       PROJECT=Object.assign({}, PROJECT, data.PROJECT||{});
-      SELECTED_TYPES=data.SELECTED_TYPES||{}; INSTANCES=data.INSTANCES||[]; ID_COUNTER=data.ID_COUNTER||1;
+      SELECTED_TYPES=data.SELECTED_TYPES||{}; INSTANCES=collapseAllInstances(data.INSTANCES||[]); ID_COUNTER=data.ID_COUNTER||1;
       UPLOADED_FILES=data.UPLOADED_FILES||[];
       saveEstimateState();
       rerenderAllPages(); renderUploadedFiles();
