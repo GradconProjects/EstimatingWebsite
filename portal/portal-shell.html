@@ -621,6 +621,7 @@
         </select>
       </div>
       <div class="field"><label class="settings-check"><input type="checkbox" id="settings-autopublish" checked> Auto-publish Estimates quantities to Cost Planner</label></div>
+      <div class="field"><label class="settings-check"><input type="checkbox" id="settings-est-blueprint"> Estimates: new blueprint layout (preview)</label><div class="hint">Element navigator, one element at a time, drawing and totals beside it. Off = the classic stacked layout. Switch back any time here or with the ⇄ button in Estimates; the takeoff itself is identical either way.</div></div>
       <div class="field">
         <label for="settings-est-startpage">Estimates opens on</label>
         <select id="settings-est-startpage">
@@ -1004,7 +1005,8 @@
     ['settings-confirm-deletes','confirmDeletes',true],
     ['settings-remember-project','quotesRememberProject',true],
     ['settings-download-on-save','quotesDownloadOnSave',false],
-    ['settings-autopublish','estAutoPublish',true]
+    ['settings-autopublish','estAutoPublish',true],
+    ['settings-est-blueprint','estBlueprintShell',false]
   ];
   // Elements always start rolled up now, in Quotes and in Estimates. The two
   // toggles that used to govern that shipped defaulting to OFF, so anyone who

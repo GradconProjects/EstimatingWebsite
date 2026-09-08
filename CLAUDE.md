@@ -299,6 +299,26 @@ rewrites each lazily-loaded chunk (today only the PDF renderer) to
 succeeds with a working lazy path. `vite.config.js` turns the preload
 helper off so the import takes the plain form that rewrite targets.
 
+## Estimates layout switch (Phase 1 of the UX redesign)
+
+Estimates has two layouts over ONE DOM and one set of calculators:
+**classic** (the default: every element card stacked in the Workspace) and
+**blueprint** (opt-in: element navigator | the selected card | inspector,
+tutorials in a Help drawer, cooler tokens). The switch is the portal
+preference `estBlueprintShell` (Settings → "Estimates: new blueprint layout",
+or the ⇄ button in the Estimates header, which writes the same key through
+`setPortalPref`). `applyShellMode(mode)` sets `body[data-shell]`, relabels
+the tabs from `SHELL_LABELS`, and re-renders the workspace; every blueprint
+style is scoped under `body[data-shell="blueprint"]`, so the classic skin is
+untouched while the switch is off. `renderWorkspace()` branches to
+`renderBlueprintWorkspace()` which mounts ONLY the selected element's card
+(`BP_SELECTED_ID`) and never writes to `inst._collapsed` — the fold state
+belongs to the classic layout. No layout state is ever saved into the
+takeoff (`estimateStateSnapshot` is unchanged); a takeoff edited in one
+layout opens identically in the other. `refreshCardResults` is the one hook
+that refreshes the inspector and the navigator row after an edit — keep
+calling it rather than recomputing totals in the shell code.
+
 ## Estimates data safety (schema, migration, recovery, raw backup)
 
 `portal/estimates-schema.js` is pure and DOM-free: the assembler inlines it

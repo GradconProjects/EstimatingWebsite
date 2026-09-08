@@ -173,6 +173,131 @@ footer.note{color:var(--muted);font-size:11px;text-align:center;padding:20px;}
   table.results th, table.results td{border:1px solid #999;color:#000;}
 }
 #printReport{display:none;}
+/* ============ Phase 1 — "blueprint professional" shell (opt-in) ============
+   Switched on by body[data-shell="blueprint"] (portal Settings →
+   "Estimates: new blueprint layout", or the ⇄ button in the header). Every
+   rule below is scoped to that attribute, so the classic craft-paper skin
+   above is untouched when the switch is off. Same DOM, same controls, same
+   calculators — only tokens, chrome and the workspace layout change. */
+body[data-shell="blueprint"]{
+  --bg:#f4f6f9; --panel:#ffffff; --panel2:#eef2f7; --line:#d5dce6; --text:#1b2a3a; --muted:#5b6b7d;
+  --accent:#143d6b; --accent2:#e8760a; --danger:#b42318; --good:#1f7a4d; --input:#ffffff;
+  --thread:#143d6b; --thread2:#0e2a4a; --pine:#0e2a4a; --ink2:#0b1f36; --rose:#fde3cf; --berry:#7c4a5a;
+  --radius:8px;
+  --shadow-tag:0 1px 2px rgba(16,32,52,.08);
+  --shadow-pin:0 6px 18px -8px rgba(16,32,52,.25);
+  font-family:"Segoe UI",system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif;font-size:13px;
+  background-image:none;
+}
+body[data-shell="blueprint"] h1,body[data-shell="blueprint"] h2,body[data-shell="blueprint"] h3,body[data-shell="blueprint"] h4{font-family:inherit;letter-spacing:0;font-weight:700;}
+body[data-shell="blueprint"] ::selection{background:var(--accent2);color:#fff;}
+body[data-shell="blueprint"] header.app{padding:8px 16px;border-bottom:3px solid var(--accent2);background-image:none;background:var(--pine);}
+body[data-shell="blueprint"] header.app .title .logo{border-radius:6px;background:var(--accent2);font-family:inherit;box-shadow:none;}
+body[data-shell="blueprint"] header.app .title h1{font-size:15px;}
+body[data-shell="blueprint"] header.app .title span{display:none;}
+body[data-shell="blueprint"] nav.tabs{background:rgba(255,255,255,.08);border-radius:6px;border:1px solid rgba(255,255,255,.18);padding:3px;}
+body[data-shell="blueprint"] nav.tabs button{border-radius:4px;padding:6px 12px;font-weight:600;}
+body[data-shell="blueprint"] nav.tabs button:hover{transform:none;}
+body[data-shell="blueprint"] nav.tabs button.active{background:var(--accent2);color:#fff;box-shadow:none;}
+body[data-shell="blueprint"] .save-status.ok{color:#8fd3a8;}
+body[data-shell="blueprint"] .btn{border-radius:6px;font-weight:600;transition:none;}
+body[data-shell="blueprint"] .btn:hover{transform:none;box-shadow:none;border-color:var(--accent);}
+body[data-shell="blueprint"] .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;}
+body[data-shell="blueprint"] .btn.primary:hover{background:var(--thread2);border-color:var(--thread2);}
+body[data-shell="blueprint"] .proj-menu,body[data-shell="blueprint"] .proj-item{border-radius:6px;}
+body[data-shell="blueprint"] .proj-item.active{outline:2px solid rgba(232,118,10,.6);}
+body[data-shell="blueprint"] .panel{box-shadow:var(--shadow-tag);}
+body[data-shell="blueprint"] .card{box-shadow:var(--shadow-tag);transition:none;}
+body[data-shell="blueprint"] .card:hover{box-shadow:var(--shadow-tag);}
+body[data-shell="blueprint"] .card .card-head{border-bottom:1px solid var(--line);}
+body[data-shell="blueprint"] .card .card-head .idn .badge{border-radius:4px;background:var(--accent);font-family:ui-monospace,Menlo,Consolas,monospace;}
+body[data-shell="blueprint"] .card .card-head input.name{font-family:inherit;font-size:14px;}
+body[data-shell="blueprint"] .card-tabs button{border-radius:4px;}
+body[data-shell="blueprint"] .card-tabs button.active{box-shadow:inset 3px 0 0 var(--accent2);color:var(--accent);}
+body[data-shell="blueprint"] .subsec{border-top:1px solid var(--line);}
+body[data-shell="blueprint"] .sechead{letter-spacing:.12em;color:var(--accent);}
+body[data-shell="blueprint"] .sechead::before,body[data-shell="blueprint"] .lib-group h4::before{background:var(--accent2);}
+body[data-shell="blueprint"] .lib-group h4{color:var(--accent);letter-spacing:.12em;}
+body[data-shell="blueprint"] .lib-item .count{background:var(--accent);}
+body[data-shell="blueprint"] input[type=text],body[data-shell="blueprint"] input[type=number],body[data-shell="blueprint"] select,body[data-shell="blueprint"] textarea{border-radius:5px;}
+body[data-shell="blueprint"] input[type=number]{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;}
+body[data-shell="blueprint"] input:focus,body[data-shell="blueprint"] select:focus{outline:2px solid rgba(20,61,107,.45);}
+body[data-shell="blueprint"] input[type=checkbox]{accent-color:var(--accent);}
+body[data-shell="blueprint"] table.rows td{border-bottom:1px solid #e6ebf2;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;}
+body[data-shell="blueprint"] table.results td{border-bottom:1px solid #e6ebf2;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;}
+body[data-shell="blueprint"] table.results tr:hover td{background:#f4f7fb;}
+body[data-shell="blueprint"] tr.reg-group-head td{font-family:inherit;}
+body[data-shell="blueprint"] .stat{border-radius:6px;box-shadow:none;}
+body[data-shell="blueprint"] .stat .n{font-family:ui-monospace,Menlo,Consolas,monospace;color:var(--accent);font-size:16px;}
+body[data-shell="blueprint"] .pill{border-radius:4px;}
+body[data-shell="blueprint"] .pill.concrete{background:#e6edf6;color:var(--accent);}
+body[data-shell="blueprint"] .pill.reo{background:#fdebd9;color:#9a4a04;}
+body[data-shell="blueprint"] .pill.form{background:#e3f1ea;color:#1f7a4d;}
+body[data-shell="blueprint"] .pill.exc{background:#f6e4e2;color:#8a2c22;}
+body[data-shell="blueprint"] .takeoff-chip{border-radius:6px;transition:none;}
+body[data-shell="blueprint"] .takeoff-chip:hover{transform:none;box-shadow:none;}
+body[data-shell="blueprint"] .takeoff-chip.active{outline:2px solid rgba(232,118,10,.5);}
+body[data-shell="blueprint"] .takeoff-chip.active .takeoff-open{background:var(--accent);}
+body[data-shell="blueprint"] .diagram{border-radius:6px;background:#f8fafc;background-image:linear-gradient(rgba(20,61,107,.07) 1px,transparent 1px),linear-gradient(90deg,rgba(20,61,107,.07) 1px,transparent 1px);background-size:20px 20px;}
+body[data-shell="blueprint"] .diag-head{border-bottom:1px solid var(--line);background:#fff;}
+body[data-shell="blueprint"] .empty{font-family:inherit;font-size:13.5px;}
+body[data-shell="blueprint"] .warn{border-radius:6px;background:#fff4e5;border-color:#f3c58a;color:#7a4a08;}
+body[data-shell="blueprint"] .manual-badge{border-radius:4px;}
+body[data-shell="blueprint"] .tip,body[data-shell="blueprint"] .teach{border-radius:6px;border-style:solid;box-shadow:none;}
+/* Tutorials leave the working pages: they live in the ? Help drawer. */
+body[data-shell="blueprint"]:not(.help-open) .teach,body[data-shell="blueprint"]:not(.help-open) .tip{display:none;}
+body[data-shell="blueprint"] .roleband{display:none;}
+/* Help drawer */
+#helpDrawer{display:none;position:fixed;top:0;right:0;bottom:0;width:min(440px,92vw);background:var(--panel);border-left:1px solid var(--line);box-shadow:var(--shadow-pin);z-index:80;overflow:auto;padding:16px 18px;color:var(--text);}
+#helpDrawer.open{display:block;}
+#helpDrawer h3{margin-bottom:10px;}
+#helpDrawer .help-body .teach,#helpDrawer .help-body .tip{display:flex !important;margin:0 0 10px;}
+#helpDrawer .help-body .teach{display:block !important;}
+#helpDrawer .help-close{position:absolute;top:10px;right:12px;}
+/* Workspace: navigator | canvas | inspector */
+body[data-shell="blueprint"] main{max-width:none;padding:12px 14px 60px;}
+body[data-shell="blueprint"] #page-workspace.active{display:grid;grid-template-columns:270px minmax(0,1fr) 340px;gap:12px;align-items:start;}
+body[data-shell="blueprint"] #page-workspace > .panel{grid-column:1 / -1;margin-bottom:0;padding:10px 12px;}
+body[data-shell="blueprint"] #page-workspace > .panel h2{display:none;}
+body[data-shell="blueprint"] #page-workspace > .panel .toolbar{margin-bottom:0;}
+body[data-shell="blueprint"] #page-workspace > .panel .toolbar + .toolbar{display:none;}
+body[data-shell="blueprint"] #cardsHost{min-width:0;}
+body[data-shell="blueprint"] #cardsHost .card{margin-bottom:0;}
+body[data-shell="blueprint"] #cardsHost .card .card-head [data-action="collapseToggle"]{display:none;}
+body[data-shell="blueprint"] #cardsHost .card .card-body{display:flex !important;}
+body[data-shell="blueprint"] #cardsHost .card .diag-host{display:none;}
+body[data-shell="blueprint"] #cardsHost .card .card-panes > .pane > div{display:block !important;}
+.bp-nav,.bp-inspector{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow-tag);position:sticky;top:64px;max-height:calc(100vh - 80px);overflow:auto;}
+.bp-nav{padding:10px;}
+.bp-nav .bp-nav-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}
+.bp-nav .bp-nav-head b{font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:var(--accent);}
+.bp-nav .bp-nav-tools{display:flex;gap:6px;margin-bottom:8px;}
+.bp-nav .bp-nav-tools input,.bp-nav .bp-nav-tools select{font-size:12px;padding:5px 7px;}
+.bp-nav .bp-nav-tools select{max-width:46%;}
+.bp-row{display:grid;grid-template-columns:auto 1fr auto;gap:6px 8px;align-items:center;padding:6px 8px;border-radius:6px;cursor:pointer;border:1px solid transparent;margin-bottom:2px;}
+.bp-row:hover{background:var(--panel2);}
+.bp-row.active{background:#e6edf6;border-color:rgba(20,61,107,.35);}
+.bp-row .bp-id{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:10.5px;color:#fff;background:var(--accent);padding:1px 6px;border-radius:4px;}
+.bp-row .bp-label{font-weight:600;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.bp-row .bp-flag{font-size:11px;color:var(--accent2);}
+.bp-row .bp-meta{grid-column:2 / -1;font-size:10.5px;color:var(--muted);font-family:ui-monospace,Menlo,Consolas,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.bp-nav .bp-nav-foot{display:flex;gap:6px;margin-top:8px;justify-content:space-between;}
+.bp-inspector{padding:10px 12px;}
+.bp-inspector .bp-insp-head{font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:var(--accent);margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;}
+.bp-inspector .bp-insp-title{font-weight:700;font-size:13.5px;margin-bottom:2px;}
+.bp-inspector .bp-insp-type{font-size:11px;color:var(--muted);margin-bottom:8px;}
+.bp-inspector .bp-diag{margin-bottom:10px;}
+.bp-inspector .bp-totals{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px;}
+.bp-inspector .bp-tot{background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:6px 8px;}
+.bp-inspector .bp-tot .n{font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:700;font-size:14px;color:var(--accent);font-variant-numeric:tabular-nums;}
+.bp-inspector .bp-tot .l{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;}
+.bp-inspector .bp-warns .warn{margin-bottom:6px;}
+.bp-inspector .bp-lines{font-size:11px;color:var(--muted);}
+@media(max-width:1100px){
+  body[data-shell="blueprint"] #page-workspace.active{grid-template-columns:1fr;}
+  .bp-nav,.bp-inspector{position:static;max-height:none;}
+}
+@media print{ .bp-nav,.bp-inspector,#helpDrawer,#shellToggle,#helpBtn{display:none !important;} }
 </style>
 </head>
 <body>
@@ -196,8 +321,11 @@ footer.note{color:var(--muted);font-size:11px;text-align:center;padding:20px;}
       <div id="projMenu" class="proj-menu" style="display:none;"></div>
     </div>
     <button class="btn primary" id="saveBtn" type="button">💾 Save</button>
+    <button class="btn small" id="helpBtn" type="button" title="Tutorials and tips for the page you are on" style="display:none;">? Help</button>
+    <button class="btn small" id="shellToggle" type="button" title="Switch between the classic layout and the new blueprint layout — nothing about the takeoff changes, only how it is laid out">⇄ New layout</button>
   </div>
 </header>
+<aside id="helpDrawer" aria-label="Help"><button class="btn small help-close" type="button" onclick="toggleHelp(false)">✕ Close</button><h3>Help &amp; tutorials</h3><div class="help-body"></div></aside>
 <main>
 
 <section id="page-setup" class="page active">
@@ -280,7 +408,9 @@ footer.note{color:var(--muted);font-size:11px;text-align:center;padding:20px;}
     <div class="toolbar"><button class="btn small" onclick="collapseAllCards(true)">▸ Roll up all elements</button><button class="btn small" onclick="collapseAllCards(false)">▾ Expand all</button></div>
     <div class="tip"><span class="ico">💻</span><div>Each card rolls up to a one-line summary — name, ID and live concrete/reinforcement/formwork totals — once you're done with it. Click the ▾/▸ arrow to collapse or re-open any single card, or use the buttons above to roll up the whole workspace once your inputs are in.</div></div>
   </div>
+  <div id="bpNav" class="bp-nav" style="display:none;"></div>
   <div id="cardsHost"></div>
+  <div id="bpInspector" class="bp-inspector" style="display:none;"></div>
 </section>
 
 <section id="page-register" class="page">
@@ -653,6 +783,53 @@ function renderProjectMenu(){
 // "explicitly false" differently from "untouched".
 function portalPref(key){
   try{ var p = JSON.parse(localStorage.getItem("gradcon-preferences")) || {}; return p[key]; }catch(e){ return undefined; }
+}
+// The one writer of a portal preference from inside Estimates (the shell
+// owns the Settings modal; this keeps its ⇄ layout button in step with it).
+function setPortalPref(key, value){
+  try{ var p = JSON.parse(localStorage.getItem("gradcon-preferences")) || {}; p[key] = value; localStorage.setItem("gradcon-preferences", JSON.stringify(p)); }catch(e){}
+}
+
+/* ============================= SHELL MODE (Phase 1) =============================
+ * "classic" (default) is the layout every takeoff has always used: every
+ * element card stacked in the workspace. "blueprint" is the opt-in
+ * professional shell: element navigator | one card | inspector, tutorials in
+ * a Help drawer, cooler tokens. The switch is instant and reversible from
+ * the header or portal Settings (pref estBlueprintShell); nothing about the
+ * stored takeoff changes — INSTANCES, calculators and every field are
+ * identical in both, so a takeoff edited in one opens unchanged in the
+ * other. */
+const SHELL_LABELS = {
+  classic:  { setup:"1. Project Setup", library:"2. Elements", workspace:"3. Workspace", register:"4. Quantity Register", export:"5. Export", orderschedule:"6. Order Schedule" },
+  blueprint:{ setup:"Project", library:"Elements", workspace:"Takeoff", register:"Register", export:"Publish & Export", orderschedule:"Orders" },
+};
+let SHELL_MODE = "classic";
+let BP_SELECTED_ID = null;
+function applyShellMode(mode, opts){
+  opts = opts || {};
+  SHELL_MODE = mode === "blueprint" ? "blueprint" : "classic";
+  document.body.dataset.shell = SHELL_MODE;
+  document.querySelectorAll('.tabs button').forEach(b=>{ b.textContent = SHELL_LABELS[SHELL_MODE][b.dataset.page] || b.textContent; });
+  let tg = document.getElementById("shellToggle");
+  if(tg) tg.textContent = SHELL_MODE==="blueprint" ? "⇄ Classic layout" : "⇄ New layout";
+  let hb = document.getElementById("helpBtn");
+  if(hb) hb.style.display = SHELL_MODE==="blueprint" ? "" : "none";
+  if(SHELL_MODE!=="blueprint") toggleHelp(false);
+  if(opts.persist) setPortalPref("estBlueprintShell", SHELL_MODE==="blueprint");
+  if(typeof renderWorkspace === "function" && typeof INSTANCES !== "undefined") renderWorkspace();
+}
+function toggleHelp(force){
+  let d = document.getElementById("helpDrawer");
+  let open = force===undefined ? !d.classList.contains("open") : !!force;
+  if(open){
+    // The page's own tutorials and tips, copied into the drawer.
+    let page = document.querySelector('.page.active');
+    let body = d.querySelector('.help-body');
+    let nodes = page ? page.querySelectorAll('.teach, .tip') : [];
+    body.innerHTML = nodes.length ? Array.from(nodes).map(n=>n.outerHTML).join('') : '<p class="small">No tutorial for this page yet.</p>';
+  }
+  d.classList.toggle("open", open);
+  document.body.classList.toggle("help-open", open);
 }
 function applyElementPrefs(data){
   try{
@@ -5108,18 +5285,22 @@ function targetLabelOf(id){ if(!id) return ""; let i=INSTANCES.find(x=>x.id===id
 
 function addInstance(typeId){
   let def=LIB_INDEX[typeId];
+  BP_SELECTED_ID = null; // the new element becomes the selected one (set below)
   let calc=CALC[def.calc];
   let inst={id:uid("EL"), typeKey:typeId, label:def.label+" "+(INSTANCES.filter(i=>i.typeKey===typeId).length+1), data:applyElementPrefs(calc.defaults(def.slabCategory||def.beamCategory||def.kind, def.suspended))};
   if(inst.data.cover!==undefined) inst.data.cover = defaultCoverFor(typeId);
   // Rolled up, always — see collapseAllInstances for why there is no opt-out.
   inst._collapsed = true;
   INSTANCES.push(inst);
+  BP_SELECTED_ID = inst.id;
   renderWorkspace();
   computeAllAndRefresh();
   document.querySelector('.tabs button[data-page="workspace"]').click();
 }
 function removeInstance(id){
+  let idx = INSTANCES.findIndex(i=>i.id===id);
   INSTANCES = INSTANCES.filter(i=>i.id!==id);
+  if(BP_SELECTED_ID===id){ let nb = INSTANCES[Math.min(idx, INSTANCES.length-1)]; BP_SELECTED_ID = nb? nb.id : null; }
   renderWorkspace(); computeAllAndRefresh();
 }
 function duplicateInstance(id){
@@ -5127,6 +5308,7 @@ function duplicateInstance(id){
   let copy=JSON.parse(JSON.stringify(src));
   copy.id=uid("EL"); copy.label=src.label+" copy";
   INSTANCES.push(copy);
+  BP_SELECTED_ID = copy.id;
   renderWorkspace(); computeAllAndRefresh();
 }
 
@@ -5189,9 +5371,117 @@ const TABS=[["geom","Geometry"],["conc","Concrete"],["reo","Reinforcement"],["pi
 
 function renderWorkspace(){
   let host=document.getElementById("cardsHost");
+  let nav=document.getElementById("bpNav"), insp=document.getElementById("bpInspector");
+  if(SHELL_MODE==="blueprint"){ renderBlueprintWorkspace(); return; }
+  if(nav) nav.style.display="none";
+  if(insp) insp.style.display="none";
   if(INSTANCES.length===0){ host.innerHTML=`<div class="empty">No elements added yet. Go to <b>Elements</b>, tick what exists on this project, then add instances here.</div>`; return; }
   host.innerHTML="";
   INSTANCES.forEach(inst=>host.appendChild(buildCard(inst)));
+}
+
+/* ---- Blueprint workspace: navigator | the selected card | inspector ---- */
+let BP_NAV_FILTER = { q:"", group:"" };
+function bpSelected(){
+  if(!INSTANCES.length) return null;
+  let cur = INSTANCES.find(i=>i.id===BP_SELECTED_ID);
+  if(!cur){ cur = INSTANCES[0]; BP_SELECTED_ID = cur.id; }
+  return cur;
+}
+function bpSelect(id, keepScroll){
+  BP_SELECTED_ID = id;
+  renderBlueprintWorkspace();
+  if(!keepScroll){ let host=document.getElementById("cardsHost"); if(host && host.scrollIntoView) host.scrollIntoView({block:"start"}); }
+}
+function bpStep(delta){
+  let list = bpVisibleInstances();
+  if(!list.length) return;
+  let idx = list.findIndex(i=>i.id===BP_SELECTED_ID);
+  let next = list[Math.min(list.length-1, Math.max(0, (idx<0?0:idx)+delta))];
+  if(next) bpSelect(next.id, true);
+}
+function bpVisibleInstances(){
+  let q = BP_NAV_FILTER.q.trim().toLowerCase(), g = BP_NAV_FILTER.group;
+  return INSTANCES.filter(i=>{
+    let def = LIB_INDEX[i.typeKey] || {};
+    if(g && def.groupName!==g) return false;
+    if(q && !((i.label||"")+" "+i.id+" "+(def.label||"")).toLowerCase().includes(q)) return false;
+    return true;
+  });
+}
+function bpTotalsOf(inst){
+  let out = inst.results || computeInstance(inst);
+  let lines = out.lines || [];
+  let sum = (grp, fld) => lines.filter(l=>l.materialGroup===grp).reduce((s,l)=>s+(fld==="kg"? (l.weightKg||0) : (l.finalQty||0)),0);
+  let bv = blindingVapourTotals(lines);
+  return { conc:sum("Concrete"), reoKg:sum("Reinforcement","kg"), form:sum("Formwork"), exc:sum("Excavation"), blind:bv.blind||0, vap:bv.vap||0, lines:lines.length, warnings:(out.warnings||[]) };
+}
+function bpEsc(s){ return String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+function renderBlueprintWorkspace(){
+  let host=document.getElementById("cardsHost");
+  let nav=document.getElementById("bpNav"), insp=document.getElementById("bpInspector");
+  nav.style.display=""; insp.style.display="";
+  let cur = bpSelected();
+  // Navigator
+  let groups = Array.from(new Set(INSTANCES.map(i=>(LIB_INDEX[i.typeKey]||{}).groupName).filter(Boolean)));
+  let list = bpVisibleInstances();
+  nav.innerHTML = `
+   <div class="bp-nav-head"><b>Elements</b><span class="small">${INSTANCES.length}</span></div>
+   <div class="bp-nav-tools">
+     <input type="text" id="bpNavSearch" placeholder="Find element…" value="${bpEsc(BP_NAV_FILTER.q)}">
+     <select id="bpNavGroup"><option value="">All groups</option>${groups.map(g=>`<option value="${bpEsc(g)}" ${g===BP_NAV_FILTER.group?'selected':''}>${bpEsc(g)}</option>`).join('')}</select>
+   </div>
+   <div class="bp-rows">${INSTANCES.length? (list.length? list.map(i=>{
+      let def=LIB_INDEX[i.typeKey]||{}; let t=bpTotalsOf(i);
+      return `<div class="bp-row ${cur&&i.id===cur.id?'active':''}" data-id="${i.id}" title="${bpEsc(def.groupName)} / ${bpEsc(def.label)}">
+        <span class="bp-id">${bpEsc(i.id)}</span><span class="bp-label">${bpEsc(i.label)}</span><span class="bp-flag">${t.warnings.length?'⚠':''}</span>
+        <span class="bp-meta">${fmt(t.conc,2)} m³ · ${fmt(t.reoKg,0)} kg · ${fmt(t.form,1)} m²</span>
+      </div>`; }).join('') : `<div class="small" style="padding:8px;">No element matches.</div>`) : `<div class="small" style="padding:8px;">No elements yet — use the + Add buttons above.</div>`}</div>
+   <div class="bp-nav-foot"><button class="btn small" type="button" onclick="bpStep(-1)">▲ Prev</button><button class="btn small" type="button" onclick="bpStep(1)">Next ▼</button></div>`;
+  nav.querySelectorAll('.bp-row').forEach(r=>r.addEventListener('click',()=>bpSelect(r.dataset.id, true)));
+  let search = nav.querySelector('#bpNavSearch');
+  search.addEventListener('input', e=>{ BP_NAV_FILTER.q = e.target.value; let pos=e.target.selectionStart; renderBlueprintWorkspace(); let s2=document.getElementById('bpNavSearch'); if(s2){ s2.focus(); try{ s2.setSelectionRange(pos,pos);}catch(x){} } });
+  nav.querySelector('#bpNavGroup').addEventListener('change', e=>{ BP_NAV_FILTER.group = e.target.value; renderBlueprintWorkspace(); });
+  // Canvas: only the selected element's card, always open
+  host.innerHTML="";
+  if(!cur){
+    host.innerHTML=`<div class="empty">No elements added yet. Go to <b>Elements</b>, tick what exists on this project, then add instances here.</div>`;
+    insp.innerHTML = `<div class="bp-insp-head"><span>Inspector</span></div><p class="small">Select an element to see its drawing and totals here.</p>`;
+    return;
+  }
+  let wasCollapsed = cur._collapsed; cur._collapsed = false;   // the canvas card is never folded
+  host.appendChild(buildCard(cur));
+  cur._collapsed = wasCollapsed;                                // the stored fold state is the classic layout's, leave it alone
+  renderBlueprintInspector(cur);
+}
+function renderBlueprintInspector(inst){
+  let insp=document.getElementById("bpInspector");
+  if(!insp || SHELL_MODE!=="blueprint" || !inst) return;
+  let def=LIB_INDEX[inst.typeKey]||{}, calc=CALC[def.calc];
+  let t=bpTotalsOf(inst);
+  insp.innerHTML = `
+   <div class="bp-insp-head"><span>Inspector</span><span class="small">${bpEsc(inst.id)}</span></div>
+   <div class="bp-insp-title">${bpEsc(inst.label)}</div>
+   <div class="bp-insp-type">${bpEsc(def.groupName)} / ${bpEsc(def.label)}</div>
+   <div class="bp-diag">${calc? calc.diagram(inst) : ''}</div>
+   <div class="bp-totals">
+     <div class="bp-tot"><div class="n">${fmt(t.conc,2)}</div><div class="l">m³ concrete</div></div>
+     <div class="bp-tot"><div class="n">${fmt(t.reoKg,1)}</div><div class="l">kg reo (${fmt(t.reoKg/1000,3)} t)</div></div>
+     <div class="bp-tot"><div class="n">${fmt(t.form,2)}</div><div class="l">m² formwork</div></div>
+     <div class="bp-tot"><div class="n">${fmt(t.exc,2)}</div><div class="l">m³ excavation</div></div>
+     ${t.blind?`<div class="bp-tot"><div class="n">${fmt(t.blind,2)}</div><div class="l">m³ blinding/base</div></div>`:''}
+     ${t.vap?`<div class="bp-tot"><div class="n">${fmt(t.vap,2)}</div><div class="l">m² vapour barrier</div></div>`:''}
+   </div>
+   <div class="bp-warns">${t.warnings.map(w=>`<div class="warn">⚠ ${bpEsc(w)}</div>`).join('')}</div>
+   <div class="bp-lines">${t.lines} quantity line${t.lines===1?'':'s'} in the register</div>`;
+}
+function bpRefreshNavRow(inst){
+  let row=document.querySelector(`#bpNav .bp-row[data-id="${inst.id}"]`);
+  if(!row) return;
+  let t=bpTotalsOf(inst);
+  row.querySelector('.bp-label').textContent = inst.label;
+  row.querySelector('.bp-flag').textContent = t.warnings.length?'⚠':'';
+  row.querySelector('.bp-meta').textContent = `${fmt(t.conc,2)} m³ · ${fmt(t.reoKg,0)} kg · ${fmt(t.form,1)} m²`;
 }
 function collapseAllCards(state){
   INSTANCES.forEach(inst=>inst._collapsed=state);
@@ -5699,6 +5989,7 @@ function refreshCardResults(card,inst){
   let bv=blindingVapourTotals(out.lines);
   let headStats=card.querySelector('.headStats');
   if(headStats) headStats.innerHTML = ` · ${fmt(totC,2)}m³ concrete · ${fmt(totR,1)}kg reo · ${fmt(totF,2)}m² formwork${bv.blind?` · ${fmt(bv.blind,2)}m³ blinding/base`:''}${bv.vap?` · ${fmt(bv.vap,2)}m² vapour barrier`:''}`;
+  if(SHELL_MODE==="blueprint" && inst.id===BP_SELECTED_ID){ renderBlueprintInspector(inst); bpRefreshNavRow(inst); }
   let {bars,mesh}=summarizeReinforcement(out.lines);
   let barKeys=Object.keys(bars).sort();
   let meshKeys=Object.keys(mesh).sort();
@@ -6808,7 +7099,10 @@ document.querySelectorAll('.tabs button').forEach(b=>b.addEventListener('click',
   if(b.dataset.page==="export") renderExportSummary();
   if(b.dataset.page==="orderschedule") renderOrderSchedule();
   if(b.dataset.page==="library") renderLibrary();
+  if(document.body.classList.contains("help-open")) toggleHelp(true); // the drawer follows the page
 }));
+document.getElementById("shellToggle").addEventListener("click", ()=>applyShellMode(SHELL_MODE==="blueprint"?"classic":"blueprint", {persist:true}));
+document.getElementById("helpBtn").addEventListener("click", ()=>toggleHelp());
 
 /* ============================= INIT ============================= */
 // NOTE: not passed directly as the handler — the click Event would land in
@@ -6831,7 +7125,8 @@ renderDefaultsForm();
 renderGeometryForm();
 renderLibrary();
 renderAddToolbar();
-renderWorkspace();
+// Phase 1 layout switch — classic unless the preference says otherwise.
+applyShellMode(portalPref("estBlueprintShell")===true ? "blueprint" : "classic");
 computeAllAndRefresh();
 if(!restoredFromSave){
   // Fresh install / cleared storage only — seed a couple of default-selected
