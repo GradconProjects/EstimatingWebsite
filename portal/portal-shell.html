@@ -1135,16 +1135,30 @@
   });
 
   var b64cache = {};
-  function blobUrlFor(key){
-    if(b64cache[key]) return b64cache[key];
+  function appBytes(key){
     var raw = atob(document.getElementById(key + '-app-b64').textContent.trim());
     var bytes = new Uint8Array(raw.length);
     for(var i=0;i<raw.length;i++){ bytes[i] = raw.charCodeAt(i); }
-    var blob = new Blob([bytes], {type:'text/html'});
+    return bytes;
+  }
+  function blobUrlFor(key){
+    if(b64cache[key]) return b64cache[key];
+    var blob = new Blob([appBytes(key)], {type:'text/html'});
     var url = URL.createObjectURL(blob);
     b64cache[key] = url;
     return url;
   }
+  // The downloadable copy is opened straight from a folder (file://). There a
+  // blob: iframe gets an OPAQUE origin — no localStorage at all, so every app
+  // renders blank (measured: SecurityError). An iframe fed by `srcdoc`
+  // inherits this page's origin instead and works. Only for file:// — the
+  // hosted portal keeps the blob: path it has always used.
+  var htmlCache = {};
+  function htmlFor(key){
+    if(!htmlCache[key]) htmlCache[key] = new TextDecoder('utf-8').decode(appBytes(key));
+    return htmlCache[key];
+  }
+  var RUNNING_FROM_FILE = (location.protocol === 'file:');
 
   // Shared by the dashboard panel buttons AND the "Publish to Quote" message
   // handler below. `forceReload` always routes the iframe through
@@ -1161,8 +1175,11 @@
   function openApp(target, forceReload){
     var frame = document.getElementById('app-frame');
     document.getElementById('app-label').innerHTML = APP_LABELS[target] || '';
-    var go = function(){ frame.src = blobUrlFor(target); };
-    if(forceReload){ frame.src = 'about:blank'; setTimeout(go, 0); } else { go(); }
+    var go = function(){
+      if(RUNNING_FROM_FILE){ frame.removeAttribute('src'); frame.srcdoc = htmlFor(target); }
+      else { frame.removeAttribute('srcdoc'); frame.src = blobUrlFor(target); }
+    };
+    if(forceReload){ frame.removeAttribute('srcdoc'); frame.src = 'about:blank'; setTimeout(go, 0); } else { go(); }
     saveSession({ activeApp: target });
     show('screen-app');
   }

@@ -53,7 +53,24 @@ let js = fs.readFileSync(path.join(assetsDir, jsFile), "utf8");
  *   - the entry must reference each chunk exactly once, as the literal
  *     `import("./<file>")` this rewrite targets (vite.config.js turns the
  *     preload helper off precisely so it takes that plain form). */
+/* Modes (environment variables, all optional — see scripts/build-download.mjs):
+ *   PORTAL_STANDALONE=1  the output is ONE file with nothing to fetch: lazy
+ *                        chunks are embedded (base64) and served to import()
+ *                        from a blob: URL made on demand — the downloadable
+ *                        copy, which runs from file:// where "/assets" is
+ *                        meaningless.
+ *   PORTAL_OFFLINE=1     the vanilla apps' cloud constants are blanked so the
+ *                        copy never talks to Supabase (Quotes is built with
+ *                        the VITE_SUPABASE_* vars empty for the same effect,
+ *                        and that is asserted below).
+ *   PORTAL_OUT=<path>    where to write (default dist/index.html).
+ *   PORTAL_STAMP_SUFFIX  appended to the build stamp, e.g. " · download". */
+const STANDALONE = process.env.PORTAL_STANDALONE === "1";
+const OFFLINE = process.env.PORTAL_OFFLINE === "1";
+const outPathFinal = process.env.PORTAL_OUT ? path.resolve(process.env.PORTAL_OUT) : outPath;
+
 const chunkFiles = fs.readdirSync(assetsDir).filter((f) => f.endsWith(".js") && f !== jsFile);
+const embeddedChunks = [];
 for (const chunk of chunkFiles) {
   const chunkSrc = fs.readFileSync(path.join(assetsDir, chunk), "utf8");
   if (/(^|[;\s}])import\s*["'][^"']+["']|\bfrom\s*["']\.\/[^"']+["']/.test(chunkSrc)) {
@@ -64,8 +81,23 @@ for (const chunk of chunkFiles) {
   if (occurrences !== 1) {
     throw new Error(`expected exactly one ${literal} in ${jsFile}, found ${occurrences} — the lazy-load rewrite would be wrong`);
   }
-  js = js.replace(literal, () => `import(/* @vite-ignore */ location.origin + "/assets/${chunk}")`);
-  console.log(`Lazy chunk kept at /assets/${chunk} (${(chunkSrc.length / 1024).toFixed(0)} KB), import rewritten to an absolute URL`);
+  if (STANDALONE) {
+    js = js.replace(literal, () => `import(/* @vite-ignore */ window.__gradconChunkUrl(${JSON.stringify(chunk)}))`);
+    embeddedChunks.push({ chunk, b64: Buffer.from(chunkSrc, "utf8").toString("base64") });
+    console.log(`Lazy chunk ${chunk} (${(chunkSrc.length / 1024).toFixed(0)} KB) embedded for the standalone copy`);
+  } else {
+    js = js.replace(literal, () => `import(/* @vite-ignore */ location.origin + "/assets/${chunk}")`);
+    console.log(`Lazy chunk kept at /assets/${chunk} (${(chunkSrc.length / 1024).toFixed(0)} KB), import rewritten to an absolute URL`);
+  }
+}
+// The project's own cloud URL, taken from the Estimates app's constant — the
+// one string that must not survive an offline build anywhere. (The
+// supabase-js library inside the Quotes bundle mentions "supabase.co" in its
+// own code, so the domain alone is no test.)
+const projectUrlMatch = fs.readFileSync(estimatesPath, "utf8").match(/const SUPABASE_URL = "(https:\/\/[^"]+)";/);
+const PROJECT_URL = projectUrlMatch ? projectUrlMatch[1] : null;
+if (OFFLINE && PROJECT_URL && js.includes(PROJECT_URL)) {
+  throw new Error("PORTAL_OFFLINE=1 but the Quotes bundle still carries the project's Supabase URL — build it with .env.local out of the way");
 }
 
 // The bundle can contain a literal "</script" substring inside a string/regex
@@ -82,25 +114,52 @@ js = js.replace(/<\/script/gi, "<\\/script");
 // followed by a backtick/quote/digit/& is near-guaranteed, silently
 // splicing fragments of the surrounding document into the bundle. A
 // function replacer returns its value literally, with no substitution.
+// Standalone: the chunk payloads and the helper that turns one into a blob:
+// module URL go in BEFORE the module script, so they exist when it runs.
+// A blob: module import works from any document, file:// included.
+const chunkPrelude = embeddedChunks.length
+  ? embeddedChunks.map(({ chunk, b64 }) => `<script type="text/plain" id="gradcon-chunk-${chunk}">${b64}</script>`).join("\n") +
+    `\n<script>window.__gradconChunkUrl=function(n){var c=window.__gradconChunkUrls=window.__gradconChunkUrls||{};if(c[n])return c[n];var raw=atob(document.getElementById("gradcon-chunk-"+n).textContent.trim());var b=new Uint8Array(raw.length);for(var i=0;i<raw.length;i++)b[i]=raw.charCodeAt(i);return c[n]=URL.createObjectURL(new Blob([b],{type:"text/javascript"}));};</script>\n`
+  : "";
 quotesHtml = quotesHtml
   .replace(/<link rel="stylesheet"[^>]*>/, () => `<style>${css}</style>`)
-  .replace(/<script type="module"[^>]*src="[^"]*"[^>]*><\/script>/, () => `<script type="module">${js}</script>`);
+  .replace(/<script type="module"[^>]*src="[^"]*"[^>]*><\/script>/, () => `${chunkPrelude}<script type="module">${js}</script>`);
 
 // Positive check: confirm both tags were actually replaced with inlined
 // content (not just that "/assets" is absent — the bundle can coincidentally
 // contain that substring as inert string data inside unrelated dead code).
-const headStart = quotesHtml.slice(0, 300);
+const headStart = quotesHtml.slice(0, 300 + chunkPrelude.length);
 if (!/<script type="module">\s*\S/.test(headStart)) {
-  throw new Error("script tag doesn't look inlined — check manually:\n" + headStart);
+  throw new Error("script tag doesn't look inlined — check manually:\n" + headStart.slice(0, 300));
 }
 if (!quotesHtml.includes(`<style>${css.slice(0, 40)}`)) {
   throw new Error("style tag doesn't look inlined — css not found where expected");
 }
 
 // --- Estimates and Cost Planner are already self-contained, embed verbatim ---
-const estimatesHtml = fs.readFileSync(estimatesPath, "utf8");
-const costPlannerHtml = fs.readFileSync(costPlannerPath, "utf8");
-const ratesLibraryHtml = fs.readFileSync(ratesLibraryPath, "utf8");
+let estimatesHtml = fs.readFileSync(estimatesPath, "utf8");
+let costPlannerHtml = fs.readFileSync(costPlannerPath, "utf8");
+let ratesLibraryHtml = fs.readFileSync(ratesLibraryPath, "utf8");
+if (OFFLINE) {
+  // The vanilla apps carry their cloud constants inline. Blank them so the
+  // offline copy never reaches out; each app already treats a failed fetch
+  // as "use what is stored locally". Asserted so a renamed constant cannot
+  // ship a copy that quietly still syncs.
+  const blank = (html, name) => {
+    const re = /const SUPABASE_(URL|ANON_KEY) = "[^"]*";/g;
+    const n = (html.match(re) || []).length;
+    if (n === 0) return html;
+    const out = html.replace(re, (m, which) => `const SUPABASE_${which} = "";`);
+    console.log(`Offline: blanked ${n} cloud constant(s) in ${name}`);
+    return out;
+  };
+  estimatesHtml = blank(estimatesHtml, "estimates-app.html");
+  costPlannerHtml = blank(costPlannerHtml, "cost-planner.html");
+  ratesLibraryHtml = blank(ratesLibraryHtml, "rates-library.html");
+  for (const [name, html] of [["estimates", estimatesHtml], ["cost-planner", costPlannerHtml], ["rates-library", ratesLibraryHtml]]) {
+    if (PROJECT_URL && html.includes(PROJECT_URL)) throw new Error(`offline copy: ${name} still references the project's Supabase URL`);
+  }
+}
 
 const quotesB64 = Buffer.from(quotesHtml, "utf8").toString("base64");
 const estimatesB64 = Buffer.from(estimatesHtml, "utf8").toString("base64");
@@ -117,7 +176,7 @@ function buildStamp() {
     || (() => { try { return execSync("git rev-parse --short HEAD", { stdio: ["ignore", "pipe", "ignore"] }).toString().trim(); } catch { return "local"; } })();
   return `${sha} · ${new Date().toISOString().slice(0, 16).replace("T", " ")} UTC`;
 }
-const stamp = buildStamp();
+const stamp = buildStamp() + (process.env.PORTAL_STAMP_SUFFIX || "");
 
 let shell = fs.readFileSync(shellPath, "utf8");
 shell = shell
@@ -127,6 +186,7 @@ shell = shell
   .replace("__RATESLIBRARY_B64__", ratesLibraryB64)
   .replaceAll("__BUILD_STAMP__", stamp);
 
-fs.writeFileSync(outPath, shell);
+fs.mkdirSync(path.dirname(outPathFinal), { recursive: true });
+fs.writeFileSync(outPathFinal, shell);
 console.log("Build stamp:", stamp);
-console.log("Assembled combined portal at", outPath, "-", (fs.statSync(outPath).size / 1024 / 1024).toFixed(2), "MB");
+console.log("Assembled combined portal at", outPathFinal, "-", (fs.statSync(outPathFinal).size / 1024 / 1024).toFixed(2), "MB");
