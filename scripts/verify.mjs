@@ -975,50 +975,40 @@ check("The agreed house margin is 25%, and 25% margin means cost / 0.75 (a 33.33
   assert.equal(pct(0.40).toFixed(1), "66.7");
 });
 
-const { pendingRateUpdates, libraryPrices } = await import("../src/lib/ratesLibrarySync.js");
+const { pendingRateUpdates, libraryPrices, libraryGovernedKeys, LIBRARY_EXCLUDED_NAMES } = await import("../src/lib/ratesLibrarySync.js");
 
-check("Rates Library rules: its price flows into Quotes, but never over an estimator's own edit", () => {
+check("Rates Library rules: its price flows into Quotes over ANY stored value, including a typed one", () => {
   const CONV = rateKey("FORMWORK", "Conventional", "m2");
   const C32 = rateKey("CONCRETE", "32 mpa", "m3");
   // the library's stored shape: {section: {productName: {cost}}}
   const lib = { formworkLegacy: { Conventional: { cost: 175 } }, concreteGrade: { "32 mpa": { cost: 219 } } };
 
-  // both sitting at their catalog defaults — unowned, so both move
+  // both sitting at their catalog defaults — both move
   let rates = defaultRates();
   let up = pendingRateUpdates(rates, lib, {});
   assert.equal(up.length, 2, `expected both to move, got ${JSON.stringify(up)}`);
   assert.equal(up.find((u) => u.key === CONV).price, 175);
   assert.equal(up.find((u) => u.key === C32).price, 219);
 
-  // an estimator has typed their own formwork price — the library must NOT win
+  // an estimator (or an older build on another device) has left a different
+  // formwork price in the shared row — the library STILL wins; the Rates
+  // modal shows such rows as "Rates Library" and does not offer an edit box
   rates = defaultRates();
   rates[CONV] = { ...rates[CONV], unitCost: 190 };
   up = pendingRateUpdates(rates, lib, {});
-  assert.ok(!up.some((u) => u.key === CONV), "a typed rate is never overwritten by the library");
-  assert.ok(up.some((u) => u.key === C32), "...while an untouched one still follows");
+  assert.ok(up.some((u) => u.key === CONV && u.price === 175), "the library corrects a stored rate whatever set it");
+  assert.ok(libraryGovernedKeys(lib).has(CONV), "...and the modal knows the row is governed");
 
-  // a rate this sync itself wrote last time still belongs to the library, so a
-  // SECOND library edit flows through as well
+  // no last-synced record at all (a fresh browser, or a cleared one) makes no difference
   rates = defaultRates();
-  rates[CONV] = { ...rates[CONV], unitCost: 175 };          // what the sync wrote before
-  up = pendingRateUpdates(rates, { formworkLegacy: { Conventional: { cost: 185 } } }, { [CONV]: 175 });
-  assert.equal(up.length, 1, "a previously synced rate follows the next library change");
-  assert.equal(up[0].price, 185);
+  rates[CONV] = { ...rates[CONV], unitCost: 60 };
+  up = pendingRateUpdates(rates, { formworkLegacy: { Conventional: { cost: 150 } } }, undefined);
+  assert.deepEqual(up, [{ key: CONV, price: 150 }]);
 
   // already in agreement = no update at all, so this can never render-loop
   rates = defaultRates();
   rates[CONV] = { ...rates[CONV], unitCost: 175 };
   assert.equal(pendingRateUpdates(rates, { formworkLegacy: { Conventional: { cost: 175 } } }, { [CONV]: 175 }).length, 0);
-
-  // junk in the library is ignored rather than costing $0 or NaN
-  assert.deepEqual(pendingRateUpdates(defaultRates(), null, {}), []);
-  assert.deepEqual(pendingRateUpdates(defaultRates(), { formworkLegacy: { Conventional: { cost: "abc" } } }, {}), []);
-  assert.deepEqual(pendingRateUpdates(defaultRates(), { formworkLegacy: { "No Such Product": { cost: 5 } } }, {}), []);
-
-  // and the mapper only claims products it can identify unambiguously
-  const mapped = libraryPrices({ concreteGrade: { "32 mpa": { cost: 1 }, "Not A Product": { cost: 2 } } });
-  assert.equal(mapped.length, 1);
-  assert.equal(mapped[0].key, C32);
 });
 
 const { computeTenderProjectSum, parseTenderPrice, seedTenderItems } = await import("../src/lib/tenderQuoteDefaults.js");
@@ -1485,6 +1475,29 @@ check("Margin ladder rungs are editable, and bad input falls back to the catalog
   } finally {
     if (had) g.localStorage = prev; else delete g.localStorage;
   }
+});
+
+check("Rates Library rules: a listed product moves to the library price whatever Quotes stores", () => {
+  const conv = rateKey("FORMWORK", "Conventional", "m2"), edge = rateKey("FORMWORK", "Edgeform", "m");
+  const lib = { formworkLegacy: { Conventional: { cost: 150 }, Edgeform: { cost: 50 } } };
+  const rates = { [conv]: { unitCost: 60 }, [edge]: { unitCost: 8 } };          // what a stale device left in the shared row
+  const upd = pendingRateUpdates(rates, lib, {});                              // no last-synced record at all (a fresh browser)
+  assert.deepEqual(upd.map((u) => [u.key, u.price]).sort(), [[conv, 150], [edge, 50]].sort());
+  assert.deepEqual(pendingRateUpdates({ [conv]: { unitCost: 150 }, [edge]: { unitCost: 50 } }, lib, {}), [], "nothing pending once they agree");
+  assert.deepEqual(pendingRateUpdates({ [conv]: { unitCost: 999 } }, lib, {}), [{ key: conv, price: 150 }], "a hand-typed $999 does not block the library either");
+});
+check("Rates Library rules: excluded and ambiguous names never move a Quotes rate", () => {
+  assert.ok(LIBRARY_EXCLUDED_NAMES.includes("Delivery fee"));
+  const del = rateKey("REINFORCING ACCESSORIES", "Delivery fee", "each");
+  const lib = { reinfAcc: { "Delivery fee": { cost: 300 } }, otherAcc: { "Delivery fee": { cost: 0 } } };
+  assert.deepEqual(pendingRateUpdates({ [del]: { unitCost: 0 } }, lib, {}), []);
+  assert.ok(!libraryGovernedKeys(lib).has(del), "not governed either, so the Rates modal keeps it editable");
+  assert.deepEqual(pendingRateUpdates({ x: { unitCost: 1 } }, { formworkLegacy: { "No Such Product": { cost: 5 } } }, {}), [], "an unmatched name is ignored");
+});
+check("Rates Library rules: governed keys are exactly the matched, non-excluded products", () => {
+  const lib = { formworkLegacy: { Conventional: { cost: 150 } }, reinfAcc: { "Delivery fee": { cost: 300 } } };
+  const g = libraryGovernedKeys(lib);
+  assert.ok(g.has(rateKey("FORMWORK", "Conventional", "m2")) && g.size === 1);
 });
 
 console.log(`\n${passed} check(s) passed.`);

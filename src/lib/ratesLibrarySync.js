@@ -52,6 +52,7 @@ function catalogByName() {
 export function libraryPrices(libraryState) {
   const byName = catalogByName();
   const out = [];
+  const seen = new Set();
   if (!libraryState || typeof libraryState !== "object") return out;
   PRICED_SECTIONS.forEach((section) => {
     const rows = libraryState[section];
@@ -62,27 +63,46 @@ export function libraryPrices(libraryState) {
       if (typeof price !== "number" || !Number.isFinite(price)) return;
       const hit = byName.get(norm(name));
       if (!hit) return;
+      if (seen.has(hit.key)) return;                // the same product priced in two sections: first wins, never flip-flops
+      seen.add(hit.key);
       out.push({ key: hit.key, price, catalogCost: hit.unitCost, name, section });
     });
   });
   return out;
 }
 
+/* Names the library lists but Quotes must not take a price from: "Delivery
+ * fee" appears in TWO library sections ($300 and $0 — different things) and
+ * would map to one catalog product, so it is left to the Rates modal. */
+export const LIBRARY_EXCLUDED_NAMES = ["Delivery fee"];
+const excluded = (name) => LIBRARY_EXCLUDED_NAMES.some((n) => norm(n) === norm(name));
+
+/** The rate keys the library governs right now (a Set). */
+export function libraryGovernedKeys(libraryState) {
+  const out = new Set();
+  libraryPrices(libraryState).forEach(({ key, name }) => { if (!excluded(name)) out.add(key); });
+  return out;
+}
+
 /**
- * The rate changes this library state implies, given the rates Quotes holds
- * now and what the sync last wrote. Returns [] when nothing should move, so a
- * caller can skip setState entirely and avoid a render loop.
+ * The rate changes this library state implies. THE LIBRARY RULES: for every
+ * product it prices, the stored Quotes rate must equal the library price —
+ * no matter who set the stored value or on which device. (An earlier rule
+ * only moved a rate that still equalled the catalog default or the value the
+ * sync last wrote on THIS browser; a second browser, or a value written by an
+ * older build, then looked like a deliberate edit and was never corrected —
+ * that is how conventional formwork sat at $60 across every project while
+ * the library said $150.) Returns [] when nothing should move, so a caller
+ * can skip setState entirely and avoid a render loop.
  */
-export function pendingRateUpdates(rates, libraryState, lastSynced) {
-  const prev = lastSynced && typeof lastSynced === "object" ? lastSynced : {};
+export function pendingRateUpdates(rates, libraryState /* , lastSynced: kept for callers, no longer consulted */) {
   const updates = [];
-  libraryPrices(libraryState).forEach(({ key, price, catalogCost }) => {
+  libraryPrices(libraryState).forEach(({ key, price, name }) => {
+    if (excluded(name)) return;
     const cur = rates && rates[key] ? rates[key].unitCost : undefined;
     if (cur == null) return;                        // not a rate this install carries
     if (Number(cur) === Number(price)) return;      // already agrees
-    const unowned = catalogCost != null && Number(cur) === Number(catalogCost);
-    const oursToMove = prev[key] != null && Number(cur) === Number(prev[key]);
-    if (unowned || oursToMove) updates.push({ key, price });
+    updates.push({ key, price });
   });
   return updates;
 }

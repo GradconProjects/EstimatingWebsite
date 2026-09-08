@@ -3,8 +3,13 @@ import { X } from "lucide-react";
 import { FULL_CATALOG, RESOURCE_COLS, PRODUCTION_RATES } from "../data/catalog.js";
 import { rateKey } from "../lib/costing.js";
 import { NumInput } from "./atoms.jsx";
+import { libraryGovernedKeys, readLibraryState } from "../lib/ratesLibrarySync.js";
 
 export default function RatesModal({ rates, setRates, onClose }) {
+  // Prices the Rates Library sets are shown, not edited, here: an edit would
+  // be overwritten by the library on the next load anyway (the library
+  // rules — see lib/ratesLibrarySync.js). Change them in the Rates Library.
+  const governed = useMemo(() => libraryGovernedKeys(readLibraryState()), []);
   const update = (key, field, value) =>
     setRates((r) => ({ ...r, [key]: { ...r[key], [field]: value === "" ? null : Number(value) } }));
 
@@ -161,7 +166,14 @@ export default function RatesModal({ rates, setRates, onClose }) {
                         ) : <td className="w-28"></td>}
                         <td className="py-1 pr-2 w-28">
                           <div className="flex items-center gap-1">
-                            <NumInput value={r.unitCost} onChange={(v) => update(k, "unitCost", v)} />
+                            {governed.has(k) ? (
+                              <div className="flex items-center gap-1.5" title="This price is set in the Rates Library and follows it automatically — change it there">
+                                <span className="font-mono tabular-nums text-neutral-800">{r.unitCost}</span>
+                                <span className="text-[9px] uppercase tracking-wide font-semibold text-blue-800 bg-blue-50 border border-blue-200 rounded px-1 py-0.5">Rates Library</span>
+                              </div>
+                            ) : (
+                              <NumInput value={r.unitCost} onChange={(v) => update(k, "unitCost", v)} />
+                            )}
                             {p.unitCost != null && Number(r.unitCost) !== Number(p.unitCost) && (
                               <button
                                 onClick={() => update(k, "unitCost", p.unitCost)}
