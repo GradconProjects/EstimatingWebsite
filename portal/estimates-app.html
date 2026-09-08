@@ -772,7 +772,7 @@ function restoreSaveHistory(i){
   let h=loadSaveHistory(); let entry=h[i]; if(!entry) return;
   // the state being left becomes the NEWEST history entry — nothing is lost
   pushSaveHistory();
-  applyLoadedEstimateState(entry.snapshot);
+  applyLoadedEstimateState(entry.snapshot,{collapseAll:true});
   saveEstimateState(true); // skipHistory: the restore itself isn't a new save-point
   rerenderAllPages();
 }
@@ -841,10 +841,27 @@ function collapseAllInstances(list){
   (list||[]).forEach(inst=>{ if(inst) inst._collapsed = true; });
   return list;
 }
-function applyLoadedEstimateState(parsed){
+function applyLoadedEstimateState(parsed, opts){
+  opts = opts || {};
   if(parsed.project) PROJECT = Object.assign({}, PROJECT, parsed.project);
   if(parsed.selectedTypes) SELECTED_TYPES = parsed.selectedTypes;
-  if(Array.isArray(parsed.instances)) INSTANCES = collapseAllInstances(parsed.instances);
+  if(Array.isArray(parsed.instances)){
+    if(opts.collapseAll){
+      // A real LOAD (boot, switching takeoffs, opening a file): everything
+      // arrives rolled up.
+      INSTANCES = collapseAllInstances(parsed.instances);
+    } else {
+      // A LIVE sync (the 6 s cloud poll, a tab coming back into view) must
+      // never change what is open on screen: every element keeps the fold
+      // state it has now; only an element that is new to this browser
+      // arrives rolled up. This used to route through the load path and
+      // folded every card mid-edit on each sync.
+      const fold = {};
+      (INSTANCES||[]).forEach(i=>{ if(i) fold[i.id] = !!i._collapsed; });
+      parsed.instances.forEach(i=>{ if(i) i._collapsed = (i.id in fold) ? fold[i.id] : true; });
+      INSTANCES = parsed.instances;
+    }
+  }
   if(parsed.idCounter) ID_COUNTER = parsed.idCounter;
 }
 function loadEstimateState(){
@@ -853,7 +870,7 @@ function loadEstimateState(){
   if(!raw) return false;
   try{
     let parsed = JSON.parse(raw);
-    applyLoadedEstimateState(parsed);
+    applyLoadedEstimateState(parsed,{collapseAll:true});
     return true;
   }catch(err){ return false; }
 }
