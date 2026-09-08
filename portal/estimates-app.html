@@ -5003,16 +5003,6 @@ function computeShotWall(inst,def){
   }
   return {lines,warnings:[]};
 }
-function diagShotWall(inst){ let d=inst.data;
-  let x=20,y=30,w=260,h=90;
-  let content=`<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="rgba(232,163,61,0.06)" stroke="${DWG.ink}" stroke-width="1.6"/>
-   <line x1="${x+2}" y1="${y+h/2}" x2="${x+w-2}" y2="${y+h/2}" stroke="${DWG.bar}" stroke-width="1.4" opacity="0.85"/>
-   ${Array.from({length:12}).map((_,i)=>`<line x1="${x+(w*(i+1))/13}" y1="${y+h/2-6}" x2="${x+(w*(i+1))/13}" y2="${y+h/2+6}" stroke="${DWG.bar}" stroke-width="0.8" opacity="0.6"/>`).join('')}
-   ${dimH(x,x+w,y-10,`${d.length||10000}`)}
-   ${dimV(y,y+h,x+w+14,`${d.height||3000}`)}
-   ${specLine(x,y+h+16,`T${d.thickness||120} · ${d.meshType||'SL82'} central mesh${d.xypex?' · Xypex':''}`)}`;
-  return sheetFrame(inst, "Shotcrete Wall", [300,160], content);
-}
 
 /* ---- STAIRS ---- */
 function stairsDefaults(){ return {
@@ -5228,32 +5218,6 @@ function renderTankbox(inst){
   </div></div>`;
   return {geom,conc:concSection(d,"<p class='small'>Concrete = base slab + perimeter walls</p>"),reo,form,conns};
 }
-function diagTankbox(inst){ let d=inst.data;
-  let cx=130, gy=44, hh=64, bot=gy+hh, wt=10;
-  let content;
-  if(d.shape=="circular"){
-    content=`${groundLine(cx-100,cx+100,gy)}
-    <path d="M${cx-70} ${gy} V${bot} H${cx+70} V${gy}" fill="none" stroke="${DWG.ink}" stroke-width="1.6"/>
-    <path d="M${cx-70+wt} ${gy} V${bot-wt} H${cx+70-wt} V${gy}" fill="none" stroke="${DWG.ink}" stroke-width="1" opacity="0.85"/>
-    ${[0.3,0.6,0.9].map(p=>`<line x1="${cx-70+wt+4}" y1="${gy+hh*p}" x2="${cx+70-wt-4}" y2="${gy+hh*p}" stroke="${DWG.bar}" stroke-width="0.9" opacity="0.75"/>`).join('')}
-    ${[-0.6,-0.2,0.2,0.6].map(p=>`<line x1="${cx+70*p}" y1="${gy+6}" x2="${cx+70*p}" y2="${bot-2}" stroke="${DWG.bar}" stroke-width="0.9" opacity="0.7"/>`).join('')}
-    ${dimH(cx-70,cx+70,gy-14,`⌀${d.dia||3000}`)}
-    ${dimV(gy,bot,cx+80,`${d.depth||1500}`)}
-    ${specLine(cx,bot+16,`${d.kind||'Tank'} · WALL T${d.wallThickness||200}`,'middle')}`;
-  } else {
-    let w=200;
-    content=`${groundLine(cx-110,cx+110,gy)}
-    <path d="M${cx-w/2} ${gy} V${bot} H${cx+w/2} V${gy}" fill="none" stroke="${DWG.ink}" stroke-width="1.6"/>
-    <path d="M${cx-w/2+wt} ${gy} V${bot-wt} H${cx+w/2-wt} V${gy}" fill="none" stroke="${DWG.ink}" stroke-width="1" opacity="0.85"/>
-    <line x1="${cx-w/2+wt+4}" y1="${bot-wt-4}" x2="${cx+w/2-wt-4}" y2="${bot-wt-4}" stroke="${DWG.bar}" stroke-width="1"/>
-    <line x1="${cx-w/2+wt+4}" y1="${gy+6}" x2="${cx-w/2+wt+4}" y2="${bot-wt-4}" stroke="${DWG.bar}" stroke-width="1"/>
-    <line x1="${cx+w/2-wt-4}" y1="${gy+6}" x2="${cx+w/2-wt-4}" y2="${bot-wt-4}" stroke="${DWG.bar}" stroke-width="1"/>
-    ${dimH(cx-w/2,cx+w/2,bot+16,`${d.L||1500} INT.`)}
-    ${dimV(gy,bot,cx-w/2-14,`${d.depth||600}`)}
-    ${specLine(cx,bot+34,`${d.kind||'Box'} · WALL T${d.wallThickness||100}`,'middle')}`;
-  }
-  return sheetFrame(inst, d.kind||"Tank/Box", [260,176], content);
-}
 function computeTankbox(inst,def){
   let d=inst.data, lines=[];
   let N=num(d.qty,1), depth=num(d.depth)/1000, baseT=num(d.baseThickness)/1000, wallT=num(d.wallThickness)/1000, cover=num(d.cover);
@@ -5316,6 +5280,534 @@ function computeTankbox(inst,def){
 }
 
 /* ============================= REGISTRY ============================= */
+/* ============================= ELEMENT DRAWINGS =============================
+ * Every element type draws like the strip footing: a dimensioned SECTION
+ * (cover, bars, ligatures, blinding, excavation, starters) beside a
+ * dimensioned PLAN or ELEVATION, every figure taken live from the card's own
+ * fields — so what is typed is seen where it is measured. Nothing here
+ * calculates a quantity; the drawings only read the data. */
+const DG = {
+  mono:(x,y,t,size,color,anchor)=>`<text x="${x}" y="${y}" text-anchor="${anchor||'start'}" font-size="${size||6.5}" font-family="ui-monospace,Menlo,Consolas,monospace" fill="${color||DWG.txt}">${t}</text>`,
+  fit:(wmm,hmm,boxW,boxH)=>Math.min(boxW/Math.max(1,wmm), boxH/Math.max(1,hmm)),
+  bars:(x1,x2,y,n,r)=>{ n=Math.max(1,Math.min(14,Math.round(n))); return Array.from({length:n}).map((_,i)=>{const xx=n===1?(x1+x2)/2:x1+(x2-x1)*i/(n-1); return `<circle cx="${xx}" cy="${y}" r="${r||1.6}" fill="${DWG.bar}"/>`;}).join(''); },
+  barsV:(x,y1,y2,n,r)=>{ n=Math.max(1,Math.min(14,Math.round(n))); return Array.from({length:n}).map((_,i)=>{const yy=n===1?(y1+y2)/2:y1+(y2-y1)*i/(n-1); return `<circle cx="${x}" cy="${yy}" r="${r||1.6}" fill="${DWG.bar}"/>`;}).join(''); },
+  ticksH:(x1,x2,y1,y2,spacingMM,scale,max)=>{ let out=[]; let step=Math.max(2.5,spacingMM*scale); let n=Math.min(max||60,Math.floor((x2-x1)/step)); for(let i=0;i<=n;i++){ let xx=x1+i*step; if(xx>x2+0.01) break; out.push(`<line x1="${xx}" y1="${y1}" x2="${xx}" y2="${y2}" stroke="${DWG.bar}" stroke-width="0.7" opacity="0.75"/>`);} return out.join(''); },
+  ticksV:(y1,y2,x1,x2,spacingMM,scale,max)=>{ let out=[]; let step=Math.max(2.5,spacingMM*scale); let n=Math.min(max||60,Math.floor((y2-y1)/step)); for(let i=0;i<=n;i++){ let yy=y1+i*step; if(yy>y2+0.01) break; out.push(`<line x1="${x1}" y1="${yy}" x2="${x2}" y2="${yy}" stroke="${DWG.bar}" stroke-width="0.7" opacity="0.75"/>`);} return out.join(''); },
+  rect:(x,y,w,h,fill,sw,dash)=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${fill||'rgba(232,163,61,0.10)'}" stroke="${DWG.ink}" stroke-width="${sw||1.6}"${dash?` stroke-dasharray="${dash}"`:''}/>`,
+  exc:(x,y,w,h)=>`<path d="M${x} ${y} L${x} ${y+h} L${x+w} ${y+h} L${x+w} ${y}" fill="rgba(124,74,90,0.05)" stroke="${DWG.gl}" stroke-width="1" stroke-dasharray="3 2"/>`,
+  blind:(x,y,w,h)=> h>0.2? `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="rgba(85,116,95,0.18)" stroke="${DWG.dim}" stroke-width="0.6"/>` : '',
+  lig:(x,y,w,h)=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="2" fill="none" stroke="${DWG.bar}" stroke-width="0.9"/>`,
+  starters:(xs,yTop,yBot)=>xs.map(xx=>`<line x1="${xx}" y1="${yBot}" x2="${xx}" y2="${yTop}" stroke="${DWG.bar}" stroke-width="1.4"/>`).join(''),
+  cov:(x,y,c)=>`<text x="${x}" y="${y}" font-size="5.5" font-family="ui-monospace,Menlo,Consolas,monospace" fill="${DWG.dim}">c${c}</text>`,
+  title:(x,y,t)=>`<text x="${x}" y="${y}" font-size="6.5" font-family="ui-monospace,Menlo,Consolas,monospace" fill="${DWG.muted}" letter-spacing="1">${t}</text>`,
+  soil:(x,y,w,h)=>`<path d="${Array.from({length:Math.max(1,Math.floor(w/8))}).map((_,i)=>`M${x+i*8} ${y+h} l4 -${Math.min(6,h)}`).join(' ')}" stroke="${DWG.muted}" stroke-width="0.6" opacity="0.6"/>`,
+};
+const coverOf = (d)=>num(d.cover!==undefined&&d.cover!==""?d.cover:PROJECT.cover,40);
+const N_ = (v,f)=>Math.max(0,num(v,f));
+
+function diagPier(inst){ let d=inst.data;
+  const castIn = typeof isCastInSitu==="function" ? isCastInSitu(d) : true;
+  const isSq = d.pileShape==="square"||d.pileShape==="rect";
+  const DIA=Math.max(150,isSq?N_(d.pileW,300):N_(d.dia,600)), DEP=Math.max(300,N_(d.depth,6000)), CUT=N_(d.cutoff,0), cov=coverOf(d);
+  const UR=d.underream&&castIn, UD=UR?Math.max(DIA,N_(d.underDia,900)):DIA, UH=UR?N_(d.underDepth,600):0;
+  const sx=70, sy=30, s=DG.fit(UD, DEP+CUT, 70, 150);
+  const w=DIA*s, ud=UD*s, dep=DEP*s, cut=CUT*s, uh=Math.min(dep*0.3,UH*s), cx=sx+ud/2;
+  const x=cx-w/2, top=sy+cut, bot=sy+cut+dep, cv=Math.max(1.5,cov*s);
+  const nV=Math.max(2,Math.min(14,N_(d.vBars,8)));
+  const gs=N_(d.genSpacing,200), ts=N_(d.topSpacing,100), bs=N_(d.botSpacing,100), tz=N_(d.topZone,600), bz=N_(d.botZone,600);
+  let ligs="";
+  if(castIn && d.cage!==false && d.ligs!==false){
+    const zones=[[top+cv,top+cv+Math.min(dep*0.4,tz*s),ts],[top+cv+Math.min(dep*0.4,tz*s),bot-cv-Math.min(dep*0.4,bz*s),gs],[bot-cv-Math.min(dep*0.4,bz*s),bot-cv,bs]];
+    ligs=zones.map(z=>DG.ticksV(z[0],z[1],x+cv,x+w-cv,z[2],s,40)).join('');
+  }
+  const starters=d.starters&&castIn, proj=Math.min(30,Math.max(6,N_(d.connProj,900)*s)), emb=Math.min(dep-cv-2,Math.max(4,N_(d.connEmbed,800)*s));
+  let section=`${groundLine(sx-18,sx+ud+56,sy)}
+   ${DG.exc(x-1,sy,w+2,cut+dep)}
+   ${DG.rect(x,top,w,dep,castIn?'rgba(232,163,61,0.10)':'rgba(138,154,143,0.15)')}
+   ${UR?`<polygon points="${x},${bot-uh} ${x+w},${bot-uh} ${sx+ud},${bot} ${sx},${bot}" fill="rgba(232,163,61,0.10)" stroke="${DWG.ink}" stroke-width="1.4"/>`:''}
+   ${castIn&&d.cage!==false?[x+cv,x+w-cv].map(xx=>`<line x1="${xx}" y1="${top+cv}" x2="${xx}" y2="${bot-cv}" stroke="${DWG.bar}" stroke-width="1.2"/>`).join(''):''}
+   ${ligs}
+   ${starters?DG.starters([x+cv+1,x+w-cv-1].slice(0,Math.max(1,Math.min(2,N_(d.connQty,8)))),top-proj,top+emb):''}
+   ${dimH(x,x+w,sy-12,isSq?`${DIA} SQ`:`⌀${DIA}`)}
+   ${dimV(top,bot,sx+ud+16+(starters?18:0),`L ${DEP}`)}
+   ${CUT>0?dimV(sy,top,sx-14,`CUT ${CUT}`):''}
+   ${UR?dimH(sx,sx+ud,bot+12,`⌀${UD} BELL`):''}
+   ${UR?dimV(bot-uh,bot,sx+ud+34+(starters?18:0),`${UH}`):''}
+   ${starters?dimV(top-proj,top,x+w+12,`PROJ ${N_(d.connProj,900)}`):''}
+   ${castIn?DG.cov(x+w+2,top+cv+8,cov):''}`;
+  /* plan of the cage */
+  const px=228, py=110, pr=Math.min(38,DIA*0.045+10), pcv=Math.max(2,Math.min(pr-4,cov*(pr/(DIA/2))));
+  let plan=`${DG.title(px-30,py-pr-14,"PLAN")}
+   ${isSq?DG.rect(px-pr,py-pr,2*pr,2*pr):`<circle cx="${px}" cy="${py}" r="${pr}" fill="rgba(232,163,61,0.10)" stroke="${DWG.ink}" stroke-width="1.6"/>`}
+   ${UR?`<circle cx="${px}" cy="${py}" r="${pr*UD/DIA}" fill="none" stroke="${DWG.ink}" stroke-width="0.8" stroke-dasharray="3 2"/>`:''}
+   ${castIn&&d.cage!==false?`<circle cx="${px}" cy="${py}" r="${pr-pcv}" fill="none" stroke="${DWG.bar}" stroke-width="0.9"/>${Array.from({length:nV}).map((_,i)=>{const a=i/nV*2*Math.PI; return `<circle cx="${px+(pr-pcv)*Math.cos(a)}" cy="${py+(pr-pcv)*Math.sin(a)}" r="1.7" fill="${DWG.bar}"/>`;}).join('')}`:''}
+   ${specLine(px,py+pr+14,castIn?`${nV}${d.vDia||'N20'} CAGE`:`${(d.pileType||'driven').toUpperCase()} PILE`,'middle')}
+   ${specLine(px,py+pr+24,castIn&&d.ligs!==false?`${d.ligDia||'N10'} @${gs} · ${ts} TOP/BOT ZONES`:`${d.pileSection||''}`,'middle')}
+   ${N_(d.qty,1)>1?specLine(px,py+pr+34,`× ${N_(d.qty,1)} PIERS`,'middle'):''}`;
+  return sheetFrame(inst, castIn?"Bored Pier":"Pile", [300,206], section+plan);
+}
+
+function diagPileCap(inst){ let d=inst.data;
+  const L=Math.max(300,N_(d.L,1800)), W=Math.max(300,N_(d.W,1800)), D=Math.max(150,N_(d.D,800)), BL=N_(d.blinding,50), OV=N_(d.oversize,150), cov=coverOf(d);
+  const nP=Math.max(1,Math.min(9,Math.round(N_(d.linkedPierCount,4))));
+  /* plan (left) */
+  const px=24, py=40, s=DG.fit(L,W,120,96), w=L*s, h=W*s, cv=Math.max(1.5,cov*s);
+  const pileR=Math.max(4,Math.min(w,h)*0.12);
+  const pilePts=nP===1?[[0.5,0.5]]:nP===2?[[0.3,0.5],[0.7,0.5]]:nP===3?[[0.5,0.28],[0.28,0.72],[0.72,0.72]]:nP===4?[[0.28,0.28],[0.72,0.28],[0.28,0.72],[0.72,0.72]]:Array.from({length:nP}).map((_,i)=>[0.2+0.6*((i%3)/2),0.2+0.6*(Math.floor(i/3)/Math.max(1,Math.ceil(nP/3)-1||1))]);
+  let plan=`${DG.title(px,py-16,"PLAN")}
+   ${DG.rect(px,py,w,h)}
+   ${d.botX!==false?DG.ticksH(px+cv,px+w-cv,py+cv,py+h-cv,N_(d.botXSpacing,150),s,24):''}
+   ${d.botY!==false?DG.ticksV(py+cv,py+h-cv,px+cv,px+w-cv,N_(d.botYSpacing,150),s,24):''}
+   ${pilePts.map(p=>`<circle cx="${px+w*p[0]}" cy="${py+h*p[1]}" r="${pileR}" fill="rgba(138,154,143,0.35)" stroke="${DWG.ink}" stroke-width="1"/>`).join('')}
+   ${dimH(px,px+w,py-6,`L ${L}`)}
+   ${dimV(py,py+h,px+w+12,`W ${W}`)}
+   ${specLine(px,py+h+14,`${nP} PILE${nP>1?'S':''}${d.linkTarget?' · '+targetLabelOf(d.linkTarget):''} · × ${N_(d.qty,1)}`)}`;
+  /* section (right) */
+  const sx=178, sy=52, s2=DG.fit(L+2*OV, D+BL, 100, 80), tw=(L+2*OV)*s2, ed=(D+BL)*s2, fw=L*s2, fd=D*s2, bl=BL*s2, cv2=Math.max(1.5,cov*s2);
+  const fx=sx+OV*s2, fy=sy+ed-bl-fd, right=sx+tw;
+  const nB=Math.max(2,Math.min(12,Math.round(L/Math.max(50,N_(d.botXSpacing,150)))+1)), nT=d.topX!==false?nB:0;
+  const proj=Math.min(26,Math.max(6,N_(d.colProj,900)*s2)), emb=Math.min(fd-cv2-2,Math.max(4,N_(d.colEmbed,600)*s2));
+  const starters=d.colStarters!==false && N_(d.colQty,8)>0;
+  let section=`${DG.title(sx,sy-22,"SECTION")}
+   ${groundLine(sx-10,right+34,sy)}
+   ${DG.exc(sx,sy,tw,ed)}
+   ${DG.blind(sx+1,sy+ed-bl,tw-2,bl)}
+   ${DG.rect(fx,fy,fw,fd)}
+   ${DG.bars(fx+cv2,fx+fw-cv2,fy+fd-cv2,nB)}
+   ${nT?DG.bars(fx+cv2,fx+fw-cv2,fy+cv2,nT):''}
+   ${d.sideBars?DG.barsV(fx+cv2,fy+cv2,fy+fd-cv2,3,1.3)+DG.barsV(fx+fw-cv2,fy+cv2,fy+fd-cv2,3,1.3):''}
+   ${starters?DG.starters([fx+fw*0.42,fx+fw*0.58],fy-proj,fy+emb):''}
+   ${[0.3,0.7].map(p=>`<rect x="${fx+fw*p-4}" y="${fy+fd}" width="8" height="14" fill="rgba(138,154,143,0.35)" stroke="${DWG.ink}" stroke-width="0.8"/>`).join('')}
+   ${dimV(fy,fy+fd,right+12,`D ${D}`)}
+   ${dimV(sy,sy+ed,right+30,`EXC ${D+BL}`)}
+   ${dimH(sx,right,sy+ed+26,`${L}+2×${OV}`)}
+   ${BL>0?DG.mono(sx+2,sy+ed-bl-2,`BLINDING ${BL}`,5.5,DWG.dim):''}
+   ${starters?dimV(fy-proj,fy,sx-12,`PROJ ${N_(d.colProj,900)}`):''}
+   ${DG.cov(fx+2,fy+fd-cv2-3,cov)}
+   ${specLine(sx,sy+ed+40,`BOT ${d.botXDia||'N20'}@${N_(d.botXSpacing,150)} / ${d.botYDia||'N20'}@${N_(d.botYSpacing,150)}${d.topX!==false?` · TOP ${d.topXDia||'N16'}@${N_(d.topXSpacing,200)}`:''}`)}
+   ${starters?specLine(sx,sy+ed+50,`${N_(d.colQty,8)}${d.colDia||'N24'} COLUMN STARTERS`):''}`;
+  return sheetFrame(inst, "Pile Cap", [316,216], plan+section);
+}
+
+function diagPadFooting(inst){ let d=inst.data;
+  const round=d.shape==="round"||d.shape==="circular";
+  const L=Math.max(200,round?N_(d.diameter,1200):N_(d.length,1500)), W=Math.max(200,round?N_(d.diameter,1200):N_(d.width,1500)), D=Math.max(100,N_(d.depth,500)), cov=coverOf(d);
+  const BL=N_(d.blinding,0), OV=N_(d.oversize,150), ED=Math.max(D+BL,N_(d.excDepth,D+BL));
+  const ped=d.pedestal&&N_(d.pedH,0)>0, PH=N_(d.pedH,0), PW=Math.max(100,N_(d.pedW,300)), PD=Math.max(100,N_(d.pedD,300));
+  /* plan */
+  const px=24, py=36, s=DG.fit(L,W,110,96), w=L*s, h=W*s, cv=Math.max(1.5,cov*s);
+  let plan=`${DG.title(px,py-16,"PLAN")}
+   ${round?`<ellipse cx="${px+w/2}" cy="${py+h/2}" rx="${w/2}" ry="${h/2}" fill="rgba(232,163,61,0.10)" stroke="${DWG.ink}" stroke-width="1.6"/>`:DG.rect(px,py,w,h)}
+   ${d.botX!==false?DG.ticksH(px+cv,px+w-cv,py+cv,py+h-cv,N_(d.botXSpacing,200),s,24):''}
+   ${d.botY!==false?DG.ticksV(py+cv,py+h-cv,px+cv,px+w-cv,N_(d.botYSpacing,200),s,24):''}
+   ${ped?DG.rect(px+w/2-PW*s/2,py+h/2-PD*s/2,PW*s,PD*s,'rgba(232,163,61,0.22)',1.2):''}
+   ${dimH(px,px+w,py-6,round?`⌀${L}`:`L ${L}`)}
+   ${!round?dimV(py,py+h,px+w+12,`W ${W}`):''}
+   ${specLine(px,py+h+14,`× ${N_(d.qty,1)}${ped?` · PED ${PW}×${PD}`:''}`)}`;
+  /* section */
+  const sx=172, sy=ped?68:46, s2=DG.fit(L+2*OV, ED, 104, ped?70:92), tw=(L+2*OV)*s2, ed=ED*s2, fw=L*s2, fd=D*s2, bl=BL*s2, cv2=Math.max(1.5,cov*s2);
+  const fx=sx+OV*s2, fy=sy+ed-bl-fd, right=sx+tw, ph=Math.min(40,PH*s2), pw=PW*s2;
+  const nB=Math.max(2,Math.min(12,Math.round(L/Math.max(50,N_(d.botXSpacing,200)))+1));
+  const starters=!!d.starters&&N_(d.connQty,0)>0, proj=Math.min(26,Math.max(6,N_(d.connProj,900)*s2)), emb=Math.min(fd-cv2-2,Math.max(4,N_(d.connEmbed,600)*s2));
+  const stTop=ped? fy-ph : fy;
+  let section=`${DG.title(sx,sy-22-(ped?ph:0)+ (ped?ph:0),"SECTION")}
+   ${groundLine(sx-8,right+34,sy)}
+   ${DG.exc(sx,sy,tw,ed)}
+   ${DG.blind(sx+1,sy+ed-bl,tw-2,bl)}
+   ${DG.rect(fx,fy,fw,fd)}
+   ${ped?DG.rect(fx+fw/2-pw/2,fy-ph,pw,ph,'rgba(232,163,61,0.16)',1.3):''}
+   ${d.ligs?DG.lig(fx+cv2,fy+cv2,fw-2*cv2,fd-2*cv2):''}
+   ${d.botX!==false?DG.bars(fx+cv2,fx+fw-cv2,fy+fd-cv2,nB):''}
+   ${d.topMatOn?DG.bars(fx+cv2,fx+fw-cv2,fy+cv2,nB):''}
+   ${starters?DG.starters([fx+fw*0.42,fx+fw*0.58].slice(0,Math.min(2,N_(d.connQty,4))),stTop-proj,fy+emb):''}
+   ${dimV(fy,fy+fd,right+12,`D ${D}`)}
+   ${dimV(sy,sy+ed,right+30,`EXC ${ED}`)}
+   ${dimH(sx,right,sy+ed+22,`${L}+2×${OV}`)}
+   ${ped?dimV(fy-ph,fy,sx-12,`PED ${PH}`):''}
+   ${starters?dimV(stTop-proj,stTop,ped?sx-28:sx-12,`PROJ ${N_(d.connProj,900)}`):''}
+   ${BL>0?DG.mono(sx+2,sy+ed-bl-2,`BLINDING ${BL}`,5.5,DWG.dim):''}
+   ${DG.cov(fx+2,fy+fd-cv2-3,cov)}
+   ${specLine(sx,sy+ed+36,`BOT ${d.botReoType==='mesh'?(d.botMeshType||'SL82'):`${d.botXDia||'N16'}@${N_(d.botXSpacing,200)} EW`}${d.topMatOn?` · TOP ${d.topXDia||'N16'}@${N_(d.topXSpacing,200)}`:''}`)}
+   ${starters?specLine(sx,sy+ed+46,`${N_(d.connQty,4)}${d.connDia||'N20'} STARTERS`):(d.ligs?specLine(sx,sy+ed+46,`LIGS ${d.ligDia||'N10'}@${N_(d.ligSpacing,200)}`):'')}`;
+  return sheetFrame(inst, d.qty>1?`${N_(d.qty,1)}× Pad Footing`:"Pad Footing", [316,ped?226:206], plan+section);
+}
+
+function diagBeam(inst){ let d=inst.data;
+  const W=Math.max(100,N_(d.width,400)), D=Math.max(100,N_(d.depth,600)), L=Math.max(300,N_(d.length,7200)), cov=coverOf(d), ST=N_(d.slabThickness,200);
+  const type=d.beamType||"independent", withSlab=type!=="independent" && ST>0;
+  const rows=Array.isArray(d.reoRows)?d.reoRows:[];
+  const top=rows.filter(r=>/top/i.test(r.position||"")), bot=rows.filter(r=>/bot/i.test(r.position||""));
+  const nTop=top.reduce((s,r)=>s+N_(r.qty,0),0)||(rows[0]?N_(rows[0].qty,2):2), nBot=bot.reduce((s,r)=>s+N_(r.qty,0),0)||(rows[1]?N_(rows[1].qty,3):3);
+  /* section */
+  const sx=40, sy=40, s=DG.fit(withSlab?W*3:W, D, 100, 100), w=W*s, dd=D*s, cv=Math.max(1.5,cov*s), st=withSlab?Math.min(dd*0.5,ST*s):0;
+  const bx=withSlab?sx+W*s:sx, by=type==="upstand"?sy+st:sy;
+  const slabY = type==="upstand"? sy : sy+dd-st;
+  const beamTop = type==="upstand"? sy : sy;
+  let section=`${DG.title(sx,sy-18,"SECTION")}
+   ${withSlab?DG.rect(sx,slabY,W*s*3,st,'rgba(232,163,61,0.06)',1):''}
+   ${DG.rect(bx,sy,w,dd)}
+   ${d.trenchMesh?`<line x1="${bx+cv}" y1="${sy+dd-cv}" x2="${bx+w-cv}" y2="${sy+dd-cv}" stroke="${DWG.bar}" stroke-width="1.3"/>`:`${DG.lig(bx+cv,sy+cv,w-2*cv,dd-2*cv)}${DG.bars(bx+cv,bx+w-cv,sy+dd-cv,nBot)}${DG.bars(bx+cv,bx+w-cv,sy+cv,nTop)}`}
+   ${dimH(bx,bx+w,sy+dd+12,`W ${W}`)}
+   ${dimV(sy,sy+dd,bx+w+12,`D ${D}`)}
+   ${withSlab?dimV(slabY,slabY+st,sx-12,`SLAB ${ST}`):''}
+   ${DG.cov(bx+2,sy+dd-cv-3,cov)}
+   ${specLine(sx+52,sy-18,`${type.toUpperCase()}${withSlab?' WITH SLAB':''}`,'start',DWG.dim)}`;
+  /* elevation */
+  const ex=24, ey=Math.max(150,sy+dd+46)+(withSlab?8:0), ew=268, eh=18, s2=ew/L;
+  const zones=Array.isArray(d.ligZones)?d.ligZones:[];
+  let zx=ex, zoneSvg="", zoneDims="";
+  const fixed=zones.filter(z=>!z.auto&&N_(z.length,0)>0), autoZ=zones.find(z=>z.auto);
+  const fixedLen=fixed.reduce((a,z)=>a+N_(z.length,0),0), midLen=Math.max(0,L-fixedLen);
+  let order=zones.map(z=>({...z, len: z.auto? midLen : N_(z.length,0)}));
+  if(!order.length) order=[{zone:"General",len:L,spacing:200}];
+  order.forEach((z,i)=>{ const zw=Math.max(0,z.len*s2); if(zw<=0) return; zoneSvg+=DG.ticksH(zx+1,zx+zw-1,ey+2,ey+eh-2,N_(z.spacing,200),s2,40); zoneDims+=dimH(zx,zx+zw,ey+eh+11,`${z.len}@${N_(z.spacing,200)}`,(z.zone||'').toUpperCase()); zx+=zw; });
+  const runs=starterRunsOf(d).filter(r=>starterRunCount(r,L/1000)>0);
+  let elevation=`${DG.title(ex,ey-22,"ELEVATION")}
+   ${DG.rect(ex,ey,ew,eh)}
+   <line x1="${ex+3}" y1="${ey+eh-4}" x2="${ex+ew-3}" y2="${ey+eh-4}" stroke="${DWG.bar}" stroke-width="1"/>
+   <line x1="${ex+3}" y1="${ey+4}" x2="${ex+ew-3}" y2="${ey+4}" stroke="${DWG.bar}" stroke-width="0.9" opacity="0.8"/>
+   ${zoneSvg}
+   ${starterRunTicks(d,L/1000,ex,ew,ey-10,ey+2)}
+   ${zoneDims}
+   ${dimH(ex,ex+ew,ey+eh+38,`L ${L}${N_(d.qty,1)>1?` × ${N_(d.qty,1)}`:''}`)}
+   ${d.stepdown?`<path d="M${ex+ew-40} ${ey} l0 -6 l40 0" fill="none" stroke="${DWG.ink}" stroke-width="1" stroke-dasharray="2 2"/>`:''}
+   ${specLine(ex,ey+eh+52,d.trenchMesh?`TRENCH MESH ${d.trenchMeshType||'4 Bar-L12TM'}`:`TOP ${nTop}${(top[0]||rows[0]||{}).dia||'N24'} · BOT ${nBot}${(bot[0]||rows[1]||{}).dia||'N28'} · LIGS ${(zones[0]||{}).dia||'N10'}`)}
+   ${starterRunSpecLines(d,L/1000,ex,ey+eh+63,11)}`;
+  return sheetFrame(inst, `${(d.category||'')} beam`.trim(), [316,ey+eh+84+(runs.length?Math.min(3,runs.length)*11:0)], section+elevation);
+}
+
+function diagSlab(inst){ let d=inst.data;
+  const manual=!!d.manualArea, T=Math.max(50,N_(d.thickness,150)), cov=coverOf(d);
+  const Lm=manual?Math.sqrt(N_(d.areaOverride,1)||1):N_(d.length,25), Wm=manual?Math.sqrt(N_(d.areaOverride,1)||1):N_(d.width,12);
+  const L=Math.max(0.5,Lm)*1000, W=Math.max(0.5,Wm)*1000;
+  const et=!!d.edgeThicken, etW=N_(d.edgeThickenWidth,300), etD=N_(d.edgeThickenExtraDepth,150);
+  const eb=!!d.edgeBeamOn, ebW=N_(d.edgeBeamWidth,300), ebD=N_(d.edgeBeamExtraDepth,300);
+  const dropW=eb?ebW:(et?etW:0), dropD=eb?ebD:(et?etD:0), dropTri=(eb?d.edgeBeamShape:d.etShape)==="tri";
+  const base=!d.suspended?N_(d.baseThickness,0):0, vb=!d.suspended&&d.vapourMembrane!==false;
+  /* plan (left) */
+  const px=22, py=40, s=DG.fit(L,W,124,92);
+  let outline="";
+  const pts=d.outlineOn&&Array.isArray(d.outlinePts)&&d.outlinePts.length>=3?d.outlinePts:null;
+  let w=L*s, h=W*s;
+  if(pts){
+    const xs=pts.map(p=>num(p.x)), ys=pts.map(p=>num(p.y)); const minX=Math.min(...xs), minY=Math.min(...ys), maxX=Math.max(...xs), maxY=Math.max(...ys);
+    const os=DG.fit((maxX-minX)*1000||1,(maxY-minY)*1000||1,124,92); w=(maxX-minX)*1000*os; h=(maxY-minY)*1000*os;
+    outline=`<polygon points="${pts.map(p=>`${px+(num(p.x)-minX)*1000*os},${py+(num(p.y)-minY)*1000*os}`).join(' ')}" fill="rgba(232,163,61,0.10)" stroke="${DWG.ink}" stroke-width="1.6"/>`;
+  } else outline=DG.rect(px,py,w,h);
+  const meshSp=d.meshOn?200:N_(d.botXSpacing,200);
+  const opens=(Array.isArray(d.openings)?d.openings:[]).filter(o=>N_(o.w,0)>0&&N_(o.h,0)>0).slice(0,4);
+  let plan=`${DG.title(px,py-16,"PLAN")}
+   ${outline}
+   ${!pts?DG.ticksH(px+3,px+w-3,py+3,py+h-3,Math.max(150,meshSp*Math.max(1,L/6000)),s,30):''}
+   ${!pts?DG.ticksV(py+3,py+h-3,px+3,px+w-3,Math.max(150,meshSp*Math.max(1,W/6000)),s,20):''}
+   ${dropW>0&&!pts?`<rect x="${px+dropW*s}" y="${py+dropW*s}" width="${Math.max(0,w-2*dropW*s)}" height="${Math.max(0,h-2*dropW*s)}" fill="none" stroke="${DWG.ink}" stroke-width="0.9" stroke-dasharray="3 2"/>`:''}
+   ${d.beamStrips&&!pts?[0.33,0.66].map(p=>`<line x1="${px+w*p}" y1="${py+2}" x2="${px+w*p}" y2="${py+h-2}" stroke="${DWG.ink}" stroke-width="1" stroke-dasharray="4 2"/>`).join(''):''}
+   ${opens.map((o,i)=>{const ow=Math.min(w*0.3,N_(o.w,600)*s), oh=Math.min(h*0.3,N_(o.h,600)*s); const ox=px+w*(0.2+0.6*(i/Math.max(1,opens.length)))-ow/2, oy=py+h*0.5-oh/2; return `<rect x="${ox}" y="${oy}" width="${ow}" height="${oh}" fill="#faf5e9" stroke="${DWG.muted}" stroke-width="0.9"/><line x1="${ox}" y1="${oy}" x2="${ox+ow}" y2="${oy+oh}" stroke="${DWG.muted}" stroke-width="0.6"/><line x1="${ox+ow}" y1="${oy}" x2="${ox}" y2="${oy+oh}" stroke="${DWG.muted}" stroke-width="0.6"/>`;}).join('')}
+   ${d.stepdown?`<line x1="${px+w*0.7}" y1="${py}" x2="${px+w*0.7}" y2="${py+h}" stroke="${DWG.gl}" stroke-width="1" stroke-dasharray="2 2"/>`:''}
+   ${dimH(px,px+w,py-6,manual?`${fmt(N_(d.areaOverride),1)} m² (manual)`:(pts?`${fmt(Math.max(...pts.map(p=>num(p.x)))-Math.min(...pts.map(p=>num(p.x))),2)} m`:`${fmt(Lm,2)} m`))}
+   ${!manual?dimV(py,py+h,px+w+12,pts?`${fmt(Math.max(...pts.map(p=>num(p.y)))-Math.min(...pts.map(p=>num(p.y))),2)} m`:`${fmt(Wm,2)} m`):''}
+   ${specLine(px,py+h+14,`${d.meshOn?`MESH ${d.meshType||'SL82'}${N_(d.meshLayers,1)>1?' ×'+d.meshLayers:''}`:`${d.botXDia||'N12'}@${N_(d.botXSpacing,200)} EW`}${opens.length?` · ${opens.length} OPENING${opens.length>1?'S':''}`:''}`)}`;
+  /* section at the edge (right) */
+  const sx=178, sy=60, secW=110, s2=DG.fit(Math.max(1200,dropW*3+600), T+dropD+base+40, secW, 80);
+  const t=T*s2, dd=dropD*s2, dw=dropW*s2, bs=base*s2, cv2=Math.max(1.2,cov*s2);
+  const topY=sy+16, slabBot=topY+t, edgeX=sx;
+  let secPath = dropW>0
+    ? (dropTri?`M${edgeX} ${topY} H${edgeX+secW} V${slabBot} H${edgeX+dw*1.6} L${edgeX} ${slabBot+dd} Z`:`M${edgeX} ${topY} H${edgeX+secW} V${slabBot} H${edgeX+dw} V${slabBot+dd} H${edgeX} Z`)
+    : `M${edgeX} ${topY} H${edgeX+secW} V${slabBot} H${edgeX} Z`;
+  let section=`${DG.title(sx,sy-22+16,"EDGE SECTION")}
+   ${!d.suspended?groundLine(sx-8,sx+secW+30,topY):''}
+   <path d="${secPath}" fill="rgba(232,163,61,0.10)" stroke="${DWG.ink}" stroke-width="1.6"/>
+   ${base>0?`<rect x="${edgeX+(dropW>0?dw:0)}" y="${slabBot+dd}" width="${secW-(dropW>0?dw:0)}" height="${bs}" fill="rgba(85,116,95,0.18)" stroke="${DWG.dim}" stroke-width="0.6"/>`:''}
+   ${vb?`<line x1="${edgeX}" y1="${slabBot+dd+0.8}" x2="${edgeX+secW}" y2="${slabBot+0.8}" stroke="${DWG.gl}" stroke-width="1.2" stroke-dasharray="3 2"/>`:''}
+   ${d.meshOn||d.topX?`<line x1="${edgeX+cv2}" y1="${topY+cv2+1}" x2="${edgeX+secW-2}" y2="${topY+cv2+1}" stroke="${DWG.bar}" stroke-width="1.2"/>`:''}
+   ${(d.botX!==false&&!d.meshOn)||d.suspended?`<line x1="${edgeX+cv2}" y1="${slabBot-cv2}" x2="${edgeX+secW-2}" y2="${slabBot-cv2}" stroke="${DWG.bar}" stroke-width="1.2"/>`:''}
+   ${dropW>0&&(eb?d.edgeBeamReo:true)?DG.bars(edgeX+cv2,edgeX+Math.max(cv2+2,dw-cv2),slabBot+dd-cv2,eb?N_(d.edgeBeamBars,4):2):''}
+   ${dropW>0&&eb&&d.edgeBeamLigs?DG.lig(edgeX+cv2,topY+cv2,Math.max(2,dw-2*cv2),t+dd-2*cv2):''}
+   ${d.suspended?`<line x1="${edgeX-6}" y1="${slabBot+3}" x2="${edgeX+secW}" y2="${slabBot+3}" stroke="${DWG.muted}" stroke-width="1.6"/>`:''}
+   ${dimV(topY,slabBot,edgeX+secW+12,`T ${T}`)}
+   ${dropW>0?dimV(slabBot,slabBot+dd,edgeX-12,`+${dropD}`):''}
+   ${dropW>0?dimH(edgeX,edgeX+dw,slabBot+dd+12+bs,`${dropW}`):''}
+   ${base>0?dimV(slabBot+dd,slabBot+dd+bs,edgeX+secW+30,`BASE ${base}`):''}
+   ${DG.cov(edgeX+secW-14,topY+cv2+8,cov)}
+   ${specLine(sx,slabBot+dd+bs+28,`${(d.category||'SLAB').toUpperCase()}${d.suspended?' · SUSPENDED':''}${dropW>0?(eb?' · EDGE BEAM':' · EDGE THICKENING'):''}${vb?' · VAPOUR BARRIER':''}`)}`;
+  return sheetFrame(inst, d.category||"Slab", [316,206], plan+section);
+}
+
+function diagColumn(inst){ let d=inst.data;
+  const circ=d.shape==="circular", Wm=Math.max(150,circ?N_(d.dia,450):N_(d.width,400)), Dm=Math.max(150,circ?N_(d.dia,450):N_(d.depth,400)), H=Math.max(500,N_(d.height,3200)), cov=coverOf(d);
+  const nV=Math.max(4,Math.min(16,N_(d.vBars,8)));
+  /* elevation */
+  const ex=70, ey=26, s=DG.fit(Wm, H, 60, 140), w=Wm*s, h=H*s, cv=Math.max(1.5,cov*s);
+  const tz=Math.min(h*0.35,N_(d.topZone,600)*s), bz=Math.min(h*0.35,N_(d.botZone,600)*s);
+  const proj=Math.min(24,Math.max(6,N_(d.connProj,900)*s));
+  let elev=`${DG.title(ex-40,ey-8,"ELEVATION")}
+   ${groundLine(ex-30,ex+w+40,ey+h)}
+   ${DG.rect(ex,ey,w,h)}
+   ${[ex+cv,ex+w-cv].map(xx=>`<line x1="${xx}" y1="${ey+cv}" x2="${xx}" y2="${ey+h-cv}" stroke="${DWG.bar}" stroke-width="1.2"/>`).join('')}
+   ${DG.ticksV(ey+cv,ey+tz,ex+cv,ex+w-cv,N_(d.topSpacing,100),s,30)}
+   ${DG.ticksV(ey+tz,ey+h-bz,ex+cv,ex+w-cv,N_(d.ligSpacing,200),s,30)}
+   ${DG.ticksV(ey+h-bz,ey+h-cv,ex+cv,ex+w-cv,N_(d.botSpacing,100),s,30)}
+   ${d.dowelsOut?DG.starters([ex+cv,ex+w-cv],ey-proj,ey+Math.min(h*0.3,N_(d.connEmbed,600)*s)):''}
+   ${d.startersIn?DG.starters([ex+cv,ex+w-cv],ey+h-Math.min(h*0.3,N_(d.connProj,900)*s),ey+h+8):''}
+   ${dimV(ey,ey+h,ex+w+14,`H ${H}`)}
+   ${dimV(ey,ey+tz,ex-12,`${N_(d.topZone,600)}@${N_(d.topSpacing,100)}`)}
+   ${dimV(ey+h-bz,ey+h,ex-12,`${N_(d.botZone,600)}@${N_(d.botSpacing,100)}`)}
+   ${dimV(ey+tz,ey+h-bz,ex+w+32,`@${N_(d.ligSpacing,200)}`)}
+   ${d.dowelsOut?dimV(ey-proj,ey,ex+w+14,`PROJ ${N_(d.connProj,900)}`):''}`;
+  /* section */
+  const px=236, py=90, ps=DG.fit(Wm,Dm,68,68), pw=Wm*ps, ph=Dm*ps, pcv=Math.max(2,cov*ps), sx0=px-pw/2, sy0=py-ph/2;
+  let bars="";
+  if(circ){ const r=pw/2-pcv; bars=Array.from({length:nV}).map((_,i)=>{const a=i/nV*2*Math.PI; return `<circle cx="${px+r*Math.cos(a)}" cy="${py+r*Math.sin(a)}" r="1.7" fill="${DWG.bar}"/>`;}).join('')+`<circle cx="${px}" cy="${py}" r="${r}" fill="none" stroke="${DWG.bar}" stroke-width="0.9"/>`; }
+  else { const per=nV, side=Math.max(2,Math.ceil(per/4)+1); bars=DG.bars(sx0+pcv,sx0+pw-pcv,sy0+pcv,side)+DG.bars(sx0+pcv,sx0+pw-pcv,sy0+ph-pcv,side)+DG.barsV(sx0+pcv,sy0+pcv,sy0+ph-pcv,side)+DG.barsV(sx0+pw-pcv,sy0+pcv,sy0+ph-pcv,side)+DG.lig(sx0+pcv,sy0+pcv,pw-2*pcv,ph-2*pcv)+(d.crossTies?`<line x1="${sx0+pcv}" y1="${py}" x2="${sx0+pw-pcv}" y2="${py}" stroke="${DWG.bar}" stroke-width="0.8" stroke-dasharray="2 1.5"/>`:''); }
+  let section=`${DG.title(px-34,sy0-14,"SECTION")}
+   ${circ?`<circle cx="${px}" cy="${py}" r="${pw/2}" fill="rgba(232,163,61,0.10)" stroke="${DWG.ink}" stroke-width="1.6"/>`:DG.rect(sx0,sy0,pw,ph)}
+   ${bars}
+   ${dimH(sx0,sx0+pw,sy0+ph+12,circ?`⌀${Wm}`:`${Wm}`)}
+   ${!circ?dimV(sy0,sy0+ph,sx0+pw+12,`${Dm}`):''}
+   ${DG.cov(sx0+pw+2,sy0+pcv+6,cov)}
+   ${specLine(px,sy0+ph+28,`${nV}${d.vDia||'N24'}`,'middle')}
+   ${specLine(px,sy0+ph+38,`${d.ligDia||'N10'} LIGS${d.crossTies?` + ${N_(d.ctQty,2)} X-TIES`:''}`,'middle')}
+   ${N_(d.qty,1)>1?specLine(px,sy0+ph+48,`× ${N_(d.qty,1)}`,'middle'):''}`;
+  return sheetFrame(inst, `${N_(d.qty,1)}× Column`, [300,206], elev+section);
+}
+
+function diagWall(inst){ let d=inst.data;
+  const L=Math.max(500,N_(d.length,8000)), H=Math.max(300,N_(d.height,3000)), T=Math.max(60,N_(d.thickness,200)), cov=coverOf(d);
+  /* elevation */
+  const ex=24, ey=34, s=DG.fit(L,H,190,96), w=L*s, h=H*s;
+  const opens=(Array.isArray(d.openings)?d.openings:[]).filter(o=>N_(o.w,0)>0&&N_(o.h,0)>0).slice(0,4);
+  const proj=Math.min(22,Math.max(5,N_(d.connProj,600)*s));
+  let elev=`${DG.title(ex,ey-16,"ELEVATION")}
+   ${DG.rect(ex,ey,w,h)}
+   ${DG.ticksH(ex+2,ex+w-2,ey+2,ey+h-2,Math.max(N_(d.vertASpacing,200),L/40),s,40)}
+   ${DG.ticksV(ey+2,ey+h-2,ex+2,ex+w-2,Math.max(N_(d.horASpacing,200),H/14),s,14)}
+   ${opens.map((o,i)=>{const ow=Math.min(w*0.3,N_(o.w,900)*s), oh=Math.min(h*0.8,N_(o.h,2100)*s); const ox=ex+w*(0.15+0.7*(i/Math.max(1,opens.length)))-ow/2+ (opens.length===1?w*0.35-ow/2+ow/2:0), oy=ey+h-oh-Math.min(h*0.15,4); return `<rect x="${ox}" y="${oy}" width="${ow}" height="${oh}" fill="#faf5e9" stroke="${DWG.muted}" stroke-width="1"/>${DG.mono(ox+ow/2,oy+oh/2+2,`${N_(o.w,900)}×${N_(o.h,2100)}${N_(o.qty,1)>1?' ×'+N_(o.qty,1):''}`,5,DWG.muted,'middle')}`;}).join('')}
+   ${d.starters&&N_(d.connQty,0)>0?DG.ticksH(ex+4,ex+w-4,ey+h-Math.min(h*0.25,N_(d.connEmbed,500)*s),ey+h+proj,Math.max(N_(d.connSpacing,200),L/30),s,30):''}
+   ${d.stepdown?`<path d="M${ex+w-40} ${ey+h} l0 6 l40 0" fill="none" stroke="${DWG.ink}" stroke-width="1" stroke-dasharray="2 2"/>`:''}
+   ${dimH(ex,ex+w,ey-6,`L ${L}${N_(d.qty,1)>1?` × ${N_(d.qty,1)}`:''}`)}
+   ${dimV(ey,ey+h,ex+w+12,`H ${H}`)}
+   ${specLine(ex,ey+h+(d.starters?proj:0)+14,`FACE A ${d.vertADia||'N12'}@${N_(d.vertASpacing,200)} V / ${d.horADia||'N12'}@${N_(d.horASpacing,200)} H${d.vertB?` · FACE B ${d.vertBDia||'N12'}@${N_(d.vertBSpacing,200)}`:' · 1 FACE'}`)}
+   ${d.starters&&N_(d.connQty,0)>0?specLine(ex,ey+h+proj+24,`${d.connDia||'N16'} STARTERS @${N_(d.connSpacing,200)} · EMB ${N_(d.connEmbed,500)} / PROJ ${N_(d.connProj,600)}`):''}`;
+  /* section */
+  const sx=262, sy=34, s2=DG.fit(T*2.2,H,30,96), tw=T*s2, th=H*s2, cv2=Math.max(1.2,cov*s2), sx0=sx-tw/2;
+  let section=`${DG.title(sx-18,sy-16,"SECTION")}
+   ${DG.rect(sx0,sy,tw,th)}
+   <line x1="${sx0+cv2}" y1="${sy+cv2}" x2="${sx0+cv2}" y2="${sy+th-cv2}" stroke="${DWG.bar}" stroke-width="1.2"/>
+   ${d.vertB?`<line x1="${sx0+tw-cv2}" y1="${sy+cv2}" x2="${sx0+tw-cv2}" y2="${sy+th-cv2}" stroke="${DWG.bar}" stroke-width="1.2"/>`:''}
+   ${DG.barsV(sx0+cv2,sy+cv2+2,sy+th-cv2-2,Math.min(8,Math.max(2,Math.round(H/N_(d.horASpacing,200)))),1.1)}
+   ${d.vertB?DG.barsV(sx0+tw-cv2,sy+cv2+2,sy+th-cv2-2,Math.min(8,Math.max(2,Math.round(H/N_(d.horBSpacing,200)))),1.1):''}
+   ${d.dowelsOut&&N_(d.outQty,0)>0?DG.starters([sx],sy-Math.min(20,N_(d.outProj,600)*s2),sy+Math.min(th*0.3,N_(d.outEmbed,500)*s2)):''}
+   ${d.waterstop?`<circle cx="${sx}" cy="${sy+th-3}" r="2" fill="${DWG.gl}"/>`:''}
+   ${dimH(sx0,sx0+tw,sy+th+12,`T ${T}`)}
+   ${DG.cov(sx0+tw+2,sy+cv2+8,cov)}`;
+  return sheetFrame(inst, "Concrete Wall", [316,200], elev+section);
+}
+
+function diagRetWall(inst){ let d=inst.data;
+  const FL=Math.max(300,N_(d.footL,1800)), FD=Math.max(100,N_(d.footD,500)), TOE=N_(d.toe,300), HEEL=N_(d.heel,900), ST=Math.max(100,N_(d.stemT,250)), SH=Math.max(300,N_(d.stemH,2400)), cov=coverOf(d);
+  const KEY=d.key?N_(d.keyD,200):0, KW=d.key?N_(d.keyW,200):0, BF=Math.min(SH,N_(d.backfillDepth,2000)), L=N_(d.length,10000);
+  const sx=44, sy=40, s=DG.fit(FL, SH+FD+KEY, 150, 140), fw=FL*s, fd=FD*s, st=ST*s, sh=SH*s, toe=TOE*s, key=KEY*s, kw=KW*s, cv=Math.max(1.5,cov*s);
+  const fy=sy+sh, stemX=sx+toe, bf=BF*s;
+  const stemFace=stemX+st;  // soil side = heel side
+  let section=`${DG.title(sx,sy-26,"SECTION")}
+   <rect x="${stemFace}" y="${fy-bf}" width="${sx+fw-stemFace+10}" height="${bf}" fill="rgba(124,74,90,0.06)" stroke="none"/>
+   ${DG.soil(stemFace,fy-bf,sx+fw-stemFace+10,bf)}
+   ${groundLine(stemFace,sx+fw+30,fy-bf)}
+   ${groundLine(sx-20,stemX,fy)}
+   ${DG.rect(sx,fy,fw,fd)}
+   ${DG.rect(stemX,sy,st,sh+1)}
+   ${KEY>0?DG.rect(stemX+st/2-kw/2,fy+fd,kw,key):''}
+   <line x1="${stemFace-cv}" y1="${sy+cv}" x2="${stemFace-cv}" y2="${fy+fd-cv}" stroke="${DWG.bar}" stroke-width="1.3"/>
+   <line x1="${stemX+cv}" y1="${sy+cv}" x2="${stemX+cv}" y2="${fy+fd-cv}" stroke="${DWG.bar}" stroke-width="0.9" opacity="0.8"/>
+   ${DG.barsV(stemFace-cv,sy+cv+2,fy-2,Math.min(10,Math.max(2,Math.round(SH/N_(d.stemHorSp,250)))),1.1)}
+   ${DG.bars(sx+cv,sx+fw-cv,fy+fd-cv,Math.min(12,Math.max(2,Math.round(FL/N_(d.footBotXSp,200))+1)))}
+   ${d.footTop?DG.bars(sx+cv,sx+fw-cv,fy+cv,Math.min(12,Math.max(2,Math.round(FL/N_(d.footTopXSp,200))+1))):''}
+   ${d.waterstop?`<circle cx="${stemX+st/2}" cy="${fy}" r="2" fill="${DWG.gl}"/>`:''}
+   ${d.dowelsOut&&N_(d.outQty,0)>0?DG.starters([stemX+st/2],sy-Math.min(20,N_(d.outProj,600)*s),sy+Math.min(sh*0.3,N_(d.outEmbed,500)*s)):''}
+   ${dimV(sy,fy,stemX-12-toe,`STEM H ${SH}`)}
+   ${dimH(stemX,stemFace,sy-8,`T ${ST}`)}
+   ${dimH(sx,stemX,fy+fd+key+12,`TOE ${TOE}`)}
+   ${dimH(stemFace,sx+fw,fy+fd+key+12,`HEEL ${HEEL}`)}
+   ${dimH(sx,sx+fw,fy+fd+key+28,`FTG L ${FL}`)}
+   ${dimV(fy,fy+fd,sx+fw+14,`D ${FD}`)}
+   ${KEY>0?dimV(fy+fd,fy+fd+key,sx+fw+14,`KEY ${KEY}`):''}
+   ${dimV(fy-bf,fy,sx+fw+32,`BACKFILL ${BF}`)}
+   ${DG.cov(stemFace+2,sy+cv+8,cov)}`;
+  /* elevation strip */
+  const ex=214, ey=40, ew=88, eh=14;
+  let elev=`${DG.title(ex,ey-12,"ELEVATION")}
+   ${DG.rect(ex,ey,ew,eh)}
+   ${DG.ticksH(ex+2,ex+ew-2,ey+2,ey+eh-2,N_(d.stemVertSp,200)*Math.max(1,L/8000),ew/L,30)}
+   ${dimH(ex,ex+ew,ey+eh+12,`L ${L}`)}
+   ${specLine(ex,ey+eh+28,`STEM ${d.stemVertDia||'N16'}@${N_(d.stemVertSp,200)} V`)}
+   ${specLine(ex,ey+eh+38,`     ${d.stemHorDia||'N12'}@${N_(d.stemHorSp,250)} H`)}
+   ${specLine(ex,ey+eh+48,`FTG ${d.footBotX||'N16'}@${N_(d.footBotXSp,200)} EW`)}
+   ${d.footTop?specLine(ex,ey+eh+58,`TOP ${d.footTopX||'N16'}@${N_(d.footTopXSp,200)}`):''}
+   ${d.waterstop?specLine(ex,ey+eh+68,`WATERSTOP AT KICKER`):''}`;
+  return sheetFrame(inst, "Retaining Wall", [316,232], section+elev);
+}
+
+function diagShotWall(inst){ let d=inst.data;
+  const L=Math.max(500,N_(d.length,10000)), H=Math.max(300,N_(d.height,3000)), T=Math.max(40,N_(d.thickness,120)), cov=coverOf(d);
+  const ex=24, ey=34, s=DG.fit(L,H,196,96), w=L*s, h=H*s;
+  let elev=`${DG.title(ex,ey-16,"ELEVATION")}
+   ${DG.rect(ex,ey,w,h)}
+   ${DG.ticksH(ex+2,ex+w-2,ey+2,ey+h-2,Math.max(200,L/40),s,40)}
+   ${DG.ticksV(ey+2,ey+h-2,ex+2,ex+w-2,Math.max(200,H/14),s,14)}
+   ${d.stripDrain?[0.25,0.5,0.75].map(p=>`<line x1="${ex+w*p}" y1="${ey+2}" x2="${ex+w*p}" y2="${ey+h-2}" stroke="${DWG.gl}" stroke-width="2" opacity="0.6"/>`).join(''):''}
+   ${dimH(ex,ex+w,ey-6,`L ${L}`)}
+   ${dimV(ey,ey+h,ex+w+12,`H ${H}`)}
+   ${specLine(ex,ey+h+14,`${d.meshType||'SL82'}${N_(d.meshLayers,1)>1?' ×'+d.meshLayers:''} CENTRAL${d.xypex?' · XYPEX ADMIX':''}${d.stripDrain?' · STRIP DRAINS':''}`)}`;
+  const sx=268, s2=DG.fit(T*3,H,26,96), tw=T*s2, th=H*s2, sx0=sx-tw/2, cv2=Math.max(1,cov*s2);
+  let section=`${DG.title(sx-18,ey-16,"SECTION")}
+   ${DG.soil(sx0-14,ey,14,th)}
+   ${DG.rect(sx0,ey,tw,th)}
+   <line x1="${sx}" y1="${ey+cv2}" x2="${sx}" y2="${ey+th-cv2}" stroke="${DWG.bar}" stroke-width="1.2"/>
+   ${DG.barsV(sx,ey+cv2+2,ey+th-cv2-2,Math.min(8,Math.max(2,Math.round(H/400))),1)}
+   ${d.starters&&N_(d.connQty,0)>0?DG.starters([sx],ey+th-Math.min(th*0.3,N_(d.connProj,400)*s2),ey+th+8):''}
+   ${d.dowelsOut&&N_(d.outQty,0)>0?DG.starters([sx],ey-Math.min(16,N_(d.outProj,600)*s2),ey+Math.min(th*0.3,N_(d.outEmbed,500)*s2)):''}
+   ${dimH(sx0,sx0+tw,ey+th+12,`T ${T}`)}
+   ${DG.cov(sx0+tw+2,ey+cv2+8,cov)}
+   ${DG.mono(sx0-14,ey+th+24,'SOIL',5.5,DWG.muted)}`;
+  return sheetFrame(inst, "Shotcrete Wall", [316,190], elev+section);
+}
+
+function diagStairs(inst){ let d=inst.data;
+  const R=Math.max(1,Math.min(24,Math.round(N_(d.risers,14)))), RH=Math.max(100,N_(d.riserH,175)), TD=Math.max(150,N_(d.treadD,280)), WT=Math.max(80,N_(d.waistT,180)), WID=Math.max(300,N_(d.width,1200)), cov=coverOf(d);
+  const land=!!d.landing, LL=land?N_(d.landL,1200):0, LD=land?Math.max(80,N_(d.landD,180)):0;
+  const going=(R-1)*TD, rise=R*RH;
+  const sx=30, sy=28, s=DG.fit(going+LL+TD, rise+WT+LD, 200, 150), tr=TD*s, rh=RH*s, wt=WT*s, ll=LL*s, ld=LD*s;
+  const baseY=sy+rise*s+wt, x0=sx;
+  let steps=`M${x0} ${baseY}`;
+  for(let i=0;i<R;i++){ const x=x0+i*tr, yTop=baseY-(i+1)*rh; steps+=` L${x} ${yTop} L${x+tr} ${yTop}`; }
+  const topX=x0+R*tr, topY=baseY-R*rh;
+  steps+=land?` L${topX+ll} ${topY} L${topX+ll} ${topY+ld} L${topX} ${topY+ld}`:` L${topX} ${topY+wt}`;
+  // sloped soffit back down to the base
+  const angle=Math.atan2(rh,tr), off=wt/Math.cos(angle);
+  steps+=` L${topX} ${topY+off} L${x0} ${baseY+off-rh}`;
+  steps+=` L${x0} ${baseY} Z`;
+  const midX=x0+going*s/2, midYTop=baseY-(going*s/2)*Math.tan(angle)-rh/2;
+  const barOff=(off-Math.max(1.5,cov*s));
+  let section=`${DG.title(sx,sy-12,"SECTION")}
+   <path d="${steps}" fill="rgba(232,163,61,0.10)" stroke="${DWG.ink}" stroke-width="1.6"/>
+   <line x1="${x0+2}" y1="${baseY+barOff-rh}" x2="${topX-2}" y2="${topY+barOff}" stroke="${DWG.bar}" stroke-width="1.3"/>
+   ${d.topMatOn?`<line x1="${x0+tr}" y1="${baseY-rh-Math.max(1.5,cov*s)}" x2="${topX}" y2="${topY-Math.max(1.5,cov*s)+rh}" stroke="${DWG.bar}" stroke-width="1" stroke-dasharray="3 2"/>`:''}
+   ${Array.from({length:Math.min(12,Math.max(2,Math.round(going/N_(d.distSpacing,250))))}).map((_,i,a)=>{const t=(i+0.5)/a.length; return `<circle cx="${x0+2+(topX-x0-4)*t}" cy="${baseY+barOff-rh+(topY+barOff-(baseY+barOff-rh))*t}" r="1.4" fill="${DWG.bar}"/>`;}).join('')}
+   ${d.starters&&N_(d.connQty,0)>0?DG.starters([x0+tr*0.5],baseY-rh-12,baseY+off-rh-2):''}
+   ${dimH(x0,x0+tr,baseY-rh+14,`G ${TD}`)}
+   ${dimV(baseY-rh,baseY,x0-12,`R ${RH}`)}
+   ${dimH(x0,topX,baseY+off+8,`GOING ${going}`)}
+   ${dimV(topY,baseY,land?topX+ll+14:topX+14,`RISE ${rise}`)}
+   ${land?dimH(topX,topX+ll,topY-8,`LANDING ${LL}`):''}
+   ${land?dimV(topY,topY+ld,topX+ll+14+ (0),`${LD}`):''}
+   ${DG.mono(midX-10,midYTop+off+12,`WAIST ${WT}`,6,DWG.dim)}
+   ${specLine(sx,baseY+off+24,`${R} RISERS · ${d.mainDia||'N12'}@${N_(d.mainSpacing,150)} MAIN · ${d.distReoType==='mesh'?(d.distMeshType||'SL62'):`${d.distDia||'N10'}@${N_(d.distSpacing,250)}`} DIST${d.topMatOn?' · TOP MAT':''}`)}`;
+  /* plan strip: width */
+  const px=250, py=40, pw=44, ph=Math.min(110,R*6);
+  let plan=`${DG.title(px-6,py-12,"PLAN")}
+   ${DG.rect(px,py,pw,ph)}
+   ${Array.from({length:Math.min(R,18)}).map((_,i)=>`<line x1="${px}" y1="${py+ph*(i+1)/Math.min(R,18)}" x2="${px+pw}" y2="${py+ph*(i+1)/Math.min(R,18)}" stroke="${DWG.ink}" stroke-width="0.6"/>`).join('')}
+   ${dimH(px,px+pw,py-4,`W ${WID}`)}`;
+  return sheetFrame(inst, "Concrete Stair", [316,Math.max(200,Math.round(sy+rise*s+wt+off+40))], section+plan);
+}
+
+function diagKerb(inst){ let d=inst.data;
+  const L=Math.max(500,N_(d.length,40000)), prof=String(d.profile||"150x300 kerb"), cov=coverOf(d);
+  let m=prof.match(/(\d+)\s*[x×]\s*(\d+)/); let KW=m?N_(m[1],150):150, KH=m?N_(m[2],300):300;
+  const kind=/channel/i.test(prof)?"channel":/mountable/i.test(prof)?"mountable":/spoon/i.test(prof)?"spoon":/custom/i.test(prof)?"custom":"kerb";
+  if(kind==="custom"){ const A=N_(d.crossSectionArea,0.045)*1e6; KW=Math.round(Math.sqrt(A/2)); KH=Math.round(A/Math.max(1,KW)); }
+  const CH=kind==="channel"?450:0;
+  const sx=40, sy=46, s=DG.fit(KW+CH+100, KH+60, 120, 84), kw=KW*s, kh=KH*s, ch=CH*s, gy=sy+kh;
+  let shape;
+  if(kind==="channel") shape=`M${sx} ${sy} H${sx+kw} V${gy-kh*0.35} L${sx+kw+ch} ${gy-kh*0.3} V${gy} H${sx} Z`;
+  else if(kind==="mountable") shape=`M${sx} ${sy} L${sx+kw} ${gy-kh*0.15} L${sx+kw} ${gy} H${sx} Z`;
+  else if(kind==="spoon") shape=`M${sx} ${sy+kh*0.4} Q${sx+kw/2} ${gy+kh*0.4} ${sx+kw} ${sy+kh*0.4} V${gy} H${sx} Z`;
+  else shape=`M${sx} ${sy} H${sx+kw} V${gy} H${sx} Z`;
+  const cv=Math.max(1.2,cov*s), nR=d.reoOn?Math.max(1,Math.min(4,N_(d.reoQty,2))):0;
+  let section=`${DG.title(sx,sy-24,"SECTION")}
+   ${groundLine(sx-24,sx+kw+ch+40,gy)}
+   <path d="${shape}" fill="rgba(232,163,61,0.10)" stroke="${DWG.ink}" stroke-width="1.6"/>
+   ${nR?DG.bars(sx+cv+1,sx+kw-cv-1,gy-cv-2,nR):''}
+   ${d.dowels?`<line x1="${sx-16}" y1="${gy-kh*0.5}" x2="${sx+kw*0.7}" y2="${gy-kh*0.5}" stroke="${DWG.bar}" stroke-width="1.4"/>`:''}
+   ${dimH(sx,sx+kw,sy-6,`${KW}`)}
+   ${dimV(sy,gy,sx+kw+ch+14,`${KH}`)}
+   ${CH>0?dimH(sx+kw,sx+kw+ch,gy+12,`CHANNEL ${CH}`):''}
+   ${specLine(sx,gy+26,`${prof.toUpperCase()}${nR?` · ${nR}${d.reoDia||'N12'} LONG`:''}`)}
+   ${d.dowels?specLine(sx,gy+36,`${N_(d.dowelsPerJoint,2)}×${d.dowelDia||'N12'} DOWELS ${N_(d.dowelLength,800)} LG PER JOINT`):''}`;
+  /* elevation with joints */
+  const ex=190, ey=60, ew=110, eh=16, JS=Math.max(0.5,N_(d.jointSpacing,12))*1000, nJ=Math.max(0,Math.min(40,Math.floor(L/JS)));
+  let elev=`${DG.title(ex,ey-26,"ELEVATION")}
+   ${DG.rect(ex,ey,ew,eh)}
+   ${Array.from({length:nJ}).map((_,i)=>{const x=ex+ew*((i+1)*JS/L); return x<ex+ew?`<line x1="${x}" y1="${ey}" x2="${x}" y2="${ey+eh}" stroke="${DWG.gl}" stroke-width="1"/>`:'';}).join('')}
+   ${d.dowels?Array.from({length:Math.min(nJ,40)}).map((_,i)=>{const x=ex+ew*((i+1)*JS/L); return x<ex+ew?`<line x1="${x-4}" y1="${ey+eh/2}" x2="${x+4}" y2="${ey+eh/2}" stroke="${DWG.bar}" stroke-width="1.2"/>`:'';}).join(''):''}
+   ${dimH(ex,ex+ew,ey+eh+12,`L ${L}`)}
+   ${nJ>0?dimH(ex,ex+ew*(JS/L),ey-4,`JT @${N_(d.jointSpacing,12)}m`):''}
+   ${specLine(ex,ey+eh+26,`${nJ} JOINT${nJ===1?'':'S'}`)}`;
+  return sheetFrame(inst, prof, [316,178], section+elev);
+}
+
+function diagTankbox(inst){ let d=inst.data;
+  const circ=d.shape==="circular", L=Math.max(300,circ?N_(d.dia,3000):N_(d.L,2400)), W=Math.max(300,circ?N_(d.dia,3000):N_(d.W,600)), DEP=Math.max(200,N_(d.depth,900)), WT=Math.max(50,N_(d.wallThickness,150)), BT=Math.max(50,N_(d.baseThickness,150)), cov=coverOf(d);
+  const COP=d.coping?N_(d.copingWidth,300):0;
+  /* section */
+  const sx=30, sy=48, s=DG.fit(L+2*WT+2*COP, DEP+BT, 150, 104), ow=(L+2*WT)*s, oh=(DEP+BT)*s, wt=WT*s, bt=BT*s, cop=COP*s, cv=Math.max(1.2,cov*s);
+  const x0=sx+cop, gy=sy;
+  let section=`${DG.title(sx,sy-34,"SECTION")}
+   ${groundLine(sx-16,sx+ow+2*cop+30,gy)}
+   ${DG.exc(x0-1,gy,ow+2,oh)}
+   <path d="M${x0} ${gy} V${gy+oh} H${x0+ow} V${gy} H${x0+ow-wt} V${gy+oh-bt} H${x0+wt} V${gy} Z" fill="rgba(232,163,61,0.10)" stroke="${DWG.ink}" stroke-width="1.6"/>
+   ${COP>0?`<rect x="${x0-cop}" y="${gy-4}" width="${ow+2*cop}" height="4" fill="rgba(232,163,61,0.16)" stroke="${DWG.ink}" stroke-width="1"/>`:''}
+   <line x1="${x0+cv}" y1="${gy+cv}" x2="${x0+cv}" y2="${gy+oh-cv}" stroke="${DWG.bar}" stroke-width="1.2"/>
+   <line x1="${x0+ow-cv}" y1="${gy+cv}" x2="${x0+ow-cv}" y2="${gy+oh-cv}" stroke="${DWG.bar}" stroke-width="1.2"/>
+   ${DG.barsV(x0+cv,gy+cv+3,gy+oh-bt-2,Math.min(8,Math.max(2,Math.round(DEP/N_(d.wallHorSpacing,200)))),1)}
+   ${DG.barsV(x0+ow-cv,gy+cv+3,gy+oh-bt-2,Math.min(8,Math.max(2,Math.round(DEP/N_(d.wallHorSpacing,200)))),1)}
+   ${DG.bars(x0+cv,x0+ow-cv,gy+oh-cv,Math.min(12,Math.max(2,Math.round(L/N_(d.baseXSpacing,200))+1)))}
+   ${d.baseTop?DG.bars(x0+wt+cv,x0+ow-wt-cv,gy+oh-bt+cv,Math.min(10,Math.max(2,Math.round(L/N_(d.baseTopXSpacing,200))))):''}
+   ${d.waterstop?`<circle cx="${x0+wt/2}" cy="${gy+oh-bt}" r="2" fill="${DWG.gl}"/><circle cx="${x0+ow-wt/2}" cy="${gy+oh-bt}" r="2" fill="${DWG.gl}"/>`:''}
+   ${d.membrane?`<path d="M${x0-2} ${gy+2} V${gy+oh+2} H${x0+ow+2} V${gy+2}" fill="none" stroke="${DWG.gl}" stroke-width="1" stroke-dasharray="3 2"/>`:''}
+   ${d.lid?`<rect x="${x0}" y="${gy-6}" width="${ow}" height="5" fill="rgba(138,154,143,0.3)" stroke="${DWG.ink}" stroke-width="0.8"/>`:''}
+   ${d.grate?`<line x1="${x0+wt}" y1="${gy-2}" x2="${x0+ow-wt}" y2="${gy-2}" stroke="${DWG.ink}" stroke-width="1.5" stroke-dasharray="2 2"/>`:''}
+   ${d.starters&&N_(d.connQty,0)>0?DG.starters([x0+wt/2,x0+ow-wt/2],gy-Math.min(14,N_(d.connProj,400)*s),gy+Math.min(oh*0.3,N_(d.connEmbed,400)*s)):''}
+   ${dimH(x0+wt,x0+ow-wt,gy+oh+12,circ?`⌀${L} INT`:`${L} INT`)}
+   ${dimV(gy,gy+oh-bt,x0+ow+14,`DEPTH ${DEP}`)}
+   ${dimV(gy+oh-bt,gy+oh,x0+ow+14,`BASE ${BT}`)}
+   ${dimH(x0,x0+wt,gy-10,`T ${WT}`)}
+   ${COP>0?dimH(x0-cop,x0+wt,gy-22,`COPING ${COP}`):''}
+   ${DG.cov(x0+ow-cv-12,gy+cv+8,cov)}
+   ${specLine(sx,gy+oh+26,`WALL ${d.wallVertDia||'N12'}@${N_(d.wallVertSpacing,200)} V / ${d.wallHorDia||'N12'}@${N_(d.wallHorSpacing,200)} H`)}
+   ${specLine(sx,gy+oh+36,`BASE ${d.baseXDia||'N12'}@${N_(d.baseXSpacing,200)} EW${d.baseTop?' + TOP MAT':''}${d.waterstop?' · WATERSTOP':''}${d.membrane?' · MEMBRANE':''}`)}`;
+  /* plan */
+  const px=248, py=90, ps=DG.fit(L+2*WT,W+2*WT,90,90), pw=(L+2*WT)*ps, ph=(W+2*WT)*ps, pwt=WT*ps, px0=px-pw/2, py0=py-ph/2;
+  let plan=`${DG.title(px0,py0-14,"PLAN")}
+   ${circ?`<circle cx="${px}" cy="${py}" r="${pw/2}" fill="rgba(232,163,61,0.10)" stroke="${DWG.ink}" stroke-width="1.6"/><circle cx="${px}" cy="${py}" r="${pw/2-pwt}" fill="#faf5e9" stroke="${DWG.ink}" stroke-width="1"/>`:`${DG.rect(px0,py0,pw,ph)}<rect x="${px0+pwt}" y="${py0+pwt}" width="${pw-2*pwt}" height="${ph-2*pwt}" fill="#faf5e9" stroke="${DWG.ink}" stroke-width="1"/>`}
+   ${!circ?dimV(py0+pwt,py0+ph-pwt,px0+pw+12,`${W} INT`):''}
+   ${dimH(px0,px0+pw,py0+ph+12,circ?`⌀${L+2*WT} O/A`:`${L+2*WT} O/A`)}
+   ${N_(d.pipePenetrations,0)>0?specLine(px,py0+ph+26,`${N_(d.pipePenetrations,0)} PIPE PEN.`,'middle'):''}
+   ${N_(d.qty,1)>1?specLine(px,py0+ph+36,`× ${N_(d.qty,1)}`,'middle'):''}`;
+  return sheetFrame(inst, d.kind||"Tank/Box", [316,Math.max(190,Math.round(sy+oh+50))], section+plan);
+}
+
+function diagGeneric(inst){ let d=inst.data;
+  const L=Math.max(100,N_(d.length,10000)), W=Math.max(100,N_(d.width,1000)), D=Math.max(50,N_(d.depth,300));
+  const px=24, py=40, s=DG.fit(L,W,150,90), w=L*s, h=W*s;
+  let plan=`${DG.title(px,py-16,"PLAN")}
+   ${DG.rect(px,py,w,h,d.manualVolume?'rgba(232,163,61,0.04)':undefined,1.4,d.manualVolume?'6 3':undefined)}
+   ${d.reoOn&&N_(d.reoQty,0)>0?DG.ticksV(py+3,py+h-3,px+3,px+w-3,Math.max(W/Math.max(1,N_(d.reoQty,2)),50),s,12):''}
+   ${dimH(px,px+w,py-6,`L ${L}`)}
+   ${dimV(py,py+h,px+w+12,`W ${W}`)}
+   ${specLine(px,py+h+14,d.manualVolume?`MANUAL VOLUME ${fmt(N_(d.volumeOverride),2)} m³`:`× ${N_(d.qty,1)}`)}
+   ${d.formworkOn?specLine(px,py+h+24,`FORMWORK ${fmt(N_(d.formworkArea),1)} m²`):''}
+   ${d.reoOn?specLine(px,py+h+34,`${N_(d.reoQty,0)}${d.reoDia||'N12'} × ${N_(d.reoLength,0)}mm`):''}`;
+  const sx=222, sy=60, s2=DG.fit(W*1.5,D,70,60), sw=W*s2, sd=D*s2;
+  let section=`${DG.title(sx,sy-16,"SECTION")}
+   ${groundLine(sx-10,sx+sw+30,sy)}
+   ${DG.rect(sx,sy,sw,sd)}
+   ${d.reoOn&&N_(d.reoQty,0)>0?DG.bars(sx+3,sx+sw-3,sy+sd-4,Math.min(6,N_(d.reoQty,2))):''}
+   ${dimV(sy,sy+sd,sx+sw+12,`D ${D}`)}
+   ${dimH(sx,sx+sw,sy+sd+12,`W ${W}`)}`;
+  return sheetFrame(inst, inst.label||"Element", [316,170], plan+section);
+}
+
 const CALC = {
   pier:{defaults:pierDefaults, render:renderPier, compute:computePier, diagram:diagPier},
   pilecap:{defaults:pileCapDefaults, render:renderPileCap, compute:computePileCap, diagram:diagPileCap},
@@ -5334,32 +5826,6 @@ const CALC = {
 };
 
 /* ---- diagrams ---- */
-function diagPier(inst){ let d=inst.data;
-  let w=clampN(d.dia,300,900,450)/12, x=150-w/2, top=34, bot=132;
-  let spiral=[]; for(let i=0;i<=16;i++){ let yy=top+8+((bot-top-16)*i)/16; let xx=i%2===0? x+w*0.18 : x+w*0.82; spiral.push(`${i===0?'M':'L'}${xx} ${yy}`); }
-  let content=`${groundLine(40,236,top+12)}
-   <rect x="${x}" y="${top}" width="${w}" height="${bot-top}" fill="rgba(232,163,61,0.06)" stroke="${DWG.ink}" stroke-width="1.6"/>
-   ${[0.22,0.5,0.78].map(p=>`<line x1="${x+w*p}" y1="${top+3}" x2="${x+w*p}" y2="${bot-3}" stroke="${DWG.bar}" stroke-width="1.2"/>`).join('')}
-   <path d="${spiral.join(' ')}" fill="none" stroke="${DWG.bar}" stroke-width="0.9" opacity="0.8"/>
-   ${d.underream?`<polygon points="${x-16},${bot} ${x+w+16},${bot} ${x+w+6},${bot+16} ${x-6},${bot+16}" fill="rgba(232,163,61,0.06)" stroke="${DWG.ink}" stroke-width="1.4"/>`:""}
-   ${dimH(x,x+w,22,`⌀${d.dia||450}`)}
-   ${dimV(top,bot,252,`L${d.depth||4100}`)}
-   <text x="${x+w+8}" y="${bot-6}" font-size="6.5" font-family="ui-monospace,Menlo,Consolas,monospace" fill="${DWG.bar}" transform="rotate(-90 ${x+w+8} ${bot-6})">CAGE ${d.vBars||8}${d.vDia||'N20'}${d.underream?' · UNDERREAM':''}</text>`;
-  return sheetFrame(inst, "Bored Pier", [300,176], content);
-}
-function diagPileCap(inst){ let d=inst.data;
-  let L=clampN(d.L,800,4000,2000), W=clampN(d.W,800,4000,2000);
-  let w=(L/4000)*150+60, h=(W/4000)*80+34, x=150-w/2, y=90-h/2;
-  let content=`<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="rgba(232,163,61,0.06)" stroke="${DWG.ink}" stroke-width="1.6"/>
-   ${Array.from({length:5}).map((_,i)=>`<line x1="${x+(w*(i+1))/6}" y1="${y+3}" x2="${x+(w*(i+1))/6}" y2="${y+h-3}" stroke="${DWG.bar}" stroke-width="0.8" opacity="0.75"/>`).join('')}
-   ${Array.from({length:3}).map((_,i)=>`<line x1="${x+3}" y1="${y+(h*(i+1))/4}" x2="${x+w-3}" y2="${y+(h*(i+1))/4}" stroke="${DWG.bar}" stroke-width="0.8" opacity="0.75"/>`).join('')}
-   <line x1="${x+w*0.25}" y1="${y+h}" x2="${x+w*0.25}" y2="${y+h+22}" stroke="${DWG.muted}" stroke-width="10" opacity="0.5"/>
-   <line x1="${x+w*0.75}" y1="${y+h}" x2="${x+w*0.75}" y2="${y+h+22}" stroke="${DWG.muted}" stroke-width="10" opacity="0.5"/>
-   ${dimH(x,x+w,y-10,`${d.L||2000}`)}
-   ${dimV(y,y+h,x-14,`${d.W||2000}`)}
-   <text x="${x+w-4}" y="${y+h+30}" text-anchor="end" font-size="6.5" font-family="ui-monospace,Menlo,Consolas,monospace" fill="${DWG.txt}">BOT MAT ${d.botXDia||'N20'}@${d.botXSpacing||150} · D${d.D||800}mm${d.linkTarget?' → '+targetLabelOf(d.linkTarget):''}</text>`;
-  return sheetFrame(inst, "Pile Cap", [300,196], content);
-}
 /** Strip footing: a dimensioned SECTION (trench, footing on its blinding,
  * cover, bars, ligatures, starters) beside a dimensioned ELEVATION along the
  * run with the starters set out at their spacing — every measurement the
@@ -5408,112 +5874,6 @@ function diagStripFooting(inst){ let d=inst.data;
    ${specLine(ex,ey+eh+26,spec)}
    ${starters?starterRunSpecLines(d,L/1000,ex,ey+eh+37,11):''}`;
   return sheetFrame(inst, "Strip Footing", [300,246+(starters&&runsAll.length>1?Math.min(3,runsAll.length-1)*11:0)], section+elevation);
-}
-function diagPadFooting(inst){ let d=inst.data;
-  let x=60,y=60,w=140,h=110;
-  let content=`${groundLine(x-24,x+w+24,y-18)}
-   <rect x="${x}" y="${y}" width="${w}" height="${h}" fill="rgba(232,163,61,0.06)" stroke="${DWG.ink}" stroke-width="1.6"/>
-   ${Array.from({length:5}).map((_,i)=>`<line x1="${x+(w*(i+1))/6}" y1="${y+3}" x2="${x+(w*(i+1))/6}" y2="${y+h-3}" stroke="${DWG.bar}" stroke-width="0.8" opacity="0.75"/>`).join('')}
-   ${Array.from({length:3}).map((_,i)=>`<line x1="${x+3}" y1="${y+(h*(i+1))/4}" x2="${x+w-3}" y2="${y+(h*(i+1))/4}" stroke="${DWG.bar}" stroke-width="0.8" opacity="0.75"/>`).join('')}
-   ${d.pedestal?`<rect x="${x+w/2-25}" y="${y-40}" width="50" height="40" fill="rgba(232,163,61,0.06)" stroke="${DWG.ink}" stroke-width="1.4"/>`:""}
-   ${dimH(x,x+w,y-8,`${d.length||1500}`)}
-   ${dimV(y,y+h,x+w+16,`${d.width||1500}`)}
-   ${specLine(x,y+h+16,`${d.qty||4}× D${d.depth||500}mm${d.pedestal?' · PEDESTAL':''}`)}`;
-  return sheetFrame(inst, "Pad Footing", [260,196], content);
-}
-function diagBeam(inst){ let d=inst.data;
-  let x=20,y=60,w=280,h=clampN(d.depth,300,1200,600)/12+22;
-  let nSt=9;
-  let rows=d.reoRows||[];
-  let topRow=rows.find(r=>/top/i.test(r.position||""))||rows[0]||{};
-  let botRow=rows.find(r=>/bot/i.test(r.position||""))||rows[1]||{};
-  let content=`<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="rgba(232,163,61,0.06)" stroke="${DWG.ink}" stroke-width="1.6"/>
-   <line x1="${x+4}" y1="${y+6}" x2="${x+w-4}" y2="${y+6}" stroke="${DWG.bar}" stroke-width="1.2"/>
-   <line x1="${x+4}" y1="${y+10}" x2="${x+w-4}" y2="${y+10}" stroke="${DWG.bar}" stroke-width="1" opacity="0.8"/>
-   <line x1="${x+4}" y1="${y+h-6}" x2="${x+w-4}" y2="${y+h-6}" stroke="${DWG.bar}" stroke-width="1.4"/>
-   <line x1="${x+4}" y1="${y+h-10}" x2="${x+w-4}" y2="${y+h-10}" stroke="${DWG.bar}" stroke-width="1.1" opacity="0.85"/>
-   ${Array.from({length:nSt}).map((_,i)=>`<line x1="${x+(w*(i+0.5))/nSt}" y1="${y+3}" x2="${x+(w*(i+0.5))/nSt}" y2="${y+h-3}" stroke="${DWG.bar}" stroke-width="0.8" opacity="0.7"/>`).join('')}
-   ${dimH(x,x+w,y+h+16,`SPAN ${d.length||6000}`)}
-   ${dimV(y,y+h,x-14,`${d.depth||600}`)}
-   ${specLine(x,y-26,`${d.width||300}W · TOP ${topRow.qty||2}${topRow.dia||'N16'} / BOT ${botRow.qty||3}${botRow.dia||'N20'} · ${(d.beamType||'independent').toUpperCase()}`)}
-   ${starterRunTicks(d,num(d.length,6000)/1000,x,w,y-16,y+2)}
-   ${starterRunSpecLines(d,num(d.length,6000)/1000,x,y+h+30,11)}`;
-  let nRuns=starterRunsOf(d).filter(r=>starterRunCount(r,num(d.length,6000)/1000)>0).length;
-  return sheetFrame(inst, (d.beamType||"Beam")+" beam", [320,176+(nRuns?Math.min(4,nRuns)*11+4:0)], content);
-}
-function diagSlab(inst){ let d=inst.data;
-  // length/width are stored in METRES for slabs (large plan dims — see slabDefaults), everything else here is mm
-  let L=d.manualArea? Math.sqrt(num(d.areaOverride)||1)*1000 : num(d.length,25)*1000;
-  let W=d.manualArea? Math.sqrt(num(d.areaOverride)||1)*1000 : num(d.width,12)*1000;
-  let ar=L/W; let w=Math.min(220,150*ar), h=w/ar; h=Math.max(46,Math.min(96,h));
-  let x=150-w/2, y=88-h/2;
-  let content=`<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="rgba(232,163,61,0.06)" stroke="${DWG.ink}" stroke-width="1.6"/>
-   ${Array.from({length:11}).map((_,i)=>`<line x1="${x+(w*(i+1))/12}" y1="${y+2}" x2="${x+(w*(i+1))/12}" y2="${y+h-2}" stroke="${DWG.bar}" stroke-width="0.7" opacity="0.6"/>`).join('')}
-   ${Array.from({length:5}).map((_,i)=>`<line x1="${x+2}" y1="${y+(h*(i+1))/6}" x2="${x+w-2}" y2="${y+(h*(i+1))/6}" stroke="${DWG.bar}" stroke-width="0.7" opacity="0.6"/>`).join('')}
-   ${d.edgeForms?`<rect x="${x+4}" y="${y+4}" width="${w-8}" height="${h-8}" fill="none" stroke="${DWG.bar}" stroke-width="1" stroke-dasharray="4 3"/>`:""}
-   ${dimH(x,x+w,y-10,d.manualArea? fmt(num(d.areaOverride),0)+' m² (manual)' : `${fmt(L,0)}`)}
-   ${!d.manualArea?dimV(y,y+h,x-14,`${fmt(W,0)}`):''}
-   ${specLine(x,y+h+16,`${d.category||'Slab'} T${d.thickness||150}${d.meshOn?` · MESH ${d.meshType||'SL82'}`:''}${d.suspended?' · SUSPENDED':''}`)}`;
-  return sheetFrame(inst, d.category||"Slab", [300,176], content);
-}
-function diagColumn(inst){ let d=inst.data;
-  let w=clampN(d.shape=='circular'?d.dia:d.width,200,900,300)/9, h=clampN(d.height,1800,6000,3000)/38;
-  let x=90-w/2, y=100-h/2, nTies=6;
-  let content=`${groundLine(30,150,y+h+4)}
-   <rect x="${x}" y="${y}" width="${w}" height="${h}" fill="rgba(232,163,61,0.06)" stroke="${DWG.ink}" stroke-width="1.6"/>
-   ${[0.18,0.82].map(p=>`<line x1="${x+w*p}" y1="${y+3}" x2="${x+w*p}" y2="${y+h-3}" stroke="${DWG.bar}" stroke-width="1.2"/>`).join('')}
-   ${Array.from({length:nTies}).map((_,i)=>`<line x1="${x+2.5}" y1="${y+(h*(i+0.5))/nTies}" x2="${x+w-2.5}" y2="${y+(h*(i+0.5))/nTies}" stroke="${DWG.bar}" stroke-width="0.9" opacity="0.85"/>`).join('')}
-   ${dimV(y,y+h,x+w+16,`${d.height||3000}`)}
-   ${dimH(x,x+w,y+h+16,d.shape=='circular'?`⌀${d.dia||450}`:`${d.width||300}×${d.depth||300}`)}
-   <text x="${x+w+26}" y="${y+8}" font-size="6.5" font-family="ui-monospace,Menlo,Consolas,monospace" fill="${DWG.bar}">${d.vBars||4}${d.vDia||'N16'}</text>
-   <text x="${x+w+26}" y="${y+18}" font-size="6.5" font-family="ui-monospace,Menlo,Consolas,monospace" fill="${DWG.bar}">${d.ligDia||'N10'} TIES@${d.ligSpacing||200}</text>`;
-  return sheetFrame(inst, `${d.qty||1}× Column`, [230,220], content);
-}
-function diagWall(inst){ let d=inst.data;
-  let x=20,y=30,w=260,h=90;
-  let content=`<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="rgba(232,163,61,0.06)" stroke="${DWG.ink}" stroke-width="1.6"/>
-   ${Array.from({length:12}).map((_,i)=>`<line x1="${x+(w*(i+1))/13}" y1="${y+2}" x2="${x+(w*(i+1))/13}" y2="${y+h-2}" stroke="${DWG.bar}" stroke-width="0.8" opacity="0.7"/>`).join('')}
-   ${Array.from({length:5}).map((_,i)=>`<line x1="${x+2}" y1="${y+(h*(i+1))/6}" x2="${x+w-2}" y2="${y+(h*(i+1))/6}" stroke="${DWG.bar}" stroke-width="0.8" opacity="0.6"/>`).join('')}
-   ${(d.openings||[]).slice(0,3).map((o,i)=>`<rect x="${x+30+i*70}" y="${y+22}" width="34" height="${h-44}" fill="#ede1c9" stroke="${DWG.muted}"/>`).join('')}
-   ${dimH(x,x+w,y-10,`${d.length||8000}`)}
-   ${dimV(y,y+h,x+w+14,`${d.height||3000}`)}
-   ${specLine(x,y+h+16,`T${d.thickness||200} · ${d.vertADia||'N12'}@${d.vertASpacing||200} EW${d.vertB?' · 2 FACES':' · 1 FACE'}`)}`;
-  return sheetFrame(inst, "Concrete Wall", [300,160], content);
-}
-function diagRetWall(inst){ let d=inst.data;
-  let fx=20,fw=180,fy=142,fh=26, sx=90,sw=30,sy=42,sh=100;
-  let content=`${groundLine(0,220,fy-2)}
-   <rect x="${fx}" y="${fy}" width="${fw}" height="${fh}" fill="rgba(232,163,61,0.06)" stroke="${DWG.ink}" stroke-width="1.6"/>
-   <rect x="${sx}" y="${sy}" width="${sw}" height="${sh}" fill="rgba(232,163,61,0.06)" stroke="${DWG.ink}" stroke-width="1.6"/>
-   <line x1="${sx+5}" y1="${sy+4}" x2="${sx+5}" y2="${sy+sh-4}" stroke="${DWG.bar}" stroke-width="1"/>
-   <line x1="${sx+sw-5}" y1="${sy+4}" x2="${sx+sw-5}" y2="${sy+sh-4}" stroke="${DWG.bar}" stroke-width="1"/>
-   ${Array.from({length:6}).map((_,i)=>`<line x1="${sx+3}" y1="${sy+4+(sh-8)*i/5}" x2="${sx+sw-3}" y2="${sy+4+(sh-8)*i/5}" stroke="${DWG.bar}" stroke-width="0.7" opacity="0.7"/>`).join('')}
-   ${dimV(sy,sy+sh,sx+sw+16,`${d.stemH||2400}`)}
-   ${dimH(fx,fx+fw,fy+fh+16,`TOE${d.toe||300}+HEEL${d.heel||900}`)}
-   ${specLine(fx,fy-6,`STEM T${d.stemT||250} · FTG D${d.footD||500}`)}`;
-  return sheetFrame(inst, "Retaining Wall", [220,196], content);
-}
-function diagStairs(inst){ let d=inst.data;
-  let steps=Math.min(10,num(d.risers,10));
-  let pts=""; for(let i=0;i<steps;i++){ let x=30+i*22, y=140-i*11; pts+=`<rect x="${x}" y="${y}" width="22" height="11" fill="rgba(232,163,61,0.06)" stroke="${DWG.ink}" stroke-width="1.2"/>`; }
-  let content=`${pts}
-   <line x1="30" y1="150" x2="${30+steps*22}" y2="${150-steps*11}" stroke="${DWG.bar}" stroke-width="1" stroke-dasharray="3 2" opacity="0.7"/>
-   ${specLine(30,172,`${d.risers||10} risers × R${d.riserH||175} · G${d.treadD||280}`)}`;
-  return sheetFrame(inst, "Concrete Stair", [300,196], content);
-}
-function diagKerb(inst){ let d=inst.data;
-  let x=30,y=60,w=200,h=20;
-  let content=`${groundLine(x-10,x+w+10,y-6)}
-   <rect x="${x}" y="${y}" width="${w}" height="${h}" fill="rgba(232,163,61,0.06)" stroke="${DWG.ink}" stroke-width="1.6"/>
-   <rect x="${x}" y="${y-20}" width="30" height="40" fill="rgba(232,163,61,0.06)" stroke="${DWG.ink}" stroke-width="1.4"/>
-   ${dimH(x,x+w,y+h+16,`L ${d.length||40000}`)}
-   ${specLine(x,y-24,`${d.profile||'Kerb'}${d.dowels?` · DOWELS ${d.dowelDia||'N12'}`:''}`)}`;
-  return sheetFrame(inst, d.profile||"Kerb/Channel", [260,120], content);
-}
-function diagGeneric(inst){ let d=inst.data;
-  let content=`<rect x="30" y="30" width="200" height="60" fill="rgba(232,163,61,0.04)" stroke="${DWG.ink}" stroke-width="1.4" stroke-dasharray="7 4"/>
-   ${specLine(130,66,d.manualVolume? `MANUAL VOLUME ${fmt(num(d.volumeOverride),1)} m³` : `${d.length||10000}×${d.width||1000}×${d.depth||300}`,'middle')}`;
-  return sheetFrame(inst, inst.label||"Element", [260,110], content);
 }
 function clampN(v,lo,hi,fb){ v=num(v); return (v>0)? Math.min(hi,Math.max(lo,v)) : fb; }
 
