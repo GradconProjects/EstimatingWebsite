@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { uid, getGstRate } from "../lib/costing.js";
-import { GRADCON_LOGO_DATA_URI } from "../lib/logo.js";
+import { GRADCON_LOGO_FULL_DATA_URI } from "../lib/logo.js";
 import { newTenderQuote, seedTenderItems, computeTenderProjectSum } from "../lib/tenderQuoteDefaults.js";
 
 const fmtMoney = (n) => `$${(n || 0).toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -309,7 +309,7 @@ function ReportContent({ quote, tq }) {
         <div className="flex-1 text-center pt-2">
           <span className="text-2xl font-bold underline underline-offset-4">QUOTATION{tq.rev ? ` (${tq.rev})` : ""}</span>
         </div>
-        <img src={GRADCON_LOGO_DATA_URI} alt="Gradcon Concrete Constructions" className="h-12 flex-none" />
+        <img src={GRADCON_LOGO_FULL_DATA_URI} alt="Gradcon Concrete Constructions" className="h-44 flex-none" />
       </div>
 
       <table className="mb-3">

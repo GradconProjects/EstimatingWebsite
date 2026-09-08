@@ -1,6 +1,6 @@
 import { useRef } from "react";
 import { computeExternalScopeLines, money2, getDefaultMargin } from "../lib/costing.js";
-import { GRADCON_LOGO_DATA_URI } from "../lib/logo.js";
+import { GRADCON_LOGO_FULL_DATA_URI } from "../lib/logo.js";
 import { newExternalQuote } from "../lib/externalQuoteDefaults.js";
 
 /**
@@ -172,7 +172,7 @@ function ReportContent({ quote, items, rates, eq }) {
     <>
       <div className="flex items-start justify-between border-b-2 border-black pb-2 mb-3">
         <div className="text-2xl font-bold tracking-wide">QUOTATION</div>
-        <img src={GRADCON_LOGO_DATA_URI} alt="Gradcon Concrete Constructions" className="h-10" />
+        <img src={GRADCON_LOGO_FULL_DATA_URI} alt="Gradcon Concrete Constructions" className="h-44" />
       </div>
 
       <div className="space-y-1 mb-3">

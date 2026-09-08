@@ -264,7 +264,7 @@ table.margin col.g0 { width: 90px; } table.margin col.g1 { width: 110px; } table
 </style>
 </head>
 <body>
-<table><colgroup><col style="width:1px"></colgroup><tr><td style="border:none;padding:4px 8px;"><img src="${GRADCON_LOGO_DATA_URI}" height="34" alt="Gradcon Concrete Constructions"></td></tr></table>
+<table><colgroup><col style="width:1px"></colgroup><tr><td style="border:none;padding:4px 8px;"><img src="${GRADCON_LOGO_DATA_URI}" height="60" alt="Gradcon Concrete Constructions"></td></tr></table>
 ${buildMetaTable(quote)}
 ${itemTableHtml}
 ${summaryTableHtml}
