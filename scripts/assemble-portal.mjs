@@ -138,6 +138,19 @@ if (!quotesHtml.includes(`<style>${css.slice(0, 40)}`)) {
 
 // --- Estimates and Cost Planner are already self-contained, embed verbatim ---
 let estimatesHtml = fs.readFileSync(estimatesPath, "utf8");
+// The Estimates app keeps its pure, Node-testable modules in sibling files
+// (estimates-schema.js: schema version, migration, raw backup). They are
+// inlined here so the app stays ONE self-contained document that runs from
+// a blob: URL. Asserted: a missing inline would ship an app that throws on
+// its first function call.
+{
+  const inlineTag = /<script src="estimates-schema\.js"><\/script>/;
+  if (!inlineTag.test(estimatesHtml)) throw new Error("estimates-app.html no longer loads estimates-schema.js — inline step out of date");
+  const schemaSrc = fs.readFileSync(path.join(root, "portal", "estimates-schema.js"), "utf8").replace(/<\/script/gi, "<\\/script");
+  estimatesHtml = estimatesHtml.replace(inlineTag, () => `<script>${schemaSrc}</script>`);
+  estimatesHtml = estimatesHtml.replaceAll("__BUILD_STAMP__", buildStamp() + (process.env.PORTAL_STAMP_SUFFIX || ""));
+  console.log(`Inlined portal/estimates-schema.js (${(schemaSrc.length / 1024).toFixed(0)} KB) into the Estimates app`);
+}
 let costPlannerHtml = fs.readFileSync(costPlannerPath, "utf8");
 let ratesLibraryHtml = fs.readFileSync(ratesLibraryPath, "utf8");
 if (OFFLINE) {

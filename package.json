@@ -8,8 +8,9 @@
     "build": "vite build",
     "build:portal": "vite build && node scripts/assemble-portal.mjs",
     "preview": "vite preview",
-    "verify": "node scripts/verify.mjs",
-    "build:download": "node scripts/build-download.mjs"
+    "verify": "node scripts/verify.mjs && node scripts/verify-estimates.mjs",
+    "build:download": "node scripts/build-download.mjs",
+    "verify:estimates": "node scripts/verify-estimates.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",

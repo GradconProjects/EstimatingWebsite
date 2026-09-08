@@ -201,6 +201,7 @@ footer.note{color:var(--muted);font-size:11px;text-align:center;padding:20px;}
 <main>
 
 <section id="page-setup" class="page active">
+  <div id="recoveryBanner" class="panel" style="display:none;border:2px solid #b91c1c;"></div>
   <div class="panel" id="takeoffsBar"></div>
   <!-- Project file save/load lives HERE with the saved sessions — not buried
        on the Export page — so opening or backing up a project is part of
@@ -214,6 +215,12 @@ footer.note{color:var(--muted);font-size:11px;text-align:center;padding:20px;}
       </label>
     </div>
     <p class="small" style="margin:0;">The .json file is a complete portable copy of one takeoff — every element and value. Loading one never overwrites anything: it always comes in as its own new saved project.</p>
+    <div class="sechead" style="margin-top:12px;">Backup &amp; recovery</div>
+    <div class="toolbar" style="margin-bottom:6px;">
+      <button class="btn" type="button" onclick="downloadAllDataBackup()" title="Every Gradcon value stored in this browser — takeoffs, quotes, rates, preferences — as one raw file">⬇ Download full backup (all Gradcon data)</button>
+      <button class="btn" type="button" onclick="downloadPreMigrationCopy()" title="The untouched copy taken automatically before the current build first ran in this browser">⬇ Download pre-migration copy</button>
+    </div>
+    <p class="small" id="backupStatus" style="margin:0;"></p>
   </div>
   <div class="teach">
     <div class="roleband"><span>👷 Estimator</span><span>🏗️ Structural Engineer</span><span>💻 Software Logic</span><span>🎓 Teacher</span></div>
@@ -362,7 +369,9 @@ footer.note{color:var(--muted);font-size:11px;text-align:center;padding:20px;}
 </main>
 <footer class="note">Gradcon Element Takeoff Engine — Australian D500N reinforcement approximation kg/m ≈ d²/162. Verify all quantities before commercial submission.</footer>
 
+<script src="estimates-schema.js"></script>
 <script>
+const ESTIMATES_BUILD = "__BUILD_STAMP__"; // replaced by scripts/assemble-portal.mjs
 /* ============================= STATE ============================= */
 // estimateSessionId identifies THIS Estimates project across repeated publishes —
 // generated once per session (or per Load/New) and reused on every subsequent
@@ -500,6 +509,7 @@ function newTakeoff(){
   // with empty Untitled entries.
   if(registerDraftIfNeeded() || INSTANCES.length>0 || (PROJECT.name||"").trim()) saveEstimateState();
   startUnregisteredDraft();
+  leaveRecovery();   // only AFTER the key has moved on: the unreadable row stays untouched under its own key
   freshProjectState();
   rerenderAllPages();
 }
@@ -752,7 +762,54 @@ function showSaveStatus(kind){
   }
 }
 function estimateStateSnapshot(){
-  return { project: PROJECT, selectedTypes: SELECTED_TYPES, instances: INSTANCES, idCounter: ID_COUNTER };
+  return { schemaVersion: ESTIMATE_SCHEMA_VERSION, project: PROJECT, selectedTypes: SELECTED_TYPES, instances: INSTANCES, idCounter: ID_COUNTER };
+}
+/* ---- Recovery mode -----------------------------------------------------
+ * A stored takeoff this build cannot read (unparseable, or written by a newer
+ * schema) is NEVER overwritten: the app opens it read-only with the raw text
+ * downloadable, and every save path below refuses while it is the open key.
+ * Before this, an unreadable row silently became a fresh empty takeoff which
+ * the next autosave then wrote over the top of the original. */
+let RECOVERY_MODE = null; // { key, raw, error }
+function inRecovery(key){ return !!(RECOVERY_MODE && RECOVERY_MODE.key === (key||CURRENT_PROJECT_KEY)); }
+function enterRecovery(key, raw, err){
+  RECOVERY_MODE = { key, raw: String(raw==null?"":raw), error: (err && err.message) || String(err) };
+  try{ console.error("Estimates: opening", key, "read-only —", RECOVERY_MODE.error); }catch(e){}
+  renderRecoveryBanner();
+}
+function leaveRecovery(){ RECOVERY_MODE = null; renderRecoveryBanner(); }
+function renderRecoveryBanner(){
+  let el = document.getElementById("recoveryBanner"); if(!el) return;
+  if(!RECOVERY_MODE){ el.style.display="none"; el.innerHTML=""; return; }
+  el.style.display="";
+  el.innerHTML = `<div class="sechead" style="color:#b91c1c;">This takeoff is open READ-ONLY</div>
+   <p class="small" style="margin:0 0 8px;">The saved copy under <code>${RECOVERY_MODE.key}</code> could not be read by this build (${RECOVERY_MODE.error}). Nothing will be saved over it. Download the raw copy and send it on, or start a new takeoff — the original stays exactly as it is.</p>
+   <div class="toolbar"><button class="btn primary" type="button" onclick="downloadRecoveryRaw()">⬇ Download the raw saved copy</button><button class="btn" type="button" onclick="newTakeoff()">Start a new takeoff instead</button></div>`;
+}
+function downloadRecoveryRaw(){
+  if(!RECOVERY_MODE) return;
+  download("RECOVER_"+RECOVERY_MODE.key.replace(/[^A-Za-z0-9_-]+/g,"_")+".json", RECOVERY_MODE.raw, "application/json");
+}
+/* Every raw gradcon-* value in this browser, as one file (brief 4.0.D). */
+function downloadAllDataBackup(){
+  let doc = buildRawBackup(localStorage, { build: ESTIMATES_BUILD, origin: location.origin });
+  let d=new Date(), stamp=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}_${String(d.getHours()).padStart(2,"0")}${String(d.getMinutes()).padStart(2,"0")}`;
+  download("Gradcon_all_data_backup_"+stamp+".json", JSON.stringify(doc), "application/json");
+  let el=document.getElementById("backupStatus"); if(el) el.textContent=`Backup downloaded: ${doc.keyCount} keys, ${(doc.bytes/1024).toFixed(0)} KB, checksum ${doc.checksum}.`;
+}
+function downloadPreMigrationCopy(){
+  let keys = listPreMigrationBackups(localStorage); if(!keys.length){ alert("No pre-migration copy exists in this browser."); return; }
+  let raw = localStorage.getItem(keys[0]);
+  download(keys[0].replace(/[^A-Za-z0-9_-]+/g,"_")+".json", raw, "application/json");
+}
+function renderBackupStatus(){
+  let el=document.getElementById("backupStatus"); if(!el) return;
+  let keys = listPreMigrationBackups(localStorage);
+  if(keys.length){ let doc=null; try{ doc=JSON.parse(localStorage.getItem(keys[0])); }catch(e){}
+    el.textContent = doc ? `A copy of this browser's data as it was before the current build first ran is kept (${doc.keyCount} keys, ${(doc.bytes/1024).toFixed(0)} KB, ${new Date(doc.createdAt).toLocaleString("en-AU")}). It is never overwritten.` : `A pre-migration copy exists (${keys[0]}).`;
+  } else if(PRE_MIGRATION && PRE_MIGRATION.error){
+    el.textContent = `Could not keep a pre-migration copy in this browser (${PRE_MIGRATION.error}) — download the full backup now instead.`;
+  } else el.textContent = "";
 }
 /* ---- Save history: the last 10 deliberate saves of each project, so an
    estimator can step back to an earlier session without losing anything.
@@ -772,7 +829,8 @@ function restoreSaveHistory(i){
   let h=loadSaveHistory(); let entry=h[i]; if(!entry) return;
   // the state being left becomes the NEWEST history entry — nothing is lost
   pushSaveHistory();
-  applyLoadedEstimateState(entry.snapshot,{collapseAll:true});
+  let snap; try{ snap = migrateEstimateSnapshot(entry.snapshot); }catch(err){ alert("That saved version can't be read by this build: "+err.message); return; }
+  applyLoadedEstimateState(snap,{collapseAll:true});
   saveEstimateState(true); // skipHistory: the restore itself isn't a new save-point
   rerenderAllPages();
 }
@@ -784,6 +842,7 @@ function saveEstimateState(skipHistory){
   // empty fresh state could later be saved over the real one. (This was the
   // "my save has no elements" bug.)
   const keyAtSave = CURRENT_PROJECT_KEY;
+  if(inRecovery(keyAtSave)){ showSaveStatus("err"); return; }   // read-only: never write over what we could not read
   const snapshot = estimateStateSnapshot();
   awaitingCloudLoad = false; // an explicit save commits the in-memory state
   registerDraftIfNeeded();   // a draft with content earns its saved-list entry now
@@ -813,6 +872,7 @@ function saveEstimateState(skipHistory){
 // current. Runs on a slow interval, when the tab is hidden (phone/tablet
 // switching apps), and on unload.
 function autosaveLocal(){
+  if(inRecovery()) return;   // read-only takeoff: autosave must not write the placeholder state over it
   // Never autosave while a just-opened takeoff is still waiting on its cloud
   // copy — the in-memory state is a placeholder, and writing it out would
   // overwrite the real saved elements with an empty workspace.
@@ -867,12 +927,14 @@ function applyLoadedEstimateState(parsed, opts){
 function loadEstimateState(){
   let raw;
   try{ raw = localStorage.getItem(CURRENT_PROJECT_KEY); }catch(err){ return false; }
+  if(RECOVERY_MODE && RECOVERY_MODE.key!==CURRENT_PROJECT_KEY) leaveRecovery();
   if(!raw) return false;
+  let migrated;
   try{
-    let parsed = JSON.parse(raw);
-    applyLoadedEstimateState(parsed,{collapseAll:true});
-    return true;
-  }catch(err){ return false; }
+    migrated = migrateEstimateSnapshot(JSON.parse(raw));   // deep copy; raw is never mutated
+  }catch(err){ enterRecovery(CURRENT_PROJECT_KEY, raw, err); return false; }
+  applyLoadedEstimateState(migrated,{collapseAll:true});
+  return true;
 }
 // Pulls whatever another device last saved, if newer than what this browser has — on
 // load, on regaining focus, and on a slow poll. Never overwrites a local edit that's
@@ -898,7 +960,10 @@ async function syncFromCloud(){
       if(CURRENT_PROJECT_KEY === keyAtStart) awaitingCloudLoad = false;
       return;
     }
-    applyLoadedEstimateState(row.value || {});
+    let migratedRow;
+    try{ migratedRow = migrateEstimateSnapshot(row.value || {}); }
+    catch(err){ try{ console.warn("Estimates: cloud copy of", keyAtStart, "not readable by this build — kept local state:", err.message); }catch(e){} return; }
+    applyLoadedEstimateState(migratedRow);
     if(CURRENT_PROJECT_KEY === keyAtStart) awaitingCloudLoad = false;
     try{
       localStorage.setItem(keyAtStart, JSON.stringify({ ...estimateStateSnapshot(), savedAt: new Date().toISOString() }));
@@ -6067,7 +6132,11 @@ function toCSV(headers,rows){
 // way to actually get the data out regardless of the hosting sandbox.
 function download(filename,content,mime){
   try{
-    let blob=new Blob(["﻿"+content],{type:mime||"text/csv;charset=utf-8;"});
+    // The BOM is for Excel opening a CSV as UTF-8. A JSON file must NOT carry
+    // one: strict parsers (Node, many tools) reject it, and a backup that a
+    // tool cannot read is no backup.
+    let bom = /json/i.test(mime||"") ? "" : "﻿";
+    let blob=new Blob([bom+content],{type:mime||"text/csv;charset=utf-8;"});
     let a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=filename;
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     setTimeout(()=>URL.revokeObjectURL(a.href),2000);
@@ -6218,7 +6287,8 @@ document.getElementById("loadFile").addEventListener("change",e=>{
   let reader=new FileReader();
   reader.onload=()=>{
     try{
-      let data=JSON.parse(reader.result);
+      let data=migrateEstimateSnapshot(JSON.parse(reader.result));   // export shape, live-snapshot shape or a recovery download — all accepted
+      if(!("INSTANCES" in data)) data={PROJECT:data.project,SELECTED_TYPES:data.selectedTypes,INSTANCES:data.instances,ID_COUNTER:data.idCounter,UPLOADED_FILES:data.uploadedFiles||[]};
       // NEVER overwrite the open session: the file opens as its OWN new
       // saved project in the Saved Projects list. newTakeoff() saves the
       // current session first and switches to a fresh one; the loaded data
@@ -6745,8 +6815,13 @@ document.querySelectorAll('.tabs button').forEach(b=>b.addEventListener('click',
 // saveEstimateState's skipHistory parameter (truthy), silently skipping the
 // save-history push on every manual 💾 Save.
 document.getElementById("saveBtn").addEventListener("click", ()=>saveEstimateState());
+// Brief 4.0.B.6: before a single stored value is parsed, migrated or autosaved,
+// copy every raw gradcon-* key to a timestamped pre-migration key (once per
+// browser per schema version). Never overwritten, never deleted by the app.
+const PRE_MIGRATION = ensurePreMigrationBackup(localStorage, { build: ESTIMATES_BUILD, origin: location.origin });
 initTakeoffRegistry();
 let restoredFromSave = loadEstimateState();
+renderRecoveryBanner(); renderBackupStatus();
 // Nothing local for this takeoff yet (fresh browser): hold autosave until the
 // cloud copy has been checked, so a placeholder never overwrites a real save.
 awaitingCloudLoad = !restoredFromSave;

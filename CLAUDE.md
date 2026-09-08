@@ -299,6 +299,26 @@ rewrites each lazily-loaded chunk (today only the PDF renderer) to
 succeeds with a working lazy path. `vite.config.js` turns the preload
 helper off so the import takes the plain form that rewrite targets.
 
+## Estimates data safety (schema, migration, recovery, raw backup)
+
+`portal/estimates-schema.js` is pure and DOM-free: the assembler inlines it
+into `estimates-app.html` (asserted) and `scripts/verify-estimates.mjs`
+runs the same file in Node against real takeoffs in `tests/fixtures/estimates/`.
+Rules: a snapshot without `schemaVersion` is v1; `migrateEstimateSnapshot`
+deep-copies, repairs STRUCTURE only (never a value, a name or a unit — mm
+stay mm, blank stays blank, zero stays zero), is idempotent, keeps unknown
+fields, and THROWS for anything it cannot read. Every load path (boot,
+cloud sync, save-history restore, Load .json) goes through it. A throw on
+the open takeoff puts the app in RECOVERY MODE: read-only banner, raw copy
+downloadable, and `saveEstimateState`/`autosaveLocal` refuse to write that
+key — before this an unreadable row silently became a fresh takeoff that
+the next autosave wrote over the original. On first load of each schema
+version, before anything is parsed, every raw `gradcon-*` key is copied to
+`gradcon-pre-migration-backup::<timestamp>` (never overwritten by the app;
+excluded from later backups); Project Setup offers "Download full backup"
+(all raw keys, with checksum) and the pre-migration copy. JSON downloads
+carry no BOM. `npm run verify` runs both suites.
+
 ## PDF / print export
 
 The "Print / PDF" button in `ProjectEditor` calls `window.print()`; the
