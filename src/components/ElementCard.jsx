@@ -12,17 +12,13 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
   // expanded (it's still collapsible too, just defaults open).
   const [openCats, setOpenCats] = useState({});
   // Everything starts ROLLED UP: the labour matrix and the whole card, same
-  // as every material category. The Settings toggle can restore open-by-
-  // default cards by being explicitly set to false.
+  // as every material category. Unconditionally — this used to honour a
+  // `quotesCardsCollapsed` preference, but that toggle shipped defaulting
+  // to OFF, so anyone who saved Settings back then carried an explicit
+  // `false` forever and every element opened flat on every project no
+  // matter what the default was later changed to. There is no opt-out now.
   const [labourOpen, setLabourOpen] = useState(false);
-  const [cardOpen, setCardOpen] = useState(() => {
-    try {
-      const p = JSON.parse(localStorage.getItem("gradcon-preferences")) || {};
-      return p.quotesCardsCollapsed === false;
-    } catch {
-      return false;
-    }
-  });
+  const [cardOpen, setCardOpen] = useState(false);
 
   const cost = useMemo(() => computeElementCost(item, rates), [item, rates]);
   // Benchmark rates for the panel beside this row — $/lm and $/m² over the

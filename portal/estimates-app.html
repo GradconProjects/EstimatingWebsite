@@ -833,10 +833,11 @@ document.addEventListener("visibilitychange", function(){ if(document.visibility
  * is pages of scrolling before you find the one you want, so the workspace
  * always opens as a list of headings — the same rule new elements have always
  * followed (addInstance), now applied to loaded ones too, which is where
- * saved sessions were coming back expanded. An explicit Settings opt-out
- * (estNewCollapsed === false) still adds and loads them open. */
+ * saved sessions were coming back expanded. Unconditional: this used to
+ * honour an estNewCollapsed preference, but that toggle shipped defaulting
+ * to OFF, so anyone who saved Settings back then carried an explicit false
+ * forever and every element loaded open regardless of the later default. */
 function collapseAllInstances(list){
-  if(portalPref("estNewCollapsed")===false) return list;
   (list||[]).forEach(inst=>{ if(inst) inst._collapsed = true; });
   return list;
 }
@@ -4925,8 +4926,8 @@ function addInstance(typeId){
   let calc=CALC[def.calc];
   let inst={id:uid("EL"), typeKey:typeId, label:def.label+" "+(INSTANCES.filter(i=>i.typeKey===typeId).length+1), data:applyElementPrefs(calc.defaults(def.slabCategory||def.beamCategory||def.kind, def.suspended))};
   if(inst.data.cover!==undefined) inst.data.cover = defaultCoverFor(typeId);
-  // Rolled up by default — only an explicit Settings opt-out (false) adds cards expanded.
-  if(portalPref("estNewCollapsed")!==false) inst._collapsed = true;
+  // Rolled up, always — see collapseAllInstances for why there is no opt-out.
+  inst._collapsed = true;
   INSTANCES.push(inst);
   renderWorkspace();
   computeAllAndRefresh();
