@@ -5,7 +5,7 @@ import { defaultRates, newElementItem, computeGrandTotal, uid, money, rateKey } 
 import { pendingRateUpdates, readLibraryState, readLastSynced, writeLastSynced, RATES_LIBRARY_KEY } from "./lib/ratesLibrarySync.js";
 import { buildQuoteExcelHtml, quoteExcelFilename, buildQuoteCsv } from "./lib/exportQuote.js";
 import { useStoredState } from "./lib/storage.js";
-import { PROJECTS_INDEX_KEY, newProjectEntry, migrateLegacyQuote, deleteQuote, writeQuote, readQuotes, publishQuoteToCostPlanner } from "./lib/projects.js";
+import { PROJECTS_INDEX_KEY, newProjectEntry, migrateLegacyQuote, deleteQuote, writeQuote, readQuotes, publishQuoteToCostPlanner, mirrorQuoteSummary } from "./lib/projects.js";
 import { ESTIMATE_EXPORT_KEY, buildImportFromEstimate } from "./lib/estimateImport.js";
 import { SaveBadge } from "./components/atoms.jsx";
 import AddElementBar from "./components/AddElementBar.jsx";
@@ -346,7 +346,9 @@ export default function App() {
               </button>
               <button
                 onClick={() => setRatesOpen(true)}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-900 hover:bg-blue-800 text-sm font-medium transition-colors"
+                disabled={ratesStatus === "loading"}
+                title={ratesStatus === "loading" ? "Loading the rates…" : undefined}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-900 hover:bg-blue-800 disabled:opacity-50 text-sm font-medium transition-colors"
               >
                 <Settings2 size={16} /> Rates
               </button>
@@ -437,6 +439,17 @@ function ProjectEditor({ project, rates, setRates, ratesStatus, saveProjectsNow,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.id, quote.projectName, quote.gfa, quote.items]);
 
+  // Keeps the dashboard's instant-paint summary of this project current with
+  // every edit (name, client, status, deadline, quantities), so the next visit
+  // never flashes a stale row. Only once the real row has loaded — the blank
+  // placeholder quote held during the load must never be mirrored.
+  useEffect(() => {
+    if (quoteStatus === "loading") return;
+    const t = setTimeout(() => { mirrorQuoteSummary(project.storageKey, quote); }, 600);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project.storageKey, quote, quoteStatus]);
+
   const [ratesOpen, setRatesOpen] = useState(false);
   const [elementTypesOpen, setElementTypesOpen] = useState(false);
   const [printPreviewOpen, setPrintPreviewOpen] = useState(false);
@@ -516,6 +529,17 @@ function ProjectEditor({ project, rates, setRates, ratesStatus, saveProjectsNow,
     : quoteStatus === "loading" || ratesStatus === "loading" || ratesStatus === "syncing" ? "loading"
     : "saved";
 
+  // Nothing editable until this project's own row has arrived. The hook
+  // cannot save an edit made before it has loaded, and the arriving row
+  // then replaces whatever was typed — so for the length of one round trip
+  // a keystroke here was silently lost. Worse for an EXISTING project: the
+  // screen showed a blank quote for that moment, and an edit made against
+  // it would have been saved as the whole quote. A brief blank (same as the
+  // dashboard's own gate) is the only safe state to show.
+  if (quoteStatus === "loading") {
+    return <div className="min-h-screen bg-neutral-100" />;
+  }
+
   return (
     <div className="min-h-screen bg-neutral-100 print:bg-white text-neutral-900 font-sans">
       <div className="print:hidden sticky top-0 z-30 bg-blue-950 text-white shadow-md">
@@ -593,7 +617,9 @@ function ProjectEditor({ project, rates, setRates, ratesStatus, saveProjectsNow,
           </button>
           <button
             onClick={() => setRatesOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-900 hover:bg-blue-800 text-sm font-medium transition-colors flex-none"
+            disabled={ratesStatus === "loading"}
+            title={ratesStatus === "loading" ? "Loading the rates…" : undefined}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-900 hover:bg-blue-800 disabled:opacity-50 text-sm font-medium transition-colors flex-none"
           >
             <Settings2 size={16} /> Rates
           </button>

@@ -33,6 +33,17 @@ export function useStoredState(key, initial, { cacheFirst = false } = {}) {
   const [status, setStatus] = useState("loading");
   const loadedRef = useRef(false);
   const saveTimer = useRef(null);
+  // True from the moment a debounced save's timer fires until its upsert
+  // has settled. Together with saveTimer this is the ONE definition of "a
+  // local edit is in flight": the poll, the realtime push and the cache-
+  // first reconcile all consult it, so none of them can drop a remote value
+  // into state on top of something this browser is in the middle of
+  // writing (which would leave the screen and the database disagreeing
+  // until the next change). The timer handle itself is cleared when it
+  // fires — it used to be left set, which silently switched the poll off
+  // for good after the first edit of a session.
+  const savingRef = useRef(false);
+  const localEditPending = () => !!saveTimer.current || savingRef.current;
   // Tracks the updated_at of whatever value this browser currently holds (set on
   // load and on every save) — the poll effect below compares against it so a
   // fetch that just echoes this browser's own last write is a no-op, and a
@@ -104,7 +115,7 @@ export function useStoredState(key, initial, { cacheFirst = false } = {}) {
           const { data, error } = await supabase.from(TABLE).select("value, updated_at").eq("key", key).maybeSingle();
           if (cancelled) return;
           if (error) setStatus("error");
-          else if (fromMirror && saveTimer.current) {
+          else if (fromMirror && localEditPending()) {
             // A local edit is sitting in the debounce window — it is about to
             // be saved on top of whatever is remote, so applying the fetched
             // row now would just overwrite what is being typed. Same rule as
@@ -152,6 +163,16 @@ export function useStoredState(key, initial, { cacheFirst = false } = {}) {
   valueRef.current = value;
 
   const doSave = async () => {
+    saveTimer.current = null;          // the debounce window is over
+    savingRef.current = true;
+    try {
+      await doSaveInner();
+    } finally {
+      savingRef.current = false;
+    }
+  };
+
+  const doSaveInner = async () => {
     if (supabaseEnabled) {
       try {
         let toSave = valueRef.current;
@@ -261,7 +282,7 @@ export function useStoredState(key, initial, { cacheFirst = false } = {}) {
   useEffect(() => {
     if (!supabaseEnabled) return;
     const poll = async () => {
-      if (saveTimer.current) return;
+      if (localEditPending()) return;
       try {
         const { data, error } = await supabase.from(TABLE).select("value, updated_at").eq("key", key).maybeSingle();
         if (error || !data) return;
@@ -296,6 +317,7 @@ export function useStoredState(key, initial, { cacheFirst = false } = {}) {
         (payload) => {
           const row = payload.new;
           if (!row) return;
+          if (localEditPending()) return;   // our own write is in flight — the poll catches up after
           if (lastSyncedAtRef.current && row.updated_at <= lastSyncedAtRef.current) return;
           lastSyncedAtRef.current = row.updated_at;
           applyRemote(row.value);

@@ -53,6 +53,15 @@ function mirrorSummaries(map) {
   Object.keys(map).forEach((k) => writeMirror(summaryMirrorKey(k), stripForSummary(map[k]), null));
 }
 
+/** Keeps a project's summary mirror current as it is EDITED — the editor
+ * saves through useStoredState, which knows nothing about summaries, so
+ * without this a rename made just before leaving would show its old name
+ * on the next dashboard visit for the length of one round trip. */
+export function mirrorQuoteSummary(storageKey, quote) {
+  if (!supabaseEnabled || !storageKey || !quote) return;
+  writeMirror(summaryMirrorKey(storageKey), stripForSummary(quote), null);
+}
+
 /** Synchronous: `{ storageKey: quote-without-drawing-data }` for every key
  * that has a mirror. Only for summary rows; empty on a localStorage install
  * (there the quotes are already local and instant). */
