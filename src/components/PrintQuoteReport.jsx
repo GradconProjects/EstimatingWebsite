@@ -157,6 +157,7 @@ function ReportContent({ quote, items, rates, categoryOrder, sectionOrder }) {
           <thead>
             <tr className="text-left bg-blue-50 text-blue-900">
               <th className="py-1 px-1">Margin</th>
+              <th className="py-1 px-1 text-right">= Markup on cost</th>
               <th className="py-1 px-1 text-right">Sell (ex GST)</th>
               <th className="py-1 px-1 text-right">Sell (inc GST)</th>
               <th className="py-1 px-1 text-right">$/m² GFA</th>
@@ -169,6 +170,7 @@ function ReportContent({ quote, items, rates, categoryOrder, sectionOrder }) {
                 className={`border-b border-neutral-200 ${Math.abs(row.margin - getDefaultMargin()) < 1e-9 ? "font-bold" : ""}`}
               >
                 <td className="py-0.5">{Math.round(row.margin * 100)}%</td>
+                <td className="py-0.5 text-right">{(row.markupOnCost * 100).toFixed(1)}%</td>
                 <td className="py-0.5 text-right">{money(row.sellExGst)}</td>
                 <td className="py-0.5 text-right">{money(row.sellIncGst)}</td>
                 <td className="py-0.5 text-right">{row.perM2 > 0 ? money2(row.perM2) : "—"}</td>

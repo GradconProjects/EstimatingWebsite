@@ -940,6 +940,22 @@ check("The agreed house margin is 25%, and 25% margin means cost / 0.75 (a 33.33
   const wrong = cost * 1.25;
   assert.ok(Math.abs((wrong - cost) / wrong - 0.20) < 1e-9, "cost x 1.25 only earns 20% margin");
   assert.ok(r.sellExGst > wrong, "so the ladder always prices above the multiply-by method");
+
+  // every rung states its own markup beside it, so nobody has to convert
+  assert.ok(Math.abs(r.markupOnCost - 1 / 3) < 1e-9, "the 25% rung reports a 33.33% markup");
+  const all = computeMarginLadder(cost, 0, 0, 0, MARGIN_STEPS).rows;
+  all.forEach((row) => {
+    // the markup is exactly what reproduces that rung's sell price from cost
+    assert.ok(Math.abs(cost * (1 + row.markupOnCost) - row.sellExGst) < 1e-6,
+      `cost x (1 + markup) must equal the ${Math.round(row.margin * 100)}% sell price`);
+    // and it is always ABOVE the margin — that is the whole point of the column
+    assert.ok(row.markupOnCost > row.margin, `markup must exceed the margin at ${Math.round(row.margin * 100)}%`);
+  });
+  const pct = (m) => all.find((x) => Math.abs(x.margin - m) < 1e-9).markupOnCost * 100;
+  assert.equal(pct(0.10).toFixed(1), "11.1");
+  assert.equal(pct(0.20).toFixed(1), "25.0");
+  assert.equal(pct(0.30).toFixed(1), "42.9");
+  assert.equal(pct(0.40).toFixed(1), "66.7");
 });
 
 const { computeTenderProjectSum, parseTenderPrice, seedTenderItems } = await import("../src/lib/tenderQuoteDefaults.js");

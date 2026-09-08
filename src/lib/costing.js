@@ -650,6 +650,12 @@ export function computeMarginLadder(directCost, overheadPct, contingencyPct, gfa
       margin,
       sellExGst,
       sellIncGst,
+      // The markup on COST that lands this margin on the SELL price — the
+      // two are different numbers and confusing them is the classic way a
+      // job comes in under. A 25% margin needs 33.33% added to cost; adding
+      // 25% only earns 20%. Shown beside every rung so the ladder states
+      // both rather than leaving the reader to convert.
+      markupOnCost: margin < 1 ? margin / (1 - margin) : 0,
       perM2: gfaNum > 0 ? sellExGst / gfaNum : 0,
     };
   });
