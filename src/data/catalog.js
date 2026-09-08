@@ -486,5 +486,14 @@ export const PLANNER_PRIORITY_STYLES = {
  * CLAUDE.md "the 15-vs-0.15 gotcha" before touching this.
  */
 export const MARGIN_STEPS = [0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40];
-export const DEFAULT_MARGIN = 0.30;
+/* Gradcon's agreed house margin. This is the rung the Quote Summary
+ * highlights, the one the Dashboard's "Total sell" column and $/m² are struck
+ * at, and the one the External and Tender quotes allocate their line prices
+ * from — so changing it moves every headline sell figure in the app.
+ * Margin is on the SELL price, not a markup on cost: 25% margin is cost
+ * ÷ 0.75, which is a 33.33% markup (see computeMarginLadder). A saved
+ * Settings value ("Default margin %") overrides this per install — see
+ * getDefaultMargin() — so an install that has one keeps it until it is
+ * changed there too. */
+export const DEFAULT_MARGIN = 0.25;
 export const GST_RATE = 0.10; // Australian GST — change here if this is ever used outside AU

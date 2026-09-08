@@ -920,6 +920,28 @@ check("TRENCH MESH covers every L-series size 3-8 bar, priced per length off its
   assert.ok(computeElementCost(item, stale).materialsTotal > 0, "a rates blob saved before these sizes existed still prices them");
 });
 
+check("The agreed house margin is 25%, and 25% margin means cost / 0.75 (a 33.33% markup), never cost x 1.25", () => {
+  assert.equal(catalogAll.DEFAULT_MARGIN, 0.25, "Gradcon's agreed margin");
+  assert.ok(MARGIN_STEPS.includes(0.25), "and it is a rung on the ladder, so it renders highlighted");
+
+  // the ladder divides (CLAUDE.md rule 4) — this is the arithmetic Grady
+  // queried, pinned so it can never silently become a markup
+  const cost = 80545.91;
+  const { rows } = computeMarginLadder(cost, 0, 0, 0, [0.25]);
+  const r = rows[0];
+  assert.ok(Math.abs(r.sellExGst - cost / 0.75) < 1e-9, "sell = cost / (1 - 0.25)");
+  assert.ok(Math.abs(r.sellExGst - 107394.5467) < 1e-3, `expected $107,394.55, got ${r.sellExGst}`);
+  // the profit inside that price really is 25% OF THE SELL
+  const profit = r.sellExGst - cost;
+  assert.ok(Math.abs(profit / r.sellExGst - 0.25) < 1e-9, "profit is 25% of the sell price");
+  // ...and 33.33% of the cost, which is what you'd have to mark up by
+  assert.ok(Math.abs(profit / cost - 1 / 3) < 1e-9, "the equivalent markup on cost is 33.33%");
+  // marking up BY the margin instead lands 5 points short — the original bug
+  const wrong = cost * 1.25;
+  assert.ok(Math.abs((wrong - cost) / wrong - 0.20) < 1e-9, "cost x 1.25 only earns 20% margin");
+  assert.ok(r.sellExGst > wrong, "so the ladder always prices above the multiply-by method");
+});
+
 const { computeTenderProjectSum, parseTenderPrice, seedTenderItems } = await import("../src/lib/tenderQuoteDefaults.js");
 
 check("Tender quote prints the FLOOR AREA entered in the quote (measureM2), not the Square Mesh coverage", () => {
@@ -1356,8 +1378,13 @@ check("Margin ladder rungs are editable, and bad input falls back to the catalog
     setPrefs({});
     assert.deepEqual(getMarginSteps(), [...MARGIN_STEPS].sort((a, b) => a - b), "no preference = the catalog ladder");
 
+    // an entered ladder replaces the catalog one; the house default is always
+    // folded in so the highlighted row exists, whatever the ladder says
     setPrefs({ marginStepsPct: "10,20,30,45" });
-    assert.deepEqual(getMarginSteps(), [0.1, 0.2, 0.3, 0.45], "an entered ladder replaces it");
+    assert.deepEqual(getMarginSteps(), [0.1, 0.2, 0.25, 0.3, 0.45], "an entered ladder replaces it, with the 25% default folded in");
+
+    setPrefs({ marginStepsPct: "10,25,45" });
+    assert.deepEqual(getMarginSteps(), [0.1, 0.25, 0.45], "a ladder that already lists the default is left alone");
 
     // the default margin is always represented, so the highlight has a row
     setPrefs({ marginStepsPct: "10,20", defaultMarginPct: 33 });
@@ -1365,7 +1392,7 @@ check("Margin ladder rungs are editable, and bad input falls back to the catalog
 
     // junk, out-of-range and duplicate rungs are dropped
     setPrefs({ marginStepsPct: "10, abc, 200, -5, 20, 20" });
-    assert.deepEqual(getMarginSteps(), [0.1, 0.2, 0.3], "junk dropped; default 30% merged in");
+    assert.deepEqual(getMarginSteps(), [0.1, 0.2, 0.25], "junk dropped; the 25% house default merged in");
 
     // nothing usable at all falls back rather than producing an empty ladder
     setPrefs({ marginStepsPct: "abc, 300" });
