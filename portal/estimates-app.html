@@ -348,6 +348,41 @@ body[data-shell="blueprint"] input.prov-missing{outline:2px solid var(--danger);
 #drawingFull .close{position:absolute;top:14px;right:18px;}
 .manual-reason{width:150px;font-size:11px;margin-top:3px;}
 @media print{ #drawingFull,.bp-head2{display:none !important;} }
+/* ============ Phase 2B — assembly checklist + 3D viewer ============ */
+.asm-wrap{display:grid;grid-template-columns:minmax(0,1fr);gap:10px;}
+.asm-3d{position:relative;background:#f4f6f9;border:1px solid var(--line);border-radius:8px;min-height:300px;height:340px;overflow:hidden;}
+.asm-3d canvas{outline:none;}
+.asm-3d .asm-fallback{padding:12px;font-size:12px;color:var(--muted);}
+.asm-3d .asm-legend{position:absolute;left:8px;bottom:8px;background:rgba(255,255,255,.9);border:1px solid var(--line);border-radius:6px;padding:4px 8px;font-size:10px;font-family:ui-monospace,Menlo,Consolas,monospace;display:flex;gap:8px;flex-wrap:wrap;max-width:70%;}
+.asm-3d .asm-legend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:3px;vertical-align:-1px;}
+.asm-3d .asm-name{position:absolute;right:8px;bottom:8px;background:rgba(20,61,107,.92);color:#fff;border-radius:6px;padding:4px 8px;font-size:11px;font-weight:600;max-width:45%;}
+.asm-tools{display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:11px;}
+.asm-tools .btn.small{padding:3px 8px;font-size:11px;}
+.asm-tools label{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--muted);}
+.asm-tools input[type=range]{width:80px;}
+.asm-tools .on{background:var(--accent);color:#fff;border-color:var(--accent);}
+table.asm{width:100%;border-collapse:collapse;font-size:12px;}
+table.asm th{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);text-align:left;padding:4px 6px;border-bottom:1px solid var(--line);}
+table.asm td{padding:5px 6px;border-bottom:1px solid #e6ebf2;vertical-align:middle;}
+table.asm tr.asm-hi td{background:#fff4e5;}
+table.asm tr.asm-sel td{background:#e6edf6;}
+table.asm .asm-eye{cursor:pointer;background:transparent;border:1px solid var(--line);border-radius:4px;padding:1px 5px;font-size:11px;}
+table.asm .asm-eye.off{opacity:.45;text-decoration:line-through;}
+table.asm .st{display:inline-block;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:700;white-space:nowrap;}
+table.asm .st.core{background:#e6edf6;color:var(--accent);}
+table.asm .st.included{background:#e3f1ea;color:#1f7a4d;}
+table.asm .st.suggested{background:#fff4e5;color:#9a4a04;}
+table.asm .st.excluded{background:#eef2f7;color:#5b6b7d;}
+table.asm .st.na{background:#eef2f7;color:#5b6b7d;}
+table.asm .q{font-family:ui-monospace,Menlo,Consolas,monospace;white-space:nowrap;}
+table.asm .asm-purpose{color:var(--muted);font-size:11px;}
+table.asm .asm-warn{color:#9a4a04;font-size:11px;}
+table.asm .asm-decide{display:flex;gap:4px;flex-wrap:wrap;}
+table.asm .asm-decide .btn.small{padding:1px 6px;font-size:10.5px;}
+table.asm input.asm-reason{width:150px;font-size:11px;padding:2px 5px;}
+body[data-shell="blueprint"] .card-panes .pane[data-pane="assembly"] .diag-host{display:none;}
+.asm-note{font-size:11px;color:var(--muted);margin:4px 0 8px;}
+@media print{ .asm-3d,.asm-tools{display:none !important;} }
 </style>
 </head>
 <body>
@@ -550,6 +585,7 @@ body[data-shell="blueprint"] input.prov-missing{outline:2px solid var(--danger);
 </main>
 <footer class="note">Gradcon Element Takeoff Engine — Australian D500N reinforcement approximation kg/m ≈ d²/162. Verify all quantities before commercial submission.</footer>
 
+<!-- __GRADCON_3D_BUNDLE__ -->
 <script src="estimates-schema.js"></script>
 <script>
 const ESTIMATES_BUILD = "__BUILD_STAMP__"; // replaced by scripts/assemble-portal.mjs
@@ -5808,6 +5844,271 @@ function diagGeneric(inst){ let d=inst.data;
   return sheetFrame(inst, inst.label||"Element", [316,170], plan+section);
 }
 
+
+/* ============================= PHASE 2B — ASSEMBLY & 3D (pad footing first) =============================
+ * The 3D view is a VIEW of the canonical takeoff state: buildElementScene()
+ * reads the same instance fields and result lines the Quantity Register
+ * uses and produces a SceneModel; the viewer (portal/estimates-3d, Three.js,
+ * bundled locally) only draws it. Include-in-estimate is the card's own
+ * checkbox/field (canonical → recompute → scene rebuilt); Visible-in-3D is a
+ * per-session eye toggle that never touches a quantity. */
+const THREE_BUNDLE_PATH = "/assets/estimates-3d.js";
+let THREE_LOAD = null;
+function loadThreeBundle(){
+  if(window.GradconThree) return Promise.resolve(window.GradconThree);
+  if(THREE_LOAD) return THREE_LOAD;
+  THREE_LOAD = new Promise((resolve, reject)=>{
+    let src;
+    const emb = document.getElementById("gradcon-3d-bundle");
+    if(emb){ try{ const raw=atob(emb.textContent.trim()); const b=new Uint8Array(raw.length); for(let i=0;i<raw.length;i++) b[i]=raw.charCodeAt(i); src=URL.createObjectURL(new Blob([b],{type:"text/javascript"})); }catch(e){ reject(e); return; } }
+    else if(location.protocol==="file:" || location.origin==="null"){ reject(new Error("3D viewer bundle not available in this copy")); return; }
+    else src = location.origin + THREE_BUNDLE_PATH;
+    const sc=document.createElement("script"); sc.src=src; sc.async=true;
+    sc.onload=()=> window.GradconThree ? resolve(window.GradconThree) : reject(new Error("3D bundle loaded but GradconThree is missing"));
+    sc.onerror=()=> reject(new Error("could not load the 3D viewer bundle"));
+    document.head.appendChild(sc);
+  });
+  THREE_LOAD.catch(()=>{ THREE_LOAD=null; });
+  return THREE_LOAD;
+}
+const ASSEMBLY_CALCS = new Set(["padfooting"]);
+const hasAssembly = (inst)=>{ const def=LIB_INDEX[inst.typeKey]; return !!def && ASSEMBLY_CALCS.has(def.calc); };
+const VIS_3D = {};      // instId -> { nodeId: false } (session only — never saved)
+let ACTIVE_3D = null;   // { instId, viewer, host }
+
+/* ---- Pad footing assembly: the component tree (brief §8.9) ---- */
+function padComponents(inst){
+  const d=inst.data, N=Math.max(1,num(d.qty,1)), round=(d.shape||"rect")==="round";
+  const scope=inst.scope||{};
+  const dec=(id)=>scope[id]||null;
+  const L=num(d.length,1500), W=num(d.width,1500), D=num(d.depth,500), DIA=num(d.diameter,1200), cov=coverOf(d);
+  const bl=num(d.blinding,0), os=num(d.oversize,0), excD=num(d.excDepth,D+bl);
+  const rows=[];
+  const add=(o)=>rows.push(o);
+  const lineIs=(pred)=>(l)=>pred(l);
+  add({id:"excavation",label:"Excavation envelope",purpose:`${round?`Ø${DIA+2*os}`:`${L+2*os}×${W+2*os}`} × ${excD} deep, ${os} mm working space`,kind:"core",role:"excavation",fields:["oversize","excDepth"],tab:"geom",match:l=>l.materialGroup==="Excavation"&&!/spoil/i.test(l.material+" "+l.spec),unit:"m³"});
+  add({id:"spoil",label:"Spoil disposal",purpose:"loose/bulked, separate from the in-situ volume",kind:"core",role:"excavation",fields:["excDepth"],tab:"exc",match:l=>/spoil/i.test(l.material+" "+l.spec),unit:"m³",noNode:true});
+  add({id:"blinding",label:"Blinding / base layer",purpose:bl>0?`${d.blindingMaterial||"concrete"} ${bl} mm under the pad`:"none — set a thickness to include",kind:bl>0?"included":"suggested",role:"blinding",fields:["blinding","blindingMaterial"],tab:"blind",include:{field:"blinding",on:50,off:0},match:l=>l.materialGroup==="Base/Blinding",unit:"m³"});
+  add({id:"membrane",label:"Vapour / waterproofing membrane",purpose:"thin layer over the base, with laps",kind:d.vapourMembrane?"included":"suggested",role:"membrane",fields:["vapourMembrane"],tab:"blind",include:{field:"vapourMembrane",on:true,off:false},match:l=>l.materialGroup==="Vapour Barrier",unit:"m²"});
+  add({id:"insulation",label:"Insulation",purpose:"boards under the pad where scoped",kind:d.insulationOn?"included":"suggested",role:"insulation",fields:["insulationOn"],tab:"blind",include:{field:"insulationOn",on:true,off:false},match:l=>l.materialGroup==="Insulation",unit:"m²"});
+  add({id:"pad",label:"Pad concrete",purpose:`${round?`Ø${DIA}`:`${L}×${W}`} × ${D} deep · N${d.grade||PROJECT.grade} · ×${N}`,kind:"core",role:"concrete",fields:["qty","shape","length","width","diameter","depth","grade"],tab:"geom",match:l=>l.materialGroup==="Concrete"&&!/blind/i.test(l.spec),unit:"m³"});
+  add({id:"reo-bottom",label:"Bottom reinforcement",purpose:d.botReoType==="mesh"?`mesh ${d.botMeshType||"SL82"}`:`${d.botXDia||"N16"}@${num(d.botXSpacing,200)} / ${d.botYDia||"N16"}@${num(d.botYSpacing,200)}, cover ${cov}`,kind:(d.botX||d.botY||d.botReoType==="mesh")?"core":"suggested",role:"reoBottom",fields:["botReoType","botXDia","botXSpacing","botYDia","botYSpacing","cover"],tab:"reo",match:l=>l.materialGroup==="Reinforcement"&&/bottom/i.test(l.spec),unit:"m"});
+  add({id:"reo-top",label:"Top reinforcement",purpose:"independent top mat — only where detailed",kind:d.topMatOn?"included":"suggested",role:"reoTop",fields:["topMatOn","topXDia","topXSpacing","topYDia","topYSpacing"],tab:"reo",include:{field:"topMatOn",on:true,off:false},match:l=>l.materialGroup==="Reinforcement"&&/top/i.test(l.spec)&&!/ligature/i.test(l.spec),unit:"m"});
+  add({id:"pedestal",label:"Pedestal / plinth",purpose:d.pedestal?`${num(d.pedW)}×${num(d.pedD)} × ${num(d.pedH)} high`:"grows from the pad; carries the column",kind:d.pedestal?"included":"suggested",role:"pedestal",fields:["pedestal","pedW","pedD","pedH"],tab:"geom",include:{field:"pedestal",on:true,off:false},match:l=>false,unit:"m³",note:"volume is inside the pad concrete line"});
+  add({id:"starters",label:"Column starter bars",purpose:d.starters?`${num(d.connQty)}${d.connDia||"N20"} · embed ${num(d.connEmbed)} / proj ${num(d.connProj)}${d.connTarget?" → "+targetLabelOf(d.connTarget):""}`:"bars cast in, projecting into the column",kind:d.starters?"included":"suggested",role:"starter",fields:["starters","connTarget","connQty","connDia","connEmbed","connProj","connHook"],tab:"conns",include:{field:"starters",on:true,off:false},match:l=>l.materialGroup==="Connections",unit:"m"});
+  add({id:"ligs",label:"Starter-cage ligatures / ties",purpose:d.ligs?`${d.ligDia||"N10"} @${num(d.ligSpacing,200)} · ${num(d.ligW)}×${num(d.ligD)} cage`:"closed ties around the starter cage",kind:d.ligs?"included":"suggested",role:"lig",fields:["ligs","ligDia","ligSpacing","ligW","ligD"],tab:"reo",include:{field:"ligs",on:true,off:false},match:l=>/ligature/i.test(l.spec),unit:"no."});
+  add({id:"dowels",label:"Dowels / additional connections",purpose:"extra connections to other elements, counted once at source",kind:(Array.isArray(d.extraConn)&&d.extraConn.length)?"included":"suggested",role:"starter",fields:["extraConn"],tab:"conns",decisionOnly:true,match:l=>l.materialGroup==="Connections"&&!/Column starters/i.test(l.spec),unit:"m"});
+  const castKeys=[["anchorBolts","Anchor bolts"],["holdDown","Hold-down bolts"],["ferrules","Ferrules"],["plates","Cast-in plates"],["boltTemplate","Bolt template"]];
+  castKeys.forEach(([k,lab])=>add({id:"castin-"+k,label:lab,purpose:"cast-in item, per footing",kind:d[k]?"included":"suggested",role:"castin",fields:[k],tab:"form",include:{field:k,on:true,off:false},match:l=>l.materialGroup==="Cast-ins"&&l.material===k,unit:"no."}));
+  if(round){
+    add({id:"form-round",label:"Formwork — circular edge",purpose:"full perimeter π×Ø×D",kind:d.formRound?"included":"suggested",role:"formwork",fields:["formRound"],tab:"form",include:{field:"formRound",on:true,off:false},match:l=>l.materialGroup==="Formwork",unit:"m²"});
+  } else {
+    [["formA","Face A (long side 1)"],["formB","Face B (long side 2)"],["formC","Face C (end 1)"],["formD","Face D (end 2)"]].forEach(([k,lab])=>add({id:"form-"+k.slice(4),label:"Formwork — "+lab,purpose:d[k]?"formed face":"cast against ground unless formed",kind:d[k]?"included":"suggested",role:"formwork",fields:[k],tab:"form",include:{field:k,on:true,off:false},match:l=>l.materialGroup==="Formwork",unit:"m²",shared:"formwork"}));
+  }
+  rows.forEach(r=>{ const dd=dec(r.id); if(r.kind==="suggested" && dd){ r.kind = dd.decision==="na" ? "na" : "excluded"; r.reason=dd.reason||""; } });
+  return rows;
+}
+function assemblyUndecided(inst){ return hasAssembly(inst) ? padComponents(inst).filter(r=>r.kind==="suggested") : []; }
+function componentQty(inst, comp){
+  const lines=((inst.results||{}).lines||[]).filter(comp.match);
+  if(!lines.length) return null;
+  if(comp.shared){ /* faces share one formwork line: apportion by this face's area share is not honest — show the line total once */ }
+  const q=lines.reduce((s,l)=>s+(l.finalQty||0),0);
+  return { qty:q, unit:lines[0].unit||comp.unit, kg:lines.reduce((s,l)=>s+(l.weightKg||0),0), manual:lines.some(l=>l.manualOverride), keys:lines.map(l=>l.overrideKey) };
+}
+
+/* ---- Scene adapter: pad footing → SceneModel (mm, Y up, pad top at y=0) ---- */
+function buildElementScene(inst){
+  const def=LIB_INDEX[inst.typeKey]; if(!def || def.calc!=="padfooting") return null;
+  const d=inst.data, comps=padComponents(inst);
+  const vis=VIS_3D[inst.id]||{};
+  const round=(d.shape||"rect")==="round";
+  const L=Math.max(100,num(d.length,1500)), W=Math.max(100,num(d.width,1500)), DIA=Math.max(100,num(d.diameter,1200)), D=Math.max(50,num(d.depth,500));
+  const PX=round?DIA:L, PZ=round?DIA:W;
+  const cov=Math.max(5,coverOf(d)), bl=Math.max(0,num(d.blinding,0)), os=Math.max(0,num(d.oversize,0)), excD=Math.max(D+bl,num(d.excDepth,D+bl));
+  const ped=!!d.pedestal&&num(d.pedH,0)>0, PW=Math.max(50,num(d.pedW,300)), PD=Math.max(50,num(d.pedD,300)), PH=Math.max(0,num(d.pedH,0));
+  const warns=((inst.results||{}).warnings||[]);
+  const nodes=[];
+  const st=(id)=>comps.find(c=>c.id===id)||{};
+  const node=(id,role,geometry,extra)=>{ const c=st(id); const kind=c.kind||"core"; const included=kind==="core"||kind==="included"; const ghost=kind==="suggested"; if(kind==="excluded"||kind==="na") return; nodes.push(Object.assign({id,label:c.label||id,role,geometry,included,ghost,visible:vis[id]!==false,fields:c.fields||[],warning:false},extra||{})); };
+  const dia=(name)=>{ try{ return barDiaOf(name||"N16"); }catch(e){ return 16; } };
+  // excavation & base
+  node("excavation","excavation",{kind:round?"cyl":"box", size:[PX+2*os,excD,PZ+2*os], r:(DIA+2*os)/2, h:excD, pos:[0,-excD/2,0]},{explodeDir:[0,0,0]});
+  if(bl>0 || st("blinding").kind==="suggested"){ const t=bl>0?bl:50; node("blinding","blinding",{kind:round?"cyl":"box", size:[PX+2*os,t,PZ+2*os], r:(DIA+2*os)/2, h:t, pos:[0,-D-t/2,0]},{explodeDir:[0,-1,0]}); }
+  node("membrane","membrane",{kind:round?"cyl":"box", size:[PX+2*os,6,PZ+2*os], r:(DIA+2*os)/2, h:6, pos:[0,-D-3,0]},{explodeDir:[0,-1.6,0]});
+  node("insulation","insulation",{kind:round?"cyl":"box", size:[PX,40,PZ], r:DIA/2, h:40, pos:[0,-D-(bl>0?bl:0)-20-6,0]},{explodeDir:[0,-2.2,0]});
+  // pad
+  node("pad","concrete",{kind:round?"cyl":"box", size:[PX,D,PZ], r:DIA/2, h:D, pos:[0,-D/2,0]},{explodeDir:[0,0,0]});
+  if(ped || st("pedestal").kind==="suggested"){ const h=ped?PH:Math.min(400,D); node("pedestal","pedestal",{kind:"box", size:[PW,h,PD], pos:[0,h/2,0]},{explodeDir:[0,1,0]}); }
+  // bars
+  const mat=(id,role,y,dX,dZ,spX,spZ,mesh)=>{
+    const bars=[]; const dX_=dia(dX), dZ_=dia(dZ);
+    const sx=mesh?200:Math.max(50,num(spX,200)), sz=mesh?200:Math.max(50,num(spZ,200));
+    const nX=Math.max(2,Math.min(60,Math.floor((PZ-2*cov)/sz)+1)), nZ=Math.max(2,Math.min(60,Math.floor((PX-2*cov)/sx)+1));
+    for(let i=0;i<nX;i++){ const z=-PZ/2+cov+(nX===1?(PZ-2*cov)/2:(PZ-2*cov)*i/(nX-1)); bars.push({from:[-PX/2+cov,y,z],to:[PX/2-cov,y,z]}); }
+    const y2=y+ (id.indexOf("bottom")>=0? dX_ : -dX_);
+    for(let i=0;i<nZ;i++){ const x=-PX/2+cov+(nZ===1?(PX-2*cov)/2:(PX-2*cov)*i/(nZ-1)); bars.push({from:[x,y2,-PZ/2+cov],to:[x,y2,PZ/2-cov]}); }
+    node(id,role,{kind:"bars",dia:mesh?8:Math.max(dX_,dZ_),bars},{explodeDir:[0,id.indexOf("bottom")>=0?-0.6:0.6,0]});
+  };
+  const botMesh=d.botReoType==="mesh";
+  if(d.botX||d.botY||botMesh) mat("reo-bottom","reoBottom",-D+cov+dia(d.botXDia)/2,d.botXDia,d.botYDia,d.botXSpacing,d.botYSpacing,botMesh);
+  if(d.topMatOn || st("reo-top").kind==="suggested") mat("reo-top","reoTop",-cov-dia(d.topXDia)/2,d.topXDia,d.topYDia,d.topXSpacing,d.topYSpacing,(d.topReoType||"bars")==="mesh");
+  // starters + ligatures
+  const cageW=Math.max(60,num(d.ligW,300)), cageD=Math.max(60,num(d.ligD,300));
+  const sug=st("starters").kind==="suggested";
+  if(d.starters || sug){
+    const n=Math.max(1,Math.min(24,Math.round(num(d.connQty,4)))), emb=Math.max(50,num(d.connEmbed,600)), proj=Math.max(50,num(d.connProj,900));
+    const top=(ped?PH:0)+proj, bot=Math.max(-D+cov, -Math.min(emb, D-cov));
+    const pts=[]; const per=Math.max(1,n);
+    for(let i=0;i<per;i++){ const t=i/per; let x,z; if(n<=4){ const c=[[-1,-1],[1,-1],[1,1],[-1,1]][i%4]; x=c[0]*(cageW/2-cov*0.5); z=c[1]*(cageD/2-cov*0.5); } else { const a=t*2*Math.PI; x=Math.cos(a)*(cageW/2-cov*0.5); z=Math.sin(a)*(cageD/2-cov*0.5); } pts.push({from:[x,bot,z],to:[x,top,z]}); }
+    node("starters","starter",{kind:"bars",dia:dia(d.connDia),bars:pts},{explodeDir:[0,1.2,0],warning:warns.some(w=>/starter|cover/i.test(w.text))});
+    const ligSug=st("ligs").kind==="suggested";
+    if(d.ligs || ligSug){
+      const sp=Math.max(25,num(d.ligSpacing,200)); const loops=[]; const y0=-D+cov, y1=(ped?PH-cov:-cov);
+      for(let y=y0;y<=y1+0.01 && loops.length<80;y+=sp) loops.push({center:[0,y,0],w:cageW,d:cageD});
+      node("ligs","lig",{kind:"loops",dia:dia(d.ligDia),loops},{explodeDir:[0,1.6,0]});
+    }
+  }
+  // formwork faces
+  const faces=[["form-A",[0,-D/2,-PZ/2-10],[PX,D,20]],["form-B",[0,-D/2,PZ/2+10],[PX,D,20]],["form-C",[-PX/2-10,-D/2,0],[20,D,PZ]],["form-D",[PX/2+10,-D/2,0],[20,D,PZ]]];
+  if(round){ node("form-round","formwork",{kind:"cyl", r:DIA/2+12, r2:DIA/2+12, h:D, pos:[0,-D/2,0], open:true},{explodeDir:[0,0,0]}); }
+  else faces.forEach(([id,pos,size],i)=>{ const dir=[[0,0,-1],[0,0,1],[-1,0,0],[1,0,0]][i]; node(id,"formwork",{kind:"panel",size,pos},{explodeDir:dir}); });
+  // cast-ins
+  const castPts=[[-cageW/2,ped?PH:0,-cageD/2],[cageW/2,ped?PH:0,-cageD/2],[cageW/2,ped?PH:0,cageD/2],[-cageW/2,ped?PH:0,cageD/2]].map(p=>[p[0]*0.7,p[1]+60,p[2]*0.7]);
+  ["anchorBolts","holdDown","ferrules","plates","boltTemplate"].forEach((k,i)=>{ const id="castin-"+k; if(st(id).kind==="excluded"||st(id).kind==="na") return; if(d[k]||st(id).kind==="suggested"){ if(k==="plates"||k==="boltTemplate") node(id,"castin",{kind:"box",size:[cageW*0.8,12,cageD*0.8],pos:[0,(ped?PH:0)+6+(k==="boltTemplate"?140:0),0]},{explodeDir:[0,2+i*0.3,0]}); else node(id,"castin",{kind:"markers",dia:24,h:140,points:castPts.map(p=>[p[0],p[1]+i*10,p[2]])},{explodeDir:[0,2+i*0.3,0]}); } });
+  // dimensions + labels (mm)
+  const dims=[
+    {from:[-PX/2,60,PZ/2+120],to:[PX/2,60,PZ/2+120],label:round?`Ø ${DIA}`:`L ${L}`},
+    {from:[PX/2+120,60,-PZ/2],to:[PX/2+120,60,PZ/2],label:round?"":`W ${W}`},
+    {from:[PX/2+120,0,PZ/2+120],to:[PX/2+120,-D,PZ/2+120],label:`D ${D}`},
+    {from:[-PX/2-os-80,0,-PZ/2-os-80],to:[-PX/2-os-80,-excD,-PZ/2-os-80],label:`EXC ${excD}`},
+  ].filter(x=>x.label);
+  if(ped) dims.push({from:[PW/2+60,0,-PD/2],to:[PW/2+60,PH,-PD/2],label:`PED ${PH}`});
+  const labels=[{text:`${inst.id} · ${inst.label}`.slice(0,48),at:[0,(ped?PH:0)+Math.max(400,num(d.connProj,900))+200,0]}];
+  return { units:"mm", nodes, dimensions:dims, labels, extents:{x:PX+2*os,y:excD+(ped?PH:0),z:PZ+2*os} };
+}
+
+/* ---- Assembly pane (HTML) ---- */
+function assemblySection(inst){
+  const comps=padComponents(inst);
+  const und=comps.filter(c=>c.kind==="suggested").length;
+  const rows=comps.map(c=>{
+    const q=componentQty(inst,c);
+    const eyeOff=(VIS_3D[inst.id]||{})[c.id]===false;
+    const inc = c.kind==="core" ? `<input type="checkbox" checked disabled title="Core component — always in the takeoff">`
+      : c.include ? `<input type="checkbox" data-field="${c.include.field}" data-rerender="true" data-asm-include="${c.id}" ${c.kind==="included"?"checked":""} title="Include in estimate — changes the takeoff through the card's own field">`
+      : c.decisionOnly ? `<span class="small" title="Add rows on the Connections tab">rows</span>` : `<input type="checkbox" disabled>`;
+    const decide = c.kind==="suggested" ? `<span class="asm-decide">${c.include?`<button class="btn small primary" type="button" data-asm-decide="include" data-asm-id="${c.id}">Include</button>`:''}<button class="btn small" type="button" data-asm-decide="excluded" data-asm-id="${c.id}">Exclude / by others</button><button class="btn small" type="button" data-asm-decide="na" data-asm-id="${c.id}">N/A</button></span>`
+      : (c.kind==="excluded"||c.kind==="na") ? `<span class="asm-decide"><input type="text" class="asm-reason" data-asm-reason="${c.id}" value="${bpEsc(c.reason||'')}" placeholder="Reason (optional)"><button class="btn small" type="button" data-asm-decide="reopen" data-asm-id="${c.id}" title="Back to Suggested — review">↺</button></span>` : "";
+    const stLabel={core:"Core",included:"Included",suggested:"Suggested — review",excluded:"Excluded / by others",na:"Not applicable"}[c.kind];
+    const qty = q ? `<span class="q">${fmt(q.qty,2)} ${bpEsc(q.unit)}${q.kg?` · ${fmt(q.kg,1)} kg`:''}${q.manual?' <span class="manual-badge">✎ manual</span>':''}</span>` : `<span class="small">${c.note||(c.kind==="core"?"—":"not priced")}</span>`;
+    const warn=((inst.results||{}).warnings||[]).filter(w=>c.fields.some(f=>new RegExp(f,"i").test(w.text))||(c.tab==="reo"&&/cover|spacing/i.test(w.text)&&/reo|lig/.test(c.id)));
+    return `<tr data-asm-row="${c.id}">
+      <td>${inc}</td>
+      <td>${c.noNode?'<span class="small">—</span>':`<button class="asm-eye ${eyeOff?'off':''}" type="button" data-asm-eye="${c.id}" title="Visible in 3D — never changes a quantity" aria-pressed="${eyeOff?'false':'true'}">👁</button>`}</td>
+      <td><b>${bpEsc(c.label)}</b><div class="asm-purpose">${bpEsc(c.purpose)}</div>${c.reason?`<div class="asm-purpose">Reason: ${bpEsc(c.reason)}</div>`:''}</td>
+      <td><span class="st ${c.kind}">${stLabel}</span></td>
+      <td>${qty}${warn.length?`<div class="asm-warn">⚠ ${bpEsc(warn[0].text)}</div>`:''}</td>
+      <td>${decide}<button class="btn small" type="button" data-asm-jump="${c.id}" title="Jump to the fields that control this">→ fields</button></td>
+    </tr>`;
+  }).join('');
+  return `<div class="asm-wrap">
+    <div class="asm-tools" data-asm-tools>
+      <button class="btn small" type="button" data-3d="fit" title="Fit element (F)">⤢ Fit</button>
+      <button class="btn small" type="button" data-3d="view" data-arg="iso">Iso</button><button class="btn small" type="button" data-3d="view" data-arg="plan">Plan</button><button class="btn small" type="button" data-3d="view" data-arg="front">Front</button><button class="btn small" type="button" data-3d="view" data-arg="side">Side</button>
+      <button class="btn small" type="button" data-3d="proj" title="Orthographic / perspective">Ortho</button>
+      <label title="Section / clipping plane">Clip <input type="range" min="0" max="100" value="100" data-3d="clip"></label>
+      <label title="Exploded assembly">Explode <input type="range" min="0" max="100" value="0" data-3d="explode"></label>
+      <button class="btn small" type="button" data-3d="xray" title="Transparent concrete">X-ray</button>
+      <button class="btn small on" type="button" data-3d="labels" title="Dimensions and labels">Dims</button>
+      <button class="btn small" type="button" data-3d="filter" data-arg="reo" title="Reinforcement only">Reo only</button>
+      <button class="btn small" type="button" data-3d="filter" data-arg="form" title="Formwork only">Formwork only</button>
+      <button class="btn small" type="button" data-3d="static" title="Static render (no animation)">Static</button>
+      <button class="btn small" type="button" data-3d="shot" title="Export image">📷 Image</button>
+      <button class="btn small" type="button" data-3d="reset" title="Reset view (R)">Reset</button>
+    </div>
+    <div class="asm-3d" data-asm-3d tabindex="0" aria-label="3D assembly of ${bpEsc(inst.label)}"><div class="asm-fallback">Loading the 3D viewer…</div></div>
+    <p class="asm-note">The model is a view of the takeoff: every solid, bar and layer comes from the fields on this card and the register lines. <b>Include in estimate</b> changes the takeoff through the card's own field; <b>👁 Visible in 3D</b> only hides the object. Translucent "Not included" parts are suggestions to review — ${und?`<b>${und} still to decide</b> before this element can be marked reviewed`:"all decided"}.</p>
+    <table class="asm"><thead><tr><th>In estimate</th><th>3D</th><th>Component</th><th>Status</th><th>Live quantity</th><th></th></tr></thead><tbody>${rows}</tbody></table>
+  </div>`;
+}
+const ASM_LEGEND=[["concrete","#9aa0a6","Concrete"],["reoBottom","#c0392b","Bottom reo"],["reoTop","#e67e22","Top reo"],["starter","#8e44ad","Starters"],["lig","#2980b9","Ties"],["blinding","#e3d5b3","Blinding"],["membrane","#00b8d9","Membrane"],["formwork","#3a7bd5","Formwork"],["excavation","#8b6b4a","Excavation"],["castin","#2c3e50","Cast-ins"]];
+function mount3D(card, inst){
+  if(!hasAssembly(inst) || SHELL_MODE!=="blueprint") return;
+  const host=card.querySelector('[data-asm-3d]'); if(!host) return;
+  if(ACTIVE_3D && ACTIVE_3D.host===host && ACTIVE_3D.instId===inst.id && ACTIVE_3D.viewer){ ACTIVE_3D.viewer.setScene(buildElementScene(inst)); return; }
+  dispose3D();
+  ACTIVE_3D={instId:inst.id, host, viewer:null, pending:true};
+  const fallback=(msg)=>{ host.innerHTML=`<div class="asm-fallback">${bpEsc(msg)} The section and plan drawing beside every tab and the component schedule above stay fully usable.</div>`; };
+  loadThreeBundle().then(T=>{
+    if(!ACTIVE_3D || ACTIVE_3D.host!==host) return;
+    if(!T.webglAvailable()){ fallback("3D needs WebGL, which this browser has turned off."); ACTIVE_3D.pending=false; return; }
+    host.innerHTML="";
+    const viewer=T.create(host,{});
+    if(!viewer){ fallback("The 3D viewer could not start on this device."); ACTIVE_3D.pending=false; return; }
+    ACTIVE_3D.viewer=viewer; ACTIVE_3D.pending=false;
+    viewer.setScene(buildElementScene(inst));
+    const legend=document.createElement("div"); legend.className="asm-legend"; legend.innerHTML=ASM_LEGEND.map(([r,c,l])=>`<span><i style="background:${c}"></i>${l}</span>`).join(""); host.appendChild(legend);
+    const nameEl=document.createElement("div"); nameEl.className="asm-name"; nameEl.textContent="Click a part to select it"; host.appendChild(nameEl);
+    viewer.onSelect(id=>{ asmSelectRow(card,inst,id,true); nameEl.textContent = id ? (padComponents(inst).find(c=>c.id===id)||{}).label||id : "Click a part to select it"; });
+    viewer.onHover(id=>{ card.querySelectorAll('tr[data-asm-row].asm-hi').forEach(r=>r.classList.remove('asm-hi')); if(id){ const r=card.querySelector(`tr[data-asm-row="${id}"]`); if(r) r.classList.add('asm-hi'); } });
+  }).catch(err=>{ fallback("3D viewer unavailable ("+(err&&err.message||err)+")."); if(ACTIVE_3D) ACTIVE_3D.pending=false; });
+}
+function dispose3D(){ if(ACTIVE_3D && ACTIVE_3D.viewer){ try{ ACTIVE_3D.viewer.dispose(); }catch(e){} } ACTIVE_3D=null; }
+function refresh3D(card, inst){ if(ACTIVE_3D && ACTIVE_3D.viewer && ACTIVE_3D.instId===inst.id) ACTIVE_3D.viewer.setScene(buildElementScene(inst)); }
+function asmSelectRow(card, inst, id, focusField){
+  card.querySelectorAll('tr[data-asm-row].asm-sel').forEach(r=>r.classList.remove('asm-sel'));
+  if(!id) return;
+  const row=card.querySelector(`tr[data-asm-row="${id}"]`); if(row){ row.classList.add('asm-sel'); row.scrollIntoView({block:"nearest"}); }
+  if(focusField) asmJump(card, inst, id);
+}
+function asmJump(card, inst, id){
+  const c=padComponents(inst).find(x=>x.id===id); if(!c) return;
+  bpGoSection(card, c.tab);
+  for(const f of c.fields){ const el=card.querySelector(`.pane[data-pane="${c.tab}"] [data-field="${f}"]`); if(el){ el.focus(); el.classList.add('prov-missing'); setTimeout(()=>el.classList.remove('prov-missing'),1800); break; } }
+}
+function asmDecide(inst, id, decision, reason){
+  if(!inst.scope || typeof inst.scope!=="object") inst.scope={};
+  if(decision==="reopen") delete inst.scope[id];
+  else inst.scope[id]={decision, reason:reason||"", at:new Date().toISOString().slice(0,16).replace("T"," ")};
+}
+function attachAssemblyEvents(card, inst){
+  const pane=card.querySelector('.pane[data-pane="assembly"]'); if(!pane) return;
+  pane.addEventListener('click', e=>{
+    const t=e.target.closest('[data-3d],[data-asm-eye],[data-asm-jump],[data-asm-decide]'); if(!t) return;
+    const v=ACTIVE_3D&&ACTIVE_3D.viewer;
+    if(t.dataset.asmEye!==undefined){ const id=t.dataset.asmEye; const m=VIS_3D[inst.id]=VIS_3D[inst.id]||{}; m[id]=m[id]===false; t.classList.toggle('off',m[id]===false); t.setAttribute('aria-pressed',m[id]===false?'false':'true'); if(v) v.setVisible(id,m[id]!==false); return; }
+    if(t.dataset.asmJump!==undefined){ asmJump(card,inst,t.dataset.asmJump); return; }
+    if(t.dataset.asmDecide!==undefined){
+      const id=t.dataset.asmId, dec=t.dataset.asmDecide;
+      if(dec==="include"){ const c=padComponents(inst).find(x=>x.id===id); if(c&&c.include){ setPath(inst.data,c.include.field,c.include.on); markEntered(inst,c.include.field); } }
+      else asmDecide(inst,id,dec,"");
+      computeAllAndRefresh(); rerenderCardKeepTab(card,inst); return;
+    }
+    const act=t.dataset["3d"]; if(!act) return;
+    if(act==="shot"){ if(!v) return; const url=v.screenshot(); const a=document.createElement("a"); a.href=url; a.download=`${inst.id}-3d.png`; document.body.appendChild(a); a.click(); a.remove(); return; }
+    if(!v) return;
+    if(act==="fit") v.fit(); else if(act==="view") v.setView(t.dataset.arg); else if(act==="reset"){ v.reset(); pane.querySelectorAll('[data-3d="xray"],[data-3d="filter"],[data-3d="static"]').forEach(b=>b.classList.remove('on')); pane.querySelector('[data-3d="labels"]').classList.add('on'); pane.querySelector('[data-3d="clip"]').value=100; pane.querySelector('[data-3d="explode"]').value=0; }
+    else if(act==="proj"){ const on=t.classList.toggle('on'); v.setProjection(on?"ortho":"persp"); }
+    else if(act==="xray"){ v.setXray(t.classList.toggle('on')); }
+    else if(act==="labels"){ v.setLabels(t.classList.toggle('on')); }
+    else if(act==="static"){ v.setStatic(t.classList.toggle('on')); }
+    else if(act==="filter"){ const on=!t.classList.contains('on'); pane.querySelectorAll('[data-3d="filter"]').forEach(b=>b.classList.remove('on')); if(on) t.classList.add('on'); v.setFilter(on?t.dataset.arg:"all"); }
+  });
+  pane.addEventListener('input', e=>{
+    const v=ACTIVE_3D&&ACTIVE_3D.viewer;
+    if(e.target.dataset.asmReason!==undefined){ const id=e.target.dataset.asmReason; if(inst.scope&&inst.scope[id]) inst.scope[id].reason=e.target.value; computeAllAndRefresh(); return; }
+    if(!v) return;
+    if(e.target.dataset["3d"]==="clip"){ const val=+e.target.value; v.setClip(val>=100?null:val/100); }
+    else if(e.target.dataset["3d"]==="explode"){ v.setExplode(+e.target.value/100); }
+  });
+  pane.addEventListener('keydown', e=>{ const v=ACTIVE_3D&&ACTIVE_3D.viewer; if(!v||e.target.tagName==="INPUT") return; if(e.key==="f"||e.key==="F"){ v.fit(); e.preventDefault(); } else if(e.key==="r"||e.key==="R"){ v.reset(); e.preventDefault(); } });
+  // field ↔ component highlighting: focusing/hovering an input lights its 3D part; hovering a register line lights the contributing part
+  const fieldToNode=(f)=>{ const c=padComponents(inst).find(x=>x.fields.indexOf(f)>=0); return c? c.id : null; };
+  card.addEventListener('focusin', e=>{ const f=e.target.dataset&&e.target.dataset.field; if(!f) return; const id=fieldToNode(f.split('.')[0]); const v=ACTIVE_3D&&ACTIVE_3D.viewer; if(v) v.highlight(id?[id]:[]); asmSelectRow(card,inst,id,false); });
+  card.addEventListener('mouseover', e=>{ const tr=e.target.closest('.detail-results tr'); if(!tr) return; const keyInp=tr.querySelector('[data-field^="manualOverrides."]'); if(!keyInp) return; const key=keyInp.dataset.field.replace(/^manualOverrides\./,'').replace(/\.(enabled|qty|reason)$/,''); const line=((inst.results||{}).lines||[]).find(l=>l.overrideKey===key); if(!line) return; const c=padComponents(inst).find(x=>x.match(line)); const v=ACTIVE_3D&&ACTIVE_3D.viewer; if(v) v.highlight(c?[c.id]:[]); });
+}
+
 const CALC = {
   pier:{defaults:pierDefaults, render:renderPier, compute:computePier, diagram:diagPier},
   pilecap:{defaults:pileCapDefaults, render:renderPileCap, compute:computePileCap, diagram:diagPileCap},
@@ -6068,9 +6369,10 @@ function additionalItemsSection(inst){
    <div class="toolbar" style="margin-top:8px;"><button class="btn small primary" data-action="addlAdd" type="button">+ Add row</button></div>
   </div>`;
 }
-const TABS=[["geom","Geometry"],["conc","Concrete"],["reo","Reinforcement"],["pilecap","Pile Cap"],["edgebeams","Edge Beams"],["intbeams","Internal Beams"],["form","Formwork"],["exc","Excavation"],["blind","Blinding / Insulation"],["conns","Connections / Dowels"],["addl","Additional Reo / Elements"],["results","Results"]];
+const TABS=[["assembly","Assembly & 3D"],["geom","Geometry"],["conc","Concrete"],["reo","Reinforcement"],["pilecap","Pile Cap"],["edgebeams","Edge Beams"],["intbeams","Internal Beams"],["form","Formwork"],["exc","Excavation"],["blind","Blinding / Insulation"],["conns","Connections / Dowels"],["addl","Additional Reo / Elements"],["results","Results"]];
 
 function renderWorkspace(){
+  dispose3D();   // the viewer belongs to the mounted card; a rebuild always starts clean
   let host=document.getElementById("cardsHost");
   let nav=document.getElementById("bpNav"), insp=document.getElementById("bpInspector");
   if(SHELL_MODE==="blueprint"){ renderBlueprintWorkspace(); return; }
@@ -6249,6 +6551,8 @@ function buildCard(inst){
   parts.blind = parts.blind + insulationSubsection(inst.data);
   // EVERY element gets the additional reinforcement / elements catch-all.
   if(parts.addl===undefined) parts.addl = additionalItemsSection(inst);
+  // Phase 2B: the assembly checklist + 3D view, pad footings first, blueprint layout only.
+  if(SHELL_MODE==="blueprint" && hasAssembly(inst)) parts.assembly = assemblySection(inst);
   let collapsed = inst._collapsed;
   // The active tab is remembered PER ELEMENT (by id, in CARD_TAB_MEMORY)
   // across every rebuild — autosave/cloud-sync refreshes re-render the whole
@@ -6281,7 +6585,9 @@ function buildCard(inst){
    </div>`;
   attachCardEvents(card,inst);
   if(bp) annotateProvenance(card,inst);
+  if(bp && parts.assembly) attachAssemblyEvents(card,inst);
   refreshCardResults(card,inst);
+  if(bp && parts.assembly && activeTab==="assembly") mount3D(card,inst);
   return card;
 }
 /* ---- Phase 2: provenance on every input of a card (blueprint only) ---- */
@@ -6379,7 +6685,7 @@ function refreshSectionRail(card, inst, out){
       ${pc.imported?`<span class="chip st-imported" title="Imported values not yet reviewed">${pc.imported} imported</span>`:""}
       <span class="spacer"></span>
       ${firstInc?`<button class="btn small" type="button" data-action="nextIncomplete" title="Jump to the first section with a warning or a blank field (Alt+N)">Next incomplete →</button>`:`<span class="chip" style="color:var(--good)">All sections complete</span>`}
-      ${status.state==="reviewed"?`<button class="btn small" type="button" data-action="unreview" title="Clear the reviewed mark">Clear review</button>`:`<button class="btn small primary" type="button" data-action="review" title="Record that every value on this element has been checked">✓ Mark reviewed</button>`}`;
+      ${status.state==="reviewed"?`<button class="btn small" type="button" data-action="unreview" title="Clear the reviewed mark">Clear review</button>`:(assemblyUndecided(inst).length?`<button class="btn small" type="button" disabled title="${assemblyUndecided(inst).length} Suggested — review item(s) in Assembly still undecided">✓ Mark reviewed (${assemblyUndecided(inst).length} to decide)</button>`:`<button class="btn small primary" type="button" data-action="review" title="Record that every value on this element has been checked">✓ Mark reviewed</button>`)}`;
   }
 }
 function bpGoSection(card, tab){
@@ -6479,6 +6785,7 @@ function attachCardEvents(card,inst){
     card.querySelectorAll('.pane').forEach(x=>x.classList.remove('active'));
     b.classList.add('active');
     card.querySelector(`.pane[data-pane="${b.dataset.tab}"]`).classList.add('active');
+    if(b.dataset.tab==="assembly") mount3D(card,inst);
   }));
   // Two-click "arm, then confirm" delete instead of window.confirm() — a
   // native confirm() dialog can be silently blocked (throws, or is a
@@ -6585,7 +6892,7 @@ function attachCardEvents(card,inst){
     if(act==="prevEl"){ bpStep(-1); return; }
     if(act==="nextEl"){ bpStep(1); return; }
     if(act==="nextIncomplete"){ bpNextIncomplete(card); return; }
-    if(act==="review"){ markReviewed(inst); computeAllAndRefresh(); refreshCardResults(card,inst); return; }
+    if(act==="review"){ if(assemblyUndecided(inst).length) return; markReviewed(inst); computeAllAndRefresh(); refreshCardResults(card,inst); return; }
     if(act==="unreview"){ clearReview(inst); computeAllAndRefresh(); refreshCardResults(card,inst); return; }
     if(act==="addRow"){
       // target is a PATH, not just a key — a raft's extra beams keep their own
@@ -6654,6 +6961,7 @@ function attachCardEvents(card,inst){
 }
 function rerenderCardKeepTab(card,inst){
   let activeTab=card.querySelector('.card-tabs button.active').dataset.tab;
+  dispose3D();
   let newCard=buildCard(inst);
   card.replaceWith(newCard);
   let btn=newCard.querySelector(`.card-tabs button[data-tab="${activeTab}"]`);
@@ -6843,6 +7151,12 @@ function refreshCardResults(card,inst){
   let headStats=card.querySelector('.headStats');
   if(headStats) headStats.innerHTML = ` · ${fmt(totC,2)}m³ concrete · ${fmt(totR,1)}kg reo · ${fmt(totF,2)}m² formwork${bv.blind?` · ${fmt(bv.blind,2)}m³ blinding/base`:''}${bv.vap?` · ${fmt(bv.vap,2)}m² vapour barrier`:''}`;
   refreshSectionRail(card,inst,out);
+  if(SHELL_MODE==="blueprint" && hasAssembly(inst)){
+    refresh3D(card,inst);
+    // live quantities in the checklist without rebuilding the pane (keeps the viewer mounted)
+    const comps=padComponents(inst);
+    card.querySelectorAll('tr[data-asm-row]').forEach(tr=>{ const c=comps.find(x=>x.id===tr.dataset.asmRow); if(!c) return; const q=componentQty(inst,c); const cell=tr.children[4]; if(cell && q) cell.innerHTML=`<span class="q">${fmt(q.qty,2)} ${bpEsc(q.unit)}${q.kg?` · ${fmt(q.kg,1)} kg`:''}${q.manual?' <span class="manual-badge">✎ manual</span>':''}</span>`; });
+  }
   if(SHELL_MODE==="blueprint" && inst.id===BP_SELECTED_ID){ renderBlueprintInspector(inst); bpRefreshNavRow(inst); }
   let {bars,mesh}=summarizeReinforcement(out.lines);
   let barKeys=Object.keys(bars).sort();

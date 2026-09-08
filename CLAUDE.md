@@ -363,6 +363,37 @@ The blueprint-only chrome (header row 2, section rail, input chips, ↺ default,
 inspector warnings/trace) all reads these; `refreshCardResults` → 
 `refreshSectionRail` is the one refresh path.
 
+## Estimates assembly checklist and 3D (Phase 2B, pad footing first)
+
+The 3D model is a VIEW of the takeoff, never a second calculator.
+`buildElementScene(inst)` (estimates-app.html) reads the same instance
+fields and result lines the Quantity Register uses and returns a SceneModel
+(`{units:"mm", nodes:[{id, role, geometry, included, ghost, visible,
+fields}], dimensions, labels}`); the viewer in `portal/estimates-3d/main.js`
+(Three.js 0.186.0, pinned, built by `vite.3d.config.js` into
+`dist/assets/estimates-3d.js`) only draws it and never writes back. The
+hosted portal fetches that file on demand from `location.origin + "/assets/…"`
+the first time a 3D view opens; the standalone/offline copies embed it as
+base64 through the `<!-- __GRADCON_3D_BUNDLE__ -->` placeholder (asserted by
+the assembler). Run the full `npm run build` before `assemble-portal.mjs` —
+the assembler rewrites dist/index.html in place and cannot run twice on it.
+
+Two independent controls, by rule: **Include in estimate** is the card's own
+canonical checkbox/field (the checklist's checkbox carries the same
+`data-field`, so the calculator recomputes and only then is the scene
+rebuilt); **Visible in 3D** (`VIS_3D`, session-only, never saved) hides the
+object and can never change a quantity. `padComponents(inst)` is the one
+component tree (Core / Suggested—review / Included / Excluded / N/A); a
+suggestion becomes Excluded or N/A only through an explicit decision stored
+in `inst.scope[id] = {decision, reason}`, and `markReviewed` is refused while
+any suggestion is undecided — "not applicable" is never the same as "not
+reviewed". `refreshCardResults` → `refresh3D` is the only scene refresh
+path; `renderWorkspace`/`rerenderCardKeepTab` dispose the viewer first, so a
+viewer never outlives its card. No WebGL → the SVG drawing and checklist
+stay fully usable. `scratchpad/test-3d.mjs` proves parity, visibility,
+decisions, disposal and the fallback; keep it passing. Extending 3D to other
+element families waits on the owner's approval of the pad footing.
+
 ## Estimates data safety (schema, migration, recovery, raw backup)
 
 `portal/estimates-schema.js` is pure and DOM-free: the assembler inlines it

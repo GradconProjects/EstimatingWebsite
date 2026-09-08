@@ -69,7 +69,15 @@ const STANDALONE = process.env.PORTAL_STANDALONE === "1";
 const OFFLINE = process.env.PORTAL_OFFLINE === "1";
 const outPathFinal = process.env.PORTAL_OUT ? path.resolve(process.env.PORTAL_OUT) : outPath;
 
-const chunkFiles = fs.readdirSync(assetsDir).filter((f) => f.endsWith(".js") && f !== jsFile);
+// The Estimates 3D viewer bundle (vite.3d.config.js) is NOT a Quotes chunk:
+// the Estimates document loads it itself — from /assets on the hosted portal,
+// embedded (base64 → blob: URL) in the standalone/offline copies.
+const THREE_BUNDLE = "estimates-3d.js";
+const threeBundlePath = path.join(assetsDir, THREE_BUNDLE);
+if (!fs.existsSync(threeBundlePath)) throw new Error(`dist/assets/${THREE_BUNDLE} is missing — run "vite build --config vite.3d.config.js" after the main build`);
+const threeBundleSrc = fs.readFileSync(threeBundlePath, "utf8");
+if (!/GradconThree/.test(threeBundleSrc)) throw new Error(`dist/assets/${THREE_BUNDLE} does not define GradconThree`);
+const chunkFiles = fs.readdirSync(assetsDir).filter((f) => f.endsWith(".js") && f !== jsFile && f !== THREE_BUNDLE);
 const embeddedChunks = [];
 for (const chunk of chunkFiles) {
   const chunkSrc = fs.readFileSync(path.join(assetsDir, chunk), "utf8");
@@ -149,6 +157,20 @@ let estimatesHtml = fs.readFileSync(estimatesPath, "utf8");
   const schemaSrc = fs.readFileSync(path.join(root, "portal", "estimates-schema.js"), "utf8").replace(/<\/script/gi, "<\\/script");
   estimatesHtml = estimatesHtml.replace(inlineTag, () => `<script>${schemaSrc}</script>`);
   estimatesHtml = estimatesHtml.replaceAll("__BUILD_STAMP__", buildStamp() + (process.env.PORTAL_STAMP_SUFFIX || ""));
+  // 3D viewer bundle: the hosted portal fetches /assets/estimates-3d.js on
+  // demand (nothing embedded, the page stays small); a standalone copy has
+  // no /assets to fetch from, so the bundle rides inside the document as
+  // base64 and becomes a blob: URL the first time a 3D view opens.
+  const threeTag = "<!-- __GRADCON_3D_BUNDLE__ -->";
+  if (!estimatesHtml.includes(threeTag)) throw new Error("estimates-app.html has no __GRADCON_3D_BUNDLE__ placeholder — 3D embed step out of date");
+  if (STANDALONE) {
+    const b64 = Buffer.from(threeBundleSrc, "utf8").toString("base64");
+    estimatesHtml = estimatesHtml.replace(threeTag, () => `<script type="text/plain" id="gradcon-3d-bundle">${b64}</script>`);
+    console.log(`3D viewer bundle (${(threeBundleSrc.length / 1024).toFixed(0)} KB) embedded in the Estimates app for the standalone copy`);
+  } else {
+    estimatesHtml = estimatesHtml.replace(threeTag, () => "");
+    console.log(`3D viewer bundle kept at /assets/${THREE_BUNDLE} (${(threeBundleSrc.length / 1024).toFixed(0)} KB), loaded on demand`);
+  }
   console.log(`Inlined portal/estimates-schema.js (${(schemaSrc.length / 1024).toFixed(0)} KB) into the Estimates app`);
 }
 let costPlannerHtml = fs.readFileSync(costPlannerPath, "utf8");

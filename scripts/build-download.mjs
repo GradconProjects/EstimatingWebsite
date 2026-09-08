@@ -35,7 +35,7 @@ fs.rmSync(outDir, { recursive: true, force: true });
 fs.mkdirSync(outDir, { recursive: true });
 
 console.log("\n=== 1/4  Cloud-connected copy ===");
-run("npx vite build");
+run("npx vite build"); run("npx vite build --config vite.3d.config.js");
 run("node scripts/assemble-portal.mjs", { PORTAL_STANDALONE: "1", PORTAL_OUT: path.join(outDir, "Gradcon-Estimator.html"), PORTAL_STAMP_SUFFIX: " · download" });
 
 console.log("\n=== 2/4  Offline copy ===");
@@ -47,7 +47,7 @@ const envAside = path.join(root, ".env.local.download-aside");
 const hadEnv = fs.existsSync(envLocal);
 if (hadEnv) fs.renameSync(envLocal, envAside);
 try {
-  run("npx vite build", { VITE_SUPABASE_URL: "", VITE_SUPABASE_ANON_KEY: "" });
+  run("npx vite build", { VITE_SUPABASE_URL: "", VITE_SUPABASE_ANON_KEY: "" }); run("npx vite build --config vite.3d.config.js");
   run("node scripts/assemble-portal.mjs", { PORTAL_STANDALONE: "1", PORTAL_OFFLINE: "1", PORTAL_OUT: path.join(outDir, "Gradcon-Estimator-offline.html"), PORTAL_STAMP_SUFFIX: " · offline copy" });
 } finally {
   if (hadEnv) fs.renameSync(envAside, envLocal);
@@ -95,7 +95,7 @@ source.zip
 
 console.log("\n=== 4/4  Zip + restore the hosted build ===");
 run(`cd "${outDir}" && zip -q -j Gradcon-Estimator-download.zip Gradcon-Estimator.html Gradcon-Estimator-offline.html README.txt source.zip`);
-run("npx vite build");
+run("npx vite build"); run("npx vite build --config vite.3d.config.js");
 run("node scripts/assemble-portal.mjs");
 
 for (const f of fs.readdirSync(outDir)) {
