@@ -204,7 +204,9 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
       }));
       patch((it) => ({ ...it, markups: (it.markups || []).flatMap((x) => (x.id === id ? imgs : [x])) }));
     } catch (err) {
-      alert(`Couldn't render "${m.name}" to images — the PDF may be corrupt or password-protected.`);
+      alert(err && err.code === "PDF_ENGINE_UNAVAILABLE"
+        ? "Couldn't load the PDF renderer — check the connection and try again. If it keeps failing, reload the portal to pick up the latest build."
+        : `Couldn't render "${m.name}" to images — the PDF may be corrupt or password-protected.`);
     } finally {
       setConvertingPdf(false);
     }

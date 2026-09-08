@@ -84,9 +84,14 @@ function takeInitialView() {
 }
 
 export default function App() {
-  const [projects, setProjects, projectsStatus, saveProjectsNow] = useStoredState(PROJECTS_INDEX_KEY, []);
+  // Both cache-first (see storage.js): the index and the rates paint from the
+  // last-known copy immediately and reconcile against the database behind.
+  // "syncing" means exactly that — a value is showing but not yet confirmed
+  // — and the one-off migrations below wait for "saved" (see `settled`).
+  const [projects, setProjects, projectsStatus, saveProjectsNow] = useStoredState(PROJECTS_INDEX_KEY, [], { cacheFirst: true });
   const initialRates = useMemo(() => defaultRates(), []);
-  const [rates, setRates, ratesStatus] = useStoredState("gradcon-rates", initialRates);
+  const [rates, setRates, ratesStatus] = useStoredState("gradcon-rates", initialRates, { cacheFirst: true });
+  const settled = (status) => status !== "loading" && status !== "syncing";
   const [initialView] = useState(takeInitialView);
   const [activeId, setActiveId] = useState(() => {
     // A pending Planner/Project Folder jump always wins over whatever project
@@ -126,7 +131,7 @@ export default function App() {
    * Rates Library showed $150. The direction is the whole point of the table.
    */
   useEffect(() => {
-    if (ratesStatus === "loading") return;
+    if (!settled(ratesStatus)) return;
     const fixes = [
       [rateKey("FORMWORK", "Conventional", "m2"), 60, 150],
       [rateKey("FORMWORK", "Edgeform", "m"), 8, 50],
@@ -169,7 +174,7 @@ export default function App() {
    * and offers a restore). Runs on load and on the storage event the library
    * fires when it saves, the same signal Cost Planner listens for. */
   useEffect(() => {
-    if (ratesStatus === "loading") return;
+    if (!settled(ratesStatus)) return;
     const apply = () => {
       const updates = pendingRateUpdates(rates, readLibraryState(), readLastSynced());
       if (!updates.length) return;                 // nothing to do — never loops
@@ -208,7 +213,7 @@ export default function App() {
   // One-time migration for installs that had a single quote under the old
   // fixed "gradcon-quote" key before multi-project support existed.
   useEffect(() => {
-    if (projectsStatus === "loading") return;
+    if (!settled(projectsStatus)) return;
     if (projects.length === 0) {
       migrateLegacyQuote().then((migrated) => {
         if (migrated.length) setProjects(migrated);
@@ -229,7 +234,7 @@ export default function App() {
   // browsing context to the Estimates iframe that wrote it) the moment
   // Estimates auto-publishes — no reload needed.
   useEffect(() => {
-    if (projectsStatus === "loading") return;
+    if (!settled(projectsStatus)) return;
 
     const importFromEstimateExport = async (estimateExport) => {
       const { quote: freshQuote } = buildImportFromEstimate(estimateExport);
@@ -508,7 +513,7 @@ function ProjectEditor({ project, rates, setRates, ratesStatus, saveProjectsNow,
     quoteStatus === "error" || ratesStatus === "error" ? "error"
     : quoteStatus === "saving" || ratesStatus === "saving" ? "saving"
     : quoteStatus === "unavailable" || ratesStatus === "unavailable" ? "unavailable"
-    : quoteStatus === "loading" || ratesStatus === "loading" ? "loading"
+    : quoteStatus === "loading" || ratesStatus === "loading" || ratesStatus === "syncing" ? "loading"
     : "saved";
 
   return (

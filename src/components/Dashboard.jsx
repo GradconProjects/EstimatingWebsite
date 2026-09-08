@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Plus, Trash2, ArrowRight, LayoutDashboard, Loader2 } from "lucide-react";
 import { QUOTE_STATUSES, QUOTE_STATUS_STYLES } from "../data/catalog.js";
 import { computeGrandTotal, computeMarginLadder, money, getDefaultMargin, getMarginSteps } from "../lib/costing.js";
-import { readQuotes, writeQuote } from "../lib/projects.js";
+import { readQuotes, readQuotesCached, writeQuote } from "../lib/projects.js";
 import { dashboardDueLabel } from "../lib/planner.js";
 
 const SORT_OPTIONS = [
@@ -34,7 +34,10 @@ function summarizeQuote(quote, rates) {
     name: quote.projectName || "Untitled project",
     client: quote.clientName || "",
     date: quote.projectDate,
-    status: quote.status || QUOTE_STATUSES[0],
+    // Only a status the style table knows: the rows below index
+    // QUOTE_STATUS_STYLES by this value, and one stale/renamed status in any
+    // single quote would otherwise take the whole dashboard down.
+    status: QUOTE_STATUSES.includes(quote.status) ? quote.status : QUOTE_STATUSES[0],
     deadline: quote.planner?.deadline || null,
     gfa: Number(quote.gfa) || 0,
     elementCount: items.length,
@@ -55,7 +58,10 @@ function StatTile({ label, value, highlight }) {
 }
 
 export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete }) {
-  const [quotesByKey, setQuotesByKey] = useState({});
+  // First paint comes from the last-known summary mirror (instant), then the
+  // effect below replaces it with what the database actually holds. An
+  // install without a mirror yet starts empty exactly as before.
+  const [quotesByKey, setQuotesByKey] = useState(() => readQuotesCached(projects.map((p) => p.storageKey)));
   const [loading, setLoading] = useState(true);
   // Two-click "arm, then confirm" delete instead of window.confirm() — a
   // native confirm() dialog can be silently blocked (throws or is a no-op)

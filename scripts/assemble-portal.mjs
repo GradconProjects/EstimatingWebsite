@@ -26,9 +26,47 @@ const outPath = path.join(distDir, "index.html");
 let quotesHtml = fs.readFileSync(path.join(distDir, "index.html"), "utf8");
 const assetsDir = path.join(distDir, "assets");
 const cssFile = fs.readdirSync(assetsDir).find((f) => f.endsWith(".css"));
-const jsFile = fs.readdirSync(assetsDir).find((f) => f.endsWith(".js"));
+// The ENTRY bundle is whichever file vite's index.html actually loads — never
+// "the first .js in assets/": a lazily-loaded chunk (see below) sits in the
+// same folder and picking that would inline the wrong file without a word.
+const entryMatch = quotesHtml.match(/<script type="module"[^>]*src="\/assets\/([^"]+\.js)"/);
+if (!entryMatch) throw new Error("could not find the entry <script src=\"/assets/…\"> in dist/index.html");
+const jsFile = entryMatch[1];
 const css = fs.readFileSync(path.join(assetsDir, cssFile), "utf8");
 let js = fs.readFileSync(path.join(assetsDir, jsFile), "utf8");
+
+/* --- Lazily-loaded chunks ---------------------------------------------------
+ * Any other .js in assets/ is a chunk the entry pulls in on demand with a
+ * dynamic import() (today: the PDF renderer, lib/pdfToImages.js). Vite emits
+ * that as `import("./chunk-hash.js")`, resolved against the importing module's
+ * URL — which, once this bundle is inlined and run from a blob: URL inside the
+ * portal, is a blob: URL that a relative path cannot resolve against
+ * (measured: "Failed to resolve module specifier"). `location.origin` inside
+ * that iframe IS the real site origin (blob: URLs inherit their creator's), so
+ * an absolute `origin + "/assets/chunk-hash.js"` loads fine, and Vercel serves
+ * dist/assets/ as-is. The chunk file stays where vite put it.
+ *
+ * Every step is asserted so a build can only ever succeed with a working lazy
+ * path — never with a silently broken one:
+ *   - a chunk that itself imports another module could not run from a URL its
+ *     imports don't resolve against, so it must be self-contained;
+ *   - the entry must reference each chunk exactly once, as the literal
+ *     `import("./<file>")` this rewrite targets (vite.config.js turns the
+ *     preload helper off precisely so it takes that plain form). */
+const chunkFiles = fs.readdirSync(assetsDir).filter((f) => f.endsWith(".js") && f !== jsFile);
+for (const chunk of chunkFiles) {
+  const chunkSrc = fs.readFileSync(path.join(assetsDir, chunk), "utf8");
+  if (/(^|[;\s}])import\s*["'][^"']+["']|\bfrom\s*["']\.\/[^"']+["']/.test(chunkSrc)) {
+    throw new Error(`chunk ${chunk} imports another module — it can't be loaded from an absolute URL on its own`);
+  }
+  const literal = `import("./${chunk}")`;
+  const occurrences = js.split(literal).length - 1;
+  if (occurrences !== 1) {
+    throw new Error(`expected exactly one ${literal} in ${jsFile}, found ${occurrences} — the lazy-load rewrite would be wrong`);
+  }
+  js = js.replace(literal, () => `import(/* @vite-ignore */ location.origin + "/assets/${chunk}")`);
+  console.log(`Lazy chunk kept at /assets/${chunk} (${(chunkSrc.length / 1024).toFixed(0)} KB), import rewritten to an absolute URL`);
+}
 
 // The bundle can contain a literal "</script" substring inside a string/regex
 // literal — embedded raw inside a real <script> tag, the HTML parser (not
