@@ -298,6 +298,56 @@ body[data-shell="blueprint"] #cardsHost .card .card-panes > .pane > div{display:
   .bp-nav,.bp-inspector{position:static;max-height:none;}
 }
 @media print{ .bp-nav,.bp-inspector,#helpDrawer,#shellToggle,#helpBtn{display:none !important;} }
+/* ============ Phase 2 — provenance, section status, live feedback ============ */
+body[data-shell="blueprint"] #cardsHost .card .card-head{position:sticky;top:50px;z-index:6;}
+.bp-head2{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 14px;background:var(--panel);border-bottom:1px solid var(--line);font-size:11.5px;position:sticky;top:96px;z-index:6;}
+.bp-head2 .chip{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--line);border-radius:4px;padding:1px 7px;font-size:10.5px;font-weight:600;background:var(--panel2);color:var(--text);}
+.bp-head2 .chip.st-draft{background:#eef2f7;color:#3b4b60;}
+.bp-head2 .chip.st-reviewed{background:#e3f1ea;color:#1f7a4d;border-color:#a9d7bd;}
+.bp-head2 .chip.st-stale{background:#fff4e5;color:#9a4a04;border-color:#f3c58a;}
+.bp-head2 .chip.st-imported{background:#fde3cf;color:#9a4a04;border-color:#f3c58a;}
+.bp-head2 .chip.warn{background:#fff4e5;color:#9a4a04;border-color:#f3c58a;}
+.bp-head2 .chip.prov-e{background:#e6edf6;color:var(--accent);}
+.bp-head2 .chip.prov-d{background:#f4f6f9;color:var(--muted);}
+.bp-head2 .chip.prov-m{background:#fff4e5;color:#9a4a04;}
+.bp-head2 .spacer{flex:1;}
+.bp-head2 .btn.small{padding:2px 8px;font-size:11px;}
+/* section rail */
+body[data-shell="blueprint"] .card-tabs{width:168px;}
+body[data-shell="blueprint"] .card-tabs button{display:grid;grid-template-columns:14px 1fr;gap:2px 6px;align-items:center;}
+body[data-shell="blueprint"] .card-tabs button .rail-ico{font-size:11px;color:var(--muted);}
+body[data-shell="blueprint"] .card-tabs button .rail-ico.ok{color:var(--good);}
+body[data-shell="blueprint"] .card-tabs button .rail-ico.warn{color:var(--accent2);}
+body[data-shell="blueprint"] .card-tabs button .rail-meta{grid-column:2;font-size:10px;font-weight:500;color:var(--muted);font-family:ui-monospace,Menlo,Consolas,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+body[data-shell="blueprint"] .card-tabs button .rail-key{display:none;}
+/* input provenance */
+body[data-shell="blueprint"] label.field.prov-default input,body[data-shell="blueprint"] label.field.prov-default select{background:#f6f8fb;color:#3b4b60;border-style:dashed;}
+body[data-shell="blueprint"] label.field.prov-entered input,body[data-shell="blueprint"] label.field.prov-entered select{border-color:#9db4d3;}
+body[data-shell="blueprint"] label.field .lbl{display:flex;align-items:center;gap:6px;}
+body[data-shell="blueprint"] label.field.prov-default .lbl::after{content:"Default";font-size:9.5px;font-weight:600;color:var(--muted);border:1px solid var(--line);border-radius:3px;padding:0 4px;background:#fff;}
+body[data-shell="blueprint"] label.field .prov-reset{display:none;}
+body[data-shell="blueprint"] label.field.prov-entered .prov-reset{display:inline-block;margin-left:auto;font-size:10px;padding:0 5px;border:1px solid var(--line);border-radius:3px;background:#fff;color:var(--muted);cursor:pointer;line-height:15px;}
+body[data-shell="blueprint"] label.field .prov-reset:hover{color:var(--accent);border-color:var(--accent);}
+body[data-shell="blueprint"] input.prov-missing{outline:2px solid var(--danger);outline-offset:0;}
+/* inspector extras */
+.bp-inspector .bp-warn{display:flex;gap:6px;align-items:flex-start;background:#fff4e5;border:1px solid #f3c58a;color:#7a4a08;border-radius:6px;padding:6px 8px;font-size:11.5px;margin-bottom:6px;}
+.bp-inspector .bp-warn a{color:var(--accent);cursor:pointer;white-space:nowrap;font-weight:600;text-decoration:none;}
+.bp-inspector details.bp-calc{margin-top:8px;border-top:1px solid var(--line);padding-top:6px;}
+.bp-inspector details.bp-calc summary{cursor:pointer;font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--accent);font-weight:700;}
+.bp-inspector .bp-calc-grp{font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:8px 0 3px;}
+.bp-inspector .bp-calc-line{font-size:11px;padding:4px 0;border-bottom:1px solid #e6ebf2;}
+.bp-inspector .bp-calc-line .q{font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:700;color:var(--accent);}
+.bp-inspector .bp-calc-line .f{font-family:ui-monospace,Menlo,Consolas,monospace;color:var(--muted);font-size:10.5px;display:block;}
+.bp-inspector .bp-calc-line a{color:var(--accent);cursor:pointer;font-size:10.5px;text-decoration:none;}
+.bp-inspector .bp-diag{position:relative;}
+.bp-inspector .bp-diag .bp-full{position:absolute;top:6px;right:6px;z-index:2;}
+#drawingFull{display:none;position:fixed;inset:0;background:rgba(11,31,54,.92);z-index:90;padding:24px;align-items:center;justify-content:center;}
+#drawingFull.open{display:flex;}
+#drawingFull .diagram{width:min(1400px,96vw);max-height:92vh;overflow:auto;background:#fff;}
+#drawingFull .diagram svg{max-height:86vh;width:auto;max-width:100%;margin:0 auto;}
+#drawingFull .close{position:absolute;top:14px;right:18px;}
+.manual-reason{width:150px;font-size:11px;margin-top:3px;}
+@media print{ #drawingFull,.bp-head2{display:none !important;} }
 </style>
 </head>
 <body>
@@ -325,6 +375,7 @@ body[data-shell="blueprint"] #cardsHost .card .card-panes > .pane > div{display:
     <button class="btn small" id="shellToggle" type="button" title="Switch between the classic layout and the new blueprint layout — nothing about the takeoff changes, only how it is laid out">⇄ New layout</button>
   </div>
 </header>
+<div id="drawingFull" onclick="if(event.target===this) toggleDrawingFull(false)"><button class="btn small close" type="button" onclick="toggleDrawingFull(false)">✕ Close (Esc)</button><div class="diagram"></div></div>
 <aside id="helpDrawer" aria-label="Help"><button class="btn small help-close" type="button" onclick="toggleHelp(false)">✕ Close</button><h3>Help &amp; tutorials</h3><div class="help-body"></div></aside>
 <main>
 
@@ -750,7 +801,29 @@ function renderProjectMenu(){
         </button>`;
       }).join('');
   }
+  menu.innerHTML += `<div class="proj-meta" id="projCloudVersions" style="padding:8px 10px 2px;border-top:1px solid var(--line);margin-top:6px;"><b>Cloud versions — ${PROJECT.name||"open project"}</b> <span class="small">loading…</span></div>`;
   menu.innerHTML += `<button class="btn small primary proj-new" data-proj-new>+ New project</button>`;
+  renderCloudVersionsSection();
+}
+async function renderCloudVersionsSection(){
+  let host=document.getElementById("projCloudVersions"); if(!host) return;
+  let pid=projectIdForKey(CURRENT_PROJECT_KEY);
+  if(!SUPABASE_URL || !pid){ host.innerHTML = `<b>Cloud versions</b> <span class="small">${SUPABASE_URL? "— saved once this takeoff has a name or an element" : "— not available offline"}</span>`; return; }
+  let list = await listEstimateVersions(pid);
+  if(document.getElementById("projCloudVersions")!==host) return;
+  if(!list.length){ host.innerHTML = `<b>Cloud versions — ${PROJECT.name||"open project"}</b> <span class="small">none yet (one is kept on every 💾 Save, every few minutes while you work, and before any cloud update or restore)</span>`; return; }
+  host.innerHTML = `<b>Cloud versions — ${PROJECT.name||"open project"}</b> <span class="small">${list.length} kept, newest first — pick one to work from; the current state is kept first</span>`;
+  let frag = list.slice(0,60).map(v=>{
+    let when = v.savedAt? new Date(v.savedAt).toLocaleString([], {day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"}) : v.name;
+    return `<button class="proj-item" data-proj-ver="${v.path}" title="Restore this version — the current state is kept as a version first">
+      <span>☁ <b>${when}</b><span class="proj-meta">${versionSourceLabel(v.source)}${v.size?` · ${Math.round(v.size/1024)} KB`:""}</span></span></button>`;
+  }).join('');
+  host.insertAdjacentHTML("afterend", frag);
+  // element counts come from the file itself; fill the newest few in lazily
+  let btns = [...document.querySelectorAll('[data-proj-ver]')].slice(0,8);
+  for(const b of btns){
+    try{ const doc = await loadEstimateVersion(b.dataset.projVer); let n = doc.elementCount!==undefined? doc.elementCount : ((doc.snapshot||doc).instances||[]).length; let meta=b.querySelector('.proj-meta'); if(meta) meta.textContent += ` · ${n} element${n===1?"":"s"}`; }catch(e){}
+  }
 }
 (function initProjPicker(){
   let btn=document.getElementById("projBtn"), menu=document.getElementById("projMenu");
@@ -767,6 +840,8 @@ function renderProjectMenu(){
     if(item && !item.disabled){ menu.style.display="none"; switchToTakeoff(item.dataset.projOpen); return; }
     let hist=e.target.closest("[data-proj-hist]");
     if(hist){ menu.style.display="none"; restoreSaveHistory(parseInt(hist.dataset.projHist)); return; }
+    let ver=e.target.closest("[data-proj-ver]");
+    if(ver){ menu.style.display="none"; restoreEstimateVersion(ver.dataset.projVer); return; }
     if(e.target.closest("[data-proj-new]")){ menu.style.display="none"; newTakeoff(); }
   });
   document.addEventListener("click",(e)=>{
@@ -919,6 +994,162 @@ async function kvPush(key, value){
     return rows[0] || null;
   }catch(e){ return null; }
 }
+/* ============ Sync safety (8 Sep 2026, after the 18 Beach Road loss) ============
+ * The old flow let a tab push whatever LOCAL copy it held the moment it
+ * opened a takeoff — before it had looked at the cloud — and every other tab
+ * then pulled that stale copy within six seconds. Three rules now:
+ *  1. A tab never pushes a takeoff to the cloud until it has reconciled with
+ *     the cloud copy for that key this session (CLOUD_RECONCILED_KEY). Edits
+ *     made before that are saved locally and pushed once reconciled.
+ *  2. A push is CONDITIONAL on the cloud row being unchanged since this tab
+ *     last synced it (PATCH ... updated_at=eq.<syncedAt>). If another device
+ *     wrote in between, that device's copy is kept as a cloud VERSION first,
+ *     then this tab's live work goes up and the estimator is told.
+ *  3. Versions are immutable copies in the gradcon-files bucket under
+ *     estimate-versions/<projectId>/ — one on every 💾 Save, every N minutes
+ *     while the takeoff changes, before a cloud pull replaces local content,
+ *     before any restore, and on every conflict. Nothing deletes a version. */
+let CLOUD_RECONCILED_KEY = null;
+const PENDING_CLOUD_PUSH = {};
+const PUSH_CONFLICT = "__conflict__";
+function cloudReconciled(key){ return CLOUD_RECONCILED_KEY === key; }
+function markReconciled(key){
+  CLOUD_RECONCILED_KEY = key;
+  if(PENDING_CLOUD_PUSH[key] && CURRENT_PROJECT_KEY === key){
+    delete PENDING_CLOUD_PUSH[key];
+    pushTakeoffToCloud(key, estimateStateSnapshot());
+  }
+}
+async function kvPatchIfUnchanged(key, value, since){
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/estimator_kv?key=eq.${encodeURIComponent(key)}&updated_at=eq.${encodeURIComponent(since)}`, {
+      method:"PATCH",
+      headers:{ apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}`, "Content-Type":"application/json", Prefer:"return=representation" },
+      body: JSON.stringify({ value, updated_at: new Date().toISOString() }),
+      signal: AbortSignal.timeout(8000),
+    });
+    if(!res.ok) return null;
+    const rows = await res.json();
+    return rows[0] || PUSH_CONFLICT;   // no row matched: someone else wrote since `since` (or the row is gone)
+  }catch(e){ return null; }
+}
+function sameTakeoff(a, b){
+  const pick = (v)=>({ project:(v&&v.project)||{}, selectedTypes:(v&&v.selectedTypes)||{}, instances:(v&&v.instances)||[], idCounter:(v&&v.idCounter)||0 });
+  return JSON.stringify(pick(a)) === JSON.stringify(pick(b));
+}
+// One push in flight per key, later snapshots coalesced behind it: two
+// pushes racing from the SAME tab would otherwise read the same stale stamp
+// and report the tab's own previous write as another device's.
+const PUSH_STATE = {};
+async function pushTakeoffToCloud(key, snapshot){
+  if(!SUPABASE_URL) return null;
+  if(!cloudReconciled(key)){ PENDING_CLOUD_PUSH[key] = true; return null; }
+  const st = PUSH_STATE[key] || (PUSH_STATE[key] = { running:false, queued:null });
+  if(st.running){ st.queued = snapshot; return null; }
+  st.running = true;
+  try{
+    let row = await pushTakeoffOnce(key, snapshot);
+    while(st.queued){ const next = st.queued; st.queued = null; row = await pushTakeoffOnce(key, next); }
+    return row;
+  } finally { st.running = false; }
+}
+const LAST_CLOUD_HASH = {};   // key -> hash of the content this tab last pushed or pulled
+async function pushTakeoffOnce(key, snapshot){
+  const h = snapshotHash(snapshot);
+  if(LAST_CLOUD_HASH[key] === h) return null;   // identical to the cloud copy already: no echo write, no cross-tab ping-pong
+  let since = null; try{ since = localStorage.getItem(key+"__syncedAt"); }catch(e){}
+  let row = since ? await kvPatchIfUnchanged(key, snapshot, since) : await kvPush(key, snapshot);
+  if(row === PUSH_CONFLICT){
+    const theirs = await kvFetch(key);
+    if(theirs && theirs.value && !sameTakeoff(theirs.value, snapshot)){
+      await keepEstimateVersion(key, theirs.value, "other-device");
+      notifySyncConflict(theirs.updated_at);
+    }
+    row = await kvPush(key, snapshot);
+  }
+  if(row){ LAST_CLOUD_HASH[key] = h; try{ localStorage.setItem(key+"__syncedAt", row.updated_at); }catch(e){} }
+  return row;
+}
+function notifySyncConflict(when){
+  let el = document.getElementById("saveStatus"); if(!el) return;
+  let t = when ? new Date(when).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"}) : "";
+  el.classList.remove("ok"); el.classList.add("err");
+  el.textContent = `Another tab or device saved this takeoff${t?" at "+t:""} — its copy is kept under 📁 Projects ▾ Cloud versions`;
+  clearTimeout(saveStatusTimer);
+  saveStatusTimer = setTimeout(()=>{ el.textContent = "All changes saved automatically"; el.classList.remove("err"); }, 12000);
+}
+/* ---- Cloud versions (unlimited, immutable) ---- */
+const VERSION_BUCKET = "gradcon-files", VERSION_PREFIX = "estimate-versions/";
+let LAST_VERSION_HASH = null;
+function snapshotHash(snap){
+  let str=JSON.stringify({p:snap.project,s:snap.selectedTypes,i:snap.instances}); let h=0x811c9dc5;
+  for(let i=0;i<str.length;i++){ h^=str.charCodeAt(i); h=Math.imul(h,0x01000193)>>>0; }
+  return ("00000000"+h.toString(16)).slice(-8);
+}
+function projectIdForKey(key){ let e=loadProjectsIndex().find(p=>p.key===key); return e? e.id : null; }
+async function keepEstimateVersion(key, snapshot, source){
+  if(!SUPABASE_URL || !snapshot) return null;
+  const pid = projectIdForKey(key); if(!pid) return null;
+  if(!(Array.isArray(snapshot.instances) && snapshot.instances.length) && !((snapshot.project||{}).name||"").trim()) return null; // an empty draft is not worth a version
+  const doc = { format:"gradcon-estimate-version", formatVersion:1, schemaVersion:ESTIMATE_SCHEMA_VERSION, source, savedAt:new Date().toISOString(), projectId:pid, build:ESTIMATES_BUILD, name:(snapshot.project||{}).name||"", elementCount:(snapshot.instances||[]).length, snapshot };
+  const path = VERSION_PREFIX + pid + "/" + doc.savedAt.replace(/[:.]/g,"-") + "-" + source + ".json";
+  try{
+    const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${VERSION_BUCKET}/${path}`, {
+      method:"POST",
+      headers:{ apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}`, "Content-Type":"application/json", "x-upsert":"false" },
+      body: JSON.stringify(doc), signal: AbortSignal.timeout(15000),
+    });
+    if(!res.ok) return null;
+    if(source!=="other-device") LAST_VERSION_HASH = snapshotHash(snapshot);
+    return path;
+  }catch(e){ return null; }
+}
+async function listEstimateVersions(pid){
+  if(!SUPABASE_URL || !pid) return [];
+  try{
+    const res = await fetch(`${SUPABASE_URL}/storage/v1/object/list/${VERSION_BUCKET}`, {
+      method:"POST", headers:{ apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}`, "Content-Type":"application/json" },
+      body: JSON.stringify({ prefix: VERSION_PREFIX + pid, limit: 500, sortBy:{ column:"name", order:"desc" } }), signal: AbortSignal.timeout(10000),
+    });
+    if(!res.ok) return [];
+    const items = await res.json();
+    return (Array.isArray(items)? items : []).filter(o=>o.name && /\.json$/.test(o.name)).map(o=>{
+      let m = o.name.match(/^(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})-\d+Z-(.+)\.json$/);
+      return { path: VERSION_PREFIX + pid + "/" + o.name, name:o.name, savedAt: m? `${m[1]}T${m[2]}:${m[3]}:${m[4]}Z` : "", source: m? m[5] : "" , size: o.metadata && o.metadata.size };
+    }).sort((a,b)=> a.name<b.name? 1 : -1);
+  }catch(e){ return []; }
+}
+async function loadEstimateVersion(path){
+  const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${VERSION_BUCKET}/${path}`, { headers:{ apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` }, signal: AbortSignal.timeout(15000) });
+  if(!res.ok) throw new Error("That version could not be fetched ("+res.status+").");
+  return await res.json();
+}
+async function restoreEstimateVersion(path){
+  let doc; try{ doc = await loadEstimateVersion(path); }catch(err){ alert(err.message); return; }
+  let snap; try{ snap = migrateEstimateSnapshot(doc.snapshot || doc); }catch(err){ alert("That version can't be read by this build: "+err.message); return; }
+  await keepEstimateVersion(CURRENT_PROJECT_KEY, estimateStateSnapshot(), "before-restore"); // the state being left is never lost
+  pushSaveHistory();
+  applyLoadedEstimateState(snap,{collapseAll:true});
+  saveEstimateState(true);
+  rerenderAllPages();
+}
+function versionSourceLabel(src){ return ({save:"💾 Save", autosave:"⏱ Autosave", "before-sync":"↓ Before a cloud update", "other-device":"⚠ Other device's copy", "before-restore":"↩ Before a restore", switch:"💾 Save"})[src] || src; }
+// Timed versions: one every N minutes (portal Settings "autosave a version
+// every"; 0 = off) while the open takeoff has changed since the last version.
+(function(){
+  let mins = portalPref("quotesAutosaveMinutes");
+  mins = (typeof mins==="number" && isFinite(mins) && mins>=0) ? mins : 10;
+  if(mins===0) return;
+  setInterval(function(){
+    try{
+      if(inRecovery() || awaitingCloudLoad) return;
+      const snap = estimateStateSnapshot();
+      if(!(snap.instances||[]).length) return;
+      if(snapshotHash(snap)===LAST_VERSION_HASH) return;
+      keepEstimateVersion(CURRENT_PROJECT_KEY, snap, "autosave");
+    }catch(e){}
+  }, Math.max(1,mins)*60*1000);
+})();
 let saveStatusTimer = null;
 function showSaveStatus(kind){
   let el = document.getElementById("saveStatus");
@@ -1007,6 +1238,7 @@ function restoreSaveHistory(i){
   // the state being left becomes the NEWEST history entry — nothing is lost
   pushSaveHistory();
   let snap; try{ snap = migrateEstimateSnapshot(entry.snapshot); }catch(err){ alert("That saved version can't be read by this build: "+err.message); return; }
+  keepEstimateVersion(CURRENT_PROJECT_KEY, estimateStateSnapshot(), "before-restore");
   applyLoadedEstimateState(snap,{collapseAll:true});
   saveEstimateState(true); // skipHistory: the restore itself isn't a new save-point
   rerenderAllPages();
@@ -1028,10 +1260,10 @@ function saveEstimateState(skipHistory){
     showSaveStatus("ok");
     if(!skipHistory) pushSaveHistory();
   }catch(err){ showSaveStatus("err"); }
-  kvPush(keyAtSave, snapshot).then(row=>{
-    if(!row) return;
-    try{ localStorage.setItem(keyAtSave+"__syncedAt", row.updated_at); }catch(e){}
-  });
+  // Cloud: only once this tab has reconciled with the cloud copy of this key
+  // (see pushTakeoffToCloud); a deliberate save also keeps a cloud version.
+  pushTakeoffToCloud(keyAtSave, snapshot);
+  if(!skipHistory) keepEstimateVersion(keyAtSave, snapshot, "save");
   // Keep the takeoff registry's name/date for the open project current, so
   // the Saved Takeoffs list always shows what a resume would open.
   let idx = loadProjectsIndex();
@@ -1128,24 +1360,37 @@ async function syncFromCloud(){
     if(!row){
       // Nothing in the cloud either — the fresh state IS this takeoff's state.
       if(CURRENT_PROJECT_KEY === keyAtStart) awaitingCloudLoad = false;
-      const pushed = await kvPush(keyAtStart, estimateStateSnapshot());
-      if(pushed) try{ localStorage.setItem(keyAtStart+"__syncedAt", pushed.updated_at); }catch(e){}
+      try{ localStorage.removeItem(keyAtStart+"__syncedAt"); }catch(e){}
+      CLOUD_RECONCILED_KEY = keyAtStart; delete PENDING_CLOUD_PUSH[keyAtStart];
+      await pushTakeoffToCloud(keyAtStart, estimateStateSnapshot());
       return;
     }
     const localSyncedAt = localStorage.getItem(keyAtStart+"__syncedAt");
     if(localSyncedAt && row.updated_at <= localSyncedAt){
       if(CURRENT_PROJECT_KEY === keyAtStart) awaitingCloudLoad = false;
+      if(LAST_CLOUD_HASH[keyAtStart]===undefined && row.value) LAST_CLOUD_HASH[keyAtStart] = snapshotHash(row.value);
+      markReconciled(keyAtStart);
       return;
     }
     let migratedRow;
     try{ migratedRow = migrateEstimateSnapshot(row.value || {}); }
     catch(err){ try{ console.warn("Estimates: cloud copy of", keyAtStart, "not readable by this build — kept local state:", err.message); }catch(e){} return; }
+    // The cloud copy is newer than anything this tab has synced. Before it
+    // replaces what is on screen, keep the local content as a version when it
+    // differs and is not just the placeholder of a still-loading takeoff.
+    const localSnap = estimateStateSnapshot();
+    if(!awaitingCloudLoad && (localSnap.instances||[]).length && !sameTakeoff(localSnap, migratedRow)){
+      await keepEstimateVersion(keyAtStart, localSnap, "before-sync");
+    }
+    if(CURRENT_PROJECT_KEY !== keyAtStart) return;
     applyLoadedEstimateState(migratedRow);
     if(CURRENT_PROJECT_KEY === keyAtStart) awaitingCloudLoad = false;
     try{
       localStorage.setItem(keyAtStart, JSON.stringify({ ...estimateStateSnapshot(), savedAt: new Date().toISOString() }));
       localStorage.setItem(keyAtStart+"__syncedAt", row.updated_at);
     }catch(e){}
+    CLOUD_RECONCILED_KEY = keyAtStart; delete PENDING_CLOUD_PUSH[keyAtStart]; // the cloud copy is now on screen; nothing older waits to go up
+    LAST_CLOUD_HASH[keyAtStart] = snapshotHash(estimateStateSnapshot());
     renderProjectForm(); renderDefaultsForm(); renderGeometryForm(); renderLibrary(); renderAddToolbar(); renderWorkspace(); computeAllAndRefresh();
   } finally {
     syncingFromCloud = false;
@@ -1649,6 +1894,7 @@ function baseLine(inst,def,over){
     line.calculatedQty = line.finalQty;
     line.finalQty = (ov.qty===""||ov.qty===undefined||ov.qty===null||isNaN(ov.qty))? 0 : Number(ov.qty);
     line.manualOverride = true;
+    line.overrideReason = ov.reason || "";
   }
   // Lines whose weight can't be derived from material name alone (e.g. square mesh laid
   // as trench strips — kg depends on strip width) pass massPerUnit; computing weight from
@@ -5283,12 +5529,107 @@ function targetSelect(field,val,selfId,filterCalc){
 }
 function targetLabelOf(id){ if(!id) return ""; let i=INSTANCES.find(x=>x.id===id); return i? i.label : ""; }
 
+/* ============================= PROVENANCE & STATUS (Phase 2) =============================
+ * The data a fresh element starts with, exactly as addInstance seeds it —
+ * calculator defaults, the portal preference overlay, the type's cover.
+ * Against this every stored field reads as DEFAULT (equal to it, never
+ * typed), ENTERED (recorded in inst.entered the moment it is typed, even if
+ * typed back to the default) or, for a field with no default, entered when
+ * it holds a value. Never a default shown as if the estimator entered it. */
+function defaultDataFor(typeId){
+  let def=LIB_INDEX[typeId]; if(!def) return {};
+  let calc=CALC[def.calc];
+  let d=applyElementPrefs(calc.defaults(def.slabCategory||def.beamCategory||def.kind, def.suspended));
+  if(d.cover!==undefined) d.cover = defaultCoverFor(typeId);
+  return d;
+}
+const sameVal = (a,b) => a===b || (a==null&&b==null) || (typeof a==="number"&&typeof b==="number"&&Math.abs(a-b)<1e-9) || (a!==null&&b!==null&&typeof a==="object"&&typeof b==="object"&&JSON.stringify(a)===JSON.stringify(b));
+function markEntered(inst, field){
+  if(!field || /^manualOverrides\./.test(field)) return;
+  if(!inst.entered || typeof inst.entered!=="object") inst.entered={};
+  inst.entered[field]=true;
+}
+/** "entered" | "default" | "imported" | "none" for one data path of an element. */
+function fieldProvenance(inst, field, defaults){
+  let v=getPath(inst.data,field);
+  if(inst.entered && inst.entered[field]) return "entered";
+  let top=field.split('.')[0];
+  if(defaults && Object.prototype.hasOwnProperty.call(defaults, field)){
+    return sameVal(v, defaults[field]) ? "default" : (inst.data.__csvImport && !isReviewed(inst) ? "imported" : "entered");
+  }
+  if(field.indexOf('.')>0) return (v===""||v===undefined||v===null) ? "none" : "entered"; // table rows have no per-field default
+  return (v===""||v===undefined||v===null) ? "none" : "entered";
+}
+function provenanceCounts(inst){
+  let defaults=defaultDataFor(inst.typeKey), c={entered:0,default:0,manual:0,imported:0};
+  Object.keys(defaults).forEach(k=>{ if(/^_/.test(k)||k==="manualOverrides"||Array.isArray(defaults[k])) return; let pv=fieldProvenance(inst,k,defaults); if(pv==="entered") c.entered++; else if(pv==="default") c.default++; else if(pv==="imported") c.imported++; });
+  let mo=inst.data.manualOverrides||{}; Object.keys(mo).forEach(k=>{ if(mo[k]&&mo[k].enabled) c.manual++; });
+  return c;
+}
+function resetFieldToDefault(inst, field){
+  let defaults=defaultDataFor(inst.typeKey);
+  if(!Object.prototype.hasOwnProperty.call(defaults, field)) return false;
+  setPath(inst.data, field, JSON.parse(JSON.stringify(defaults[field])));
+  if(inst.entered) delete inst.entered[field];
+  return true;
+}
+/* Review status. A hash of the element's data is kept when the estimator
+ * marks it reviewed; the status is DERIVED from it on every read, so a
+ * later edit turns Reviewed into Stale without any bookkeeping on input. */
+function dataHash(inst){
+  let str=JSON.stringify(inst.data||{}); let h=0x811c9dc5;
+  for(let i=0;i<str.length;i++){ h^=str.charCodeAt(i); h=Math.imul(h,0x01000193)>>>0; }
+  return ("00000000"+h.toString(16)).slice(-8);
+}
+function isReviewed(inst){ return !!(inst.review && inst.review.hash && inst.review.hash===dataHash(inst)); }
+function elementStatus(inst){
+  if(inst.review && inst.review.hash){
+    return isReviewed(inst) ? {state:"reviewed", label:"Reviewed", title:"Reviewed "+(inst.review.at||"")+" — every value unchanged since"} : {state:"stale", label:"Changed since review", title:"Edited after it was marked reviewed — review again"};
+  }
+  if(inst.data && inst.data.__csvImport) return {state:"imported", label:"Imported — verify", title:"Drafted from a CSV import; check the geometry, then mark reviewed"};
+  return {state:"draft", label:"Draft", title:"Not yet marked reviewed"};
+}
+function markReviewed(inst){ inst.review={hash:dataHash(inst), at:new Date().toISOString().slice(0,16).replace("T"," ")}; }
+function clearReview(inst){ delete inst.review; }
+
+/* Generic checks every calculator gets for free, attributed to the card
+ * section that owns the fix. Plain language; a warning never blocks a save. */
+const WARN_RULES_SECTION_WORDS=[[/starter|dowel|connection|coupler/i,"conns"],[/formwork|form face|soffit/i,"form"],[/excavat|spoil|trench|batter/i,"exc"],[/blinding|vapour|membrane|insulation/i,"blind"],[/cover|spacing|bar|mesh|lap|ligature|reinforc/i,"reo"],[/opening|perimeter|thickness|depth|width|length|diameter|area|volume/i,"geom"]];
+function warnSectionOf(text){ for(const [re,sec] of WARN_RULES_SECTION_WORDS){ if(re.test(text)) return sec; } return "geom"; }
+function normaliseWarnings(list){ return (list||[]).map(w=> typeof w==="string" ? {text:w, section:warnSectionOf(w)} : (w&&w.text? {text:w.text, section:w.section||warnSectionOf(w.text), level:w.level} : null)).filter(Boolean); }
+function validateInstance(inst, def, out){
+  let d=inst.data||{}, w=[];
+  let dims=[["width",d.width],["depth",d.depth],["thickness",d.thickness],["diameter",d.dia],["height",d.height]].filter(x=>x[1]!==""&&x[1]!==undefined&&x[1]!==null&&num(x[1])>0);
+  let cover=(d.cover===""||d.cover===undefined||d.cover===null)? null : num(d.cover);
+  if(cover!==null && cover>0){
+    let mmDims=dims.filter(x=>num(x[1])>=20); // cross-section fields are millimetres; a metre-valued plan dimension (e.g. 6.5) is skipped
+    let tight=mmDims.find(x=>num(x[1])<=2*cover);
+    if(tight) w.push({text:`Cover ${cover} mm leaves no core in the ${tight[0]} of ${num(tight[1])} mm — check cover and section size`, section:"reo"});
+  }
+  (function walk(obj, path, depth){
+    if(!obj || typeof obj!=="object" || depth>3) return;
+    Object.keys(obj).forEach(k=>{
+      let v=obj[k], pth=path? path+"."+k : k;
+      if(v && typeof v==="object"){ walk(v, pth, depth+1); return; }
+      if(/spacing/i.test(k) && v!=="" && v!==undefined && v!==null){
+        let n=parseFloat(v);
+        if(!isNaN(n) && n<=0) w.push({text:`Spacing must be greater than 0 (${pth})`, section:"reo"});
+        else if(!isNaN(n) && n>0 && n<50) w.push({text:`Unusually tight spacing of ${n} mm (${pth}) — confirm it is not a typo`, section:"reo", level:"unusual"});
+      }
+    });
+  })(d,"",0);
+  if(Array.isArray(d.openings) && d.openings.length){
+    let plan=num(d._autoInsArea)||num(d._autoBlindArea)||0;
+    let openArea=d.openings.reduce((s,o)=>s+(num(o.w)/1000)*(num(o.h)/1000)*num(o.qty,1),0);
+    if(plan>0 && openArea>=plan) w.push({text:`Openings (${fmt(openArea,2)} m²) equal or exceed the host area (${fmt(plan,2)} m²) — check opening sizes are in mm`, section:"geom"});
+  }
+  return w;
+}
+
 function addInstance(typeId){
   let def=LIB_INDEX[typeId];
   BP_SELECTED_ID = null; // the new element becomes the selected one (set below)
-  let calc=CALC[def.calc];
-  let inst={id:uid("EL"), typeKey:typeId, label:def.label+" "+(INSTANCES.filter(i=>i.typeKey===typeId).length+1), data:applyElementPrefs(calc.defaults(def.slabCategory||def.beamCategory||def.kind, def.suspended))};
-  if(inst.data.cover!==undefined) inst.data.cover = defaultCoverFor(typeId);
+  let inst={id:uid("EL"), typeKey:typeId, label:def.label+" "+(INSTANCES.filter(i=>i.typeKey===typeId).length+1), data:defaultDataFor(typeId)};
   // Rolled up, always — see collapseAllInstances for why there is no opt-out.
   inst._collapsed = true;
   INSTANCES.push(inst);
@@ -5463,7 +5804,7 @@ function renderBlueprintInspector(inst){
    <div class="bp-insp-head"><span>Inspector</span><span class="small">${bpEsc(inst.id)}</span></div>
    <div class="bp-insp-title">${bpEsc(inst.label)}</div>
    <div class="bp-insp-type">${bpEsc(def.groupName)} / ${bpEsc(def.label)}</div>
-   <div class="bp-diag">${calc? calc.diagram(inst) : ''}</div>
+   <div class="bp-diag"><button class="btn small bp-full" type="button" onclick="toggleDrawingFull(true)" title="Full-screen drawing">⤢</button>${calc? calc.diagram(inst) : ''}</div>
    <div class="bp-totals">
      <div class="bp-tot"><div class="n">${fmt(t.conc,2)}</div><div class="l">m³ concrete</div></div>
      <div class="bp-tot"><div class="n">${fmt(t.reoKg,1)}</div><div class="l">kg reo (${fmt(t.reoKg/1000,3)} t)</div></div>
@@ -5472,8 +5813,30 @@ function renderBlueprintInspector(inst){
      ${t.blind?`<div class="bp-tot"><div class="n">${fmt(t.blind,2)}</div><div class="l">m³ blinding/base</div></div>`:''}
      ${t.vap?`<div class="bp-tot"><div class="n">${fmt(t.vap,2)}</div><div class="l">m² vapour barrier</div></div>`:''}
    </div>
-   <div class="bp-warns">${t.warnings.map(w=>`<div class="warn">⚠ ${bpEsc(w)}</div>`).join('')}</div>
-   <div class="bp-lines">${t.lines} quantity line${t.lines===1?'':'s'} in the register</div>`;
+   <div class="bp-warns">${t.warnings.map(w=>`<div class="bp-warn"><span>⚠</span><span style="flex:1">${bpEsc(w.text)}</span><a data-go="${bpEsc(w.section||'geom')}" title="Open the section that owns this">→ ${bpEsc(bpTabLabel(w.section))}</a></div>`).join('')}</div>
+   <div class="bp-lines">${t.lines} quantity line${t.lines===1?'':'s'} in the register${t.warnings.length?` · ${t.warnings.length} unresolved warning${t.warnings.length>1?'s':''}`:''}</div>
+   ${bpCalcTrace(inst)}`;
+  insp.querySelectorAll('a[data-go]').forEach(a=>a.addEventListener('click',()=>{ let card=document.querySelector('#cardsHost .card'); if(card) bpGoSection(card,a.dataset.go); }));
+}
+function bpTabLabel(tab){ let t=TABS.find(x=>x[0]===tab); return t? t[1] : "Geometry"; }
+/** Plain-language calculation trace: every register line with its formula,
+ * grouped by material, each linking to the section that owns it. */
+function bpCalcTrace(inst){
+  let lines=(inst.results||{}).lines||[];
+  if(!lines.length) return `<details class="bp-calc"><summary>Show calculation</summary><p class="small">Nothing measured yet.</p></details>`;
+  let card=document.querySelector('#cardsHost .card');
+  let avail=card? [...card.querySelectorAll('.card-tabs button')].map(b=>b.dataset.tab) : [];
+  let groups={}; lines.forEach(l=>{ (groups[l.materialGroup||"Other"]=groups[l.materialGroup||"Other"]||[]).push(l); });
+  return `<details class="bp-calc"><summary>Show calculation (${lines.length})</summary>${Object.keys(groups).map(g=>`<div class="bp-calc-grp">${bpEsc(g)}</div>${groups[g].map(l=>{
+    let sec=lineSection(l,avail);
+    return `<div class="bp-calc-line"><span class="q">${fmt(l.finalQty,2)} ${bpEsc(l.unit)}</span> ${bpEsc(l.material)}${l.spec?` — ${bpEsc(l.spec)}`:''}${l.manualOverride?` <span class="manual-badge" title="System calculated ${fmt(l.calculatedQty,2)}${l.overrideReason?' — '+bpEsc(l.overrideReason):''}">✎ manual (system ${fmt(l.calculatedQty,2)})</span>`:''}
+      <span class="f">${bpEsc(l.formula||'')}${l.waste?` · waste ${l.waste}%`:''}${l.lap?` · lap ${l.lap}%`:''}${l.manualOverride&&l.overrideReason?` · reason: ${bpEsc(l.overrideReason)}`:''}</span>
+      ${avail.length?`<a data-go="${sec}">→ ${bpEsc(bpTabLabel(sec))}</a>`:''}</div>`; }).join('')}`).join('')}</details>`;
+}
+function toggleDrawingFull(open){
+  let d=document.getElementById('drawingFull'); if(!d) return;
+  if(open){ let src=document.querySelector('#bpInspector .bp-diag svg') || document.querySelector('#cardsHost .diag-host svg'); d.querySelector('.diagram').innerHTML = src? src.outerHTML : '<p class="small">No drawing for this element.</p>'; }
+  d.classList.toggle('open', !!open);
 }
 function bpRefreshNavRow(inst){
   let row=document.querySelector(`#bpNav .bp-row[data-id="${inst.id}"]`);
@@ -5535,17 +5898,20 @@ function buildCard(inst){
   let activeTab=CARD_TAB_MEMORY[inst.id];
   if(activeTab!=="results" && (activeTab===undefined || parts[activeTab]===undefined)) activeTab=availTabs[0][0];
   let card=document.createElement("div"); card.className="card"+(collapsed?" collapsed":""); card.dataset.id=inst.id;
+  let bp = SHELL_MODE==="blueprint";
   card.innerHTML=`
    <div class="card-head">
-     <div class="idn"><button class="btn small ghost" data-action="collapseToggle" title="Collapse/expand">${collapsed?'▸':'▾'}</button><span class="badge">${inst.id}</span><input class="name" data-field="__label" value="${inst.label}"><span class="headStats small"></span></div>
+     <div class="idn"><button class="btn small ghost" data-action="collapseToggle" title="Collapse/expand">${collapsed?'▸':'▾'}</button><span class="badge" ${bp?'title="Click to copy the element ID" data-action="copyId" style="cursor:pointer"':''}>${inst.id}</span><input class="name" data-field="__label" value="${inst.label}"><span class="headStats small"></span></div>
      <div class="tools">
        <span class="small">${def.groupName} / ${def.label}</span>
+       ${bp?`<button class="btn small" data-action="prevEl" title="Previous element (Alt+↑)">▲</button><button class="btn small" data-action="nextEl" title="Next element (Alt+↓)">▼</button>`:''}
        <button class="btn small" data-action="dup">⧉ Duplicate</button>
        <button class="btn small danger" data-action="del">✕ Remove</button>
      </div>
    </div>
+   ${bp?`<div class="bp-head2"></div>`:''}
    <div class="card-body" style="${collapsed?'display:none;':''}">
-     <div class="card-tabs">${availTabs.map((t)=>`<button data-tab="${t[0]}" class="${t[0]===activeTab?'active':''}">${t[1]}</button>`).join('')}</div>
+     <div class="card-tabs">${availTabs.map((t,i)=>`<button data-tab="${t[0]}" class="${t[0]===activeTab?'active':''}" title="Alt+${i+1}">${bp?`<span class="rail-ico">○</span><span>${t[1]}</span><span class="rail-meta"></span>`:t[1]}</button>`).join('')}</div>
      <div class="card-panes">
        ${TABS.map((t)=>parts[t[0]]!==undefined?`<div class="pane ${t[0]===activeTab?'active':''}" data-pane="${t[0]}">
           <div style="display:flex;gap:16px;flex-wrap:wrap;"><div style="flex:2;min-width:280px;">${parts[t[0]]}</div><div class="diag-host" style="flex:1;min-width:220px;">${calc.diagram(inst)}</div></div>
@@ -5554,8 +5920,119 @@ function buildCard(inst){
      </div>
    </div>`;
   attachCardEvents(card,inst);
+  if(bp) annotateProvenance(card,inst);
   refreshCardResults(card,inst);
   return card;
+}
+/* ---- Phase 2: provenance on every input of a card (blueprint only) ---- */
+function annotateProvenance(card,inst){
+  let defaults=defaultDataFor(inst.typeKey);
+  card.querySelectorAll('label.field').forEach(lab=>{
+    let ctl=lab.querySelector('input[data-field],select[data-field]'); if(!ctl) return;
+    let f=ctl.dataset.field; if(!f || ctl.type==="checkbox") return;
+    let pv=fieldProvenance(inst,f,defaults);
+    lab.classList.remove('prov-default','prov-entered','prov-imported');
+    if(pv==="default") lab.classList.add('prov-default');
+    else if(pv==="entered"||pv==="imported") lab.classList.add('prov-entered');
+    ctl.title = pv==="default" ? "Default value — not entered yet; type to override" : pv==="entered" ? "Entered" : pv==="imported" ? "Imported — verify" : "";
+    let hasDefault=Object.prototype.hasOwnProperty.call(defaults,f);
+    let rb=lab.querySelector('.prov-reset');
+    if(hasDefault && pv==="entered" && !sameVal(getPath(inst.data,f),defaults[f])){
+      if(!rb){ rb=document.createElement('button'); rb.type="button"; rb.className="prov-reset"; rb.dataset.reset=f; rb.textContent="↺ default"; rb.title="Reset to the default value ("+String(defaults[f])+")"; lab.querySelector('.lbl').appendChild(rb); }
+    } else if(rb) rb.remove();
+  });
+}
+const RAIL_GROUP_TAB={Concrete:"conc",Reinforcement:"reo",Formwork:"form",Excavation:"exc","Base/Blinding":"blind","Vapour Barrier":"blind",Insulation:"blind",Connections:"conns"};
+/** Which card section a register line belongs to (for subtotals and links). */
+function lineSection(l, avail){
+  let has=(t)=>avail.indexOf(t)>=0;
+  if(l.source==="addl" && has("addl")) return "addl";
+  let txt=((l.spec||"")+" "+(l.material||"")+" "+(l.notes||"")).toLowerCase();
+  if(has("pilecap") && /pile cap/.test(txt)) return "pilecap";
+  if(has("edgebeams") && /edge beam|edge thickening/.test(txt)) return "edgebeams";
+  if(has("intbeams") && /internal beam|int\. beam|thickening under/.test(txt)) return "intbeams";
+  let t=RAIL_GROUP_TAB[l.materialGroup];
+  return t && has(t) ? t : (has("geom") ? "geom" : "results");
+}
+/** Blank numeric inputs in a pane that look required (not overrides, not "0 = auto" fields, not in hidden optional sections). */
+function paneBlankInputs(pane){
+  let out=[];
+  pane.querySelectorAll('input[type=number][data-field]').forEach(inp=>{
+    if(inp.value!=="") return;
+    if(inp.closest('.manual-cell')||inp.closest('.subsec.hidden')||inp.closest('[data-show-if].hidden')) return;
+    let lab=inp.closest('label.field'); let txt=lab? lab.textContent : (inp.closest('th,td')? "" : "");
+    if(/override|0 = |blank =|optional|leave blank/i.test(txt)) return;
+    if(!lab) return; // table cells are per-row items; a blank row is not an incomplete section
+    out.push(inp);
+  });
+  return out;
+}
+function sectionStatus(card, inst, out){
+  let avail=[...card.querySelectorAll('.card-tabs button')].map(b=>b.dataset.tab);
+  let lines=out.lines||[], warns=out.warnings||[];
+  let st={};
+  avail.forEach(tab=>{
+    let mine=lines.filter(l=>lineSection(l,avail)===tab);
+    let w=warns.filter(x=>x.section===tab || (x.section && avail.indexOf(x.section)<0 && tab==="geom"));
+    let pane=card.querySelector(`.pane[data-pane="${tab}"]`);
+    let blanks=pane? paneBlankInputs(pane) : [];
+    let sum=(g,fld)=>mine.filter(l=>!g||l.materialGroup===g).reduce((s,l)=>s+(fld==="kg"?(l.weightKg||0):(l.finalQty||0)),0);
+    let sub="";
+    if(tab==="conc"||tab==="exc") sub=`${fmt(sum(tab==="conc"?"Concrete":"Excavation"),2)} m³`;
+    else if(tab==="reo") sub=`${fmt(sum("Reinforcement","kg"),0)} kg`;
+    else if(tab==="form") sub=`${fmt(sum("Formwork"),1)} m²`;
+    else if(tab==="blind"){ let bv=blindingVapourTotals(mine); sub=[bv.blind?`${fmt(bv.blind,2)} m³`:"",bv.vap?`${fmt(bv.vap,1)} m²`:"",sum("Insulation")?`${fmt(sum("Insulation"),1)} ins`:""].filter(Boolean).join(" · "); }
+    else if(tab==="conns") sub=mine.length?`${mine.length} line${mine.length>1?"s":""} · ${fmt(mine.reduce((s,l)=>s+(l.weightKg||0),0),0)} kg`:"";
+    else if(tab==="addl") sub=mine.length?`${mine.length} item${mine.length>1?"s":""}`:"";
+    else if(tab==="results") sub=`${lines.length} line${lines.length===1?"":"s"}`;
+    else if(tab==="geom") sub=lines.length? `${fmt(lines.filter(l=>l.materialGroup==="Concrete").reduce((s,l)=>s+(l.finalQty||0),0),2)} m³` : "";
+    else sub=mine.length?`${fmt(sum("Concrete"),2)} m³ · ${fmt(sum(null,"kg"),0)} kg`:"";
+    if(!sub) sub="–";
+    let ico = w.length? "⚠" : (blanks.length? "○" : "✓");
+    let incomplete = w.length>0 || blanks.length>0 || (tab==="geom" && lines.length===0);
+    if(tab==="geom" && lines.length===0){ ico="○"; }
+    st[tab]={ico, sub, warns:w.length, blanks:blanks.length, incomplete};
+  });
+  return st;
+}
+function refreshSectionRail(card, inst, out){
+  if(SHELL_MODE!=="blueprint") return;
+  let st=sectionStatus(card, inst, out);
+  card.querySelectorAll('.card-tabs button').forEach(b=>{
+    let s=st[b.dataset.tab]; if(!s) return;
+    let ico=b.querySelector('.rail-ico'), meta=b.querySelector('.rail-meta'); if(!ico||!meta) return;
+    ico.textContent=s.ico; ico.className="rail-ico "+(s.ico==="✓"?"ok":s.ico==="⚠"?"warn":"");
+    meta.textContent = s.sub + (s.warns?` · ${s.warns} ⚠`:"") + (s.blanks?` · ${s.blanks} blank`:"");
+    b.title = `${b.querySelector('span:nth-child(2)').textContent} — ${s.ico==="✓"?"complete":s.ico==="⚠"?s.warns+" warning(s)":s.blanks?s.blanks+" blank field(s)":"nothing entered yet"}`;
+  });
+  card._sectionStatus=st;
+  // header row 2: status, warnings, provenance chips, actions
+  let h2=card.querySelector('.bp-head2');
+  if(h2){
+    let status=elementStatus(inst), pc=provenanceCounts(inst), nw=(out.warnings||[]).length;
+    let firstInc=[...card.querySelectorAll('.card-tabs button')].map(b=>b.dataset.tab).find(t=>st[t]&&st[t].incomplete);
+    h2.innerHTML=`<span class="chip st-${status.state}" title="${bpEsc(status.title)}">${status.state==="reviewed"?"✓ ":status.state==="stale"?"↻ ":status.state==="imported"?"⚠ ":""}${bpEsc(status.label)}</span>
+      ${nw?`<span class="chip warn" title="Open the inspector's warning panel">⚠ ${nw} warning${nw>1?"s":""}</span>`:`<span class="chip" title="No warnings">No warnings</span>`}
+      <span class="chip prov-e" title="Fields you entered">${pc.entered} entered</span>
+      <span class="chip prov-d" title="Fields still at their default value">${pc.default} default</span>
+      ${pc.manual?`<span class="chip prov-m" title="Register lines with a manual override">${pc.manual} manual</span>`:""}
+      ${pc.imported?`<span class="chip st-imported" title="Imported values not yet reviewed">${pc.imported} imported</span>`:""}
+      <span class="spacer"></span>
+      ${firstInc?`<button class="btn small" type="button" data-action="nextIncomplete" title="Jump to the first section with a warning or a blank field (Alt+N)">Next incomplete →</button>`:`<span class="chip" style="color:var(--good)">All sections complete</span>`}
+      ${status.state==="reviewed"?`<button class="btn small" type="button" data-action="unreview" title="Clear the reviewed mark">Clear review</button>`:`<button class="btn small primary" type="button" data-action="review" title="Record that every value on this element has been checked">✓ Mark reviewed</button>`}`;
+  }
+}
+function bpGoSection(card, tab){
+  let b=card.querySelector(`.card-tabs button[data-tab="${tab}"]`); if(b) b.click();
+}
+function bpNextIncomplete(card){
+  let st=card._sectionStatus||{};
+  let tabs=[...card.querySelectorAll('.card-tabs button')].map(b=>b.dataset.tab);
+  let cur=(card.querySelector('.card-tabs button.active')||{}).dataset||{}; cur=cur.tab;
+  let order=tabs.slice(tabs.indexOf(cur)+1).concat(tabs.slice(0,tabs.indexOf(cur)+1));
+  let next=order.find(t=>st[t]&&st[t].incomplete);
+  if(next){ bpGoSection(card,next); let pane=card.querySelector(`.pane[data-pane="${next}"]`); let blank=pane&&paneBlankInputs(pane)[0]; if(blank){ blank.classList.add('prov-missing'); blank.focus(); setTimeout(()=>blank.classList.remove('prov-missing'),2500); } }
+  return next||null;
 }
 /**
  * Calculators that already render AND cost a starter-bar section of their
@@ -5685,6 +6162,8 @@ function attachCardEvents(card,inst){
     let val = e.target.type==="checkbox"? e.target.checked : (e.target.type==="number"? (e.target.value===""?"": parseFloat(e.target.value)) : e.target.value);
     if(e.target.dataset.unit==="len" && PROJECT.units_len_pref==="m" && val!==""){ val = val*1000; } // stored internally as mm always
     setPath(inst.data,f,val);
+    markEntered(inst,f);
+    if(SHELL_MODE==="blueprint"){ let lab=e.target.closest('label.field'); if(lab){ annotateProvenance(card,inst); } }
     if(e.target.dataset.rerender){
       // this field changes which fields exist elsewhere in the card (e.g. manual-area slabs swap the
       // whole reinforcement layout), so a show/hide toggle isn't enough — rebuild the card from scratch.
@@ -5737,6 +6216,17 @@ function attachCardEvents(card,inst){
   card.addEventListener('change',e=>{ if(e.target.tagName==="SELECT") { /* handled by input listener too via change bubbling for selects */ } });
   card.addEventListener('click',e=>{
     let act=e.target.dataset.action;
+    if(e.target.dataset.reset){
+      e.preventDefault();
+      if(resetFieldToDefault(inst, e.target.dataset.reset)){ computeAllAndRefresh(); rerenderCardKeepTab(card,inst); }
+      return;
+    }
+    if(act==="copyId"){ try{ navigator.clipboard && navigator.clipboard.writeText(inst.id); }catch(x){} e.target.title="Copied "+inst.id; return; }
+    if(act==="prevEl"){ bpStep(-1); return; }
+    if(act==="nextEl"){ bpStep(1); return; }
+    if(act==="nextIncomplete"){ bpNextIncomplete(card); return; }
+    if(act==="review"){ markReviewed(inst); computeAllAndRefresh(); refreshCardResults(card,inst); return; }
+    if(act==="unreview"){ clearReview(inst); computeAllAndRefresh(); refreshCardResults(card,inst); return; }
     if(act==="addRow"){
       // target is a PATH, not just a key — a raft's extra beams keep their own
       // bar-set and ligature tables nested inside the group object
@@ -5898,7 +6388,7 @@ function computeInstance(inst){
       ? `${num(r.count)}×${num(r.lengthMm)}mm`
       : ((unit==="m²"||unit==="m³") && num(r.area)>0 ? `${num(r.count)>0?num(r.count)+"×":""}${num(r.area)}` : "entered");
     out.lines.push(baseLine(inst,def,{materialGroup:group,material:isBar? r.dia : desc,
-      spec:isBar? desc : "Additional item",qty,unit,waste,finalQty:withWaste(qty,waste),formula,notes}));
+      spec:isBar? desc : "Additional item",qty,unit,waste,finalQty:withWaste(qty,waste),formula,notes,source:"addl"}));
   });
   if(d.insulationOn){
     let t = insulationType(null,d); // family + thickness off the card
@@ -5914,6 +6404,9 @@ function computeInstance(inst){
       out.lines.push(baseLine(inst,def,{materialGroup:"Insulation",material:t.name,spec,qty,unit:t.unit,waste,finalQty:withWaste(qty,waste),formula:num(d.insArea)>0?"entered":"from element"}));
     }
   }
+  // Phase 2: every warning is {text, section}; the generic checks join the
+  // calculator's own.
+  out.warnings = normaliseWarnings(out.warnings).concat(validateInstance(inst, def, out));
   return out;
 }
 function summarizeReinforcement(lines){
@@ -5989,6 +6482,7 @@ function refreshCardResults(card,inst){
   let bv=blindingVapourTotals(out.lines);
   let headStats=card.querySelector('.headStats');
   if(headStats) headStats.innerHTML = ` · ${fmt(totC,2)}m³ concrete · ${fmt(totR,1)}kg reo · ${fmt(totF,2)}m² formwork${bv.blind?` · ${fmt(bv.blind,2)}m³ blinding/base`:''}${bv.vap?` · ${fmt(bv.vap,2)}m² vapour barrier`:''}`;
+  refreshSectionRail(card,inst,out);
   if(SHELL_MODE==="blueprint" && inst.id===BP_SELECTED_ID){ renderBlueprintInspector(inst); bpRefreshNavRow(inst); }
   let {bars,mesh}=summarizeReinforcement(out.lines);
   let barKeys=Object.keys(bars).sort();
@@ -6022,7 +6516,7 @@ function refreshCardResults(card,inst){
        <td>${l.material}</td><td>${l.spec}</td>
        <td>${fmt(l.qty,2)}</td><td>${l.unit}</td><td>${l.waste||0}%</td><td>${l.lap||0}%</td>
        <td class="manual-cell"><input type="checkbox" data-field="manualOverrides.${l.overrideKey}.enabled" ${ov.enabled?'checked':''} title="Use a manually entered quantity instead of the system calculation for this line"></td>
-       <td class="manual-cell"><input type="number" step="any" data-field="manualOverrides.${l.overrideKey}.qty" value="${ov.qty===undefined||ov.qty===''?'':ov.qty}" placeholder="${fmt(l.manualOverride?l.calculatedQty:l.finalQty,2)}"></td>
+       <td class="manual-cell"><input type="number" step="any" data-field="manualOverrides.${l.overrideKey}.qty" value="${ov.qty===undefined||ov.qty===''?'':ov.qty}" placeholder="${fmt(l.manualOverride?l.calculatedQty:l.finalQty,2)}">${ov.enabled?`<input type="text" class="manual-reason" data-field="manualOverrides.${l.overrideKey}.reason" value="${bpEsc(ov.reason||'')}" placeholder="Reason (e.g. per drawing S-02)" title="Why this line is entered by hand — kept with the override">`:''}</td>
        <td><b>${fmt(l.finalQty,2)}</b>${l.manualOverride?` <span class="manual-badge" title="Manually entered — system calculated ${fmt(l.calculatedQty,2)}">✎ manual</span>`:''}</td>
        <td>${l.weightKg? fmt(l.weightKg,1) : ''}</td>
        <td class="formula">${l.formula}</td><td>${l.linkedElement||''}</td>
@@ -7102,6 +7596,16 @@ document.querySelectorAll('.tabs button').forEach(b=>b.addEventListener('click',
   if(document.body.classList.contains("help-open")) toggleHelp(true); // the drawer follows the page
 }));
 document.getElementById("shellToggle").addEventListener("click", ()=>applyShellMode(SHELL_MODE==="blueprint"?"classic":"blueprint", {persist:true}));
+// Phase 2 keyboard: Alt+↑/↓ previous/next element, Alt+1…9 section, Alt+N next incomplete, Esc closes the drawing/help.
+document.addEventListener("keydown", e=>{
+  if(e.key==="Escape"){ let d=document.getElementById('drawingFull'); if(d&&d.classList.contains('open')){ toggleDrawingFull(false); return; } if(document.body.classList.contains('help-open')){ toggleHelp(false); return; } }
+  if(SHELL_MODE!=="blueprint" || !e.altKey || e.ctrlKey || e.metaKey) return;
+  let card=document.querySelector('#cardsHost .card');
+  if(e.key==="ArrowDown"){ e.preventDefault(); bpStep(1); }
+  else if(e.key==="ArrowUp"){ e.preventDefault(); bpStep(-1); }
+  else if(/^[1-9]$/.test(e.key) && card){ e.preventDefault(); let b=card.querySelectorAll('.card-tabs button')[+e.key-1]; if(b) b.click(); }
+  else if((e.key==="n"||e.key==="N") && card){ e.preventDefault(); bpNextIncomplete(card); }
+});
 document.getElementById("helpBtn").addEventListener("click", ()=>toggleHelp());
 
 /* ============================= INIT ============================= */

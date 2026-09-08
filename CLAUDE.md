@@ -319,6 +319,50 @@ layout opens identically in the other. `refreshCardResults` is the one hook
 that refreshes the inspector and the navigator row after an edit — keep
 calling it rather than recomputing totals in the shell code.
 
+## Estimates cloud sync (read before touching saveEstimateState, syncFromCloud or kvPush)
+
+Three rules, each learned from a real loss (18 Beach Road, 8 Sep 2026: a
+second tab pushed its stale two-element copy over a five-element takeoff,
+and the first tab pulled it back within six seconds):
+
+1. **A tab never pushes a takeoff until it has reconciled with the cloud copy
+   of that key this session** (`CLOUD_RECONCILED_KEY`, set by `syncFromCloud`).
+   `pushTakeoffToCloud` is the ONE cloud writer for takeoff rows; edits made
+   before reconciling are saved locally and go up afterwards
+   (`PENDING_CLOUD_PUSH`). Pushes are serialised per key (`PUSH_STATE`) and an
+   unchanged snapshot is never re-sent (`LAST_CLOUD_HASH`), so tabs cannot
+   ping-pong echoes.
+2. **Every push is conditional** on the row being unchanged since this tab
+   last synced it (`kvPatchIfUnchanged`, PostgREST `updated_at=eq.`). On a
+   conflict the other device's copy is kept as a cloud version
+   (`other-device`) BEFORE this tab's live work goes up, and the estimator is
+   told in the save-status line. This tab's in-memory work always wins — it is
+   the human's latest intent — but nothing is discarded.
+3. **Cloud versions are immutable and unlimited**: `keepEstimateVersion`
+   writes `estimate-versions/<projectId>/<iso>-<source>.json` to the
+   `gradcon-files` bucket on every 💾 Save, every N minutes while the takeoff
+   changes (portal `quotesAutosaveMinutes`, 0 = off), before a cloud pull
+   replaces local content that differs (`before-sync`), before any restore,
+   and on every conflict. `📁 Projects ▾` lists them with restore. Nothing
+   deletes a version. `scratchpad`'s `test-sync-safety.mjs` proves all three
+   with two browsers on a mock cloud; keep it passing.
+
+## Estimates provenance and status (Phase 2)
+
+Data, not layout, so both layouts share it: `inst.entered[field] = true` is
+recorded the moment a field is typed (`markEntered`); a field equal to
+`defaultDataFor(typeKey)` and never typed reads as **Default**, never as
+entered. `inst.review = {hash, at}` is written by "Mark reviewed"; the status
+(Draft / Reviewed / Changed since review / Imported — verify) is DERIVED from
+the hash on every read, so no edit path has to maintain it. `computeInstance`
+normalises every warning to `{text, section}` and appends the generic checks
+in `validateInstance` (cover vs section, spacing ≤ 0, openings ≥ host);
+warnings never block a save. Manual overrides carry an optional `reason` next
+to the quantity and `baseLine` copies it onto the line as `overrideReason`.
+The blueprint-only chrome (header row 2, section rail, input chips, ↺ default,
+inspector warnings/trace) all reads these; `refreshCardResults` → 
+`refreshSectionRail` is the one refresh path.
+
 ## Estimates data safety (schema, migration, recovery, raw backup)
 
 `portal/estimates-schema.js` is pure and DOM-free: the assembler inlines it
