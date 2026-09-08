@@ -313,15 +313,21 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
           )}
 
           <div className="rounded-lg border border-neutral-200 bg-white overflow-hidden">
-            <div className="flex items-center justify-between px-3 py-2">
+            {/* The roll-up is the control people reach for most on an element
+                that carries drawings, so it is a full blue bar rather than a
+                10px grey caption — big enough to hit without aiming, and
+                unmistakably the thing that opens and closes the section. */}
+            <div className="flex items-center justify-between gap-3 px-4 py-3 bg-blue-950 text-white">
               <button
                 onClick={() => setMarkupsOpen(!markupsOpen)}
-                className="text-[10px] uppercase tracking-widest text-neutral-500 font-semibold flex items-center gap-1.5"
+                aria-expanded={markupsOpen}
+                title={markupsOpen ? "Roll up the markup drawings" : "Roll down the markup drawings"}
+                className="flex-1 min-w-0 text-left text-[15px] uppercase tracking-widest font-bold flex items-center gap-3 text-white hover:text-orange-300 transition-colors"
               >
-                {markupsOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-                <Paperclip size={12} /> Markup drawings {markups.length > 0 && <span className="text-orange-600">({markups.length})</span>}
+                {markupsOpen ? <ChevronDown size={26} /> : <ChevronRight size={26} />}
+                <Paperclip size={22} /> Markup drawings {markups.length > 0 && <span className="text-orange-300">({markups.length})</span>}
               </button>
-              <label className="cursor-pointer px-2.5 py-1 rounded-md bg-blue-950 hover:bg-blue-900 text-white text-[11px] font-semibold">
+              <label className="flex-none cursor-pointer px-2.5 py-1 rounded-md bg-white/15 hover:bg-white/25 text-white text-[11px] font-semibold">
                 Upload PDF / PNG / JPG
                 <input
                   ref={fileInputRef}

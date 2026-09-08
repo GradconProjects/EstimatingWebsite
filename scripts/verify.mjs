@@ -975,6 +975,52 @@ check("The agreed house margin is 25%, and 25% margin means cost / 0.75 (a 33.33
   assert.equal(pct(0.40).toFixed(1), "66.7");
 });
 
+const { pendingRateUpdates, libraryPrices } = await import("../src/lib/ratesLibrarySync.js");
+
+check("Rates Library rules: its price flows into Quotes, but never over an estimator's own edit", () => {
+  const CONV = rateKey("FORMWORK", "Conventional", "m2");
+  const C32 = rateKey("CONCRETE", "32 mpa", "m3");
+  // the library's stored shape: {section: {productName: {cost}}}
+  const lib = { formworkLegacy: { Conventional: { cost: 175 } }, concreteGrade: { "32 mpa": { cost: 219 } } };
+
+  // both sitting at their catalog defaults — unowned, so both move
+  let rates = defaultRates();
+  let up = pendingRateUpdates(rates, lib, {});
+  assert.equal(up.length, 2, `expected both to move, got ${JSON.stringify(up)}`);
+  assert.equal(up.find((u) => u.key === CONV).price, 175);
+  assert.equal(up.find((u) => u.key === C32).price, 219);
+
+  // an estimator has typed their own formwork price — the library must NOT win
+  rates = defaultRates();
+  rates[CONV] = { ...rates[CONV], unitCost: 190 };
+  up = pendingRateUpdates(rates, lib, {});
+  assert.ok(!up.some((u) => u.key === CONV), "a typed rate is never overwritten by the library");
+  assert.ok(up.some((u) => u.key === C32), "...while an untouched one still follows");
+
+  // a rate this sync itself wrote last time still belongs to the library, so a
+  // SECOND library edit flows through as well
+  rates = defaultRates();
+  rates[CONV] = { ...rates[CONV], unitCost: 175 };          // what the sync wrote before
+  up = pendingRateUpdates(rates, { formworkLegacy: { Conventional: { cost: 185 } } }, { [CONV]: 175 });
+  assert.equal(up.length, 1, "a previously synced rate follows the next library change");
+  assert.equal(up[0].price, 185);
+
+  // already in agreement = no update at all, so this can never render-loop
+  rates = defaultRates();
+  rates[CONV] = { ...rates[CONV], unitCost: 175 };
+  assert.equal(pendingRateUpdates(rates, { formworkLegacy: { Conventional: { cost: 175 } } }, { [CONV]: 175 }).length, 0);
+
+  // junk in the library is ignored rather than costing $0 or NaN
+  assert.deepEqual(pendingRateUpdates(defaultRates(), null, {}), []);
+  assert.deepEqual(pendingRateUpdates(defaultRates(), { formworkLegacy: { Conventional: { cost: "abc" } } }, {}), []);
+  assert.deepEqual(pendingRateUpdates(defaultRates(), { formworkLegacy: { "No Such Product": { cost: 5 } } }, {}), []);
+
+  // and the mapper only claims products it can identify unambiguously
+  const mapped = libraryPrices({ concreteGrade: { "32 mpa": { cost: 1 }, "Not A Product": { cost: 2 } } });
+  assert.equal(mapped.length, 1);
+  assert.equal(mapped[0].key, C32);
+});
+
 const { computeTenderProjectSum, parseTenderPrice, seedTenderItems } = await import("../src/lib/tenderQuoteDefaults.js");
 
 check("Tender quote prints the FLOOR AREA entered in the quote (measureM2), not the Square Mesh coverage", () => {

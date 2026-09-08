@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from "react";
 import { Settings2, ArrowLeft, Printer, ListPlus, FileSpreadsheet, LayoutDashboard, Radar, FolderOpen } from "lucide-react";
 import { ELEMENT_TYPES, QUOTE_STATUSES, QUOTE_STATUS_STYLES } from "./data/catalog.js";
 import { defaultRates, newElementItem, computeGrandTotal, uid, money, rateKey } from "./lib/costing.js";
+import { pendingRateUpdates, readLibraryState, readLastSynced, writeLastSynced, RATES_LIBRARY_KEY } from "./lib/ratesLibrarySync.js";
 import { buildQuoteExcelHtml, quoteExcelFilename, buildQuoteCsv } from "./lib/exportQuote.js";
 import { useStoredState } from "./lib/storage.js";
 import { PROJECTS_INDEX_KEY, newProjectEntry, migrateLegacyQuote, deleteQuote, writeQuote, readQuotes, publishQuoteToCostPlanner } from "./lib/projects.js";
@@ -157,6 +158,36 @@ export default function App() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ratesStatus]);
+
+  /* Follow the Rates Library. It is Gradcon's authoritative price list, and
+   * Cost Planner and Estimates already read it live — Quotes kept its own
+   * copy, so editing a library price changed nothing on an element card.
+   *
+   * A rate still at its catalog default, or still at whatever this sync last
+   * wrote, belongs to the library and takes its price. Anything an estimator
+   * typed in the Rates modal is left alone (the modal's drift banner shows it
+   * and offers a restore). Runs on load and on the storage event the library
+   * fires when it saves, the same signal Cost Planner listens for. */
+  useEffect(() => {
+    if (ratesStatus === "loading") return;
+    const apply = () => {
+      const updates = pendingRateUpdates(rates, readLibraryState(), readLastSynced());
+      if (!updates.length) return;                 // nothing to do — never loops
+      const next = { ...rates };
+      const synced = { ...readLastSynced() };
+      updates.forEach(({ key, price }) => {
+        next[key] = { ...(next[key] || {}), unitCost: price };
+        synced[key] = price;
+      });
+      writeLastSynced(synced);
+      setRates(next);
+    };
+    apply();
+    const onStorage = (e) => { if (!e || e.key === RATES_LIBRARY_KEY) apply(); };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ratesStatus, rates]);
   const [ratesOpen, setRatesOpen] = useState(false);
   const [elementTypesOpen, setElementTypesOpen] = useState(false);
   // Which top-level tab shows when no project is open — Dashboard, Planner
