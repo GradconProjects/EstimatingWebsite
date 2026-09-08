@@ -2825,16 +2825,93 @@ function stripFootingDefaults(){ return {
   starters:false, connTarget:"", connMode:"count", connQty:2, connRunM:"", connSpacing:400, connRows:1, connDia:"N16", connEmbed:500, connProj:600,
   stepdown:false, sdLength:3, sdDepth:300, sdDia:"N12", sdSpacing:300, sdProj1:500, sdProj2:500
 };}
-/** Starters per footing. "count" is the total typed in; "spacing" sets them
- * out along a run — the footing's own length unless a shorter run is given
- * (a wall that only occupies part of the strip) — in one or two rows. */
-function stripStarterCount(d){
-  if((d.connMode||"count")!=="spacing") return num(d.connQty);
-  let runM = num(d.connRunM)>0 ? num(d.connRunM) : num(d.length)/1000;
-  let sp = num(d.connSpacing,400); if(!(sp>0)) sp=400;
-  return (Math.floor(runM*1000/sp)+1)*Math.max(1,Math.round(num(d.connRows,1)));
+/* ---- Starter bars / dowels ALONG A RUN (strip footings and beams) ----
+ * A footing or beam can carry several starter runs — a wall on part of the
+ * strip, a column line elsewhere — each with its own bar, spacing, run
+ * length (blank = the whole element), start position, rows across the
+ * section, embedment and projection. Count per run =
+ * (run ÷ spacing + 1 end bar) × rows, per element. "Total number" is kept as
+ * a per-run choice for a schedule that simply states a count. A takeoff
+ * saved before this feature (a single count, or the interim connMode form)
+ * migrates into one run with the same numbers the first time it renders. */
+function newStarterRun(){ return {target:"", mode:"spacing", dia:"N16", spacing:400, runM:"", startM:"", rows:1, qty:4, embed:500, proj:600}; }
+function starterRunsOf(d){
+  if(!Array.isArray(d.starterRuns)){
+    d.starterRuns = d.starters
+      ? [{target:d.connTarget||"", mode:(d.connMode==="spacing"?"spacing":"count"), dia:d.connDia||"N16", spacing:num(d.connSpacing,400), runM:d.connRunM||"", startM:"", rows:Math.max(1,Math.round(num(d.connRows,1))), qty:num(d.connQty), embed:num(d.connEmbed,500), proj:num(d.connProj,600)}]
+      : [];
+  }
+  return d.starterRuns;
 }
-function stripStarterRunM(d){ return num(d.connRunM)>0 ? num(d.connRunM) : num(d.length)/1000; }
+function starterRunM(run,elemLenM){ return num(run.runM)>0 ? num(run.runM) : Math.max(0,elemLenM); }
+function starterRunCount(run,elemLenM){
+  if((run.mode||"spacing")==="count") return Math.max(0,Math.round(num(run.qty)));
+  let sp=num(run.spacing,400); if(!(sp>0)) sp=400;
+  return (Math.floor(starterRunM(run,elemLenM)*1000/sp+1e-9)+1)*Math.max(1,Math.round(num(run.rows,1)));
+}
+function starterRunDesc(run,elemLenM){
+  let n=starterRunCount(run,elemLenM), rows=Math.max(1,Math.round(num(run.rows,1)));
+  if((run.mode||"spacing")==="count") return `${n} no. ${run.dia||"N16"}`;
+  return `${run.dia||"N16"} @${num(run.spacing,400)} crs over ${fmt(starterRunM(run,elemLenM),2)} m${rows>1?` × ${rows} rows`:""} = ${n} no.`;
+}
+function starterRunsUI(inst,d,elemLenM,noun){
+  let runs=starterRunsOf(d);
+  let rowsHtml=runs.map((r,i)=>{
+    let base=`starterRuns.${i}.`, bySpacing=(r.mode||"spacing")!=="count";
+    let n=starterRunCount(r,elemLenM);
+    return `<div class="subsec" style="border-left:3px solid var(--accent,#b45309);padding-left:10px;">
+     <div class="sechead" style="display:flex;align-items:center;justify-content:space-between;gap:8px;"><span>Starter run ${i+1} — ${starterRunDesc(r,elemLenM)}</span><button class="btn small danger" data-action="delRow" data-target="starterRuns" data-idx="${i}" type="button">✕ Remove</button></div>
+     <div class="grid cols4">
+      ${F("Connects to",targetSelect(base+"target",r.target,inst.id))}
+      ${F("Bar",barSizeSel(base+"dia",r.dia||"N16"))}
+      ${F("Set out",selOpts(base+"mode",r.mode||"spacing",[["spacing","At a spacing along the run"],["count","Total number"]],true))}
+      ${bySpacing?F("Spacing along run (mm)",inpNumR(base+"spacing",r.spacing===undefined?400:r.spacing)):F(`Qty (per ${noun})`,inpNumR(base+"qty",r.qty===undefined?4:r.qty))}
+     </div>
+     <div class="grid cols4">
+      ${bySpacing?F("Run of starters (m)",`<input type="number" step="any" data-field="${base}runM" data-rerender="true" value="${r.runM===undefined?'':r.runM}" placeholder="= whole ${noun} ${fmt(elemLenM,2)} m">`):""}
+      ${bySpacing?F("Starts at (m from one end)",`<input type="number" step="any" data-field="${base}startM" value="${r.startM===undefined?'':r.startM}" placeholder="0">`):""}
+      ${bySpacing?F("Rows across the section",selOpts(base+"rows",Math.max(1,Math.round(num(r.rows,1))),[[1,"1 row (centre)"],[2,"2 rows (one each face)"]],true)):""}
+      ${F("Embedment (mm)",inpNum(base+"embed",r.embed===undefined?500:r.embed))}${F("Projection (mm)",inpNum(base+"proj",r.proj===undefined?600:r.proj))}
+     </div>
+     ${bySpacing?`<p class="small">→ <b>${n}</b> per ${noun}: ${fmt(starterRunM(r,elemLenM),2)} m ÷ ${num(r.spacing,400)} mm + 1 end bar${num(r.rows,1)>1?` × ${Math.round(num(r.rows,1))} rows`:""}${num(d.qty,1)>1?` · × ${num(d.qty,1)} = <b>${n*num(d.qty,1)}</b>`:""}. Leave the run blank for the whole ${noun}; give a shorter run (and where it starts) for a wall or column line on part of it.</p>`:""}
+    </div>`;
+  }).join("");
+  return `<div class="sechead" style="display:flex;align-items:center;justify-content:space-between;gap:8px;"><span>Starter bars / dowels along the ${noun}</span><button class="btn small" data-action="addRow" data-target="starterRuns" type="button">+ Add starter run</button></div>
+  ${runs.length?rowsHtml:`<p class="small">No starters yet. Add a run to set bars out along the ${noun} by size and spacing — one run per wall or column line it carries.</p>`}
+  <div class="tip"><span class="ico">🏗️</span><div>Each run is drawn on the sheet where it sits along the ${noun}. Bars are costed as embedment + projection each, and counted once here — the element they connect to shows them as incoming for reference.</div></div>`;
+}
+function starterRunLines(inst,def,d,N,elemLenM,label){
+  let out=[];
+  starterRunsOf(d).forEach((r,i)=>{
+    let n=starterRunCount(r,elemLenM); if(!(n>0)) return;
+    let bd=barDiaOf(r.dia||"N16"); let len=(num(r.embed,500)+num(r.proj,600))/1000;
+    let totLen=n*N*len; let wt=totLen*massPerM(bd);
+    let tgt=targetLabelOf(r.target);
+    let bySpacing=(r.mode||"spacing")!=="count";
+    out.push(baseLine(inst,def,{materialGroup:"Connections",material:r.dia||"N16",spec:`${label}${starterRunsOf(d).length>1?` (run ${i+1})`:""}: ${starterRunDesc(r,elemLenM)} → ${tgt||"(unlinked)"}`,qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:bySpacing?`(${fmt(starterRunM(r,elemLenM),2)}m/${num(r.spacing,400)}+1)${num(r.rows,1)>1?`×${Math.round(num(r.rows,1))}`:""}=${n} × ${N} × (embed+proj)/1000`:`${n}×${N}×(embed+proj)/1000`,linkedElement:tgt,notes:`${fmt(wt,1)} kg · ${n*N} bars`}));
+  });
+  return out;
+}
+/** Elevation ticks for every run: ex..ex+ew spans the element's length. */
+function starterRunTicks(d,elemLenM,ex,ew,yTop,yBot){
+  let runs=starterRunsOf(d), out="";
+  runs.forEach((r,ri)=>{
+    let n=starterRunCount(r,elemLenM); if(!(n>0)||elemLenM<=0) return;
+    let rows=Math.max(1,Math.round(num(r.rows,1))), perRow=Math.max(1,Math.round(n/rows));
+    let bySpacing=(r.mode||"spacing")!=="count";
+    let runM=bySpacing?Math.min(elemLenM,starterRunM(r,elemLenM)):elemLenM;
+    let start=bySpacing?Math.min(Math.max(0,num(r.startM)),Math.max(0,elemLenM-runM)):0;
+    let x0=ex+ew*(start/elemLenM), rw=ew*(runM/elemLenM);
+    let nDraw=Math.min(perRow,60);
+    for(let i=0;i<nDraw;i++){ let xx=nDraw===1?x0+rw/2:x0+(rw*i)/(nDraw-1); out+=`<line x1="${xx}" y1="${yTop}" x2="${xx}" y2="${yBot}" stroke="${DWG.bar}" stroke-width="${rows>1?1.6:1.1}"/>`; }
+    if(bySpacing&&rw<ew-4) out+=dimH(x0,x0+rw,yTop-5,`RUN${runs.length>1?" "+(ri+1):""} ${fmt(runM,2)} m`);
+  });
+  return out;
+}
+function starterRunSpecLines(d,elemLenM,x,y,step){
+  let runs=starterRunsOf(d).filter(r=>starterRunCount(r,elemLenM)>0);
+  return runs.slice(0,3).map((r,i)=>specLine(x,y+i*step,`${runs.length>1?`RUN ${i+1}: `:""}${starterRunDesc(r,elemLenM).toUpperCase()}, EMB ${num(r.embed,500)} / PROJ ${num(r.proj,600)}`)).join("")+(runs.length>3?specLine(x,y+3*step,`+${runs.length-3} MORE RUN(S)`):"");
+}
 function renderStripFooting(inst){
   let d=inst.data;
   let geom=`<div class="grid cols4">
@@ -2856,18 +2933,7 @@ function renderStripFooting(inst){
   <div class="subsec ${d.trenchMesh?'':'hidden'}" data-show-if="trenchMesh"><div class="grid cols3">${F("Trench mesh type",trenchMeshTypeSel("trenchMeshType",d.trenchMeshType,true))}${F("Layers",inpNumR("trenchMeshLayers",d.trenchMeshLayers===undefined?1:d.trenchMeshLayers))}${chk("trenchMeshLap",d.trenchMeshLap,"Include lap allowance (%)","trenchMeshLap")}</div>
   ${layerTypeSelects(d,"trenchMeshLayers","trenchMeshType","trenchMeshLayerTypes",trenchMeshTypeSel,"trench mesh type")}
   <p class="small">Trench mesh is priced and ordered by the metre (a welded strip of longitudinal bars run the length of the trench), not by sheet area — this counts it the same way as any other run of bars. Same named types as Quotes' own Trench Mesh catalog. Layers &gt; 1 stacks that many mesh strips — each layer can be its own product, and steel quantities follow per material. Lap allowance is off by default (a single continuous mesh strip laid the trench's own run length usually needs none) — turn it on if this run is spliced from more than one length and needs the project's lap % (Defaults &amp; Rules) added.</p></div>`;
-  let bySpacing=(d.connMode||"count")==="spacing";
-  let perFtg=stripStarterCount(d), runM=stripStarterRunM(d), rows=Math.max(1,Math.round(num(d.connRows,1)));
-  let conns=`${chk("starters",d.starters,"Starter bars / dowels up (to wall or column)","starters")}
-  <div class="subsec ${d.starters?'':'hidden'}" data-show-if="starters"><div class="grid cols4">
-   ${F("Connects to",targetSelect("connTarget",d.connTarget,inst.id))}${F("How many",selOpts("connMode",d.connMode||"count",[["count","Total number"],["spacing","At a spacing along the run"]],true))}${F("Dia",barSizeSel("connDia",d.connDia))}${F("Embedment (mm)",inpNum("connEmbed",d.connEmbed))}${F("Projection (mm)",inpNum("connProj",d.connProj))}
-   ${bySpacing
-     ? `${F("Run of starters (m)",`<input type="number" step="any" data-field="connRunM" data-rerender="true" value="${d.connRunM===undefined?'':d.connRunM}" placeholder="= footing length ${fmt(num(d.length)/1000,2)} m">`)}${F("Spacing along run (mm)",inpNumR("connSpacing",d.connSpacing===undefined?400:d.connSpacing))}${F("Rows across the footing",selOpts("connRows",rows,[[1,"1 row (centre)"],[2,"2 rows (one each face)"]],true))}`
-     : F("Qty (per footing)",inpNum("connQty",d.connQty))}
-  </div>
-  ${bySpacing?`<p class="small">→ <b>${perFtg}</b> starters per footing: ${fmt(runM,2)} m run ÷ ${num(d.connSpacing,400)} mm + 1 end bar${rows>1?` × ${rows} rows`:''}${num(d.qty,1)>1?` · × ${num(d.qty,1)} footings = <b>${perFtg*num(d.qty,1)}</b>`:''}. Leave the run blank to set them out along the whole footing; enter a shorter run for a wall that only sits on part of the strip.</p>`:''}
-  </div>
-  `;
+  let conns=starterRunsUI(inst,d,num(d.length)/1000,"footing");
   let steps=`<div class="sechead">Stepped Footing (step-downs on sloping ground)</div>
   ${chk("stepdown",d.stepdown,"Footing steps down along its run","stepdown")}
   <div class="subsec ${d.stepdown?'':'hidden'}" data-show-if="stepdown"><div class="grid cols4">
@@ -2953,16 +3019,7 @@ function computeStripFooting(inst,def){
       lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:type,spec:`Trench mesh${layerNote}`,qty:totLen,unit:"lm",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,lapPct),massPerUnit:mpm,formula:`${N}×${n}L×${Lm}`,notes:`${fmt(wt,1)} kg`}));
     });
   }
-  if(d.starters){
-    let bd=barDiaOf(d.connDia); let len=(num(d.connEmbed)+num(d.connProj))/1000;
-    let perFtg=stripStarterCount(d);
-    let totLen=perFtg*N*len; let wt=totLen*massPerM(bd);
-    let tgt=targetLabelOf(d.connTarget);
-    let bySpacing=(d.connMode||"count")==="spacing";
-    let rows=Math.max(1,Math.round(num(d.connRows,1)));
-    let how=bySpacing?`@${num(d.connSpacing,400)} crs over ${fmt(stripStarterRunM(d),2)} m${rows>1?` × ${rows} rows`:''} = ${perFtg} no.`:`${perFtg} no.`;
-    lines.push(baseLine(inst,def,{materialGroup:"Connections",material:d.connDia,spec:`Starter bars ${how} → ${tgt||"(unlinked)"}`,qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:bySpacing?`(${fmt(stripStarterRunM(d),2)}m/${num(d.connSpacing,400)}+1)${rows>1?`×${rows}`:''}=${perFtg} × ${N} × (embed+proj)/1000`:`${perFtg}×${N}×(embed+proj)/1000`,linkedElement:tgt,notes:`${fmt(wt,1)} kg · ${perFtg*N} bars`}));
-  }
+  lines.push(...starterRunLines(inst,def,d,N,num(d.length)/1000,"Starter bars"));
   return {lines,warnings:[]};
 }
 
@@ -3200,10 +3257,7 @@ function renderBeam(inst,def){
   <div class="grid cols3" style="margin-top:6px;">${chk("ligZonesLap",d.ligZonesLap,"Include lap allowance (%)","ligZonesLap")}</div>
   <p class="small">Diagram below is to scale along the beam length — a fast visual check that support/midspan zones and ligature counts look right.</p>
   <div class="ligDiagHost">${ligDiagramFor(inst)}</div>`;
-  let conns=`${chk("starters",d.starters,"Dowels / continuity bars to column or wall below","starters")}
-  <div class="subsec ${d.starters?'':'hidden'}" data-show-if="starters"><div class="grid cols4">
-   ${F("Connects to",targetSelect("connTarget",d.connTarget,inst.id))}${F("Qty",inpNum("connQty",d.connQty))}${F("Dia",barSizeSel("connDia",d.connDia))}${F("Embedment (mm)",inpNum("connEmbed",d.connEmbed))}${F("Projection (mm)",inpNum("connProj",d.connProj))}
-  </div></div>
+  let conns=`${starterRunsUI(inst,d,num(d.length)/1000,"beam")}
   `;
   let steps=`<div class="sechead">Step-down / Construction-joint Connecting Bars</div>
   ${chk("stepdown",d.stepdown,"This beam steps down / has a level change requiring connecting dowels","stepdown")}
@@ -3586,12 +3640,7 @@ function computeBeam(inst,def){
     let zLapPct=d.ligZonesLap?PROJECT.lapPct:0;
     lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:z.dia,spec:`Ligatures — ${z.zone}`,qty:totLen,unit:"m",waste:PROJECT.reoWaste,lap:zLapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,zLapPct),formula:`${count}×${N} ligs × (perim ${fmt(ligPerimeter-2*hookExt,2)}m + 2×135° hooks ${fmt(2*hookExt,2)}m) (+${PROJECT.reoWaste}% waste${zLapPct?`, +${zLapPct}% lap`:''})`,notes:`${count*N} no., ${fmt(wt,1)} kg`}));
   });
-  if(d.starters){
-    let bd=barDiaOf(d.connDia); let len=(num(d.connEmbed)+num(d.connProj))/1000;
-    let totLen=num(d.connQty)*N*len; let wt=totLen*massPerM(bd);
-    let tgt=targetLabelOf(d.connTarget);
-    lines.push(baseLine(inst,def,{materialGroup:"Connections",material:d.connDia,spec:"Dowels/continuity → "+(tgt||"(unlinked)"),qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`${d.connQty}×${N}×len/1000`,linkedElement:tgt,notes:`${fmt(wt,1)} kg`}));
-  }
+  lines.push(...starterRunLines(inst,def,d,N,num(d.length)/1000,"Dowels / starters"));
   if(d.stepdown){
     let bd=barDiaOf(d.sdDia);
     // dowels run along the TOTAL entered step-down length (legacy saves
@@ -4820,9 +4869,10 @@ function diagStripFooting(inst){ let d=inst.data;
   const fx=sx+(tw-w)/2, fy=sy+ed-bl-dd, right=sx+tw;
   const nBot=Math.max(1,Math.min(8,num(d.botLongQty,4))), nTop=d.topLong?Math.max(1,Math.min(8,num(d.topLongQty,2))):0;
   const barsAt=(n,yy)=>Array.from({length:n}).map((_,i)=>{const xx=n===1?fx+w/2:fx+cv+(w-2*cv)*i/(n-1);return `<circle cx="${xx}" cy="${yy}" r="1.6" fill="${DWG.bar}"/>`;}).join('');
-  const starters=!!d.starters, rows=Math.max(1,Math.round(num(d.connRows,1)));
-  const proj=Math.min(24,Math.max(8,num(d.connProj,600)*s)), emb=Math.min(dd-cv-2,Math.max(4,num(d.connEmbed,500)*s));
-  const starterXs=starters?(((d.connMode||"count")==="spacing"&&rows>1)?[fx+cv+2,fx+w-cv-2]:[fx+w/2]):[];
+  const runsAll=starterRunsOf(d).filter(r=>starterRunCount(r,L/1000)>0), starters=runsAll.length>0;
+  const r0=runsAll[0]||{}, rows=Math.max(1,Math.round(num(r0.rows,1)));
+  const proj=Math.min(24,Math.max(8,num(r0.proj,600)*s)), emb=Math.min(dd-cv-2,Math.max(4,num(r0.embed,500)*s));
+  const starterXs=starters?(rows>1?[fx+cv+2,fx+w-cv-2]:[fx+w/2]):[];
   let section=`${groundLine(sx-16,right+40,sy)}
    <path d="M${sx} ${sy} L${sx} ${sy+ed} L${right} ${sy+ed} L${right} ${sy}" fill="rgba(124,74,90,0.05)" stroke="${DWG.gl}" stroke-width="1" stroke-dasharray="3 2"/>
    ${BL>0?`<rect x="${sx+1}" y="${sy+ed-bl}" width="${tw-2}" height="${bl}" fill="rgba(85,116,95,0.18)" stroke="${DWG.dim}" stroke-width="0.6"/>`:''}
@@ -4837,35 +4887,22 @@ function diagStripFooting(inst){ let d=inst.data;
    ${dimV(fy,fy+dd,right+12,`D ${D}`)}
    ${dimV(sy,sy+ed,right+30,`EXC ${ED}`)}
    ${BL>0?`<text x="${sx+2}" y="${sy+ed-bl-2}" font-size="6" font-family="ui-monospace,Menlo,Consolas,monospace" fill="${DWG.dim}">BLINDING ${BL}</text>`:''}
-   ${starters?dimV(fy-proj,fy,sx-14,`PROJ ${num(d.connProj,600)}`):''}
+   ${starters?dimV(fy-proj,fy,sx-14,`PROJ ${num(r0.proj,600)}`):''}
    <text x="${fx+2}" y="${fy+dd-cv-3}" font-size="5.5" font-family="ui-monospace,Menlo,Consolas,monospace" fill="${DWG.dim}">c${cov}</text>`;
   /* ---- elevation along the run (bottom) ---- */
   const ex=24, ey=180, ew=252, eh=16;
-  const perFtg=starters?stripStarterCount(d):0;
-  const bySpacing=(d.connMode||"count")==="spacing";
-  const runM=stripStarterRunM(d), runW=Math.min(ew,ew*(runM*1000)/L);
-  let ticks="";
-  if(starters&&perFtg>0){
-    const perRow=Math.max(1,Math.round(perFtg/rows));
-    const nDraw=Math.min(perRow,60);
-    for(let i=0;i<nDraw;i++){
-      const xx=nDraw===1?ex+runW/2:ex+(runW*i)/(nDraw-1);
-      ticks+=`<line x1="${xx}" y1="${ey-9}" x2="${xx}" y2="${ey+2}" stroke="${DWG.bar}" stroke-width="${rows>1?1.6:1.1}"/>`;
-    }
-    if(runW<ew-4) ticks+=`${dimH(ex,ex+runW,ey-14,`RUN ${fmt(runM,2)} m`)}`;
-  }
+  const ticks=starters?starterRunTicks(d,L/1000,ex,ew,ey-9,ey+2):"";
   const spec=d.trenchMesh
     ? `TRENCH MESH ${d.trenchMeshType||'4 Bar-L12TM'}${num(d.trenchMeshLayers,1)>1?` ×${d.trenchMeshLayers}`:''}`
     : `${nBot}${d.botLongDia||'N16'} BTM${d.topLong?` · ${num(d.topLongQty,2)}${d.topLongDia||'N12'} TOP`:''}${d.ligs?` · LIGS ${d.ligDia||'N10'}@${d.ligSpacing===undefined?300:d.ligSpacing}`:''}${d.cross?` · X ${d.crossDia||'N12'}@${d.crossSpacing||300}`:''}`;
-  const starterSpec=starters?(bySpacing?`${d.connDia||'N16'} STARTERS @${num(d.connSpacing,400)} CRS${rows>1?` × ${rows} ROWS`:''} = ${perFtg} NO.`:`${perFtg} NO. ${d.connDia||'N16'} STARTERS`)+`, EMB ${num(d.connEmbed,500)} / PROJ ${num(d.connProj,600)}`:'';
   let elevation=`<rect x="${ex}" y="${ey}" width="${ew}" height="${eh}" fill="rgba(232,163,61,0.10)" stroke="${DWG.ink}" stroke-width="1.4"/>
    <line x1="${ex+3}" y1="${ey+eh-4}" x2="${ex+ew-3}" y2="${ey+eh-4}" stroke="${DWG.bar}" stroke-width="1"/>
    ${ticks}
    ${dimH(ex,ex+ew,ey+eh+12,`L ${L}${N>1?` × ${N}`:''}`)}
    ${d.stepdown?`<path d="M${ex+ew-40} ${ey} l0 -6 l40 0" fill="none" stroke="${DWG.ink}" stroke-width="1" stroke-dasharray="2 2"/>`:''}
    ${specLine(ex,ey+eh+26,spec)}
-   ${starters?specLine(ex,ey+eh+37,starterSpec):''}`;
-  return sheetFrame(inst, "Strip Footing", [300,246], section+elevation);
+   ${starters?starterRunSpecLines(d,L/1000,ex,ey+eh+37,11):''}`;
+  return sheetFrame(inst, "Strip Footing", [300,246+(starters&&runsAll.length>1?Math.min(3,runsAll.length-1)*11:0)], section+elevation);
 }
 function diagPadFooting(inst){ let d=inst.data;
   let x=60,y=60,w=140,h=110;
@@ -4893,8 +4930,11 @@ function diagBeam(inst){ let d=inst.data;
    ${Array.from({length:nSt}).map((_,i)=>`<line x1="${x+(w*(i+0.5))/nSt}" y1="${y+3}" x2="${x+(w*(i+0.5))/nSt}" y2="${y+h-3}" stroke="${DWG.bar}" stroke-width="0.8" opacity="0.7"/>`).join('')}
    ${dimH(x,x+w,y+h+16,`SPAN ${d.length||6000}`)}
    ${dimV(y,y+h,x-14,`${d.depth||600}`)}
-   ${specLine(x,y-8,`${d.width||300}W · TOP ${topRow.qty||2}${topRow.dia||'N16'} / BOT ${botRow.qty||3}${botRow.dia||'N20'} · ${(d.beamType||'independent').toUpperCase()}`)}`;
-  return sheetFrame(inst, (d.beamType||"Beam")+" beam", [320,176], content);
+   ${specLine(x,y-26,`${d.width||300}W · TOP ${topRow.qty||2}${topRow.dia||'N16'} / BOT ${botRow.qty||3}${botRow.dia||'N20'} · ${(d.beamType||'independent').toUpperCase()}`)}
+   ${starterRunTicks(d,num(d.length,6000)/1000,x,w,y-16,y+2)}
+   ${starterRunSpecLines(d,num(d.length,6000)/1000,x,y+h+30,11)}`;
+  let nRuns=starterRunsOf(d).filter(r=>starterRunCount(r,num(d.length,6000)/1000)>0).length;
+  return sheetFrame(inst, (d.beamType||"Beam")+" beam", [320,176+(nRuns?Math.min(4,nRuns)*11+4:0)], content);
 }
 function diagSlab(inst){ let d=inst.data;
   // length/width are stored in METRES for slabs (large plan dims — see slabDefaults), everything else here is mm
@@ -5337,6 +5377,7 @@ function attachCardEvents(card,inst){
        : /Groups$/.test(leaf)? newExtraBeamGroup(inst.data,leaf,arr.length)
        : /Rows$/.test(leaf)? {position:"Additional",qty:2,dia:"N16",layers:1,startA:"straight",endA:"straight"}
        : leaf==="extraConn"? {target:"",role:"Dowel",qty:4,dia:"N16",embed:400,proj:400,hook:"straight"}
+       : leaf==="starterRuns"? newStarterRun()
        : leaf==="sdExtraBars"? {orient:"vertical",dia:"N12",spacing:300,len:600}
        : leaf.endsWith("Bars")? {mark:"Section "+((arr.length)+1),dia:"N12",span:1,spacing:200,len:1}
        : leaf==="outlinePts"? {x:0,y:0}
