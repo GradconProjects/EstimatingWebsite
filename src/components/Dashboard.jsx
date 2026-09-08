@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Trash2, ArrowRight, LayoutDashboard, Loader2 } from "lucide-react";
+import { Plus, Trash2, ArrowRight, LayoutDashboard, Loader2, FolderOpen } from "lucide-react";
 import { QUOTE_STATUSES, QUOTE_STATUS_STYLES } from "../data/catalog.js";
 import { computeGrandTotal, computeMarginLadder, money, getDefaultMargin, getMarginSteps } from "../lib/costing.js";
 import { readQuotes, readQuotesCached, writeQuote } from "../lib/projects.js";
@@ -57,7 +57,7 @@ function StatTile({ label, value, highlight }) {
   );
 }
 
-export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete }) {
+export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete, onImportFile, onPrune }) {
   // First paint comes from the last-known summary mirror (instant), then the
   // effect below replaces it with what the database actually holds. An
   // install without a mirror yet starts empty exactly as before.
@@ -87,6 +87,20 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete 
       if (cancelled) return;
       setQuotesByKey(map);
       setLoading(false);
+      // An index entry whose data row does not exist is an "Untitled
+      // project" that can never be opened or edited — a project whose first
+      // save never landed, or a delete that only half-completed. Drop it.
+      // Only when the fetch plainly succeeded (it returned at least one
+      // quote): an empty map is also what a failed fetch looks like, and
+      // that must never prune anything. A brand-new entry is left alone
+      // for an hour so a slow first save cannot be mistaken for an orphan.
+      if (onPrune && Object.keys(map).length > 0) {
+        const cutoff = Date.now() - 60 * 60 * 1000;
+        const orphans = projects
+          .filter((p) => !map[p.storageKey] && Date.parse(p.createdAt || 0) < cutoff)
+          .map((p) => p.id);
+        if (orphans.length) onPrune(orphans);
+      }
     });
     return () => {
       cancelled = true;
@@ -214,6 +228,25 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete 
               ))}
             </select>
           </div>
+          {onImportFile && (
+            <label
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-neutral-300 bg-white hover:bg-neutral-50 text-neutral-700 text-sm font-medium transition-colors cursor-pointer"
+              title="Open a quote saved with “Save to computer” or downloaded from a project's Versions"
+            >
+              <FolderOpen size={16} /> Open .json
+              <input
+                type="file"
+                accept=".json,application/json"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files && e.target.files[0];
+                  e.target.value = "";
+                  if (!file) return;
+                  file.text().then((text) => onImportFile(text, file.name));
+                }}
+              />
+            </label>
+          )}
           <button
             onClick={onCreate}
             className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-950 hover:bg-blue-900 text-white text-sm font-medium transition-colors"

@@ -44,6 +44,24 @@ export function useStoredState(key, initial, { cacheFirst = false } = {}) {
   // for good after the first edit of a session.
   const savingRef = useRef(false);
   const localEditPending = () => !!saveTimer.current || savingRef.current;
+  // A failed save is retried on its own — 5 s, 15 s, 30 s, then every 60 s —
+  // until one succeeds or a newer edit starts a fresh save. Before this, one
+  // failed attempt left the status on "error" and the data only in this
+  // tab's memory until the next keystroke happened to trigger another try;
+  // a whole project could be typed up and never reach the database.
+  const retryTimer = useRef(null);
+  const retryCount = useRef(0);
+  const RETRY_DELAYS_MS = [5000, 15000, 30000, 60000];
+  const scheduleRetry = () => {
+    if (retryTimer.current) clearTimeout(retryTimer.current);
+    const delay = RETRY_DELAYS_MS[Math.min(retryCount.current, RETRY_DELAYS_MS.length - 1)];
+    retryCount.current += 1;
+    retryTimer.current = setTimeout(() => { retryTimer.current = null; doSave(); }, delay);
+  };
+  const clearRetry = () => {
+    if (retryTimer.current) { clearTimeout(retryTimer.current); retryTimer.current = null; }
+    retryCount.current = 0;
+  };
   // Tracks the updated_at of whatever value this browser currently holds (set on
   // load and on every save) — the poll effect below compares against it so a
   // fetch that just echoes this browser's own last write is a no-op, and a
@@ -164,12 +182,16 @@ export function useStoredState(key, initial, { cacheFirst = false } = {}) {
 
   const doSave = async () => {
     saveTimer.current = null;          // the debounce window is over
+    if (retryTimer.current) { clearTimeout(retryTimer.current); retryTimer.current = null; }
     savingRef.current = true;
+    let ok = false;
     try {
-      await doSaveInner();
+      ok = await doSaveInner();
     } finally {
       savingRef.current = false;
     }
+    if (ok) clearRetry();
+    else if (supabaseEnabled) scheduleRetry();   // localStorage failures (quota) won't heal by waiting
   };
 
   const doSaveInner = async () => {
@@ -211,17 +233,22 @@ export function useStoredState(key, initial, { cacheFirst = false } = {}) {
           if (cacheFirst) writeMirror(key, toSave, nowIso);
         }
         setStatus(error ? "error" : "saved");
+        return !error;
       } catch {
         setStatus("error");
+        return false;
       }
     } else if (typeof window === "undefined" || !window.localStorage) {
       setStatus("unavailable");
+      return false;
     } else {
       try {
         window.localStorage.setItem(key, JSON.stringify(valueRef.current));
         setStatus("saved");
+        return true;
       } catch {
         setStatus("error");
+        return false;
       }
     }
   };
@@ -269,6 +296,7 @@ export function useStoredState(key, initial, { cacheFirst = false } = {}) {
     return () => {
       window.removeEventListener("beforeunload", flush);
       window.removeEventListener("pagehide", flush);
+      if (retryTimer.current) clearTimeout(retryTimer.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

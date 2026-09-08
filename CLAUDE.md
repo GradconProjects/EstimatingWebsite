@@ -251,6 +251,54 @@ hardcode a URL or key. `VITE_SUPABASE_ANON_KEY` must be the
 anon/publishable key; the secret/service_role key bypasses every RLS
 policy and must never ship in client code. See `.env.example`.
 
+## How a project is persisted (read before touching storage.js, projects.js or quoteVersions.js)
+
+Three layers, each with a rule that was learned the hard way:
+
+- **The live row** (`useStoredState` in `lib/storage.js`, one `estimator_kv`
+  row per key) is the moving copy: every edit lands there within 500 ms. A
+  failed save **retries on its own** (5 s → 15 s → 30 s → every 60 s) and the
+  editor shows a red banner until it lands — a project once vanished
+  because a save failed silently and the badge was the only sign. The hook
+  cannot save an edit made before its row has loaded, so `ProjectEditor`
+  renders nothing editable while `quoteStatus === "loading"`; never remove
+  that gate. `applyRemote()` is the ONE way a stored value enters state —
+  it arms the "remote apply" flag only when React will actually re-render
+  (a same-reference `initial` bails out, and an armed flag would swallow the
+  user's first real edit). `localEditPending()` is the ONE definition of
+  "this browser is mid-write" that the poll, the realtime push and the
+  cache-first reconcile all consult.
+- **Cache-first mirrors** (`lib/localMirror.js`, `cacheFirst: true` on the
+  projects index and the rates only) paint the last-known copy instantly
+  with status `"syncing"`, then reconcile on `updated_at`. One-off
+  migrations in `App.jsx` wait for `"saved"` (see `settled()`). **A project's
+  quote is never cache-first**: its mirror would have to drop the markup
+  drawings to fit, and a save from that copy would delete them. The
+  dashboard's summary mirrors (drawings' image data stripped) exist only to
+  draw rows. Every quote row is prefetched in one like-query at boot; the
+  FIRST `readQuotes()` consumes it, later calls hit the database.
+- **Versions** (`lib/quoteVersions.js`) are immutable full copies in the
+  `gradcon-files` bucket under `quote-versions/<projectId>/` — one on every
+  Save, one every N minutes (portal Settings `quotesAutosaveMinutes`, 0 =
+  off) while the quote has changed, and one "before-restore" ahead of any
+  restore. Nothing deletes a version. The same document shape is what "Save
+  to computer" downloads and "Open .json" reads; filenames must stay ASCII
+  (Chromium drops a download name containing an em dash or curly quote).
+
+A new project is a **draft** held only in `App` state until it has a name
+or an element (`onPromote`); leaving it unpromoted discards it, so an
+"Untitled project" never persists. The dashboard prunes index entries whose
+row does not exist (older than an hour, and only when the fetch plainly
+succeeded) — an entry with no row is the other way "Untitled project" used
+to appear.
+
+The Quotes bundle is inlined into the portal and runs from a blob: URL, so
+a relative chunk import cannot resolve there: `scripts/assemble-portal.mjs`
+rewrites each lazily-loaded chunk (today only the PDF renderer) to
+`location.origin + "/assets/<chunk>"` and asserts every step — a build only
+succeeds with a working lazy path. `vite.config.js` turns the preload
+helper off so the import takes the plain form that rewrite targets.
+
 ## PDF / print export
 
 The "Print / PDF" button in `ProjectEditor` calls `window.print()`; the

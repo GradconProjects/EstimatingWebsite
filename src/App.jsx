@@ -1,5 +1,8 @@
-import { useState, useMemo, useEffect } from "react";
-import { Settings2, ArrowLeft, Printer, ListPlus, FileSpreadsheet, LayoutDashboard, Radar, FolderOpen } from "lucide-react";
+import { useState, useMemo, useEffect, useRef } from "react";
+import { Settings2, ArrowLeft, Printer, ListPlus, FileSpreadsheet, LayoutDashboard, Radar, FolderOpen, History, HardDriveDownload, AlertTriangle } from "lucide-react";
+import { saveVersion, downloadQuoteFile, parseQuoteFile } from "./lib/quoteVersions.js";
+import { quoteStorageKey } from "./lib/projects.js";
+import VersionsModal from "./components/VersionsModal.jsx";
 import { ELEMENT_TYPES, QUOTE_STATUSES, QUOTE_STATUS_STYLES } from "./data/catalog.js";
 import { defaultRates, newElementItem, computeGrandTotal, uid, money, rateKey } from "./lib/costing.js";
 import { pendingRateUpdates, readLibraryState, readLastSynced, writeLastSynced, RATES_LIBRARY_KEY } from "./lib/ratesLibrarySync.js";
@@ -43,6 +46,25 @@ const prefPct = (key, fallback) => {
     return Number.isFinite(p[key]) ? p[key] / 100 : fallback;
   } catch {
     return fallback;
+  }
+};
+
+/* Portal Settings → how versions are kept (see lib/quoteVersions.js). Read
+ * at mount: the shell reloads this iframe after Settings are saved. */
+const prefAutosaveMinutes = () => {
+  try {
+    const p = JSON.parse(localStorage.getItem("gradcon-preferences")) || {};
+    return Number.isFinite(p.quotesAutosaveMinutes) && p.quotesAutosaveMinutes >= 0 ? p.quotesAutosaveMinutes : 10;
+  } catch {
+    return 10;
+  }
+};
+const prefDownloadOnSave = () => {
+  try {
+    const p = JSON.parse(localStorage.getItem("gradcon-preferences")) || {};
+    return p.quotesDownloadOnSave === true;
+  } catch {
+    return false;
   }
 };
 
@@ -306,10 +328,57 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectsStatus, projects]);
 
-  const activeProject = projects.find((p) => p.id === activeId) || null;
+  // A new project is a DRAFT until it has a name or an element: it lives
+  // only in this state, not in the persisted index, so an "Untitled project"
+  // that was opened and abandoned never appears on anyone's dashboard. The
+  // editor promotes it (onPromote) the moment it earns a place; leaving it
+  // unpromoted discards it, data row included.
+  const [draft, setDraft] = useState(null);
+  const activeProject = projects.find((p) => p.id === activeId) || (draft && draft.id === activeId ? draft : null);
+  const activeIsDraft = !!activeProject && !projects.some((p) => p.id === activeProject.id);
 
   const createProject = () => {
     const entry = newProjectEntry();
+    setDraft(entry);
+    setActiveId(entry.id);
+  };
+  const promoteDraft = () => {
+    if (!draft) return;
+    const d = draft;
+    setProjects((ps) => (ps.some((p) => p.id === d.id) ? ps : [...ps, d]));
+    setDraft(null);
+  };
+  const leaveProject = () => {
+    if (draft && activeId === draft.id) {
+      deleteQuote(draft.storageKey);      // may not exist — harmless
+      setDraft(null);
+    }
+    setActiveId(null);
+  };
+  // Dashboard found index entries with no data row (see its comment).
+  const pruneProjects = (ids) => setProjects((ps) => ps.filter((p) => !ids.includes(p.id)));
+
+  // "Open .json": a file written by Save-to-computer or a Versions download
+  // becomes a project. Its row is written BEFORE it joins the index, so the
+  // index can never point at a row that isn't there. A file whose project
+  // already exists here opens as a separate copy rather than overwriting —
+  // restoring INTO an existing project is what its Versions list is for.
+  const importQuoteFile = async (text, fileName) => {
+    let parsed;
+    try {
+      parsed = parseQuoteFile(text);
+    } catch (e) {
+      alert(`Couldn't open ${fileName || "that file"}: ${e.message}`);
+      return;
+    }
+    const exists = parsed.projectId && projects.some((p) => p.id === parsed.projectId);
+    const entry = parsed.projectId && !exists
+      ? { id: parsed.projectId, storageKey: quoteStorageKey(parsed.projectId), createdAt: new Date().toISOString() }
+      : newProjectEntry();
+    const quote = exists
+      ? { ...parsed.quote, projectName: `${parsed.quote.projectName || "Untitled project"} (from file)` }
+      : parsed.quote;
+    await writeQuote(entry.storageKey, quote);
     setProjects((ps) => [...ps, entry]);
     setActiveId(entry.id);
   };
@@ -375,7 +444,7 @@ export default function App() {
           </div>
         </div>
         {view === "dashboard" && (
-          <Dashboard projects={projects} rates={rates} onOpen={setActiveId} onCreate={createProject} onDelete={deleteProject} />
+          <Dashboard projects={projects} rates={rates} onOpen={setActiveId} onCreate={createProject} onDelete={deleteProject} onImportFile={importQuoteFile} onPrune={pruneProjects} />
         )}
         {view === "planner" && <PlannerView projects={projects} onOpen={setActiveId} />}
         {view === "folder" && (
@@ -397,7 +466,9 @@ export default function App() {
       setRates={setRates}
       ratesStatus={ratesStatus}
       saveProjectsNow={saveProjectsNow}
-      onBack={() => setActiveId(null)}
+      onBack={leaveProject}
+      isDraft={activeIsDraft}
+      onPromote={promoteDraft}
       elementTypes={allElementTypes}
       categoryOrder={allCategoryOrder}
       sectionOrder={allSectionOrder}
@@ -407,7 +478,7 @@ export default function App() {
   );
 }
 
-function ProjectEditor({ project, rates, setRates, ratesStatus, saveProjectsNow, onBack, elementTypes, categoryOrder, sectionOrder, customTypes, setCustomTypes }) {
+function ProjectEditor({ project, rates, setRates, ratesStatus, saveProjectsNow, onBack, isDraft, onPromote, elementTypes, categoryOrder, sectionOrder, customTypes, setCustomTypes }) {
   // Editing a labour rate on any element's crew sheet writes the SAME rates
   // store the Rates modal shows — one library, one figure, everywhere.
   const setLabourRate = (res, v) => {
@@ -449,6 +520,87 @@ function ProjectEditor({ project, rates, setRates, ratesStatus, saveProjectsNow,
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.storageKey, quote, quoteStatus]);
+
+  // A draft earns its place in the index the moment it has a name or an
+  // element (see App's draft state). Never while its row is still loading.
+  useEffect(() => {
+    if (!isDraft || quoteStatus === "loading") return;
+    if ((quote.projectName || "").trim() || (quote.items || []).length > 0) onPromote();
+  }, [isDraft, quoteStatus, quote.projectName, quote.items, onPromote]);
+
+  /* ---- Versions: unlimited saves, autosaved on an interval, optional local copy ---- */
+  const [autosaveMinutes] = useState(prefAutosaveMinutes);
+  const [downloadOnSave] = useState(prefDownloadOnSave);
+  const [versionsOpen, setVersionsOpen] = useState(false);
+  const [saveNote, setSaveNote] = useState(null);           // { text, tone: "ok" | "error" }
+  const quoteRef = useRef(quote);
+  quoteRef.current = quote;
+  const changedSinceVersionRef = useRef(false);            // anything to autosave?
+  const seenLoadedQuoteRef = useRef(false);
+  useEffect(() => {
+    if (quoteStatus === "loading") return;
+    // The first settled value is the row arriving, not an edit — opening a
+    // project must not by itself produce an autosave version.
+    if (!seenLoadedQuoteRef.current) { seenLoadedQuoteRef.current = true; return; }
+    changedSinceVersionRef.current = true;
+  }, [quote, quoteStatus]);
+  const note = (text, tone = "ok") => {
+    setSaveNote({ text, tone });
+    setTimeout(() => setSaveNote((cur) => (cur && cur.text === text ? null : cur)), tone === "ok" ? 4000 : 12000);
+  };
+  const keepVersion = async (source) => {
+    const v = await saveVersion(project.id, quoteRef.current, source);
+    changedSinceVersionRef.current = false;
+    return v;
+  };
+  // Save = the live row now + the index + Cost Planner (as before), PLUS a
+  // version kept for good, PLUS a copy on this computer when Settings say so.
+  const handleSave = async () => {
+    saveQuoteNow();
+    saveProjectsNow();
+    publishQuoteToCostPlanner(project.id, quote);
+    if (isDraft) onPromote();
+    try {
+      await keepVersion("manual");
+      note(`Saved — version kept ${new Date().toLocaleTimeString("en-AU", { hour: "2-digit", minute: "2-digit" })}`);
+    } catch (e) {
+      note(e?.code === "VERSIONS_UNAVAILABLE" ? e.message : `Saved, but the version could not be kept: ${e?.message || e}`, "error");
+    }
+    if (downloadOnSave) {
+      try { await downloadQuoteFile(project.id, quoteRef.current, "manual"); } catch (e) { note(`Couldn't save the copy to this computer: ${e?.message || e}`, "error"); }
+    }
+  };
+  const handleSaveToComputer = async () => {
+    saveQuoteNow();
+    if (isDraft) onPromote();
+    try {
+      const how = await downloadQuoteFile(project.id, quoteRef.current, "manual");
+      if (how === "cancelled") note("Save to computer cancelled");
+      else note(how === "picker" ? "Saved to the folder you chose" : "Saved to this computer (check your Downloads folder)");
+    } catch (e) {
+      note(`Couldn't save to this computer: ${e?.message || e}`, "error");
+    }
+  };
+  // Autosave: a version every N minutes while something has changed.
+  useEffect(() => {
+    if (!(autosaveMinutes > 0) || quoteStatus === "loading") return;
+    const id = setInterval(async () => {
+      if (!changedSinceVersionRef.current) return;
+      try {
+        await keepVersion("autosave");
+        note(`Autosaved a version ${new Date().toLocaleTimeString("en-AU", { hour: "2-digit", minute: "2-digit" })}`);
+      } catch { /* the next tick tries again; a manual Save reports failures */ }
+    }, autosaveMinutes * 60 * 1000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autosaveMinutes, project.id, quoteStatus]);
+  // Restore keeps what is on screen NOW as its own version first, so a
+  // restore can be undone from the same list.
+  const restoreVersion = async (restoredQuote) => {
+    try { await keepVersion("before-restore"); } catch { /* still restore — the live row is the moving copy */ }
+    setQuote({ ...restoredQuote });
+    note("Version restored — what you had before is kept as a version too");
+  };
 
   const [ratesOpen, setRatesOpen] = useState(false);
   const [elementTypesOpen, setElementTypesOpen] = useState(false);
@@ -647,17 +799,56 @@ function ProjectEditor({ project, rates, setRates, ratesStatus, saveProjectsNow,
           </select>
         </div>
         <div className="flex items-center gap-3">
+          {saveNote && (
+            <span className={`text-xs font-medium ${saveNote.tone === "error" ? "text-red-600" : "text-emerald-700"}`}>{saveNote.text}</span>
+          )}
           <SaveBadge status={overallStatus} />
           <button
             type="button"
-            onClick={() => { saveQuoteNow(); saveProjectsNow(); publishQuoteToCostPlanner(project.id, quote); }}
+            onClick={() => setVersionsOpen(true)}
+            className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded border border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-50"
+            title="Every saved version of this quote — restore or download any of them"
+          >
+            <History size={14} /> Versions
+          </button>
+          <button
+            type="button"
+            onClick={handleSaveToComputer}
+            className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded border border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-50"
+            title="Save this quote as a file on this computer (opens a Save-as dialog where the browser allows it, otherwise goes to Downloads)"
+          >
+            <HardDriveDownload size={14} /> Save to computer
+          </button>
+          <button
+            type="button"
+            onClick={handleSave}
             className="text-xs font-semibold px-3 py-1.5 rounded bg-orange-600 text-white hover:bg-orange-700"
-            title="Save this quote's current work, its place in the Projects Dashboard, and push it to Cost Planner's BOQ immediately"
+            title="Save now: the live quote, its place on the Dashboard, Cost Planner's BOQ — and keep a version of it for good"
           >
             Save
           </button>
         </div>
       </div>
+      {overallStatus === "error" && (
+        <div className="print:hidden max-w-7xl mx-auto px-4 pb-3">
+          <div className="flex items-start gap-2 rounded-lg border border-red-300 bg-red-50 text-red-800 text-sm px-4 py-3">
+            <AlertTriangle size={18} className="flex-none mt-0.5" />
+            <div>
+              <b>Your changes are not reaching the cloud.</b> They are safe in this tab and the app keeps retrying on its own — but do not close this tab
+              until the badge says <b>Saved</b>. To be sure, click <b>Save to computer</b> now and keep the file.
+            </div>
+          </div>
+        </div>
+      )}
+      {versionsOpen && (
+        <VersionsModal
+          projectId={project.id}
+          projectName={quote.projectName}
+          autosaveMinutes={autosaveMinutes}
+          onRestore={restoreVersion}
+          onClose={() => setVersionsOpen(false)}
+        />
+      )}
 
       <div className="print:hidden max-w-7xl mx-auto px-4 pb-16 grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-4 items-start">
         <div className="space-y-3">
