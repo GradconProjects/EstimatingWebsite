@@ -253,6 +253,18 @@ body[data-shell="blueprint"] .roleband{display:none;}
 #helpDrawer h3{margin-bottom:10px;}
 #helpDrawer .help-body .teach,#helpDrawer .help-body .tip{display:flex !important;margin:0 0 10px;}
 #helpDrawer .help-body .teach{display:block !important;}
+/* Phase 5 — orders, preview, reconciliation */
+.order-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;}
+.order-sub h3{margin:0 0 6px;font-size:13px;}
+.order-table td.small,.pour-table td.small{max-width:260px;}
+.pour-head td{background:var(--input);}
+.preview-files{display:flex;flex-wrap:wrap;gap:6px;padding:8px 16px 0;}
+.preview-table th,.preview-table td{white-space:nowrap;max-width:320px;overflow:hidden;text-overflow:ellipsis;font-size:11px;}
+.rec-ok{color:#15803d;font-weight:600;font-size:13px;}
+.rec-bad{color:#b91c1c;font-weight:700;font-size:13px;}
+.rec-stale{color:#b45309;font-weight:600;font-size:12px;}
+.rec-row-bad td{background:rgba(185,28,28,.08);}
+.rec-table code{font-size:11px;}
 #helpDrawer .help-close{position:absolute;top:10px;right:12px;}
 /* Workspace: navigator | canvas | inspector */
 body[data-shell="blueprint"] main{max-width:none;padding:12px 14px 60px;}
@@ -603,6 +615,17 @@ table.results th:nth-child(3),table.results td:nth-child(3){position:sticky;left
     <div class="tip"><span class="ico">👷</span><div><b>CSV</b> is the pricing file — one worksheet per material group, ready to paste rates against in Excel. <b>PDF</b> is the clean report — project header, defaults, element-by-element breakdown and grand totals, suitable for a file note, client submission or subcontractor RFQ pack. Both pull from the same live Quantity Register, so they can never disagree with each other.</div></div>
     <div id="exportSummary"></div>
   </div>
+  <div class="panel" id="reconcilePanel"></div>
+  <div class="teach">
+    <div class="roleband"><span>👷 Estimator</span><span>📄 Reviewer</span><span>💻 Software Logic</span></div>
+    <h3>Publishing and exporting</h3>
+    <ol>
+      <li><b>Every export previews first.</b> Click any export button and a preview opens showing the exact rows, columns and row count that will be in the file, with the project, revision, preparer and date it carries. Download from the preview, or copy the text if the browser blocks downloads.</li>
+      <li><b>Reconciliation proves the numbers agree.</b> The block below totals the element cards, the Quantity Register and the export payload independently and shows a ✓ where they match — and a ✗ against the last published copy when Quotes / Cost Planner are behind the takeoff. Publish again to bring them up to date.</li>
+      <li><b>Publish is gated by the review acknowledgement.</b> Manual overrides need a reason, assembly suggestions need a decision, and a named reviewer acknowledges the current register before it goes to Quotes and Cost Planner. Auto-publish keeps them live afterwards.</li>
+      <li><b>Worksheet CSVs are pure tables</b> so their live Final Quantity formulas keep working in Excel. The order schedule, pour schedule and warnings CSVs carry a report trailer (revision, preparer, date, standards profile, register fingerprint) under their rows, and the PDF prints the same header.</li>
+    </ol>
+  </div>
 </section>
 
 <section id="page-orderschedule" class="page">
@@ -617,9 +640,53 @@ table.results th:nth-child(3),table.results td:nth-child(3){position:sticky;left
     <div id="orderScheduleHost"></div>
     <div class="totals-row" id="orderScheduleTotals"></div>
   </div>
+  <div class="panel">
+    <h2>Reinforcement by product</h2>
+    <p class="small">Bars by diameter, trench mesh and strips by product, sheet mesh by type — metres, kg, tonnes and the whole stock lengths / sheets purchasing buys.</p>
+    <div id="reoByProductHost"></div>
+  </div>
+  <div class="panel">
+    <h2>Pour schedule</h2>
+    <p class="small">Concrete grouped by grade, then by each element's planned <b>pour</b> tag, then by element — net, waste-adjusted and order volumes.</p>
+    <div class="toolbar"><button class="btn" onclick="exportPourScheduleCSV()">⬇ Export Pour Schedule (CSV)</button></div>
+    <div id="pourScheduleHost"></div>
+  </div>
+  <div class="teach">
+    <div class="roleband"><span>👷 Estimator</span><span>🛒 Purchasing</span><span>💻 Software Logic</span></div>
+    <h3>Reading the order schedule</h3>
+    <ol>
+      <li><b>Three quantities, never merged.</b> <b>Net</b> is what the drawings measure. <b>Waste + lap adjusted</b> applies the project waste and lap allowances — this is the figure the Quantity Register, every CSV and the PDF show. <b>Order qty</b> rounds the adjusted figure UP by the procurement rule in the next column: whole 12 m bars, whole 14.4 m² sheets, concrete in 0.2 m³ steps, formwork to 0.1 m². The rule is printed on every line so nobody has to guess why an order figure is bigger than the register figure.</li>
+      <li><b>Untick what you are not buying.</b> Already ordered, supplied by others, priced elsewhere — the totals and the CSV follow the ticks and the ticks save with the takeoff.</li>
+      <li><b>Reinforcement by product is the steel order.</b> Ligatures and stirrups are counted in numbers on the register but cut from the same bar stock, so their metres and kg join their diameter here. Stock lengths use the bar stock length from Project Setup.</li>
+      <li><b>The pour schedule is the concrete order.</b> Tag each element with a pour (⋯ Tags on the card) and the schedule groups the grade's volume by pour. Each pour is rounded up separately, because each pour is a separate delivery.</li>
+      <li><b>Nothing here re-measures.</b> Every figure is built from the same register lines the cards and exports use; the Export page's reconciliation block proves it.</li>
+    </ol>
+  </div>
 </section>
 
 <div id="printReport"></div>
+
+<!-- Export preview (Phase 5): every export opens here first — the exact rows,
+     columns and report metadata the file will carry — then downloads. -->
+<div id="exportPreview" role="dialog" aria-modal="true" aria-labelledby="exportPreviewTitle" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:80;align-items:center;justify-content:center;padding:24px;">
+  <div style="background:var(--panel);border:1px solid var(--line);border-radius:10px;max-width:1100px;width:100%;max-height:88vh;display:flex;flex-direction:column;">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line);">
+      <div>
+        <h3 id="exportPreviewTitle" style="margin:0;">Export preview</h3>
+        <div id="exportPreviewMeta" class="small" style="margin:4px 0 0;"></div>
+      </div>
+      <button class="btn small" type="button" onclick="closeExportPreview()">✕ Close</button>
+    </div>
+    <div id="exportPreviewFiles" class="preview-files"></div>
+    <div id="exportPreviewBody" style="padding:8px 16px;flex:1;overflow:auto;"></div>
+    <div style="padding:12px 16px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:flex-end;align-items:center;flex-wrap:wrap;">
+      <span id="exportPreviewNote" class="small" style="margin-right:auto;"></span>
+      <span id="exportPreviewStatus" class="small"></span>
+      <button class="btn" type="button" onclick="copyExportPreview()">📋 Copy as text</button>
+      <button class="btn primary" type="button" id="exportPreviewDownload" onclick="downloadExportPreview()">⬇ Download</button>
+    </div>
+  </div>
+</div>
 
 <!-- Fallback for environments that block script-triggered file downloads
      (e.g. this tool embedded in a sandboxed preview) — see download() below. -->
@@ -647,6 +714,7 @@ table.results th:nth-child(3),table.results td:nth-child(3){position:sticky;left
 
 <!-- __GRADCON_3D_BUNDLE__ -->
 <script src="estimates-schema.js"></script>
+<script src="estimates-orders.js"></script>
 <script>
 const ESTIMATES_BUILD = "__BUILD_STAMP__"; // replaced by scripts/assemble-portal.mjs
 /* ============================= STATE ============================= */
@@ -6537,10 +6605,7 @@ function renderReviewAck(){
 }
 function exportWarningsCSV(){
   const rows=[]; INSTANCES.forEach(inst=>{ ((inst.results&&inst.results.warnings)||[]).forEach(w=>rows.push([inst.id,inst.label,LIB_INDEX[inst.typeKey].label,w.level==="verify"?"Engineering verification required":w.level==="completeness"?"Input completeness":"Estimating sanity check",w.text,bpTabLabel(w.section)])); });
-  const st=standardsOf();
-  rows.push([]); rows.push(["Standards profile",(st.standards||[]).map(c=>(STANDARD_OPTIONS.find(o=>o[1]===c)||[c])[0]).join(" | "),st.otherStandards||"",st.nccEdition||"",st.drawingRev||"",st.specRev||""]);
-  rows.push(["Disclaimer",DISCLAIMER_SHORT]);
-  download(`${(PROJECT.name||"Project").replace(/[^a-z0-9]+/gi,'_')}_warnings.csv`, toCSV(["Element ID","Element","Type","Level","Note","Section"],rows));
+  openExportPreview({title:"Warnings & verification notes", files:[{name:`${(PROJECT.name||"Project").replace(/[^a-z0-9]+/gi,'_')}_warnings.csv`, headers:["Element ID","Element","Type","Level","Note","Section"], rows: rows.concat(reportTrailerRows())}], note:"Completeness, sanity and engineering-verification notes for every element, with the standards profile and disclaimer."});
 }
 
 const CALC = {
@@ -7847,6 +7912,7 @@ function renderProjectForm(){
     F("Job number",inpText("jobNumber",PROJECT.jobNumber)),
     F("Client",inpText("client",PROJECT.client)),
     F("Drawing revision",inpText("revision",PROJECT.revision)),
+    F("Prepared by (printed on every report)",inpText("preparedBy",PROJECT.preparedBy||"")),
     F("Measurement units",inpText("units_len",PROJECT.units_len)),
     F("Measurement rule",selOpts("measurementRule",PROJECT.measurementRule,[["gross","Gross"],["net","Net"],["configurable","Configurable per element"]])),
   ].join('');
@@ -8047,51 +8113,68 @@ function renderRegisterTable(){
 // line. Ticks live on PROJECT.orderExclude (only exclusions stored, so new
 // materials default to included) and save/sync with the takeoff like any
 // other project field.
-function orderScheduleRows(){
-  let agg=new Map();
-  allLines().forEach(l=>{
-    if(!(l.finalQty||l.weightKg)) return;
-    let key=l.materialGroup+"::"+l.material+"::"+l.unit;
-    let e=agg.get(key)||{key,group:l.materialGroup,material:l.material,unit:l.unit,qty:0,kg:0,sheets:0};
-    e.qty+=l.finalQty||0; e.kg+=l.weightKg||0;
-    if(l.sheets!==undefined) e.sheets+=l.sheets;
-    agg.set(key,e);
-  });
-  return [...agg.values()];
+/* Phase 5: the order schedule, reinforcement-by-product and pour-schedule
+   tables are all VIEWS built by portal/estimates-orders.js (pure, Node-tested)
+   from the same register lines — this file only renders them. ordersCtx()
+   hands that module the project/catalog facts it must not hard-code. */
+function ordersCtx(){
+  return {
+    barStockMm: Number(PROJECT.barStock)||12000,
+    trenchStockM: 6,
+    meshSheetAreaM2: MESH_SHEET_AREA_M2,
+    meshSheetLengthM: 6,
+    concreteStepM3: 0.2,
+    isTrenchMesh: (m)=>TRENCH_MESH_TYPES.some(t=>t[0]===m),
+    isSquareMesh: (m)=>MESHTYPES[m]!==undefined,
+    massPerM,
+  };
 }
+function orderScheduleRows(){ return orderScheduleFrom(allLines(), ordersCtx()); }
 function orderIncluded(key){ return !(PROJECT.orderExclude && PROJECT.orderExclude[key]); }
+function orderStockCell(r){
+  if(r.stock===undefined) return "";
+  if(r.ruleId==="mesh") return `${r.stock} sheet${r.stock===1?'':'s'}`;
+  return `${r.stock} × ${fmt((r.orderM||0)/(r.stock||1),1)} m`;
+}
 function renderOrderSchedule(){
   let host=document.getElementById("orderScheduleHost"); if(!host) return;
   let rows=orderScheduleRows();
   let groups=[...new Set(rows.map(r=>r.group))];
-  host.innerHTML = rows.length? `<table class="results" style="width:100%;"><thead><tr><th style="width:44px;">Incl.</th><th>Item</th><th style="text-align:right;">Order qty</th><th>Unit</th><th style="text-align:right;">kg</th><th style="text-align:right;">Sheets</th></tr></thead>
+  host.innerHTML = rows.length? `<div style="overflow-x:auto;"><table class="results order-table" style="width:100%;"><thead><tr><th style="width:44px;">Incl.</th><th>Item</th><th style="text-align:right;" title="Measured quantity, no allowances">Net</th><th style="text-align:right;" title="Waste- and lap-adjusted — the register / export figure">Waste + lap adj.</th><th>Unit</th><th style="text-align:right;" title="Adjusted quantity rounded UP by the procurement rule">Order qty</th><th>Order unit</th><th>Procurement rule</th><th style="text-align:right;">kg</th><th style="text-align:right;">t</th><th>Stock lengths / sheets</th><th style="text-align:right;">Elements</th></tr></thead>
    <tbody>${groups.map(g=>{
      let gs=rows.filter(r=>r.group===g);
-     return `<tr class="reg-group-head"><td colspan="6"><b>${g}</b></td></tr>`+
-       gs.map(r=>`<tr style="${orderIncluded(r.key)?'':'opacity:.45;text-decoration:line-through;'}">
-         <td style="text-align:center;"><input type="checkbox" data-order-key="${r.key.replace(/"/g,'&quot;')}" ${orderIncluded(r.key)?'checked':''} title="Include this line on the order schedule"></td>
-         <td>${r.material}</td><td style="text-align:right;"><b>${fmt(r.qty,2)}</b></td><td>${r.unit}</td>
-         <td style="text-align:right;">${r.kg?fmt(r.kg,1):''}</td><td style="text-align:right;">${r.sheets||''}</td></tr>`).join('');
-   }).join('')}</tbody></table>` : `<p class="small">No quantities yet — add elements in the Workspace first.</p>`;
+     return `<tr class="reg-group-head"><td colspan="12"><b>${bpEsc(g)}</b></td></tr>`+
+       gs.map(r=>`<tr data-order-row="${bpEsc(r.key)}" style="${orderIncluded(r.key)?'':'opacity:.45;text-decoration:line-through;'}">
+         <td style="text-align:center;"><input type="checkbox" data-order-key="${bpEsc(r.key)}" ${orderIncluded(r.key)?'checked':''} title="Include this line on the order schedule"></td>
+         <td>${bpEsc(r.material)}${r.manual?` <span class="manual-badge" title="${r.manual} line${r.manual===1?'':'s'} carry a manual override">✎ ${r.manual}</span>`:''}</td>
+         <td style="text-align:right;">${fmt(r.net,2)}</td><td style="text-align:right;">${fmt(r.adjusted,2)}</td><td>${bpEsc(r.unit)}</td>
+         <td style="text-align:right;"><b>${fmt(r.order,2)}</b></td><td>${bpEsc(r.orderUnit)}</td>
+         <td class="small">${bpEsc(r.rule)}</td>
+         <td style="text-align:right;">${r.kg?fmt(r.kg,1):''}</td><td style="text-align:right;">${r.kg?fmt(r.tonnes,3):''}</td>
+         <td class="small">${orderStockCell(r)}</td><td style="text-align:right;" title="${bpEsc(r.elements.join(', '))}">${r.elements.length}</td></tr>`).join('');
+   }).join('')}</tbody></table></div>` : `<p class="small">No quantities yet — add elements in the Workspace first.</p>`;
   host.oninput=(e)=>{
     let k=e.target.dataset.orderKey; if(k===undefined) return;
     if(!PROJECT.orderExclude) PROJECT.orderExclude={};
     if(e.target.checked) delete PROJECT.orderExclude[k]; else PROJECT.orderExclude[k]=true;
+    saveEstimateState(true);
     renderOrderSchedule();
   };
   let inc=rows.filter(r=>orderIncluded(r.key));
-  let sum=(g)=>inc.filter(r=>r.group===g).reduce((s,r)=>s+r.qty,0);
+  let sum=(g)=>inc.filter(r=>r.group===g).reduce((s,r)=>s+r.adjusted,0);
   let kg=inc.reduce((s,r)=>s+r.kg,0);
-  let sheets=inc.reduce((s,r)=>s+r.sheets,0);
+  let sheets=inc.filter(r=>r.ruleId==="mesh").reduce((s,r)=>s+(r.stock||0),0);
+  let lengths=inc.filter(r=>r.ruleId==="bar").reduce((s,r)=>s+(r.stock||0),0);
   let totals=document.getElementById("orderScheduleTotals");
-  // Blinding/base (m³) and vapour barrier (m²) are separate groups
-  let obBlind=inc.filter(r=>r.group==="Base/Blinding").reduce((s,r)=>s+r.qty,0);
-  let obVap=inc.filter(r=>r.group==="Vapour Barrier").reduce((s,r)=>s+r.qty,0);
-  // Excavation included rows likewise — dug volume vs bulked spoil disposal
-  let obExc=inc.filter(r=>r.group==="Excavation" && !/spoil disposal/i.test(r.material)).reduce((s,r)=>s+r.qty,0);
-  let obSpoil=inc.filter(r=>r.group==="Excavation" && /spoil disposal/i.test(r.material)).reduce((s,r)=>s+r.qty,0);
-  if(totals) totals.innerHTML = `<div class="stat"><div class="n">${fmt(sum("Concrete"),2)}</div><div class="l">m³ concrete</div></div>
+  let obBlind=inc.filter(r=>r.group==="Base/Blinding").reduce((s,r)=>s+r.adjusted,0);
+  let obVap=inc.filter(r=>r.group==="Vapour Barrier").reduce((s,r)=>s+r.adjusted,0);
+  let obExc=inc.filter(r=>r.group==="Excavation" && !/spoil disposal/i.test(r.material)).reduce((s,r)=>s+r.adjusted,0);
+  let obSpoil=inc.filter(r=>r.group==="Excavation" && /spoil disposal/i.test(r.material)).reduce((s,r)=>s+r.adjusted,0);
+  let concOrder=inc.filter(r=>r.group==="Concrete").reduce((s,r)=>s+r.order,0);
+  if(totals) totals.innerHTML = `<div class="stat"><div class="n">${fmt(sum("Concrete"),2)}</div><div class="l">m³ concrete (adjusted)</div></div>
+   <div class="stat"><div class="n">${fmt(concOrder,2)}</div><div class="l">m³ concrete to order</div></div>
    <div class="stat"><div class="n">${fmt(kg,1)}</div><div class="l">kg reinforcement</div></div>
+   <div class="stat"><div class="n">${lengths}</div><div class="l">bar stock lengths</div></div>
    <div class="stat"><div class="n">${sheets}</div><div class="l">mesh sheets</div></div>
    <div class="stat"><div class="n">${fmt(sum("Formwork"),2)}</div><div class="l">m² formwork</div></div>
    <div class="stat"><div class="n">${fmt(obBlind,2)}</div><div class="l">m³ blinding/base</div></div>
@@ -8099,18 +8182,90 @@ function renderOrderSchedule(){
    <div class="stat"><div class="n">${fmt(obExc,2)}</div><div class="l">m³ excavation</div></div>
    <div class="stat"><div class="n">${fmt(obSpoil,2)}</div><div class="l">m³ spoil removal</div></div>
    <div class="stat"><div class="n">${inc.length} / ${rows.length}</div><div class="l">items included</div></div>`;
+  renderReoByProduct();
+  renderPourSchedule();
 }
 function orderScheduleSetAll(on){
   if(on){ PROJECT.orderExclude={}; }
   else { PROJECT.orderExclude={}; orderScheduleRows().forEach(r=>PROJECT.orderExclude[r.key]=true); }
+  saveEstimateState(true);
   renderOrderSchedule();
 }
-function exportOrderScheduleCSV(){
+/* Reinforcement grouped by product — bars by diameter, trench mesh and mesh
+   strips by product, sheet mesh by type — with the whole stock lengths /
+   sheets purchasing actually buys. Rendered on the Order Schedule page. */
+function renderReoByProduct(){
+  const host=document.getElementById("reoByProductHost"); if(!host) return;
+  const r=reinforcementByProduct(allLines(), ordersCtx());
+  const t=(title,head,rows,foot)=>rows.length? `<div class="order-sub"><h3>${title}</h3><table class="results"><thead><tr>${head.map((h,i)=>`<th${i?' style="text-align:right;"':''}>${h}</th>`).join('')}</tr></thead><tbody>${rows.map(row=>`<tr>${row.map((c,i)=>`<td${i?' style="text-align:right;"':''}>${c}</td>`).join('')}</tr>`).join('')}${foot?`<tr style="font-weight:700;">${foot.map((c,i)=>`<td${i?' style="text-align:right;"':''}>${c}</td>`).join('')}</tr>`:''}</tbody></table></div>` : '';
+  host.innerHTML = (r.bars.length||r.trench.length||r.strips.length||r.mesh.length) ? `<div class="order-grid">
+    ${t("Bars by diameter",["Bar","m","kg","t",`Stock lengths (${fmt((Number(PROJECT.barStock)||12000)/1000,1)} m)`],r.bars.map(b=>[bpEsc(b.product),fmt(b.lm,1),fmt(b.kg,1),fmt(b.tonnes,3),b.stockLengths]),["Total",fmt(r.bars.reduce((s,b)=>s+b.lm,0),1),fmt(r.bars.reduce((s,b)=>s+b.kg,0),1),fmt(r.bars.reduce((s,b)=>s+b.kg,0)/1000,3),r.totals.stockLengths])}
+    ${t("Trench mesh by product",["Product","m","kg","t","Lengths (6 m)"],r.trench.map(b=>[bpEsc(b.product),fmt(b.lm,1),fmt(b.kg,1),fmt(b.tonnes,3),b.lengths]),["Total",fmt(r.trench.reduce((s,b)=>s+b.lm,0),1),fmt(r.trench.reduce((s,b)=>s+b.kg,0),1),fmt(r.trench.reduce((s,b)=>s+b.kg,0)/1000,3),r.totals.trenchLengths])}
+    ${t("Mesh strips by product",["Product","m","kg","t","Sheet lengths (6 m)"],r.strips.map(b=>[bpEsc(b.product),fmt(b.lm,1),fmt(b.kg,1),fmt(b.tonnes,3),b.lengths]),["Total",fmt(r.strips.reduce((s,b)=>s+b.lm,0),1),fmt(r.strips.reduce((s,b)=>s+b.kg,0),1),fmt(r.strips.reduce((s,b)=>s+b.kg,0)/1000,3),r.totals.stripLengths])}
+    ${t("Sheet mesh by type",["Mesh","m²",`Sheets (${MESH_SHEET_AREA_M2} m²)`],r.mesh.map(m=>[bpEsc(m.product),fmt(m.m2,1),m.sheets]),["Total",fmt(r.mesh.reduce((s,m)=>s+m.m2,0),1),r.totals.sheets])}
+  </div><p class="small">Bar and trench metres are waste- and lap-adjusted; ligatures and stirrups join their bar size. Stock lengths are whole bars at the project's bar stock length (Project Setup); sheets are whole ${MESH_SHEET_AREA_M2} m² sheets, already rounded up line by line.</p>` : `<p class="small">No reinforcement measured yet.</p>`;
+}
+/* Pour schedule — concrete by grade → planned pour (the element's "pour" tag)
+   → element, with net, adjusted and order (0.2 m³ steps) volumes. */
+function renderPourSchedule(){
+  const host=document.getElementById("pourScheduleHost"); if(!host) return;
+  const sched=pourSchedule(allLines(), INSTANCES, ordersCtx());
+  if(!sched.length){ host.innerHTML=`<p class="small">No concrete measured yet.</p>`; return; }
+  host.innerHTML = `<div style="overflow-x:auto;"><table class="results pour-table" style="width:100%;"><thead><tr><th>Grade / pour / element</th><th>Level</th><th>Zone</th><th style="text-align:right;">Net m³</th><th style="text-align:right;">Adjusted m³</th><th style="text-align:right;">Order m³</th><th>Section</th></tr></thead><tbody>
+   ${sched.map(g=>`<tr class="reg-group-head"><td colspan="3"><b>${bpEsc(g.grade)}</b></td><td style="text-align:right;"><b>${fmt(g.net,2)}</b></td><td style="text-align:right;"><b>${fmt(g.adjusted,2)}</b></td><td style="text-align:right;"><b>${fmt(g.order,2)}</b></td><td></td></tr>
+     ${g.pours.map(p=>`<tr class="pour-head"><td colspan="3" style="padding-left:18px;">Pour: <b>${bpEsc(p.pour)}</b> <span class="small">(${p.elements.length} element${p.elements.length===1?'':'s'})</span></td><td style="text-align:right;">${fmt(p.net,2)}</td><td style="text-align:right;">${fmt(p.adjusted,2)}</td><td style="text-align:right;">${fmt(p.order,2)}</td><td></td></tr>
+       ${p.elements.map(e=>`<tr><td style="padding-left:36px;"><a href="#" onclick="openLineSource('${bpEsc(e.elementId)}');return false;">${bpEsc(e.elementId)}</a> ${bpEsc(e.element)}</td><td>${bpEsc(e.level||'')}</td><td>${bpEsc(e.zone||'')}</td><td style="text-align:right;">${fmt(e.net,2)}</td><td style="text-align:right;">${fmt(e.adjusted,2)}</td><td style="text-align:right;">${fmt(e.order,2)}</td><td class="small">${bpEsc(e.spec)}</td></tr>`).join('')}`).join('')}`).join('')}
+  </tbody></table></div><p class="small">Pours come from each element's <b>pour</b> tag (⋯ Tags on the card, or the navigator's multi-select in the blueprint layout); elements without one sit under "(unscheduled)". Order volumes round each pour up to 0.2 m³ separately, so the sum of pours can exceed the grade's own order figure — that is the cost of pouring separately, shown rather than hidden.</p>`;
+}
+function reportMeta(){
+  const st=standardsOf();
+  const names=(st.standards||[]).map(c=>(STANDARD_OPTIONS.find(o=>o[1]===c)||[c])[0]);
+  const d=new Date();
+  return {
+    project: PROJECT.name||"Untitled project", jobNumber: PROJECT.jobNumber||"", client: PROJECT.client||"",
+    revision: PROJECT.revision||"", drawingRev: st.drawingRev||"", specRev: st.specRev||"",
+    preparedBy: PROJECT.preparedBy||"", reviewedBy: PROJECT.reviewAck&&PROJECT.reviewAck.at? `${PROJECT.reviewAck.name} (${PROJECT.reviewAck.role}) ${PROJECT.reviewAck.at}` : "",
+    date: d.toLocaleDateString('en-AU',{year:'numeric',month:'long',day:'numeric'}), iso: d.toISOString(),
+    standards: names, otherStandards: st.otherStandards||"", jurisdiction: [st.country,st.state,st.location].filter(Boolean).join(", "),
+    projectType: st.projectType||"building", measurementRules: st.measurementRules||"", rateBaseDate: st.rateBaseDate||"",
+    fingerprint: linesFingerprint(allLines()), build: ESTIMATES_BUILD,
+  };
+}
+/* Report trailer rows appended to non-formula CSVs (order schedule, pour
+   schedule, warnings) — revision, date, preparer and standards profile. The
+   worksheet CSVs stay pure tables because their Final Quantity column is a
+   live row-relative Excel formula. */
+function reportTrailerRows(){
+  const m=reportMeta();
+  return [[],["Project",m.project,"Job",m.jobNumber,"Client",m.client],
+    ["Revision",m.revision,"Drawings",m.drawingRev,"Specification",m.specRev],
+    ["Prepared by",m.preparedBy||"—","Reviewed",m.reviewedBy||"not acknowledged","Generated",m.date],
+    ["Standards profile",m.standards.join(" | "),m.otherStandards,m.jurisdiction,m.projectType,m.measurementRules],
+    ["Register fingerprint",m.fingerprint,"Build",m.build],
+    ["Disclaimer",DISCLAIMER_SHORT]];
+}
+function orderScheduleCSVRows(){
   let inc=orderScheduleRows().filter(r=>orderIncluded(r.key));
-  let head=["Material Group","Item","Order Qty","Unit","kg","Sheets"];
-  let body=inc.map(r=>[r.group,r.material,numCell(r.qty,2),r.unit,r.kg?numCell(r.kg,1):"",r.sheets||""]);
-  let csv=[head,...body].map(row=>row.map(csvEscape).join(",")).join("\r\n");
-  download((PROJECT.name||"project")+"_order_schedule.csv",csv);
+  let head=["Material Group","Item","Net Qty","Adjusted Qty (waste+lap)","Unit","Order Qty","Order Unit","Procurement Rule","kg","t","Stock lengths / sheets","Elements"];
+  let body=inc.map(r=>[r.group,r.material,numCell(r.net,3),numCell(r.adjusted,3),r.unit,numCell(r.order,3),r.orderUnit,r.rule,r.kg?numCell(r.kg,1):"",r.kg?numCell(r.tonnes,3):"",r.stock!==undefined?r.stock:"",r.elements.join(" ")]);
+  return {head, body: body.concat(reportTrailerRows())};
+}
+function exportOrderScheduleCSV(){
+  const {head,body}=orderScheduleCSVRows();
+  openExportPreview({title:"Order schedule", files:[{name:(PROJECT.name||"project").replace(/[^a-z0-9]+/gi,'_')+"_order_schedule.csv", headers:head, rows:body}], note:"Only ticked lines are included. Net = measured, Adjusted = waste and lap applied (the register figure), Order = adjusted rounded up by the procurement rule shown."});
+}
+function pourScheduleCSVRows(){
+  const sched=pourSchedule(allLines(), INSTANCES, ordersCtx());
+  const head=["Grade","Pour","Element ID","Element","Level","Zone","Net m3","Adjusted m3","Order m3","Section"];
+  const body=[];
+  sched.forEach(g=>{ body.push([g.grade,"(grade total)","","","","",numCell(g.net,3),numCell(g.adjusted,3),numCell(g.order,3),""]);
+    g.pours.forEach(p=>{ body.push([g.grade,p.pour,"","(pour total)","","",numCell(p.net,3),numCell(p.adjusted,3),numCell(p.order,3),""]);
+      p.elements.forEach(e=>body.push([g.grade,p.pour,e.elementId,e.element,e.level,e.zone,numCell(e.net,3),numCell(e.adjusted,3),numCell(e.order,3),e.spec])); }); });
+  return {head, body: body.concat(reportTrailerRows())};
+}
+function exportPourScheduleCSV(){
+  const {head,body}=pourScheduleCSVRows();
+  openExportPreview({title:"Pour schedule", files:[{name:(PROJECT.name||"project").replace(/[^a-z0-9]+/gi,'_')+"_pour_schedule.csv", headers:head, rows:body}], note:"Concrete by grade, planned pour (element pour tag) and element. Order volumes round each pour up to 0.2 m³."});
 }
 
 /* ============================= EXPORT ============================= */
@@ -8149,7 +8304,7 @@ function toCSV(headers,rows){
 // the fallback panel (with a working copy-to-clipboard / manual copy path)
 // alongside attempting the real download, so there's always at least one
 // way to actually get the data out regardless of the hosting sandbox.
-function download(filename,content,mime){
+function triggerDownload(filename,content,mime){
   try{
     // The BOM is for Excel opening a CSV as UTF-8. A JSON file must NOT carry
     // one: strict parsers (Node, many tools) reject it, and a backup that a
@@ -8159,8 +8314,59 @@ function download(filename,content,mime){
     let a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=filename;
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     setTimeout(()=>URL.revokeObjectURL(a.href),2000);
-  }catch(e){ /* fall through to the copy panel below regardless */ }
+    return true;
+  }catch(e){ return false; }
+}
+function download(filename,content,mime){
+  triggerDownload(filename,content,mime);   // may silently do nothing in a sandbox — the copy panel below always works
   showExportFallback(filename,content);
+}
+/* ---- Export preview ----------------------------------------------------
+ * opts = { title, files:[{name, headers, rows}], note }. Shows the first
+ * rows of each file as a table (all rows are in the download), the row and
+ * column counts, and the report metadata; Download writes every file. */
+let PREVIEW=null;
+function openExportPreview(opts){
+  PREVIEW=Object.assign({files:[],active:0},opts||{});
+  const m=reportMeta();
+  document.getElementById("exportPreviewTitle").textContent=`Export preview — ${PREVIEW.title||"export"}`;
+  document.getElementById("exportPreviewMeta").innerHTML=`<b>${bpEsc(m.project)}</b>${m.jobNumber?` · Job ${bpEsc(m.jobNumber)}`:''}${m.client?` · ${bpEsc(m.client)}`:''} · Revision ${bpEsc(m.revision||"—")}${m.drawingRev?` (drawings ${bpEsc(m.drawingRev)})`:''} · Prepared by ${bpEsc(m.preparedBy||"— (set in Project Setup)")} · ${bpEsc(m.date)} · Register ${m.fingerprint}${m.standards.length?` · ${bpEsc(m.standards.join(", "))}`:''}`;
+  document.getElementById("exportPreviewNote").textContent=PREVIEW.note||"";
+  document.getElementById("exportPreviewStatus").textContent="";
+  renderExportPreview();
+  document.getElementById("exportPreview").style.display="flex";
+}
+function closeExportPreview(){ document.getElementById("exportPreview").style.display="none"; PREVIEW=null; }
+function previewCellText(c){ if(c&&typeof c==="object"&&"raw" in c) return c.raw; if(c===undefined||c===null) return ""; return String(c); }
+function renderExportPreview(){
+  if(!PREVIEW) return;
+  const filesEl=document.getElementById("exportPreviewFiles");
+  filesEl.innerHTML = PREVIEW.files.length>1 ? PREVIEW.files.map((f,i)=>`<button type="button" class="btn small ${i===PREVIEW.active?'primary':''}" data-preview-file="${i}">${bpEsc(f.name)} <span class="small">(${f.rows.length})</span></button>`).join('') : '';
+  filesEl.onclick=(e)=>{ const b=e.target.closest('[data-preview-file]'); if(!b) return; PREVIEW.active=Number(b.dataset.previewFile); renderExportPreview(); };
+  const f=PREVIEW.files[PREVIEW.active]; if(!f){ document.getElementById("exportPreviewBody").innerHTML='<p class="small">Nothing to export.</p>'; return; }
+  const MAX=60;
+  const shown=f.rows.slice(0,MAX);
+  document.getElementById("exportPreviewBody").innerHTML=`<div class="small" style="margin:0 0 6px;"><b>${bpEsc(f.name)}</b> — ${f.rows.length} row${f.rows.length===1?'':'s'} × ${f.headers.length} columns${f.rows.length>MAX?` (first ${MAX} shown; the file has every row)`:''}</div>
+    <div style="overflow:auto;max-height:52vh;"><table class="results preview-table"><thead><tr><th>#</th>${f.headers.map(h=>`<th>${bpEsc(h)}</th>`).join('')}</tr></thead><tbody>${shown.map((r,i)=>`<tr><td class="small">${i+2}</td>${f.headers.map((_,j)=>`<td>${bpEsc(previewCellText(r[j]))}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+  document.getElementById("exportPreviewDownload").textContent = PREVIEW.files.length>1 ? `⬇ Download all ${PREVIEW.files.length} files` : "⬇ Download";
+}
+function previewFileText(f){ return toCSV(f.headers,f.rows); }
+function downloadExportPreview(){
+  if(!PREVIEW) return;
+  const status=document.getElementById("exportPreviewStatus");
+  const files=PREVIEW.files.slice(); // the dialog may close before the staggered downloads finish
+  let ok=true;
+  files.forEach((f,i)=>setTimeout(()=>{ if(!triggerDownload(f.name, previewFileText(f))) ok=false; if(i===files.length-1) status.textContent = ok? `Download started (${files.length} file${files.length===1?'':'s'}). If nothing arrived, use Copy as text.` : "The browser blocked the download — use Copy as text."; }, i*300));
+  status.textContent="Downloading…";
+}
+function copyExportPreview(){
+  if(!PREVIEW) return;
+  const f=PREVIEW.files[PREVIEW.active]; if(!f) return;
+  const text=previewFileText(f);
+  const status=document.getElementById("exportPreviewStatus");
+  const done=()=>{ status.textContent=`Copied ${f.name} ✓`; };
+  try{ if(navigator.clipboard){ navigator.clipboard.writeText(text).then(done).catch(()=>showExportFallback(f.name,text)); return; } }catch(e){}
+  showExportFallback(f.name,text);
 }
 function showExportFallback(filename,content){
   document.getElementById('exportFallbackName').textContent=filename;
@@ -8198,34 +8404,85 @@ function sheetLines(kind){
 // M Manual Override (Yes/No + system-calculated qty when overridden), N Formula (reference text),
 // O Linked Element, P Notes.
 const EXPORT_HEADERS=["Stage","Category","Element","Element ID","Material Group","Material","Specification","Quantity","Unit","Waste %","Lap %","Final Quantity","Manual Override","Formula (reference)","Linked Element","Notes"];
-function exportSheet(kind){
+const SHEET_TITLES={register:"Quantity Register / Takeoff Summary",concrete:"Concrete",reinforcement:"Reinforcement (BBS)",formwork:"Formwork",excavation:"Excavation / Base & Blinding",connections:"Connections"};
+function sheetFile(kind){
   let data=sheetLines(kind);
   let rows=data.map((l,i)=>{
     let r=i+2; // header is row 1
     return [l.stage,l.category,l.element,l.elementId,l.materialGroup,l.material,l.spec,
       numCell(l.qty), l.unit, numCell(l.waste||0,2), numCell(l.lap||0,2),
       rawFormula(`=ROUND(H${r}*(1+J${r}/100)*(1+K${r}/100),4)`),
-      l.manualOverride? `Yes (system calc ${fmt(l.calculatedQty,2)})` : "No",
+      l.manualOverride? `Yes (system calc ${fmt(l.calculatedQty,2)})${l.overrideReason?' — '+l.overrideReason:''}` : "No",
       l.formula, l.linkedElement, l.notes];
   });
-  let name=`${(PROJECT.name||"Project").replace(/[^a-z0-9]+/gi,'_')}_${kind}.csv`;
-  download(name, toCSV(EXPORT_HEADERS,rows));
+  return {name:`${(PROJECT.name||"Project").replace(/[^a-z0-9]+/gi,'_')}_${kind}.csv`, headers:EXPORT_HEADERS, rows, title:SHEET_TITLES[kind]||kind};
+}
+const SHEET_NOTE="Pure table: the Final Quantity column is a live Excel formula (H×(1+J/100)×(1+K/100)), so no report trailer is added here — the PDF and the order/pour/warnings CSVs carry the revision, preparer and date.";
+function exportSheet(kind,opts){
+  const f=sheetFile(kind);
+  if(opts&&opts.direct){ download(f.name, toCSV(f.headers,f.rows)); return; }
+  openExportPreview({title:f.title, files:[f], note:SHEET_NOTE});
 }
 function exportAll(){
-  ["register","concrete","reinforcement","formwork","excavation","connections"].forEach((k,i)=>setTimeout(()=>exportSheet(k), i*300));
+  const files=["register","concrete","reinforcement","formwork","excavation","connections"].map(sheetFile);
+  openExportPreview({title:"All worksheets", files, note:SHEET_NOTE});
 }
 function renderExportSummary(){
   renderReviewAck();
   let lines=allLines();
-  let {bars,mesh}=summarizeReinforcement(lines);
+  const r=reinforcementByProduct(lines, ordersCtx());
   let byGrade={};
   lines.filter(l=>l.materialGroup==="Concrete").forEach(l=>{ byGrade[l.material]=(byGrade[l.material]||0)+l.finalQty; });
   let host=document.getElementById("exportSummary");
+  const stockM=(Number(PROJECT.barStock)||12000)/1000;
   host.innerHTML = `<div class="grid cols2">
-   <div><h3>Concrete by grade</h3><table class="results"><thead><tr><th>Grade</th><th>m³</th></tr></thead><tbody>${Object.entries(byGrade).map(([k,v])=>`<tr><td>${k}</td><td>${fmt(v,2)}</td></tr>`).join('')||'<tr><td colspan=2 class="small">No data yet</td></tr>'}</tbody></table></div>
-   <div><h3>Reinforcement bars by diameter</h3><table class="results"><thead><tr><th>Bar</th><th>lm</th><th>kg</th></tr></thead><tbody>${Object.entries(bars).map(([k,v])=>`<tr><td>${k}</td><td>${fmt(v.lm,1)}</td><td>${fmt(v.kg,1)}</td></tr>`).join('')||'<tr><td colspan=3 class="small">No data yet</td></tr>'}</tbody></table></div>
-   <div><h3>Mesh by type (sheets)</h3><table class="results"><thead><tr><th>Mesh</th><th>m²</th><th>Sheets</th></tr></thead><tbody>${Object.entries(mesh).map(([k,v])=>`<tr><td>${k}</td><td>${fmt(v.area,1)}</td><td>${v.sheets}</td></tr>`).join('')||'<tr><td colspan=3 class="small">No data yet</td></tr>'}</tbody></table></div>
+   <div><h3>Concrete by grade</h3><table class="results"><thead><tr><th>Grade</th><th>m³ (adjusted)</th><th>m³ to order</th></tr></thead><tbody>${Object.entries(byGrade).map(([k,v])=>`<tr><td>${bpEsc(k)}</td><td>${fmt(v,2)}</td><td>${fmt(roundUpTo(v,0.2),2)}</td></tr>`).join('')||'<tr><td colspan=3 class="small">No data yet</td></tr>'}</tbody></table></div>
+   <div><h3>Reinforcement bars by diameter</h3><table class="results"><thead><tr><th>Bar</th><th>m</th><th>kg</th><th>t</th><th>Stock lengths (${fmt(stockM,1)} m)</th></tr></thead><tbody>${r.bars.map(b=>`<tr><td>${bpEsc(b.product)}</td><td>${fmt(b.lm,1)}</td><td>${fmt(b.kg,1)}</td><td>${fmt(b.tonnes,3)}</td><td>${b.stockLengths}</td></tr>`).join('')||'<tr><td colspan=5 class="small">No data yet</td></tr>'}</tbody></table></div>
+   <div><h3>Trench mesh / strips by product</h3><table class="results"><thead><tr><th>Product</th><th>m</th><th>kg</th><th>Lengths (6 m)</th></tr></thead><tbody>${r.trench.concat(r.strips).map(b=>`<tr><td>${bpEsc(b.product)}</td><td>${fmt(b.lm,1)}</td><td>${fmt(b.kg,1)}</td><td>${b.lengths}</td></tr>`).join('')||'<tr><td colspan=4 class="small">No data yet</td></tr>'}</tbody></table></div>
+   <div><h3>Mesh by type (sheets)</h3><table class="results"><thead><tr><th>Mesh</th><th>m²</th><th>Sheets</th></tr></thead><tbody>${r.mesh.map(m=>`<tr><td>${bpEsc(m.product)}</td><td>${fmt(m.m2,1)}</td><td>${m.sheets}</td></tr>`).join('')||'<tr><td colspan=3 class="small">No data yet</td></tr>'}</tbody></table></div>
   </div>`;
+  renderReconciliation();
+}
+/* Reconciliation block (Phase 5): element totals = register totals = export
+   totals, each summed INDEPENDENTLY from its own source, plus the copy last
+   published to Quotes / Cost Planner (stale = publish again). */
+function lastPublishedRecord(){
+  try{
+    const all=JSON.parse(localStorage.getItem(PUBLISHED_ESTIMATES_KEY)||"[]");
+    return Array.isArray(all)? all.find(r=>r && r.estimateSessionId===PROJECT.estimateSessionId) : null;
+  }catch(e){ return null; }
+}
+function reconciliationSources(){
+  const cards=[]; INSTANCES.forEach(inst=>{ const out=inst.results||computeInstance(inst); (out.lines||[]).forEach(l=>cards.push(l)); });
+  const sources=[
+    {name:"Element cards", lines:cards},
+    {name:"Quantity Register", lines:allLines()},
+    {name:"Export payload", lines:buildEstimateExportPayload().lines},
+  ];
+  const pub=lastPublishedRecord();
+  if(pub) sources.push({name:`Last published${pub.publishedAt?` (${new Date(pub.publishedAt).toLocaleString('en-AU')})`:''}`, lines:Array.isArray(pub.lines)?pub.lines:[], published:true});
+  return sources;
+}
+function renderReconciliation(){
+  const host=document.getElementById("reconcilePanel"); if(!host) return;
+  const sources=reconciliationSources();
+  const rec=reconcile(sources);
+  const pubIdx=sources.findIndex(s=>s.published);
+  const agree=(r,i)=> typeof r.values[i]==="number" ? Math.abs(r.values[i]-r.values[0])<Math.pow(10,-r.dp)/2+1e-9 : r.values[i]===r.values[0];
+  const rows=rec.rows.map(r=>{
+    const liveN = pubIdx>=0? pubIdx : r.values.length;
+    let liveOk=true; for(let i=1;i<liveN;i++) if(!agree(r,i)) liveOk=false;
+    const pubOk = pubIdx<0 ? true : agree(r,pubIdx);
+    return Object.assign({liveOk,pubOk}, r);
+  });
+  const liveOk=rows.every(r=>r.liveOk);
+  const pubStale=pubIdx>=0 && rows.some(r=>!r.pubOk);
+  host.innerHTML=`<h2>Reconciliation ${liveOk?'<span class="rec-ok">✓ element totals = register = export</span>':'<span class="rec-bad">✗ totals disagree — do not publish</span>'}</h2>
+   <p class="small">Each column is totalled independently from its own source: the element cards' result lines, the Quantity Register, and the payload Publish sends to Quotes / Cost Planner${pubIdx>=0?', plus the copy last published from this browser':''}. The fingerprint is a hash of every line's element, key and final quantity.</p>
+   <div style="overflow-x:auto;"><table class="results rec-table" data-rec-ok="${liveOk?'1':'0'}" data-rec-stale="${pubStale?'1':'0'}"><thead><tr><th>Total</th>${rec.names.map(n=>`<th style="text-align:right;">${bpEsc(n)}</th>`).join('')}<th></th></tr></thead><tbody>
+   ${rows.map(r=>`<tr data-rec="${r.key}" class="${r.liveOk?'':'rec-row-bad'}"><td>${bpEsc(r.label)}${r.unit?` <span class="small">${bpEsc(r.unit)}</span>`:''}</td>${r.values.map((v,i)=>`<td style="text-align:right;${i===pubIdx&&!r.pubOk?'color:#b45309;font-weight:700;':''}">${typeof v==="number"? fmt(v,r.dp) : `<code>${bpEsc(String(v))}</code>`}</td>`).join('')}<td>${r.liveOk?'<span class="rec-ok">✓</span>':'<span class="rec-bad">✗</span>'}${pubIdx>=0? (r.pubOk?' <span class="rec-ok" title="matches the last published copy">✓ published</span>':' <span class="rec-stale" title="the last published copy differs — publish again">⟳ stale</span>') : ''}</td></tr>`).join('')}
+   </tbody></table></div>
+   ${pubIdx<0? '<p class="small">Not yet published from this browser — the published column appears after the first Publish.</p>' : pubStale? '<div class="warn" style="margin-top:8px;">The copy in Quotes / Cost Planner is behind this takeoff. Publish again (or let auto-publish catch up) to bring it into line.</div>' : '<p class="small rec-ok">The last published copy matches this takeoff.</p>'}`;
 }
 function exportPDF(){
   // Persisted portal Settings orientation — applied on every export, so a
@@ -8249,7 +8506,7 @@ function exportPDF(){
   let html=`
    <div style="padding:10px 4px;">
      <h1 style="margin:0 0 2px;">${PROJECT.name||"Untitled Project"} — Element Takeoff Report</h1>
-     <div style="font-size:11px;color:#333;margin-bottom:10px;">Job No. ${PROJECT.jobNumber||"—"} · Client: ${PROJECT.client||"—"} · Revision: ${PROJECT.revision||"—"} · Generated ${dateStr}</div>
+     <div style="font-size:11px;color:#333;margin-bottom:10px;">Job No. ${PROJECT.jobNumber||"—"} · Client: ${PROJECT.client||"—"} · Revision: ${PROJECT.revision||"—"} · Prepared by: ${PROJECT.preparedBy||"—"} · Generated ${dateStr} · Register ${linesFingerprint(lines)}</div>
      <table style="width:100%;border-collapse:collapse;margin-bottom:14px;">
        <tr><td style="border:1px solid #999;padding:6px;"><b>Default cover</b><br>${PROJECT.cover} mm</td>
        <td style="border:1px solid #999;padding:6px;"><b>Default grade</b><br>N${PROJECT.grade}</td>
@@ -8276,16 +8533,30 @@ function exportPDF(){
      ${(function(){
        let byGrade={};
        lines.filter(l=>l.materialGroup==="Concrete").forEach(l=>{ byGrade[l.material]=(byGrade[l.material]||0)+l.finalQty; });
-       let {bars,mesh,strips}=summarizeReinforcement(lines);
+       let rp=reinforcementByProduct(lines, ordersCtx());
        let cell='border:1px solid #999;padding:4px;';
        let mk=(title,head,rows)=>rows.length? `<div style="display:inline-block;vertical-align:top;margin:0 18px 12px 0;"><h3 style="margin:0 0 4px;">${title}</h3>
          <table style="border-collapse:collapse;font-size:10px;"><tr style="background:#eee;">${head.map(h=>`<th style="${cell}">${h}</th>`).join('')}</tr>
          ${rows.map(r=>`<tr>${r.map((c,i)=>`<td style="${cell}${i>0?'text-align:right;':''}">${c}</td>`).join('')}</tr>`).join('')}</table></div>` : '';
        return `<h2>Material Summary</h2>
-        ${mk("Concrete by grade",["Grade","m³"],Object.entries(byGrade).map(([k,v])=>[k,fmt(v,2)]))}
-        ${mk("Reinforcement bars by diameter",["Bar","lm","kg"],Object.entries(bars).map(([k,v])=>[k,fmt(v.lm,1),fmt(v.kg,1)]))}
-        ${mk("Trench mesh / strips by type",["Type","lm","kg"],Object.entries(strips).map(([k,v])=>[k,fmt(v.lm,1),fmt(v.kg,1)]))}
-        ${mk("Mesh by type",["Mesh","m²","Sheets"],Object.entries(mesh).map(([k,v])=>[k,fmt(v.area,1),v.sheets]))}`;
+        ${mk("Concrete by grade",["Grade","m³ adjusted","m³ to order"],Object.entries(byGrade).map(([k,v])=>[k,fmt(v,2),fmt(roundUpTo(v,0.2),2)]))}
+        ${mk("Reinforcement bars by diameter",["Bar","m","kg","t",`Stock lengths (${fmt((Number(PROJECT.barStock)||12000)/1000,1)} m)`],rp.bars.map(b=>[b.product,fmt(b.lm,1),fmt(b.kg,1),fmt(b.tonnes,3),b.stockLengths]))}
+        ${mk("Trench mesh / strips by product",["Product","m","kg","Lengths (6 m)"],rp.trench.concat(rp.strips).map(b=>[b.product,fmt(b.lm,1),fmt(b.kg,1),b.lengths]))}
+        ${mk("Mesh by type",["Mesh","m²","Sheets"],rp.mesh.map(m=>[m.product,fmt(m.m2,1),m.sheets]))}`;
+     })()}
+     ${(function(){
+       const sched=pourSchedule(lines, INSTANCES, ordersCtx()); if(!sched.length) return '';
+       const cell='border:1px solid #999;padding:3px;';
+       return `<h2>Pour schedule</h2><table style="width:100%;border-collapse:collapse;font-size:10px;margin-bottom:12px;"><tr style="background:#eee;"><th style="${cell}text-align:left;">Grade / pour / element</th><th style="${cell}">Level</th><th style="${cell}">Zone</th><th style="${cell}">Net m³</th><th style="${cell}">Adjusted m³</th><th style="${cell}">Order m³</th></tr>
+        ${sched.map(g=>`<tr style="background:#f4f4f4;"><td style="${cell}"><b>${g.grade}</b></td><td style="${cell}"></td><td style="${cell}"></td><td style="${cell}text-align:right;"><b>${fmt(g.net,2)}</b></td><td style="${cell}text-align:right;"><b>${fmt(g.adjusted,2)}</b></td><td style="${cell}text-align:right;"><b>${fmt(g.order,2)}</b></td></tr>
+          ${g.pours.map(p=>`<tr><td style="${cell}padding-left:14px;">Pour: ${p.pour}</td><td style="${cell}"></td><td style="${cell}"></td><td style="${cell}text-align:right;">${fmt(p.net,2)}</td><td style="${cell}text-align:right;">${fmt(p.adjusted,2)}</td><td style="${cell}text-align:right;">${fmt(p.order,2)}</td></tr>
+            ${p.elements.map(e=>`<tr><td style="${cell}padding-left:28px;">${e.elementId} ${e.element}</td><td style="${cell}">${e.level||''}</td><td style="${cell}">${e.zone||''}</td><td style="${cell}text-align:right;">${fmt(e.net,2)}</td><td style="${cell}text-align:right;">${fmt(e.adjusted,2)}</td><td style="${cell}text-align:right;">${fmt(e.order,2)}</td></tr>`).join('')}`).join('')}`).join('')}</table>`;
+     })()}
+     ${(function(){
+       const rec=reconcile(reconciliationSources().filter(s=>!s.published));
+       const cell='border:1px solid #999;padding:3px;';
+       return `<h2>Reconciliation ${rec.ok?'✓':'✗'}</h2><table style="border-collapse:collapse;font-size:10px;margin-bottom:12px;"><tr style="background:#eee;"><th style="${cell}text-align:left;">Total</th>${rec.names.map(n=>`<th style="${cell}">${n}</th>`).join('')}<th style="${cell}"></th></tr>
+        ${rec.rows.map(r=>`<tr><td style="${cell}">${r.label}${r.unit?` (${r.unit})`:''}</td>${r.values.map(v=>`<td style="${cell}text-align:right;">${typeof v==="number"?fmt(v,r.dp):v}</td>`).join('')}<td style="${cell}">${r.ok?'✓':'✗'}</td></tr>`).join('')}</table>`;
      })()}
      <h2>Element-by-Element Breakdown</h2>
      ${Object.entries(byElement).map(([k,ls])=>`
@@ -8357,7 +8628,7 @@ document.getElementById("loadFile").addEventListener("change",e=>{
  * refresh it in place, instead of spawning a new duplicate project every time. */
 function buildEstimateExportPayload(){
   return {
-    project: {name:PROJECT.name, jobNumber:PROJECT.jobNumber, client:PROJECT.client, revision:PROJECT.revision, estimateSessionId:PROJECT.estimateSessionId},
+    project: {name:PROJECT.name, jobNumber:PROJECT.jobNumber, client:PROJECT.client, revision:PROJECT.revision, preparedBy:PROJECT.preparedBy||"", estimateSessionId:PROJECT.estimateSessionId},
     lines: allLines(),
     // The Project Geometry table's measured length/area per element — Quotes
     // divides each element's cost by these for its $/lm and $/m² rates.

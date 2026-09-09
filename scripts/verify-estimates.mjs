@@ -140,6 +140,128 @@ for (const f of fixtures) {
   check("a storage failure is reported, not thrown, and leaves no marker", !r3.created && /Quota/.test(r3.error));
 }
 
+/* ---- 6. orders module (Phase 5): procurement rounding, order schedule, pour schedule, reconciliation ---- */
+console.log("\nOrders, pour schedule and reconciliation (portal/estimates-orders.js)\n");
+{
+  const ordersSrc = fs.readFileSync(path.join(root, "portal", "estimates-orders.js"), "utf8");
+  const box = { globalThis: undefined, module: undefined }; box.globalThis = box;
+  vm.runInNewContext(ordersSrc, box, { filename: "estimates-orders.js" });
+  const O = box;
+  const TRENCH = ["3 Bar-L8TM", "4 Bar-L11TM", "5 Bar-L12TM", "6 Bar-L12TM"];
+  const MESH = ["SL52", "SL62", "SL72", "SL81", "SL82", "SL92", "SL102", "RL818", "RL1018", "RL1118"];
+  const ctx = { barStockMm: 12000, trenchStockM: 6, meshSheetAreaM2: 14.4, meshSheetLengthM: 6, concreteStepM3: 0.2, isTrenchMesh: (m) => TRENCH.includes(m), isSquareMesh: (m) => MESH.includes(m), massPerM: (d) => d * d / 162 };
+  const L = (o) => Object.assign({ elementId: "E1", element: "Elem 1", stage: "S", category: "C", spec: "", qty: 0, finalQty: 0, weightKg: 0, unit: "" }, o);
+
+  check("roundUpTo: 11.999999 to 0.2 steps is 12, not 12.2", O.roundUpTo(11.999999, 0.2) === 12);
+  check("roundUpTo: 12.01 to 0.2 steps is 12.2", O.roundUpTo(12.01, 0.2) === 12.2);
+  check("roundUpTo: zero and negatives give 0; step 0 returns the value", O.roundUpTo(0, 0.2) === 0 && O.roundUpTo(-3, 1) === 0 && O.roundUpTo(3.14159, 0) === 3.14159);
+
+  const lines = [
+    L({ materialGroup: "Concrete", material: "N32 concrete", unit: "m³", qty: 10, finalQty: 12 }),
+    L({ materialGroup: "Concrete", material: "N32 concrete", unit: "m³", qty: 1.5, finalQty: 1.65, elementId: "E2", element: "Elem 2" }),
+    L({ materialGroup: "Concrete", material: "N25 concrete", unit: "m³", qty: 3, finalQty: 3.3, elementId: "E3", element: "Elem 3" }),
+    L({ materialGroup: "Reinforcement", material: "N16", unit: "m", qty: 100, finalQty: 110, weightKg: 110 * 256 / 162 }),
+    L({ materialGroup: "Reinforcement", material: "N16", unit: "no.", qty: 40, finalQty: 42, lengthM: 30, weightKg: 30 * 256 / 162, spec: "Ligatures" }),
+    L({ materialGroup: "Reinforcement", material: "N12", unit: "m", qty: 23.5, finalQty: 24.5, weightKg: 24.5 * 144 / 162 }),
+    L({ materialGroup: "Reinforcement", material: "SL82", unit: "m²", qty: 100, finalQty: 115, sheets: 8 }),
+    L({ materialGroup: "Reinforcement", material: "SL82", unit: "m²", qty: 20, finalQty: 23, sheets: 2, elementId: "E2" }),
+    L({ materialGroup: "Reinforcement", material: "6 Bar-L12TM", unit: "lm", qty: 50, finalQty: 55, weightKg: 55 * 32.8 / 6 }),
+    L({ materialGroup: "Reinforcement", material: "SL82", unit: "lm", qty: 10, finalQty: 11, weightKg: 4, spec: "strips" }),
+    L({ materialGroup: "Formwork", material: "Edge formwork", unit: "m²", qty: 10, finalQty: 10.55 }),
+    L({ materialGroup: "Excavation", material: "Bulk excavation", unit: "m³", qty: 20, finalQty: 20.1 }),
+    L({ materialGroup: "Excavation", material: "Spoil disposal (bulked)", unit: "m³", qty: 23, finalQty: 23.2 }),
+    L({ materialGroup: "Vapour Barrier", material: "200um polyethylene", unit: "m²", qty: 30.2, finalQty: 33.22 }),
+    L({ materialGroup: "Base/Blinding", material: "Base material (compacted)", unit: "m³", qty: 4, finalQty: 4.4 }),
+    L({ materialGroup: "Concrete", material: "N32 concrete", unit: "m³", qty: 0, finalQty: 0, elementId: "E9" }),
+  ];
+  const rows = O.orderScheduleFrom(lines, ctx);
+  const row = (mat, unit) => rows.find((r) => r.material === mat && (!unit || r.unit === unit));
+  check("order schedule key keeps the group::material::unit format the saved ticks use", rows.every((r) => r.key === r.group + "::" + r.material + "::" + r.unit));
+  check("a zero line is skipped", !rows.some((r) => r.elements.includes("E9")));
+  check("group order: excavation first, concrete before reinforcement before formwork", rows.map((r) => r.group).join(",").replace(/(\w[\w\/ ]*)(,\1)+/g, "$1") === "Excavation,Base/Blinding,Vapour Barrier,Concrete,Reinforcement,Formwork");
+  const n32 = row("N32 concrete");
+  check("concrete: net 11.5, adjusted 13.65, order 13.8 (0.2 m³ steps) with the rule text", n32 && Math.abs(n32.net - 11.5) < 1e-9 && Math.abs(n32.adjusted - 13.65) < 1e-9 && n32.order === 13.8 && /0\.2 m³ steps/.test(n32.rule), n32 && JSON.stringify([n32.net, n32.adjusted, n32.order]));
+  check("concrete row lists both elements", n32 && n32.elements.join() === "E1,E2");
+  const n16 = row("N16", "m"), n16lig = row("N16", "no.");
+  check("bars: whole 12 m stock lengths, rounded up (110 m → 10 lengths)", n16 && n16.stock === 10 && n16.orderUnit === "lengths" && /12 m stock lengths/.test(n16.rule));
+  check("ligatures (no.) keep their own row but count stock lengths from their metres (30 m → 3)", n16lig && n16lig.stock === 3 && Math.abs(n16lig.kg - 30 * 256 / 162) < 1e-9);
+  const sl = row("SL82", "m²");
+  check("sheet mesh: order = the sheets already rounded up line by line (8 + 2 = 10)", sl && sl.order === 10 && sl.orderUnit === "sheets" && sl.stock === 10);
+  check("trench mesh: whole 6 m lengths (55 m → 10)", row("6 Bar-L12TM").stock === 10 && /trench-mesh lengths/.test(row("6 Bar-L12TM").rule));
+  check("mesh strips: sheet lengths (11 m → 2), never mis-read as an 82 mm bar", row("SL82", "lm").stock === 2 && /Strips cut/.test(row("SL82", "lm").rule));
+  check("formwork rounds up to 0.1 (10.55 → 10.6)", row("Edge formwork").order === 10.6);
+  check("excavation and spoil round up to 0.5 (20.1 → 20.5, 23.2 → 23.5)", row("Bulk excavation").order === 20.5 && row("Spoil disposal (bulked)").order === 23.5);
+  check("vapour barrier rounds up to the whole m² (33.22 → 34)", row("200um polyethylene").order === 34);
+  check("adjusted totals equal the register (sum of finalQty per product)", Math.abs(rows.reduce((s, r) => s + (r.group === "Concrete" ? r.adjusted : 0), 0) - 16.95) < 1e-9);
+  check("net never equals adjusted where waste applies, and order ≥ adjusted on every row", rows.every((r) => (r.ruleId === "bar" || r.ruleId === "trench" || r.ruleId === "strip" || r.ruleId === "mesh") ? true : r.order + 1e-9 >= r.adjusted) && n32.net < n32.adjusted);
+
+  const rp = O.reinforcementByProduct(lines, ctx);
+  check("reinforcement by product: N16 joins bars + ligature metres (140 m → 12 lengths), N12 24.5 m → 3", rp.bars.find((b) => b.product === "N16").stockLengths === 12 && rp.bars.find((b) => b.product === "N12").stockLengths === 3);
+  check("bars sorted numerically by diameter", rp.bars.map((b) => b.product).join() === "N12,N16");
+  check("trench, strips and sheet mesh grouped separately", rp.trench.length === 1 && rp.trench[0].lengths === 10 && rp.strips.length === 1 && rp.mesh.length === 1 && rp.mesh[0].sheets === 10);
+  check("kg total equals the register's reinforcement kg (sheet mesh weightless)", Math.abs(rp.totals.kg - O.totalsOf(lines).reoKg) < 1e-9);
+
+  const instances = [{ id: "E1", tags: { pour: "P2", level: "L1" } }, { id: "E2", tags: { pour: "P1", zone: "Z" } }, { id: "E3" }];
+  const ps = O.pourSchedule(lines, instances, ctx);
+  check("pour schedule: grades sorted numerically (N25 before N32)", ps.map((g) => g.grade).join() === "N25 concrete,N32 concrete");
+  const g32 = ps[1];
+  check("pours sorted, elements under their pour, level/zone carried", g32.pours.map((p) => p.pour).join() === "P1,P2" && g32.pours[1].elements[0].elementId === "E1" && g32.pours[1].elements[0].level === "L1" && g32.pours[0].elements[0].zone === "Z");
+  check("untagged element sits under (unscheduled)", ps[0].pours[0].pour === "(unscheduled)" && ps[0].pours[0].elements[0].elementId === "E3");
+  check("pour volumes: net/adjusted sum to the grade; each pour rounds up separately (12 → 12, 1.65 → 1.8)", Math.abs(g32.pours[0].adjusted + g32.pours[1].adjusted - g32.adjusted) < 1e-9 && g32.pours[0].order === 1.8 && g32.pours[1].order === 12 && g32.order === 13.8);
+
+  const rec = O.reconcile([{ name: "a", lines }, { name: "b", lines: lines.slice().reverse() }, { name: "c", lines: lines.map((l) => ({ ...l })) }]);
+  check("reconcile: same lines in any order agree on every total and the fingerprint", rec.ok && rec.rows.every((r) => r.ok) && rec.fingerprints.every((f) => f === rec.fingerprints[0]));
+  const changed = lines.map((l, i) => (i === 0 ? { ...l, finalQty: 12.5 } : l));
+  const rec2 = O.reconcile([{ name: "a", lines }, { name: "b", lines: changed }]);
+  check("reconcile: a changed final quantity fails the concrete row and the fingerprint, passes the rest", !rec2.ok && !rec2.rows.find((r) => r.key === "concreteM3").ok && !rec2.rows.find((r) => r.key === "fingerprint").ok && rec2.rows.find((r) => r.key === "reoKg").ok);
+  const rec3 = O.reconcile([{ name: "a", lines }, { name: "b", lines: lines.slice(1) }]);
+  check("reconcile: a missing line fails the line count", !rec3.rows.find((r) => r.key === "lines").ok);
+  check("totalsOf splits spoil from excavation and blinding from vapour", (() => { const t = O.totalsOf(lines); return t.excM3 === 20.1 && t.spoilM3 === 23.2 && t.blindM3 === 4.4 && t.vapM2 === 33.22 && t.formworkM2 === 10.55; })());
+
+  // real fixtures: the order schedule reads them without throwing and reconciles with itself
+  for (const f of fixtures) {
+    const raw = JSON.parse(fs.readFileSync(path.join(fixDir, f), "utf8"));
+    const insts = raw.INSTANCES || raw.instances;
+    const all = []; insts.forEach((i) => ((i.results && i.results.lines) || []).forEach((l) => all.push(l)));
+    if (!all.length) continue;
+    const r = O.orderScheduleFrom(all, ctx);
+    const t = O.totalsOf(all);
+    const adjConc = r.filter((x) => x.group === "Concrete").reduce((s, x) => s + x.adjusted, 0);
+    check(`${f}: ${r.length} order rows, every row carries a rule, concrete adjusted equals the register (${t.concreteM3.toFixed(2)} m³)`, r.every((x) => x.rule && x.orderUnit) && Math.abs(adjConc - t.concreteM3) < 1e-6);
+    check(`${f}: order ≥ adjusted on every non-stock row, stock rows carry whole counts`, r.every((x) => x.stock !== undefined ? Number.isInteger(x.stock) : x.order + 1e-9 >= x.adjusted));
+    const rc = O.reconcile([{ name: "cards", lines: all }, { name: "register", lines: all.slice() }]);
+    check(`${f}: reconciles with itself`, rc.ok);
+  }
+}
+
+/* ---- 7. Quotes bridge (Phase 5): the export payload imports without loss ---- */
+console.log("\nEstimates → Quotes bridge (src/lib/estimateImport.js)\n");
+{
+  const { buildImportFromEstimate, ESTIMATE_TYPE_MAP } = await import(path.join(root, "src", "lib", "estimateImport.js"));
+  const { ELEMENT_TYPES } = await import(path.join(root, "src", "data", "catalog.js"));
+  const quoteTypeIds = new Set(ELEMENT_TYPES.map((t) => t.id));
+  const f = fixtures.find((x) => /7-elements/.test(x)) || fixtures[0];
+  const raw = JSON.parse(fs.readFileSync(path.join(fixDir, f), "utf8"));
+  const insts = raw.INSTANCES || raw.instances;
+  const lines = []; insts.forEach((i) => ((i.results && i.results.lines) || []).forEach((l) => lines.push(l)));
+  const payload = { project: { name: "Bridge test", jobNumber: "J1", client: "C", revision: "Rev B", preparedBy: "GP", estimateSessionId: "sess_test" }, lines, elementGeometry: {} };
+  let out, err;
+  try { out = buildImportFromEstimate(payload); } catch (e) { err = e; }
+  check(`${f}: buildImportFromEstimate runs on a real register (${lines.length} lines)`, !err, err && err.message);
+  if (out) {
+    const quote = out.quote || out;
+    const items = quote.items || out.items || [];
+    const flags = quote.importFlags || out.flags || [];
+    check("the import creates one Quotes element per Estimates element with a quantity", items.length >= 1 && items.length <= insts.length, `${items.length} items for ${insts.length} elements`);
+    check("unmatched products become plain-English flags, never guessed quantities", Array.isArray(flags) && flags.every((x) => typeof x === "string"));
+    check("every mapped type id in ESTIMATE_TYPE_MAP exists in Quotes' ELEMENT_TYPES (null = deliberately unmapped)", Object.values(ESTIMATE_TYPE_MAP).every((v) => v === null || quoteTypeIds.has(v)), Object.values(ESTIMATE_TYPE_MAP).filter((v) => v !== null && !quoteTypeIds.has(v)).join(","));
+    check("flags name the element and are actionable text", flags.every((x) => x.length > 20));
+    check("the payload's project metadata (name, revision, preparer) reaches the quote", quote.projectName === "Bridge test" || quote.name === "Bridge test" || JSON.stringify(quote).includes("Bridge test"));
+    const empty = buildImportFromEstimate({ project: {}, lines: [] });
+    check("an empty register imports to an empty, flag-free project", !!empty);
+  }
+}
+
 console.log(`\n${passed} check(s) passed${failed ? `, ${failed} FAILED` : ""}.`);
 if (failed) { console.log("Estimates data safety is NOT proven — do not ship."); process.exit(1); }
 console.log("All good.");

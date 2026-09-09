@@ -156,6 +156,12 @@ let estimatesHtml = fs.readFileSync(estimatesPath, "utf8");
   if (!inlineTag.test(estimatesHtml)) throw new Error("estimates-app.html no longer loads estimates-schema.js — inline step out of date");
   const schemaSrc = fs.readFileSync(path.join(root, "portal", "estimates-schema.js"), "utf8").replace(/<\/script/gi, "<\\/script");
   estimatesHtml = estimatesHtml.replace(inlineTag, () => `<script>${schemaSrc}</script>`);
+  // estimates-orders.js: procurement rounding, order schedule, pour schedule,
+  // reconciliation — same pure-module contract, same inline step.
+  const ordersTag = /<script src="estimates-orders\.js"><\/script>/;
+  if (!ordersTag.test(estimatesHtml)) throw new Error("estimates-app.html no longer loads estimates-orders.js — inline step out of date");
+  const ordersSrc = fs.readFileSync(path.join(root, "portal", "estimates-orders.js"), "utf8").replace(/<\/script/gi, "<\\/script");
+  estimatesHtml = estimatesHtml.replace(ordersTag, () => `<script>${ordersSrc}</script>`);
   estimatesHtml = estimatesHtml.replaceAll("__BUILD_STAMP__", buildStamp() + (process.env.PORTAL_STAMP_SUFFIX || ""));
   // 3D viewer bundle: the hosted portal fetches /assets/estimates-3d.js on
   // demand (nothing embedded, the page stays small); a standalone copy has
@@ -171,7 +177,7 @@ let estimatesHtml = fs.readFileSync(estimatesPath, "utf8");
     estimatesHtml = estimatesHtml.replace(threeTag, () => "");
     console.log(`3D viewer bundle kept at /assets/${THREE_BUNDLE} (${(threeBundleSrc.length / 1024).toFixed(0)} KB), loaded on demand`);
   }
-  console.log(`Inlined portal/estimates-schema.js (${(schemaSrc.length / 1024).toFixed(0)} KB) into the Estimates app`);
+  console.log(`Inlined portal/estimates-schema.js (${(schemaSrc.length / 1024).toFixed(0)} KB) and portal/estimates-orders.js (${(ordersSrc.length / 1024).toFixed(0)} KB) into the Estimates app`);
 }
 let costPlannerHtml = fs.readFileSync(costPlannerPath, "utf8");
 let ratesLibraryHtml = fs.readFileSync(ratesLibraryPath, "utf8");

@@ -21,11 +21,19 @@ Build a single-deployable web portal for **Gradcon Concrete Constructions** (an 
 ├─ portal/
 │  ├─ portal-shell.html      # login + dashboard + Settings + app host (vanilla)
 │  ├─ estimates-app.html     # Element Takeoff Engine (single-file vanilla JS)
+│  ├─ estimates-schema.js    # pure: schema version, migration, raw backup (inlined + Node-tested)
+│  ├─ estimates-orders.js    # pure: procurement rounding, order/pour schedules, reconciliation (inlined + Node-tested)
+│  ├─ estimates-3d/main.js   # Three.js viewer (built by vite.3d.config.js → dist/assets/estimates-3d.js)
 │  ├─ rates-library.html     # Rates Library (single-file vanilla JS)
 │  └─ cost-planner.html      # Cost Planner (single-file vanilla JS)
 ├─ scripts/
-│  ├─ assemble-portal.mjs    # builds the combined dist/index.html
-│  └─ verify.mjs             # Node-only costing regression suite
+│  ├─ assemble-portal.mjs    # builds the combined dist/index.html (inlines the pure modules, asserts every step)
+│  ├─ build-download.mjs     # download/ zip: cloud-connected + offline single-file copies (+ source)
+│  ├─ verify.mjs             # Node-only costing regression suite (Quotes)
+│  ├─ verify-estimates.mjs   # Node-only Estimates suite: migration, backup, orders, Quotes bridge
+│  └─ …
+├─ docs/ESTIMATES_COVERAGE.md # coverage audit: real-world item → calculator + modifier
+├─ tests/fixtures/estimates/  # real legacy takeoffs the Estimates suite runs against
 └─ supabase/migrations/0001_estimator_kv.sql
 ```
 
@@ -177,6 +185,18 @@ Filters (category/material-group/search). Grouped per element: collapsible `<tbo
 - Save/Load project `.json` (full state incl. UPLOADED_FILES).
 - **CSV import** (Project Setup): Bluebeam Markup-Summary or generic CSV → drafts one element per row by keyword→type regex map; applies only Count automatically; keeps raw measurement on the label tagged "⚠ From CSV import — verify"; Excel/PDF files attach for reference only, listed with remove buttons.
 
+### 5.5a Export preview, report metadata and reconciliation (Phase 5)
+- **Every export opens a preview first** (`openExportPreview({title, files:[{name, headers, rows}], note})`): the exact rows/columns of each file (first 60 rows shown, all in the download), row × column count, and the report header from `reportMeta()` — project, job, client, revision, drawing/spec revisions, **Prepared by** (`PROJECT.preparedBy`, Project Setup), reviewer acknowledgement, date, standards profile, register fingerprint, build. Download (all files for Export All) or Copy as text from the dialog; `download()` keeps the copy-fallback panel for JSON/backup paths.
+- Worksheet CSVs stay pure tables (live Final Quantity formula); the order schedule, pour schedule and warnings CSVs append `reportTrailerRows()` (project, revision, preparer, reviewed, generated date, standards, fingerprint, disclaimer) under the data.
+- **Reconciliation block** (Export page + PDF): `reconcile()` totals element cards, the Quantity Register and the export payload independently (concrete m³, reo kg, formwork m², blinding, vapour, excavation, spoil, line count, fingerprint) and ✓/✗ each row; a fourth "Last published" column appears after the first Publish and flags ⟳ stale rows when Quotes / Cost Planner are behind the takeoff.
+- PDF header carries preparer and fingerprint; the Material Summary shows m³ to order and whole stock lengths; a Pour schedule table and the Reconciliation block follow.
+
+### 5.5b Order Schedule (tab 6) — `portal/estimates-orders.js`
+- One line per `group::material::unit` (the key `PROJECT.orderExclude` ticks are stored under, saved with the takeoff on every tick) with **Net | Waste + lap adjusted | Unit | Order qty | Order unit | Procurement rule | kg | t | Stock lengths / sheets | Elements**. Rules (`procurementRuleFor`): concrete 0.2 m³ steps; bars whole stock lengths at `PROJECT.barStock` (ligatures/stirrups counted in no. join through `lengthM`); trench mesh whole 6 m lengths; sheet mesh whole 14.4 m² sheets (line-level ceilings summed); mesh strips whole 6 m sheet lengths; formwork to 0.1 m²; excavation/base to 0.5 m³; vapour barrier to the whole m²; counts to whole items. Order is never less than adjusted; adjusted always equals the register.
+- **Reinforcement by product**: bars by diameter (m, kg, t, stock lengths), trench mesh and strips by product (lengths), sheet mesh by type (sheets).
+- **Pour schedule**: concrete by grade → element `pour` tag → element (level/zone shown), net / adjusted / order per row, each pour rounded up separately; own CSV export.
+- `npm run verify` proves the module in Node against synthetic lines and every real fixture (rounding, keys, grouping, pour sort, reconciliation catches a changed quantity or a missing line).
+
 ### 5.6 Saved Takeoffs (multi-project) + cloud sync
 - Keys: legacy blob `gradcon-estimate-state` (project #1 keeps it for continuity), later takeoffs `gradcon-estimate-state::proj_<rand>`; registry `gradcon-estimate-projects-index` = `[{id,name,key,savedAt}]`; active id `gradcon-estimate-active`; `CURRENT_PROJECT_KEY` variable is what save/load/sync use.
 - **Saved Takeoffs bar** at top of Project Setup: chip per takeoff (name+saved time, active highlighted "▶", ✕ delete honouring confirmDeletes) + "+ New takeoff". Save writes ONLY the open takeoff and refreshes its index name/date. New: save current → fresh state from `DEFAULT_PROJECT_TEMPLATE` (+ seed 5 common types) → new key → save. Switch: save current (skip if just deleted) → point key → reset → `loadEstimateState()` → rerender all → cloud pull. Delete: remove key(+`__syncedAt`)+index entry, push `null` to cloud key; if active, switch to first remaining or auto-new.
@@ -202,7 +222,7 @@ create policy anon_all on estimator_kv for all using (true) with check (true);
 Anon/publishable key only — never service_role in client code. Every load/save try/catch-wrapped.
 
 ## 9. Build, verify, deploy
-`npm run dev` (Vite, :5173) · `npm run verify` (must pass; treat red = broken build) · `npm run build` · `npm run build:portal` (build + assemble) → deploy `dist/` to Vercel (git-push CI). Local Playwright testing: move `.env.local` aside, plain build + assemble, serve dist via Node http, login grady/2580, find app frame via `page.frames().find(f=>f.url().startsWith("blob:"))`; click sidebar tabs by text with `{force:true}`, never fixed coordinates.
+`npm run dev` (Vite, :5173) · `npm run verify` (must pass; treat red = broken build — Quotes costing suite + Estimates suite: migration, backup, orders module, Quotes bridge) · `npm run build` (Vite app + the 3D viewer bundle) · `npm run build:portal` (build + assemble; the assembler needs a FRESH build and cannot run twice on the same dist/index.html) → deploy `dist/` to Vercel (git-push CI) · `npm run build:download` regenerates `download/` (cloud-connected and offline single-file copies + source zip) — the ONLY way those files are produced; never edit them by hand. Local Playwright testing: move `.env.local` aside, plain build + assemble, serve dist via Node http, login grady/2580, find app frame via `page.frames().find(f=>f.url().startsWith("blob:"))`; click sidebar tabs by text with `{force:true}`, never fixed coordinates.
 
 ## 10. Acceptance checklist
-1) verify 27/27. 2) Login→dashboard: 6 centred colourful tiles one row; Settings ticks visibly draw; every setting round-trips and actually changes behaviour (spot-check GST 12%/margin 25% flow to the ladder to the cent; Estimates fresh takeoff picks up cover/lap/waste/mesh defaults; auto-open lands in the chosen app once). 3) Quotes: add one element of each family shape; totals roll into sticky bar + summary under correct category/section; Square Mesh rounds sheets UP; both Pump columns total; print shows only entered lines. 4) Estimates: raft slab with edge thickening + internal beam strips + trench-mesh beam reo computes; every reinforcement item shows a lap checkbox and every mesh an extra-lap checkbox; pad-footing ties & pile-cap side-bars/stirrups produce lines; register override checkbox edits qty live; CSV opens clean in Excel with live final-qty formulas; PDF has no app chrome and includes the Material Summary; two Saved Takeoffs switch cleanly with independent state; second device sees both via cloud. 5) Publish to Quote creates a flagged, conservatively-prefilled project; Cost Planner reflects the same register.
+1) `npm run verify` green (Quotes costing + Estimates suites). 2) Login→dashboard: 6 centred colourful tiles one row; Settings ticks visibly draw; every setting round-trips and actually changes behaviour (spot-check GST 12%/margin 25% flow to the ladder to the cent; Estimates fresh takeoff picks up cover/lap/waste/mesh defaults; auto-open lands in the chosen app once). 3) Quotes: add one element of each family shape; totals roll into sticky bar + summary under correct category/section; Square Mesh rounds sheets UP; both Pump columns total; print shows only entered lines. 4) Estimates: raft slab with edge thickening + internal beam strips + trench-mesh beam reo computes; every reinforcement item shows a lap checkbox and every mesh an extra-lap checkbox; pad-footing ties & pile-cap side-bars/stirrups produce lines; register override checkbox edits qty live; CSV opens clean in Excel with live final-qty formulas; PDF has no app chrome and includes the Material Summary; two Saved Takeoffs switch cleanly with independent state; second device sees both via cloud. 5) Publish to Quote creates a flagged, conservatively-prefilled project; Cost Planner reflects the same register. 6) Every export previews first with revision / preparer / date; the Export page reconciliation shows ✓ on every row and ⟳ stale against the last published copy after an edit; the Order Schedule shows net, adjusted and order quantities with the rule on each row, reinforcement by product with stock lengths, and a pour schedule grouped by grade → pour → element; the offline download copy runs all of this with no cloud.

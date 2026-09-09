@@ -475,6 +475,41 @@ excluded from later backups); Project Setup offers "Download full backup"
 (all raw keys, with checksum) and the pre-migration copy. JSON downloads
 carry no BOM. `npm run verify` runs both suites.
 
+## Estimates orders, export preview and reconciliation (Phase 5)
+
+`portal/estimates-orders.js` is the second pure, DOM-free module (same
+contract as `estimates-schema.js`: inlined by the assembler, asserted, and
+run in Node by `scripts/verify-estimates.mjs`). It never measures anything
+— it groups, rounds and totals the register lines the calculators already
+produce. Three quantities are kept apart on every order line and never
+merged: **net** (`line.qty`), **adjusted** (`line.finalQty`, waste + lap —
+the register/export figure) and **order** (adjusted rounded UP by the
+material's procurement rule, with the rule text on the row:
+`procurementRuleFor`). `ordersCtx()` in the app hands the module the facts
+it must not hard-code (bar stock length from Project Setup, sheet area,
+trench/strip stock 6 m, concrete step 0.2 m³, the mesh/trench product
+tables). `orderScheduleFrom` keeps the `group::material::unit` key that
+`PROJECT.orderExclude` ticks are stored under; `reinforcementByProduct`
+groups bars by diameter (ligatures join their bar size through `lengthM`),
+trench mesh and strips by product, sheet mesh by type; `pourSchedule`
+groups concrete by grade → the element's `pour` tag → element and rounds
+each pour separately (a separate delivery). `reconcile(sources)` totals
+several line sets independently and compares them to the metric's decimal
+places plus an order-independent `linesFingerprint`; the Export page shows
+element cards = register = export payload, plus the copy last published
+from this browser (stale = publish again). The PDF prints the same block.
+
+**Every export previews first** (`openExportPreview`): the exact rows and
+columns, row count, and the report metadata from `reportMeta()` (project,
+job, revision, drawing/spec revs, `PROJECT.preparedBy`, reviewer, date,
+standards, fingerprint, build). `download()` still shows the copy fallback;
+the preview uses `triggerDownload()` and reports in-dialog. Worksheet CSVs
+stay pure tables (their Final Quantity is a live row-relative formula); the
+order schedule, pour schedule and warnings CSVs append `reportTrailerRows()`.
+`scratchpad/test-phase5.mjs` proves the schedule, preview, reconciliation,
+both bridges (Quotes and Cost Planner pick up one publish) and the offline
+local-only mode; keep it passing with `npm run verify`.
+
 ## PDF / print export
 
 The "Print / PDF" button in `ProjectEditor` calls `window.print()`; the
