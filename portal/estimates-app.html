@@ -4357,7 +4357,7 @@ function slabDefaults(cat,suspended){ return {
   topX:!!suspended,topXDia:"N12",topXMethod:"spacing",topXSpacing:200,topXQty:0,topXBars:[],topXLap:false, topY:!!suspended,topYDia:"N12",topYMethod:"spacing",topYSpacing:200,topYQty:0,topYBars:[],topYLap:false,
   cover:PROJECT.cover, grade:PROJECT.grade,
   returnBars:false, retDia:"N12", retSpacing:200, retTurndown:150, retLeg:300, retEdges:"perimeter", retLap:false,
-  reentrantOn:false, reentrantQty:"", reentrantMode:"bars", reentrantDia:"N12", reentrantPer:2, reentrantLen:1200, reentrantStripType:"4 Bar-L12TM", reentrantStripW:300, reentrantLap:false,
+  reentrantOn:false, reentrantQty:"", reentrantMode:"bars", reentrantDia:"N12", reentrantPer:2, reentrantLen:1200, reentrantStripType:"4 Bar-L12TM", reentrantStripW:300, reentrantSheetType:"SL82", reentrantSheetW:600, reentrantLap:false,
   joints:true, jointSpacing:6, dowels:false, dowelDia:"N16", dowelSpacing:300, dowelLength:500,
   starters:false, connTarget:"", connQty:0, connDia:"N12", connEmbed:400, connProj:400,
   stepdown:false, sdLength:6, sdDepth:150, sdDia:"N12", sdSpacing:300, sdProj1:300, sdProj2:300,
@@ -4560,14 +4560,16 @@ function renderSlab(inst,def){
    ${chk("reentrantOn",d.reentrantOn,"Diagonal crack-control reinforcement at re-entrant (internal) corners","reentrantOn")}
    <div class="subsec ${d.reentrantOn?'':'hidden'}" data-show-if="reentrantOn"><div class="grid cols4">
     ${F(`Re-entrant corners (count${reentrantCornerCount(d)?`, sketch shows ${reentrantCornerCount(d)}`:''})`,inpNum("reentrantQty",d.reentrantQty))}
-    ${F("Material",selOpts("reentrantMode",d.reentrantMode||"bars",[["bars","Diagonal bars"],["strip","Trench mesh / mesh strip"]],true))}
+    ${F("Material",selOpts("reentrantMode",d.reentrantMode||"bars",[["bars","Diagonal bars"],["strip","Trench mesh / mesh strip (cut to width)"],["sheet","Mesh sheet piece (SL/RL offcut, L × W)"]],true))}
     ${(d.reentrantMode||"bars")==="strip"
-      ? F("Strip type",trenchMeshTypeSel("reentrantStripType",d.reentrantStripType||"4 Bar-L12TM"))+F("Strip width (mm)",inpNum("reentrantStripW",d.reentrantStripW===undefined?300:d.reentrantStripW))
+      ? F("Strip type (trench mesh or SL/RL mesh)",trenchMeshTypeSel("reentrantStripType",d.reentrantStripType||"4 Bar-L12TM"))+F("Strip width (mm)",inpNum("reentrantStripW",d.reentrantStripW===undefined?300:d.reentrantStripW))
+      : (d.reentrantMode||"bars")==="sheet"
+      ? F("Mesh sheet type",selOpts("reentrantSheetType",d.reentrantSheetType||"SL82",Object.keys(MESHTYPES).map(m=>[m,`${m} (${MESHTYPES[m]} kg/m²)`])))+F("Piece width (mm)",inpNum("reentrantSheetW",d.reentrantSheetW===undefined?600:d.reentrantSheetW))
       : F("Bar size",barSizeSel("reentrantDia",d.reentrantDia))+F("Bars per corner",inpNum("reentrantPer",d.reentrantPer===undefined?2:d.reentrantPer))}
-    ${F((d.reentrantMode||"bars")==="strip"?"Strip length per corner (mm)":"Bar length (mm)",inpNum("reentrantLen",d.reentrantLen===undefined?1200:d.reentrantLen))}
+    ${F((d.reentrantMode||"bars")==="strip"?"Strip length per corner (mm)":(d.reentrantMode||"bars")==="sheet"?"Piece length per corner (mm)":"Bar length (mm)",inpNum("reentrantLen",d.reentrantLen===undefined?1200:d.reentrantLen))}
     ${chk("reentrantLap",d.reentrantLap,"Include lap allowance (%)","reentrantLap")}
    </div>
-   <div class="tip"><span class="ico">🎓</span><div>Every internal (re-entrant) corner of an L-, T- or U-shaped slab concentrates shrinkage stress and cracks diagonally from the corner — standard practice lays diagonal bars (typically 2×N12×1200 top) or a short mesh/trench strip at 45° across each one. Leave the count blank to use the sketched outline's own re-entrant corner count where one is drawn.</div></div></div></div>
+   <div class="tip"><span class="ico">🎓</span><div>Every internal (re-entrant) corner of an L-, T- or U-shaped slab concentrates shrinkage stress and cracks diagonally from the corner — standard practice lays diagonal bars (typically 2×N12×1200 top), a short trench-mesh or SL/RL strip at 45°, or a mesh sheet offcut (e.g. SL82 1200×600) across each one — choose the material above and its type/size follows. Sheet pieces are cut from whole 6.0×2.4 m sheets, so the register counts whole sheets by how many pieces fit. Leave the count blank to use the sketched outline's own re-entrant corner count where one is drawn.</div></div></div></div>
    <div class="subsec"><div class="sechead">Joints &amp; Dowels</div><div class="grid cols4">
     ${chk("joints",d.joints,"Construction/control joints")}${F("Joint spacing (m)",inpNum("jointSpacing",d.jointSpacing))}
     ${chk("dowels",d.dowels,"Joint dowels","dowels")}
@@ -4827,7 +4829,17 @@ function computeSlab(inst,def){
     let corners = num(d.reentrantQty)>0? Math.round(num(d.reentrantQty)) : reentrantCornerCount(d);
     let lenM=num(d.reentrantLen,1200)/1000;
     if(corners>0 && lenM>0){
-      if((d.reentrantMode||"bars")==="strip"){
+      if((d.reentrantMode||"bars")==="sheet"){
+        // a mesh sheet offcut per corner (L × W), cut from whole 6.0 × 2.4 m sheets
+        let type=MESHTYPES[d.reentrantSheetType]!==undefined? d.reentrantSheetType : "SL82";
+        let wM=num(d.reentrantSheetW,600)/1000;
+        let areaPer=lenM*wM; let area=corners*areaPer;
+        let perSheet=Math.max(1, Math.floor(6.0/lenM+1e-9)*Math.floor(2.4/wM+1e-9));
+        let reLap=d.reentrantLap?MESH_LAP_PCT:0;
+        let wastedArea=withWasteLap(area,PROJECT.reoWaste,reLap);
+        let sheets=Math.ceil(withWasteLap(corners,PROJECT.reoWaste,reLap)/perSheet-1e-9);
+        lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:type,spec:`Re-entrant corner mesh pieces (${num(d.reentrantLen,1200)}×${num(d.reentrantSheetW,600)} mm, ${corners} corner(s))`,qty:area,unit:"m²",waste:PROJECT.reoWaste,lap:reLap,finalQty:wastedArea,sheets,formula:`${corners} corners × ${fmt(lenM,2)}×${fmt(wM,2)}m (+${PROJECT.reoWaste}% waste${reLap?`, +${reLap}% lap`:''}) → ${perSheet} piece(s) per 6.0×2.4m sheet = ${sheets} sheet(s)`,notes:`${sheets} sheet(s), ≈${fmt(wastedArea*MESHTYPES[type],1)} kg`}));
+      } else if((d.reentrantMode||"bars")==="strip"){
         let type=d.reentrantStripType||"4 Bar-L12TM";
         let mpm=trenchReoMassPerM(type,num(d.reentrantStripW,300));
         let totLen=corners*lenM; let wt=totLen*mpm;
