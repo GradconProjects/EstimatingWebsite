@@ -383,6 +383,40 @@ table.asm input.asm-reason{width:150px;font-size:11px;padding:2px 5px;}
 body[data-shell="blueprint"] .card-panes .pane[data-pane="assembly"] .diag-host{display:none;}
 .asm-note{font-size:11px;color:var(--muted);margin:4px 0 8px;}
 @media print{ .asm-3d,.asm-tools{display:none !important;} }
+/* ============ Phase 3 — data-entry power tools ============ */
+input[data-num]{font-variant-numeric:tabular-nums;}
+body[data-shell="blueprint"] input[data-num]{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;}
+input[data-num].num-invalid{outline:2px solid var(--danger);outline-offset:0;}
+input[data-num].num-expr{background:#fffbea;}
+.mini-menu{position:absolute;z-index:60;background:var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow-pin);padding:6px;min-width:220px;max-height:60vh;overflow:auto;}
+.mini-menu button.item,.mini-menu .item{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;text-align:left;background:transparent;border:none;border-radius:6px;padding:7px 9px;cursor:pointer;color:var(--text);font-family:inherit;font-size:12.5px;}
+.mini-menu button.item:hover{background:rgba(47,84,72,.08);}
+.mini-menu .mm-head{font-size:10.5px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);padding:6px 9px 2px;}
+.mini-menu input[type=text]{width:100%;margin:4px 0;}
+.mini-menu .mm-del{color:var(--danger);background:transparent;border:none;cursor:pointer;font-size:12px;}
+.bp-row .bp-pick{grid-row:1 / span 2;margin:0;}
+.bp-row{grid-template-columns:auto auto 1fr auto;}
+.bp-row .bp-meta{grid-column:3 / -1;}
+.bp-row .bp-tags{font-size:9.5px;color:var(--accent);}
+.bp-bulk{display:flex;gap:6px;flex-wrap:wrap;align-items:center;background:#e6edf6;border:1px solid rgba(20,61,107,.3);border-radius:6px;padding:6px 8px;margin:0 0 8px;font-size:11px;}
+.bp-bulk input[type=text]{width:90px;font-size:11px;padding:3px 6px;}
+.bp-bulk .btn.small{padding:2px 8px;font-size:11px;}
+.bp-tagrow{display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
+.bp-tagrow input{width:84px;font-size:11px;padding:2px 6px;}
+.bp-tagrow label{font-size:10.5px;color:var(--muted);}
+.reg-tools{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px;}
+.reg-tools select,.reg-tools input[type=text]{max-width:200px;}
+.reg-chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;}
+.reg-chip{border:1px solid var(--line);border-radius:999px;padding:2px 10px;font-size:11px;background:var(--panel);cursor:pointer;font-family:inherit;color:var(--text);}
+.reg-chip.on{background:var(--accent);color:#fff;border-color:var(--accent);}
+.reg-chip b{font-variant-numeric:tabular-nums;}
+table.results tr[data-line-inst]{cursor:pointer;}
+table.results tr[data-line-inst]:hover td{background:rgba(217,161,59,.16);}
+.reg-cols{display:flex;gap:8px;flex-wrap:wrap;font-size:11px;}
+.reg-cols label{display:inline-flex;gap:3px;align-items:center;}
+table.results.hide-col-1 th:nth-child(1),table.results.hide-col-1 td:nth-child(1),table.results.hide-col-2 th:nth-child(2),table.results.hide-col-2 td:nth-child(2),table.results.hide-col-10 th:nth-child(10),table.results.hide-col-10 td:nth-child(10),table.results.hide-col-11 th:nth-child(11),table.results.hide-col-11 td:nth-child(11),table.results.hide-col-12 th:nth-child(12),table.results.hide-col-12 td:nth-child(12),table.results.hide-col-13 th:nth-child(13),table.results.hide-col-13 td:nth-child(13),table.results.hide-col-15 th:nth-child(15),table.results.hide-col-15 td:nth-child(15),table.results.hide-col-16 th:nth-child(16),table.results.hide-col-16 td:nth-child(16),table.results.hide-col-17 th:nth-child(17),table.results.hide-col-17 td:nth-child(17){display:none;}
+table.results th:nth-child(3),table.results td:nth-child(3){position:sticky;left:0;background:var(--panel);z-index:1;}
+.reg-totals-label{flex-basis:100%;font-size:10.5px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-top:6px;}
 </style>
 </head>
 <body>
@@ -405,6 +439,8 @@ body[data-shell="blueprint"] .card-panes .pane[data-pane="assembly"] .diag-host{
       <button class="btn" id="projBtn" type="button" title="Saved projects — switch to any older session; your current work is saved automatically first">📁 <span id="projBtnName">Projects</span> ▾</button>
       <div id="projMenu" class="proj-menu" style="display:none;"></div>
     </div>
+    <button class="btn small" id="undoBtn" type="button" title="Undo (Ctrl+Z)" disabled>↶ Undo</button>
+    <button class="btn small" id="redoBtn" type="button" title="Redo (Ctrl+Shift+Z / Ctrl+Y)" disabled>↷ Redo</button>
     <button class="btn primary" id="saveBtn" type="button">💾 Save</button>
     <button class="btn small" id="helpBtn" type="button" title="Tutorials and tips for the page you are on" style="display:none;">? Help</button>
     <button class="btn small" id="shellToggle" type="button" title="Switch between the classic layout and the new blueprint layout — nothing about the takeoff changes, only how it is laid out">⇄ New layout</button>
@@ -506,9 +542,20 @@ body[data-shell="blueprint"] .card-panes .pane[data-pane="assembly"] .diag-host{
     <div class="filterbar">
       <select id="filterCategory"></select>
       <select id="filterMaterialGroup"></select>
-      <input type="text" id="filterSearch" placeholder="Search element / material...">
+      <input type="text" id="filterSearch" placeholder="Search element / material / warning...">
+      <select id="regGroupBy" title="Group rows by"><option value="element">Group: element</option><option value="materialGroup">Group: material group</option><option value="category">Group: category</option><option value="level">Group: level</option><option value="zone">Group: zone</option><option value="pour">Group: pour</option></select>
     </div>
-    <div class="toolbar"><button class="btn small" onclick="collapseAllCards(true)">▸ Roll up all elements</button><button class="btn small" onclick="collapseAllCards(false)">▾ Expand all</button></div>
+    <div class="reg-chips" id="regChips"></div>
+    <div class="reg-tools">
+      <button class="btn small" onclick="collapseAllRegisterGroups(true)">▸ Roll up all groups</button><button class="btn small" onclick="collapseAllRegisterGroups(false)">▾ Expand all</button>
+      <select id="regViews" title="Saved views"><option value="">Saved views…</option></select>
+      <button class="btn small" type="button" onclick="saveRegisterView()" title="Save the current filters, grouping and columns as a named view">💾 Save view</button>
+      <button class="btn small" type="button" onclick="deleteRegisterView()" title="Delete the selected view">✕</button>
+      <details style="font-size:11px;"><summary class="btn small" style="display:inline-block;">Columns</summary><div class="reg-cols" id="regCols"></div></details>
+      <span style="flex:1"></span>
+      <button class="btn small" type="button" onclick="exportRegisterCSV(true)" title="CSV of exactly the rows shown, in this order">⬇ Export filtered view</button>
+      <button class="btn small" type="button" onclick="exportRegisterCSV(false)" title="CSV of the complete register">⬇ Export complete register</button>
+    </div>
     <div class="subsec" id="registerReoSummary"></div>
     <div style="overflow-x:auto;max-height:70vh;overflow-y:auto;border:1px solid var(--line);border-radius:8px;">
       <table class="results" id="registerTable"></table>
@@ -1106,6 +1153,7 @@ async function pushTakeoffOnce(key, snapshot){
   if(row){ LAST_CLOUD_HASH[key] = h; try{ localStorage.setItem(key+"__syncedAt", row.updated_at); }catch(e){} }
   return row;
 }
+function notifyStatus(text){ let el=document.getElementById("saveStatus"); if(!el) return; el.classList.remove("ok","err"); el.textContent=text; clearTimeout(saveStatusTimer); saveStatusTimer=setTimeout(()=>{ el.textContent="All changes saved automatically"; },6000); }
 function notifySyncConflict(when){
   let el = document.getElementById("saveStatus"); if(!el) return;
   let t = when ? new Date(when).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"}) : "";
@@ -1348,6 +1396,7 @@ function collapseAllInstances(list){
 }
 function applyLoadedEstimateState(parsed, opts){
   opts = opts || {};
+  if(!UNDO.applying) undoReset();   // a loaded / synced / restored takeoff starts a fresh history
   if(parsed.project) PROJECT = Object.assign({}, PROJECT, parsed.project);
   if(parsed.selectedTypes) SELECTED_TYPES = parsed.selectedTypes;
   if(Array.isArray(parsed.instances)){
@@ -1592,7 +1641,7 @@ function trenchMeshTypeSel(field,val,rerender){
    1's type until changed). layerTypeCounts() resolves the choices into
    {type -> how many layers use it} so the compute emits ONE register line
    per distinct material — a single-type stack prices exactly as before. */
-function inpNumR(field,val,step){ return `<input type="number" step="${step||'any'}" data-field="${field}" data-rerender="true" value="${val===undefined?'':val}">`; }
+function inpNumR(field,val,step){ return `<input type="text" inputmode="decimal" data-num="1" data-step="${step||''}" data-field="${field}" data-rerender="true" value="${val===undefined?'':val}">`; }
 /* pathPrefix lets the same selects back onto an object nested inside the
  * element's data (one of a raft's several edge beams, say): the VALUES are
  * read from `d` as always, while the field names the inputs bind through get
@@ -1733,16 +1782,16 @@ function setPath(obj,path,val){
   cur[parts[parts.length-1]] = val;
 }
 function F(label,inner,extraClass){ return `<label class="field ${extraClass||''}"><span class="lbl">${label}</span>${inner}</label>`; }
-function inpNum(field,val,step){ return `<input type="number" step="${step||'any'}" data-field="${field}" value="${val===undefined?'':val}">`; }
+function inpNum(field,val,step){ return `<input type="text" inputmode="decimal" data-num="1" data-step="${step||''}" data-field="${field}" value="${val===undefined?'':val}">`; }
 // Overall run lengths/heights (beam/wall/column/pier/kerb) can be entered in mm or m per the
 // project's preferred unit — everything is still stored in mm internally so every formula
 // elsewhere in the app never has to care which unit the estimator typed in.
 function lenInput(field,valMM){
   if(PROJECT.units_len_pref==="m"){
     let v=(valMM===undefined||valMM==="")? "" : (Number(valMM)/1000);
-    return `<input type="number" step="any" data-field="${field}" data-unit="len" value="${v}">`;
+    return `<input type="text" inputmode="decimal" data-num="1" data-field="${field}" data-unit="len" value="${v}">`;
   }
-  return `<input type="number" step="any" data-field="${field}" data-unit="len" value="${valMM===undefined?'':valMM}">`;
+  return `<input type="text" inputmode="decimal" data-num="1" data-field="${field}" data-unit="len" value="${valMM===undefined?'':valMM}">`;
 }
 function lenLabel(label){ return PROJECT.units_len_pref==="m"? label.replace(/\(mm\)/,"(m)") : label; }
 function LF(label,field,valMM){ return F(lenLabel(label), lenInput(field,valMM)); }
@@ -3409,8 +3458,8 @@ function starterRunsUI(inst,d,elemLenM,noun){
       ${bySpacing?F("Spacing along run (mm)",inpNumR(base+"spacing",r.spacing===undefined?400:r.spacing)):F(`Qty (per ${noun})`,inpNumR(base+"qty",r.qty===undefined?4:r.qty))}
      </div>
      <div class="grid cols4">
-      ${bySpacing?F("Run of starters (m)",`<input type="number" step="any" data-field="${base}runM" data-rerender="true" value="${r.runM===undefined?'':r.runM}" placeholder="= whole ${noun} ${fmt(elemLenM,2)} m">`):""}
-      ${bySpacing?F("Starts at (m from one end)",`<input type="number" step="any" data-field="${base}startM" value="${r.startM===undefined?'':r.startM}" placeholder="0">`):""}
+      ${bySpacing?F("Run of starters (m)",`<input type="text" inputmode="decimal" data-num="1" data-field="${base}runM" data-rerender="true" value="${r.runM===undefined?'':r.runM}" placeholder="= whole ${noun} ${fmt(elemLenM,2)} m">`):""}
+      ${bySpacing?F("Starts at (m from one end)",`<input type="text" inputmode="decimal" data-num="1" data-field="${base}startM" value="${r.startM===undefined?'':r.startM}" placeholder="0">`):""}
       ${bySpacing?F("Rows across the section",selOpts(base+"rows",Math.max(1,Math.round(num(r.rows,1))),[[1,"1 row (centre)"],[2,"2 rows (one each face)"]],true)):""}
       ${F("Embedment (mm)",inpNum(base+"embed",r.embed===undefined?500:r.embed))}${F("Projection (mm)",inpNum(base+"proj",r.proj===undefined?600:r.proj))}
      </div>
@@ -6109,6 +6158,227 @@ function attachAssemblyEvents(card, inst){
   card.addEventListener('mouseover', e=>{ const tr=e.target.closest('.detail-results tr'); if(!tr) return; const keyInp=tr.querySelector('[data-field^="manualOverrides."]'); if(!keyInp) return; const key=keyInp.dataset.field.replace(/^manualOverrides\./,'').replace(/\.(enabled|qty|reason)$/,''); const line=((inst.results||{}).lines||[]).find(l=>l.overrideKey===key); if(!line) return; const c=padComponents(inst).find(x=>x.match(line)); const v=ACTIVE_3D&&ACTIVE_3D.viewer; if(v) v.highlight(c?[c.id]:[]); });
 }
 
+
+/* ============================= PHASE 3 — DATA-ENTRY POWER TOOLS ============================= */
+/* ---- 1. Safe expressions + unit parsing (no eval, ever) ----
+ * Accepts numbers with thousands separators, + - * / and brackets, and a
+ * unit suffix (mm, cm, m) on the whole entry. Anything else is refused. */
+function parseNumInput(raw, displayUnit){
+  let s=String(raw==null?"":raw).trim().toLowerCase();
+  if(!s) return {ok:false, reason:"empty"};
+  let unit=null; const um=s.match(/^(.*?)\s*(mm|cm|m)$/); if(um){ s=um[1].trim(); unit=um[2]; }
+  s=s.replace(/,(?=\d{3}\b)/g,"").replace(/\s+/g,"");
+  if(!/^[0-9.+\-*/()e]+$/.test(s)) return {ok:false, reason:"characters"};
+  // tokenizer
+  const toks=[]; let i=0;
+  while(i<s.length){ const c=s[i]; if(/[0-9.]/.test(c)){ let j=i; while(j<s.length && /[0-9.]/.test(s[j])) j++; if(s[j]==="e" && /[0-9+\-]/.test(s[j+1]||"")){ j++; if(/[+\-]/.test(s[j])) j++; while(j<s.length && /[0-9]/.test(s[j])) j++; } const n=Number(s.slice(i,j)); if(!isFinite(n)) return {ok:false, reason:"number"}; toks.push({t:"n",v:n}); i=j; } else if("+-*/()".includes(c)){ toks.push({t:c}); i++; } else return {ok:false, reason:"token"}; }
+  let pos=0; const peek=()=>toks[pos], take=()=>toks[pos++];
+  function expr(){ let v=term(); while(peek() && (peek().t==="+"||peek().t==="-")){ const op=take().t; const r=term(); v = op==="+"? v+r : v-r; } return v; }
+  function term(){ let v=factor(); while(peek() && (peek().t==="*"||peek().t==="/")){ const op=take().t; const r=factor(); if(op==="/"){ if(r===0) throw new Error("divide by zero"); v=v/r; } else v=v*r; } return v; }
+  function factor(){ const t=take(); if(!t) throw new Error("unexpected end"); if(t.t==="n") return t.v; if(t.t==="-") return -factor(); if(t.t==="+") return factor(); if(t.t==="("){ const v=expr(); const c=take(); if(!c||c.t!==")") throw new Error("bracket"); return v; } throw new Error("syntax"); }
+  let value; try{ value=expr(); if(pos!==toks.length) throw new Error("trailing"); }catch(err){ return {ok:false, reason:err.message}; }
+  if(!isFinite(value)) return {ok:false, reason:"not finite"};
+  const expression = toks.length>1;
+  if(unit && displayUnit){ const toMM={mm:1,cm:10,m:1000}[unit]; const target={mm:1,cm:10,m:1000}[displayUnit]; if(toMM && target) value = value*toMM/target; }
+  value=Math.round(value*1e6)/1e6;
+  return {ok:true, value, expression, unit};
+}
+/** The unit a field DISPLAYS in: data-unit="len" follows the project preference; otherwise the label's "(mm)" / "(m)" / "(m²)"… hint; null when unknown (unit suffixes then convert nothing). */
+function fieldDisplayUnit(inp){
+  if(inp.dataset.unit==="len") return PROJECT.units_len_pref==="m" ? "m" : "mm";
+  const lab=inp.closest('label.field'); const txt=lab? lab.textContent : (inp.closest('th,td')? "" : "");
+  if(/\(mm\)/.test(txt)) return "mm"; if(/\(m\)/.test(txt)) return "m"; if(/\(cm\)/.test(txt)) return "cm";
+  if(/\(mm/.test(txt)) return "mm";
+  return null;
+}
+function numStepFor(inp){ const u=fieldDisplayUnit(inp); if(u==="m") return 0.1; const f=(inp.dataset.field||""); if(/pct|waste|lap|percent/i.test(f)) return 0.5; return 1; }
+
+/* ---- 2. Undo / redo (snapshot history, coalesced per field) ---- */
+const UNDO={stack:[],redo:[],last:null,lastCtx:null,lastAt:0,applying:false,max:100};
+let UNDO_CTX=null;
+function undoSnap(){ return JSON.stringify({project:PROJECT,selectedTypes:SELECTED_TYPES,idCounter:ID_COUNTER,instances:(INSTANCES||[]).map(i=>{ const c=Object.assign({},i); delete c.results; delete c._collapsed; delete c._regCollapsed; return c; })}); }
+function undoCommit(ctx){
+  if(UNDO.applying) return;
+  const now=undoSnap();
+  if(UNDO.last===null){ UNDO.last=now; return; }
+  if(now===UNDO.last) return;
+  const coalesce = ctx && ctx===UNDO.lastCtx && (Date.now()-UNDO.lastAt)<1500;
+  if(!coalesce){ UNDO.stack.push(UNDO.last); if(UNDO.stack.length>UNDO.max) UNDO.stack.shift(); UNDO.redo.length=0; }
+  UNDO.last=now; UNDO.lastCtx=ctx||null; UNDO.lastAt=Date.now(); updateUndoButtons();
+}
+function undoReset(){ UNDO.stack.length=0; UNDO.redo.length=0; UNDO.last=null; UNDO.lastCtx=null; updateUndoButtons(); }
+function applyUndoState(json){
+  UNDO.applying=true;
+  try{
+    const parsed=JSON.parse(json); const fold={}; (INSTANCES||[]).forEach(i=>{ if(i) fold[i.id]=!!i._collapsed; });
+    PROJECT=Object.assign({},PROJECT,parsed.project); SELECTED_TYPES=parsed.selectedTypes||{}; ID_COUNTER=parsed.idCounter||ID_COUNTER;
+    INSTANCES=(parsed.instances||[]).map(i=>{ i._collapsed=(i.id in fold)? fold[i.id] : true; return i; });
+    UNDO.last=json; UNDO.lastCtx=null;
+    rerenderAllPages();
+  } finally { UNDO.applying=false; }
+  updateUndoButtons();
+}
+function undo(){ if(!UNDO.stack.length) return false; const cur=UNDO.last; const prev=UNDO.stack.pop(); UNDO.redo.push(cur); applyUndoState(prev); return true; }
+function redo(){ if(!UNDO.redo.length) return false; const cur=UNDO.last; const next=UNDO.redo.pop(); UNDO.stack.push(cur); applyUndoState(next); return true; }
+function updateUndoButtons(){ const u=document.getElementById("undoBtn"), r=document.getElementById("redoBtn"); if(u){ u.disabled=!UNDO.stack.length; u.textContent=`↶ Undo${UNDO.stack.length?` (${UNDO.stack.length})`:''}`; } if(r){ r.disabled=!UNDO.redo.length; r.textContent=`↷ Redo${UNDO.redo.length?` (${UNDO.redo.length})`:''}`; } }
+
+/* ---- 3. Templates + copy from element + duplicate choices ---- */
+const TEMPLATES_KEY="gradcon-estimate-templates";
+let TEMPLATES=[]; try{ TEMPLATES=JSON.parse(localStorage.getItem(TEMPLATES_KEY))||[]; }catch(e){ TEMPLATES=[]; }
+const DIM_FIELDS=new Set(["qty","length","width","depth","height","dia","diameter","thickness","areaOverride","manualArea","outlinePts","outlineOn","outlineDirs","outlineSideLens","perimeterOverride","L","W","D","stemH","footL","risers","excDepth","pedW","pedD","pedH"]);
+function templateDataFrom(inst){ const d=JSON.parse(JSON.stringify(inst.data||{})); delete d.manualOverrides; delete d.__csvImport; delete d.__csvMeasurement; Object.keys(d).forEach(k=>{ if(/^_/.test(k)) delete d[k]; }); return d; }
+function saveTemplates(){ try{ localStorage.setItem(TEMPLATES_KEY, JSON.stringify(TEMPLATES)); }catch(e){} if(SUPABASE_URL) kvPush(TEMPLATES_KEY, TEMPLATES); }
+async function syncTemplatesFromCloud(){ if(!SUPABASE_URL) return; const row=await kvFetch(TEMPLATES_KEY); if(row && Array.isArray(row.value)){ const byId={}; TEMPLATES.forEach(t=>byId[t.id]=t); row.value.forEach(t=>{ if(!byId[t.id] || (t.updatedAt||"")>(byId[t.id].updatedAt||"")) byId[t.id]=t; }); TEMPLATES=Object.values(byId).sort((a,b)=>(a.name||"").localeCompare(b.name||"")); try{ localStorage.setItem(TEMPLATES_KEY, JSON.stringify(TEMPLATES)); }catch(e){} renderAddToolbar(); } }
+function saveAsTemplate(inst, name){
+  name=(name||"").trim(); if(!name) return null;
+  const t={id:"tpl_"+Date.now().toString(36)+Math.random().toString(36).slice(2,6), name, typeKey:inst.typeKey, data:templateDataFrom(inst), createdAt:new Date().toISOString(), updatedAt:new Date().toISOString()};
+  TEMPLATES.push(t); saveTemplates(); renderAddToolbar(); return t;
+}
+function deleteTemplate(id){ TEMPLATES=TEMPLATES.filter(t=>t.id!==id); saveTemplates(); renderAddToolbar(); }
+function addFromTemplate(id){
+  const t=TEMPLATES.find(x=>x.id===id); if(!t || !LIB_INDEX[t.typeKey]) return null;
+  const def=LIB_INDEX[t.typeKey];
+  const inst={id:uid("EL"), typeKey:t.typeKey, label:t.name+" "+(INSTANCES.filter(i=>i.typeKey===t.typeKey).length+1), data:Object.assign(defaultDataFor(t.typeKey), JSON.parse(JSON.stringify(t.data))), _collapsed:true};
+  inst.entered={}; Object.keys(t.data).forEach(k=>{ if(!Array.isArray(t.data[k]) && typeof t.data[k]!=="object") inst.entered[k]=true; });
+  SELECTED_TYPES[t.typeKey]=true;
+  INSTANCES.push(inst); BP_SELECTED_ID=inst.id; UNDO_CTX=null;
+  renderLibrary(); renderAddToolbar(); renderWorkspace(); computeAllAndRefresh();
+  document.querySelector('.tabs button[data-page="workspace"]').click();
+  return inst;
+}
+function copyValuesFrom(inst, srcId){
+  const src=INSTANCES.find(i=>i.id===srcId); if(!src || LIB_INDEX[src.typeKey].calc!==LIB_INDEX[inst.typeKey].calc) return false;
+  const d=templateDataFrom(src); const keepOv=inst.data.manualOverrides;
+  inst.data=Object.assign(defaultDataFor(inst.typeKey), d); if(keepOv) inst.data.manualOverrides=keepOv;
+  inst.entered=JSON.parse(JSON.stringify(src.entered||{})); delete inst.review; UNDO_CTX=null;
+  return true;
+}
+function duplicateInstanceMode(id, mode){
+  const src=INSTANCES.find(i=>i.id===id); if(!src) return;
+  const copy=JSON.parse(JSON.stringify(src)); delete copy.results; delete copy.review; delete copy.scope;
+  copy.id=uid("EL"); copy.label=src.label+" copy";
+  if(mode==="settings"){ const fresh=defaultDataFor(src.typeKey); Object.keys(copy.data).forEach(k=>{ if(DIM_FIELDS.has(k) && k in fresh) copy.data[k]=fresh[k]; }); delete copy.data.manualOverrides; copy.entered=copy.entered||{}; DIM_FIELDS.forEach(k=>{ delete copy.entered[k]; }); }
+  INSTANCES.push(copy); BP_SELECTED_ID=copy.id; UNDO_CTX=null;
+  renderWorkspace(); computeAllAndRefresh();
+}
+function closeMiniMenus(){ document.querySelectorAll('.mini-menu').forEach(m=>m.remove()); }
+function openMiniMenu(anchor, html, onClick){
+  closeMiniMenus();
+  const m=document.createElement('div'); m.className='mini-menu'; m.innerHTML=html;
+  const r=anchor.getBoundingClientRect(); m.style.position='fixed'; m.style.top=(r.bottom+4)+'px'; m.style.left=Math.max(8,Math.min(window.innerWidth-260,r.left))+'px';
+  document.body.appendChild(m);
+  m.addEventListener('click',e=>{ const b=e.target.closest('[data-mm]'); if(!b) return; e.stopPropagation(); const keep=onClick(b, m); if(!keep) closeMiniMenus(); });
+  setTimeout(()=>document.addEventListener('click',function h(e){ if(!m.contains(e.target)){ closeMiniMenus(); document.removeEventListener('click',h); } }),0);
+  return m;
+}
+function duplicateMenu(card, inst, anchor){
+  const peers=INSTANCES.filter(i=>i.id!==inst.id && LIB_INDEX[i.typeKey].calc===LIB_INDEX[inst.typeKey].calc);
+  openMiniMenu(anchor, `<div class="mm-head">Duplicate</div>
+    <button class="item" data-mm="dup-all">⧉ Duplicate — everything</button>
+    <button class="item" data-mm="dup-settings">⧉ Duplicate — settings only, fresh dimensions</button>
+    <div class="mm-head">Copy values from…</div>
+    ${peers.length? peers.map(p=>`<button class="item" data-mm="copy" data-id="${p.id}"><span>${bpEsc(p.id)} · ${bpEsc(p.label)}</span></button>`).join('') : '<div class="item small">no other element of this kind</div>'}
+    <div class="mm-head">Save as template</div>
+    <input type="text" data-mm-name placeholder="Template name" value="${bpEsc(inst.label)}"><button class="item" data-mm="tpl">💾 Save this element's configuration as a template</button>`, (b,m)=>{
+      const act=b.dataset.mm;
+      if(act==="dup-all") duplicateInstanceMode(inst.id,"all");
+      else if(act==="dup-settings") duplicateInstanceMode(inst.id,"settings");
+      else if(act==="copy"){ if(copyValuesFrom(inst,b.dataset.id)){ computeAllAndRefresh(); rerenderCardKeepTab(card,inst); } }
+      else if(act==="tpl"){ const t=saveAsTemplate(inst, m.querySelector('[data-mm-name]').value); if(t) showSaveStatus("ok"); }
+    });
+}
+function templateMenu(anchor){
+  const list=TEMPLATES.filter(t=>LIB_INDEX[t.typeKey]);
+  openMiniMenu(anchor, `<div class="mm-head">Add from template</div>${list.length? list.map(t=>`<button class="item" data-mm="add" data-id="${t.id}"><span>${bpEsc(t.name)} <span class="small">· ${bpEsc(LIB_INDEX[t.typeKey].label)}</span></span><span class="mm-del" data-mm="del" data-id="${t.id}" title="Delete template">✕</span></button>`).join('') : '<div class="item small">No templates yet — open an element\'s ⧉ Duplicate ▾ menu and save one.</div>'}`, (b)=>{
+    if(b.dataset.mm==="add") addFromTemplate(b.dataset.id);
+    else if(b.dataset.mm==="del"){ deleteTemplate(b.dataset.id); return false; }
+  });
+}
+
+/* ---- 4. Tags + bulk actions (navigator multi-select) ---- */
+const BP_MULTI=new Set();
+const tagOf=(inst,k)=>((inst.tags||{})[k]||"").trim();
+function setTag(inst,k,v){ if(!inst.tags||typeof inst.tags!=="object") inst.tags={}; v=(v||"").trim(); if(v) inst.tags[k]=v; else delete inst.tags[k]; }
+function bulkApply(action, value){
+  const ids=[...BP_MULTI]; const targets=INSTANCES.filter(i=>ids.includes(i.id)); if(!targets.length) return {n:0};
+  let n=0, skipped=0;
+  targets.forEach(inst=>{
+    if(action==="review"){ if(assemblyUndecided(inst).length){ skipped++; return; } markReviewed(inst); n++; }
+    else if(action==="unreview"){ clearReview(inst); n++; }
+    else if(action==="level"||action==="zone"||action==="pour"){ setTag(inst,action,value); n++; }
+    else if(action==="delete"){ n++; }
+  });
+  if(action==="delete"){ INSTANCES=INSTANCES.filter(i=>!ids.includes(i.id)); BP_MULTI.clear(); if(!INSTANCES.find(i=>i.id===BP_SELECTED_ID)) BP_SELECTED_ID=null; }
+  UNDO_CTX=null; renderWorkspace(); computeAllAndRefresh();
+  return {n,skipped};
+}
+function bpBulkBar(){
+  if(!BP_MULTI.size) return "";
+  return `<div class="bp-bulk" data-bulk>
+    <b>${BP_MULTI.size} selected</b>
+    <button class="btn small" type="button" data-bulk-act="review" title="Mark every selected element reviewed (elements with undecided assembly items are skipped)">✓ Reviewed</button>
+    <button class="btn small" type="button" data-bulk-act="unreview">Clear review</button>
+    <label>Level <input type="text" data-bulk-val="level" placeholder="e.g. L1"></label><button class="btn small" type="button" data-bulk-act="level">Set</button>
+    <label>Pour <input type="text" data-bulk-val="pour" placeholder="e.g. P2"></label><button class="btn small" type="button" data-bulk-act="pour">Set</button>
+    <label>Zone <input type="text" data-bulk-val="zone" placeholder="e.g. Nth"></label><button class="btn small" type="button" data-bulk-act="zone">Set</button>
+    <button class="btn small danger" type="button" data-bulk-act="delete" data-armed="0">✕ Delete selected</button>
+    <button class="btn small" type="button" data-bulk-act="clear">Clear selection</button>
+  </div>`;
+}
+
+/* ---- 5. Register views ---- */
+const REG_VIEWS_KEY="gradcon-estimate-register-views", REG_COLS_KEY="gradcon-estimate-register-cols";
+const REG_GROUP_COLLAPSED={};
+let REG_CHIP={};   // {mg:"Concrete"} | {manual:true} | {unreviewed:true}
+const REG_COLUMNS=[[1,"Stage"],[2,"Category"],[10,"Waste %"],[11,"Lap %"],[12,"Manual?"],[13,"Override qty"],[15,"Kg"],[16,"Formula"],[17,"Linked"]];
+function regHiddenCols(){ try{ return JSON.parse(localStorage.getItem(REG_COLS_KEY))||[]; }catch(e){ return []; } }
+function setRegHiddenCols(list){ try{ localStorage.setItem(REG_COLS_KEY, JSON.stringify(list)); }catch(e){} }
+function regViews(){ try{ return JSON.parse(localStorage.getItem(REG_VIEWS_KEY))||[]; }catch(e){ return []; } }
+function regState(){ return { cat:document.getElementById("filterCategory").value, mg:document.getElementById("filterMaterialGroup").value, q:document.getElementById("filterSearch").value, groupBy:document.getElementById("regGroupBy").value, chip:REG_CHIP, cols:regHiddenCols() }; }
+function applyRegState(v){ document.getElementById("filterCategory").value=v.cat||""; document.getElementById("filterMaterialGroup").value=v.mg||""; document.getElementById("filterSearch").value=v.q||""; document.getElementById("regGroupBy").value=v.groupBy||"element"; REG_CHIP=v.chip||{}; if(Array.isArray(v.cols)) setRegHiddenCols(v.cols); renderRegisterTable(); }
+function saveRegisterView(){
+  const host=document.getElementById("regViews");
+  const m=openMiniMenu(host, `<div class="mm-head">Save view</div><input type="text" data-mm-name placeholder="View name"><button class="item" data-mm="save">💾 Save</button>`, (b,m)=>{ const name=(m.querySelector('[data-mm-name]').value||"").trim(); if(!name) return true; const views=regViews().filter(x=>x.name!==name); views.push({name, state:regState()}); try{ localStorage.setItem(REG_VIEWS_KEY, JSON.stringify(views)); }catch(e){} renderRegisterViews(name); });
+  const inp=m.querySelector('[data-mm-name]'); if(inp) inp.focus();
+}
+function deleteRegisterView(){ const sel=document.getElementById("regViews"); const name=sel.value; if(!name) return; const views=regViews().filter(x=>x.name!==name); try{ localStorage.setItem(REG_VIEWS_KEY, JSON.stringify(views)); }catch(e){} renderRegisterViews(""); }
+function renderRegisterViews(selected){ const sel=document.getElementById("regViews"); if(!sel) return; sel.innerHTML=`<option value="">Saved views…</option>`+regViews().map(v=>`<option value="${bpEsc(v.name)}" ${v.name===selected?'selected':''}>${bpEsc(v.name)}</option>`).join(''); }
+function collapseAllRegisterGroups(state){ const t=document.getElementById("registerTable"); t.querySelectorAll('tbody[data-reg-group]').forEach(g=>{ REG_GROUP_COLLAPSED[g.dataset.regGroup]=state; }); renderRegisterTable(); }
+function regGroupKey(l, mode){
+  const inst=INSTANCES.find(i=>i.id===l.elementId)||{};
+  if(mode==="materialGroup") return l.materialGroup||"(none)";
+  if(mode==="category") return l.category||"(none)";
+  if(mode==="level"||mode==="zone"||mode==="pour") return tagOf(inst,mode)||`(no ${mode})`;
+  return l.elementId;
+}
+function openLineSource(instId, line){
+  const inst=INSTANCES.find(i=>i.id===instId); if(!inst) return;
+  document.querySelector('.tabs button[data-page="workspace"]').click();
+  if(SHELL_MODE==="blueprint"){ bpSelect(instId,true); const card=document.querySelector('#cardsHost .card'); if(card){ const avail=[...card.querySelectorAll('.card-tabs button')].map(b=>b.dataset.tab); bpGoSection(card, line? lineSection(line,avail) : "geom"); } }
+  else { inst._collapsed=false; renderWorkspace(); const card=document.querySelector(`#cardsHost .card[data-id="${instId}"]`); if(card){ card.scrollIntoView({block:"start"}); const avail=[...card.querySelectorAll('.card-tabs button')].map(b=>b.dataset.tab); const b=card.querySelector(`.card-tabs button[data-tab="${line? lineSection(line,avail) : "geom"}"]`); if(b) b.click(); } }
+}
+function registerLineRows(data){
+  return data.map((l,i)=>{ const r=i+2; return [l.stage,l.category,l.element,l.elementId,l.materialGroup,l.material,l.spec, numCell(l.qty), l.unit, numCell(l.waste||0,2), numCell(l.lap||0,2), rawFormula(`=ROUND(H${r}*(1+J${r}/100)*(1+K${r}/100),4)`), l.manualOverride? `Yes (system calc ${fmt(l.calculatedQty,2)})${l.overrideReason?' — '+l.overrideReason:''}` : "No", l.formula, l.linkedElement, l.notes]; });
+}
+function exportRegisterCSV(filteredOnly){
+  const data = filteredOnly ? registerFilteredLines() : allLines();
+  const name=`${(PROJECT.name||"Project").replace(/[^a-z0-9]+/gi,'_')}_register${filteredOnly?'_filtered':''}.csv`;
+  download(name, toCSV(EXPORT_HEADERS, registerLineRows(data)));
+}
+function registerFilteredLines(){
+  const lines=allLines();
+  const cat=document.getElementById("filterCategory").value, mg=document.getElementById("filterMaterialGroup").value, q=(document.getElementById("filterSearch").value||"").toLowerCase();
+  return lines.filter(l=>{
+    if(cat && l.category!==cat) return false;
+    if(mg && l.materialGroup!==mg) return false;
+    if(REG_CHIP.mg && l.materialGroup!==REG_CHIP.mg) return false;
+    if(REG_CHIP.manual && !l.manualOverride) return false;
+    if(REG_CHIP.unreviewed){ const inst=INSTANCES.find(i=>i.id===l.elementId); if(inst && isReviewed(inst)) return false; }
+    if(q){ const inst=INSTANCES.find(i=>i.id===l.elementId)||{}; const warns=((inst.results||{}).warnings||[]).map(w=>w.text).join(" "); const hay=(l.element+" "+l.elementId+" "+l.material+" "+l.spec+" "+l.formula+" "+warns+" "+Object.values(inst.tags||{}).join(" ")).toLowerCase(); if(!hay.includes(q)) return false; }
+    return true;
+  });
+}
+
 const CALC = {
   pier:{defaults:pierDefaults, render:renderPier, compute:computePier, diagram:diagPier},
   pilecap:{defaults:pileCapDefaults, render:renderPileCap, compute:computePileCap, diagram:diagPileCap},
@@ -6436,12 +6706,23 @@ function renderBlueprintWorkspace(){
    </div>
    <div class="bp-rows">${INSTANCES.length? (list.length? list.map(i=>{
       let def=LIB_INDEX[i.typeKey]||{}; let t=bpTotalsOf(i);
+      const tags=[tagOf(i,'level'),tagOf(i,'zone'),tagOf(i,'pour')].filter(Boolean).join(' · ');
       return `<div class="bp-row ${cur&&i.id===cur.id?'active':''}" data-id="${i.id}" title="${bpEsc(def.groupName)} / ${bpEsc(def.label)}">
-        <span class="bp-id">${bpEsc(i.id)}</span><span class="bp-label">${bpEsc(i.label)}</span><span class="bp-flag">${t.warnings.length?'⚠':''}</span>
-        <span class="bp-meta">${fmt(t.conc,2)} m³ · ${fmt(t.reoKg,0)} kg · ${fmt(t.form,1)} m²</span>
+        <input type="checkbox" class="bp-pick" data-pick="${i.id}" ${BP_MULTI.has(i.id)?'checked':''} title="Select for bulk actions" onclick="event.stopPropagation()">
+        <span class="bp-id">${bpEsc(i.id)}</span><span class="bp-label">${bpEsc(i.label)}</span><span class="bp-flag">${t.warnings.length?'⚠':''}${isReviewed(i)?' ✓':''}</span>
+        <span class="bp-meta">${fmt(t.conc,2)} m³ · ${fmt(t.reoKg,0)} kg · ${fmt(t.form,1)} m²${tags?` <span class="bp-tags">· ${bpEsc(tags)}</span>`:''}</span>
       </div>`; }).join('') : `<div class="small" style="padding:8px;">No element matches.</div>`) : `<div class="small" style="padding:8px;">No elements yet — use the + Add buttons above.</div>`}</div>
-   <div class="bp-nav-foot"><button class="btn small" type="button" onclick="bpStep(-1)">▲ Prev</button><button class="btn small" type="button" onclick="bpStep(1)">Next ▼</button></div>`;
-  nav.querySelectorAll('.bp-row').forEach(r=>r.addEventListener('click',()=>bpSelect(r.dataset.id, true)));
+   <div class="bp-nav-foot"><button class="btn small" type="button" onclick="bpStep(-1)">▲ Prev</button><button class="btn small" type="button" data-pick-all title="Select every element shown">☑ All shown</button><button class="btn small" type="button" onclick="bpStep(1)">Next ▼</button></div>`;
+  nav.innerHTML = bpBulkBar() + nav.innerHTML;
+  nav.querySelectorAll('.bp-row').forEach(r=>r.addEventListener('click',(e)=>{ if(e.target.classList.contains('bp-pick')) return; bpSelect(r.dataset.id, true); }));
+  nav.querySelectorAll('.bp-pick').forEach(cb=>cb.addEventListener('change',()=>{ if(cb.checked) BP_MULTI.add(cb.dataset.pick); else BP_MULTI.delete(cb.dataset.pick); renderBlueprintWorkspace(); }));
+  const pickAll=nav.querySelector('[data-pick-all]'); if(pickAll) pickAll.addEventListener('click',()=>{ list.forEach(i=>BP_MULTI.add(i.id)); renderBlueprintWorkspace(); });
+  const bulk=nav.querySelector('[data-bulk]');
+  if(bulk) bulk.addEventListener('click',e=>{ const b=e.target.closest('[data-bulk-act]'); if(!b) return; const act=b.dataset.bulkAct;
+    if(act==="clear"){ BP_MULTI.clear(); renderBlueprintWorkspace(); return; }
+    if(act==="delete"){ if(b.dataset.armed!=="1" && portalPref("confirmDeletes")!==false){ b.dataset.armed="1"; b.textContent="✕ Confirm delete "+BP_MULTI.size; setTimeout(()=>{ b.dataset.armed="0"; b.textContent="✕ Delete selected"; },3000); return; } bulkApply("delete"); return; }
+    const val=(bulk.querySelector(`[data-bulk-val="${act}"]`)||{}).value; const r=bulkApply(act,val);
+    if(r.skipped) notifyStatus(`${r.n} marked reviewed · ${r.skipped} skipped — undecided assembly items`); });
   let search = nav.querySelector('#bpNavSearch');
   search.addEventListener('input', e=>{ BP_NAV_FILTER.q = e.target.value; let pos=e.target.selectionStart; renderBlueprintWorkspace(); let s2=document.getElementById('bpNavSearch'); if(s2){ s2.focus(); try{ s2.setSelectionRange(pos,pos);}catch(x){} } });
   nav.querySelector('#bpNavGroup').addEventListener('change', e=>{ BP_NAV_FILTER.group = e.target.value; renderBlueprintWorkspace(); });
@@ -6569,7 +6850,7 @@ function buildCard(inst){
      <div class="tools">
        <span class="small">${def.groupName} / ${def.label}</span>
        ${bp?`<button class="btn small" data-action="prevEl" title="Previous element (Alt+↑)">▲</button><button class="btn small" data-action="nextEl" title="Next element (Alt+↓)">▼</button>`:''}
-       <button class="btn small" data-action="dup">⧉ Duplicate</button>
+       <button class="btn small" data-action="dup" title="Duplicate, copy values from another element, or save as a template">⧉ Duplicate ▾</button>
        <button class="btn small danger" data-action="del">✕ Remove</button>
      </div>
    </div>
@@ -6623,7 +6904,7 @@ function lineSection(l, avail){
 /** Blank numeric inputs in a pane that look required (not overrides, not "0 = auto" fields, not in hidden optional sections). */
 function paneBlankInputs(pane){
   let out=[];
-  pane.querySelectorAll('input[type=number][data-field]').forEach(inp=>{
+  pane.querySelectorAll('input[data-num][data-field],input[type=number][data-field]').forEach(inp=>{
     if(inp.value!=="") return;
     if(inp.closest('.manual-cell')||inp.closest('.subsec.hidden')||inp.closest('[data-show-if].hidden')) return;
     let lab=inp.closest('label.field'); let txt=lab? lab.textContent : (inp.closest('th,td')? "" : "");
@@ -6683,6 +6964,7 @@ function refreshSectionRail(card, inst, out){
       <span class="chip prov-d" title="Fields still at their default value">${pc.default} default</span>
       ${pc.manual?`<span class="chip prov-m" title="Register lines with a manual override">${pc.manual} manual</span>`:""}
       ${pc.imported?`<span class="chip st-imported" title="Imported values not yet reviewed">${pc.imported} imported</span>`:""}
+      <span class="bp-tagrow"><label>Level</label><input type="text" data-tag="level" value="${bpEsc(tagOf(inst,'level'))}" placeholder="L1"><label>Zone</label><input type="text" data-tag="zone" value="${bpEsc(tagOf(inst,'zone'))}" placeholder="Nth"><label>Pour</label><input type="text" data-tag="pour" value="${bpEsc(tagOf(inst,'pour'))}" placeholder="P1"></span>
       <span class="spacer"></span>
       ${firstInc?`<button class="btn small" type="button" data-action="nextIncomplete" title="Jump to the first section with a warning or a blank field (Alt+N)">Next incomplete →</button>`:`<span class="chip" style="color:var(--good)">All sections complete</span>`}
       ${status.state==="reviewed"?`<button class="btn small" type="button" data-action="unreview" title="Clear the reviewed mark">Clear review</button>`:(assemblyUndecided(inst).length?`<button class="btn small" type="button" disabled title="${assemblyUndecided(inst).length} Suggested — review item(s) in Assembly still undecided">✓ Mark reviewed (${assemblyUndecided(inst).length} to decide)</button>`:`<button class="btn small primary" type="button" data-action="review" title="Record that every value on this element has been checked">✓ Mark reviewed</button>`)}`;
@@ -6807,7 +7089,8 @@ function attachCardEvents(card,inst){
     clearTimeout(delTimer);
     removeInstance(inst.id);
   });
-  card.querySelector('[data-action="dup"]').addEventListener('click',()=>duplicateInstance(inst.id));
+  card.querySelector('[data-action="dup"]').addEventListener('click',(e)=>duplicateMenu(card,inst,e.currentTarget));
+  card.addEventListener('change',e=>{ if(e.target.dataset && e.target.dataset.tag){ setTag(inst,e.target.dataset.tag,e.target.value); UNDO_CTX=null; computeAllAndRefresh(); if(SHELL_MODE==="blueprint") bpRefreshNavRow(inst); } });
   card.addEventListener('input',e=>{
     // Corner-angle inputs on the outline sides table (not backed by a data
     // field — the angle is derived from the stored side directions).
@@ -6826,10 +7109,27 @@ function attachCardEvents(card,inst){
     }
     let f=e.target.dataset.field; if(!f) return;
     if(f==="__label"){ inst.label=e.target.value; card.querySelector('.tools .small').textContent=LIB_INDEX[inst.typeKey].groupName+" / "+LIB_INDEX[inst.typeKey].label; refreshAllDiagramsReferencing(); computeAllAndRefresh(); return; }
-    let val = e.target.type==="checkbox"? e.target.checked : (e.target.type==="number"? (e.target.value===""?"": parseFloat(e.target.value)) : e.target.value);
+    let val;
+    if(e.target.type==="checkbox") val=e.target.checked;
+    else if(e.target.dataset.num!==undefined){
+      // Phase 3: expressions ("6*2400", "2*(600+50)") and unit suffixes
+      // ("7.2m", "7,200 mm") are accepted; anything that is not a safe
+      // arithmetic expression is refused (never eval), shown red, not stored.
+      const raw=e.target.value.trim();
+      if(raw===""){ val=""; e.target.classList.remove('num-invalid','num-expr'); }
+      else {
+        const r=parseNumInput(raw, fieldDisplayUnit(e.target));
+        if(!r.ok){ e.target.classList.add('num-invalid'); return; }
+        e.target.classList.remove('num-invalid'); e.target.classList.toggle('num-expr', r.expression);
+        val=r.value;
+      }
+    }
+    else if(e.target.type==="number") val=(e.target.value===""?"": parseFloat(e.target.value));
+    else val=e.target.value;
     if(e.target.dataset.unit==="len" && PROJECT.units_len_pref==="m" && val!==""){ val = val*1000; } // stored internally as mm always
     setPath(inst.data,f,val);
     markEntered(inst,f);
+    UNDO_CTX = inst.id+":"+f;
     if(SHELL_MODE==="blueprint"){ let lab=e.target.closest('label.field'); if(lab){ annotateProvenance(card,inst); } }
     if(e.target.dataset.rerender){
       // this field changes which fields exist elsewhere in the card (e.g. manual-area slabs swap the
@@ -6880,7 +7180,50 @@ function attachCardEvents(card,inst){
     updateLigDiagram(card,inst);
     computeAllAndRefresh();
   });
-  card.addEventListener('change',e=>{ if(e.target.tagName==="SELECT") { /* handled by input listener too via change bubbling for selects */ } });
+  card.addEventListener('change',e=>{
+    if(e.target.dataset && e.target.dataset.num!==undefined){
+      // on blur / Enter the expression becomes its result in the field's display unit
+      const raw=e.target.value.trim(); if(raw==="") return;
+      const r=parseNumInput(raw, fieldDisplayUnit(e.target)); if(!r.ok) return;
+      e.target.value=String(r.value); e.target.classList.remove('num-expr');
+    }
+  });
+  card.addEventListener('keydown',e=>{
+    const t=e.target; if(!t || !t.dataset) return;
+    if(t.dataset.num!==undefined && (e.key==="ArrowUp"||e.key==="ArrowDown")){
+      e.preventDefault();
+      const cur=parseNumInput(t.value.trim()||"0", fieldDisplayUnit(t)); if(!cur.ok) return;
+      let step=parseFloat(t.dataset.step); if(!isFinite(step)||step<=0) step=numStepFor(t);
+      if(e.shiftKey) step*=10;
+      const next=Math.round((cur.value+(e.key==="ArrowUp"?step:-step))*1e6)/1e6;
+      t.value=String(next); t.dispatchEvent(new Event('input',{bubbles:true}));
+      return;
+    }
+    const tr=t.closest('table.rows tr'); if(!tr) return;
+    if(e.key==="Enter" && t.tagName==="INPUT"){
+      e.preventDefault(); t.dispatchEvent(new Event('change',{bubbles:true}));
+      const table=tr.closest('table.rows'); const wrap=table.parentElement; const addBtn=(wrap.parentElement||wrap).querySelector('[data-action="addRow"]');
+      if(addBtn){ UNDO_CTX=null; addBtn.click(); const rows=document.querySelectorAll(`#cardsHost .card[data-id="${inst.id}"] table.rows tr`); const last=[...rows].reverse().find(r=>r.querySelector('input[data-field]')); const first=last&&last.querySelector('input[data-field]'); if(first) first.focus(); }
+      return;
+    }
+    if((e.ctrlKey||e.metaKey) && (e.key==="d"||e.key==="D") && t.dataset.field){
+      e.preventDefault();
+      const m=t.dataset.field.match(/^(.*)\.(\d+)\.[^.]+$/); if(!m) return;
+      const arr=getPath(inst.data,m[1]); const i=+m[2]; if(!Array.isArray(arr)||!arr[i]) return;
+      arr.splice(i+1,0,JSON.parse(JSON.stringify(arr[i]))); UNDO_CTX=null;
+      computeAllAndRefresh(); rerenderCardKeepTab(card,inst); return;
+    }
+  });
+  card.addEventListener('paste',e=>{
+    const t=e.target; if(!t||!t.dataset||!t.dataset.field) return;
+    const text=(e.clipboardData||window.clipboardData).getData('text')||""; const parts=text.split(/\r?\n|\t/).map(x=>x.trim()).filter(Boolean);
+    if(parts.length<2) return;
+    const m=t.dataset.field.match(/^(.*)\.(\d+)\.([^.]+)$/); if(!m) return;
+    e.preventDefault();
+    const arr=getPath(inst.data,m[1]); if(!Array.isArray(arr)) return; let i=+m[2];
+    parts.forEach((pv,k)=>{ const idx=i+k; if(!arr[idx]) arr[idx]=JSON.parse(JSON.stringify(arr[arr.length-1]||{})); const r=parseNumInput(pv, fieldDisplayUnit(t)); arr[idx][m[3]] = r.ok? r.value : pv; markEntered(inst,`${m[1]}.${idx}.${m[3]}`); });
+    UNDO_CTX=null; computeAllAndRefresh(); rerenderCardKeepTab(card,inst);
+  });
   card.addEventListener('click',e=>{
     let act=e.target.dataset.action;
     if(e.target.dataset.reset){
@@ -7207,6 +7550,7 @@ function refreshAllDiagramsReferencing(){ /* label changes affect target dropdow
 function computeAllAndRefresh(){
   refreshReoAllowances(); // live from the Rates Library — see constants above
   INSTANCES.forEach(inst=>{ inst.results = computeInstance(inst); });
+  undoCommit(UNDO_CTX); UNDO_CTX=null;   // Phase 3: every committed change is a step back
   renderRegister();
   renderExportSummary();
   refreshGeometryForm();
@@ -7330,7 +7674,8 @@ function renderDefaultsForm(){
   // oninput for the same stacked-listener reason as renderProjectForm above.
   f.oninput = (e)=>{
     let k=e.target.dataset.field; if(!k) return;
-    PROJECT[k]= e.target.type==="number"? parseFloat(e.target.value)||0 : e.target.value;
+    if(e.target.dataset.num!==undefined){ const r=parseNumInput(e.target.value); if(e.target.value.trim()!=="" && !r.ok){ e.target.classList.add('num-invalid'); return; } e.target.classList.remove('num-invalid'); PROJECT[k]= e.target.value.trim()===""? 0 : r.value; }
+    else PROJECT[k]= e.target.type==="number"? parseFloat(e.target.value)||0 : e.target.value;
     computeAllAndRefresh();
     if(k==="units_len_pref") renderWorkspace();
   };
@@ -7353,7 +7698,7 @@ function renderAddToolbar(){
   let tb=document.getElementById("addToolbar");
   let ids=Object.keys(SELECTED_TYPES).filter(k=>SELECTED_TYPES[k]);
   if(ids.length===0){ tb.innerHTML=`<span class="small">Tick element types on the Elements tab first.</span>`; return; }
-  tb.innerHTML = ids.map(id=>`<button class="btn primary small" onclick="addInstance('${id}')">+ Add ${LIB_INDEX[id].label}</button>`).join('');
+  tb.innerHTML = ids.map(id=>`<button class="btn primary small" onclick="addInstance('${id}')">+ Add ${LIB_INDEX[id].label}</button>`).join('') + `<button class="btn small" type="button" id="addFromTemplateBtn" onclick="templateMenu(this)" title="Add an element from a saved template (configuration only — new ID, no results or history)">+ From template${TEMPLATES.length?` (${TEMPLATES.length})`:''} ▾</button>`;
 }
 
 /* ============================= REGISTER ============================= */
@@ -7370,73 +7715,90 @@ function renderRegister(){
   let mgs=[...new Set(lines.map(l=>l.materialGroup))];
   if(catSel.options.length!==cats.length+1) catSel.innerHTML=`<option value="">All categories</option>`+cats.map(c=>`<option>${c}</option>`).join('');
   if(mgSel.options.length!==mgs.length+1) mgSel.innerHTML=`<option value="">All material groups</option>`+mgs.map(c=>`<option>${c}</option>`).join('');
+  if(!document.getElementById("regViews").options.length || document.getElementById("regViews").dataset.ready!=="1"){ renderRegisterViews(""); document.getElementById("regViews").dataset.ready="1"; }
   renderRegisterTable();
   catSel.oninput=renderRegisterTable; mgSel.oninput=renderRegisterTable;
   document.getElementById("filterSearch").oninput=renderRegisterTable;
+  document.getElementById("regGroupBy").oninput=renderRegisterTable;
+  document.getElementById("regViews").onchange=(e)=>{ const v=regViews().find(x=>x.name===e.target.value); if(v) applyRegState(v.state); };
 }
 function renderRegisterTable(){
   let lines=allLines();
-  let cat=document.getElementById("filterCategory").value;
-  let mg=document.getElementById("filterMaterialGroup").value;
-  let q=(document.getElementById("filterSearch").value||"").toLowerCase();
-  let filtered=lines.filter(l=> (!cat||l.category===cat) && (!mg||l.materialGroup===mg) && (!q || (l.element+l.material+l.spec).toLowerCase().includes(q)) );
+  let filtered=registerFilteredLines();
   let t=document.getElementById("registerTable");
   const REG_COLS=17;
-  let byElement=new Map();
-  filtered.forEach(l=>{
-    if(!byElement.has(l.elementId)) byElement.set(l.elementId,[]);
-    byElement.get(l.elementId).push(l);
-  });
-  let groupsHtml = INSTANCES.filter(inst=>byElement.has(inst.id)).map(inst=>{
-    let glines=byElement.get(inst.id);
-    // Register collapse is its OWN flag — the workspace card's _collapsed
-    // (and the "new elements start collapsed" preference) must never roll
-    // up register groups automatically. Default: expanded.
-    let collapsed=inst._regCollapsed===true;
+  const mode=(document.getElementById("regGroupBy")||{}).value||"element";
+  // chips: material groups with counts, manual overrides, unreviewed elements
+  const chips=document.getElementById("regChips");
+  if(chips){
+    const counts={}; lines.forEach(l=>{ counts[l.materialGroup]=(counts[l.materialGroup]||0)+1; });
+    const manualN=lines.filter(l=>l.manualOverride).length;
+    const unrevN=lines.filter(l=>{ const i=INSTANCES.find(x=>x.id===l.elementId); return i && !isReviewed(i); }).length;
+    chips.innerHTML=`<button class="reg-chip ${!REG_CHIP.mg&&!REG_CHIP.manual&&!REG_CHIP.unreviewed?'on':''}" data-chip="all">All <b>${lines.length}</b></button>`+Object.keys(counts).sort().map(g=>`<button class="reg-chip ${REG_CHIP.mg===g?'on':''}" data-chip="mg" data-val="${bpEsc(g)}">${bpEsc(g)} <b>${counts[g]}</b></button>`).join('')+`<button class="reg-chip ${REG_CHIP.manual?'on':''}" data-chip="manual">✎ Manual overrides <b>${manualN}</b></button><button class="reg-chip ${REG_CHIP.unreviewed?'on':''}" data-chip="unreviewed">Unreviewed elements <b>${unrevN}</b></button>`;
+    chips.onclick=(e)=>{ const b=e.target.closest('.reg-chip'); if(!b) return; const k=b.dataset.chip; if(k==="all") REG_CHIP={}; else if(k==="mg") REG_CHIP= REG_CHIP.mg===b.dataset.val? {} : {mg:b.dataset.val}; else REG_CHIP= REG_CHIP[k]? {} : {[k]:true}; renderRegisterTable(); };
+  }
+  // column chooser
+  const colsHost=document.getElementById("regCols"); const hidden=regHiddenCols();
+  if(colsHost){ colsHost.innerHTML=REG_COLUMNS.map(([n,lab])=>`<label><input type="checkbox" data-col="${n}" ${hidden.includes(n)?'':'checked'}> ${lab}</label>`).join(''); colsHost.onchange=(e)=>{ const n=+e.target.dataset.col; if(!n) return; let h=regHiddenCols().filter(x=>x!==n); if(!e.target.checked) h.push(n); setRegHiddenCols(h); renderRegisterTable(); }; }
+  t.className="results "+hidden.map(n=>"hide-col-"+n).join(" ");
+  // grouping
+  const groups=new Map();
+  filtered.forEach(l=>{ const k=regGroupKey(l,mode); if(!groups.has(k)) groups.set(k,[]); groups.get(k).push(l); });
+  let keys=[...groups.keys()]; if(mode==="element") keys=INSTANCES.map(i=>i.id).filter(id=>groups.has(id)); else keys.sort();
+  let groupsHtml = keys.map(key=>{
+    let glines=groups.get(key);
+    const inst=mode==="element"? INSTANCES.find(i=>i.id===key) : null;
+    let collapsed=REG_GROUP_COLLAPSED[mode+":"+key]===true;
     let totC=glines.filter(l=>l.materialGroup==="Concrete").reduce((s,l)=>s+l.finalQty,0);
     let totR=glines.filter(l=>l.materialGroup==="Reinforcement").reduce((s,l)=>s+(l.weightKg||0),0);
     let totF=glines.filter(l=>l.materialGroup==="Formwork").reduce((s,l)=>s+l.finalQty,0);
     let gbv=blindingVapourTotals(glines);
-    // Decompose the lump reo kg into the bar sizes / mesh types it's made of
     let typeStr=reoTypeBreakdownStr(glines);
-    return `<tbody data-reg-group="${inst.id}">
+    const st=inst? elementStatus(inst) : null;
+    const tags=inst? [tagOf(inst,'level'),tagOf(inst,'zone'),tagOf(inst,'pour')].filter(Boolean).join(' · ') : '';
+    const title=inst? `<span class="badge">${inst.id}</span> <b>${bpEsc(inst.label)}</b>${st?` <span class="pill ${st.state==='reviewed'?'form':'acc'}" title="${bpEsc(st.title)}">${bpEsc(st.label)}</span>`:''}${tags?` <span class="small">[${bpEsc(tags)}]</span>`:''}` : `<b>${bpEsc(key)}</b> <span class="small">· ${new Set(glines.map(l=>l.elementId)).size} element(s)</span>`;
+    return `<tbody data-reg-group="${bpEsc(key)}">
       <tr class="reg-group-head"><td colspan="${REG_COLS}">
-        <button class="btn small ghost" data-action="regCollapseToggle" data-id="${inst.id}" title="Collapse/expand">${collapsed?'▸':'▾'}</button>
-        <span class="badge">${inst.id}</span> <b>${inst.label}</b>
-        <span class="small"> · ${fmt(totC,2)}m³ concrete · ${fmt(totR,1)}kg reo${typeStr?` <span style="opacity:.72;">(${typeStr})</span>`:''} · ${fmt(totF,2)}m² formwork${gbv.blind?` · ${fmt(gbv.blind,2)}m³ blinding/base`:''}${gbv.vap?` · ${fmt(gbv.vap,2)}m² vapour barrier`:''} · ${glines.length} line(s)</span>
-        <button class="btn small danger" data-action="regDelete" data-id="${inst.id}" style="float:right;">✕ Remove element</button>
+        <button class="btn small ghost" data-action="regCollapseToggle" data-key="${bpEsc(mode+":"+key)}" title="Collapse/expand">${collapsed?'▸':'▾'}</button>
+        ${title}
+        <span class="small"> · ${fmt(totC,2)}m³ concrete · ${fmt(totR,1)}kg reo${typeStr?` <span style="opacity:.72;">(${typeStr})</span>`:''} · ${fmt(totF,2)}m² formwork${gbv.blind?` · ${fmt(gbv.blind,2)}m³ blinding/base`:''}${gbv.vap?` · ${fmt(gbv.vap,2)}m² vapour barrier`:''} · ${glines.length} line${glines.length===1?'':'s'}</span>
+        ${inst?`<button class="btn small danger" data-action="regDelete" data-id="${inst.id}" style="float:right;">✕ Remove element</button><button class="btn small" data-action="regOpen" data-id="${inst.id}" style="float:right;margin-right:6px;" title="Open this element in the workspace">↗ Open</button>`:''}
       </td></tr>
       ${collapsed? '' : glines.map(l=>{
-        let ov=(inst.data.manualOverrides && inst.data.manualOverrides[l.overrideKey]) || {};
-        return `<tr class="${l.manualOverride?'manual-override':''}"><td>${l.stage}</td><td>${l.category}</td><td>${l.element}</td><td>${l.elementId}</td><td><span class="pill ${pillClass(l.materialGroup)}">${l.materialGroup}</span></td><td>${l.material}</td><td>${l.spec}</td><td>${fmt(l.qty,2)}</td><td>${l.unit}</td><td>${l.waste||0}</td><td>${l.lap||0}</td>
-        <td class="manual-cell"><input type="checkbox" data-reg-inst="${inst.id}" data-reg-key="${l.overrideKey}" data-reg-sub="enabled" ${ov.enabled?'checked':''} title="Use a manually entered quantity instead of the system calculation for this line"></td>
-        <td class="manual-cell"><input type="number" step="any" data-reg-inst="${inst.id}" data-reg-key="${l.overrideKey}" data-reg-sub="qty" value="${ov.qty===undefined||ov.qty===''?'':ov.qty}" placeholder="${fmt(l.manualOverride?l.calculatedQty:l.finalQty,2)}"></td>
-        <td><b>${fmt(l.finalQty,2)}</b>${l.manualOverride?` <span class="manual-badge" title="Manually entered — system calculated ${fmt(l.calculatedQty,2)}">✎ manual</span>`:''}</td>
+        const li=INSTANCES.find(i=>i.id===l.elementId)||{data:{}};
+        let ov=(li.data.manualOverrides && li.data.manualOverrides[l.overrideKey]) || {};
+        return `<tr class="${l.manualOverride?'manual-override':''}" data-line-inst="${l.elementId}" data-line-key="${bpEsc(l.overrideKey)}" title="Click to open the element at the section that produces this line"><td>${l.stage}</td><td>${l.category}</td><td>${bpEsc(l.element)}</td><td>${l.elementId}</td><td><span class="pill ${pillClass(l.materialGroup)}">${l.materialGroup}</span></td><td>${bpEsc(l.material)}</td><td>${bpEsc(l.spec)}</td><td>${fmt(l.qty,2)}</td><td>${l.unit}</td><td>${l.waste||0}%</td><td>${l.lap||0}%</td>
+        <td class="manual-cell"><input type="checkbox" data-reg-inst="${l.elementId}" data-reg-key="${l.overrideKey}" data-reg-sub="enabled" ${ov.enabled?'checked':''} title="Use a manually entered quantity instead of the system calculation for this line"></td>
+        <td class="manual-cell"><input type="number" step="any" data-reg-inst="${l.elementId}" data-reg-key="${l.overrideKey}" data-reg-sub="qty" value="${ov.qty===undefined||ov.qty===''?'':ov.qty}" placeholder="${fmt(l.manualOverride?l.calculatedQty:l.finalQty,2)}" title="Manual quantity — the system value stays beside it">${ov.enabled?`<input type="text" class="manual-reason" data-reg-inst="${l.elementId}" data-reg-key="${l.overrideKey}" data-reg-sub="reason" value="${bpEsc(ov.reason||'')}" placeholder="Reason">`:''}</td>
+        <td><b>${fmt(l.finalQty,2)}</b>${l.manualOverride?` <span class="manual-badge" title="Manually entered — system calculated ${fmt(l.calculatedQty,2)}">✎ manual · sys ${fmt(l.calculatedQty,2)}</span>`:''}</td>
         <td>${l.weightKg? fmt(l.weightKg,1) : ''}</td><td class="formula">${l.formula}</td><td>${l.linkedElement||''}</td></tr>`;
       }).join('')}
     </tbody>`;
   }).join('');
   t.innerHTML = `<thead><tr><th>Stage</th><th>Category</th><th>Element</th><th>ID</th><th>Material Group</th><th>Material</th><th>Spec</th><th>Qty</th><th>Unit</th><th>Waste%</th><th>Lap%</th><th>Manual?</th><th>Override Qty</th><th>Final Qty</th><th>Kg</th><th>Formula</th><th>Linked</th></tr></thead>
-  ${groupsHtml || `<tbody><tr><td colspan="${REG_COLS}" class="small">No quantity lines yet.</td></tr></tbody>`}`;
+  ${groupsHtml || `<tbody><tr><td colspan="${REG_COLS}" class="small">${lines.length? 'No quantity lines match these filters.' : 'No quantity lines yet.'}</td></tr></tbody>`}`;
   t.onclick=(e)=>{
-    let btn=e.target.closest('button[data-action]'); if(!btn) return;
-    let id=btn.dataset.id;
-    if(btn.dataset.action==="regCollapseToggle"){
-      let inst=INSTANCES.find(i=>i.id===id); if(!inst) return;
-      inst._regCollapsed=!inst._regCollapsed;
-      renderRegisterTable();
-    } else if(btn.dataset.action==="regDelete"){
-      let inst=INSTANCES.find(i=>i.id===id);
-      if(inst && (portalPref("confirmDeletes")===false || confirm(`Remove element ${inst.id} — ${inst.label} and all its quantity lines? This cannot be undone.`))) removeInstance(id);
+    let btn=e.target.closest('button[data-action]');
+    if(btn){
+      let id=btn.dataset.id;
+      if(btn.dataset.action==="regCollapseToggle"){ REG_GROUP_COLLAPSED[btn.dataset.key]=!REG_GROUP_COLLAPSED[btn.dataset.key]; renderRegisterTable(); }
+      else if(btn.dataset.action==="regDelete"){ let inst=INSTANCES.find(i=>i.id===id); if(inst && (portalPref("confirmDeletes")===false || confirm(`Remove element ${inst.id} — ${inst.label} and all its quantity lines? This cannot be undone.`))) removeInstance(id); }
+      else if(btn.dataset.action==="regOpen"){ openLineSource(id, null); }
+      return;
     }
+    if(e.target.closest('input,select,button')) return;
+    const tr=e.target.closest('tr[data-line-inst]'); if(!tr) return;
+    const inst=INSTANCES.find(i=>i.id===tr.dataset.lineInst); const line=inst && (inst.results.lines||[]).find(l=>l.overrideKey===tr.dataset.lineKey);
+    openLineSource(tr.dataset.lineInst, line||null);
   };
   t.oninput=(e)=>{
     let el=e.target;
     let instId=el.dataset.regInst; if(!instId) return;
     let inst=INSTANCES.find(i=>i.id===instId); if(!inst) return;
     let key=el.dataset.regKey, sub=el.dataset.regSub;
-    let val = el.type==="checkbox"? el.checked : (el.value===""?"":parseFloat(el.value));
+    let val = el.type==="checkbox"? el.checked : (sub==="reason"? el.value : (el.value===""?"":parseFloat(el.value)));
     setPath(inst.data,`manualOverrides.${key}.${sub}`,val);
+    UNDO_CTX=instId+":manualOverrides."+key+"."+sub;
     computeAllAndRefresh();
   };
   let reoSummaryHost=document.getElementById("registerReoSummary");
@@ -7444,7 +7806,7 @@ function renderRegisterTable(){
     let {bars,mesh,strips}=summarizeReinforcement(filtered);
     let barKeys=Object.keys(bars).sort(), meshKeys=Object.keys(mesh).sort(), stripKeys=Object.keys(strips).sort();
     reoSummaryHost.innerHTML = (barKeys.length||meshKeys.length||stripKeys.length)? `
-     <div class="sechead">Reinforcement Summary — project-wide, by bar size / mesh type (one line per size, not repeated per element)</div>
+     <div class="sechead">Reinforcement Summary — ${filtered.length===lines.length?'project-wide':'filtered rows'}, by bar size / mesh type (one line per size, not repeated per element)</div>
      <div style="display:flex;gap:16px;flex-wrap:wrap;">
      ${barKeys.length? `<table class="results" style="width:auto;min-width:260px;"><thead><tr><th>Bar</th><th>Total (lm)</th><th>Total (kg)</th></tr></thead>
        <tbody>${barKeys.map(m=>`<tr><td>${m}</td><td style="text-align:right;">${fmt(bars[m].lm,2)}</td><td style="text-align:right;">${fmt(bars[m].kg,1)}</td></tr>`).join('')}
@@ -7461,24 +7823,20 @@ function renderRegisterTable(){
      </div>` : '';
   }
   let totals=document.getElementById("registerTotals");
-  let concrete=filtered.filter(l=>l.materialGroup==="Concrete").reduce((s,l)=>s+l.finalQty,0);
-  let reoKg=filtered.filter(l=>l.materialGroup==="Reinforcement").reduce((s,l)=>s+(l.weightKg||0),0);
-  let form=filtered.filter(l=>l.materialGroup==="Formwork").reduce((s,l)=>s+l.finalQty,0);
-  let regEs=excavationSpoilTotals(filtered);
-  let regBv=blindingVapourTotals(filtered);
-  // The reinforcement figure broken into the types it's made of — lm for
-  // bars/trench strips and m²+sheets for sheet mesh, alongside the kg.
+  const statsOf=(set)=>{ const concrete=set.filter(l=>l.materialGroup==="Concrete").reduce((s,l)=>s+l.finalQty,0), reoKg=set.filter(l=>l.materialGroup==="Reinforcement").reduce((s,l)=>s+(l.weightKg||0),0), form=set.filter(l=>l.materialGroup==="Formwork").reduce((s,l)=>s+l.finalQty,0), es=excavationSpoilTotals(set), bv=blindingVapourTotals(set); return {concrete,reoKg,form,es,bv,n:set.length}; };
+  const block=(st,label)=>`${label?`<div class="reg-totals-label">${label}</div>`:''}<div class="stat"><div class="n">${fmt(st.concrete,2)}</div><div class="l">m³ concrete</div></div>
+   <div class="stat"><div class="n">${fmt(st.reoKg,1)}</div><div class="l">kg reinforcement</div></div>
+   <div class="stat"><div class="n">${fmt(st.reoKg/1000,2)}</div><div class="l">tonnes reinforcement</div></div>
+   <div class="stat"><div class="n">${fmt(st.form,2)}</div><div class="l">m² formwork</div></div>
+   <div class="stat"><div class="n">${fmt(st.bv.blind,2)}</div><div class="l">m³ blinding/base</div></div>
+   <div class="stat"><div class="n">${fmt(st.bv.vap,2)}</div><div class="l">m² vapour barrier</div></div>
+   <div class="stat"><div class="n">${fmt(st.es.exc,2)}</div><div class="l">m³ excavation</div></div>
+   <div class="stat"><div class="n">${fmt(st.es.spoil,2)}</div><div class="l">m³ spoil removal</div></div>
+   <div class="stat"><div class="n">${st.n}</div><div class="l">quantity lines</div></div>`;
+  const isFiltered=filtered.length!==lines.length;
   let totalsTypeStr=reoTypeBreakdownStr(filtered);
-  totals.innerHTML = `<div class="stat"><div class="n">${fmt(concrete,2)}</div><div class="l">m³ concrete</div></div>
-   <div class="stat"><div class="n">${fmt(reoKg,1)}</div><div class="l">kg reinforcement</div></div>
-   <div class="stat"><div class="n">${fmt(reoKg/1000,2)}</div><div class="l">tonnes reinforcement</div></div>
-   <div class="stat"><div class="n">${fmt(form,2)}</div><div class="l">m² formwork</div></div>
-   <div class="stat"><div class="n">${fmt(regBv.blind,2)}</div><div class="l">m³ blinding/base</div></div>
-   <div class="stat"><div class="n">${fmt(regBv.vap,2)}</div><div class="l">m² vapour barrier</div></div>
-   <div class="stat"><div class="n">${fmt(regEs.exc,2)}</div><div class="l">m³ excavation</div></div>
-   <div class="stat"><div class="n">${fmt(regEs.spoil,2)}</div><div class="l">m³ spoil removal</div></div>
-   <div class="stat"><div class="n">${filtered.length}</div><div class="l">quantity lines</div></div>
-   ${totalsTypeStr? `<div class="small" style="flex-basis:100%;margin-top:2px;"><b>Reinforcement by type:</b> ${totalsTypeStr}</div>` : ''}`;
+  totals.innerHTML = (isFiltered? block(statsOf(filtered),"Filtered rows") : "") + block(statsOf(lines), isFiltered? "Whole project" : "") +
+   (totalsTypeStr? `<div class="small" style="flex-basis:100%;margin-top:2px;"><b>Reinforcement by type${isFiltered?' (filtered)':''}:</b> ${totalsTypeStr}</div>` : '');
 }
 
 /* ============================= ORDER SCHEDULE ============================= */
@@ -8272,6 +8630,16 @@ document.querySelectorAll('.tabs button').forEach(b=>b.addEventListener('click',
 document.getElementById("shellToggle").addEventListener("click", ()=>applyShellMode(SHELL_MODE==="blueprint"?"classic":"blueprint", {persist:true}));
 // Phase 2 keyboard: Alt+↑/↓ previous/next element, Alt+1…9 section, Alt+N next incomplete, Esc closes the drawing/help.
 document.addEventListener("keydown", e=>{
+  if((e.ctrlKey||e.metaKey) && !e.altKey && (e.key==="z"||e.key==="Z"||e.key==="y"||e.key==="Y")){
+    const t=e.target; const editing = t && /^(INPUT|TEXTAREA)$/.test(t.tagName) && t.type!=="checkbox";
+    // inside a field the browser's own text undo runs first; once the field's
+    // text matches what is stored, the app-level undo takes over
+    if(editing && t.dataset && t.dataset.field!==undefined) return;   // the browser's own text undo inside a field already flows through the input handler
+    e.preventDefault();
+    if(t && t.blur) t.blur();
+    if((e.key==="y"||e.key==="Y") || e.shiftKey) redo(); else undo();
+    return;
+  }
   if(e.key==="Escape"){ let d=document.getElementById('drawingFull'); if(d&&d.classList.contains('open')){ toggleDrawingFull(false); return; } if(document.body.classList.contains('help-open')){ toggleHelp(false); return; } }
   if(SHELL_MODE!=="blueprint" || !e.altKey || e.ctrlKey || e.metaKey) return;
   let card=document.querySelector('#cardsHost .card');
@@ -8281,6 +8649,8 @@ document.addEventListener("keydown", e=>{
   else if((e.key==="n"||e.key==="N") && card){ e.preventDefault(); bpNextIncomplete(card); }
 });
 document.getElementById("helpBtn").addEventListener("click", ()=>toggleHelp());
+document.getElementById("undoBtn").addEventListener("click", ()=>undo());
+document.getElementById("redoBtn").addEventListener("click", ()=>redo());
 
 /* ============================= INIT ============================= */
 // NOTE: not passed directly as the handler — the click Event would land in
@@ -8322,7 +8692,7 @@ if(!restoredFromSave){
     if(b) b.click();
   }
 })();
-syncFromCloud().then(prefetchTakeoffBlobs); // pull the open takeoff first, then warm every other saved session so the whole list is ready to resume
+syncFromCloud().then(prefetchTakeoffBlobs).then(syncTemplatesFromCloud); // pull the open takeoff first, then warm every other saved session so the whole list is ready to resume
 window.addEventListener("focus", syncFromCloud);
 document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) syncFromCloud(); });
 setInterval(syncFromCloud, 6000); // close to live without a WebSocket subscription

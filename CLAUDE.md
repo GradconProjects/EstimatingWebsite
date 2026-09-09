@@ -394,6 +394,38 @@ stay fully usable. `scratchpad/test-3d.mjs` proves parity, visibility,
 decisions, disposal and the fallback; keep it passing. Extending 3D to other
 element families waits on the owner's approval of the pad footing.
 
+## Estimates data-entry power tools (Phase 3)
+
+- **Numeric fields are `<input type="text" inputmode="decimal" data-num>`**,
+  not `type=number`: `parseNumInput(raw, displayUnit)` is the ONE parser —
+  a hand-written tokenizer/recursive-descent evaluator for `+ - * / ( )`,
+  thousands separators and a trailing `mm|cm|m` suffix (converted into the
+  field's display unit from `fieldDisplayUnit`). It never calls `eval` or
+  `Function`; anything it cannot parse is shown red and NOT stored. The
+  display normalises to the result on change. Arrow keys step (Shift ×10),
+  Enter in a table row adds a row, Ctrl+D duplicates the row, pasting a
+  column fills down. Manual-override cells stay `type=number`.
+- **Undo/redo** is snapshot-based: `computeAllAndRefresh` calls
+  `undoCommit(UNDO_CTX)`; keystrokes in the same field within 1.5 s coalesce
+  into one step; `applyLoadedEstimateState` resets the history on any real
+  load/sync/restore so undo never crosses another device's save. Undo runs
+  through the normal save path, so the autosaved copy and the cloud follow.
+- **Templates** (`gradcon-estimate-templates`, local + cloud row) copy
+  configuration only (`templateDataFrom`: no overrides, import flags,
+  derived `_` fields); adding one gives a new ID and no results/history.
+  "Copy values from…" and "Duplicate — settings only" (`DIM_FIELDS` reset)
+  live in the card's ⧉ Duplicate ▾ menu.
+- **Tags** `inst.tags = {level, zone, pour}` are data (saved); the navigator's
+  multi-select (`BP_MULTI`, session) drives `bulkApply` for tags, review,
+  delete. Bulk review skips elements with undecided assembly items.
+- **Register**: `registerFilteredLines()` is the one filter (selects, chips,
+  search incl. warnings and tags); `regGroupKey` groups by element /
+  material / category / level / zone / pour; totals show filtered vs whole
+  project; rows jump to their source section (`openLineSource` →
+  `lineSection`); saved views (`gradcon-estimate-register-views`) and hidden
+  columns (`gradcon-estimate-register-cols`) are per-browser preferences;
+  "Export filtered view" exports exactly the rows shown.
+
 ## Estimates data safety (schema, migration, recovery, raw backup)
 
 `portal/estimates-schema.js` is pure and DOM-free: the assembler inlines it
