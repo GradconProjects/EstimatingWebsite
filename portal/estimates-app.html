@@ -274,7 +274,12 @@ body[data-shell="blueprint"] #page-workspace > .panel h2{display:none;}
 body[data-shell="blueprint"] #page-workspace > .panel .toolbar{margin-bottom:0;}
 body[data-shell="blueprint"] #page-workspace > .panel .toolbar + .toolbar{display:none;}
 body[data-shell="blueprint"] #cardsHost{min-width:0;}
-body[data-shell="blueprint"] #cardsHost .card{margin-bottom:0;}
+/* overflow must be visible: a hidden overflow makes the card its own sticky
+   container, and the two sticky header rows are then pushed DOWN inside the
+   card by their offsets, over the first body rows, instead of sticking to
+   the viewport. */
+body[data-shell="blueprint"] #cardsHost .card{margin-bottom:0;overflow:visible;}
+body[data-shell="blueprint"] #cardsHost .card .card-head{border-top-left-radius:var(--radius);border-top-right-radius:var(--radius);}
 body[data-shell="blueprint"] #cardsHost .card .card-head [data-action="collapseToggle"]{display:none;}
 body[data-shell="blueprint"] #cardsHost .card .card-body{display:flex !important;}
 body[data-shell="blueprint"] #cardsHost .card .diag-host{display:none;}
@@ -311,8 +316,23 @@ body[data-shell="blueprint"] #cardsHost .card .card-panes > .pane > div{display:
 }
 @media print{ .bp-nav,.bp-inspector,#helpDrawer,#shellToggle,#helpBtn{display:none !important;} }
 /* ============ Phase 2 — provenance, section status, live feedback ============ */
-body[data-shell="blueprint"] #cardsHost .card .card-head{position:sticky;top:50px;z-index:6;}
-.bp-head2{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 14px;background:var(--panel);border-bottom:1px solid var(--line);font-size:11.5px;position:sticky;top:96px;z-index:6;}
+/* Both header rows are sticky. Their offsets are MEASURED (bpObserveSticky sets
+   --app-head-h on the body and --bp-head-h on the card) so a wrapped stats line,
+   a long category name or a wrapped app header never lets row 2 ride over row 1. */
+body[data-shell="blueprint"] #cardsHost .card .card-head{position:sticky;top:var(--app-head-h,50px);z-index:6;}
+body[data-shell="blueprint"] #cardsHost{container-type:inline-size;}
+body[data-shell="blueprint"] #cardsHost .card .card-head{flex-wrap:wrap;gap:6px 10px;}
+body[data-shell="blueprint"] #cardsHost .card .card-head .idn{min-width:0;flex:1 1 280px;}
+body[data-shell="blueprint"] #cardsHost .card .card-head input.name{width:auto;flex:1 1 140px;min-width:120px;}
+body[data-shell="blueprint"] #cardsHost .card .card-head .headStats{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1 1 200px;}
+body[data-shell="blueprint"] #cardsHost .card .card-head .tools{flex:0 1 auto;flex-wrap:wrap;justify-content:flex-end;align-items:center;margin-left:auto;}
+body[data-shell="blueprint"] #cardsHost .card .card-head .tools > .small{max-width:200px;text-align:right;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+/* narrow card column: the stats line lives in the inspector, the category in the navigator */
+@container (max-width: 720px){
+  body[data-shell="blueprint"] #cardsHost .card .card-head .headStats{display:none;}
+  body[data-shell="blueprint"] #cardsHost .card .card-head .tools > .small{max-width:140px;}
+}
+.bp-head2{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 14px;background:var(--panel);border-bottom:1px solid var(--line);font-size:11.5px;position:sticky;top:calc(var(--app-head-h,50px) + var(--bp-head-h,46px));z-index:6;}
 .bp-head2 .chip{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--line);border-radius:4px;padding:1px 7px;font-size:10.5px;font-weight:600;background:var(--panel2);color:var(--text);}
 .bp-head2 .chip.st-draft{background:#eef2f7;color:#3b4b60;}
 .bp-head2 .chip.st-reviewed{background:#e3f1ea;color:#1f7a4d;border-color:#a9d7bd;}
@@ -1044,6 +1064,25 @@ const SHELL_LABELS = {
 };
 let SHELL_MODE = "classic";
 let BP_SELECTED_ID = null;
+/* Sticky header offsets are measured, never assumed: the app header wraps at
+   narrow widths and the card head grows when its stats line or category
+   wraps, and a fixed offset then lets header row 2 cover row 1. */
+let BP_STICKY_RO=null;
+function bpObserveSticky(card){
+  if(typeof ResizeObserver==="undefined") return;
+  if(!BP_STICKY_RO){
+    BP_STICKY_RO=new ResizeObserver(entries=>{
+      entries.forEach(en=>{
+        const el=en.target, h=Math.round(el.getBoundingClientRect().height);
+        if(el.matches('header.app')) document.body.style.setProperty('--app-head-h', h+'px');
+        else if(el.classList.contains('card-head')){ const c=el.closest('.card'); if(c) c.style.setProperty('--bp-head-h', h+'px'); }
+      });
+    });
+    const app=document.querySelector('header.app'); if(app) BP_STICKY_RO.observe(app);
+  }
+  const head=card && card.querySelector('.card-head');
+  if(head){ BP_STICKY_RO.observe(head); const c=head.closest('.card'); if(c) c.style.setProperty('--bp-head-h', Math.round(head.getBoundingClientRect().height)+'px'); }
+}
 function applyShellMode(mode, opts){
   opts = opts || {};
   SHELL_MODE = mode === "blueprint" ? "blueprint" : "classic";
@@ -7007,6 +7046,7 @@ function renderBlueprintWorkspace(){
   }
   let wasCollapsed = cur._collapsed; cur._collapsed = false;   // the canvas card is never folded
   host.appendChild(buildCard(cur));
+  bpObserveSticky(host.querySelector('.card'));
   cur._collapsed = wasCollapsed;                                // the stored fold state is the classic layout's, leave it alone
   renderBlueprintInspector(cur);
 }
