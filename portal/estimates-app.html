@@ -383,6 +383,12 @@ table.asm input.asm-reason{width:150px;font-size:11px;padding:2px 5px;}
 body[data-shell="blueprint"] .card-panes .pane[data-pane="assembly"] .diag-host{display:none;}
 .asm-note{font-size:11px;color:var(--muted);margin:4px 0 8px;}
 @media print{ .asm-3d,.asm-tools{display:none !important;} }
+/* ============ Phase 4 ============ */
+.bp-inspector details.bp-verify{margin-top:8px;border-top:1px solid var(--line);padding-top:6px;}
+.bp-inspector details.bp-verify summary{cursor:pointer;font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:700;}
+.bp-inspector details.bp-verify .bp-calc-line{font-size:11px;padding:4px 0;border-bottom:1px solid #e6ebf2;}
+.bp-inspector details.bp-verify .bp-calc-line .f{font-family:ui-monospace,Menlo,Consolas,monospace;color:var(--muted);font-size:10.5px;display:block;}
+#standardsForm .chk{font-size:11.5px;}
 /* ============ Phase 3 — data-entry power tools ============ */
 input[data-num]{font-variant-numeric:tabular-nums;}
 body[data-shell="blueprint"] input[data-num]{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;}
@@ -506,6 +512,11 @@ table.results th:nth-child(3),table.results td:nth-child(3){position:sticky;left
     <div class="tip"><span class="ico">📐</span><div>Concrete volume is never entered here — it always comes from the takeoff's own calculated m³, so the <b>$/m³</b> rate can't drift from the quantities being priced. Only the two figures the volume can't imply — the total run of the strips/beams, and the plan/footprint area — are recorded here.</div></div>
   </div>
   <div class="panel">
+    <h2>Standards &amp; assumptions</h2>
+    <p class="small">The project's jurisdiction, NCC class and edition, project type, drawing and specification revisions, engineer, governing standards and measurement rules — recorded by exact designation with this takeoff, so a later standards update never silently changes an old estimate. A civil, bridge or water-retaining project type also unlocks those element families.</p>
+    <div id="standardsForm"></div>
+  </div>
+  <div class="panel">
     <h2>Defaults &amp; Rules</h2>
     <p class="small">These are project-wide defaults. Every element can override cover, grade, laps and anchorage individually.</p>
     <div class="grid cols4" id="defaultsForm"></div>
@@ -573,6 +584,7 @@ table.results th:nth-child(3),table.results td:nth-child(3){position:sticky;left
     </div>
     <div id="publishStatus"></div>
   </div>
+  <div class="panel" id="reviewAckPanel"></div>
 
   <div class="panel">
     <h2>Spreadsheet Export</h2>
@@ -586,6 +598,7 @@ table.results th:nth-child(3),table.results td:nth-child(3){position:sticky;left
       <button class="btn" onclick="exportSheet('formwork')">Formwork</button>
       <button class="btn" onclick="exportSheet('excavation')">Excavation / Base &amp; Blinding</button>
       <button class="btn" onclick="exportSheet('connections')">Connections (Starters / Dowels / Step-downs)</button>
+      <button class="btn" onclick="exportWarningsCSV()" title="Every element's warnings and engineering-verification notes, with the standards profile and disclaimer">Warnings &amp; verification notes</button>
     </div>
     <div class="tip"><span class="ico">👷</span><div><b>CSV</b> is the pricing file — one worksheet per material group, ready to paste rates against in Excel. <b>PDF</b> is the clean report — project header, defaults, element-by-element breakdown and grand totals, suitable for a file note, client submission or subcontractor RFQ pack. Both pull from the same live Quantity Register, so they can never disagree with each other.</div></div>
     <div id="exportSummary"></div>
@@ -1725,6 +1738,9 @@ const LIBRARY = [
    {id:"stairs", label:"Concrete Stair", calc:"stairs"},
    {id:"tempshoring", label:"Temporary Shoring", calc:"generic", kind:"temporary"},
    {id:"tempprop", label:"Temporary Propping", calc:"generic", kind:"temporary"},
+      {id:"falsework",label:"Falsework (allowance)",calc:"generic",kind:"temporary"},
+      {id:"accessscaffold",label:"Access / Scaffold (allowance)",calc:"generic",kind:"temporary"},
+      {id:"cranepump",label:"Crane / Pump Set-up (allowance)",calc:"generic",kind:"temporary"},
  ]},
  {group:"Suspended Structure", items:[
    {id:"suspslab", label:"Suspended Slab", calc:"slab", slabCategory:"Suspended Slab", suspended:true},
@@ -1751,6 +1767,10 @@ const LIBRARY = [
    {id:"drilldowel", label:"Drill &amp; Dowel", calc:"generic", kind:"alteration"},
    {id:"concreterepair", label:"Concrete Repair", calc:"generic", kind:"alteration"},
    {id:"crackrepair", label:"Crack Repair / Sealing", calc:"generic", kind:"alteration"},
+      {id:"sawcut",label:"Sawcut / Core Drill",calc:"generic",kind:"alteration"},
+      {id:"demolition",label:"Demolition / Breakout",calc:"generic",kind:"alteration"},
+      {id:"scabble",label:"Scabble / Surface Preparation",calc:"generic",kind:"alteration"},
+      {id:"makegood",label:"Make Good / Patch",calc:"generic",kind:"alteration"},
  ]},
  {group:"Special Items", items:[
    {id:"turntableslab", label:"Turntable Slab (vehicle turntable)", calc:"slab", slabCategory:"Turntable Slab", suspended:false},
@@ -1759,6 +1779,16 @@ const LIBRARY = [
    {id:"watertank", label:"Water Tank (in-ground)", calc:"tankbox", kind:"Water Tank"},
    {id:"sumppit", label:"Sump Pit (drainage)", calc:"tankbox", kind:"Sump Pit"},
  ]},
+  {group:"Precast / Tilt-up", items:[
+      {id:"precastpanel",label:"Precast / Tilt-up Panel (supply-and-fix allowance)",calc:"generic",kind:"precast"},
+      {id:"precaststitch",label:"Precast Stitch / Grout / Embeds",calc:"generic",kind:"precast"}
+  ]},
+  {group:"Civil / Bridge", items:[
+      {id:"headwall",label:"Headwall / Wingwall",calc:"generic",kind:"civil"},
+      {id:"culvert",label:"Culvert / Drainage Structure",calc:"generic",kind:"civil"},
+      {id:"thrustblock",label:"Thrust Block",calc:"generic",kind:"civil"},
+      {id:"barrier",label:"Barrier / Plinth / Kerb Unit",calc:"generic",kind:"civil"}
+  ]},
 ];
 const LIB_INDEX = {}; LIBRARY.forEach(g=>g.items.forEach(it=>{it.groupName=g.group; LIB_INDEX[it.id]=it;}));
 
@@ -5247,7 +5277,7 @@ function renderGeneric(inst){
 function computeGeneric(inst,def){
   let d=inst.data, lines=[];
   let vol = d.manualVolume? num(d.volumeOverride) : num(d.qty,1)*(num(d.length)/1000)*(num(d.width)/1000)*(num(d.depth)/1000);
-  let group = (def.kind=="excavation")? "Excavation" : (def.kind=="alteration")? "Alterations" : (def.kind=="temporary")? "Temporary Works" : "Concrete";
+  let group = (def.kind=="excavation")? "Excavation" : (def.kind=="alteration")? "Alterations" : (def.kind=="temporary")? "Temporary Works" : (def.kind=="precast")? "Precast" : "Concrete";
   lines.push(baseLine(inst,def,{materialGroup:group,material:def.label,spec:d.notes||"",qty:vol,unit:"m³",waste:group=="Concrete"?concWastePct(d):0,finalQty:group=="Concrete"?withWaste(vol,concWastePct(d)):vol,formula:d.manualVolume?"manual entry":"qty×L×W×D"}));
   if(d.formworkOn && num(d.formworkArea)>0) lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:def.label,spec:"",qty:num(d.formworkArea),unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(num(d.formworkArea),PROJECT.formworkWaste),formula:"manual entry"}));
   if(d.reoOn){
@@ -6379,6 +6409,140 @@ function registerFilteredLines(){
   });
 }
 
+
+/* ============================= PHASE 4 — STANDARDS PROFILE, ALLOWANCES, REVIEW GATE ============================= */
+const DISCLAIMER_SHORT="Quantities and defaults are estimating aids only. Cover, grade, reinforcement, laps, piling, formwork, fire, durability, waterproofing and stability are confirmed from the engineer's and specifier's documents — this tool performs no code design.";
+const STANDARD_OPTIONS=[
+  ["NCC 2022 (jurisdiction amendment as adopted)","ncc"],
+  ["AS 3600:2018 Concrete structures (with amendments)","as3600"],
+  ["AS 2870:2011 Residential slabs and footings (check revision status)","as2870"],
+  ["AS/NZS 4671:2019 Steel for the reinforcement of concrete","as4671"],
+  ["AS 1379:2026 Specification and supply of concrete","as1379"],
+  ["AS 3610.1:2018 Formwork for concrete","as3610"],
+  ["AS 2159:2009 Piling — design and installation (with amendment)","as2159"],
+  ["AS/NZS 1170 series Structural design actions","as1170"],
+  ["AS 3735 Concrete structures retaining liquids","as3735"],
+  ["AS 5100 series Bridge design","as5100"],
+];
+const SUGGESTED_STANDARDS={
+  building:["ncc","as3600","as4671","as1379","as3610","as2159","as1170"],
+  residential:["ncc","as2870","as3600","as4671","as1379","as3610"],
+  civil:["as3600","as4671","as1379","as3610","as2159","as1170"],
+  bridge:["as5100","as3600","as4671","as1379","as3610","as2159","as1170"],
+  water:["as3735","as3600","as4671","as1379","as3610","as1170"],
+  alteration:["ncc","as3600","as4671","as1379"],
+};
+function standardsOf(){ if(!PROJECT.standards || typeof PROJECT.standards!=="object") PROJECT.standards={}; const st=PROJECT.standards; if(!Array.isArray(st.standards)) st.standards=[]; if(!st.checks||typeof st.checks!=="object") st.checks={}; return st; }
+function renderStandardsForm(){
+  const host=document.getElementById("standardsForm"); if(!host) return;
+  const st=standardsOf();
+  const sel=(k,opts,def)=>`<select data-std="${k}">${opts.map(o=>`<option value="${o[0]}" ${(st[k]||def)===o[0]?'selected':''}>${o[1]}</option>`).join('')}</select>`;
+  const txt=(k,ph)=>`<input type="text" data-std="${k}" value="${bpEsc(st[k]||'')}" placeholder="${ph||''}">`;
+  const numf=(k,def)=>`<input type="text" inputmode="decimal" data-std-num="${k}" value="${st.checks[k]!==undefined?st.checks[k]:def}">`;
+  host.innerHTML=`
+   <div class="grid cols4">
+    ${F("Country",txt("country","Australia"))}
+    ${F("State / territory",sel("state",[["","—"],["VIC","VIC"],["NSW","NSW"],["QLD","QLD"],["SA","SA"],["WA","WA"],["TAS","TAS"],["NT","NT"],["ACT","ACT"],["other","Other"]],""))}
+    ${F("Project location",txt("location","Suburb / site"))}
+    ${F("Project type",sel("projectType",[["building","Building"],["residential","Residential footing / slab"],["civil","Civil"],["bridge","Bridge"],["water","Water-retaining"],["alteration","Alteration"]],"building"))}
+    ${F("NCC building class",txt("nccClass","e.g. Class 1a"))}
+    ${F("NCC edition / amendment",txt("nccEdition","e.g. NCC 2022 Amdt 1"))}
+    ${F("Structural drawing revision",txt("drawingRev","e.g. S1–S6 Rev C"))}
+    ${F("Specification revision",txt("specRev","e.g. Spec Rev B"))}
+    ${F("Engineer / designer",txt("engineer","Name and firm"))}
+    ${F("Engineer review status",sel("reviewStatus",[["not-reviewed","Not reviewed"],["in-review","In review"],["reviewed","Reviewed by engineer"]],"not-reviewed"))}
+    ${F("Measurement rules / edition",txt("measurementRules","e.g. gross measure per project"))}
+    ${F("Rate base date",txt("rateBaseDate","YYYY-MM"))}
+    ${F("Currency",txt("currency","AUD"))}
+    ${F("GST treatment",sel("gstTreatment",[["ex","Ex GST"],["inc","Inc GST"]],"ex"))}
+   </div>
+   <div class="sechead" style="margin-top:10px;">Governing standards selected (exact designation kept with this takeoff)</div>
+   <div class="grid cols2">${STANDARD_OPTIONS.map(([label,code])=>`<label class="chk"><input type="checkbox" data-std-code="${code}" ${st.standards.includes(code)?'checked':''}> ${label}</label>`).join('')}</div>
+   <div class="grid cols2" style="margin-top:6px;">${F("Other standards / documents (free text)",txt("otherStandards","Geotechnical report ref, authority requirements…"))}<div style="display:flex;align-items:flex-end;"><button class="btn small" type="button" data-std-suggest>Use the suggested set for this project type</button></div></div>
+   <div class="sechead" style="margin-top:10px;">Review prompts (estimating sanity checks — never design verdicts)</div>
+   <div class="grid cols4">${F("Reinforcement ratio low (kg/m³)",numf("reoMinKgM3",20))}${F("Reinforcement ratio high (kg/m³)",numf("reoMaxKgM3",300))}${F("Formwork high (m² per m³)",numf("formMaxM2M3",25))}</div>
+   <p class="small" style="margin-top:8px;"><b>Disclaimer.</b> ${bpEsc(DISCLAIMER_SHORT)} Standards are recorded by designation only; this tool reproduces no standards text and invents no clause references.</p>`;
+  host.oninput=(e)=>{
+    const t=e.target;
+    if(t.dataset.std){ st[t.dataset.std]=t.value; if(t.dataset.std==="projectType") renderLibrary(); saveEstimateState(true); }
+    else if(t.dataset.stdNum!==undefined){ const r=parseNumInput(t.value); if(r.ok) st.checks[t.dataset.stdNum]=r.value; saveEstimateState(true); computeAllAndRefresh(); }
+    else if(t.dataset.stdCode){ st.standards=STANDARD_OPTIONS.map(o=>o[1]).filter(c=>host.querySelector(`[data-std-code="${c}"]`).checked); saveEstimateState(true); }
+  };
+  host.onclick=(e)=>{ if(e.target.closest('[data-std-suggest]')){ const pt=st.projectType||"building"; st.standards=(SUGGESTED_STANDARDS[pt]||SUGGESTED_STANDARDS.building).slice(); saveEstimateState(true); renderStandardsForm(); } };
+}
+
+/* ---- Site & placement allowances: scoped estimating items on every element ---- */
+function siteAllowancesSection(inst){
+  const d=inst.data;
+  return `<div class="subsec" data-optional="1"><div class="sechead">Site &amp; Placement Allowances</div>
+   <p class="small">Scoped estimating items that belong to this element but are not geometry: overbreak and rock in the dig, dewatering, backfill, the concrete placement method, temporary propping and testing. Blank = no allowance. They reach the register as their own lines marked "scoped allowance" — none is a design item.</p>
+   <div class="grid cols4">
+     ${F("Overbreak (% of excavation)",inpNum("allowOverbreakPct",d.allowOverbreakPct))}
+     ${F("Rock excavation (m³, allowance)",inpNum("allowRockM3",d.allowRockM3))}
+     ${F("Dewatering (days, allowance)",inpNum("allowDewateringDays",d.allowDewateringDays))}
+     ${F("Backfill (m³)",inpNum("allowBackfillM3",d.allowBackfillM3))}
+     ${F("Backfill material",selOpts("allowBackfillMat",d.allowBackfillMat||"imported",[["imported","Imported fill"],["reuse","Site spoil reuse"],["sand","Sand / bedding"]]))}
+     ${F("Placement method",selOpts("allowPlacement",d.allowPlacement||"",[["","— not stated —"],["pump","Concrete pump"],["crane","Crane &amp; kibble"],["chute","Direct from truck / chute"]]))}
+     ${F("Pump / crane hours (allowance)",inpNum("allowPumpHours",d.allowPumpHours))}
+     ${F("Temporary propping (m², allowance)",inpNum("allowPropM2",d.allowPropM2))}
+     ${F("Testing (no., allowance)",inpNum("allowTestingNo",d.allowTestingNo))}
+     ${F("Allowance notes",inpText("allowNotes",d.allowNotes))}
+   </div></div>`;
+}
+function siteAllowanceLines(inst, def, lines){
+  const d=inst.data||{}, out=[]; const SPEC="Scoped allowance — estimating item, not design";
+  const excVol=(lines||[]).filter(l=>l.materialGroup==="Excavation" && !/spoil|overbreak|rock|dewater|backfill/i.test(l.material)).reduce((s,l)=>s+(l.qty||0),0);
+  const ob=num(d.allowOverbreakPct);
+  if(ob>0 && excVol>0){ const v=excVol*ob/100; out.push(baseLine(inst,def,{materialGroup:"Excavation",material:"Overbreak allowance",spec:SPEC,qty:v,unit:"m³",waste:0,finalQty:v,formula:`excavation ${fmt(excVol,2)} × ${ob}%`})); const sp=v*(1+num(PROJECT.bulking)/100); out.push(baseLine(inst,def,{materialGroup:"Excavation",material:"Spoil disposal — overbreak (loose, bulked)",spec:SPEC,qty:sp,unit:"m³",waste:0,finalQty:sp,formula:`overbreak × (1+${num(PROJECT.bulking)}%)`})); }
+  const rock=num(d.allowRockM3); if(rock>0) out.push(baseLine(inst,def,{materialGroup:"Excavation",material:"Rock excavation (allowance)",spec:SPEC,qty:rock,unit:"m³",waste:0,finalQty:rock,formula:"entered allowance"}));
+  const dw=num(d.allowDewateringDays); if(dw>0) out.push(baseLine(inst,def,{materialGroup:"Excavation",material:"Dewatering (allowance)",spec:SPEC,qty:dw,unit:"day",waste:0,finalQty:dw,formula:"entered allowance"}));
+  const bf=num(d.allowBackfillM3); if(bf>0){ const mat={imported:"Backfill — imported fill",reuse:"Backfill — site spoil reuse",sand:"Backfill — sand / bedding"}[d.allowBackfillMat||"imported"]; out.push(baseLine(inst,def,{materialGroup:"Excavation",material:mat,spec:SPEC,qty:bf,unit:"m³",waste:0,finalQty:bf,formula:"entered allowance"})); }
+  if(d.allowPlacement){ const hrs=num(d.allowPumpHours); const name={pump:"Concrete placement — pump",crane:"Concrete placement — crane & kibble",chute:"Concrete placement — direct chute"}[d.allowPlacement]; if(d.allowPlacement==="chute") out.push(baseLine(inst,def,{materialGroup:"Allowances",material:name,spec:SPEC,qty:1,unit:"item",waste:0,finalQty:1,formula:"placement assumption"})); else if(hrs>0) out.push(baseLine(inst,def,{materialGroup:"Allowances",material:name,spec:SPEC,qty:hrs,unit:"hr",waste:0,finalQty:hrs,formula:"entered allowance"})); }
+  const prop=num(d.allowPropM2); if(prop>0) out.push(baseLine(inst,def,{materialGroup:"Temporary Works",material:"Temporary propping (allowance)",spec:SPEC,qty:prop,unit:"m²",waste:0,finalQty:prop,formula:"entered allowance"}));
+  const test=num(d.allowTestingNo); if(test>0) out.push(baseLine(inst,def,{materialGroup:"Allowances",material:"Testing (allowance)",spec:SPEC+(d.allowNotes?" · "+d.allowNotes:""),qty:test,unit:"no.",waste:0,finalQty:test,formula:"entered allowance"}));
+  return out;
+}
+
+/* ---- Project review acknowledgement (gates the deliberate Publish) ---- */
+function linesHash(){ const str=JSON.stringify(allLines().map(l=>[l.elementId,l.overrideKey,Math.round((l.finalQty||0)*1000)])); let h=0x811c9dc5; for(let i=0;i<str.length;i++){ h^=str.charCodeAt(i); h=Math.imul(h,0x01000193)>>>0; } return ("00000000"+h.toString(16)).slice(-8); }
+function overridesWithoutReason(){ const out=[]; INSTANCES.forEach(inst=>{ const mo=(inst.data||{}).manualOverrides||{}; Object.keys(mo).forEach(k=>{ if(mo[k]&&mo[k].enabled && !(mo[k].reason||"").trim()) out.push({inst, key:k}); }); }); return out; }
+function publishBlockers(){
+  const b=[];
+  const ack=PROJECT.reviewAck;
+  if(!ack || !ack.name || !ack.at) b.push({code:"ack", text:"The project review acknowledgement has not been completed (name, role and tick on the Publish page)."});
+  else if(ack.hash!==linesHash()) b.push({code:"stale", text:`The takeoff has changed since ${ack.name} acknowledged it — review and acknowledge again.`});
+  const miss=overridesWithoutReason(); if(miss.length) b.push({code:"reasons", text:`${miss.length} manual override${miss.length>1?'s have':' has'} no reason: ${miss.slice(0,4).map(m=>m.inst.id+" · "+m.key.slice(0,40)).join("; ")}${miss.length>4?" …":""}`});
+  const und=INSTANCES.filter(i=>assemblyUndecided(i).length); if(und.length) b.push({code:"undecided", text:`${und.length} element${und.length>1?'s have':' has'} undecided "Suggested — review" assembly items: ${und.slice(0,5).map(i=>i.id).join(", ")}`});
+  return b;
+}
+function renderReviewAck(){
+  const host=document.getElementById("reviewAckPanel"); if(!host) return;
+  const ack=PROJECT.reviewAck||{}; const blockers=publishBlockers();
+  const unresolved=INSTANCES.reduce((n,i)=>n+((i.results&&i.results.warnings)||[]).filter(w=>w.level!=="verify").length,0);
+  const verifyN=INSTANCES.reduce((n,i)=>n+((i.results&&i.results.warnings)||[]).filter(w=>w.level==="verify").length,0);
+  host.innerHTML=`<h2>Project review acknowledgement</h2>
+   <p class="small">Before the deliberate Publish, the person responsible confirms the takeoff scope has been reviewed: geometry and counts, grades and waste, reinforcement choices, cover source, connections, blinding/membrane, excavation and spoil, formwork faces, cast-ins, drawing revision and manual overrides. This records that the <b>scope</b> was reviewed — not that any element is structurally adequate.</p>
+   <div class="grid cols4">
+     ${F("Reviewer name",`<input type="text" data-ack="name" value="${bpEsc(ack.name||'')}">`)}
+     ${F("Role",`<select data-ack="role"><option value="Estimator" ${ack.role==="Estimator"?'selected':''}>Estimator</option><option value="QS" ${ack.role==="QS"?'selected':''}>Quantity surveyor</option><option value="Engineer" ${ack.role==="Engineer"?'selected':''}>Engineer</option></select>`)}
+     <label class="chk" style="align-self:end;"><input type="checkbox" data-ack="tick" ${ack.at&&ack.hash===linesHash()?'checked':''}> I have reviewed the takeoff scope and its warnings</label>
+     <div class="small" style="align-self:end;">${ack.at?`Acknowledged ${bpEsc(ack.at)} by ${bpEsc(ack.name||'')} (${bpEsc(ack.role||'')})${ack.hash!==linesHash()?' — <b>changed since</b>':''}`:'Not acknowledged yet'}</div>
+   </div>
+   <div class="small" style="margin-top:6px;">${unresolved} unresolved warning${unresolved===1?'':'s'} · ${verifyN} engineering-verification note${verifyN===1?'':'s'} · ${overridesWithoutReason().length} manual override${overridesWithoutReason().length===1?'':'s'} without a reason</div>
+   ${blockers.length?`<div class="warn" style="margin-top:8px;"><b>Publish is held until:</b><ul style="margin:4px 0 0 18px;">${blockers.map(b=>`<li>${bpEsc(b.text)}</li>`).join('')}</ul></div>`:`<div class="tip" style="margin-top:8px;"><span class="ico">✓</span><div>Ready to publish. ${bpEsc(DISCLAIMER_SHORT)}</div></div>`}`;
+  host.oninput=(e)=>{ const k=e.target.dataset.ack; if(!k) return; const a=PROJECT.reviewAck=Object.assign({},PROJECT.reviewAck||{});
+    if(k==="name") a.name=e.target.value; else if(k==="role") a.role=e.target.value;
+    else if(k==="tick"){ if(e.target.checked){ a.at=new Date().toISOString().slice(0,16).replace("T"," "); a.hash=linesHash(); } else { delete a.at; delete a.hash; } }
+    saveEstimateState(true); if(k==="tick") renderReviewAck(); };
+}
+function exportWarningsCSV(){
+  const rows=[]; INSTANCES.forEach(inst=>{ ((inst.results&&inst.results.warnings)||[]).forEach(w=>rows.push([inst.id,inst.label,LIB_INDEX[inst.typeKey].label,w.level==="verify"?"Engineering verification required":w.level==="completeness"?"Input completeness":"Estimating sanity check",w.text,bpTabLabel(w.section)])); });
+  const st=standardsOf();
+  rows.push([]); rows.push(["Standards profile",(st.standards||[]).map(c=>(STANDARD_OPTIONS.find(o=>o[1]===c)||[c])[0]).join(" | "),st.otherStandards||"",st.nccEdition||"",st.drawingRev||"",st.specRev||""]);
+  rows.push(["Disclaimer",DISCLAIMER_SHORT]);
+  download(`${(PROJECT.name||"Project").replace(/[^a-z0-9]+/gi,'_')}_warnings.csv`, toCSV(["Element ID","Element","Type","Level","Note","Section"],rows));
+}
+
 const CALC = {
   pier:{defaults:pierDefaults, render:renderPier, compute:computePier, diagram:diagPier},
   pilecap:{defaults:pileCapDefaults, render:renderPileCap, compute:computePileCap, diagram:diagPileCap},
@@ -6529,13 +6693,28 @@ const WARN_RULES_SECTION_WORDS=[[/starter|dowel|connection|coupler/i,"conns"],[/
 function warnSectionOf(text){ for(const [re,sec] of WARN_RULES_SECTION_WORDS){ if(re.test(text)) return sec; } return "geom"; }
 function normaliseWarnings(list){ return (list||[]).map(w=> typeof w==="string" ? {text:w, section:warnSectionOf(w)} : (w&&w.text? {text:w.text, section:w.section||warnSectionOf(w.text), level:w.level} : null)).filter(Boolean); }
 function validateInstance(inst, def, out){
+  /* Three levels, brief §10 "safe validation language":
+   *   completeness — required takeoff information is missing;
+   *   sanity       — a dimension, ratio or quantity looks unusual and should be reviewed;
+   *   verify       — the value depends on design/exposure/loads/geotech and must be confirmed
+   *                  from the engineer's documents (never auto-approved; not counted as a warning).
+   * Wording never asserts a design verdict. */
   let d=inst.data||{}, w=[];
+  const lines=(out&&out.lines)||[];
+  const push=(text,section,level)=>w.push({text,section,level:level||"sanity"});
+  const checks=Object.assign({reoMinKgM3:20, reoMaxKgM3:300, formMaxM2M3:25}, (PROJECT.standards&&PROJECT.standards.checks)||{});
+  // completeness: negative or zero primary dimensions
+  const dimKeys=["length","width","depth","thickness","dia","diameter","height","L","W","D","stemH","stemT"];
+  dimKeys.forEach(k=>{ if(!(k in d)) return; const v=d[k]; if(v===""||v===undefined||v===null) return; const n=parseFloat(v); if(!isNaN(n) && n<0) push(`${k} is negative (${n}) — a size cannot be below zero`, "geom", "completeness"); });
+  const mainDims=dimKeys.filter(k=>k in d && d[k]!=="" && d[k]!==undefined && d[k]!==null);
+  if(mainDims.length && mainDims.every(k=>parseFloat(d[k])===0)) push("Every dimension is 0 — nothing is measured yet", "geom", "completeness");
+  // sanity: cover vs section, bar layout with no clear length
   let dims=[["width",d.width],["depth",d.depth],["thickness",d.thickness],["diameter",d.dia],["height",d.height]].filter(x=>x[1]!==""&&x[1]!==undefined&&x[1]!==null&&num(x[1])>0);
   let cover=(d.cover===""||d.cover===undefined||d.cover===null)? null : num(d.cover);
   if(cover!==null && cover>0){
-    let mmDims=dims.filter(x=>num(x[1])>=20); // cross-section fields are millimetres; a metre-valued plan dimension (e.g. 6.5) is skipped
+    let mmDims=dims.filter(x=>num(x[1])>=20);
     let tight=mmDims.find(x=>num(x[1])<=2*cover);
-    if(tight) w.push({text:`Cover ${cover} mm leaves no core in the ${tight[0]} of ${num(tight[1])} mm — check cover and section size`, section:"reo"});
+    if(tight) push(`Cover ${cover} mm leaves no core in the ${tight[0]} of ${num(tight[1])} mm — check cover and section size`, "reo");
   }
   (function walk(obj, path, depth){
     if(!obj || typeof obj!=="object" || depth>3) return;
@@ -6544,16 +6723,31 @@ function validateInstance(inst, def, out){
       if(v && typeof v==="object"){ walk(v, pth, depth+1); return; }
       if(/spacing/i.test(k) && v!=="" && v!==undefined && v!==null){
         let n=parseFloat(v);
-        if(!isNaN(n) && n<=0) w.push({text:`Spacing must be greater than 0 (${pth})`, section:"reo"});
-        else if(!isNaN(n) && n>0 && n<50) w.push({text:`Unusually tight spacing of ${n} mm (${pth}) — confirm it is not a typo`, section:"reo", level:"unusual"});
+        if(!isNaN(n) && n<=0) push(`Spacing must be greater than 0 (${pth})`, "reo", "completeness");
+        else if(!isNaN(n) && n>0 && n<50) push(`Unusually tight spacing of ${n} mm (${pth}) — confirm it is not a typo`, "reo");
       }
     });
   })(d,"",0);
   if(Array.isArray(d.openings) && d.openings.length){
     let plan=num(d._autoInsArea)||num(d._autoBlindArea)||0;
     let openArea=d.openings.reduce((s,o)=>s+(num(o.w)/1000)*(num(o.h)/1000)*num(o.qty,1),0);
-    if(plan>0 && openArea>=plan) w.push({text:`Openings (${fmt(openArea,2)} m²) equal or exceed the host area (${fmt(plan,2)} m²) — check opening sizes are in mm`, section:"geom"});
+    if(plan>0 && openArea>=plan) push(`Openings (${fmt(openArea,2)} m²) equal or exceed the host area (${fmt(plan,2)} m²) — check opening sizes are in mm`, "geom");
   }
+  // sanity: ratios (configurable review prompts — never a design verdict)
+  const conc=lines.filter(l=>l.materialGroup==="Concrete").reduce((s,l)=>s+(l.qty||0),0);
+  const reoKg=lines.filter(l=>l.materialGroup==="Reinforcement").reduce((s,l)=>s+(l.weightKg||0),0);
+  const formM2=lines.filter(l=>l.materialGroup==="Formwork").reduce((s,l)=>s+(l.qty||0),0);
+  if(conc>0.05 && reoKg>0){ const r=reoKg/conc; if(r>checks.reoMaxKgM3) push(`Reinforcement ratio ${fmt(r,0)} kg/m³ is above the review prompt (${checks.reoMaxKgM3}) — check bar sizes, spacing and count`, "reo"); else if(r<checks.reoMinKgM3) push(`Reinforcement ratio ${fmt(r,0)} kg/m³ is below the review prompt (${checks.reoMinKgM3}) — check nothing is missing`, "reo"); }
+  if(conc>0.05 && formM2/conc>checks.formMaxM2M3) push(`Formwork ${fmt(formM2/conc,1)} m² per m³ of concrete is above the review prompt (${checks.formMaxM2M3}) — check faces and dimensions`, "form");
+  // sanity: duplicate linked connection
+  if(Array.isArray(d.extraConn)){ const seen={}; d.extraConn.forEach(r=>{ const k=(r.target||"")+"|"+(r.role||""); if(r.target && seen[k]) push(`Two connection rows point at the same element (${targetLabelOf(r.target)||r.target}) — the bars may be counted twice`, "conns"); seen[k]=true; }); }
+  // verify: values that depend on design/exposure/geotech — from defaults, never auto-approved
+  const defaults=defaultDataFor(inst.typeKey);
+  if("cover" in d){ const pv=fieldProvenance(inst,"cover",defaults); if(pv==="default") push("Cover is the project/element default — confirm exposure classification and cover from the engineer's documents", "reo", "verify"); }
+  if("grade" in d){ const pv=fieldProvenance(inst,"grade",defaults); if(pv==="default") push("Concrete grade is the project default — confirm strength/class from the specification", "conc", "verify"); }
+  if(lines.some(l=>l.materialGroup==="Reinforcement")) push("Reinforcement sizes, spacing, laps and development are taken as entered — adequacy is confirmed by the engineer's documents, not by this tool", "reo", "verify");
+  if(lines.some(l=>l.materialGroup==="Formwork")) push("Formwork/falsework design and stripping are not assessed here — quantities only", "form", "verify");
+  if(/pier|pile/.test(LIB_INDEX[inst.typeKey].calc)) push("Pile capacity, founding depth and socket are geotechnical/engineering inputs — confirm from the geotechnical report and drawings", "geom", "verify");
   return w;
 }
 
@@ -6639,7 +6833,7 @@ function additionalItemsSection(inst){
    <div class="toolbar" style="margin-top:8px;"><button class="btn small primary" data-action="addlAdd" type="button">+ Add row</button></div>
   </div>`;
 }
-const TABS=[["assembly","Assembly & 3D"],["geom","Geometry"],["conc","Concrete"],["reo","Reinforcement"],["pilecap","Pile Cap"],["edgebeams","Edge Beams"],["intbeams","Internal Beams"],["form","Formwork"],["exc","Excavation"],["blind","Blinding / Insulation"],["conns","Connections / Dowels"],["addl","Additional Reo / Elements"],["results","Results"]];
+const TABS=[["assembly","Assembly & 3D"],["geom","Geometry"],["conc","Concrete"],["reo","Reinforcement"],["pilecap","Pile Cap"],["edgebeams","Edge Beams"],["intbeams","Internal Beams"],["form","Formwork"],["exc","Excavation"],["blind","Blinding / Insulation"],["conns","Connections / Dowels"],["addl","Additional / Allowances"],["results","Results"]];
 
 function renderWorkspace(){
   dispose3D();   // the viewer belongs to the mounted card; a rebuild always starts clean
@@ -6687,7 +6881,8 @@ function bpTotalsOf(inst){
   let lines = out.lines || [];
   let sum = (grp, fld) => lines.filter(l=>l.materialGroup===grp).reduce((s,l)=>s+(fld==="kg"? (l.weightKg||0) : (l.finalQty||0)),0);
   let bv = blindingVapourTotals(lines);
-  return { conc:sum("Concrete"), reoKg:sum("Reinforcement","kg"), form:sum("Formwork"), exc:sum("Excavation"), blind:bv.blind||0, vap:bv.vap||0, lines:lines.length, warnings:(out.warnings||[]) };
+  const allW=(out.warnings||[]);
+  return { conc:sum("Concrete"), reoKg:sum("Reinforcement","kg"), form:sum("Formwork"), exc:sum("Excavation"), blind:bv.blind||0, vap:bv.vap||0, lines:lines.length, warnings:allW.filter(w=>w.level!=="verify"), verify:allW.filter(w=>w.level==="verify") };
 }
 function bpEsc(s){ return String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
 function renderBlueprintWorkspace(){
@@ -6756,7 +6951,8 @@ function renderBlueprintInspector(inst){
      ${t.blind?`<div class="bp-tot"><div class="n">${fmt(t.blind,2)}</div><div class="l">m³ blinding/base</div></div>`:''}
      ${t.vap?`<div class="bp-tot"><div class="n">${fmt(t.vap,2)}</div><div class="l">m² vapour barrier</div></div>`:''}
    </div>
-   <div class="bp-warns">${t.warnings.map(w=>`<div class="bp-warn"><span>⚠</span><span style="flex:1">${bpEsc(w.text)}</span><a data-go="${bpEsc(w.section||'geom')}" title="Open the section that owns this">→ ${bpEsc(bpTabLabel(w.section))}</a></div>`).join('')}</div>
+   <div class="bp-warns">${t.warnings.map(w=>`<div class="bp-warn"><span title="${w.level==='completeness'?'Input completeness':'Estimating sanity check'}">${w.level==='completeness'?'○':'⚠'}</span><span style="flex:1">${bpEsc(w.text)}</span><a data-go="${bpEsc(w.section||'geom')}" title="Open the section that owns this">→ ${bpEsc(bpTabLabel(w.section))}</a></div>`).join('')}</div>
+   ${t.verify.length?`<details class="bp-verify"><summary>Engineering verification required (${t.verify.length})</summary>${t.verify.map(w=>`<div class="bp-calc-line"><span class="f">ⓘ ${bpEsc(w.text)}</span></div>`).join('')}<div class="small" style="margin-top:6px;">${bpEsc(DISCLAIMER_SHORT)}</div></details>`:''}
    <div class="bp-lines">${t.lines} quantity line${t.lines===1?'':'s'} in the register${t.warnings.length?` · ${t.warnings.length} unresolved warning${t.warnings.length>1?'s':''}`:''}</div>
    ${bpCalcTrace(inst)}`;
   insp.querySelectorAll('a[data-go]').forEach(a=>a.addEventListener('click',()=>{ let card=document.querySelector('#cardsHost .card'); if(card) bpGoSection(card,a.dataset.go); }));
@@ -6832,6 +7028,7 @@ function buildCard(inst){
   parts.blind = parts.blind + insulationSubsection(inst.data);
   // EVERY element gets the additional reinforcement / elements catch-all.
   if(parts.addl===undefined) parts.addl = additionalItemsSection(inst);
+  parts.addl += siteAllowancesSection(inst);   // Phase 4: scoped allowances on every element
   // Phase 2B: the assembly checklist + 3D view, pad footings first, blueprint layout only.
   if(SHELL_MODE==="blueprint" && hasAssembly(inst)) parts.assembly = assemblySection(inst);
   let collapsed = inst._collapsed;
@@ -6906,7 +7103,7 @@ function paneBlankInputs(pane){
   let out=[];
   pane.querySelectorAll('input[data-num][data-field],input[type=number][data-field]').forEach(inp=>{
     if(inp.value!=="") return;
-    if(inp.closest('.manual-cell')||inp.closest('.subsec.hidden')||inp.closest('[data-show-if].hidden')) return;
+    if(inp.closest('.manual-cell')||inp.closest('.subsec.hidden')||inp.closest('[data-show-if].hidden')||inp.closest('[data-optional]')) return;
     let lab=inp.closest('label.field'); let txt=lab? lab.textContent : (inp.closest('th,td')? "" : "");
     if(/override|0 = |blank =|optional|leave blank/i.test(txt)) return;
     if(!lab) return; // table cells are per-row items; a blank row is not an incomplete section
@@ -6920,7 +7117,7 @@ function sectionStatus(card, inst, out){
   let st={};
   avail.forEach(tab=>{
     let mine=lines.filter(l=>lineSection(l,avail)===tab);
-    let w=warns.filter(x=>x.section===tab || (x.section && avail.indexOf(x.section)<0 && tab==="geom"));
+    let w=warns.filter(x=>x.level!=="verify" && (x.section===tab || (x.section && avail.indexOf(x.section)<0 && tab==="geom")));
     let pane=card.querySelector(`.pane[data-pane="${tab}"]`);
     let blanks=pane? paneBlankInputs(pane) : [];
     let sum=(g,fld)=>mine.filter(l=>!g||l.materialGroup===g).reduce((s,l)=>s+(fld==="kg"?(l.weightKg||0):(l.finalQty||0)),0);
@@ -6956,7 +7153,7 @@ function refreshSectionRail(card, inst, out){
   // header row 2: status, warnings, provenance chips, actions
   let h2=card.querySelector('.bp-head2');
   if(h2){
-    let status=elementStatus(inst), pc=provenanceCounts(inst), nw=(out.warnings||[]).length;
+    let status=elementStatus(inst), pc=provenanceCounts(inst), nw=(out.warnings||[]).filter(w=>w.level!=="verify").length;
     let firstInc=[...card.querySelectorAll('.card-tabs button')].map(b=>b.dataset.tab).find(t=>st[t]&&st[t].incomplete);
     h2.innerHTML=`<span class="chip st-${status.state}" title="${bpEsc(status.title)}">${status.state==="reviewed"?"✓ ":status.state==="stale"?"↻ ":status.state==="imported"?"⚠ ":""}${bpEsc(status.label)}</span>
       ${nw?`<span class="chip warn" title="Open the inspector's warning panel">⚠ ${nw} warning${nw>1?"s":""}</span>`:`<span class="chip" title="No warnings">No warnings</span>`}
@@ -7415,6 +7612,8 @@ function computeInstance(inst){
       out.lines.push(baseLine(inst,def,{materialGroup:"Insulation",material:t.name,spec,qty,unit:t.unit,waste,finalQty:withWaste(qty,waste),formula:num(d.insArea)>0?"entered":"from element"}));
     }
   }
+  // Phase 4: scoped site/placement allowances — estimating items, never design
+  out.lines.push(...siteAllowanceLines(inst, def, out.lines));
   // Phase 2: every warning is {text, section}; the generic checks join the
   // calculator's own.
   out.warnings = normaliseWarnings(out.warnings).concat(validateInstance(inst, def, out));
@@ -7656,6 +7855,7 @@ function renderProjectForm(){
   f.oninput = (e)=>{ let k=e.target.dataset.field; if(k){ PROJECT[k]=e.target.value; saveEstimateState(true); } };
 }
 function renderDefaultsForm(){
+  renderStandardsForm();
   let f=document.getElementById("defaultsForm");
   f.innerHTML = [
     F("Fallback cover (mm) — used only where an element has no type default",inpNum("cover",PROJECT.cover)),
@@ -7684,11 +7884,13 @@ function renderDefaultsForm(){
 /* ============================= LIBRARY PAGE ============================= */
 function renderLibrary(){
   let host=document.getElementById("libraryGroups");
-  host.innerHTML = LIBRARY.map(g=>`
+  const pt=((PROJECT.standards||{}).projectType||"building");
+  const civilOn=["civil","bridge","water"].includes(pt);
+  host.innerHTML = LIBRARY.filter(g=>g.group!=="Civil / Bridge" || civilOn).map(g=>`
    <div class="lib-group"><h4>${g.group}</h4>
    ${g.items.map(it=>`<div class="lib-item"><label class="name"><input type="checkbox" data-type="${it.id}" ${SELECTED_TYPES[it.id]?'checked':''}> ${it.label}</label>
      <span class="count" data-countfor="${it.id}">${INSTANCES.filter(i=>i.typeKey===it.id).length} added</span></div>`).join('')}
-   </div>`).join('');
+   </div>`).join('') + (civilOn? '' : `<p class="small">Civil / bridge elements (headwalls, culverts, thrust blocks, barriers) appear when the project's <b>Standards &amp; assumptions</b> profile is set to a civil, bridge or water-retaining project type.</p>`);
   host.querySelectorAll('input[type=checkbox]').forEach(cb=>cb.addEventListener('change',e=>{
     SELECTED_TYPES[e.target.dataset.type]=e.target.checked;
     renderAddToolbar();
@@ -8013,6 +8215,7 @@ function exportAll(){
   ["register","concrete","reinforcement","formwork","excavation","connections"].forEach((k,i)=>setTimeout(()=>exportSheet(k), i*300));
 }
 function renderExportSummary(){
+  renderReviewAck();
   let lines=allLines();
   let {bars,mesh}=summarizeReinforcement(lines);
   let byGrade={};
@@ -8054,6 +8257,12 @@ function exportPDF(){
        <td style="border:1px solid #999;padding:6px;"><b>Reinforcement waste</b><br>${PROJECT.reoWaste}%</td>
        <td style="border:1px solid #999;padding:6px;"><b>Standard</b><br>${PROJECT.reoStandard}</td></tr>
      </table>
+     ${(function(){ const st=standardsOf(); const names=(st.standards||[]).map(c=>(STANDARD_OPTIONS.find(o=>o[1]===c)||[c])[0]); return `<table style="width:100%;border-collapse:collapse;margin-bottom:14px;font-size:10px;">
+       <tr><td style="border:1px solid #999;padding:6px;"><b>Standards profile</b><br>${names.length? names.join("<br>") : "—"}${st.otherStandards?`<br>${st.otherStandards}`:''}</td>
+       <td style="border:1px solid #999;padding:6px;"><b>Jurisdiction / project</b><br>${[st.country,st.state,st.location].filter(Boolean).join(", ")||"—"}<br>${st.projectType||"building"}${st.nccClass?` · ${st.nccClass}`:''}${st.nccEdition?` · ${st.nccEdition}`:''}</td>
+       <td style="border:1px solid #999;padding:6px;"><b>Revisions</b><br>Drawings ${st.drawingRev||PROJECT.revision||"—"}<br>Specification ${st.specRev||"—"}<br>Engineer ${st.engineer||"—"} (${st.reviewStatus||"not reviewed"})</td>
+       <td style="border:1px solid #999;padding:6px;"><b>Measurement / rates</b><br>${st.measurementRules||"—"}<br>Rate base ${st.rateBaseDate||"—"} · ${st.currency||"AUD"} ${st.gstTreatment==="inc"?"inc GST":"ex GST"}<br>Reviewed: ${PROJECT.reviewAck&&PROJECT.reviewAck.at? `${PROJECT.reviewAck.name} (${PROJECT.reviewAck.role}) ${PROJECT.reviewAck.at}` : "not acknowledged"}</td></tr>
+     </table>`; })()}
      <h2>Project Totals</h2>
      <table style="width:60%;border-collapse:collapse;margin-bottom:16px;">
        <tr><td style="border:1px solid #999;padding:6px;">Concrete</td><td style="border:1px solid #999;padding:6px;"><b>${fmt(concrete,2)} m³</b></td></tr>
@@ -8086,6 +8295,8 @@ function exportPDF(){
          <tr style="background:#eee;"><th style="border:1px solid #999;padding:3px;text-align:left;">Material Group</th><th style="border:1px solid #999;padding:3px;text-align:left;">Material</th><th style="border:1px solid #999;padding:3px;text-align:left;">Spec</th><th style="border:1px solid #999;padding:3px;">Qty</th><th style="border:1px solid #999;padding:3px;">Unit</th><th style="border:1px solid #999;padding:3px;">Final Qty</th><th style="border:1px solid #999;padding:3px;text-align:left;">Formula</th></tr>
          ${ls.map(l=>`<tr><td style="border:1px solid #999;padding:3px;">${l.materialGroup}</td><td style="border:1px solid #999;padding:3px;">${l.material}</td><td style="border:1px solid #999;padding:3px;">${l.spec}</td><td style="border:1px solid #999;padding:3px;text-align:right;">${fmt(l.qty,2)}</td><td style="border:1px solid #999;padding:3px;">${l.unit}</td><td style="border:1px solid #999;padding:3px;text-align:right;"><b>${fmt(l.finalQty,2)}</b></td><td style="border:1px solid #999;padding:3px;font-family:monospace;">${l.formula}</td></tr>`).join('')}
        </table></div>`).join('') || "<p>No elements added yet.</p>"}
+     ${(function(){ const rows=[]; INSTANCES.forEach(inst=>((inst.results&&inst.results.warnings)||[]).forEach(w=>rows.push([inst.id,w.level==="verify"?"Verify":w.level==="completeness"?"Incomplete":"Review",w.text]))); return rows.length? `<h2>Warnings &amp; verification notes</h2><table style="width:100%;border-collapse:collapse;font-size:10px;">${rows.map(r=>`<tr><td style="border:1px solid #999;padding:3px;width:60px;">${r[0]}</td><td style="border:1px solid #999;padding:3px;width:70px;">${r[1]}</td><td style="border:1px solid #999;padding:3px;">${r[2]}</td></tr>`).join('')}</table>` : ''; })()}
+     <p style="font-size:9px;color:#333;margin-top:14px;border:1px solid #999;padding:6px;"><b>Disclaimer.</b> ${DISCLAIMER_SHORT}</p>
      <p style="font-size:9px;color:#666;margin-top:20px;">Gradcon Concrete Constructions — Element Takeoff Engine. Australian D500N reinforcement mass approximation kg/m ≈ d²/162. Verify all quantities before commercial submission.</p>
    </div>`;
   document.getElementById("printReport").innerHTML=html;
@@ -8203,6 +8414,12 @@ function publishToQuote(){
     return;
   }
   computeAllAndRefresh();
+  const blockers=publishBlockers();
+  if(blockers.length){
+    document.getElementById("publishStatus").innerHTML = `<div class="warn"><b>Not published yet.</b> Complete the project review acknowledgement below first:<ul style="margin:4px 0 0 18px;">${blockers.map(b=>`<li>${bpEsc(b.text)}</li>`).join('')}</ul></div>`;
+    renderReviewAck(); const el=document.getElementById("reviewAckPanel"); if(el) el.scrollIntoView({block:"start"});
+    return;
+  }
   const payload = buildEstimateExportPayload();
   try{
     writeEstimateExport(payload);

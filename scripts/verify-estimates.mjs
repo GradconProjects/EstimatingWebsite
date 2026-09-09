@@ -92,6 +92,16 @@ for (const f of fixtures) {
   check("second migration leaves migratedFrom as the ORIGINAL version", again.migratedFrom === 1 && again.schemaVersion === ESTIMATE_SCHEMA_VERSION);
 }
 
+/* ---- 3b. Phase 3/4 fields ride through untouched ---- */
+{
+  const raw = { schemaVersion: 2, project: { name: "P4", standards: { projectType: "civil", standards: ["as3600", "as5100"], nccEdition: "NCC 2022 Amdt 1", checks: { reoMaxKgM3: 250 } }, reviewAck: { name: "G", role: "QS", at: "2026-09-09 08:00", hash: "abcd1234" } }, selectedTypes: {}, idCounter: 2, instances: [
+    { id: "EL01", typeKey: "padfooting", label: "F1", data: { length: 600, allowOverbreakPct: 10, allowPlacement: "pump", allowPumpHours: 4 }, tags: { level: "L1", pour: "P2" }, entered: { length: true }, review: { hash: "x", at: "t" }, scope: { membrane: { decision: "excluded", reason: "by others" } } },
+  ] };
+  const m = migrateEstimateSnapshot(raw);
+  check("standards profile, review acknowledgement, tags, entered, review and scope survive migration untouched", deepEqual(m.project.standards, raw.project.standards) && deepEqual(m.project.reviewAck, raw.project.reviewAck) && deepEqual(m.instances[0].tags, raw.instances[0].tags) && deepEqual(m.instances[0].scope, raw.instances[0].scope) && m.instances[0].data.allowOverbreakPct === 10);
+  check("a v2 snapshot is not re-marked as migrated from v1", m.migratedFrom === undefined);
+}
+
 /* ---- 4. rejection: never overwrite what we cannot read ---- */
 {
   const bad = [null, 42, "text", [], {}, { foo: 1 }];

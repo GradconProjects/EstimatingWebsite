@@ -426,6 +426,35 @@ element families waits on the owner's approval of the pad footing.
   columns (`gradcon-estimate-register-cols`) are per-browser preferences;
   "Export filtered view" exports exactly the rows shown.
 
+## Estimates standards profile, allowances and review gate (Phase 4)
+
+- `docs/ESTIMATES_COVERAGE.md` is the coverage audit (brief §11.3): map a
+  new real-world item to an existing calculator + modifier first; the
+  generic calculator (`kind` excavation / alteration / temporary / precast /
+  civil) is the universal measured item. The Civil / Bridge library group
+  renders only when `PROJECT.standards.projectType` is civil, bridge or water.
+- `PROJECT.standards` (jurisdiction, NCC class/edition, project type,
+  drawing/spec revisions, engineer, governing standards by exact designation
+  from `STANDARD_OPTIONS`, measurement rules, rate base, currency/GST,
+  `checks` thresholds) is recorded with the takeoff and printed on the PDF
+  and warnings export. Standards are designations only — no standards text,
+  no invented clause references.
+- **Site & Placement Allowances** (`siteAllowancesSection` /
+  `siteAllowanceLines`) put overbreak, rock, dewatering, backfill, placement
+  method, propping and testing on every element as register lines whose spec
+  reads "Scoped allowance — estimating item, not design". Blank = nothing.
+- `validateInstance` emits three levels: `completeness` (○, counted),
+  `sanity` (⚠, counted, thresholds from `standards.checks`) and `verify`
+  (ⓘ, never counted as a warning — cover/grade from defaults, reinforcement
+  adequacy, formwork design, pile capacity are confirmed from the engineer's
+  documents). Wording never asserts a design verdict.
+- The deliberate **Publish** is held by `publishBlockers()`: acknowledgement
+  (`PROJECT.reviewAck` = name, role, time, `linesHash()`), stale
+  acknowledgement, manual overrides without a reason, undecided assembly
+  items. The live auto-publish that follows a first publish is unchanged.
+  `DISCLAIMER_SHORT` appears in Project Setup, the Publish page, the PDF and
+  the warnings CSV.
+
 ## Estimates data safety (schema, migration, recovery, raw backup)
 
 `portal/estimates-schema.js` is pure and DOM-free: the assembler inlines it
