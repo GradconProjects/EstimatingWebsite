@@ -2,8 +2,7 @@ import {
   CATEGORY_ORDER, SECTION_ORDER, FULL_CATALOG, RESOURCE_COLS,
 } from "../data/catalog.js";
 import {
-  computeElementCost, computeGrandTotal, computeMarginLadder, rateKey, lookupRate, computeRowTotal, rowContext, money, money2, getDefaultMargin, getMarginSteps, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy,
-} from "../lib/costing.js";
+  computeElementCost, computeGrandTotal, computeMarginLadder, rateKey, lookupRate, computeRowTotal, rowContext, money, money2, getDefaultMargin, getMarginSteps, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, additionalRowsFor, additionalRowTotal } from "../lib/costing.js";
 import { GRADCON_LOGO_DATA_URI } from "../lib/logo.js";
 
 /**
@@ -198,6 +197,11 @@ function ElementReportBlock({ item, rates }) {
         materialLines.push({ key: qKey, label: `${p.name} (${cat.key})`, qty, unit: p.unit, total: rowTotal });
       }
     });
+    // custom rows added under this category — after its last catalog line, same band
+    additionalRowsFor(item, cat.key).forEach((a) => {
+      const qty = Number(a.qty) || 0;
+      if (qty > 0 && a.name) materialLines.push({ key: `custom::${a.id}`, label: `${a.name} (${cat.key} — custom)`, qty, unit: a.unit || "", total: additionalRowTotal(a) });
+    });
   });
 
   // the auto small-load charge is real money in the totals, so the report
@@ -223,7 +227,7 @@ function ElementReportBlock({ item, rates }) {
     total: cost.resourceCosts[res.key],
   }));
 
-  const customLines = item.additional.filter((a) => (Number(a.qty) || 0) > 0 && a.name);
+  const customLines = additionalRowsFor(item, null).filter((a) => (Number(a.qty) || 0) > 0 && a.name);
   const noLines = materialLines.length === 0 && labourLines.length === 0 && customLines.length === 0;
 
   return (

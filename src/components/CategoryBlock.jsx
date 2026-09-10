@@ -1,5 +1,5 @@
-import { ChevronDown, ChevronRight } from "lucide-react";
-import { rateKey, money2, lookupRate, computeRowTotal, rowContext, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy } from "../lib/costing.js";
+import { ChevronDown, ChevronRight, Plus, X } from "lucide-react";
+import { rateKey, money2, lookupRate, computeRowTotal, rowContext, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, additionalRowsFor, additionalRowTotal } from "../lib/costing.js";
 import { NumInput } from "./atoms.jsx";
 
 /**
@@ -9,13 +9,18 @@ import { NumInput } from "./atoms.jsx";
  * shouldn't apply to a given job, the estimator just leaves those rows
  * blank (blank quantities cost nothing — see computeElementCost).
  */
-export default function CategoryBlock({ cat, item, rates, onQtyChange, onRateChange, catOpen, toggleCat, catTotal }) {
+export default function CategoryBlock({ cat, item, rates, onQtyChange, onRateChange, catOpen, toggleCat, catTotal, onAddCustom, onRemoveCustom, onChangeCustom }) {
   const hasWeight = cat.products.some((p) => p.unitWeight != null);
+  // Custom rows the estimator added under THIS category (item.additional
+  // rows carrying cat === this key). They sit after the last catalog product,
+  // cost qty × rate through computeElementCost, and are part of catTotal.
+  const customRows = additionalRowsFor(item, cat.key);
   const hasArea = !!cat.areaBasis;
   const hasLength = !!cat.lengthBasis;
   // Reinforcement priced in kg/m³ needs the element's poured volume, both to
   // cost the row and to show the estimator the tonnage the rate works out to.
   const hasVolumeRate = !!cat.volumeRateBasis;
+  const extraCols = (hasArea ? 1 : 0) + (hasLength ? 1 : 0) + (hasVolumeRate ? 2 : 0) + (hasWeight ? 2 : 0);
   const ctx = rowContext(item);
   // A last delivered load under 4 m³ auto-applies Minimum cartage (amber ghost on its
   // row, like the crew sheet) — typing a Qty there takes the row manual.
@@ -182,6 +187,70 @@ export default function CategoryBlock({ cat, item, rates, onQtyChange, onRateCha
                   </tr>
                 );
               })}
+              {customRows.map((a) => {
+                const total = additionalRowTotal(a);
+                const filled = total > 0;
+                return (
+                  <tr key={a.id} data-custom-row={a.id} className={`border-t border-dashed border-neutral-200 ${filled ? "bg-orange-50/40" : "bg-neutral-50/60"}`}>
+                    <td className="px-3 py-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] font-semibold uppercase tracking-wide text-neutral-400 flex-none" title="Custom item added under this category">custom</span>
+                        <input
+                          type="text"
+                          value={a.name || ""}
+                          placeholder="Item name (e.g. Certification)"
+                          onChange={(e) => onChangeCustom(a.id, "name", e.target.value)}
+                          className="flex-1 min-w-[10rem] border border-neutral-200 rounded px-2 py-1 text-[13px] focus:outline-none focus:ring-2 focus:ring-orange-400"
+                        />
+                      </div>
+                    </td>
+                    <td className="px-2 py-1">
+                      <input
+                        type="text"
+                        value={a.unit || ""}
+                        placeholder="unit"
+                        onChange={(e) => onChangeCustom(a.id, "unit", e.target.value)}
+                        className="w-16 border border-neutral-200 rounded px-2 py-1 text-[13px] focus:outline-none focus:ring-2 focus:ring-orange-400"
+                      />
+                    </td>
+                    <td className="px-2 py-1">
+                      <NumInput value={a.qty} onChange={(v) => onChangeCustom(a.id, "qty", v)} />
+                    </td>
+                    {extraCols > 0 && <td colSpan={extraCols} className="px-2 py-1 text-right font-mono text-neutral-300 tabular-nums">—</td>}
+                    <td className="px-2 py-1">
+                      <NumInput step="0.25" value={a.rate} placeholder="$/unit" onChange={(v) => onChangeCustom(a.id, "rate", v)} />
+                    </td>
+                    <td className={`px-3 py-1 text-right font-mono tabular-nums font-medium ${filled ? "text-neutral-900" : "text-neutral-300"}`}>
+                      <div className="flex items-center justify-end gap-1.5">
+                        <span>{money2(total)}</span>
+                        <button
+                          type="button"
+                          onClick={() => onRemoveCustom(a.id)}
+                          title="Remove this custom item"
+                          className="text-neutral-400 hover:text-red-600"
+                        >
+                          <X size={13} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              {onAddCustom && (
+                <tr className="border-t border-neutral-100 bg-neutral-50/40">
+                  <td colSpan={5 + extraCols} className="px-3 py-1">
+                    <button
+                      type="button"
+                      onClick={() => onAddCustom(cat.key)}
+                      data-add-custom={cat.key}
+                      title={`Add your own line under ${cat.label} — name, unit, quantity and rate are all yours; it costs qty × rate into this category`}
+                      className="inline-flex items-center gap-1 text-[12px] font-medium text-orange-700 hover:text-orange-800"
+                    >
+                      <Plus size={13} /> Add item under {cat.label}
+                    </button>
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

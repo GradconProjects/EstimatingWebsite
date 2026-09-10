@@ -19,7 +19,7 @@
  *   can't accept the HTML clipboard format still gets usable text).
  */
 import { FULL_CATALOG, RESOURCE_COLS, CATEGORY_ORDER, SECTION_ORDER } from "../data/catalog.js";
-import { computeElementCost, computeGrandTotal, computeMarginLadder, rateKey, lookupRate, computeRowTotal, rowContext, getDefaultMargin, getMarginSteps } from "./costing.js";
+import { computeElementCost, computeGrandTotal, computeMarginLadder, rateKey, lookupRate, computeRowTotal, rowContext, getDefaultMargin, getMarginSteps, additionalRowsFor, additionalRowTotal } from "./costing.js";
 import { GRADCON_LOGO_DATA_URI } from "./logo.js";
 
 /** Rate ($/unit) backed out from the line's own total ÷ qty — always exactly
@@ -43,6 +43,10 @@ function buildElementLines(item, rates) {
         materialLines.push({ label: `${p.name} (${cat.key})`, qty, unit: p.unit, total: rowTotal });
       }
     });
+    additionalRowsFor(item, cat.key).forEach((a) => {
+      const qty = Number(a.qty) || 0;
+      if (qty > 0 && a.name) materialLines.push({ label: `${a.name} (${cat.key} — custom)`, qty, unit: a.unit || "", total: additionalRowTotal(a) });
+    });
   });
 
   const cost = computeElementCost(item, rates);
@@ -50,7 +54,7 @@ function buildElementLines(item, rates) {
     label: res.name, qty: cost.resourceTotals[res.key], unit: res.unit, total: cost.resourceCosts[res.key],
   }));
 
-  const customLines = item.additional
+  const customLines = additionalRowsFor(item, null)
     .filter((a) => (Number(a.qty) || 0) > 0 && a.name)
     .map((a) => ({ label: a.name, qty: Number(a.qty) || 0, unit: a.unit, total: (Number(a.qty) || 0) * (Number(a.rate) || 0) }));
 

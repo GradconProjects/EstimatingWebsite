@@ -268,8 +268,24 @@ export function newElementItem(type) {
     labourVer: 2, // crew-engine era marker — elements without it get their labour cells cleared once (see ElementCard), so values baked in by the old write-in prefill can't shadow the live engine
     qtys: {}, // rateKey(category, product, unit) -> number
     tasks: LABOUR_TEMPLATES[type.labour].map((name) => ({ id: uid(), name, qtys: {} })), // qtys: resourceKey -> number
-    additional: [], // [{id, name, unit, qty, rate}]
+    additional: [], // [{id, name, unit, qty, rate, cat?}] — cat = a FULL_CATALOG key when the row was added UNDER that category
   };
+}
+
+/**
+ * Custom rows (item.additional) cost as qty × rate, nothing else — no weight,
+ * area or length basis, no catalog rate lookup: the rate typed on the row is
+ * the rate. A row added under a catalog category carries `cat` (that
+ * category's key) and is costed INTO that category's total, so "Certification"
+ * added under FORMWORK shows in the Formwork band and in materialsTotal;
+ * rows without `cat` are the element's free-standing Other Allowances and
+ * stay in additionalTotal. One row is never in both.
+ */
+export function additionalRowTotal(a) {
+  return (Number(a.qty) || 0) * (Number(a.rate) || 0);
+}
+export function additionalRowsFor(item, catKey) {
+  return (item.additional || []).filter((a) => (catKey ? a.cat === catKey : !a.cat));
 }
 
 /**
@@ -302,6 +318,9 @@ export function newElementItem(type) {
  *    rows, then each resource total is multiplied by that resource's
  *    day/hour rate. The element's labour total is the sum of all resource
  *    costs.
+ *  - Custom rows added under a category (item.additional with `cat`) cost
+ *    qty × rate into that category's total and materialsTotal; custom rows
+ *    without a category are additionalTotal (see additionalRowTotal).
  *  - `total` = materialsTotal + labourTotal + additionalTotal. Nothing
  *    else feeds into an element's total cost.
  */
@@ -323,6 +342,9 @@ export function computeElementCost(item, rates) {
         if (cat.key === "CONCRETE" && !CONCRETE_CHARGE_MATCH(p.name)) concreteQty += qty; // the delivery fees are $/m³ charges, not poured volume
       }
     });
+    // custom rows the estimator added under this category ("Certification"
+    // after the last Formwork product, say) — plain qty × rate, same band
+    additionalRowsFor(item, cat.key).forEach((a) => { catTotal += additionalRowTotal(a); });
     categoryTotals[cat.key] = catTotal;
     materialsTotal += catTotal;
   });
@@ -376,10 +398,7 @@ export function computeElementCost(item, rates) {
     labourTotal += cost;
   });
 
-  const additionalTotal = item.additional.reduce(
-    (s, a) => s + (Number(a.qty) || 0) * (Number(a.rate) || 0),
-    0
-  );
+  const additionalTotal = additionalRowsFor(item, null).reduce((s, a) => s + additionalRowTotal(a), 0);
 
   return {
     categoryTotals,

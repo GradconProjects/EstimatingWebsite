@@ -112,8 +112,11 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
   const setTaskMeta = (taskId, field, v) =>
     patch((it) => ({ ...it, tasks: it.tasks.map((t) => (t.id === taskId ? { ...t, [field]: v } : t)) }));
 
-  const addAdditional = () =>
-    patch((it) => ({ ...it, additional: [...it.additional, { id: uid(), name: "", unit: "", qty: undefined, rate: undefined }] }));
+  // cat = a FULL_CATALOG key when the row is added from inside a category
+  // block (it then lives after that category's last product and costs into
+  // that category); no cat = a free-standing Other Allowances row.
+  const addAdditional = (cat) =>
+    patch((it) => ({ ...it, additional: [...it.additional, { id: uid(), name: "", unit: "", qty: undefined, rate: undefined, ...(typeof cat === "string" && cat ? { cat } : {}) }] }));
   const removeAdditional = (id) => patch((it) => ({ ...it, additional: it.additional.filter((a) => a.id !== id) }));
   const changeAdditional = (id, field, v) =>
     patch((it) => ({ ...it, additional: it.additional.map((a) => (a.id === id ? { ...a, [field]: v } : a)) }));
@@ -424,6 +427,9 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
               catOpen={openCats[cat.key]}
               toggleCat={() => setOpenCats((o) => ({ ...o, [cat.key]: !o[cat.key] }))}
               catTotal={cost.categoryTotals[cat.key]}
+              onAddCustom={addAdditional}
+              onRemoveCustom={removeAdditional}
+              onChangeCustom={changeAdditional}
             />
           ))}
 
@@ -451,7 +457,7 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
           <AdditionalItems
             item={item}
             rates={rates}
-            onAdd={addAdditional}
+            onAdd={() => addAdditional()}
             onRemove={removeAdditional}
             onChange={changeAdditional}
             onFill={fillAdditional}

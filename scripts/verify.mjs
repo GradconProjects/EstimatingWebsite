@@ -17,8 +17,7 @@ import {
   computeElementCost, computeGrandTotal, computeMarginLadder,
   defaultRates, newElementItem, rateKey, suggestedLabourPrefill, computeExternalScopeLines,
   labourResourceRate, taskRowMeta, labourQuantities, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, computeRowTotal,
-  computeElementUnitRates, computeProjectUnitRates, rowContext, computeElementReinforcementTonnes, getMarginSteps,
-} from "../src/lib/costing.js";
+  computeElementUnitRates, computeProjectUnitRates, rowContext, computeElementReinforcementTonnes, getMarginSteps, additionalRowsFor } from "../src/lib/costing.js";
 import { buildImportFromEstimate, normalizeElementName, geometryForLabel } from "../src/lib/estimateImport.js";
 
 let passed = 0;
@@ -645,6 +644,24 @@ check("Custom line items add directly (qty * rate)", () => {
   const cost = computeElementCost(item, rates);
   assert.equal(cost.additionalTotal, 2500);
   assert.equal(cost.total, 2500);
+});
+
+check("a custom row added UNDER a category costs into that category (and materials), not into Other Allowances", () => {
+  const type = ELEMENT_TYPES[0];
+  const rates = defaultRates();
+  const item = newElementItem(type);
+  item.additional.push({ id: "c1", name: "Certification", unit: "item", qty: 1, rate: 450, cat: "FORMWORK" });
+  item.additional.push({ id: "c2", name: "Difficult access allowance", unit: "item", qty: 2, rate: 100 });
+  const cost = computeElementCost(item, rates);
+  assert.equal(cost.categoryTotals["FORMWORK"], 450, "Formwork band carries the custom row");
+  assert.equal(cost.materialsTotal, 450, "…and so does materialsTotal");
+  assert.equal(cost.additionalTotal, 200, "the uncategorised row stays in Other Allowances");
+  assert.equal(cost.total, 650, "never counted twice");
+  assert.equal(additionalRowsFor(item, "FORMWORK").length, 1);
+  assert.equal(additionalRowsFor(item, null).length, 1);
+  // a blank custom row costs nothing, like every other blank row
+  item.additional.push({ id: "c3", name: "", unit: "", qty: undefined, rate: undefined, cat: "CONCRETE" });
+  assert.equal(computeElementCost(item, rates).total, 650);
 });
 
 /* ---------- rate overrides / fallback ---------- */

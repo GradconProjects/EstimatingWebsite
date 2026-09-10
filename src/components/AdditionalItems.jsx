@@ -1,12 +1,15 @@
 import { useState } from "react";
 import { ChevronDown, ChevronRight, Plus, Trash2 } from "lucide-react";
 import { FULL_CATALOG, RESOURCE_COLS } from "../data/catalog.js";
-import { money2, rateKey, lookupRate } from "../lib/costing.js";
+import { money2, rateKey, lookupRate, additionalRowsFor } from "../lib/costing.js";
 import { NumInput } from "./atoms.jsx";
 
 export default function AdditionalItems({ item, rates, onAdd, onRemove, onChange, onFill, total }) {
   // Rolled up by default like every other section of the card.
   const [open, setOpen] = useState(false);
+  // Only the free-standing rows: custom rows added under a catalog category
+  // (row.cat) render inside that category block and cost into its band.
+  const rows = additionalRowsFor(item, null);
   // "Pick from catalog" prefill: selecting a product (or labour resource)
   // fills name/unit/rate in ONE patch (see fillAdditional in ElementCard —
   // three separate onChange calls would each start from the same stale item
@@ -37,13 +40,13 @@ export default function AdditionalItems({ item, rates, onAdd, onRemove, onChange
       >
         <span className="flex items-center gap-1.5">
           {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-          Other Allowances / Custom Items {item.additional.length > 0 && <span className="text-neutral-400 normal-case">({item.additional.length})</span>}
+          Other Allowances / Custom Items {rows.length > 0 && <span className="text-neutral-400 normal-case">({rows.length})</span>}
         </span>
         <span className="font-mono tabular-nums normal-case font-semibold text-orange-300">{money2(total)}</span>
       </button>
       {open && (
       <div className="p-2 space-y-1.5">
-        {item.additional.map((a) => (
+        {rows.map((a) => (
           <div key={a.id} className="flex items-center gap-1.5">
             <select
               value=""

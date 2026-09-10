@@ -234,7 +234,8 @@ export async function publishQuoteToCostPlanner(projectId, quote) {
     });
     (item.additional || []).forEach((a) => {
       const qty = Number(a.qty) || 0;
-      if (qty > 0 && a.name) lines.push({ category: "CUSTOM", name: a.name, unit: a.unit || "each", qty, rate: Number(a.rate) || 0, member });
+      // a row added under a catalog category keeps that category; free-standing rows are CUSTOM
+      if (qty > 0 && a.name) lines.push({ category: a.cat || "CUSTOM", name: a.name, unit: a.unit || "each", qty, rate: Number(a.rate) || 0, member, custom: true });
     });
   });
   const record = {
