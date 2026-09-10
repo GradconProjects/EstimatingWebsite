@@ -80,7 +80,7 @@ export default function AdditionalItems({ item, rates, onAdd, onRemove, onChange
               placeholder="unit"
               className="w-16 border border-neutral-200 rounded px-2 py-1 text-[13px] text-center focus:outline-none focus:ring-2 focus:ring-orange-400"
             />
-            <NumInput value={a.qty} onChange={(v) => onChange(a.id, "qty", v)} className="w-20 flex-none" />
+            <NumInput value={a.qty} onChange={(v) => onChange(a.id, "qty", v)} className="w-24 flex-none" />
             <NumInput value={a.rate} onChange={(v) => onChange(a.id, "rate", v)} className="w-24 flex-none" />
             <span className="w-24 text-right font-mono text-[13px] tabular-nums text-neutral-800 flex-none">
               {money2((Number(a.qty) || 0) * (Number(a.rate) || 0))}

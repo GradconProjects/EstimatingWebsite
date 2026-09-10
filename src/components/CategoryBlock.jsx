@@ -50,15 +50,15 @@ export default function CategoryBlock({ cat, item, rates, onQtyChange, onRateCha
               <tr className="bg-neutral-50 text-neutral-500 text-[11px] uppercase tracking-wide">
                 <th className="text-left px-3 py-1.5 font-medium">Product</th>
                 <th className="text-left px-2 py-1.5 font-medium">Unit</th>
-                <th className="text-right px-2 py-1.5 font-medium w-24">Qty</th>
+                <th className="text-right px-2 py-1.5 font-medium w-28 min-w-[7rem]">Qty</th>
                 {hasArea && <th className="text-right px-2 py-1.5 font-medium w-20">Sheets</th>}
                 {hasLength && <th className="text-right px-2 py-1.5 font-medium w-20">Bars</th>}
                 {hasVolumeRate && <th className="text-right px-2 py-1.5 font-medium w-20">On m³</th>}
                 {hasVolumeRate && <th className="text-right px-2 py-1.5 font-medium w-20">Steel (t)</th>}
                 {hasWeight && <th className="text-right px-2 py-1.5 font-medium w-20">Wt (kg)</th>}
                 {hasWeight && <th className="text-right px-2 py-1.5 font-medium w-20">Total (t)</th>}
-                <th className="text-right px-2 py-1.5 font-medium w-24">Unit $</th>
-                <th className="text-right px-3 py-1.5 font-medium w-28">Total $</th>
+                <th className="text-right px-2 py-1.5 font-medium w-28 min-w-[7rem]">Unit $</th>
+                <th className="text-right px-3 py-1.5 font-medium w-28 min-w-[7rem]">Total $</th>
               </tr>
             </thead>
             <tbody>

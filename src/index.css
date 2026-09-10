@@ -6,6 +6,22 @@ body {
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
+/* Quantity / rate cells are narrow number inputs. The browser's own spinner
+   arrows sit INSIDE the box (Chrome and Edge show them on hover and focus)
+   and eat ~15 px of an 80 px cell, so a value such as 1,250.75 was cut off
+   at the right — worse in a smaller window. Hide the spinner; the arrow keys
+   still step the value, and the box shows every digit. */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+  min-width: 0;
+}
+
 /* Print / PDF export (see components/PrintQuoteReport.jsx) — the on-screen
    app is hidden entirely via print:hidden classes, this report is the only
    thing that prints. */
