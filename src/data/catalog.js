@@ -338,6 +338,67 @@ export const FULL_CATALOG = [
     ["Thermal break strip 20mm", "m", null, 9],
     ["Insulation (other — specify in description)", "m2", null, 25],
   ]},
+  /* Screeds — every common Australian floor screed, supply-and-lay $/m² at
+   * the stated thickness (placeholder defaults: edit in the Rates modal or
+   * type a received quote straight onto the "subcontract quote" row). Costed
+   * plain qty × rate like formwork. "+ Add item under SCREEDS" on any element
+   * card takes any type not listed here. */
+  { key: "SCREEDS", weightBasis: false, products: [
+    ["Sand/cement screed bonded — 20–30mm", "m2", null, 42],
+    ["Sand/cement screed bonded — 30–40mm", "m2", null, 48],
+    ["Sand/cement screed unbonded — 50mm", "m2", null, 58],
+    ["Sand/cement screed unbonded — 65mm", "m2", null, 66],
+    ["Sand/cement screed unbonded — 75mm", "m2", null, 74],
+    ["Floating screed over insulation — 65mm", "m2", null, 78],
+    ["Floating screed over insulation — 75mm", "m2", null, 86],
+    ["Screed to falls — wet areas / balconies", "m2", null, 72],
+    ["Screed to falls — roof / podium (lightweight)", "m2", null, 92],
+    ["Heated screed over hydronic pipes — 65mm", "m2", null, 82],
+    ["Heated screed over hydronic pipes — 75mm", "m2", null, 90],
+    ["Fibre-reinforced screed — 50mm", "m2", null, 62],
+    ["Polymer-modified screed — 25mm", "m2", null, 70],
+    ["Pumped liquid cement screed (flowing) — 50mm", "m2", null, 64],
+    ["Anhydrite / calcium sulphate flowing screed — 40mm", "m2", null, 58],
+    ["Rapid-drying / fast-set screed — 40mm", "m2", null, 76],
+    ["Lightweight foamed / bead screed — 50mm", "m2", null, 60],
+    ["Acoustic screed over resilient mat — 50mm", "m2", null, 98],
+    ["Granolithic / hard-wearing topping — 25mm", "m2", null, 95],
+    ["Epoxy / resin screed — 6mm", "m2", null, 125],
+    ["Self-levelling compound — 3–5mm", "m2", null, 32],
+    ["Self-levelling compound — 5–10mm", "m2", null, 44],
+    ["Screed reinforcement mesh (galv. 50x50)", "m2", null, 9],
+    ["Screed rails / levelling battens", "m", null, 8],
+    ["Bonding agent / SBR slurry coat", "m2", null, 6],
+    ["Polypropylene fibres", "kg", null, 14],
+    ["Screed movement joint", "m", null, 18],
+    ["Screed curing / sealing compound", "m2", null, 4],
+    ["Screed pump hire", "day", null, 650],
+    ["Screed (subcontract quote)", "quote", null, 0],
+    ["Screed (other — specify in description)", "m2", null, 60],
+  ]},
+  /* Hydronic (in-slab / in-screed) heating — pipe loops per m² of heated
+   * floor plus the parts that are counted, and quote rows for the heat
+   * source and a full subcontract. Placeholder defaults, editable in the
+   * Rates modal. */
+  { key: "HYDRONIC HEATING", weightBasis: false, products: [
+    ["Hydronic in-slab heating — pipe loops supply & lay (incl. clips)", "m2", null, 58],
+    ["Hydronic in-screed heating — pipe loops supply & lay", "m2", null, 68],
+    ["Hydronic heating on castellated insulation panel system", "m2", null, 85],
+    ["PEX-a pipe 16mm", "m", null, 6],
+    ["PEX-a pipe 20mm", "m", null, 8],
+    ["PE-RT / multilayer pipe 16mm", "m", null, 7],
+    ["Pipe clip rail / staple track", "m2", null, 4],
+    ["Pipe conduit sleeves at joints / penetrations", "m", null, 5],
+    ["Perimeter edge insulation strip", "m", null, 3],
+    ["Manifold — per port (incl. flow meters)", "each", null, 180],
+    ["Manifold cabinet (recessed / surface)", "each", null, 450],
+    ["Zone actuator", "each", null, 95],
+    ["Room thermostat / zone controller", "each", null, 220],
+    ["Pressure test & commissioning", "each", null, 350],
+    ["Heat source connection — boiler / heat pump (by others, quote)", "quote", null, 0],
+    ["Hydronic heating (subcontract quote)", "quote", null, 0],
+    ["Hydronic heating (other — specify in description)", "m2", null, 60],
+  ]},
   { key: "OTHER ACCESSORIES", weightBasis: false, products: [
     // Vapour barrier is its own product, DISTINCT from Insulation — a 200µm
     // poly membrane per m² laid, not an insulation board/strip.

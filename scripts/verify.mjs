@@ -60,10 +60,23 @@ check("every element type has both a category and a section", () => {
   });
 });
 
-check("14 material categories, 180 products (incl. CONCRETE PUMPING, REINFORCEMENT BY RATE, the 32-board INSULATION range, the full 24-size TRENCH MESH grid, Bored Piers subcontract, minimum cartage, levy, surcharge)", () => {
-  assert.equal(FULL_CATALOG.length, 14);
+check("16 material categories, 228 products (incl. CONCRETE PUMPING, REINFORCEMENT BY RATE, the 32-board INSULATION range, 31 SCREEDS, 17 HYDRONIC HEATING, the full 24-size TRENCH MESH grid, Bored Piers subcontract, minimum cartage, levy, surcharge)", () => {
+  assert.equal(FULL_CATALOG.length, 16);
   const total = FULL_CATALOG.reduce((s, c) => s + c.products.length, 0);
-  assert.equal(total, 180);
+  assert.equal(total, 228);
+  const scr = FULL_CATALOG.find((c) => c.key === "SCREEDS"), hyd = FULL_CATALOG.find((c) => c.key === "HYDRONIC HEATING");
+  assert.equal(scr.products.length, 31); assert.equal(hyd.products.length, 17);
+  assert.ok(!scr.weightBasis && !scr.areaBasis && !scr.lengthBasis && !scr.volumeRateBasis && !hyd.weightBasis && !hyd.areaBasis, "both cost plain qty × rate");
+  assert.ok(scr.products.some((p) => p.unit === "quote") && hyd.products.some((p) => p.unit === "quote"), "each carries a subcontract quote row");
+  // no duplicate product keys anywhere in the catalog
+  const keys = FULL_CATALOG.flatMap((c) => c.products.map((p) => rateKey(c.key, p.name, p.unit)));
+  assert.equal(new Set(keys).size, keys.length, "every rate key unique");
+  // a screed and a hydronic row cost qty × rate into their own category totals
+  const item = newElementItem(ELEMENT_TYPES[0]);
+  item.qtys[rateKey("SCREEDS", "Screed to falls — wet areas / balconies", "m2")] = 10;
+  item.qtys[rateKey("HYDRONIC HEATING", "Zone actuator", "each")] = 3;
+  const cost = computeElementCost(item, defaultRates());
+  assert.equal(cost.categoryTotals["SCREEDS"], 720); assert.equal(cost.categoryTotals["HYDRONIC HEATING"], 285); assert.equal(cost.materialsTotal, 1005);
   const conc = FULL_CATALOG.find((c) => c.key === "CONCRETE");
   assert.ok(conc.products.some((p) => p.name === "Production & transport surcharge" && p.unit === "m3" && p.unitCost === 9.17), "concrete surcharge product seeded at $9.17/m³");
   // Vapour barrier is its own OTHER ACCESSORIES product, distinct from Insulation
