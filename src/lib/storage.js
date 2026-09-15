@@ -309,9 +309,19 @@ export function useStoredState(key, initial, { cacheFirst = false } = {}) {
   // can never overwrite what's currently being typed.
   useEffect(() => {
     if (!supabaseEnabled) return;
+    // Cheap first: only the timestamp (a few bytes). The full row — a quote
+    // with its markup drawings can be several MB — is fetched ONLY when the
+    // cloud copy is newer than what this browser holds. Before this the poll
+    // pulled the whole row every 6 s and discarded it: ~2.4 GB an hour per
+    // open 4 MB project, which was most of the Supabase egress and a constant
+    // drag on everything else the page was loading.
     const poll = async () => {
       if (localEditPending()) return;
       try {
+        const { data: stamp, error: stampError } = await supabase.from(TABLE).select("updated_at").eq("key", key).maybeSingle();
+        if (stampError || !stamp) return;
+        if (lastSyncedAtRef.current && stamp.updated_at <= lastSyncedAtRef.current) return;
+        if (localEditPending()) return; // an edit started while the stamp was in flight
         const { data, error } = await supabase.from(TABLE).select("value, updated_at").eq("key", key).maybeSingle();
         if (error || !data) return;
         if (lastSyncedAtRef.current && data.updated_at <= lastSyncedAtRef.current) return;
