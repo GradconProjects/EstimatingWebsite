@@ -1,5 +1,6 @@
 import { ChevronDown, ChevronRight, Plus, X } from "lucide-react";
-import { rateKey, money2, lookupRate, computeRowTotal, rowContext, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, additionalRowsFor, additionalRowTotal } from "../lib/costing.js";
+import { rateKey, money2, lookupRate, computeRowTotal, rowContext, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, additionalRowsFor, additionalRowTotal, autoPigmentWashout, autoSpecialistShortLoad } from "../lib/costing.js";
+import { SPECIALIST_CONCRETE_KEY } from "../data/catalog.js";
 import { NumInput } from "./atoms.jsx";
 
 /**
@@ -29,6 +30,11 @@ export default function CategoryBlock({ cat, item, rates, onQtyChange, onRateCha
   // poured volume ($2.59/m³ default) — same amber-ghost treatment.
   const surcharge = cat.key === "CONCRETE" ? autoConcreteSurcharge(item, rates) : null;
   const levy = cat.key === "CONCRETE" ? autoEnvironmentLevy(item, rates) : null;
+  // VicMix charges on the specialist band, same amber-ghost treatment: the
+  // pigment washout per truck of pigmented mix, and one short-load charge
+  // when the pour is under the published-price minimum.
+  const washout = cat.key === SPECIALIST_CONCRETE_KEY ? autoPigmentWashout(item, rates) : null;
+  const shortLoad = cat.key === SPECIALIST_CONCRETE_KEY ? autoSpecialistShortLoad(item, rates) : null;
   return (
     <div className="border border-neutral-200 rounded-lg overflow-hidden bg-white">
       <button
@@ -74,7 +80,9 @@ export default function CategoryBlock({ cat, item, rates, onQtyChange, onRateCha
                 const isAutoCartage = minCartage && minCartage.key === qKey;
                 const isAutoSur = surcharge && surcharge.key === qKey;
                 const isAutoLevy = levy && levy.key === qKey;
-                const autoRow = isAutoCartage ? minCartage : isAutoSur ? surcharge : isAutoLevy ? levy : null;
+                const isAutoWashout = washout && washout.key === qKey;
+                const isAutoShort = shortLoad && shortLoad.key === qKey;
+                const autoRow = isAutoCartage ? minCartage : isAutoSur ? surcharge : isAutoLevy ? levy : isAutoWashout ? washout : isAutoShort ? shortLoad : null;
                 const rowTotal = autoRow ? autoRow.total : computeRowTotal(cat, rate, qty, ctx);
                 // kg/m³ × the element's poured m³ — the tonnage this rate buys
                 const rateTonnes = hasVolumeRate ? (qty * ctx.concreteM3) / 1000 : null;
@@ -93,6 +101,8 @@ export default function CategoryBlock({ cat, item, rates, onQtyChange, onRateCha
                       )}
                       {isAutoSur && <span className="ml-1.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700">auto — per m³ of concrete</span>}
                       {isAutoLevy && <span className="ml-1.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700">auto — per m³ of concrete</span>}
+                      {isAutoWashout && <span className="ml-1.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700" title={`${washout.pigmentedM3} m³ of pigmented mix at ${washout.truckM3} m³ per Maxi truck (editable in the Rates modal: "VicMix Maxi truck load size") = ${washout.qty} truck${washout.qty === 1 ? "" : "s"}. Type a quantity to set the truck count yourself.`}>auto — {washout.qty} truck{washout.qty === 1 ? "" : "s"} of pigmented mix ({washout.pigmentedM3} m³), + GST</span>}
+                      {isAutoShort && <span className="ml-1.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700" title={`VicMix's published price applies to a minimum ${shortLoad.minimumM3} m³ delivery; this element pours ${shortLoad.volumeM3} m³ (${shortLoad.shortByM3} m³ short). VicMix does not publish the charge — enter it on this row's rate. Type a quantity to take the row manual.`}>auto — {shortLoad.volumeM3} m³ is under the {shortLoad.minimumM3} m³ minimum</span>}
                     </td>
                     <td className="px-2 py-1 text-neutral-400">{p.unit}</td>
                     <td className="px-2 py-1">
@@ -148,7 +158,7 @@ export default function CategoryBlock({ cat, item, rates, onQtyChange, onRateCha
                           steel rate moves with the market often enough that
                           it's worth editing on the row rather than only in the
                           Rates modal. Same key either way, so one figure. */}
-                      {onRateChange && ((cat.key === "CONCRETE" && (/minimum cartage|small load/i.test(p.name) || /transport surcharge/i.test(p.name) || /environment levy/i.test(p.name))) || p.unit === "quote" || cat.volumeRateBasis) ? (
+                      {onRateChange && ((cat.key === "CONCRETE" && (/minimum cartage|small load/i.test(p.name) || /transport surcharge/i.test(p.name) || /environment levy/i.test(p.name))) || (cat.key === SPECIALIST_CONCRETE_KEY && (/washout|short-load|delivery beyond/i.test(p.name))) || p.unit === "quote" || cat.volumeRateBasis) ? (
                         <NumInput
                           step={p.unit === "quote" ? "50" : cat.volumeRateBasis ? "25" : "0.25"}
                           value={rate.unitCost}

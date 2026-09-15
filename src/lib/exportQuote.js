@@ -19,13 +19,26 @@
  *   can't accept the HTML clipboard format still gets usable text).
  */
 import { FULL_CATALOG, RESOURCE_COLS, CATEGORY_ORDER, SECTION_ORDER } from "../data/catalog.js";
-import { computeElementCost, computeGrandTotal, computeMarginLadder, rateKey, lookupRate, computeRowTotal, rowContext, getDefaultMargin, getMarginSteps, additionalRowsFor, additionalRowTotal } from "./costing.js";
+import { computeElementCost, computeGrandTotal, computeMarginLadder, rateKey, lookupRate, computeRowTotal, rowContext, getDefaultMargin, getMarginSteps, additionalRowsFor, additionalRowTotal, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, autoSpecialistFees } from "./costing.js";
 import { GRADCON_LOGO_DATA_URI } from "./logo.js";
 
 /** Rate ($/unit) backed out from the line's own total ÷ qty — always exactly
  * reproduces `Total = Qty × Rate` for the reader, regardless of whether the
  * underlying category is costed by weight/area/length (see computeRowTotal). */
 const rateOf = (total, qty) => (qty ? total / qty : 0);
+
+/** The auto-applied supplier charges (Holcim on the CONCRETE band, VicMix on the specialist band) as export lines. */
+function autoConcreteFeeLines(item, rates) {
+  const out = [];
+  const mc = autoMinimumCartage(item, rates); if (mc) out.push({ label: `Minimum cartage (CONCRETE — auto, ${mc.qty} m³ short of ${mc.threshold} m³)`, qty: mc.qty, unit: "m3", total: mc.total });
+  const sur = autoConcreteSurcharge(item, rates); if (sur) out.push({ label: "Production & transport surcharge (CONCRETE — auto, per m³)", qty: sur.qty, unit: "m3", total: sur.total });
+  const levy = autoEnvironmentLevy(item, rates); if (levy) out.push({ label: "Environment levy (CONCRETE — auto, per m³)", qty: levy.qty, unit: "m3", total: levy.total });
+  autoSpecialistFees(item, rates).forEach((fee) => {
+    const washout = /pigment washout/i.test(fee.key);
+    out.push({ label: washout ? `VicMix pigment washout charge (SPECIALIST FINISHING CONCRETE — auto, ${fee.qty} truck${fee.qty === 1 ? "" : "s"}, + GST)` : `VicMix short-load charge (SPECIALIST FINISHING CONCRETE — auto, under the ${fee.minimumM3} m³ minimum)`, qty: fee.qty, unit: washout ? "truck" : "load", total: fee.total });
+  });
+  return out;
+}
 
 /** Every line (material/labour/custom) actually filled in for one element, plus its total. */
 function buildElementLines(item, rates) {
@@ -49,6 +62,8 @@ function buildElementLines(item, rates) {
     });
   });
 
+  // the auto-applied supplier charges are real money in the totals, so the sheet lists them
+  autoConcreteFeeLines(item, rates).forEach((l) => materialLines.push(l));
   const cost = computeElementCost(item, rates);
   const labourLines = RESOURCE_COLS.filter((res) => cost.resourceTotals[res.key] > 0).map((res) => ({
     label: res.name, qty: cost.resourceTotals[res.key], unit: res.unit, total: cost.resourceCosts[res.key],

@@ -2,7 +2,7 @@ import {
   CATEGORY_ORDER, SECTION_ORDER, FULL_CATALOG, RESOURCE_COLS,
 } from "../data/catalog.js";
 import {
-  computeElementCost, computeGrandTotal, computeMarginLadder, rateKey, lookupRate, computeRowTotal, rowContext, money, money2, getDefaultMargin, getMarginSteps, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, additionalRowsFor, additionalRowTotal } from "../lib/costing.js";
+  computeElementCost, computeGrandTotal, computeMarginLadder, rateKey, lookupRate, computeRowTotal, rowContext, money, money2, getDefaultMargin, getMarginSteps, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, additionalRowsFor, additionalRowTotal, autoSpecialistFees } from "../lib/costing.js";
 import { GRADCON_LOGO_DATA_URI } from "../lib/logo.js";
 
 /**
@@ -218,6 +218,11 @@ function ElementReportBlock({ item, rates }) {
   if (surcharge) {
     materialLines.push({ key: `${surcharge.key}::auto`, label: "Production & transport surcharge (CONCRETE — auto, per m³)", qty: surcharge.qty, unit: "m3", total: surcharge.total });
   }
+  // VicMix charges on the specialist band, auto-applied like the Holcim fees above
+  autoSpecialistFees(item, rates).forEach((fee) => {
+    const washout = /pigment washout/i.test(fee.key);
+    materialLines.push({ key: `${fee.key}::auto`, label: washout ? `VicMix pigment washout charge (SPECIALIST FINISHING CONCRETE — auto, ${fee.pigmentedM3} m³ pigmented mix, ${fee.qty} truck${fee.qty === 1 ? "" : "s"}, + GST)` : `VicMix short-load charge (SPECIALIST FINISHING CONCRETE — auto, ${fee.volumeM3} m³ under the ${fee.minimumM3} m³ minimum)`, qty: fee.qty, unit: washout ? "truck" : "load", total: fee.total });
+  });
 
   const labourLines = RESOURCE_COLS.filter((res) => cost.resourceTotals[res.key] > 0).map((res) => ({
     key: res.key,

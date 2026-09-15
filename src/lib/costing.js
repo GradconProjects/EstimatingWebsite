@@ -5,7 +5,7 @@
  *
  * Read CLAUDE.md → "Costing rules" before editing computeElementCost.
  */
-import { FULL_CATALOG, RESOURCE_COLS, LABOUR_TEMPLATES, GST_RATE, PRODUCTION_RATES, DEFAULT_MARGIN, MARGIN_STEPS, MIN_CARTAGE_THRESHOLD_M3, TRUCK_LOAD_M3 } from "../data/catalog.js";
+import { FULL_CATALOG, RESOURCE_COLS, LABOUR_TEMPLATES, GST_RATE, PRODUCTION_RATES, DEFAULT_MARGIN, MARGIN_STEPS, MIN_CARTAGE_THRESHOLD_M3, TRUCK_LOAD_M3, SPECIALIST_CONCRETE_KEY } from "../data/catalog.js";
 
 // Shared with portal-shell.html's Settings modal (same localStorage key, same
 // origin — the portal embeds this app via a blob: URL created from its own
@@ -173,7 +173,73 @@ function pouredVolume(item) {
  * PrintQuoteReport, exportQuote) read the same volume.
  */
 export function rowContext(item) {
-  return { concreteM3: pouredVolume(item) };
+  return { concreteM3: pouredVolume(item) + specialistVolume(item) };
+}
+
+/* ---- SPECIALIST FINISHING CONCRETE (VicMix) ----
+ * Its m³ rows are poured concrete like any other (crew days, kg/m³ steel),
+ * but they are NOT Holcim volume: the Holcim minimum cartage / surcharge /
+ * levy stay on the CONCRETE band only. VicMix's own charges live here. */
+const SPECIALIST_WASHOUT_MATCH = /pigment washout/i;
+const SPECIALIST_SHORT_LOAD_MATCH = /short-load charge/i;
+const SPECIALIST_FEE_MATCH = (name, unit) => SPECIALIST_WASHOUT_MATCH.test(name) || SPECIALIST_SHORT_LOAD_MATCH.test(name) || /delivery beyond/i.test(name) || unit === "quote";
+/** A pigmented mix: charcoal / half black / black backgrounds and oxide colours. Off-white ("Ivory") is a cement, not a pigment. */
+const PIGMENTED_MIX_MATCH = /half black|black|charcoal|oxide|colou?red concrete/i;
+function specialistCategory() { return FULL_CATALOG.find((c) => c.key === SPECIALIST_CONCRETE_KEY); }
+/** m³ of specialist mix on the element (m³ rows only, never the charge rows). */
+export function specialistVolume(item) {
+  const cat = specialistCategory(); if (!cat) return 0;
+  let vol = 0;
+  cat.products.forEach((p) => {
+    if (p.unit !== "m3" || SPECIALIST_FEE_MATCH(p.name, p.unit)) return;
+    vol += Number(item.qtys[rateKey(cat.key, p.name, p.unit)]) || 0;
+  });
+  return vol;
+}
+/** m³ of PIGMENTED specialist mix — what the washout charge is counted on. */
+export function pigmentedVolume(item) {
+  const cat = specialistCategory(); if (!cat) return 0;
+  let vol = 0;
+  cat.products.forEach((p) => {
+    if (p.unit !== "m3" || SPECIALIST_FEE_MATCH(p.name, p.unit) || !PIGMENTED_MIX_MATCH.test(p.name)) return;
+    vol += Number(item.qtys[rateKey(cat.key, p.name, p.unit)]) || 0;
+  });
+  return vol;
+}
+/** VicMix pigment washout: $40 (+ GST) per TRUCK of pigmented mix — trucks =
+ * ceil(pigmented m³ / "VicMix Maxi truck load size"). Typed Qty wins. */
+export function autoPigmentWashout(item, rates) {
+  const cat = specialistCategory(); const fee = cat && cat.products.find((p) => SPECIALIST_WASHOUT_MATCH.test(p.name));
+  if (!fee) return null;
+  const key = rateKey(cat.key, fee.name, fee.unit);
+  const typed = item.qtys[key];
+  if (typed !== undefined && typed !== "") return null;
+  const pig = pigmentedVolume(item);
+  if (!(pig > 0)) return null;
+  const truck = prodRate(rates, "VicMix Maxi truck load size", "m³/load", 7);
+  if (!(truck > 0)) return null;
+  const trucks = Math.ceil(pig / truck - 1e-9);
+  const rate = lookupRate(rates, key, { unitCost: fee.unitCost ?? 0 });
+  return { key, qty: trucks, unitCost: rate.unitCost ?? 0, total: trucks * (rate.unitCost ?? 0), pigmentedM3: round2(pig), truckM3: truck };
+}
+/** VicMix short load: the published price needs a 4 m³ minimum delivery — a
+ * specialist pour under it flags one short-load charge (amount editable;
+ * VicMix does not publish it, so it seeds at $0). Typed Qty wins. */
+export function autoSpecialistShortLoad(item, rates) {
+  const cat = specialistCategory(); const fee = cat && cat.products.find((p) => SPECIALIST_SHORT_LOAD_MATCH.test(p.name));
+  if (!fee) return null;
+  const key = rateKey(cat.key, fee.name, fee.unit);
+  const typed = item.qtys[key];
+  if (typed !== undefined && typed !== "") return null;
+  const vol = specialistVolume(item);
+  const minimum = prodRate(rates, "VicMix minimum delivery (Maxi truck)", "m³/load", 4);
+  if (!(vol > 0) || !(minimum > 0) || vol >= minimum - 1e-9) return null;
+  const rate = lookupRate(rates, key, { unitCost: fee.unitCost ?? 0 });
+  return { key, qty: 1, unitCost: rate.unitCost ?? 0, total: rate.unitCost ?? 0, volumeM3: round2(vol), minimumM3: minimum, shortByM3: round2(minimum - vol) };
+}
+/** The specialist band's auto rows, in display order (null entries dropped). */
+export function autoSpecialistFees(item, rates) {
+  return [autoPigmentWashout(item, rates), autoSpecialistShortLoad(item, rates)].filter(Boolean);
 }
 
 /**
@@ -340,6 +406,7 @@ export function computeElementCost(item, rates) {
         const rowTotal = computeRowTotal(cat, rate, qty, ctx);
         catTotal += rowTotal;
         if (cat.key === "CONCRETE" && !CONCRETE_CHARGE_MATCH(p.name)) concreteQty += qty; // the delivery fees are $/m³ charges, not poured volume
+        if (cat.key === SPECIALIST_CONCRETE_KEY && p.unit === "m3" && !SPECIALIST_FEE_MATCH(p.name, p.unit)) concreteQty += qty; // VicMix mix is poured concrete too
       }
     });
     // custom rows the estimator added under this category ("Certification"
@@ -360,6 +427,11 @@ export function computeElementCost(item, rates) {
       categoryTotals["CONCRETE"] = (categoryTotals["CONCRETE"] || 0) + fee.total;
       materialsTotal += fee.total;
     });
+  // VicMix charges on the specialist band: pigment washout per truck, short load under the minimum
+  autoSpecialistFees(item, rates).forEach((fee) => {
+    categoryTotals[SPECIALIST_CONCRETE_KEY] = (categoryTotals[SPECIALIST_CONCRETE_KEY] || 0) + fee.total;
+    materialsTotal += fee.total;
+  });
 
   // Seamless labour: with labourAuto on, empty matrix cells are driven live
   // by the rate-of-work engine (autoLabourQtys) — quantities entered above
@@ -463,11 +535,12 @@ const GENERAL_TASK_MATCH = /washout|tidy|clean|patch/i;       // "Washout / clea
 export function labourQuantities(item, rates) {
   let concreteM3 = 0, formworkM2 = 0, finishM2 = 0, excavationM3 = 0;
   FULL_CATALOG.forEach((cat) => {
-    if (cat.key !== "CONCRETE" && cat.key !== "FORMWORK" && cat.key !== "SQUARE MESH" && cat.key !== "OTHER ALLOWANCES") return;
+    if (cat.key !== "CONCRETE" && cat.key !== "FORMWORK" && cat.key !== "SQUARE MESH" && cat.key !== "OTHER ALLOWANCES" && cat.key !== SPECIALIST_CONCRETE_KEY) return;
     cat.products.forEach((p) => {
       const qty = Number(item.qtys[rateKey(cat.key, p.name, p.unit)]) || 0;
       if (qty <= 0) return;
       if (cat.key === "CONCRETE" && !SURCHARGE_PRODUCT_MATCH.test(p.name)) concreteM3 += qty; // the surcharge row is a fee, not poured volume
+      else if (cat.key === SPECIALIST_CONCRETE_KEY) { if (p.unit === "m3" && !SPECIALIST_FEE_MATCH(p.name, p.unit)) concreteM3 += qty; } // VicMix mix pours like any concrete
       else if (cat.key === "FORMWORK" && p.unit === "m2") formworkM2 += qty;
       else if (cat.key === "SQUARE MESH") finishM2 += qty;
       else if (cat.key === "OTHER ALLOWANCES" && /soil removal/i.test(p.name)) excavationM3 += qty; // spoil volume ≈ excavation m³

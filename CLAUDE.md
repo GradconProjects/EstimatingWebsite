@@ -139,6 +139,21 @@ safety net silently. Keep all cost arithmetic in `lib/costing.js`.
    in `costing.js` — each has exactly ONE implementation, called by
    `computeElementCost`, `CategoryBlock.jsx` and `PrintQuoteReport.jsx`.
 
+   **VicMix charges work the same way on the `SPECIALIST FINISHING
+   CONCRETE` band**: `autoPigmentWashout` ($40 + GST per Maxi truck of
+   PIGMENTED mix — charcoal / half black / black / oxide; "Ivory" is a
+   cement, not a pigment — trucks = ceil(m³ / "VicMix Maxi truck load size"))
+   and `autoSpecialistShortLoad` (one charge when the pour is under the
+   "VicMix minimum delivery" production rate; VicMix does not publish the
+   amount, so it seeds $0). Each has ONE implementation, called by
+   `computeElementCost`, `CategoryBlock.jsx`, `PrintQuoteReport.jsx` and
+   `exportQuote.js`; a typed Qty takes the row manual. Specialist m³ IS
+   poured concrete for `rowContext` (kg/m³ steel), `labourQuantities` and
+   `concreteQty`, but NEVER for the Holcim fees above (different supplier).
+   The Rates Library's "Specialist concrete" section lists every product by
+   the same name so its prices govern Quotes through `ratesLibrarySync`;
+   `verify.mjs` fails if the two lists drift.
+
 8. **Contract minimums bill through `computeRowTotal`.** A product can
    carry a `minQty` (the 7th field in its catalog row) — a "4 hour min"
    pump bills 4 hours for a 1-hour job. `computeRowTotal` raises the

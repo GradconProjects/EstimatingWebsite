@@ -388,6 +388,60 @@ const FORMWORK_ITEMS = [
   {p:"0.75mm Bondek to suspended slab",u:"m2",material:125,fixHrs:0.28,stripHrs:0,established:true},
 ];
 
+/* Specialist finishing concrete — VicMix exposed / decorative mixes at the
+ * PUBLISHED $/m³ (ex GST), then other decorative finishes and VicMix's own
+ * charges. Names match the Quotes catalog product names exactly: the Quotes
+ * sync (src/lib/ratesLibrarySync.js) takes these prices by name. */
+const SPECIALIST_CONCRETE_ITEMS = [
+  {p:"VicMix Fusion Ash \u2014 grey cement, grey granite/dark aggregate",u:"m3",cost:330},
+  {p:"VicMix Meridian 37 Ash \u2014 grey cement, predominantly dark stone",u:"m3",cost:340},
+  {p:"VicMix Meridian 55 Ash \u2014 grey cement, light grey/brown/black aggregate",u:"m3",cost:340},
+  {p:"VicMix Himalayas Ash \u2014 grey cement, small dark stone",u:"m3",cost:340},
+  {p:"VicMix Cobram 91 Ash \u2014 grey cement, light grey/brown/black",u:"m3",cost:365},
+  {p:"VicMix Sienna Ash \u2014 grey cement, light grey/brown aggregate",u:"m3",cost:365},
+  {p:"VicMix Baltic 91 Ash \u2014 grey cement, red/brown/black",u:"m3",cost:370},
+  {p:"VicMix Amber Ash \u2014 grey cement, red/brown aggregate",u:"m3",cost:390},
+  {p:"VicMix Fusion Half Black \u2014 charcoal, grey granite/dark aggregate",u:"m3",cost:395},
+  {p:"VicMix Cobram 28 Half Black \u2014 charcoal, large dark + light stone",u:"m3",cost:405},
+  {p:"VicMix Bahrain Half Black \u2014 charcoal, light grey/brown rounded aggregate",u:"m3",cost:405},
+  {p:"VicMix Lipari Ivory \u2014 off-white cement with black stone",u:"m3",cost:425},
+  {p:"VicMix Meridian 37 Half Black \u2014 charcoal, dark stone/brown aggregate",u:"m3",cost:430},
+  {p:"VicMix Panuba 55 Ivory \u2014 off-white, light grey/brown rounded aggregate",u:"m3",cost:450},
+  {p:"VicMix Blizzard 19 Half Black \u2014 charcoal, dark stone + white quartz",u:"m3",cost:455},
+  {p:"VicMix Lipari Black \u2014 black background, large dark stone",u:"m3",cost:455},
+  {p:"VicMix Bahrain Ivory \u2014 off-white, light grey/brown rounded aggregate",u:"m3",cost:465},
+  {p:"VicMix Cobram 91 Ivory \u2014 off-white, light grey/brown/black",u:"m3",cost:465},
+  {p:"VicMix Meridian 82 Ivory \u2014 off-white, light grey/brown/black",u:"m3",cost:465},
+  {p:"VicMix Sienna Ivory \u2014 off-white, grey/brown aggregate",u:"m3",cost:465},
+  {p:"VicMix Baltic 91 Ivory \u2014 off-white, red/brown/black aggregate",u:"m3",cost:470},
+  {p:"VicMix Amber Ivory \u2014 off-white, red/brown aggregate",u:"m3",cost:490},
+  {p:"VicMix Amber Ash + Cappuccino Oxide \u2014 cappuccino coloured base, red/brown aggregate",u:"m3",cost:490},
+  {p:"VicMix Walsh 118 Black \u2014 black, large dark + brown/white stone",u:"m3",cost:495},
+  {p:"VicMix Ares 46 Ivory \u2014 off-white, red/brown/light aggregate",u:"m3",cost:505},
+  {p:"VicMix Rio 28 Half Black \u2014 charcoal, dark stone + white quartz",u:"m3",cost:530},
+  {p:"VicMix Alpine Ivory \u2014 off-white, predominantly white quartz",u:"m3",cost:625},
+  {p:"Exposed aggregate \u2014 retarder wash-off finish (finishing only)",u:"m2",cost:18},
+  {p:"Exposed aggregate \u2014 seeded decorative aggregate (supply & seed)",u:"m2",cost:38},
+  {p:"Honed / ground exposed aggregate finish",u:"m2",cost:65},
+  {p:"Polished concrete \u2014 mechanical grind & polish",u:"m2",cost:95},
+  {p:"Burnished / power-trowel finish",u:"m2",cost:14},
+  {p:"Broom / non-slip finish",u:"m2",cost:4},
+  {p:"Salt finish",u:"m2",cost:12},
+  {p:"Stamped / stencilled pattern finish",u:"m2",cost:55},
+  {p:"Acid-wash / etched finish",u:"m2",cost:10},
+  {p:"Sandblasted finish",u:"m2",cost:25},
+  {p:"Coloured concrete \u2014 oxide pigment surcharge (per m\u00b3, other supplier)",u:"m3",cost:65},
+  {p:"Off-white / white cement base surcharge (per m\u00b3, other supplier)",u:"m3",cost:110},
+  {p:"Decorative sealer \u2014 penetrating, 2 coats",u:"m2",cost:12},
+  {p:"Decorative sealer \u2014 acrylic gloss / matt, 2 coats",u:"m2",cost:10},
+  {p:"Concrete densifier / hardener",u:"m2",cost:8},
+  {p:"Sample panel / mock-up",u:"each",cost:650},
+  {p:"VicMix pigment washout charge \u2014 per truck (+ GST, pigmented mixes)",u:"truck",cost:40},
+  {p:"VicMix short-load charge \u2014 delivery under the 4 m\u00b3 Maxi minimum",u:"load",cost:0},
+  {p:"VicMix delivery beyond 25 km of plant \u2014 per load",u:"load",cost:0},
+  {p:"Specialist finishing concrete (subcontract quote)",u:"quote",cost:0},
+  {p:"Specialist finish (other \u2014 specify in description)",u:"m2",cost:60},
+];
 const CONCRETE_GRADE_ITEMS = [
   {p:"25 mpa Agilia",u:"m3",cost:318},
   {p:"32 mpa Agilia",u:"m3",cost:317},
@@ -539,7 +593,7 @@ function freshRates(){
     global: {...GLOBAL},
     steel: JSON.parse(JSON.stringify(STEEL_BUILDUPS)),
     reinfAcc: {}, concrete: {}, concreteLabour: {...CONCRETE_LABOUR}, formwork: {},
-    rateItems: {}, bciRef: {}, concreteGrade: {}, formworkLegacy: {}, otherAcc: {}, otherAllow: {}, labourPlant: {}, prelim: {},
+    rateItems: {}, bciRef: {}, concreteGrade: {}, specialistConcrete: {}, formworkLegacy: {}, otherAcc: {}, otherAllow: {}, labourPlant: {}, prelim: {},
     reinforcementEstablished: {
       trenchMesh: {...GRADCON_TRENCH_MESH_RATES},
       squareMesh: {...GRADCON_SQUARE_MESH_RATES},
@@ -554,6 +608,7 @@ function freshRates(){
   RATE_ITEMS.forEach(it=> s.rateItems[it.p] = {qtyC:it.qtyC, qtyS:it.qtyS, qtyF:it.qtyF, extraHrs:it.extraHrs});
   BCI_REFERENCE.forEach((row,i)=> s.bciRef[i] = {rate: row[3]});
   CONCRETE_GRADE_ITEMS.forEach(it=> s.concreteGrade[it.p] = {cost:it.cost});
+  SPECIALIST_CONCRETE_ITEMS.forEach(it=> s.specialistConcrete[it.p] = {cost:it.cost});
   FORMWORK_LEGACY_ITEMS.forEach(it=> s.formworkLegacy[it.p] = {cost:it.cost});
   OTHER_ACCESSORIES.forEach(it=> s.otherAcc[it.p] = {cost:it.cost});
   OTHER_ALLOWANCES.forEach(it=> s.otherAllow[it.p] = {cost:it.cost});
@@ -812,7 +867,13 @@ function renderApp(){
     </tbody></table>`;
   });
   reoBody += `</div>`;
-  h += section("sec-reinforcement", "Reinforcement", "Reinforcement", REINFORCEMENT_ITEMS["Trench mesh"].items.length+REINFORCEMENT_ITEMS["Square Mesh"].items.length+REINFORCEMENT_ITEMS["Stock Bar"].items.length+REINFORCEMENT_ITEMS["Processed Bar"].items.length, reoBody, false);
+    // Specialist finishing concrete (VicMix)
+  h += section("sec-specialist", "Specialist concrete", "Specialist finishing concrete — VicMix exposed / decorative mixes (published $/m³) and other finishes",
+    SPECIALIST_CONCRETE_ITEMS.length,
+    `<p class="hint">VicMix published prices, $/m³ ex GST. VicMix says its displayed pricing applies to <b>minimum 4 m³ deliveries in a Maxi truck within 25 km of the plant</b>, <b>prices can change</b>, and <b>pigment mixes attract a $40 per truck + GST washout charge</b>. Quotes applies the washout automatically per truck of pigmented mix (truck size and the 4 m³ minimum are production rates in the Quotes Rates modal) and flags a short-load charge under 4 m³ — VicMix does not publish that amount, so enter it on the "short-load charge" row when known. Every price here flows to the Quotes catalog by name.</p>` +
+    editableTable(SPECIALIST_CONCRETE_ITEMS, state.specialistConcrete, it=>it.p, [{field:"cost",label:"Rate ($)"}], {mapName:"specialistConcrete"}));
+
+h += section("sec-reinforcement", "Reinforcement", "Reinforcement", REINFORCEMENT_ITEMS["Trench mesh"].items.length+REINFORCEMENT_ITEMS["Square Mesh"].items.length+REINFORCEMENT_ITEMS["Stock Bar"].items.length+REINFORCEMENT_ITEMS["Processed Bar"].items.length, reoBody, false);
 
   h += section("sec-reinf-acc", "Reo Accessories", "Reinforcing Accessories (AKZ Reinforcing, real current rates)", REINFORCING_ACCESSORIES.length,
     `<p class="hint">$/unit — bar chairs, tie wire, poly, tape.</p>` +

@@ -31,7 +31,7 @@ export const LIB_SYNC_KEY = "gradcon-rates-libsync";
 /* The library sections that hold a plain per-product price. Its other
  * sections (steel build-ups, production hours, PT factors) are inputs to its
  * own calculators, not prices Quotes has a matching product for. */
-const PRICED_SECTIONS = ["concreteGrade", "formworkLegacy", "reinfAcc", "otherAcc", "otherAllow"];
+const PRICED_SECTIONS = ["concreteGrade", "specialistConcrete", "formworkLegacy", "reinfAcc", "otherAcc", "otherAllow"];
 
 const norm = (s) => String(s == null ? "" : s).toLowerCase().trim().replace(/\s+/g, " ");
 

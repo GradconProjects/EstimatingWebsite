@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import fs from "node:fs";
 /**
  * Sanity-checks the costing engine without needing a browser.
  * Run with: npm run verify
@@ -10,14 +11,13 @@
  */
 import assert from "node:assert/strict";
 import {
-  FULL_CATALOG, RESOURCE_COLS, ELEMENT_TYPES, CATEGORY_ORDER, SECTION_ORDER, LABOUR_TEMPLATES, MARGIN_STEPS,
-} from "../src/data/catalog.js";
+  FULL_CATALOG, RESOURCE_COLS, ELEMENT_TYPES, CATEGORY_ORDER, SECTION_ORDER, LABOUR_TEMPLATES, MARGIN_STEPS, PRODUCTION_RATES } from "../src/data/catalog.js";
 import * as catalogAll from "../src/data/catalog.js";
 import {
   computeElementCost, computeGrandTotal, computeMarginLadder,
   defaultRates, newElementItem, rateKey, suggestedLabourPrefill, computeExternalScopeLines,
   labourResourceRate, taskRowMeta, labourQuantities, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, computeRowTotal,
-  computeElementUnitRates, computeProjectUnitRates, rowContext, computeElementReinforcementTonnes, getMarginSteps, additionalRowsFor } from "../src/lib/costing.js";
+  computeElementUnitRates, computeProjectUnitRates, rowContext, computeElementReinforcementTonnes, getMarginSteps, additionalRowsFor, autoPigmentWashout, autoSpecialistShortLoad, autoSpecialistFees } from "../src/lib/costing.js";
 import { buildImportFromEstimate, normalizeElementName, geometryForLabel } from "../src/lib/estimateImport.js";
 
 let passed = 0;
@@ -67,10 +67,10 @@ check("every element type has both a category and a section", () => {
   });
 });
 
-check("16 material categories, 228 products (incl. CONCRETE PUMPING, REINFORCEMENT BY RATE, the 32-board INSULATION range, 31 SCREEDS, 17 HYDRONIC HEATING, the full 24-size TRENCH MESH grid, Bored Piers subcontract, minimum cartage, levy, surcharge)", () => {
-  assert.equal(FULL_CATALOG.length, 16);
+check("17 material categories, 276 products (incl. CONCRETE PUMPING, REINFORCEMENT BY RATE, the 32-board INSULATION range, 31 SCREEDS, 17 HYDRONIC HEATING, 48 SPECIALIST FINISHING CONCRETE, the full 24-size TRENCH MESH grid, Bored Piers subcontract, minimum cartage, levy, surcharge)", () => {
+  assert.equal(FULL_CATALOG.length, 17);
   const total = FULL_CATALOG.reduce((s, c) => s + c.products.length, 0);
-  assert.equal(total, 228);
+  assert.equal(total, 276);
   const scr = FULL_CATALOG.find((c) => c.key === "SCREEDS"), hyd = FULL_CATALOG.find((c) => c.key === "HYDRONIC HEATING");
   assert.equal(scr.products.length, 31); assert.equal(hyd.products.length, 17);
   assert.ok(!scr.weightBasis && !scr.areaBasis && !scr.lengthBasis && !scr.volumeRateBasis && !hyd.weightBasis && !hyd.areaBasis, "both cost plain qty × rate");
@@ -1535,6 +1535,66 @@ check("Rates Library rules: governed keys are exactly the matched, non-excluded 
   const lib = { formworkLegacy: { Conventional: { cost: 150 } }, reinfAcc: { "Delivery fee": { cost: 300 } } };
   const g = libraryGovernedKeys(lib);
   assert.ok(g.has(rateKey("FORMWORK", "Conventional", "m2")) && g.size === 1);
+});
+
+
+check("SPECIALIST FINISHING CONCRETE: 27 VicMix mixes at the published $/m³, plain qty × rate, washout/short-load/quote rows present, library names match", () => {
+  const cat = FULL_CATALOG.find((c) => c.key === "SPECIALIST FINISHING CONCRETE");
+  assert.ok(cat && !cat.weightBasis && !cat.areaBasis && !cat.lengthBasis && !cat.volumeRateBasis);
+  assert.equal(cat.products.length, 48);
+  const vm = cat.products.filter((p) => /^VicMix /.test(p.name) && p.unit === "m3");
+  assert.equal(vm.length, 27);
+  const price = (n) => vm.find((p) => p.name.startsWith("VicMix " + n + " —")).unitCost;
+  assert.equal(price("Fusion Ash"), 330); assert.equal(price("Amber Ash + Cappuccino Oxide"), 490); assert.equal(price("Alpine Ivory"), 625); assert.equal(price("Rio 28 Half Black"), 530);
+  assert.ok(cat.products.some((p) => /pigment washout/i.test(p.name) && p.unit === "truck" && p.unitCost === 40), "washout $40/truck");
+  assert.ok(cat.products.some((p) => /short-load charge/i.test(p.name) && p.unitCost === 0), "short-load row, unpublished amount seeds $0");
+  assert.ok(cat.products.some((p) => p.unit === "quote"), "subcontract quote row");
+  // the production rates VicMix's terms need
+  assert.ok(PRODUCTION_RATES.some((r) => r.name === "VicMix minimum delivery (Maxi truck)" && r.rate === 4));
+  assert.ok(PRODUCTION_RATES.some((r) => r.name === "VicMix Maxi truck load size" && r.rate === 7));
+  assert.ok(PRODUCTION_RATES.some((r) => /delivery radius/.test(r.name) && r.rate === 25));
+  // the Rates Library carries every product by the SAME name so its prices flow to Quotes by name
+  const html = fs.readFileSync(new URL("../portal/rates-library.html", import.meta.url), "utf8");
+  const block = html.slice(html.indexOf("const SPECIALIST_CONCRETE_ITEMS"), html.indexOf("const CONCRETE_GRADE_ITEMS"));
+  const libNames = [...block.matchAll(/\{p:("(?:[^"\\]|\\.)*"),u:"[^"]*",cost:([\d.]+)\}/g)].map((m) => [JSON.parse(m[1]), Number(m[2])]);
+  assert.equal(libNames.length, 48, "library lists all 48");
+  cat.products.forEach((p) => { const hit = libNames.find(([n]) => n === p.name); assert.ok(hit, `library missing "${p.name}"`); assert.equal(hit[1], p.unitCost, `library price for ${p.name}`); });
+});
+
+check("VicMix pigment washout auto-applies per Maxi truck of PIGMENTED mix; short load flags under 4 m³; Holcim fees never touch specialist volume", () => {
+  const type = ELEMENT_TYPES[0]; const rates = defaultRates();
+  const K = (n) => rateKey("SPECIALIST FINISHING CONCRETE", FULL_CATALOG.find((c) => c.key === "SPECIALIST FINISHING CONCRETE").products.find((p) => p.name.startsWith(n)).name, "m3");
+  // 10 m³ of Fusion Half Black (charcoal = pigmented) → 2 trucks at 7 m³ → 2 × $40
+  let item = newElementItem(type); item.qtys[K("VicMix Fusion Half Black")] = 10;
+  let w = autoPigmentWashout(item, rates);
+  assert.ok(w && w.qty === 2 && w.total === 80 && w.pigmentedM3 === 10, JSON.stringify(w));
+  let cost = computeElementCost(item, rates);
+  assert.equal(cost.categoryTotals["SPECIALIST FINISHING CONCRETE"], 10 * 395 + 80);
+  assert.equal(cost.concreteQty, 10, "specialist mix counts as poured concrete");
+  assert.equal(autoMinimumCartage(item, rates), null, "no Holcim cartage on VicMix volume");
+  assert.equal(autoConcreteSurcharge(item, rates), null); assert.equal(autoEnvironmentLevy(item, rates), null);
+  assert.equal(rowContext(item).concreteM3, 10, "kg/m³ reinforcement sees the volume");
+  // an Ash (grey cement, no pigment) mix attracts no washout
+  item = newElementItem(type); item.qtys[K("VicMix Fusion Ash")] = 10;
+  assert.equal(autoPigmentWashout(item, rates), null);
+  // a typed washout qty wins over the auto count
+  item = newElementItem(type); item.qtys[K("VicMix Lipari Black")] = 10;
+  const wk = rateKey("SPECIALIST FINISHING CONCRETE", "VicMix pigment washout charge — per truck (+ GST, pigmented mixes)", "truck");
+  item.qtys[wk] = 1; assert.equal(autoPigmentWashout(item, rates), null);
+  assert.equal(computeElementCost(item, rates).categoryTotals["SPECIALIST FINISHING CONCRETE"], 10 * 455 + 40);
+  // truck size is an editable production rate: 7 → 4 m³ makes 10 m³ three trucks
+  const r2 = { ...rates, [rateKey("PRODUCTION", "VicMix Maxi truck load size", "m³/load")]: { unitCost: 4 } };
+  item = newElementItem(type); item.qtys[K("VicMix Lipari Black")] = 10;
+  const w2 = autoPigmentWashout(item, r2); assert.ok(w2 && w2.qty === 3, JSON.stringify(w2));
+  // short load: 3 m³ is under the 4 m³ minimum → one charge (seeded $0 until entered); 4 m³ is not
+  item = newElementItem(type); item.qtys[K("VicMix Sienna Ash")] = 3;
+  const sl = autoSpecialistShortLoad(item, rates); assert.ok(sl && sl.qty === 1 && sl.total === 0 && sl.shortByM3 === 1, JSON.stringify(sl));
+  const sk = rateKey("SPECIALIST FINISHING CONCRETE", "VicMix short-load charge — delivery under the 4 m³ Maxi minimum", "load");
+  const r3 = { ...rates, [sk]: { unitCost: 150 } };
+  assert.equal(computeElementCost(item, r3).categoryTotals["SPECIALIST FINISHING CONCRETE"], 3 * 365 + 150);
+  item.qtys[K("VicMix Sienna Ash")] = 4; assert.equal(autoSpecialistShortLoad(item, rates), null);
+  // a blank band costs nothing and applies nothing
+  assert.deepEqual(autoSpecialistFees(newElementItem(type), rates), []);
 });
 
 console.log(`\n${passed} check(s) passed.`);

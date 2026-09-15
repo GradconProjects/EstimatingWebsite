@@ -98,7 +98,14 @@ export const PRODUCTION_RATES = [
   // by the minimum itself — kept so no saved override is orphaned, and so a
   // job that wants to reason about truck counts still has the figure.
   { key: "truck_load_m3", name: "Concrete truck load size", unit: "m³/load", rate: 8 },
+  // VicMix (SPECIALIST FINISHING CONCRETE): published prices apply to a
+  // minimum 4 m³ delivery in a Maxi truck within 25 km of the plant. The
+  // truck size sets how many washout charges a pigmented pour attracts.
+  { key: "vicmix_min_m3", name: "VicMix minimum delivery (Maxi truck)", unit: "m³/load", rate: 4 },
+  { key: "vicmix_truck_m3", name: "VicMix Maxi truck load size", unit: "m³/load", rate: 7 },
+  { key: "vicmix_radius_km", name: "VicMix published-price delivery radius", unit: "km", rate: 25 },
 ];
+export const SPECIALIST_CONCRETE_KEY = "SPECIALIST FINISHING CONCRETE";
 
 /* ---------- Labour task templates, keyed by the element's `labour` field ---------- */
 // ONE fixed crew-sheet task structure for every element type (matching the
@@ -264,6 +271,70 @@ export const FULL_CATALOG = [
    * every minimum is editable in the Rates modal like any other product.
    * The two "quote only" lines carry no rate: price them from the supplier's
    * quote by typing the total on the row. */
+  /* Specialist finishing concrete — VicMix exposed / decorative mixes at
+   * their PUBLISHED $/m³ (ex GST; VicMix's list applies to minimum 4 m³
+   * deliveries in a Maxi truck within 25 km of the plant, and prices change —
+   * every figure is editable in the Rates modal and the Rates Library), other
+   * decorative finishes priced per m², and the supplier charges: pigment
+   * mixes attract a $40 per truck (+ GST) washout charge, auto-applied per
+   * truck of pigmented mix (autoPigmentWashout, editable "VicMix Maxi truck
+   * load size" production rate), and a delivery under the 4 m³ minimum
+   * flags a short-load charge (autoSpecialistShortLoad — VicMix does not
+   * publish the amount, so it seeds at $0 until entered). This concrete is
+   * poured volume for crew days and kg/m³ reinforcement, but NOT for the
+   * Holcim delivery fees on the CONCRETE band (different supplier). */
+  { key: "SPECIALIST FINISHING CONCRETE", label: "SPECIALIST FINISHING CONCRETE (VicMix exposed / decorative mixes $/m³ published — min 4 m³ Maxi within 25 km, prices may change; pigment mixes + $40/truck washout)", weightBasis: false, products: [
+    ["VicMix Fusion Ash — grey cement, grey granite/dark aggregate", "m3", null, 330],
+    ["VicMix Meridian 37 Ash — grey cement, predominantly dark stone", "m3", null, 340],
+    ["VicMix Meridian 55 Ash — grey cement, light grey/brown/black aggregate", "m3", null, 340],
+    ["VicMix Himalayas Ash — grey cement, small dark stone", "m3", null, 340],
+    ["VicMix Cobram 91 Ash — grey cement, light grey/brown/black", "m3", null, 365],
+    ["VicMix Sienna Ash — grey cement, light grey/brown aggregate", "m3", null, 365],
+    ["VicMix Baltic 91 Ash — grey cement, red/brown/black", "m3", null, 370],
+    ["VicMix Amber Ash — grey cement, red/brown aggregate", "m3", null, 390],
+    ["VicMix Fusion Half Black — charcoal, grey granite/dark aggregate", "m3", null, 395],
+    ["VicMix Cobram 28 Half Black — charcoal, large dark + light stone", "m3", null, 405],
+    ["VicMix Bahrain Half Black — charcoal, light grey/brown rounded aggregate", "m3", null, 405],
+    ["VicMix Lipari Ivory — off-white cement with black stone", "m3", null, 425],
+    ["VicMix Meridian 37 Half Black — charcoal, dark stone/brown aggregate", "m3", null, 430],
+    ["VicMix Panuba 55 Ivory — off-white, light grey/brown rounded aggregate", "m3", null, 450],
+    ["VicMix Blizzard 19 Half Black — charcoal, dark stone + white quartz", "m3", null, 455],
+    ["VicMix Lipari Black — black background, large dark stone", "m3", null, 455],
+    ["VicMix Bahrain Ivory — off-white, light grey/brown rounded aggregate", "m3", null, 465],
+    ["VicMix Cobram 91 Ivory — off-white, light grey/brown/black", "m3", null, 465],
+    ["VicMix Meridian 82 Ivory — off-white, light grey/brown/black", "m3", null, 465],
+    ["VicMix Sienna Ivory — off-white, grey/brown aggregate", "m3", null, 465],
+    ["VicMix Baltic 91 Ivory — off-white, red/brown/black aggregate", "m3", null, 470],
+    ["VicMix Amber Ivory — off-white, red/brown aggregate", "m3", null, 490],
+    ["VicMix Amber Ash + Cappuccino Oxide — cappuccino coloured base, red/brown aggregate", "m3", null, 490],
+    ["VicMix Walsh 118 Black — black, large dark + brown/white stone", "m3", null, 495],
+    ["VicMix Ares 46 Ivory — off-white, red/brown/light aggregate", "m3", null, 505],
+    ["VicMix Rio 28 Half Black — charcoal, dark stone + white quartz", "m3", null, 530],
+    ["VicMix Alpine Ivory — off-white, predominantly white quartz", "m3", null, 625],
+    // Other decorative finishes and treatments (finishing work per m² unless stated)
+    ["Exposed aggregate — retarder wash-off finish (finishing only)", "m2", null, 18],
+    ["Exposed aggregate — seeded decorative aggregate (supply & seed)", "m2", null, 38],
+    ["Honed / ground exposed aggregate finish", "m2", null, 65],
+    ["Polished concrete — mechanical grind & polish", "m2", null, 95],
+    ["Burnished / power-trowel finish", "m2", null, 14],
+    ["Broom / non-slip finish", "m2", null, 4],
+    ["Salt finish", "m2", null, 12],
+    ["Stamped / stencilled pattern finish", "m2", null, 55],
+    ["Acid-wash / etched finish", "m2", null, 10],
+    ["Sandblasted finish", "m2", null, 25],
+    ["Coloured concrete — oxide pigment surcharge (per m³, other supplier)", "m3", null, 65],
+    ["Off-white / white cement base surcharge (per m³, other supplier)", "m3", null, 110],
+    ["Decorative sealer — penetrating, 2 coats", "m2", null, 12],
+    ["Decorative sealer — acrylic gloss / matt, 2 coats", "m2", null, 10],
+    ["Concrete densifier / hardener", "m2", null, 8],
+    ["Sample panel / mock-up", "each", null, 650],
+    // Supplier charges and catch-alls
+    ["VicMix pigment washout charge — per truck (+ GST, pigmented mixes)", "truck", null, 40],
+    ["VicMix short-load charge — delivery under the 4 m³ Maxi minimum", "load", null, 0],
+    ["VicMix delivery beyond 25 km of plant — per load", "load", null, 0],
+    ["Specialist finishing concrete (subcontract quote)", "quote", null, 0],
+    ["Specialist finish (other — specify in description)", "m2", null, 60],
+  ]},
   { key: "CONCRETE PUMPING", weightBasis: false, products: [
     ["Line pump — up to 70m of line (4 hr min)", "hr", null, 200, null, null, 4],
     ["Line pump — 70-90m of line (4 hr min)", "hr", null, 240, null, null, 4],
