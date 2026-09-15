@@ -172,6 +172,18 @@ function pouredVolume(item) {
  * call, so all four callers (computeElementCost, CategoryBlock,
  * PrintQuoteReport, exportQuote) read the same volume.
  */
+/**
+ * Does this catalog band belong on this element? Every band is on every card
+ * (CLAUDE.md rule 1) EXCEPT one carrying `visibleFor`: that band renders and
+ * costs only on elements whose element category is listed. Costing, the
+ * card, the print report, the Excel export and the Cost Planner publish all
+ * ask this, so a hidden band can never carry invisible money.
+ */
+export function categoryAppliesTo(cat, item) {
+  if (!cat || !Array.isArray(cat.visibleFor)) return true;
+  return cat.visibleFor.includes(item && item.category);
+}
+
 export function rowContext(item) {
   return { concreteM3: pouredVolume(item) + specialistVolume(item) };
 }
@@ -188,7 +200,7 @@ const PIGMENTED_MIX_MATCH = /half black|black|charcoal|oxide|colou?red concrete/
 function specialistCategory() { return FULL_CATALOG.find((c) => c.key === SPECIALIST_CONCRETE_KEY); }
 /** m³ of specialist mix on the element (m³ rows only, never the charge rows). */
 export function specialistVolume(item) {
-  const cat = specialistCategory(); if (!cat) return 0;
+  const cat = specialistCategory(); if (!cat || !categoryAppliesTo(cat, item)) return 0;
   let vol = 0;
   cat.products.forEach((p) => {
     if (p.unit !== "m3" || SPECIALIST_FEE_MATCH(p.name, p.unit)) return;
@@ -198,7 +210,7 @@ export function specialistVolume(item) {
 }
 /** m³ of PIGMENTED specialist mix — what the washout charge is counted on. */
 export function pigmentedVolume(item) {
-  const cat = specialistCategory(); if (!cat) return 0;
+  const cat = specialistCategory(); if (!cat || !categoryAppliesTo(cat, item)) return 0;
   let vol = 0;
   cat.products.forEach((p) => {
     if (p.unit !== "m3" || SPECIALIST_FEE_MATCH(p.name, p.unit) || !PIGMENTED_MIX_MATCH.test(p.name)) return;
@@ -397,6 +409,7 @@ export function computeElementCost(item, rates) {
   const ctx = rowContext(item); // poured m³, for the kg/m³ reinforcement rows
 
   FULL_CATALOG.forEach((cat) => {
+    if (!categoryAppliesTo(cat, item)) { categoryTotals[cat.key] = 0; return; } // a band this element does not carry costs nothing
     let catTotal = 0;
     cat.products.forEach((p) => {
       const qKey = rateKey(cat.key, p.name, p.unit);
@@ -495,6 +508,7 @@ export function computeElementReinforcementTonnes(item, rates) {
   let totalKg = 0;
   const ctx = rowContext(item);
   FULL_CATALOG.forEach((cat) => {
+    if (!categoryAppliesTo(cat, item)) return;
     cat.products.forEach((p) => {
       // Reinforcement entered as kg/m³ carries no unitWeight — its tonnage is
       // the rate against the poured volume. Counted here so a rate-priced
@@ -536,6 +550,7 @@ export function labourQuantities(item, rates) {
   let concreteM3 = 0, formworkM2 = 0, finishM2 = 0, excavationM3 = 0;
   FULL_CATALOG.forEach((cat) => {
     if (cat.key !== "CONCRETE" && cat.key !== "FORMWORK" && cat.key !== "SQUARE MESH" && cat.key !== "OTHER ALLOWANCES" && cat.key !== SPECIALIST_CONCRETE_KEY) return;
+    if (!categoryAppliesTo(cat, item)) return;
     cat.products.forEach((p) => {
       const qty = Number(item.qtys[rateKey(cat.key, p.name, p.unit)]) || 0;
       if (qty <= 0) return;

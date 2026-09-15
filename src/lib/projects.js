@@ -6,7 +6,7 @@
  * PROJECTS_INDEX_KEY. Name/date/GFA/items etc. all live in the quote, not
  * here, so there's exactly one place that owns each piece of data.
  */
-import { uid, rateKey } from "./costing.js";
+import { uid, rateKey, categoryAppliesTo } from "./costing.js";
 import { supabase, supabaseEnabled } from "./supabaseClient.js";
 import { FULL_CATALOG } from "../data/catalog.js";
 import { readMirror, writeMirror, clearMirror } from "./localMirror.js";
@@ -226,6 +226,7 @@ export async function publishQuoteToCostPlanner(projectId, quote) {
   (quote.items || []).forEach((item) => {
     const member = item.label || null;
     FULL_CATALOG.forEach((cat) => {
+      if (!categoryAppliesTo(cat, item)) return;
       cat.products.forEach((p) => {
         const qKey = rateKey(cat.key, p.name, p.unit);
         const qty = Number(item.qtys?.[qKey]) || 0;

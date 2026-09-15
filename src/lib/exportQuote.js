@@ -19,7 +19,7 @@
  *   can't accept the HTML clipboard format still gets usable text).
  */
 import { FULL_CATALOG, RESOURCE_COLS, CATEGORY_ORDER, SECTION_ORDER } from "../data/catalog.js";
-import { computeElementCost, computeGrandTotal, computeMarginLadder, rateKey, lookupRate, computeRowTotal, rowContext, getDefaultMargin, getMarginSteps, additionalRowsFor, additionalRowTotal, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, autoSpecialistFees } from "./costing.js";
+import { computeElementCost, computeGrandTotal, computeMarginLadder, rateKey, lookupRate, computeRowTotal, rowContext, getDefaultMargin, getMarginSteps, additionalRowsFor, additionalRowTotal, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, autoSpecialistFees, categoryAppliesTo } from "./costing.js";
 import { GRADCON_LOGO_DATA_URI } from "./logo.js";
 
 /** Rate ($/unit) backed out from the line's own total ÷ qty — always exactly
@@ -45,6 +45,7 @@ function buildElementLines(item, rates) {
   const materialLines = [];
   const ctx = rowContext(item);
   FULL_CATALOG.forEach((cat) => {
+    if (!categoryAppliesTo(cat, item)) return;
     cat.products.forEach((p) => {
       const qKey = rateKey(cat.key, p.name, p.unit);
       const qty = Number(item.qtys[qKey]) || 0;

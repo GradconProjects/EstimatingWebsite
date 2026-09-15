@@ -2,7 +2,7 @@ import {
   CATEGORY_ORDER, SECTION_ORDER, FULL_CATALOG, RESOURCE_COLS,
 } from "../data/catalog.js";
 import {
-  computeElementCost, computeGrandTotal, computeMarginLadder, rateKey, lookupRate, computeRowTotal, rowContext, money, money2, getDefaultMargin, getMarginSteps, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, additionalRowsFor, additionalRowTotal, autoSpecialistFees } from "../lib/costing.js";
+  computeElementCost, computeGrandTotal, computeMarginLadder, rateKey, lookupRate, computeRowTotal, rowContext, money, money2, getDefaultMargin, getMarginSteps, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, additionalRowsFor, additionalRowTotal, autoSpecialistFees, categoryAppliesTo } from "../lib/costing.js";
 import { GRADCON_LOGO_DATA_URI } from "../lib/logo.js";
 
 /**
@@ -188,6 +188,7 @@ function ElementReportBlock({ item, rates }) {
   const materialLines = [];
   const ctx = rowContext(item);
   FULL_CATALOG.forEach((cat) => {
+    if (!categoryAppliesTo(cat, item)) return;
     cat.products.forEach((p) => {
       const qKey = rateKey(cat.key, p.name, p.unit);
       const qty = Number(item.qtys[qKey]) || 0;

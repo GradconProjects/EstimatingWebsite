@@ -17,7 +17,7 @@ import {
   computeElementCost, computeGrandTotal, computeMarginLadder,
   defaultRates, newElementItem, rateKey, suggestedLabourPrefill, computeExternalScopeLines,
   labourResourceRate, taskRowMeta, labourQuantities, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, computeRowTotal,
-  computeElementUnitRates, computeProjectUnitRates, rowContext, computeElementReinforcementTonnes, getMarginSteps, additionalRowsFor, autoPigmentWashout, autoSpecialistShortLoad, autoSpecialistFees } from "../src/lib/costing.js";
+  computeElementUnitRates, computeProjectUnitRates, rowContext, computeElementReinforcementTonnes, getMarginSteps, additionalRowsFor, autoPigmentWashout, autoSpecialistShortLoad, autoSpecialistFees, categoryAppliesTo } from "../src/lib/costing.js";
 import { buildImportFromEstimate, normalizeElementName, geometryForLabel } from "../src/lib/estimateImport.js";
 
 let passed = 0;
@@ -43,16 +43,17 @@ const C25 = RATE("CONCRETE", "25 mpa", "m3");
 const C32 = RATE("CONCRETE", "32 mpa", "m3");
 
 /* ---------- catalog shape ---------- */
-check("69 element types, 12 categories, 18 sections (SCREEDS 14, TOPPINGS 7, HYDRONIC HEATING 3 — each its own category)", () => {
-  assert.equal(ELEMENT_TYPES.length, 69);
-  assert.equal(CATEGORY_ORDER.length, 12);
-  assert.equal(SECTION_ORDER.length, 18);
+check("79 element types, 13 categories, 19 sections (SCREEDS 14, TOPPINGS 7, HYDRONIC HEATING 3, SPECIALIST FINISHING CONCRETE 10 — each its own category)", () => {
+  assert.equal(ELEMENT_TYPES.length, 79);
+  assert.equal(CATEGORY_ORDER.length, 13);
+  assert.equal(SECTION_ORDER.length, 19);
+  assert.equal(ELEMENT_TYPES.filter((t) => t.category === "SPECIALIST FINISHING CONCRETE").length, 10);
   assert.equal(ELEMENT_TYPES.filter((t) => t.category === "SCREEDS").length, 14);
   assert.equal(ELEMENT_TYPES.filter((t) => t.category === "TOPPINGS").length, 7);
   assert.equal(ELEMENT_TYPES.filter((t) => t.category === "HYDRONIC HEATING").length, 3);
   // all three follow SUSPENDED STRUCTURE (finishes and services follow the structure they sit on)
   const i = CATEGORY_ORDER.indexOf("SUSPENDED STRUCTURE");
-  assert.deepEqual(CATEGORY_ORDER.slice(i + 1, i + 4), ["SCREEDS", "TOPPINGS", "HYDRONIC HEATING"]);
+  assert.deepEqual(CATEGORY_ORDER.slice(i + 1, i + 5), ["SCREEDS", "TOPPINGS", "HYDRONIC HEATING", "SPECIALIST FINISHING CONCRETE"]);
   assert.equal(new Set(ELEMENT_TYPES.map((t) => t.id)).size, ELEMENT_TYPES.length, "element ids unique");
   // Stump Footings and Screw Piles are separate, individually selectable types.
   assert.ok(ELEMENT_TYPES.some((t) => t.name === "Stump Footings"), "Stump Footings present");
@@ -1562,7 +1563,7 @@ check("SPECIALIST FINISHING CONCRETE: 27 VicMix mixes at the published $/m³, pl
 });
 
 check("VicMix pigment washout auto-applies per Maxi truck of PIGMENTED mix; short load flags under 4 m³; Holcim fees never touch specialist volume", () => {
-  const type = ELEMENT_TYPES[0]; const rates = defaultRates();
+  const type = ELEMENT_TYPES.find((t) => t.category === "SPECIALIST FINISHING CONCRETE"); const rates = defaultRates();
   const K = (n) => rateKey("SPECIALIST FINISHING CONCRETE", FULL_CATALOG.find((c) => c.key === "SPECIALIST FINISHING CONCRETE").products.find((p) => p.name.startsWith(n)).name, "m3");
   // 10 m³ of Fusion Half Black (charcoal = pigmented) → 2 trucks at 7 m³ → 2 × $40
   let item = newElementItem(type); item.qtys[K("VicMix Fusion Half Black")] = 10;
@@ -1595,6 +1596,27 @@ check("VicMix pigment washout auto-applies per Maxi truck of PIGMENTED mix; shor
   item.qtys[K("VicMix Sienna Ash")] = 4; assert.equal(autoSpecialistShortLoad(item, rates), null);
   // a blank band costs nothing and applies nothing
   assert.deepEqual(autoSpecialistFees(newElementItem(type), rates), []);
+});
+
+
+check("the SPECIALIST FINISHING CONCRETE band is on its own elements ONLY: hidden and free on every other element, every other band still everywhere", () => {
+  const cat = FULL_CATALOG.find((c) => c.key === "SPECIALIST FINISHING CONCRETE");
+  const rates = defaultRates();
+  const mixKey = rateKey(cat.key, cat.products.find((p) => p.name.startsWith("VicMix Fusion Half Black")).name, "m3");
+  const footing = newElementItem(ELEMENT_TYPES.find((t) => t.id === "strip_footings"));
+  const finish = newElementItem(ELEMENT_TYPES.find((t) => t.id === "finish_polished"));
+  assert.equal(categoryAppliesTo(cat, footing), false); assert.equal(categoryAppliesTo(cat, finish), true);
+  FULL_CATALOG.filter((c) => c.key !== cat.key).forEach((c) => { assert.ok(categoryAppliesTo(c, footing) && categoryAppliesTo(c, finish), `${c.key} must be on every card`); });
+  // a stale VicMix quantity on a footing (entered before the band moved) can never carry invisible money
+  footing.qtys[mixKey] = 10;
+  const fc = computeElementCost(footing, rates);
+  assert.equal(fc.categoryTotals[cat.key], 0); assert.equal(fc.total, 0); assert.equal(fc.concreteQty, 0);
+  assert.equal(autoPigmentWashout(footing, rates), null);
+  assert.equal(rowContext(footing).concreteM3, 0);
+  // the same quantity on a specialist element prices in full
+  finish.qtys[mixKey] = 10;
+  const sc = computeElementCost(finish, rates);
+  assert.equal(sc.categoryTotals[cat.key], 10 * 395 + 80); assert.equal(sc.concreteQty, 10);
 });
 
 console.log(`\n${passed} check(s) passed.`);

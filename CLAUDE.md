@@ -60,7 +60,14 @@ safety net silently. Keep all cost arithmetic in `lib/costing.js`.
    per-element-type filtering of catalog rows** without checking that's
    actually what's wanted; it was explicitly requested to be removed once
    already (see git history / prior conversation) after an earlier
-   version tried to curate a subset per element type.
+   version tried to curate a subset per element type. **One explicit
+   exception, by request (15 Sep 2026):** a category carrying `visibleFor:
+   [<element categories>]` renders and costs ONLY on elements of those
+   categories — today only `SPECIALIST FINISHING CONCRETE`, which lives on
+   the Specialist Finishing Concrete elements. `categoryAppliesTo(cat, item)`
+   in `costing.js` is the ONE test; `computeElementCost`, `ElementCard`,
+   `PrintQuoteReport`, `exportQuote` and the Cost Planner publish all use it,
+   so a hidden band can never carry invisible money (verify-covered).
 
 2. **Only `PROCESSED BAR` costs off Total Weight, and only `SQUARE MESH`
    costs off Total Area.** Processed Bar's catalog `unitCost` is genuinely

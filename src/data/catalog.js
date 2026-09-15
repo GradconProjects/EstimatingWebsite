@@ -135,6 +135,7 @@ export const LABOUR_TEMPLATES = {
   screed: CREW_SHEET_TASKS,
   topping: CREW_SHEET_TASKS,
   hydronic: CREW_SHEET_TASKS,
+  finishing: CREW_SHEET_TASKS,
 };
 
 /* ---------- Full material catalog ----------
@@ -283,7 +284,12 @@ export const FULL_CATALOG = [
    * publish the amount, so it seeds at $0 until entered). This concrete is
    * poured volume for crew days and kg/m³ reinforcement, but NOT for the
    * Holcim delivery fees on the CONCRETE band (different supplier). */
-  { key: "SPECIALIST FINISHING CONCRETE", label: "SPECIALIST FINISHING CONCRETE (VicMix exposed / decorative mixes $/m³ published — min 4 m³ Maxi within 25 km, prices may change; pigment mixes + $40/truck washout)", weightBasis: false, products: [
+  { key: "SPECIALIST FINISHING CONCRETE", label: "SPECIALIST FINISHING CONCRETE (VicMix exposed / decorative mixes $/m³ published — min 4 m³ Maxi within 25 km, prices may change; pigment mixes + $40/truck washout)", weightBasis: false,
+    // The ONE band that is not on every card (rule 1 exception, by request):
+    // it appears — and is costed — only on elements of the matching element
+    // category (categoryAppliesTo), i.e. the Specialist Finishing Concrete
+    // elements in the Add-Element dropdown. Every other band stays everywhere.
+    visibleFor: ["SPECIALIST FINISHING CONCRETE"], products: [
     ["VicMix Fusion Ash — grey cement, grey granite/dark aggregate", "m3", null, 330],
     ["VicMix Meridian 37 Ash — grey cement, predominantly dark stone", "m3", null, 340],
     ["VicMix Meridian 55 Ash — grey cement, light grey/brown/black aggregate", "m3", null, 340],
@@ -588,6 +594,20 @@ export const ELEMENT_TYPES = [
   { id: "hydronic_in_slab", category: "HYDRONIC HEATING", section: "HYDRONIC HEATING", name: "Hydronic Heating - In-Slab", labour: "hydronic" },
   { id: "hydronic_in_screed", category: "HYDRONIC HEATING", section: "HYDRONIC HEATING", name: "Hydronic Heating - In-Screed", labour: "hydronic" },
   { id: "hydronic_panel", category: "HYDRONIC HEATING", section: "HYDRONIC HEATING", name: "Hydronic Heating - Castellated Panel System", labour: "hydronic" },
+
+  // Specialist finishing concrete — decorative / exposed / polished work as
+  // its own selectable element, like the screeds. Only these elements carry
+  // the SPECIALIST FINISHING CONCRETE band (VicMix mixes and finishes).
+  { id: "finish_exposed_washoff", category: "SPECIALIST FINISHING CONCRETE", section: "SPECIALIST FINISHING CONCRETE", name: "Exposed Aggregate - Wash-Off Finish (VicMix mix)", labour: "finishing" },
+  { id: "finish_exposed_honed", category: "SPECIALIST FINISHING CONCRETE", section: "SPECIALIST FINISHING CONCRETE", name: "Honed / Ground Exposed Aggregate", labour: "finishing" },
+  { id: "finish_polished", category: "SPECIALIST FINISHING CONCRETE", section: "SPECIALIST FINISHING CONCRETE", name: "Polished Concrete", labour: "finishing" },
+  { id: "finish_burnished", category: "SPECIALIST FINISHING CONCRETE", section: "SPECIALIST FINISHING CONCRETE", name: "Burnished / Power-Trowel Finish", labour: "finishing" },
+  { id: "finish_coloured", category: "SPECIALIST FINISHING CONCRETE", section: "SPECIALIST FINISHING CONCRETE", name: "Coloured (Oxide) Concrete", labour: "finishing" },
+  { id: "finish_stamped", category: "SPECIALIST FINISHING CONCRETE", section: "SPECIALIST FINISHING CONCRETE", name: "Stamped / Stencilled Concrete", labour: "finishing" },
+  { id: "finish_nonslip", category: "SPECIALIST FINISHING CONCRETE", section: "SPECIALIST FINISHING CONCRETE", name: "Broom / Salt / Non-Slip Finish", labour: "finishing" },
+  { id: "finish_etched", category: "SPECIALIST FINISHING CONCRETE", section: "SPECIALIST FINISHING CONCRETE", name: "Acid-Wash / Sandblasted Finish", labour: "finishing" },
+  { id: "finish_sealed", category: "SPECIALIST FINISHING CONCRETE", section: "SPECIALIST FINISHING CONCRETE", name: "Decorative Overlay / Sealed Finish", labour: "finishing" },
+  { id: "finish_other", category: "SPECIALIST FINISHING CONCRETE", section: "SPECIALIST FINISHING CONCRETE", name: "Specialist Finish (Other - specify)", labour: "finishing" },
 
   // External & landscape concrete — outside the building envelope.
   { id: "planter_wall", category: "EXTERNAL & LANDSCAPE CONCRETE", section: "BOUNDARY & LANDSCAPE WALLS", name: "Planter Wall", labour: "wall" },

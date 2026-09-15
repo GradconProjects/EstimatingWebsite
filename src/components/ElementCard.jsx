@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { ChevronDown, ChevronRight, Copy, Trash2, Paperclip, X, RotateCw, ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
 import { FULL_CATALOG, LABOUR_TEMPLATES } from "../data/catalog.js";
-import { uid, money2, computeElementCost, computeElementUnitRates, autoLabourQtys, labourQuantities } from "../lib/costing.js";
+import { uid, money2, computeElementCost, computeElementUnitRates, autoLabourQtys, labourQuantities, categoryAppliesTo } from "../lib/costing.js";
 import { pdfToJpegPages } from "../lib/pdfToImages.js";
 import CategoryBlock from "./CategoryBlock.jsx";
 import LabourMatrix from "./LabourMatrix.jsx";
@@ -416,7 +416,7 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
             )}
           </div>
 
-          {FULL_CATALOG.map((cat) => (
+          {FULL_CATALOG.filter((cat) => categoryAppliesTo(cat, item)).map((cat) => (
             <CategoryBlock
               key={cat.key}
               cat={cat}
