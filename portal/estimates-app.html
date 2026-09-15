@@ -1236,10 +1236,28 @@ async function kvPatchIfUnchanged(key, value, since){
     return rows[0] || PUSH_CONFLICT;   // no row matched: someone else wrote since `since` (or the row is gone)
   }catch(e){ return null; }
 }
-function sameTakeoff(a, b){
-  const pick = (v)=>({ project:(v&&v.project)||{}, selectedTypes:(v&&v.selectedTypes)||{}, instances:(v&&v.instances)||[], idCounter:(v&&v.idCounter)||0 });
-  return JSON.stringify(pick(a)) === JSON.stringify(pick(b));
+/* ---- Content identity of a takeoff ----------------------------------------
+ * What the estimator ENTERED: project, selected types, id counter and each
+ * instance's id/type/label/data/tags/review/scope/entered… — never the
+ * derived `results` (recomputed on every load, and worded differently by
+ * different builds) and never a `_`-prefixed UI flag (`_collapsed`). Keys are
+ * canonicalised (sorted) so field order cannot masquerade as a change.
+ * Both the echo guard (LAST_CLOUD_HASH) and the "keep a version before the
+ * cloud copy replaces this" check use THIS, and only this. Before it, two
+ * sessions on different builds re-saved and re-versioned each other every
+ * poll because their recomputed warnings differed: 288 "before-sync"
+ * versions in three hours on 9 Sep 2026 with no real edit between them. */
+function canonJSON(v){
+  if(Array.isArray(v)) return "["+v.map(canonJSON).join(",")+"]";
+  if(v && typeof v==="object"){ return "{"+Object.keys(v).sort().map(k=>JSON.stringify(k)+":"+canonJSON(v[k])).join(",")+"}"; }
+  return JSON.stringify(v===undefined? null : v);
 }
+function takeoffContent(v){
+  const insts = ((v&&v.instances)||[]).map(i=>{ if(!i || typeof i!=="object") return i; const o={}; Object.keys(i).forEach(k=>{ if(k==="results" || k.charAt(0)==="_") return; o[k]=i[k]; }); return o; });
+  return { project:(v&&v.project)||{}, selectedTypes:(v&&v.selectedTypes)||{}, instances:insts, idCounter:(v&&v.idCounter)||0 };
+}
+function contentString(v){ return canonJSON(takeoffContent(v)); }
+function sameTakeoff(a, b){ return contentString(a) === contentString(b); }
 // One push in flight per key, later snapshots coalesced behind it: two
 // pushes racing from the SAME tab would otherwise read the same stale stamp
 // and report the tab's own previous write as another device's.
@@ -1286,14 +1304,16 @@ function notifySyncConflict(when){
 const VERSION_BUCKET = "gradcon-files", VERSION_PREFIX = "estimate-versions/";
 let LAST_VERSION_HASH = null;
 function snapshotHash(snap){
-  let str=JSON.stringify({p:snap.project,s:snap.selectedTypes,i:snap.instances}); let h=0x811c9dc5;
+  let str=contentString(snap); let h=0x811c9dc5;
   for(let i=0;i<str.length;i++){ h^=str.charCodeAt(i); h=Math.imul(h,0x01000193)>>>0; }
   return ("00000000"+h.toString(16)).slice(-8);
 }
 function projectIdForKey(key){ let e=loadProjectsIndex().find(p=>p.key===key); return e? e.id : null; }
+const LAST_BEFORE_SYNC_AT = {};   // key -> ms; a genuine conflict storm still keeps one per minute, never one per poll
 async function keepEstimateVersion(key, snapshot, source){
   if(!SUPABASE_URL || !snapshot) return null;
   const pid = projectIdForKey(key); if(!pid) return null;
+  if(source==="before-sync"){ const now=Date.now(); if(LAST_BEFORE_SYNC_AT[key] && now-LAST_BEFORE_SYNC_AT[key] < 60000) return null; LAST_BEFORE_SYNC_AT[key]=now; }
   if(!(Array.isArray(snapshot.instances) && snapshot.instances.length) && !((snapshot.project||{}).name||"").trim()) return null; // an empty draft is not worth a version
   const doc = { format:"gradcon-estimate-version", formatVersion:1, schemaVersion:ESTIMATE_SCHEMA_VERSION, source, savedAt:new Date().toISOString(), projectId:pid, build:ESTIMATES_BUILD, name:(snapshot.project||{}).name||"", elementCount:(snapshot.instances||[]).length, snapshot };
   const path = VERSION_PREFIX + pid + "/" + doc.savedAt.replace(/[:.]/g,"-") + "-" + source + ".json";

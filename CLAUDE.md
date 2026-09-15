@@ -338,6 +338,14 @@ and the first tab pulled it back within six seconds):
    (`other-device`) BEFORE this tab's live work goes up, and the estimator is
    told in the save-status line. This tab's in-memory work always wins — it is
    the human's latest intent — but nothing is discarded.
+   **Takeoffs are compared by CONTENT** (`contentString` / `sameTakeoff` /
+   `snapshotHash`): project, selected types, id counter and each instance
+   minus its derived `results` and any `_`-prefixed UI flag, with keys
+   canonicalised. Never compare raw JSON of a snapshot: different builds
+   recompute `results` differently, and on 9 Sep 2026 two sessions re-saved
+   and re-versioned each other every poll (288 "before-sync" versions in
+   three hours) because of exactly that. `before-sync` versions are also
+   capped at one per key per minute.
 3. **Cloud versions are immutable and unlimited**: `keepEstimateVersion`
    writes `estimate-versions/<projectId>/<iso>-<source>.json` to the
    `gradcon-files` bucket on every 💾 Save, every N minutes while the takeoff
