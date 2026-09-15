@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Plus, Trash2, ArrowRight, LayoutDashboard, Loader2, FolderOpen } from "lucide-react";
 import { QUOTE_STATUSES, QUOTE_STATUS_STYLES } from "../data/catalog.js";
 import { computeGrandTotal, computeMarginLadder, money, getDefaultMargin, getMarginSteps } from "../lib/costing.js";
-import { readQuotes, readQuotesCached, writeQuote } from "../lib/projects.js";
+import { readQuoteSummaries, readQuotesCached, patchQuoteFields } from "../lib/projects.js";
 import { dashboardDueLabel } from "../lib/planner.js";
 
 const SORT_OPTIONS = [
@@ -83,7 +83,7 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete,
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    readQuotes(projects.map((p) => p.storageKey)).then((map) => {
+    readQuoteSummaries(projects.map((p) => p.storageKey)).then((map) => {
       if (cancelled) return;
       setQuotesByKey(map);
       setLoading(false);
@@ -172,7 +172,7 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete,
     const quote = quotesByKey[project.storageKey] || {};
     const updated = { ...quote, status };
     setQuotesByKey((m) => ({ ...m, [project.storageKey]: updated }));
-    writeQuote(project.storageKey, updated);
+    patchQuoteFields(project.storageKey, { status }); // field merge: the summary copy here has no drawing data and must never be written whole
   };
 
   // The project's client/owner is edited HERE, beside the project name —
@@ -183,7 +183,7 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete,
     const quote = quotesByKey[project.storageKey] || {};
     const updated = { ...quote, clientName };
     setQuotesByKey((m) => ({ ...m, [project.storageKey]: updated }));
-    writeQuote(project.storageKey, updated);
+    patchQuoteFields(project.storageKey, { clientName });
   };
 
   const totals = useMemo(

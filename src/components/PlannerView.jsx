@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, ArrowRight, ChevronDown, ChevronRight, Clock, GitBranch, HardHat, HelpCircle, Loader2, MessageSquarePlus, Package, Plus, Radar, Receipt, Trash2 } from "lucide-react";
 import { PLANNER_PRIORITIES, PLANNER_PRIORITY_STYLES } from "../data/catalog.js";
-import { readQuotes, writeQuote } from "../lib/projects.js";
+import { readQuoteSummaries, patchQuoteFields } from "../lib/projects.js";
 import { uid, money2 } from "../lib/costing.js";
 import { useStoredState } from "../lib/storage.js";
 import { isUrgent, daysLabel, priorityRank } from "../lib/planner.js";
@@ -68,7 +68,7 @@ export default function PlannerView({ projects, onOpen }) {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    readQuotes(projects.map((p) => p.storageKey)).then((map) => {
+    readQuoteSummaries(projects.map((p) => p.storageKey)).then((map) => {
       if (cancelled) return;
       setQuotesByKey(map);
       setLoading(false);
@@ -76,12 +76,23 @@ export default function PlannerView({ projects, onOpen }) {
     return () => { cancelled = true; };
   }, [projects]);
 
+  // Field-level writes, coalesced per project over 600 ms: the copies held
+  // here are summaries without drawing data, so a whole-quote write would
+  // delete the drawings — patchQuoteFields merges only the changed fields
+  // into the full row. Typing in a requirements box costs one write, not one
+  // per keystroke.
+  const pendingRef = useRef({});
   const patchQuote = (project, patch) => {
     const quote = quotesByKey[project.storageKey] || {};
     const updated = { ...quote, ...patch };
     setQuotesByKey((m) => ({ ...m, [project.storageKey]: updated }));
-    writeQuote(project.storageKey, updated);
+    const key = project.storageKey;
+    const slot = pendingRef.current[key] || (pendingRef.current[key] = { key, patch: {}, timer: null });
+    Object.assign(slot.patch, patch);
+    clearTimeout(slot.timer);
+    slot.timer = setTimeout(() => { const p = slot.patch; slot.patch = {}; patchQuoteFields(key, p); }, 600);
   };
+  useEffect(() => () => { Object.values(pendingRef.current).forEach((slot) => { if (slot.timer) { clearTimeout(slot.timer); if (Object.keys(slot.patch).length) patchQuoteFields(slot.key || "", slot.patch); } }); }, []);
 
   const TABS = [
     { key: "planner", label: "Planner", Icon: Radar },

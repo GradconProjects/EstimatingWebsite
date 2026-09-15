@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowRight, ChevronDown, ChevronRight, File, FolderOpen, FolderUp, Loader2, MessageSquarePlus, Trash2, Upload } from "lucide-react";
-import { readQuotes, writeQuote } from "../lib/projects.js";
+import { readQuoteSummaries, patchQuoteFields } from "../lib/projects.js";
 import { uid } from "../lib/costing.js";
 import { supabaseEnabled } from "../lib/supabaseClient.js";
 import { OFFICE_FOLDER_PATH, projectFolderPath, listFiles, uploadFile, deleteFile, formatFileSize, groupFilesByMonthDay } from "../lib/storageFiles.js";
@@ -306,7 +306,7 @@ export default function ProjectFolderView({ projects, officeComms, setOfficeComm
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    readQuotes(projects.map((p) => p.storageKey)).then((map) => {
+    readQuoteSummaries(projects.map((p) => p.storageKey)).then((map) => {
       if (cancelled) return;
       setQuotesByKey(map);
       setLoading(false);
@@ -327,7 +327,7 @@ export default function ProjectFolderView({ projects, officeComms, setOfficeComm
     const list = quote.communications || [];
     const updated = { ...quote, communications: [entry, ...list] };
     setQuotesByKey((m) => ({ ...m, [project.storageKey]: updated }));
-    writeQuote(project.storageKey, updated);
+    patchQuoteFields(project.storageKey, { communications: updated.communications }); // summary copy: merge the field, never write the quote whole
   };
 
   return (

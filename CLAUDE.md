@@ -299,6 +299,20 @@ Three layers, each with a rule that was learned the hard way:
   dashboard's summary mirrors (drawings' image data stripped) exist only to
   draw rows. Every quote row is prefetched in one like-query at boot; the
   FIRST `readQuotes()` consumes it, later calls hit the database.
+- **Summary pages never hold a full quote.** The dashboard, Project
+  Management and Vault read through `readQuoteSummaries()` (`projects.js`):
+  a `key, updated_at` stamp query, the summary mirror for every row whose
+  stamp is unchanged, and a full fetch ONLY for rows that changed — the boot
+  prefetch works the same way. Those copies are stripped of drawing data, so
+  they are never written back whole: field edits from those pages go through
+  `patchQuoteFields()` (the `estimator_kv_merge` database function when
+  installed, see `supabase/migrations/0003_estimator_kv_merge.sql`, else a
+  read-merge-write of the full row), and the mirror is patched to match.
+  `readQuotes()` (full rows) is only for callers that must write a whole
+  quote (the Estimates import merge). Before this, every open of those pages
+  re-downloaded all ~24 MB of rows and each edit re-uploaded a whole project
+  with its drawings; the 6 s poll in `storage.js` likewise asks for the
+  timestamp first and fetches the row only when it is newer.
 - **Versions** (`lib/quoteVersions.js`) are immutable full copies in the
   `gradcon-files` bucket under `quote-versions/<projectId>/` — one on every
   Save, one every N minutes (portal Settings `quotesAutosaveMinutes`, 0 =

@@ -49,8 +49,119 @@ const stripForSummary = (quote) => {
     ),
   };
 };
-function mirrorSummaries(map) {
-  Object.keys(map).forEach((k) => writeMirror(summaryMirrorKey(k), stripForSummary(map[k]), null));
+function mirrorSummaries(map, stamps) {
+  Object.keys(map).forEach((k) => writeMirror(summaryMirrorKey(k), stripForSummary(map[k]), (stamps && stamps[k]) || null));
+}
+
+/* ---- Download only what changed ------------------------------------------
+ * Every project row carries its markup drawings as image data, so the 16
+ * rows together are ~24 MB. The dashboard, the Project Management page and
+ * the Vault only need the SUMMARY of each project (name, status, planner,
+ * RFIs, claims, totals) — never the drawings. readQuoteSummaries() asks the
+ * database for each row's updated_at only (a few bytes), serves every row
+ * whose summary mirror carries that same stamp from the mirror, and fetches
+ * just the rows that changed since this browser last saw them. A returning
+ * browser opens these pages with kilobytes instead of 24 MB.
+ *
+ * The values it returns are STRIPPED of drawing data. They must never be
+ * written back whole — that would delete the drawings. Field edits from those
+ * pages go through patchQuoteFields() below, which merges the fields into
+ * the full row in the database. The project editor keeps its own full,
+ * live row through useStoredState and is untouched by any of this. */
+async function readQuoteStamps(storageKeys) {
+  const { data, error } = await supabase.from(TABLE).select("key, updated_at").in("key", storageKeys);
+  if (error || !data) return null;
+  const stamps = {};
+  data.forEach((row) => { stamps[row.key] = row.updated_at; });
+  return stamps;
+}
+async function fetchAndMirror(storageKeys, stamps) {
+  const map = {};
+  if (storageKeys.length === 0) return map;
+  const { data, error } = await supabase.from(TABLE).select("key, value, updated_at").in("key", storageKeys);
+  if (error || !data) return null;
+  data.forEach((row) => { map[row.key] = row.value; if (stamps) stamps[row.key] = row.updated_at; });
+  mirrorSummaries(map, stamps);
+  return map;
+}
+/** `{ storageKey: quote-without-drawing-data }` for the summary pages — mirror
+ * when unchanged, database only for rows that changed. Falls back to a full
+ * read when the stamp query fails so nothing ever renders emptier than before. */
+export async function readQuoteSummaries(storageKeys) {
+  if (storageKeys.length === 0) return {};
+  if (!supabaseEnabled) return readQuotes(storageKeys);
+  if (summariesPrefetch) {
+    const pending = summariesPrefetch;
+    summariesPrefetch = null;
+    const pre = await pending;
+    if (pre && storageKeys.every((k) => k in pre)) {
+      const map = {};
+      storageKeys.forEach((k) => { map[k] = pre[k]; });
+      return map;
+    }
+  }
+  try {
+    const stamps = await readQuoteStamps(storageKeys);
+    if (!stamps) return readQuotes(storageKeys);
+    const map = {};
+    const stale = [];
+    storageKeys.forEach((k) => {
+      if (!(k in stamps)) return; // no row in the database (an orphan index entry — the dashboard prunes those)
+      const hit = readMirror(summaryMirrorKey(k));
+      if (hit && hit.value && hit.updatedAt && hit.updatedAt === stamps[k]) map[k] = hit.value;
+      else stale.push(k);
+    });
+    const fresh = await fetchAndMirror(stale, stamps);
+    if (!fresh) return readQuotes(storageKeys);
+    Object.assign(map, fresh);
+    return map;
+  } catch {
+    return readQuotes(storageKeys);
+  }
+}
+/**
+ * Merge a few top-level fields (status, clientName, planner, communications,
+ * rfis, claims, …) into a project's FULL row without ever holding the whole
+ * row on the client. Prefers the estimator_kv_merge database function
+ * (supabase/migrations/0003_estimator_kv_merge.sql: `value || patch`, a
+ * few-byte call); where that function is not installed it falls back to
+ * read-merge-write of the full row. Either way the drawings stay exactly as
+ * they are, and the summary mirror is patched to match. Resolves to the new
+ * updated_at (or null when nothing could be written).
+ */
+export async function patchQuoteFields(storageKey, patch) {
+  if (!storageKey || !patch || typeof patch !== "object") return null;
+  let stamp = null;
+  if (supabaseEnabled) {
+    try {
+      const { data, error } = await supabase.rpc("estimator_kv_merge", { p_key: storageKey, p_patch: patch });
+      if (!error && data) stamp = typeof data === "string" ? data : (data.updated_at || null);
+    } catch { /* fall through to the full-row merge */ }
+    if (!stamp) {
+      try {
+        const { data: row, error } = await supabase.from(TABLE).select("value").eq("key", storageKey).maybeSingle();
+        if (error || !row || !row.value) return null;
+        const merged = { ...row.value, ...patch };
+        stamp = new Date().toISOString();
+        const { error: upErr } = await supabase.from(TABLE).upsert({ key: storageKey, value: merged, updated_at: stamp });
+        if (upErr) return null;
+      } catch {
+        return null;
+      }
+    }
+    // keep the summary mirror in step so the next paint shows the edit without a round trip
+    const hit = readMirror(summaryMirrorKey(storageKey));
+    if (hit && hit.value) writeMirror(summaryMirrorKey(storageKey), { ...hit.value, ...patch }, stamp);
+    return stamp;
+  }
+  try {
+    const raw = window.localStorage.getItem(storageKey);
+    const cur = raw ? JSON.parse(raw) : {};
+    window.localStorage.setItem(storageKey, JSON.stringify({ ...cur, ...patch }));
+    return new Date().toISOString();
+  } catch {
+    return null;
+  }
 }
 
 /** Keeps a project's summary mirror current as it is EDITED — the editor
@@ -75,14 +186,27 @@ export function readQuotesCached(storageKeys) {
   return map;
 }
 
-let quotesPrefetch = null;
+// Boot-time prefetch for the FIRST summary read (the dashboard): stamps for
+// every project row, then only the rows whose summary mirror is missing or
+// stale. Consumed once; the values are drawing-stripped summaries.
+let summariesPrefetch = null;
 if (supabaseEnabled) {
-  quotesPrefetch = (async () => {
+  summariesPrefetch = (async () => {
     try {
-      const { data, error } = await supabase.from(TABLE).select("key, value").like("key", "gradcon-quote-%");
+      const { data, error } = await supabase.from(TABLE).select("key, updated_at").like("key", "gradcon-quote-%");
       if (error || !data) return null;
+      const stamps = {};
+      data.forEach((row) => { stamps[row.key] = row.updated_at; });
       const map = {};
-      data.forEach((row) => { map[row.key] = row.value; });
+      const stale = [];
+      Object.keys(stamps).forEach((k) => {
+        const hit = readMirror(summaryMirrorKey(k));
+        if (hit && hit.value && hit.updatedAt && hit.updatedAt === stamps[k]) map[k] = hit.value;
+        else stale.push(k);
+      });
+      const fresh = await fetchAndMirror(stale, stamps);
+      if (!fresh) return null;
+      Object.assign(map, fresh);
       return map;
     } catch {
       return null;
@@ -121,25 +245,14 @@ export async function readQuote(storageKey) {
 export async function readQuotes(storageKeys) {
   if (storageKeys.length === 0) return {};
   if (supabaseEnabled) {
-    // The boot prefetch is used for the FIRST call only, and only when it
-    // answers for every key asked for; anything else falls through to the
-    // ordinary query exactly as before.
-    if (quotesPrefetch) {
-      const pending = quotesPrefetch;
-      quotesPrefetch = null;
-      const pre = await pending;
-      if (pre && storageKeys.every((k) => k in pre)) {
-        const map = {};
-        storageKeys.forEach((k) => { map[k] = pre[k]; });
-        mirrorSummaries(map);
-        return map;
-      }
-    }
+    // FULL rows, drawings included — for callers that must write a whole
+    // quote back (the Estimates import merge). Summary pages use
+    // readQuoteSummaries() instead and never pay for the drawings.
     try {
-      const { data, error } = await supabase.from(TABLE).select("key, value").in("key", storageKeys);
-      const map = {};
-      if (!error && data) data.forEach((row) => { map[row.key] = row.value; });
-      if (!error && data) mirrorSummaries(map);
+      const { data, error } = await supabase.from(TABLE).select("key, value, updated_at").in("key", storageKeys);
+      const map = {}; const stamps = {};
+      if (!error && data) data.forEach((row) => { map[row.key] = row.value; stamps[row.key] = row.updated_at; });
+      if (!error && data) mirrorSummaries(map, stamps);
       return map;
     } catch {
       return {};
@@ -165,8 +278,9 @@ export async function readQuotes(storageKeys) {
 export async function writeQuote(storageKey, quote) {
   if (supabaseEnabled) {
     try {
-      await supabase.from(TABLE).upsert({ key: storageKey, value: quote, updated_at: new Date().toISOString() });
-      writeMirror(summaryMirrorKey(storageKey), stripForSummary(quote), null);
+      const stamp = new Date().toISOString();
+      await supabase.from(TABLE).upsert({ key: storageKey, value: quote, updated_at: stamp });
+      writeMirror(summaryMirrorKey(storageKey), stripForSummary(quote), stamp);
     } catch {
       /* best-effort */
     }
