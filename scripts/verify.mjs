@@ -43,10 +43,17 @@ const C25 = RATE("CONCRETE", "25 mpa", "m3");
 const C32 = RATE("CONCRETE", "32 mpa", "m3");
 
 /* ---------- catalog shape ---------- */
-check("45 element types, 9 categories, 15 sections", () => {
-  assert.equal(ELEMENT_TYPES.length, 45);
-  assert.equal(CATEGORY_ORDER.length, 9);
-  assert.equal(SECTION_ORDER.length, 15);
+check("69 element types, 12 categories, 18 sections (SCREEDS 14, TOPPINGS 7, HYDRONIC HEATING 3 — each its own category)", () => {
+  assert.equal(ELEMENT_TYPES.length, 69);
+  assert.equal(CATEGORY_ORDER.length, 12);
+  assert.equal(SECTION_ORDER.length, 18);
+  assert.equal(ELEMENT_TYPES.filter((t) => t.category === "SCREEDS").length, 14);
+  assert.equal(ELEMENT_TYPES.filter((t) => t.category === "TOPPINGS").length, 7);
+  assert.equal(ELEMENT_TYPES.filter((t) => t.category === "HYDRONIC HEATING").length, 3);
+  // all three follow SUSPENDED STRUCTURE (finishes and services follow the structure they sit on)
+  const i = CATEGORY_ORDER.indexOf("SUSPENDED STRUCTURE");
+  assert.deepEqual(CATEGORY_ORDER.slice(i + 1, i + 4), ["SCREEDS", "TOPPINGS", "HYDRONIC HEATING"]);
+  assert.equal(new Set(ELEMENT_TYPES.map((t) => t.id)).size, ELEMENT_TYPES.length, "element ids unique");
   // Stump Footings and Screw Piles are separate, individually selectable types.
   assert.ok(ELEMENT_TYPES.some((t) => t.name === "Stump Footings"), "Stump Footings present");
   assert.ok(ELEMENT_TYPES.some((t) => t.name === "Screw Piles"), "Screw Piles present");

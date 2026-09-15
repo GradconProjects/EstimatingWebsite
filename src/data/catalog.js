@@ -123,6 +123,11 @@ export const LABOUR_TEMPLATES = {
   slab_ground: CREW_SHEET_TASKS,
   slab_suspended: CREW_SHEET_TASKS,
   stairs: CREW_SHEET_TASKS,
+  // Floor finishes laid on a structure: same crew sheet, own keys so a
+  // future screed/topping-specific task list can be swapped in per family.
+  screed: CREW_SHEET_TASKS,
+  topping: CREW_SHEET_TASKS,
+  hydronic: CREW_SHEET_TASKS,
 };
 
 /* ---------- Full material catalog ----------
@@ -481,6 +486,37 @@ export const ELEMENT_TYPES = [
   // LABOUR_TEMPLATES.stairs) and its own section, since a staircase isn't really a
   // suspended slab even though it's typically propped/formed the same way.
   { id: "staircase", category: "SUSPENDED STRUCTURE", section: "STAIRS", name: "Staircase", labour: "stairs" },
+
+  // Screeds, toppings and hydronic heating — finishes and services laid ON a
+  // slab (ground or suspended), each its OWN category (like Foundations) so
+  // they are selected and summarised in their own right rather than buried
+  // under a Suspended Slab. One element per distinct work type; thickness, grade and extras are
+  // chosen on the card from the SCREEDS / HYDRONIC HEATING / CONCRETE / RATE
+  // ITEMS bands (rule 1: every band is on every card).
+  { id: "screed_bonded", category: "SCREEDS", section: "SCREEDS", name: "Sand/Cement Screed (Bonded)", labour: "screed" },
+  { id: "screed_unbonded", category: "SCREEDS", section: "SCREEDS", name: "Sand/Cement Screed (Unbonded)", labour: "screed" },
+  { id: "screed_floating", category: "SCREEDS", section: "SCREEDS", name: "Floating Screed (over insulation / acoustic mat)", labour: "screed" },
+  { id: "screed_falls_wet", category: "SCREEDS", section: "SCREEDS", name: "Screed to Falls (Wet Areas / Balconies)", labour: "screed" },
+  { id: "screed_falls_roof", category: "SCREEDS", section: "SCREEDS", name: "Roof / Podium Screed to Falls", labour: "screed" },
+  { id: "screed_heated", category: "SCREEDS", section: "SCREEDS", name: "Heated Screed (over hydronic pipes)", labour: "screed" },
+  { id: "screed_flowing", category: "SCREEDS", section: "SCREEDS", name: "Pumped Liquid / Flowing Screed", labour: "screed" },
+  { id: "screed_anhydrite", category: "SCREEDS", section: "SCREEDS", name: "Anhydrite / Calcium Sulphate Screed", labour: "screed" },
+  { id: "screed_lightweight", category: "SCREEDS", section: "SCREEDS", name: "Lightweight Screed (foamed / bead)", labour: "screed" },
+  { id: "screed_fibre_polymer", category: "SCREEDS", section: "SCREEDS", name: "Fibre-Reinforced / Polymer-Modified Screed", labour: "screed" },
+  { id: "screed_rapid", category: "SCREEDS", section: "SCREEDS", name: "Rapid-Drying / Fast-Set Screed", labour: "screed" },
+  { id: "screed_acoustic", category: "SCREEDS", section: "SCREEDS", name: "Acoustic Screed", labour: "screed" },
+  { id: "self_levelling", category: "SCREEDS", section: "SCREEDS", name: "Self-Levelling Compound", labour: "screed" },
+  { id: "screed_other", category: "SCREEDS", section: "SCREEDS", name: "Screed (Other - specify)", labour: "screed" },
+  { id: "topping_structural", category: "TOPPINGS", section: "TOPPINGS", name: "Structural Concrete Topping (precast / hollowcore)", labour: "topping" },
+  { id: "topping_metal_deck", category: "TOPPINGS", section: "TOPPINGS", name: "Concrete Topping on Bondek / Metal Deck", labour: "topping" },
+  { id: "topping_granolithic", category: "TOPPINGS", section: "TOPPINGS", name: "Granolithic / Hard-Wearing Topping", labour: "topping" },
+  { id: "topping_epoxy", category: "TOPPINGS", section: "TOPPINGS", name: "Epoxy / Resin Topping", labour: "topping" },
+  { id: "topping_decorative", category: "TOPPINGS", section: "TOPPINGS", name: "Decorative / Polished / Burnished Topping", labour: "topping" },
+  { id: "topping_overlay", category: "TOPPINGS", section: "TOPPINGS", name: "Bonded Overlay / Resurfacing", labour: "topping" },
+  { id: "topping_other", category: "TOPPINGS", section: "TOPPINGS", name: "Topping (Other - specify)", labour: "topping" },
+  { id: "hydronic_in_slab", category: "HYDRONIC HEATING", section: "HYDRONIC HEATING", name: "Hydronic Heating - In-Slab", labour: "hydronic" },
+  { id: "hydronic_in_screed", category: "HYDRONIC HEATING", section: "HYDRONIC HEATING", name: "Hydronic Heating - In-Screed", labour: "hydronic" },
+  { id: "hydronic_panel", category: "HYDRONIC HEATING", section: "HYDRONIC HEATING", name: "Hydronic Heating - Castellated Panel System", labour: "hydronic" },
 
   // External & landscape concrete — outside the building envelope.
   { id: "planter_wall", category: "EXTERNAL & LANDSCAPE CONCRETE", section: "BOUNDARY & LANDSCAPE WALLS", name: "Planter Wall", labour: "wall" },
