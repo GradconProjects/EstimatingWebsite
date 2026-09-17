@@ -489,6 +489,18 @@ element families waits on the owner's approval of the pad footing.
 
 ## Estimates geometry options: wall shapes, stair forms, reinforcement by rate
 
+- **Irregular shape — concrete volume override** (`concreteOverrideSection`,
+  `applyConcreteOverride` in `computeInstance`, on EVERY element with a
+  Concrete tab): `concVolOverride` > 0 replaces the element's own concrete
+  line(s) with one entered-volume line (first line's material kept; blinding
+  and "(reference only)" pointers untouched). It runs BEFORE `applyReoRate`,
+  so a rate follows the entered volume. Formwork keeps its own override on
+  the Formwork tab.
+- **Retaining walls** also carry a plan shape (`planShape`: straight, curved —
+  `planRadius` × `planAngle` gives the developed length, or irregular —
+  the developed length is typed), a battered stem (`stemBatter`: mean of
+  `stemT` and `stemTt`) and a footing footprint (`footShape: "area"` uses
+  `footPlanArea` × depth; excavation oversizes that footprint).
 - **Retaining wall stems** (`retStemGeom(d)`) come in four elevation shapes:
   uniform, tapered (`stemH` → `stemH2`), stepped (up to six `segL/segH`
   segments, whose lengths become the wall length) and manual (`stemArea`, an
