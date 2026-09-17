@@ -20,10 +20,10 @@ yet. New schemas are added only where the measurement basis is different.
 | | thickenings, joints, dowels, set-downs, steps | mod | slab: edge thickening, wall thickening, internal beams, joints, dowels, step-downs |
 | Suspended | one/two-way slab, flat slab/drop panels, RC roof, ramp, balcony, band/edge/transfer beams | calc + mod | Suspended Slab (`drops`, edge beams), RC Roof, Ramp, Suspended Beam |
 | | PT allowance | mod | Additional rows / allowances (no PT calculator — engineering item) |
-| Vertical | rect/circular columns, walls, cores, retaining, shotcrete | calc | Column, Concrete Wall / Core, Retaining Wall, Shotcrete Wall |
+| Vertical | rect/circular columns, walls, cores, retaining (uniform / tapered / stepped / irregular entered-area stems), shotcrete | calc | Column, Concrete Wall / Core, Retaining Wall, Shotcrete Wall |
 | | nibs, blade walls, pilasters, corbels | calc (wall/column dims) / generic | narrow Wall or Column; Corbel via generic |
 | Precast / tilt-up | panels, stitches, grout, embeds, bracing | generic (kind precast) — **added Phase 4** | Precast / Tilt-up Panel; Precast Stitch / Grout / Embeds (proprietary engineering stays outside) |
-| Stairs | flights, landings, waist, treads/risers, starters | calc | Concrete Stair |
+| Stairs | straight, L, U / dog-leg, multi-flight, winder, spiral, curved and irregular forms; flights, landings (optionally reinforced), waist, treads/risers, starters | calc | Concrete Stair |
 | Water-retaining | pools, tanks, lift pits, sumps, planters | calc | Tank/Box family |
 | | channels, bunds | calc / generic | Kerb / Spoon Drain; generic |
 | Civil / bridge | headwalls, culverts, barriers, plinths, thrust blocks, drainage structures | generic (kind civil) — **added Phase 4**, shown only for civil/bridge/water profiles | Civil / Bridge group |

@@ -487,6 +487,35 @@ element families waits on the owner's approval of the pad footing.
   columns (`gradcon-estimate-register-cols`) are per-browser preferences;
   "Export filtered view" exports exactly the rows shown.
 
+## Estimates geometry options: wall shapes, stair forms, reinforcement by rate
+
+- **Retaining wall stems** (`retStemGeom(d)`) come in four elevation shapes:
+  uniform, tapered (`stemH` → `stemH2`), stepped (up to six `segL/segH`
+  segments, whose lengths become the wall length) and manual (`stemArea`, an
+  irregular face measured off the drawing). Stem concrete = face area ×
+  thickness, stem formwork = 2 × face area, vertical bars = 2 faces × bars
+  along the length × (average height + 0.4 lap), horizontal bars = 2 faces ×
+  (face area ÷ spacing + one bottom row). A uniform wall reduces to L × H;
+  before 17 Sep 2026 the stem bars counted one face vertically and used the
+  wall length as the row count horizontally, so those two lines changed for
+  existing takeoffs (review status flags it).
+- **Stairs** (`stairGeom(d)`, `STAIR_SHAPES`): straight, L (quarter-turn),
+  U / dog-leg, multi-flight, winder, spiral (newel + outer radius, turn), curved
+  (centreline radius, turn) and irregular (measured overrides; an old
+  `irregular: true` maps to it). Risers are split over `flights`; L/U/multi
+  carry `flights − 1` landings of `landL × landW × landD`; spiral and curved
+  measure the going on the centreline arc. `landReo` (off by default, so
+  older takeoffs are unchanged) reinforces each landing as a slab.
+- **Reinforcement by rate** (`reoMethodSection`, `applyReoRate` in
+  `computeInstance`, on EVERY element with a Reinforcement tab): `reoMethod:
+  "rate"` prices the element's steel as `reoRateKgM3` × its own concrete
+  (blinding and reference lines excluded), converted to metres of one bar
+  size (`reoRateDia`, kg ÷ d²/162) so orders, tonnage and the Quotes bridge
+  keep working. It REPLACES the calculator's Reinforcement lines and keeps
+  Connections; the detailed fields hide under `data-show-if="reoMethod_detailed"`.
+  `validateInstance` flags a rate with no concrete (completeness) and always
+  asks for the ratio to be confirmed (verify).
+
 ## Estimates standards profile, allowances and review gate (Phase 4)
 
 - `docs/ESTIMATES_COVERAGE.md` is the coverage audit (brief §11.3): map a

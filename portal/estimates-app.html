@@ -5116,15 +5116,49 @@ function retWallDefaults(){ return {
   length:10000, cover:PROJECT.cover, grade:PROJECT.grade,
   footL:1800, footD:500, heel:900, toe:300, key:false, keyD:200, keyW:200,
   stemH:2400, stemT:250,
+  // Stem elevation shape: uniform height (rect), tapered (stemH → stemH2 along
+  // the length), stepped (up to 6 length×height segments) or manual (an
+  // irregular face area measured off the drawing). See retStemGeom().
+  stemShape:"rect", stemH2:1200, stemArea:0,
+  segL1:5000,segH1:2400, segL2:5000,segH2:1800, segL3:0,segH3:0, segL4:0,segH4:0, segL5:0,segH5:0, segL6:0,segH6:0,
   footBotX:"N16",footBotXSp:200,footBotXLap:false, footBotY:"N16",footBotYSp:200,footBotYLap:false,
   footTop:false, footTopX:"N16",footTopXSp:200,footTopXLap:false, footTopY:"N16",footTopYSp:200,footTopYLap:false,
   stemVertDia:"N16",stemVertSp:200,stemVertLap:false, stemHorDia:"N12",stemHorSp:250,stemHorLap:false,
   waterstop:true, backfillDepth:2000,
   dowelsOut:"", outQty:0, outDia:"N16", outEmbed:500, outProj:600,
 };}
+/* Stem elevation geometry for every retaining-wall shape → metres/m²:
+ *   L     wall length along the footing (Σ segment lengths when stepped)
+ *   area  stem face area (one face)
+ *   hMax  tallest stem height (diagram, horizontal-bar rows, starter lengths)
+ *   hAvg  area / L — what a vertical bar averages
+ * Everything downstream (stem volume, stem formwork, both bar families) works
+ * off these, so a rectangular wall prices exactly as area = L × H. */
+function retStemGeom(d){
+  let shape=d.stemShape||"rect";
+  let L=num(d.length)/1000, T=num(d.stemT)/1000, H=num(d.stemH)/1000, area=0, hMax=H, segs=[];
+  if(shape==="taper"){ let H2=num(d.stemH2)/1000; area=L*(H+H2)/2; hMax=Math.max(H,H2); }
+  else if(shape==="stepped"){
+    for(let i=1;i<=6;i++){ let sl=num(d["segL"+i])/1000, sh=num(d["segH"+i])/1000; if(sl>0){ segs.push({l:sl,h:sh}); } }
+    if(segs.length){ L=segs.reduce((a,g)=>a+g.l,0); area=segs.reduce((a,g)=>a+g.l*g.h,0); hMax=Math.max(...segs.map(g=>g.h)); }
+    else area=L*H;
+  }
+  else if(shape==="manual"){ area=num(d.stemArea); hMax=H; }
+  else area=L*H;
+  let hAvg=L>0? area/L : 0;
+  return {shape,L,T,area,hMax,hAvg,segs};
+}
+function retShapeLabel(shape){ return {rect:"uniform height",taper:"tapered",stepped:"stepped",manual:"irregular (entered area)"}[shape]||"uniform height"; }
 function renderRetWall(inst){
   let d=inst.data;
+  let shape=d.stemShape||"rect";
+  let shapeFields = shape==="taper"? `<div class="grid cols4">${LF("Stem height at start (mm)","stemH",d.stemH)}${LF("Stem height at end (mm)","stemH2",d.stemH2===undefined?1200:d.stemH2)}${F("Stem thickness (mm)",inpNum("stemT",d.stemT))}</div><p class="small">Sloping top: the stem face area is length × the average of the two heights; horizontal bars are taken over that area, vertical bars average the two heights.</p>`
+   : shape==="stepped"? `<div class="grid cols4">${[1,2,3,4,5,6].map(i=>LF(`Segment ${i} length (mm)`,"segL"+i,d["segL"+i]===undefined?0:d["segL"+i])+LF(`Segment ${i} height (mm)`,"segH"+i,d["segH"+i]===undefined?0:d["segH"+i])).join('')}</div><div class="grid cols3">${F("Stem thickness (mm)",inpNum("stemT",d.stemT))}</div><p class="small">Up to six steps along the wall — a segment with a blank length is ignored. The wall length becomes the sum of the segment lengths (the footing, backfill, waterstop and horizontal bars follow it); split a longer wall into two elements if six steps are not enough.</p>`
+   : shape==="manual"? `<div class="grid cols4">${F("Stem face area (m², one face, measured off the drawing)",inpNum("stemArea",d.stemArea))}${LF("Tallest stem height (mm)","stemH",d.stemH)}${F("Stem thickness (mm)",inpNum("stemT",d.stemT))}</div><p class="small">Irregular walls — curved tops, raking ends, cut-outs: measure the stem face area straight off the elevation (or a 3D takeoff) and enter it. Stem concrete = area × thickness, stem formwork = 2 × area, vertical bars spread along the wall length at their spacing (average height = area ÷ length), horizontal bars = area ÷ spacing per face. The tallest height only sizes the drawing and the starter lap.</p>`
+   : `<div class="grid cols3">${LF("Stem height (mm)","stemH",d.stemH)}${F("Stem thickness (mm)",inpNum("stemT",d.stemT))}</div>`;
   let geom=`<div class="grid cols4">${LF("Wall length (mm)","length",d.length)}${coverField(inst)}</div>
+  <div class="sechead">Stem shape</div>
+  <div class="grid cols3">${F("Stem elevation",selOpts("stemShape",shape,[["rect","Uniform height (rectangular elevation)"],["taper","Tapered / sloping top (height varies end to end)"],["stepped","Stepped (up to 6 segments)"],["manual","Irregular — enter the stem face area"]],true))}</div>
   <div class="sechead">Footing Source</div>
   <div class="grid cols3">${F("Footing is",selOpts("footingSource",d.footingSource,[["compound","Cast as part of this element (compound)"],["linked","Already exists — sits on an existing Strip Footing / Ground Beam / Pile Cap"]]))}</div>
   <div class="subsec ${d.footingSource=='linked'?'':'hidden'}" data-show-if="footingSource_linked">
@@ -5136,7 +5170,7 @@ function renderRetWall(inst){
   <div class="grid cols3">${chk("key",d.key,"Shear key","key")}</div>
   <div class="subsec ${d.key?'':'hidden'}" data-show-if="key"><div class="grid cols3">${F("Key depth (mm)",inpNum("keyD",d.keyD))}${F("Key width (mm)",inpNum("keyW",d.keyW))}</div></div>
   </div>
-  <div class="sechead">Stem</div><div class="grid cols3">${LF("Stem height (mm)","stemH",d.stemH)}${F("Stem thickness (mm)",inpNum("stemT",d.stemT))}</div>
+  <div class="sechead">Stem</div>${shapeFields}
   <div class="grid cols3">${F("Backfill depth (mm)",inpNum("backfillDepth",d.backfillDepth))}</div>`;
   let reo=`<div class="subsec ${d.footingSource=='compound'?'':'hidden'}" data-show-if="footingSource_compound"><div class="sechead">Footing Reinforcement</div><div class="grid cols4">${F("Bottom X dia",barSizeSel("footBotX",d.footBotX))}${F("Spacing",inpNum("footBotXSp",d.footBotXSp))}${F("Bottom Y dia",barSizeSel("footBotY",d.footBotY))}${F("Spacing",inpNum("footBotYSp",d.footBotYSp))}</div>
   <div class="grid cols3">${chk("footBotXLap",d.footBotXLap,"Bottom X — include lap allowance (%)","footBotXLap")}${chk("footBotYLap",d.footBotYLap,"Bottom Y — include lap allowance (%)","footBotYLap")}</div>
@@ -5152,13 +5186,15 @@ function renderRetWall(inst){
 }
 function computeRetWall(inst,def){
   let d=inst.data, lines=[];
-  let Lm=num(d.length)/1000;
+  let g=retStemGeom(d);
+  let Lm=g.L;
   let linked = d.footingSource==="linked";
   let footVol = linked? 0 : Lm*(num(d.footL)/1000)*(num(d.footD)/1000);
-  let stemVol = Lm*(num(d.stemH)/1000)*(num(d.stemT)/1000);
+  let stemVol = g.area*g.T;
   let keyVol = (!linked && d.key)? Lm*(num(d.keyD)/1000)*(num(d.keyW)/1000) : 0;
   let totVol=footVol+stemVol+keyVol;
-  lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:linked?"Stem only (footing linked)":"Footing+stem+key",qty:totVol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(totVol,concWastePct(d)),formula:linked?"stem vol only":"footing vol + stem vol + key vol"}));
+  let stemNote = g.shape==="rect"? "stem vol" : `stem face area ${fmt(g.area,2)} m² (${retShapeLabel(g.shape)}) × ${fmt(g.T*1000,0)} thick`;
+  lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:linked?"Stem only (footing linked)":"Footing+stem+key",qty:totVol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(totVol,concWastePct(d)),formula:linked?`${stemNote} only`:`footing vol + ${stemNote} + key vol`}));
   if(linked){
     let tgt=targetLabelOf(d.footingTarget);
     lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:"(reference only)",spec:"Footing concrete/reinforcement/excavation counted at linked element — not duplicated here",qty:0,unit:"",waste:0,finalQty:0,formula:"",linkedElement:tgt}));
@@ -5175,10 +5211,23 @@ function computeRetWall(inst,def){
   let backfillVol=Lm*(num(d.heel||1)/1000)*(num(d.backfillDepth)/1000);
   lines.push(baseLine(inst,def,{materialGroup:"Excavation",material:"Backfill (behind wall)",spec:"",qty:backfillVol,unit:"m³",waste:0,finalQty:backfillVol,formula:"heel width × backfill depth × length"}));
   function bars(dia,sp,len,label,lapFlag){
-    let d2=barDiaOf(dia); let count=Math.floor(num(d.length)/sp)+1;
+    let d2=barDiaOf(dia); let count=Math.floor(Lm*1000/sp)+1;
     let totLen=count*len; let wt=totLen*massPerM(d2);
     let lapPct=lapFlag?PROJECT.lapPct:0;
     lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:dia,spec:label,qty:totLen,unit:"m",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,lapPct),formula:`count(${count})×len(${fmt(len,2)})`,notes:`${fmt(wt,1)} kg`}));
+  }
+  // Stem bars, BOTH faces, from the stem face area so every shape works:
+  //   vertical   — bars along the length at their spacing, each the average
+  //                stem height + 400 lap into the footing, × 2 faces;
+  //   horizontal — area ÷ spacing is the total row length at that spacing
+  //                (+ one bottom row of L), × 2 faces. For a rectangular wall
+  //                this is (H/sp + 1) rows × L per face, exactly the drawing.
+  function stemBars(dia,sp,vertical,label,lapFlag){
+    let d2=barDiaOf(dia); let spM=num(sp,200)/1000; let totLen, formula;
+    if(vertical){ let count=Math.floor(Lm*1000/num(sp,200))+1; totLen=2*count*(g.hAvg+0.4); formula=`2 faces × ${count} bars × (avg height ${fmt(g.hAvg,2)} + 0.4 lap)`; }
+    else { totLen=2*(g.area/spM+Lm); formula=`2 faces × (face area ${fmt(g.area,2)} m² ÷ ${fmt(spM,3)} m + bottom row ${fmt(Lm,2)})`; }
+    let wt=totLen*massPerM(d2); let lapPct=lapFlag?PROJECT.lapPct:0;
+    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:dia,spec:label,qty:totLen,unit:"m",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,lapPct),formula,notes:`${fmt(wt,1)} kg`}));
   }
   if(!linked){
     bars(d.footBotX,d.footBotXSp,(num(d.footL))/1000,"Footing bottom X bars",d.footBotXLap);
@@ -5188,11 +5237,11 @@ function computeRetWall(inst,def){
       bars(d.footTopY||"N16",num(d.footTopYSp,200),Lm,"Footing top Y bars (distribution)",d.footTopYLap);
     }
   }
-  bars(d.stemVertDia,d.stemVertSp,(num(d.stemH))/1000+0.4,"Stem vertical bars (both faces, incl. lap into footing)",d.stemVertLap);
-  bars(d.stemHorDia,d.stemHorSp,Lm,"Stem horizontal bars (both faces)",d.stemHorLap);
+  stemBars(d.stemVertDia,d.stemVertSp,true,"Stem vertical bars (both faces, incl. lap into footing)",d.stemVertLap);
+  stemBars(d.stemHorDia,d.stemHorSp,false,"Stem horizontal bars (both faces)",d.stemHorLap);
   if(!linked && d.waterstop) lines.push(baseLine(inst,def,{materialGroup:"Joints",material:"PVC waterstop",spec:"Footing/stem joint",qty:Lm,unit:"m",waste:5,finalQty:withWaste(Lm,5),formula:"wall length"}));
-  let formArea = linked? 2*Lm*(num(d.stemH)/1000) : (2*Lm*(num(d.stemH)/1000)+2*Lm*(num(d.footD)/1000));
-  lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:linked?"Stem formwork":"Footing + stem formwork",spec:"",qty:formArea,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(formArea,PROJECT.formworkWaste),formula:linked?"2×L×stemH":"2×L×stemH + 2×L×footD"}));
+  let formArea = linked? 2*g.area : (2*g.area+2*Lm*(num(d.footD)/1000));
+  lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:linked?"Stem formwork":"Footing + stem formwork",spec:"",qty:formArea,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(formArea,PROJECT.formworkWaste),formula:linked?`2 × stem face area ${fmt(g.area,2)} m²`:`2 × stem face area ${fmt(g.area,2)} m² + 2×L×footD`}));
   let tgtOut=targetLabelOf(d.dowelsOut);
   if(tgtOut && num(d.outQty)>0){
     let dia=barDiaOf(d.outDia); let outLen=(num(d.outEmbed)+num(d.outProj))/1000;
@@ -5261,23 +5310,60 @@ function computeShotWall(inst,def){
 /* ---- STAIRS ---- */
 function stairsDefaults(){ return {
   irregular:false, volumeOverride:0, formworkOverride:0, flightLenOverride:0,
+  // Stair form: straight (one flight), quarter-turn L, half-turn U / dog-leg,
+  // multi-flight, winder, spiral (around a newel), curved (arc flights) or
+  // irregular (measured volume/area). See stairGeom().
+  stairShape:"straight", flights:2, spiralRo:1000, spiralRi:150, curveR:1500, turnDeg:270, landReo:false,
   risers:14, riserH:175, treadD:280, width:1200, waistT:180, sloped:true,
   landing:false, landL:1200, landW:1200, landD:180,
   mainDia:"N12", mainSpacing:150, mainLap:false, distReoType:"bars", distDia:"N10", distSpacing:250, distLap:false, distMeshType:"SL62", distMeshLayers:1, distMeshLap:false,
   topMatOn:false, topMainDia:"N12", topMainSpacing:150, topMainLap:false, topDistReoType:"bars", topDistDia:"N10", topDistSpacing:250, topDistLap:false, topDistMeshType:"SL62", topDistMeshLayers:1, topDistMeshLap:false,
   starters:false, connTarget:"", connQty:0, connDia:"N12", connEmbed:400, connProj:400
 };}
+const STAIR_SHAPES=[["straight","Straight — one flight"],["lshape","L-shaped — quarter-turn with landing"],["ushape","U-shaped / dog-leg — half-turn with landing"],["multi","Multi-flight — several flights and landings"],["winder","Winder — turn on tapered treads, no landing"],["spiral","Spiral / helical — around a newel or well"],["curved","Curved — arc flight(s) at a plan radius"],["irregular","Irregular — enter measured volume and area"]];
+function stairShapeOf(d){ let sh=d.stairShape; if(!sh) sh = d.irregular? "irregular" : "straight"; return sh; }
+/* Stair geometry for every shape → the figures computeStairs prices:
+ *   flights, risersPerFlight, going (m, per riser, at the walking line —
+ *   the centreline radius for spiral/curved), flightLen (m, each, on the
+ *   slope), totalFlightLen, w (m), landings (count), landL/W/D (m).
+ * A straight flight with no landing is exactly the maths this calculator
+ * has always used; the other shapes only change how many flights the
+ * risers are split over, where the going is measured and how many landings
+ * sit between flights. */
+function stairGeom(d){
+  let shape=stairShapeOf(d);
+  let risers=Math.max(1,Math.round(num(d.risers,14))), rH=num(d.riserH)/1000, w=num(d.width)/1000, waist=num(d.waistT)/1000;
+  let flights = shape==="lshape"||shape==="ushape"? Math.max(2,Math.round(num(d.flights,2))) : shape==="multi"? Math.max(1,Math.round(num(d.flights,2))) : 1;
+  let going=num(d.treadD)/1000, turnRad=num(d.turnDeg,270)*Math.PI/180, radiusNote="";
+  if(shape==="spiral"){ let ro=num(d.spiralRo,1000)/1000, ri=num(d.spiralRi,150)/1000; w=Math.max(0,ro-ri); let rc=(ro+ri)/2; going=risers>1? rc*turnRad/(risers-1) : rc*turnRad; radiusNote=`centreline radius ${fmt(rc,2)} m, ${num(d.turnDeg,270)}° turn`; }
+  else if(shape==="curved"){ let rc=num(d.curveR,1500)/1000; going=risers>1? rc*turnRad/(risers-1) : rc*turnRad; radiusNote=`centreline radius ${fmt(rc,2)} m, ${num(d.turnDeg,270)}° turn`; }
+  let rpf=risers/flights;
+  let flightLen=Math.sqrt(Math.pow(rH*rpf,2)+Math.pow(going*Math.max(0,rpf-1),2));
+  if(shape==="irregular" && num(d.flightLenOverride)>0) flightLen=num(d.flightLenOverride)/flights;
+  let landings = shape==="lshape"||shape==="ushape"||shape==="multi"? Math.max(0,flights-1) : (d.landing?1:0);
+  return {shape,risers,rH,w,waist,flights,risersPerFlight:rpf,going,flightLen,totalFlightLen:flightLen*flights,landings,landL:num(d.landL)/1000,landW:num(d.landW)/1000,landD:num(d.landD)/1000,radiusNote,
+          label:(STAIR_SHAPES.find(x=>x[0]===shape)||STAIR_SHAPES[0])[1].split(" — ")[0]};
+}
 function renderStairs(inst){
-  let d=inst.data;
-  let geom=`<div class="grid cols3">${chk("irregular",d.irregular,"Irregular stair — enter volume/area manually instead of calculating from risers","irregular")}</div>
-  <div class="subsec ${d.irregular?'':'hidden'}" data-show-if="irregular"><div class="grid cols4">
+  let d=inst.data; let shape=stairShapeOf(d); let G=stairGeom(d);
+  let turnFields=`${F("Total turn (°)",inpNum("turnDeg",d.turnDeg===undefined?270:d.turnDeg))}`;
+  let shapeFields = shape==="spiral"? `<div class="grid cols4">${F("Outer radius (mm)",inpNum("spiralRo",d.spiralRo===undefined?1000:d.spiralRo))}${F("Newel / well radius (mm)",inpNum("spiralRi",d.spiralRi===undefined?150:d.spiralRi))}${turnFields}</div><p class="small">Width = outer − inner radius (${fmt(G.w*1000,0)} mm). The going is measured on the centreline (${G.radiusNote}): ${fmt(G.going*1000,0)} mm per riser, so the flight is ${fmt(G.flightLen,2)} m on the slope. Treads are tapered — no landing.</p>`
+   : shape==="curved"? `<div class="grid cols4">${F("Centreline radius (mm)",inpNum("curveR",d.curveR===undefined?1500:d.curveR))}${turnFields}${F("Width (mm)",inpNum("width",d.width))}</div><p class="small">Going measured on the centreline arc (${G.radiusNote}): ${fmt(G.going*1000,0)} mm per riser; the flight runs ${fmt(G.flightLen,2)} m on the slope. Add a landing below if the arc is broken by one.</p>`
+   : shape==="winder"? `<div class="grid cols4">${F("Tread at walking line (mm)",inpNum("treadD",d.treadD))}${F("Width (mm)",inpNum("width",d.width))}</div><p class="small">Winders turn the stair on tapered treads instead of a landing. Enter the going at the walking line and the average width; the flight is priced as one continuous run of ${G.risers} risers.</p>`
+   : shape==="lshape"||shape==="ushape"||shape==="multi"? `<div class="grid cols4">${F("Number of flights",inpNumR("flights",d.flights===undefined?2:d.flights))}${F("Tread depth (mm)",inpNum("treadD",d.treadD))}${F("Width (mm)",inpNum("width",d.width))}</div><p class="small">${G.risers} risers over ${G.flights} flights (${fmt(G.risersPerFlight,1)} each, ${fmt(G.flightLen,2)} m on the slope) with ${G.landings} landing${G.landings===1?"":"s"} between them, each the size below${shape==="ushape"?" — for a dog-leg the landing width is usually both flights plus the gap":""}.</p>
+     <div class="grid cols3">${F("Landing length (mm)",inpNum("landL",d.landL))}${F("Landing width (mm)",inpNum("landW",d.landW))}${F("Landing depth (mm)",inpNum("landD",d.landD))}</div>`
+   : `<div class="grid cols4">${F("Tread depth (mm)",inpNum("treadD",d.treadD))}${F("Width (mm)",inpNum("width",d.width))}</div>`;
+  let landingOpt = (shape==="straight"||shape==="winder"||shape==="curved"||shape==="irregular")? `<div class="grid cols3">${chk("landing",d.landing,"Include landing","landing")}</div>
+  <div class="subsec ${d.landing?'':'hidden'}" data-show-if="landing"><div class="grid cols3">${F("Landing length (mm)",inpNum("landL",d.landL))}${F("Landing width (mm)",inpNum("landW",d.landW))}${F("Landing depth (mm)",inpNum("landD",d.landD))}</div></div>` : "";
+  let geom=`<div class="grid cols3">${F("Stair form",selOpts("stairShape",shape,STAIR_SHAPES,true))}</div>
+  <div class="subsec ${shape==="irregular"?'':'hidden'}" data-show-if="stairShape_irregular"><div class="grid cols4">
    ${F("Concrete volume override (m³)",inpNum("volumeOverride",d.volumeOverride))}
    ${F("Formwork area override (m²)",inpNum("formworkOverride",d.formworkOverride))}
-   ${F("Flight length override (m, for bar length calcs — 0=auto from risers)",inpNum("flightLenOverride",d.flightLenOverride))}
-  </div><div class="tip"><span class="ico">👷</span><div>Use this for winders, curved stairs, splayed treads or anything that doesn't fit a clean rise/going repeat — measure the volume and formwork straight off the drawing (or a 3D takeoff) and enter them here. Reinforcement below still works off risers/width/spacing as normal, or override the flight length if the stair is curved/raked.</div></div></div>
-  <div class="grid cols4">${F("Number of risers",inpNum("risers",d.risers))}${F("Riser height (mm)",inpNum("riserH",d.riserH))}${F("Tread depth (mm)",inpNum("treadD",d.treadD))}${F("Width (mm)",inpNum("width",d.width))}${F("Waist thickness (mm)",inpNum("waistT",d.waistT))}</div>
-  <div class="grid cols3">${chk("landing",d.landing,"Include landing","landing")}</div>
-  <div class="subsec ${d.landing?'':'hidden'}" data-show-if="landing"><div class="grid cols3">${F("Landing length (mm)",inpNum("landL",d.landL))}${F("Landing width (mm)",inpNum("landW",d.landW))}${F("Landing depth (mm)",inpNum("landD",d.landD))}</div></div>`;
+   ${F("Total flight length override (m, for bar length calcs — 0=auto from risers)",inpNum("flightLenOverride",d.flightLenOverride))}
+  </div><div class="tip"><span class="ico">👷</span><div>Use this for splayed treads, feature stairs or anything that doesn't fit the shapes above — measure the volume and formwork straight off the drawing (or a 3D takeoff) and enter them here. Reinforcement below still works off risers/width/spacing as normal, or override the flight length if the stair is raked.</div></div></div>
+  <div class="grid cols4">${F("Number of risers (total)",inpNum("risers",d.risers))}${F("Riser height (mm)",inpNum("riserH",d.riserH))}${F("Waist thickness (mm)",inpNum("waistT",d.waistT))}</div>
+  ${shapeFields}
+  ${landingOpt}`;
   let reo=`<div class="grid cols4">${F("Main flight bar dia",barSizeSel("mainDia",d.mainDia))}${F("Spacing (mm)",inpNum("mainSpacing",d.mainSpacing))}${chk("mainLap",d.mainLap,"Include lap allowance (%)","mainLap")}</div>
   <div class="sechead">Distribution Reinforcement</div>
   <div class="grid cols3">${F("Type",selOpts("distReoType",d.distReoType,[["bars","Bars"],["mesh","Mesh sheet"]]))}</div>
@@ -5292,26 +5378,32 @@ function renderStairs(inst){
   <div class="subsec ${(d.topDistReoType||"bars")=='bars'?'':'hidden'}" data-show-if="topDistReoType_bars"><div class="grid cols3">${F("Dia",barSizeSel("topDistDia",d.topDistDia||"N10"))}${F("Spacing (mm)",inpNum("topDistSpacing",d.topDistSpacing===undefined?250:d.topDistSpacing))}${chk("topDistLap",d.topDistLap,"Include lap allowance (%)","topDistLap")}</div></div>
   <div class="subsec ${d.topDistReoType=='mesh'?'':'hidden'}" data-show-if="topDistReoType_mesh"><div class="grid cols3">${F("Mesh type",selOpts("topDistMeshType",d.topDistMeshType||"SL62",Object.keys(MESHTYPES).map(m=>[m,m]),true))}${F("Layers",inpNumR("topDistMeshLayers",d.topDistMeshLayers===undefined?1:d.topDistMeshLayers))}${chk("topDistMeshLap",d.topDistMeshLap,"Include lap allowance (%)","topDistMeshLap")}</div>
   ${layerTypeSelects(d,"topDistMeshLayers","topDistMeshType","topDistMeshLayerTypes",(f,v)=>selOpts(f,v,Object.keys(MESHTYPES).map(m=>[m,m])),"mesh type")}</div>
-  </div>`;
+  </div>
+  <div class="sechead">Landing Reinforcement</div>
+  ${chk("landReo",d.landReo,"Reinforce each landing as a slab — bottom mat both ways at the main/distribution bar sizes and spacings above (top mat too when the top mat is on)","landReo")}
+  <p class="small">Off by default so an older takeoff keeps its figures; tick it and every landing (${G.landings} on this stair) gets its own bars in the register.</p>`;
   let conns=`${chk("starters",d.starters,"Starter bars into supporting slab/landing","starters")}
   <div class="subsec ${d.starters?'':'hidden'}" data-show-if="starters"><div class="grid cols4">${F("Connects to",targetSelect("connTarget",d.connTarget,inst.id))}${F("Qty",inpNum("connQty",d.connQty))}${F("Dia",barSizeSel("connDia",d.connDia))}${F("Embedment",inpNum("connEmbed",d.connEmbed))}${F("Projection",inpNum("connProj",d.connProj))}</div></div>`;
   return {geom,conc:concSection(d,"<p class='small'>Concrete = triangular step volumes + waist slab + landing (or manual override for irregular stairs)</p>"),reo,conns};
 }
 function computeStairs(inst,def){
   let d=inst.data, lines=[];
-  let risers=num(d.risers), rH=num(d.riserH)/1000, tD=num(d.treadD)/1000, w=num(d.width)/1000, waist=num(d.waistT)/1000;
+  let G=stairGeom(d);
+  let irregular = G.shape==="irregular";
+  let risers=G.risers, rH=G.rH, tD=G.going, w=G.w, waist=G.waist;
   let stepVol = 0.5*rH*tD*w*risers;
-  let autoFlightLen = Math.sqrt(Math.pow(rH*risers,2)+Math.pow(tD*(risers-1),2));
-  let flightLen = (d.irregular && num(d.flightLenOverride)>0)? num(d.flightLenOverride) : autoFlightLen;
+  let flightLen = G.totalFlightLen;            // every flight, on the slope
   let waistVol = flightLen*w*waist;
-  let landVol = d.landing? (num(d.landL)/1000)*(num(d.landW)/1000)*(num(d.landD)/1000) : 0;
-  let totVol = (d.irregular && num(d.volumeOverride)>0)? num(d.volumeOverride) : (stepVol+waistVol+landVol);
-  lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:"Concrete",spec:"Stair (steps+waist+landing)",qty:totVol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(totVol,concWastePct(d)),formula:(d.irregular&&num(d.volumeOverride)>0)?"manual override (irregular stair)":"Σ triangular steps + waist slab + landing"}));
-  let soffit=flightLen*w;
+  let landEach = G.landL*G.landW*G.landD;
+  let landVol = G.landings*landEach;
+  let totVol = (irregular && num(d.volumeOverride)>0)? num(d.volumeOverride) : (stepVol+waistVol+landVol);
+  let shapeTxt = `${G.label}${G.flights>1?` · ${G.flights} flights`:""}${G.landings?` · ${G.landings} landing${G.landings===1?"":"s"}`:""}${G.radiusNote?` · ${G.radiusNote}`:""}`;
+  lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:"Concrete",spec:`Stair (steps+waist${G.landings?"+landing":""}) — ${shapeTxt}`,qty:totVol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(totVol,concWastePct(d)),formula:(irregular&&num(d.volumeOverride)>0)?"manual override (irregular stair)":`Σ ${risers} triangular steps (going ${fmt(tD*1000,0)}) + waist ${fmt(flightLen,2)} m × ${fmt(w,2)} × ${fmt(waist,3)}${G.landings?` + ${G.landings} × landing`:""}`}));
+  let soffit=flightLen*w + G.landings*G.landL*G.landW;
   let risersArea=risers*w*rH;
-  let sides=2*flightLen*(waist+rH*risers/2);
-  let formArea = (d.irregular && num(d.formworkOverride)>0)? num(d.formworkOverride) : (soffit+risersArea+sides);
-  lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Stair formwork",spec:"soffit+risers+sides",qty:formArea,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(formArea,PROJECT.formworkWaste),formula:(d.irregular&&num(d.formworkOverride)>0)?"manual override (irregular stair)":"soffit + risers + side shutters"}));
+  let sides=2*flightLen*(waist+rH*G.risersPerFlight/2) + G.landings*2*(G.landL+G.landW)*G.landD;
+  let formArea = (irregular && num(d.formworkOverride)>0)? num(d.formworkOverride) : (soffit+risersArea+sides);
+  lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Stair formwork",spec:"soffit+risers+sides",qty:formArea,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(formArea,PROJECT.formworkWaste),formula:(irregular&&num(d.formworkOverride)>0)?"manual override (irregular stair)":`soffit (flights${G.landings?" + landings":""}) + risers + side shutters`}));
   let mDia=barDiaOf(d.mainDia); let mCount=Math.floor(w*1000/num(d.mainSpacing))+1;
   let mLen=mCount*flightLen; let mWt=mLen*massPerM(mDia);
   let mainLapPct=d.mainLap?PROJECT.lapPct:0;
@@ -5326,7 +5418,7 @@ function computeStairs(inst,def){
       lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:type,spec:`Distribution — mesh sheets ×${n} layer(s)`,qty:area,unit:"m²",waste:REO_WASTE_PCT,lap:distMeshLapPct,finalQty:wastedArea,sheets,formula:`flight length × width × ${n} layer(s) (+${REO_WASTE_PCT}% waste${distMeshLapPct?`, +${distMeshLapPct}% lap`:''}) → ceil(/${MESH_SHEET_AREA_M2}m²) = ${sheets} sheets`,notes:`${sheets} sheets (6.0×2.4m nominal)`}));
     });
   } else {
-    let dDia=barDiaOf(d.distDia); let dCount=Math.floor(flightLen*1000/num(d.distSpacing))+1;
+    let dDia=barDiaOf(d.distDia); let dCount=(Math.floor(G.flightLen*1000/num(d.distSpacing))+1)*G.flights;
     let dLen=dCount*w; let dWt=dLen*massPerM(dDia);
     let distLapPct=d.distLap?PROJECT.lapPct:0;
     lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.distDia,spec:"Distribution bars",qty:dLen,unit:"m",waste:PROJECT.reoWaste,lap:distLapPct,finalQty:withWasteLap(dLen,PROJECT.reoWaste,distLapPct),formula:"count × width",notes:`${fmt(dWt,1)} kg`}));
@@ -5345,11 +5437,24 @@ function computeStairs(inst,def){
         lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:type,spec:`Top distribution — mesh sheets ×${n} layer(s)`,qty:area,unit:"m²",waste:REO_WASTE_PCT,lap:tdMeshLapPct,finalQty:wastedArea,sheets,formula:`flight length × width × ${n} layer(s) (+${REO_WASTE_PCT}% waste${tdMeshLapPct?`, +${tdMeshLapPct}% lap`:''}) → ceil(/${MESH_SHEET_AREA_M2}m²) = ${sheets} sheets`,notes:`${sheets} sheets (6.0×2.4m nominal)`}));
       });
     } else {
-      let tdDia=barDiaOf(d.topDistDia||"N10"); let tdCount=Math.floor(flightLen*1000/num(d.topDistSpacing,250))+1;
+      let tdDia=barDiaOf(d.topDistDia||"N10"); let tdCount=(Math.floor(G.flightLen*1000/num(d.topDistSpacing,250))+1)*G.flights;
       let tdLen=tdCount*w; let tdWt=tdLen*massPerM(tdDia);
       let tdLapPct=d.topDistLap?PROJECT.lapPct:0;
       lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.topDistDia||"N10",spec:"Top distribution bars",qty:tdLen,unit:"m",waste:PROJECT.reoWaste,lap:tdLapPct,finalQty:withWasteLap(tdLen,PROJECT.reoWaste,tdLapPct),formula:"count × width",notes:`${fmt(tdWt,1)} kg`}));
     }
+  }
+  if(d.landReo && G.landings>0 && G.landL>0 && G.landW>0){
+    // each landing reinforced as a slab: bottom mat both ways at the flight's
+    // main / distribution sizes and spacings (top mat too when it is on)
+    let mats=[["Landing bottom",d.mainDia,num(d.mainSpacing,150),d.distReoType==="mesh"?d.mainDia:(d.distDia||"N10"),num(d.distSpacing,250),d.mainLap]];
+    if(d.topMatOn) mats.push(["Landing top",d.topMainDia||"N12",num(d.topMainSpacing,150),(d.topDistReoType||"bars")==="mesh"?(d.topMainDia||"N12"):(d.topDistDia||"N10"),num(d.topDistSpacing,250),d.topMainLap]);
+    mats.forEach(([lab,xDia,xSp,yDia,ySp,lapFlag])=>{
+      let xCount=(Math.floor(G.landW*1000/xSp)+1)*G.landings, xLen=xCount*G.landL;
+      let yCount=(Math.floor(G.landL*1000/ySp)+1)*G.landings, yLen=yCount*G.landW;
+      let lapPct=lapFlag?PROJECT.lapPct:0;
+      lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:xDia,spec:`${lab} bars (along landing)`,qty:xLen,unit:"m",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(xLen,PROJECT.reoWaste,lapPct),formula:`${G.landings} landing(s) × ${xCount/G.landings} bars × ${fmt(G.landL,2)} m`,notes:`${fmt(xLen*massPerM(barDiaOf(xDia)),1)} kg`}));
+      lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:yDia,spec:`${lab} bars (across landing)`,qty:yLen,unit:"m",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(yLen,PROJECT.reoWaste,lapPct),formula:`${G.landings} landing(s) × ${yCount/G.landings} bars × ${fmt(G.landW,2)} m`,notes:`${fmt(yLen*massPerM(barDiaOf(yDia)),1)} kg`}));
+    });
   }
   if(d.starters && num(d.connQty)>0){
     let dia=barDiaOf(d.connDia); let len=(num(d.connEmbed)+num(d.connProj))/1000;
@@ -5858,8 +5963,9 @@ function diagWall(inst){ let d=inst.data;
 }
 
 function diagRetWall(inst){ let d=inst.data;
-  const FL=Math.max(300,N_(d.footL,1800)), FD=Math.max(100,N_(d.footD,500)), TOE=N_(d.toe,300), HEEL=N_(d.heel,900), ST=Math.max(100,N_(d.stemT,250)), SH=Math.max(300,N_(d.stemH,2400)), cov=coverOf(d);
-  const KEY=d.key?N_(d.keyD,200):0, KW=d.key?N_(d.keyW,200):0, BF=Math.min(SH,N_(d.backfillDepth,2000)), L=N_(d.length,10000);
+  const G=retStemGeom(d);
+  const FL=Math.max(300,N_(d.footL,1800)), FD=Math.max(100,N_(d.footD,500)), TOE=N_(d.toe,300), HEEL=N_(d.heel,900), ST=Math.max(100,N_(d.stemT,250)), SH=Math.max(300,Math.round(G.hMax*1000)||N_(d.stemH,2400)), cov=coverOf(d);
+  const KEY=d.key?N_(d.keyD,200):0, KW=d.key?N_(d.keyW,200):0, BF=Math.min(SH,N_(d.backfillDepth,2000)), L=Math.max(300,Math.round(G.L*1000)||N_(d.length,10000));
   const sx=44, sy=40, s=DG.fit(FL, SH+FD+KEY, 150, 140), fw=FL*s, fd=FD*s, st=ST*s, sh=SH*s, toe=TOE*s, key=KEY*s, kw=KW*s, cv=Math.max(1.5,cov*s);
   const fy=sy+sh, stemX=sx+toe, bf=BF*s;
   const stemFace=stemX+st;  // soil side = heel side
@@ -5887,18 +5993,26 @@ function diagRetWall(inst){ let d=inst.data;
    ${KEY>0?dimV(fy+fd,fy+fd+key,sx+fw+14,`KEY ${KEY}`):''}
    ${dimV(fy-bf,fy,sx+fw+32,`BACKFILL ${BF}`)}
    ${DG.cov(stemFace+2,sy+cv+8,cov)}`;
-  /* elevation strip */
-  const ex=214, ey=40, ew=88, eh=14;
+  /* elevation strip — drawn to the stem shape (uniform, tapered, stepped; an
+     entered area shows as a hatched rectangle labelled with the area) */
+  const ex=214, ey=40, ew=88, eh=G.shape==="rect"?14:30;
+  const hs=eh/Math.max(1,G.hMax||1);
+  let shapePath="";
+  if(G.shape==="taper"){ const h1=(N_(d.stemH,2400)/1000)*hs, h2=(N_(d.stemH2,1200)/1000)*hs; shapePath=`<path d="M${ex} ${ey+eh} L${ex} ${ey+eh-h1} L${ex+ew} ${ey+eh-h2} L${ex+ew} ${ey+eh} Z" fill="rgba(232,163,61,0.10)" stroke="${DWG.ink}" stroke-width="1.6"/>`; }
+  else if(G.shape==="stepped" && G.segs.length){ let x=ex, pth=`M${ex} ${ey+eh}`; G.segs.forEach(sg=>{ const w=sg.l/G.L*ew, h=sg.h*hs; pth+=` L${x} ${ey+eh-h} L${x+w} ${ey+eh-h}`; x+=w; }); pth+=` L${ex+ew} ${ey+eh} Z`; shapePath=`<path d="${pth}" fill="rgba(232,163,61,0.10)" stroke="${DWG.ink}" stroke-width="1.6"/>`; }
+  else if(G.shape==="manual"){ shapePath=`${DG.rect(ex,ey,ew,eh,"rgba(232,163,61,0.10)",1.6,"3 2")}${DG.mono(ex+ew/2,ey+eh/2+2,`AREA ${fmt(G.area,1)} m²`,5.5,DWG.dim,"middle")}`; }
+  else shapePath=DG.rect(ex,ey,ew,eh);
   let elev=`${DG.title(ex,ey-12,"ELEVATION")}
-   ${DG.rect(ex,ey,ew,eh)}
-   ${DG.ticksH(ex+2,ex+ew-2,ey+2,ey+eh-2,N_(d.stemVertSp,200)*Math.max(1,L/8000),ew/L,30)}
+   ${shapePath}
+   ${G.shape==="manual"?'':DG.ticksH(ex+2,ex+ew-2,ey+2,ey+eh-2,N_(d.stemVertSp,200)*Math.max(1,L/8000),ew/L,30)}
    ${dimH(ex,ex+ew,ey+eh+12,`L ${L}`)}
    ${specLine(ex,ey+eh+28,`STEM ${d.stemVertDia||'N16'}@${N_(d.stemVertSp,200)} V`)}
    ${specLine(ex,ey+eh+38,`     ${d.stemHorDia||'N12'}@${N_(d.stemHorSp,250)} H`)}
    ${specLine(ex,ey+eh+48,`FTG ${d.footBotX||'N16'}@${N_(d.footBotXSp,200)} EW`)}
    ${d.footTop?specLine(ex,ey+eh+58,`TOP ${d.footTopX||'N16'}@${N_(d.footTopXSp,200)}`):''}
-   ${d.waterstop?specLine(ex,ey+eh+68,`WATERSTOP AT KICKER`):''}`;
-  return sheetFrame(inst, "Retaining Wall", [316,232], section+elev);
+   ${d.waterstop?specLine(ex,ey+eh+68,`WATERSTOP AT KICKER`):''}
+   ${G.shape!=="rect"?specLine(ex,ey+eh+78,`STEM ${retShapeLabel(G.shape).toUpperCase()} · ${fmt(G.area,1)} m² FACE`):''}`;
+  return sheetFrame(inst, "Retaining Wall", [316,Math.max(232,ey+eh+96)], section+elev);
 }
 
 function diagShotWall(inst){ let d=inst.data;
@@ -5927,8 +6041,9 @@ function diagShotWall(inst){ let d=inst.data;
 }
 
 function diagStairs(inst){ let d=inst.data;
-  const R=Math.max(1,Math.min(24,Math.round(N_(d.risers,14)))), RH=Math.max(100,N_(d.riserH,175)), TD=Math.max(150,N_(d.treadD,280)), WT=Math.max(80,N_(d.waistT,180)), WID=Math.max(300,N_(d.width,1200)), cov=coverOf(d);
-  const land=!!d.landing, LL=land?N_(d.landL,1200):0, LD=land?Math.max(80,N_(d.landD,180)):0;
+  const G=stairGeom(d);
+  const R=Math.max(1,Math.min(24,Math.round(G.risersPerFlight))), RH=Math.max(100,N_(d.riserH,175)), TD=Math.max(150,Math.round(G.going*1000)||N_(d.treadD,280)), WT=Math.max(80,N_(d.waistT,180)), WID=Math.max(300,Math.round(G.w*1000)||N_(d.width,1200)), cov=coverOf(d);
+  const land=G.landings>0, LL=land?N_(d.landL,1200):0, LD=land?Math.max(80,N_(d.landD,180)):0;
   const going=(R-1)*TD, rise=R*RH;
   const sx=30, sy=28, s=DG.fit(going+LL+TD, rise+WT+LD, 200, 150), tr=TD*s, rh=RH*s, wt=WT*s, ll=LL*s, ld=LD*s;
   const baseY=sy+rise*s+wt, x0=sx;
@@ -5956,12 +6071,27 @@ function diagStairs(inst){ let d=inst.data;
    ${land?dimV(topY,topY+ld,topX+ll+14+ (0),`${LD}`):''}
    ${DG.mono(midX-10,midYTop+off+12,`WAIST ${WT}`,6,DWG.dim)}
    ${specLine(sx,baseY+off+24,`${R} RISERS · ${d.mainDia||'N12'}@${N_(d.mainSpacing,150)} MAIN · ${d.distReoType==='mesh'?(d.distMeshType||'SL62'):`${d.distDia||'N10'}@${N_(d.distSpacing,250)}`} DIST${d.topMatOn?' · TOP MAT':''}`)}`;
-  /* plan strip: width */
+  /* plan strip: by stair form */
   const px=250, py=40, pw=44, ph=Math.min(110,R*6);
-  let plan=`${DG.title(px-6,py-12,"PLAN")}
-   ${DG.rect(px,py,pw,ph)}
-   ${Array.from({length:Math.min(R,18)}).map((_,i)=>`<line x1="${px}" y1="${py+ph*(i+1)/Math.min(R,18)}" x2="${px+pw}" y2="${py+ph*(i+1)/Math.min(R,18)}" stroke="${DWG.ink}" stroke-width="0.6"/>`).join('')}
-   ${dimH(px,px+pw,py-4,`W ${WID}`)}`;
+  const treads=(x,y,w,h,n,vertical)=>Array.from({length:Math.min(n,18)}).map((_,i)=>vertical?`<line x1="${x}" y1="${y+h*(i+1)/Math.min(n,18)}" x2="${x+w}" y2="${y+h*(i+1)/Math.min(n,18)}" stroke="${DWG.ink}" stroke-width="0.6"/>`:`<line x1="${x+w*(i+1)/Math.min(n,18)}" y1="${y}" x2="${x+w*(i+1)/Math.min(n,18)}" y2="${y+h}" stroke="${DWG.ink}" stroke-width="0.6"/>`).join('');
+  let plan=`${DG.title(px-6,py-12,"PLAN")}`;
+  if(G.shape==="spiral"||G.shape==="curved"){
+    const cx=px+22, cy=py+40, ro=30, ri=G.shape==="spiral"? Math.max(4,30*N_(d.spiralRi,150)/Math.max(1,N_(d.spiralRo,1000))) : 14;
+    const turn=Math.min(359,Math.max(20,N_(d.turnDeg,270)))*Math.PI/180, a0=-Math.PI/2;
+    const arc=(r,a1,a2)=>`${cx+r*Math.cos(a1)} ${cy+r*Math.sin(a1)} A${r} ${r} 0 ${(a2-a1)>Math.PI?1:0} 1 ${cx+r*Math.cos(a2)} ${cy+r*Math.sin(a2)}`;
+    const a1=a0, a2=a0+turn;
+    plan+=`<path d="M${arc(ro,a1,a2)} L${cx+ri*Math.cos(a2)} ${cy+ri*Math.sin(a2)} A${ri} ${ri} 0 ${turn>Math.PI?1:0} 0 ${cx+ri*Math.cos(a1)} ${cy+ri*Math.sin(a1)} Z" fill="rgba(232,163,61,0.10)" stroke="${DWG.ink}" stroke-width="1.6"/>`;
+    const n=Math.min(G.risers,24); for(let i=1;i<n;i++){ const a=a1+turn*i/n; plan+=`<line x1="${cx+ri*Math.cos(a)}" y1="${cy+ri*Math.sin(a)}" x2="${cx+ro*Math.cos(a)}" y2="${cy+ro*Math.sin(a)}" stroke="${DWG.ink}" stroke-width="0.6"/>`; }
+    plan+=`${specLine(px-6,cy+ro+16,`${G.shape==="spiral"?"SPIRAL":"CURVED"} ${N_(d.turnDeg,270)}° · W ${WID}`)}`;
+  } else if(G.shape==="lshape"){
+    const fh=Math.min(60,R*5);
+    plan+=`${DG.rect(px,py,pw/2+4,fh)}${treads(px,py,pw/2+4,fh,R,true)}${DG.rect(px,py+fh,pw/2+4,pw/2+4)}${DG.rect(px+pw/2+4,py+fh,fh,pw/2+4)}${treads(px+pw/2+4,py+fh,fh,pw/2+4,R,false)}${specLine(px-6,py+fh+pw/2+18,`L-SHAPE · ${G.flights} FLIGHTS · W ${WID}`)}`;
+  } else if(G.shape==="ushape"||G.shape==="multi"){
+    const fh=Math.min(70,R*5), fw=pw/2-2;
+    plan+=`${DG.rect(px,py,fw,fh)}${treads(px,py,fw,fh,R,true)}${DG.rect(px+fw+4,py,fw,fh)}${treads(px+fw+4,py,fw,fh,R,true)}${DG.rect(px,py+fh,pw+2,fw)}${specLine(px-6,py+fh+fw+14,`${G.shape==="ushape"?"U / DOG-LEG":"MULTI-FLIGHT"} · ${G.flights} FL · ${G.landings} LDG`)}`;
+  } else {
+    plan+=`${DG.rect(px,py,pw,ph)}${treads(px,py,pw,ph,R,true)}${dimH(px,px+pw,py-4,`W ${WID}`)}${G.shape==="winder"?specLine(px-6,py+ph+12,"WINDER TREADS"):""}`;
+  }
   return sheetFrame(inst, "Concrete Stair", [316,Math.max(200,Math.round(sy+rise*s+wt+off+40))], section+plan);
 }
 
@@ -6869,6 +6999,13 @@ function validateInstance(inst, def, out){
     let openArea=d.openings.reduce((s,o)=>s+(num(o.w)/1000)*(num(o.h)/1000)*num(o.qty,1),0);
     if(plan>0 && openArea>=plan) push(`Openings (${fmt(openArea,2)} m²) equal or exceed the host area (${fmt(plan,2)} m²) — check opening sizes are in mm`, "geom");
   }
+  // completeness: a rate with nothing to apply it to
+  if(reoMethodOf(d)==="rate"){
+    const rr=out&&out.reoRate;
+    if(!rr || rr.conc<=0) push("Reinforcement is priced by rate but this element has no concrete volume to apply it to", "reo", "completeness");
+    else if(num(d.reoRateKgM3,100)<=0) push("Reinforcement rate is 0 kg/m³ — no steel is being counted", "reo", "completeness");
+    else push(`Reinforcement by rate (${fmt(rr.rate,0)} kg/m³ as ${rr.dia}) — confirm the ratio against the engineer's documents before pricing`, "reo", "verify");
+  }
   // sanity: ratios (configurable review prompts — never a design verdict)
   const conc=lines.filter(l=>l.materialGroup==="Concrete").reduce((s,l)=>s+(l.qty||0),0);
   const reoKg=lines.filter(l=>l.materialGroup==="Reinforcement").reduce((s,l)=>s+(l.weightKg||0),0);
@@ -7132,10 +7269,46 @@ function collapseAllCards(state){
 // INSTANCES array wholesale. In-memory only: a fresh page load starts every
 // card on its first tab as before.
 const CARD_TAB_MEMORY={};
+/* ---- Reinforcement by RATE (every element with a Reinforcement tab) ----
+ * The estimator can price an element's steel off a kg-per-m³ ratio instead
+ * of detailing bars and mesh from spacings — the way a drawing note, a
+ * budget or an early-stage schedule states it. The rate is applied to the
+ * element's OWN concrete (blinding and reference-only lines excluded) and
+ * converted to lineal metres of one nominal bar size (kg ÷ d²/162), so the
+ * register, the order schedule (bars by diameter), the tonnage and the
+ * Quotes bridge (Processed Bar by diameter) all keep working unchanged.
+ * Detailed reinforcement lines are REPLACED for that element; starters,
+ * dowels and every other connection to another element are kept, because
+ * they belong to the join, not the ratio. reoMethod is data, saved with the
+ * takeoff; an element without it is "detailed" — exactly as before. */
+function reoMethodOf(d){ return (d && d.reoMethod)==="rate"? "rate" : "detailed"; }
+function reoMethodSection(inst){
+  let d=inst.data, rate=reoMethodOf(d)==="rate";
+  return `<div class="sechead">Reinforcement method</div>
+  <div class="grid cols3">${F("Method",selOpts("reoMethod",rate?"rate":"detailed",[["detailed","Detailed — bars and mesh from the spacings below"],["rate","By rate — kg of steel per m³ of concrete, as bar metres"]]))}</div>
+  <div class="subsec ${rate?'':'hidden'}" data-show-if="reoMethod_rate"><div class="grid cols4">
+   ${F("Rate (kg of steel per m³ of concrete)",inpNum("reoRateKgM3",d.reoRateKgM3===undefined?100:d.reoRateKgM3))}
+   ${F("Equivalent bar size",barSizeSel("reoRateDia",d.reoRateDia||"N16"))}
+   ${chk("reoRateLap",d.reoRateLap,"Include lap allowance (%)","reoRateLap")}
+  </div><p class="small">kg = rate × this element's concrete (blinding excluded); metres = kg ÷ the bar's kg/m (d²/162 — N16 is ${fmt(massPerM(16),3)} kg/m). One register line replaces every detailed reinforcement line of this element; starters, dowels and connections to other elements are kept. Typical ratios: footings 60–100, slabs on ground 40–80, suspended slabs 90–130, beams 120–200, columns and walls 120–250 kg/m³ — confirm against the engineer's documents.</p></div>`;
+}
+function applyReoRate(inst,def,out){
+  let d=inst.data, lines=out.lines||[];
+  let conc=lines.filter(l=>l.materialGroup==="Concrete" && !/blind|reference only/i.test(l.spec||"") && !/reference only/i.test(l.material||"")).reduce((s,l)=>s+(l.qty||0),0);
+  let rate=num(d.reoRateKgM3,100), dia=d.reoRateDia||"N16", kgm=massPerM(barDiaOf(dia));
+  let kg=rate*conc, metres=kgm>0? kg/kgm : 0, lapPct=d.reoRateLap?PROJECT.lapPct:0;
+  let removed=lines.filter(l=>l.materialGroup==="Reinforcement").length;
+  out.lines=lines.filter(l=>l.materialGroup!=="Reinforcement");
+  out.lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:dia,spec:`Reinforcement by rate — ${fmt(rate,0)} kg/m³ as ${dia} equivalent`,qty:metres,unit:"m",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(metres,PROJECT.reoWaste,lapPct),formula:`${fmt(rate,0)} kg/m³ × ${fmt(conc,3)} m³ concrete = ${fmt(kg,1)} kg ÷ ${fmt(kgm,3)} kg/m (${dia})`,notes:`${fmt(kg,1)} kg — replaces ${removed} detailed line(s); connections kept`}));
+  out.reoRate={rate,conc,kg,metres,dia};
+}
 function buildCard(inst){
   let def=LIB_INDEX[inst.typeKey];
   let calc=CALC[def.calc];
   let parts=calc.render(inst,def);
+  // Reinforcement method heads every Reinforcement tab; the calculator's own
+  // detailing sits under it and hides when the element is priced by rate.
+  if(parts.reo!==undefined) parts.reo = reoMethodSection(inst) + `<div class="subsec ${reoMethodOf(inst.data)==="rate"?'hidden':''}" data-show-if="reoMethod_detailed">${parts.reo}</div>`;
   parts.conns = (parts.conns||"") + (usesSharedStarters(def)? startersSection(inst) : "") + renderExtraConnRows(inst);
   // Central additions available on EVERY element with the matching tab:
   // the formwork system/type choice heads every Formwork tab, and the
@@ -7657,6 +7830,7 @@ function updateDiagramPane(card,inst){
 function computeInstance(inst){
   let def=LIB_INDEX[inst.typeKey], calc=CALC[def.calc];
   let out=calc.compute(inst,def);
+  if(reoMethodOf(inst.data)==="rate") applyReoRate(inst,def,out);   // before connections are added, so they are never replaced
   computeExtraConnections(inst,def,out);
   let d=inst.data;
   // Starter / dowel bars for the calculators that don't detail their own (see
