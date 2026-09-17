@@ -73,10 +73,10 @@ check("every element type has both a category and a section", () => {
   });
 });
 
-check("18 material categories, 321 products (incl. CONCRETE PUMPING, REINFORCEMENT BY RATE, the 32-board INSULATION range, 31 SCREEDS, 17 HYDRONIC HEATING, 48 SPECIALIST FINISHING CONCRETE, 45 PRELIMINARIES, the full 24-size TRENCH MESH grid, Bored Piers subcontract, minimum cartage, levy, surcharge)", () => {
+check("18 material categories, 322 products (incl. CONCRETE PUMPING, REINFORCEMENT BY RATE, the 32-board INSULATION range, 31 SCREEDS, 17 HYDRONIC HEATING, 48 SPECIALIST FINISHING CONCRETE, 45 PRELIMINARIES, the full 24-size TRENCH MESH grid, Bored Piers subcontract, minimum cartage, levy, surcharge)", () => {
   assert.equal(FULL_CATALOG.length, 18);
   const total = FULL_CATALOG.reduce((s, c) => s + c.products.length, 0);
-  assert.equal(total, 321);
+  assert.equal(total, 322);
   const pre = FULL_CATALOG.find((c) => c.key === "PRELIMINARIES");
   assert.equal(pre.products.length, 45);
   assert.ok(!pre.weightBasis && !pre.areaBasis && !pre.lengthBasis && !pre.volumeRateBasis, "preliminaries cost plain qty × rate");
@@ -610,14 +610,33 @@ check("Fractional crew cells kept as typed (0.5 stays 0.5, 1.2 stays 1.2); plant
   near(cost.labourTotal, 1.2 * 500 + 0.5 * 650 + 1 * 900 + 36.5 * 10); // per-person default: man-days × day rate
 });
 
-check("Excavate row: Qty prefills from the Soil removal (m³) line, but excavator/crew cells stay blank for manual entry", () => {
+check("Excavate and spoil rows are separate: Excavation (m³) drives the Excavate row, Soil removal (m³) drives the spoil row; neither auto-fills plant", () => {
   const rates = defaultRates();
   const item = newElementItem(ELEMENT_TYPES.find((t) => t.id === "excavation_bulk"));
-  item.qtys[rateKey("OTHER ALLOWANCES", "Soil removal", "m3")] = 85;
   const excTask = item.tasks.find((t) => /excavate/i.test(t.name));
-  assert.equal(taskRowMeta(excTask.name, labourQuantities(item, rates)).autoQty, 85);
+  const spoilTask = item.tasks.find((t) => /cart away spoil/i.test(t.name));
+  assert.ok(excTask && spoilTask, "a new element carries both rows");
+  assert.equal(item.tasks.indexOf(spoilTask), item.tasks.indexOf(excTask) + 1, "the spoil row sits right after the excavate row");
+  assert.ok(!/excavate/i.test(spoilTask.name), "the spoil row never matches the excavate rule");
+  // only soil removal entered (a quote from before the Excavation line existed): excavate falls back to it
+  item.qtys[rateKey("OTHER ALLOWANCES", "Soil removal", "m3")] = 85;
+  let lq = labourQuantities(item, rates);
+  assert.equal(taskRowMeta(excTask.name, lq).autoQty, 85);
+  assert.equal(taskRowMeta(spoilTask.name, lq).autoQty, 85);
+  // both entered: two different volumes, cleanly separated
+  item.qtys[rateKey("OTHER ALLOWANCES", "Excavation", "m3")] = 70;
+  lq = labourQuantities(item, rates);
+  assert.equal(taskRowMeta(excTask.name, lq).autoQty, 70);
+  assert.equal(taskRowMeta(spoilTask.name, lq).autoQty, 85);
+  assert.equal(taskRowMeta(excTask.name, lq).unit, "m³"); assert.equal(taskRowMeta(spoilTask.name, lq).unit, "m³");
   const sug = suggestedLabourPrefill(item, rates);
   assert.ok(!sug[excTask.id] || sug[excTask.id].excavator_day === undefined, "excavator days must never auto-fill");
+  assert.ok(!sug[spoilTask.id] || sug[spoilTask.id].truck_day === undefined, "truck days must never auto-fill");
+  // the Excavation line seeds at $0: a quantity driver, not a cost, until a rate is set
+  assert.equal(RATE("OTHER ALLOWANCES", "Excavation", "m3"), 0);
+  assert.equal(computeElementCost(item, rates).categoryTotals["OTHER ALLOWANCES"], 85 * 40);
+  // a renamed additional row also picks up the spoil quantity
+  assert.equal(taskRowMeta("Soil removal — trucks", lq).autoQty, 85);
 });
 
 check("Crew rates: per-person man-day keys — both stale 'day' and crew-era 'crew-day' overrides are retired", () => {

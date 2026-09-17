@@ -228,6 +228,16 @@ safety net silently. Keep all cost arithmetic in `lib/costing.js`.
   concrete/structural element Gradcon might meet across any building or
   civil project, not curated per job (see rule 1).
 
+- **Crew-sheet rows are matched by NAME** (`taskRowMeta` in `costing.js`):
+  a row whose name says "excavate" draws its Qty from the element's
+  **Excavation** (m³) line, a row saying "spoil" / "soil removal" / "cart
+  away" from its **Soil removal** (m³) line — two rows, two quantities,
+  never merged (an element from before the Excavation line existed falls
+  back to soil removal for the excavate row). Neither row auto-fills
+  excavator or truck days. Elements keep the task rows they were created
+  with, so an older element gets the spoil row by renaming one of its
+  "Additional labour / plant" rows.
+
 - **Add a new labour resource:** add to `RESOURCE_COLS` with a unique
   `key`. It appears as a new column in every element's Labour/Equipment
   matrix and in the Rates modal automatically.

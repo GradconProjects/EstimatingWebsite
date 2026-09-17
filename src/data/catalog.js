@@ -116,6 +116,7 @@ export const SPECIALIST_CONCRETE_KEY = "SPECIALIST FINISHING CONCRETE";
 const CREW_SHEET_TASKS = [
   "Site setup / mobilisation",
   "Excavate & prepare base",
+  "Remove / cart away spoil",
   "Tie reinforcement",
   "Pour / place / vibrate concrete",
   "Finish concrete surfaces",
@@ -565,7 +566,11 @@ export const FULL_CATALOG = [
     ["Marking Paint", "unit", null, 4], ["Sealers/Acid/MBT", "each", null, 400], ["Curing Products", "price", null, 100],
   ]},
   { key: "OTHER ALLOWANCES", weightBasis: false, products: [
-    ["Inspector", "each", null, 130], ["Soil removal", "m3", null, 40], ["Bin Hire", "each", null, 600], ["Sawcutting", "day", null, 450],
+    // Excavation (bank m³ dug) and Soil removal (loose m³ carted away) are
+    // SEPARATE quantities: each drives its own crew-sheet row (see
+    // labourQuantities / taskRowMeta in costing.js). Excavation seeds at $0
+    // so it is a quantity driver for excavator days unless a $/m³ rate is set.
+    ["Inspector", "each", null, 130], ["Excavation", "m3", null, 0], ["Soil removal", "m3", null, 40], ["Bin Hire", "each", null, 600], ["Sawcutting", "day", null, 450],
     ["Concrete test", "each", null, 241.5], ["Off-site washout fee", "each", null, 400], ["Truck washout fee", "each", null, 10.5],
   ]},
   { key: "SUB CONTRACTORS / TEMPORARY WORKS", weightBasis: false, products: [

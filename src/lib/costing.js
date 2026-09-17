@@ -537,6 +537,7 @@ const CONCRETE_POUR_TASK_MATCH = /pour/i;                     // "Pour / place /
 const STEEL_FIXING_TASK_MATCH = /tie (steel|reinforcement)/i; // "Tie reinforcement", legacy "Tie steel"
 const FINISH_TASK_MATCH = /finish concrete/i;                 // "Finish concrete surfaces"
 const EXCAVATE_TASK_MATCH = /excavate/i;                      // "Excavate & prepare base"
+const SPOIL_TASK_MATCH = /spoil|soil removal|cart away|cartage/i; // "Remove / cart away spoil" (a renamed additional row matches too)
 const FORMWORK_TASK_MATCH = /formwork|box out|prop & form/i;  // legacy per-type templates only
 const STRIP_TASK_MATCH = /^strip/i;
 const GENERAL_TASK_MATCH = /washout|tidy|clean|patch/i;       // "Washout / clean / tidy"
@@ -547,7 +548,7 @@ const GENERAL_TASK_MATCH = /washout|tidy|clean|patch/i;       // "Washout / clea
  * (mesh area ≈ finished slab surface). Pure qty scan — no costing — so the
  * labour engine can run inside computeElementCost without recursion. */
 export function labourQuantities(item, rates) {
-  let concreteM3 = 0, formworkM2 = 0, finishM2 = 0, excavationM3 = 0;
+  let concreteM3 = 0, formworkM2 = 0, finishM2 = 0, excavationM3 = 0, soilRemovalM3 = 0;
   FULL_CATALOG.forEach((cat) => {
     if (cat.key !== "CONCRETE" && cat.key !== "FORMWORK" && cat.key !== "SQUARE MESH" && cat.key !== "OTHER ALLOWANCES" && cat.key !== SPECIALIST_CONCRETE_KEY) return;
     if (!categoryAppliesTo(cat, item)) return;
@@ -558,10 +559,15 @@ export function labourQuantities(item, rates) {
       else if (cat.key === SPECIALIST_CONCRETE_KEY) { if (p.unit === "m3" && !SPECIALIST_FEE_MATCH(p.name, p.unit)) concreteM3 += qty; } // VicMix mix pours like any concrete
       else if (cat.key === "FORMWORK" && p.unit === "m2") formworkM2 += qty;
       else if (cat.key === "SQUARE MESH") finishM2 += qty;
-      else if (cat.key === "OTHER ALLOWANCES" && /soil removal/i.test(p.name)) excavationM3 += qty; // spoil volume ≈ excavation m³
+      else if (cat.key === "OTHER ALLOWANCES" && /^excavation$/i.test(p.name)) excavationM3 += qty;   // bank m³ dug → the Excavate row
+      else if (cat.key === "OTHER ALLOWANCES" && /soil removal/i.test(p.name)) soilRemovalM3 += qty;   // loose m³ carted → the spoil row
     });
   });
-  return { concreteM3, formworkM2, finishM2, excavationM3, reinfTonnes: computeElementReinforcementTonnes(item, rates) };
+  // Excavation and soil removal are separate rows with separate drivers. A
+  // quote entered before the Excavation line existed only has Soil removal,
+  // so the Excavate row falls back to that volume rather than going blank.
+  if (excavationM3 <= 0) excavationM3 = soilRemovalM3;
+  return { concreteM3, formworkM2, finishM2, excavationM3, soilRemovalM3, reinfTonnes: computeElementReinforcementTonnes(item, rates) };
 }
 
 /**
@@ -617,13 +623,15 @@ export function computeProjectUnitRates(items, rates) {
 }
 
 /** Crew-sheet row metadata: the unit each task is measured in and which
- * element quantity fills its Qty column automatically. Excavation draws its
- * volume from the element's "Soil removal" (m³) line. */
+ * element quantity fills its Qty column automatically. The Excavate row
+ * draws on the element's "Excavation" (m³) line and the spoil row on its
+ * "Soil removal" (m³) line — two rows, two quantities, never merged. */
 export function taskRowMeta(taskName, lq) {
   if (CONCRETE_POUR_TASK_MATCH.test(taskName)) return { unit: "m³", autoQty: lq ? lq.concreteM3 : undefined };
   if (STEEL_FIXING_TASK_MATCH.test(taskName)) return { unit: "t", autoQty: lq ? round2(lq.reinfTonnes) : undefined };
   if (FINISH_TASK_MATCH.test(taskName)) return { unit: "m²", autoQty: lq ? lq.finishM2 : undefined };
   if (EXCAVATE_TASK_MATCH.test(taskName)) return { unit: "m³", autoQty: lq ? lq.excavationM3 : undefined };
+  if (SPOIL_TASK_MATCH.test(taskName)) return { unit: "m³", autoQty: lq ? lq.soilRemovalM3 : undefined };
   if (FORMWORK_TASK_MATCH.test(taskName) && !STRIP_TASK_MATCH.test(taskName)) return { unit: "m²", autoQty: lq ? lq.formworkM2 : undefined };
   return { unit: "", autoQty: undefined };
 }
@@ -723,11 +731,12 @@ export function autoLabourQtys(item, rates) {
     } else if (GENERAL_TASK_MATCH.test(task.name)) {
       put(task, "labourer_day", crewDays(task.qty !== undefined && task.qty !== "" ? Number(task.qty) || 0 : lq.concreteM3, generalM3Block));
     }
-    // Formwork ("prop & form") and Excavation rows deliberately get NO auto
-    // crew/plant fill — propping effort varies by system and excavator days
-    // by ground conditions, so those cells stay blank and are entered
-    // manually. Their Qty columns still prefill as a guide (taskRowMeta:
-    // formwork m² from the FORMWORK rows, excavation m³ from Soil removal).
+    // Formwork ("prop & form"), Excavation and spoil-removal rows deliberately
+    // get NO auto crew/plant fill — propping effort varies by system,
+    // excavator days by ground conditions and truck days by haul distance, so
+    // those cells stay blank and are entered manually. Their Qty columns still
+    // prefill as a guide (taskRowMeta: formwork m² from the FORMWORK rows,
+    // excavation m³ from the Excavation line, spoil m³ from Soil removal).
   });
   return suggestions;
 }
