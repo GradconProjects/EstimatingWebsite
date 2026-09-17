@@ -5124,7 +5124,7 @@ function retWallDefaults(){ return {
   // an entered developed length; battered stem (base/top thickness → mean);
   // footing rectangular or an entered plan area (irregular footprint).
   planShape:"straight", planRadius:6000, planAngle:90, stemBatter:false, stemTt:250, footShape:"rect", footPlanArea:0,
-  segL1:5000,segH1:2400, segL2:5000,segH2:1800, segL3:0,segH3:0, segL4:0,segH4:0, segL5:0,segH5:0, segL6:0,segH6:0,
+  segL1:5000,segH1:2400,segT1:"",segTt1:"", segL2:5000,segH2:1800,segT2:"",segTt2:"", segL3:0,segH3:0,segT3:"",segTt3:"", segL4:0,segH4:0,segT4:"",segTt4:"", segL5:0,segH5:0,segT5:"",segTt5:"", segL6:0,segH6:0,segT6:"",segTt6:"",
   footBotX:"N16",footBotXSp:200,footBotXLap:false, footBotY:"N16",footBotYSp:200,footBotYLap:false,
   footTop:false, footTopX:"N16",footTopXSp:200,footTopXLap:false, footTopY:"N16",footTopYSp:200,footTopYLap:false,
   stemVertDia:"N16",stemVertSp:200,stemVertLap:false, stemHorDia:"N12",stemHorSp:250,stemHorLap:false,
@@ -5146,7 +5146,15 @@ function retStemGeom(d){
   let T=d.stemBatter? (num(d.stemT)+num(d.stemTt,num(d.stemT)))/2000 : num(d.stemT)/1000;  // mean thickness when battered
   if(shape==="taper"){ let H2=num(d.stemH2)/1000; area=L*(H+H2)/2; hMax=Math.max(H,H2); }
   else if(shape==="stepped"){
-    for(let i=1;i<=6;i++){ let sl=num(d["segL"+i])/1000, sh=num(d["segH"+i])/1000; if(sl>0){ segs.push({l:sl,h:sh}); } }
+    // each segment along the run has its own stem section: height, base
+    // thickness and (when battered) top thickness — blank thickness = the
+    // wall's stem thickness above
+    for(let i=1;i<=6;i++){
+      let sl=num(d["segL"+i])/1000, sh=num(d["segH"+i])/1000; if(!(sl>0)) continue;
+      let tb=d["segT"+i]===""||d["segT"+i]===undefined? num(d.stemT) : num(d["segT"+i]);
+      let tt=!d.stemBatter? tb : (d["segTt"+i]===""||d["segTt"+i]===undefined? num(d.stemTt,num(d.stemT)) : num(d["segTt"+i]));
+      segs.push({l:sl,h:sh,t:(tb+tt)/2000,tb,tt});
+    }
     if(segs.length){ L=segs.reduce((a,g)=>a+g.l,0); area=segs.reduce((a,g)=>a+g.l*g.h,0); hMax=Math.max(...segs.map(g=>g.h)); }
     else area=L*H;
   }
@@ -5154,7 +5162,8 @@ function retStemGeom(d){
   else area=L*H;
   let hAvg=L>0? area/L : 0;
   let footArea = (d.footShape||"rect")==="area"? num(d.footPlanArea) : L*num(d.footL)/1000;   // footing footprint (m²)
-  return {shape,plan,L,T,area,hMax,hAvg,segs,footArea,battered:!!d.stemBatter};
+  let stemVol = segs.length? segs.reduce((a,g)=>a+g.l*g.h*g.t,0) : area*T;                  // per-segment sections when stepped
+  return {shape,plan,L,T,area,hMax,hAvg,segs,footArea,stemVol,battered:!!d.stemBatter};
 }
 function retShapeLabel(shape){ return {rect:"uniform height",taper:"tapered",stepped:"stepped",manual:"irregular (entered area)"}[shape]||"uniform height"; }
 function renderRetWall(inst){
@@ -5162,7 +5171,7 @@ function renderRetWall(inst){
   let shape=d.stemShape||"rect";
   let thickFields = `${F(d.stemBatter?"Stem thickness at base (mm)":"Stem thickness (mm)",inpNum("stemT",d.stemT))}${d.stemBatter?F("Stem thickness at top (mm)",inpNum("stemTt",d.stemTt===undefined?d.stemT:d.stemTt)):""}`;
   let shapeFields = shape==="taper"? `<div class="grid cols4">${LF("Stem height at start (mm)","stemH",d.stemH)}${LF("Stem height at end (mm)","stemH2",d.stemH2===undefined?1200:d.stemH2)}${thickFields}</div><p class="small">Sloping top: the stem face area is length × the average of the two heights; horizontal bars are taken over that area, vertical bars average the two heights.</p>`
-   : shape==="stepped"? `<div class="grid cols4">${[1,2,3,4,5,6].map(i=>LF(`Segment ${i} length (mm)`,"segL"+i,d["segL"+i]===undefined?0:d["segL"+i])+LF(`Segment ${i} height (mm)`,"segH"+i,d["segH"+i]===undefined?0:d["segH"+i])).join('')}</div><div class="grid cols3">${thickFields}</div><p class="small">Up to six steps along the wall — a segment with a blank length is ignored. The wall length becomes the sum of the segment lengths (the footing, backfill, waterstop and horizontal bars follow it); split a longer wall into two elements if six steps are not enough.</p>`
+   : shape==="stepped"? `${[1,2,3,4,5,6].map(i=>`<div class="grid cols4">${LF(`Segment ${i} length (mm)`,"segL"+i,d["segL"+i]===undefined?0:d["segL"+i])}${LF(`Segment ${i} height (mm)`,"segH"+i,d["segH"+i]===undefined?0:d["segH"+i])}${F(`Segment ${i} ${d.stemBatter?"base ":""}thickness (mm, blank = ${num(d.stemT)})`,inpNum("segT"+i,d["segT"+i]===undefined?"":d["segT"+i]))}${d.stemBatter?F(`Segment ${i} top thickness (mm, blank = ${num(d.stemTt,num(d.stemT))})`,inpNum("segTt"+i,d["segTt"+i]===undefined?"":d["segTt"+i])):""}</div>`).join('')}<div class="grid cols3">${thickFields}</div><p class="small">Up to six sections along the run, each with its own height and thickness (tick battered for a base and top thickness per section) — a segment with a blank length is ignored, a blank thickness uses the wall thickness above. Stem concrete is the sum of the segments; the wall length becomes the sum of their lengths (the footing, backfill, waterstop and horizontal bars follow it); split a longer wall into two elements if six sections are not enough.</p>`
    : shape==="manual"? `<div class="grid cols4">${F("Stem face area (m², one face, measured off the drawing)",inpNum("stemArea",d.stemArea))}${LF("Tallest stem height (mm)","stemH",d.stemH)}${thickFields}</div><p class="small">Irregular walls — curved tops, raking ends, cut-outs: measure the stem face area straight off the elevation (or a 3D takeoff) and enter it. Stem concrete = area × thickness, stem formwork = 2 × area, vertical bars spread along the wall length at their spacing (average height = area ÷ length), horizontal bars = area ÷ spacing per face. The tallest height only sizes the drawing and the starter lap.</p>`
    : `<div class="grid cols3">${LF("Stem height (mm)","stemH",d.stemH)}${thickFields}</div>`;
   let g=retStemGeom(d), plan=d.planShape||"straight";
@@ -5173,7 +5182,7 @@ function renderRetWall(inst){
   <div class="grid cols3">${F("Plan",selOpts("planShape",plan,[["straight","Straight"],["curved","Curved — centreline radius and angle"],["irregular","Irregular — enter the developed length"]],true))}</div>
   ${planFields}${plan==="curved"?`<div class="grid cols4">${coverField(inst)}</div>`:""}
   <div class="sechead">Stem shape</div>
-  <div class="grid cols3">${F("Stem elevation",selOpts("stemShape",shape,[["rect","Uniform height (rectangular elevation)"],["taper","Tapered / sloping top (height varies end to end)"],["stepped","Stepped (up to 6 segments)"],["manual","Irregular — enter the stem face area"]],true))}</div>
+  <div class="grid cols3">${F("Stem elevation",selOpts("stemShape",shape,[["rect","Uniform section (rectangular elevation)"],["taper","Tapered / sloping top (height varies end to end)"],["stepped","Varying sections along the run (up to 6 segments, each its own height and thickness)"],["manual","Irregular — enter the stem face area"]],true))}</div>
   <div class="sechead">Footing Source</div>
   <div class="grid cols3">${F("Footing is",selOpts("footingSource",d.footingSource,[["compound","Cast as part of this element (compound)"],["linked","Already exists — sits on an existing Strip Footing / Ground Beam / Pile Cap"]]))}</div>
   <div class="subsec ${d.footingSource=='linked'?'':'hidden'}" data-show-if="footingSource_linked">
@@ -5208,10 +5217,12 @@ function computeRetWall(inst,def){
   let Lm=g.L;
   let linked = d.footingSource==="linked";
   let footVol = linked? 0 : g.footArea*(num(d.footD)/1000);
-  let stemVol = g.area*g.T;
+  let stemVol = g.stemVol;
   let keyVol = (!linked && d.key)? Lm*(num(d.keyD)/1000)*(num(d.keyW)/1000) : 0;
   let totVol=footVol+stemVol+keyVol;
-  let stemNote = (g.shape==="rect" && !g.battered && g.plan==="straight")? "stem vol" : `stem face area ${fmt(g.area,2)} m² (${retShapeLabel(g.shape)}${g.plan!=="straight"?`, ${g.plan} plan ${fmt(Lm,2)} m`:""}) × ${fmt(g.T*1000,0)} ${g.battered?"mean ":""}thick`;
+  let stemNote = (g.shape==="rect" && !g.battered && g.plan==="straight")? "stem vol"
+    : g.segs.length? `stem Σ segments ${g.segs.map(sg=>`${fmt(sg.l,2)}×${fmt(sg.h,2)}×${fmt(sg.t*1000,0)}`).join(" + ")} (${g.plan!=="straight"?`${g.plan} plan, `:""}face ${fmt(g.area,2)} m²)`
+    : `stem face area ${fmt(g.area,2)} m² (${retShapeLabel(g.shape)}${g.plan!=="straight"?`, ${g.plan} plan ${fmt(Lm,2)} m`:""}) × ${fmt(g.T*1000,0)} ${g.battered?"mean ":""}thick`;
   let footNote = (d.footShape||"rect")==="area"? `footing plan area ${fmt(g.footArea,2)} m² × ${fmt(num(d.footD),0)} deep` : "footing vol";
   lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:linked?"Stem only (footing linked)":"Footing+stem+key",qty:totVol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(totVol,concWastePct(d)),formula:linked?`${stemNote} only`:`${footNote} + ${stemNote} + key vol`}));
   if(linked){

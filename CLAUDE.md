@@ -502,8 +502,9 @@ element families waits on the owner's approval of the pad footing.
   `stemT` and `stemTt`) and a footing footprint (`footShape: "area"` uses
   `footPlanArea` × depth; excavation oversizes that footprint).
 - **Retaining wall stems** (`retStemGeom(d)`) come in four elevation shapes:
-  uniform, tapered (`stemH` → `stemH2`), stepped (up to six `segL/segH`
-  segments, whose lengths become the wall length) and manual (`stemArea`, an
+  uniform, tapered (`stemH` → `stemH2`), stepped (up to six `segL/segH/segT[/segTt]`
+  segments — each its own height and thickness, lengths summed into the wall
+  length, stem volume = Σ l × h × t) and manual (`stemArea`, an
   irregular face measured off the drawing). Stem concrete = face area ×
   thickness, stem formwork = 2 × face area, vertical bars = 2 faces × bars
   along the length × (average height + 0.4 lap), horizontal bars = 2 faces ×
