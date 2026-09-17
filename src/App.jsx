@@ -8,7 +8,7 @@ import { defaultRates, newElementItem, computeGrandTotal, uid, money, rateKey } 
 import { pendingRateUpdates, readLibraryState, readLastSynced, writeLastSynced, RATES_LIBRARY_KEY } from "./lib/ratesLibrarySync.js";
 import { buildQuoteExcelHtml, quoteExcelFilename, buildQuoteCsv } from "./lib/exportQuote.js";
 import { useStoredState } from "./lib/storage.js";
-import { PROJECTS_INDEX_KEY, newProjectEntry, migrateLegacyQuote, deleteQuote, writeQuote, readQuotes, publishQuoteToCostPlanner, mirrorQuoteSummary } from "./lib/projects.js";
+import { PROJECTS_INDEX_KEY, newProjectEntry, migrateLegacyQuote, deleteQuote, writeQuote, readQuote, readQuoteSummariesDetailed, publishQuoteToCostPlanner, mirrorQuoteSummary } from "./lib/projects.js";
 import { ESTIMATE_EXPORT_KEY, buildImportFromEstimate } from "./lib/estimateImport.js";
 import { SaveBadge } from "./components/atoms.jsx";
 import AddElementBar from "./components/AddElementBar.jsx";
@@ -263,7 +263,12 @@ export default function App() {
       const estimateSessionId = estimateExport?.project?.estimateSessionId || null;
       freshQuote.importMeta = { ...freshQuote.importMeta, estimateSessionId };
 
-      const quotesByKey = await readQuotes(projects.map((p) => p.storageKey));
+      // Matching needs only each project's name and importMeta, so it reads
+      // the drawing-free summaries (one small request) rather than every
+      // full row — a single select of all rows is ~30 MB and times out. The
+      // FULL row of the matched project is then read on its own, because the
+      // merge below writes that project back whole.
+      const { map: quotesByKey, failed } = await readQuoteSummariesDetailed(projects.map((p) => p.storageKey));
       // Match the already-imported project for this takeoff: primarily by
       // estimateSessionId; failing that (a takeoff saved before session ids
       // existed, or a .json re-imported into Estimates under a fresh id) by
@@ -281,7 +286,15 @@ export default function App() {
           return q?.importMeta?.importedAt && q?.projectName === freshQuote.projectName;
         });
       if (existing) {
-        const prev = quotesByKey[existing.storageKey];
+        const prev = await readQuote(existing.storageKey);
+        if (!prev) {
+          // The full row could not be read right now: writing anything from a
+          // summary copy would drop the drawings, and creating a new project
+          // would duplicate this one. Leave everything as it is — a re-publish
+          // from Estimates tries again.
+          console.warn("Estimates import: could not read the matched project's full row; nothing was changed", existing.storageKey);
+          return;
+        }
         // Estimates owns the bridge-created cards (fromEstimate) — those are
         // replaced with the fresh publish. Cards the estimator added by hand
         // on this project are kept alongside them. (Projects imported before
@@ -296,6 +309,12 @@ export default function App() {
           importFlags: freshQuote.importFlags,
           importMeta: freshQuote.importMeta,
         });
+        return;
+      }
+      if (failed.length > 0) {
+        // Some projects could not be read, so "no match" is not a confirmed
+        // answer — creating a new project here could duplicate one of them.
+        console.warn("Estimates import: some projects could not be read from the cloud; not creating a new project", failed);
         return;
       }
       const entry = newProjectEntry();

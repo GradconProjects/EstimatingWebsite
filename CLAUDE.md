@@ -300,19 +300,33 @@ Three layers, each with a rule that was learned the hard way:
   draw rows. Every quote row is prefetched in one like-query at boot; the
   FIRST `readQuotes()` consumes it, later calls hit the database.
 - **Summary pages never hold a full quote.** The dashboard, Project
-  Management and Vault read through `readQuoteSummaries()` (`projects.js`):
-  a `key, updated_at` stamp query, the summary mirror for every row whose
-  stamp is unchanged, and a full fetch ONLY for rows that changed — the boot
-  prefetch works the same way. Those copies are stripped of drawing data, so
-  they are never written back whole: field edits from those pages go through
-  `patchQuoteFields()` (the `estimator_kv_merge` database function when
-  installed, see `supabase/migrations/0003_estimator_kv_merge.sql`, else a
-  read-merge-write of the full row), and the mirror is patched to match.
-  `readQuotes()` (full rows) is only for callers that must write a whole
-  quote (the Estimates import merge). Before this, every open of those pages
-  re-downloaded all ~24 MB of rows and each edit re-uploaded a whole project
-  with its drawings; the 6 s poll in `storage.js` likewise asks for the
-  timestamp first and fetches the row only when it is newer.
+  Management and Vault read through `readQuoteSummariesDetailed()`
+  (`projects.js`): a `key, updated_at` stamp query (the boot prefetch is
+  this query and nothing more), the summary mirror for every row whose
+  stamp is unchanged, and — ONLY for rows that changed — the
+  `estimator_kv_quote_summaries` database function
+  (`supabase/migrations/0004_estimator_kv_quote_summaries.sql`: read-only,
+  SECURITY INVOKER, drops `items[*].markups[*].dataURL` before the row
+  leaves the database, proven in an isolated Postgres by
+  `scripts/verify-summaries-sql.mjs`). Where that function is not installed
+  the fallback is ONE full row per request through `readFullRowBounded()`
+  (one in flight for the whole app, shared per key) — never a single select
+  of every row: the 16 rows are ~30 MB and that select trips the database
+  statement timeout (57014, measured 17 Sep 2026). Those copies are stripped
+  of drawing data, so they are never written back whole: field edits from
+  those pages go through `patchQuoteFields()` (the `estimator_kv_merge`
+  database function when installed, see
+  `supabase/migrations/0003_estimator_kv_merge.sql`, else a read-merge-write
+  of the full row), and the mirror is patched to match. `readQuotes()` (full
+  rows, bounded the same way) is only for callers that must write a whole
+  quote; the Estimates import matches on summaries and reads the ONE matched
+  row in full. The result separates `missing` (absent from a SUCCESSFUL
+  stamp query — the only thing the dashboard ever prunes) from `failed`
+  (could not be read: last-known copy stays on screen, a notice offers
+  Retry, nothing is pruned, written or defaulted). A failed load must never
+  be read as "this project does not exist". The 6 s poll in `storage.js`
+  likewise asks for the timestamp first and fetches the row only when it is
+  newer.
 - **Versions** (`lib/quoteVersions.js`) are immutable full copies in the
   `gradcon-files` bucket under `quote-versions/<projectId>/` — one on every
   Save, one every N minutes (portal Settings `quotesAutosaveMinutes`, 0 =

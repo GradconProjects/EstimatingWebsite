@@ -32,3 +32,21 @@ export function NumInput({ value, onChange, placeholder = "—", className = "",
     />
   );
 }
+
+/** Shown by the summary pages when some project rows could not be read from
+ * the cloud. Nothing is changed by a failed load: the last-known copy stays
+ * on screen where one exists, and Retry re-reads only what is stale. */
+export function SummaryLoadNotice({ failedCount, onRetry }) {
+  if (!failedCount) return null;
+  return (
+    <div className="rounded-lg border border-amber-300 bg-amber-50 text-amber-900 text-sm px-3 py-2 flex items-center gap-3 flex-wrap" role="alert" data-summary-load-notice>
+      <AlertTriangle size={14} className="shrink-0" />
+      <span>
+        {failedCount === 1 ? "1 project" : `${failedCount} projects`} could not be loaded from the cloud — showing the last saved copy where one exists. Nothing has been changed.
+      </span>
+      <button type="button" onClick={onRetry} className="ml-auto px-2.5 py-1 rounded border border-amber-400 bg-white hover:bg-amber-100 text-xs font-medium">
+        Retry
+      </button>
+    </div>
+  );
+}

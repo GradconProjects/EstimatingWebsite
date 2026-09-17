@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowRight, ChevronDown, ChevronRight, File, FolderOpen, FolderUp, Loader2, MessageSquarePlus, Trash2, Upload } from "lucide-react";
-import { readQuoteSummaries, patchQuoteFields } from "../lib/projects.js";
+import { readQuoteSummariesDetailed, patchQuoteFields } from "../lib/projects.js";
+import { SummaryLoadNotice } from "./atoms.jsx";
 import { uid } from "../lib/costing.js";
 import { supabaseEnabled } from "../lib/supabaseClient.js";
 import { OFFICE_FOLDER_PATH, projectFolderPath, listFiles, uploadFile, deleteFile, formatFileSize, groupFilesByMonthDay } from "../lib/storageFiles.js";
@@ -303,16 +304,19 @@ export default function ProjectFolderView({ projects, officeComms, setOfficeComm
   const [quotesByKey, setQuotesByKey] = useState({});
   const [loading, setLoading] = useState(true);
 
+  const [failedCount, setFailedCount] = useState(0);
+  const [reloadTick, setReloadTick] = useState(0);
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    readQuoteSummaries(projects.map((p) => p.storageKey)).then((map) => {
+    readQuoteSummariesDetailed(projects.map((p) => p.storageKey)).then(({ map, failed }) => {
       if (cancelled) return;
       setQuotesByKey(map);
       setLoading(false);
+      setFailedCount(failed.length);
     });
     return () => { cancelled = true; };
-  }, [projects]);
+  }, [projects, reloadTick]);
 
   const rows = useMemo(
     () => projects.map((p) => {
@@ -340,6 +344,8 @@ export default function ProjectFolderView({ projects, officeComms, setOfficeComm
           Documents and communications — one folder per project, plus a shared Office folder for company-wide files.
         </p>
       </div>
+
+      <SummaryLoadNotice failedCount={failedCount} onRetry={() => setReloadTick((t) => t + 1)} />
 
       <div className="rounded-xl border-2 border-orange-200 bg-orange-50/40 p-4">
         <div className="flex items-center gap-2 font-semibold text-[15px] text-neutral-900 mb-3">

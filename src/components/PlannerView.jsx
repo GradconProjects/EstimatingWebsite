@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, ArrowRight, ChevronDown, ChevronRight, Clock, GitBranch, HardHat, HelpCircle, Loader2, MessageSquarePlus, Package, Plus, Radar, Receipt, Trash2 } from "lucide-react";
 import { PLANNER_PRIORITIES, PLANNER_PRIORITY_STYLES } from "../data/catalog.js";
-import { readQuoteSummaries, patchQuoteFields } from "../lib/projects.js";
+import { readQuoteSummariesDetailed, patchQuoteFields } from "../lib/projects.js";
+import { SummaryLoadNotice } from "./atoms.jsx";
 import { uid, money2 } from "../lib/costing.js";
 import { useStoredState } from "../lib/storage.js";
 import { isUrgent, daysLabel, priorityRank } from "../lib/planner.js";
@@ -65,16 +66,19 @@ export default function PlannerView({ projects, onOpen }) {
   const [quotesByKey, setQuotesByKey] = useState({});
   const [loading, setLoading] = useState(true);
 
+  const [failedCount, setFailedCount] = useState(0);
+  const [reloadTick, setReloadTick] = useState(0);
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    readQuoteSummaries(projects.map((p) => p.storageKey)).then((map) => {
+    readQuoteSummariesDetailed(projects.map((p) => p.storageKey)).then(({ map, failed }) => {
       if (cancelled) return;
       setQuotesByKey(map);
       setLoading(false);
+      setFailedCount(failed.length);
     });
     return () => { cancelled = true; };
-  }, [projects]);
+  }, [projects, reloadTick]);
 
   // Field-level writes, coalesced per project over 600 ms: the copies held
   // here are summaries without drawing data, so a whole-quote write would
@@ -122,6 +126,8 @@ export default function PlannerView({ projects, onOpen }) {
           Planning, variations and your contractor &amp; supplier registers, in one place.
         </p>
       </div>
+
+      <SummaryLoadNotice failedCount={failedCount} onRetry={() => setReloadTick((t) => t + 1)} />
 
       <AtAGlance projects={projects} quotesByKey={quotesByKey} goTo={setTab} />
 

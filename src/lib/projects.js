@@ -53,21 +53,33 @@ function mirrorSummaries(map, stamps) {
   Object.keys(map).forEach((k) => writeMirror(summaryMirrorKey(k), stripForSummary(map[k]), (stamps && stamps[k]) || null));
 }
 
-/* ---- Download only what changed ------------------------------------------
- * Every project row carries its markup drawings as image data, so the 16
- * rows together are ~24 MB. The dashboard, the Project Management page and
+/* ---- Download only what changed, and never the drawings ------------------
+ * Every project row carries its markup drawings as image data — the 16 rows
+ * measured 30 MB on 17 Sep 2026, and one select of them all now trips the
+ * database statement timeout. The dashboard, the Project Management page and
  * the Vault only need the SUMMARY of each project (name, status, planner,
- * RFIs, claims, totals) — never the drawings. readQuoteSummaries() asks the
- * database for each row's updated_at only (a few bytes), serves every row
- * whose summary mirror carries that same stamp from the mirror, and fetches
- * just the rows that changed since this browser last saw them. A returning
- * browser opens these pages with kilobytes instead of 24 MB.
+ * RFIs, claims, totals) — never the drawings. readQuoteSummariesDetailed():
+ *   1. asks the database for each row's updated_at only (a few bytes);
+ *   2. serves every row whose summary mirror carries that same stamp from
+ *      the mirror;
+ *   3. fetches just the rows that changed since this browser last saw them —
+ *      through estimator_kv_quote_summaries (supabase/migrations/0004), a
+ *      read-only database function that drops items[*].markups[*].dataURL
+ *      BEFORE the row leaves the database, so the drawing bytes never cross
+ *      the network; where that function is not installed, one full row per
+ *      request, in sequence (bounded), stripped here as before.
  *
  * The values it returns are STRIPPED of drawing data. They must never be
  * written back whole — that would delete the drawings. Field edits from those
  * pages go through patchQuoteFields() below, which merges the fields into
  * the full row in the database. The project editor keeps its own full,
- * live row through useStoredState and is untouched by any of this. */
+ * live row through useStoredState and is untouched by any of this.
+ *
+ * Failures are never "the project does not exist": a key is reported as
+ * `missing` only when a SUCCESSFUL stamp query did not list it; anything
+ * that could not be read (network, timeout, an error) is reported as
+ * `failed`, its last-known mirror copy stays on screen, and the caller
+ * offers a retry. */
 async function readQuoteStamps(storageKeys) {
   const { data, error } = await supabase.from(TABLE).select("key, updated_at").in("key", storageKeys);
   if (error || !data) return null;
@@ -75,49 +87,135 @@ async function readQuoteStamps(storageKeys) {
   data.forEach((row) => { stamps[row.key] = row.updated_at; });
   return stamps;
 }
-async function fetchAndMirror(storageKeys, stamps) {
+const SUMMARIES_FN = "estimator_kv_quote_summaries";
+// Remembered for the session once the database says the function is not
+// installed, so every later summary read goes straight to the bounded
+// per-row fallback instead of asking again. Any other error (a timeout, a
+// network failure) falls back for that read only and tries the function next time.
+let summariesFnMissing = false;
+const isMissingFunction = (error) =>
+  !!error && (error.code === "PGRST202" || error.code === "42883" || /could not find the function|does not exist/i.test(error.message || ""));
+/** Drawing-stripped values for `storageKeys` → `{ map, failed }`. Keys in
+ * `failed` could not be read; they are NOT missing rows. Every row that
+ * arrives is mirrored with its stamp. */
+async function fetchSummaries(storageKeys, stamps) {
   const map = {};
-  if (storageKeys.length === 0) return map;
-  const { data, error } = await supabase.from(TABLE).select("key, value, updated_at").in("key", storageKeys);
-  if (error || !data) return null;
-  data.forEach((row) => { map[row.key] = row.value; if (stamps) stamps[row.key] = row.updated_at; });
-  mirrorSummaries(map, stamps);
-  return map;
-}
-/** `{ storageKey: quote-without-drawing-data }` for the summary pages — mirror
- * when unchanged, database only for rows that changed. Falls back to a full
- * read when the stamp query fails so nothing ever renders emptier than before. */
-export async function readQuoteSummaries(storageKeys) {
-  if (storageKeys.length === 0) return {};
-  if (!supabaseEnabled) return readQuotes(storageKeys);
-  if (summariesPrefetch) {
-    const pending = summariesPrefetch;
-    summariesPrefetch = null;
-    const pre = await pending;
-    if (pre && storageKeys.every((k) => k in pre)) {
-      const map = {};
-      storageKeys.forEach((k) => { map[k] = pre[k]; });
-      return map;
+  const failed = [];
+  if (storageKeys.length === 0) return { map, failed };
+  if (!summariesFnMissing) {
+    try {
+      const { data, error } = await supabase.rpc(SUMMARIES_FN, { p_keys: storageKeys });
+      if (!error && Array.isArray(data)) {
+        data.forEach((row) => {
+          if (!row || typeof row.key !== "string" || !storageKeys.includes(row.key)) return;
+          map[row.key] = row.value;
+          if (stamps) stamps[row.key] = row.updated_at;
+        });
+        storageKeys.forEach((k) => { if (!(k in map)) failed.push(k); }); // listed by the stamp query a moment ago, so unavailable, not gone
+        mirrorSummaries(map, stamps);
+        return { map, failed };
+      }
+      if (isMissingFunction(error)) summariesFnMissing = true;
+    } catch {
+      /* network failure — fall through to the bounded per-row reads */
     }
   }
-  try {
-    const stamps = await readQuoteStamps(storageKeys);
-    if (!stamps) return readQuotes(storageKeys);
-    const map = {};
-    const stale = [];
-    storageKeys.forEach((k) => {
-      if (!(k in stamps)) return; // no row in the database (an orphan index entry — the dashboard prunes those)
-      const hit = readMirror(summaryMirrorKey(k));
-      if (hit && hit.value && hit.updatedAt && hit.updatedAt === stamps[k]) map[k] = hit.value;
-      else stale.push(k);
-    });
-    const fresh = await fetchAndMirror(stale, stamps);
-    if (!fresh) return readQuotes(storageKeys);
-    Object.assign(map, fresh);
-    return map;
-  } catch {
-    return readQuotes(storageKeys);
+  // Fallback: ONE full row per request, in sequence — never the whole set in
+  // one select (that is the query that times out). A row that fails is
+  // skipped, not treated as absent; the others still arrive.
+  for (const k of storageKeys) {
+    const row = await readFullRowBounded(k);
+    if (!row) { failed.push(k); continue; }
+    map[k] = stripForSummary(row.value);
+    if (stamps) stamps[k] = row.updated_at;
+    writeMirror(summaryMirrorKey(k), map[k], row.updated_at);
   }
+  return { map, failed };
+}
+/* Full-row reads are the expensive request (a row with drawings is up to
+ * 6 MB), so ALL of them — summary fallback and readQuotes() — go through one
+ * queue: at most one in flight for the whole app, whoever asks (the dashboard
+ * effect re-runs while its first read is still going, and the pages would
+ * otherwise overlap). A key already being read is shared, not fetched twice.
+ * Resolves to the row or null; never throws. */
+let rowReadQueue = Promise.resolve();
+const rowReadsInFlight = new Map();
+function readFullRowBounded(storageKey) {
+  if (rowReadsInFlight.has(storageKey)) return rowReadsInFlight.get(storageKey);
+  const read = rowReadQueue.then(async () => {
+    try {
+      const { data, error } = await supabase.from(TABLE).select("key, value, updated_at").eq("key", storageKey).maybeSingle();
+      return error || !data ? null : data;
+    } catch {
+      return null;
+    }
+  });
+  rowReadsInFlight.set(storageKey, read);
+  read.finally(() => rowReadsInFlight.delete(storageKey));
+  rowReadQueue = read.catch(() => {});
+  return read;
+}
+/** Mirror hits for stamped keys, then only the stale ones from the database. */
+async function summariesFromStamps(storageKeys, stamps) {
+  const map = {};
+  const missing = [];
+  const stale = [];
+  storageKeys.forEach((k) => {
+    if (!(k in stamps)) { missing.push(k); return; } // confirmed: the stamp query succeeded and did not list it
+    const hit = readMirror(summaryMirrorKey(k));
+    if (hit && hit.value && hit.updatedAt && hit.updatedAt === stamps[k]) map[k] = hit.value;
+    else stale.push(k);
+  });
+  const fresh = await fetchSummaries(stale, stamps);
+  Object.assign(map, fresh.map);
+  // a row that could not be refreshed keeps its last-known copy on screen
+  fresh.failed.forEach((k) => {
+    const hit = readMirror(summaryMirrorKey(k));
+    if (hit && hit.value) map[k] = hit.value;
+  });
+  return { map, missing, failed: fresh.failed, error: fresh.failed.length ? "rows" : null };
+}
+/** Nothing could be confirmed: last-known copies only, every key reported failed. */
+function summariesUnavailable(storageKeys, why) {
+  return { map: readQuotesCached(storageKeys), missing: [], failed: storageKeys.slice(), error: why };
+}
+/**
+ * `{ map, missing, failed, error }` for the summary pages:
+ *   map     — `{ storageKey: quote-without-drawing-data }` (current, or the
+ *             last-known copy for a key that is also in `failed`);
+ *   missing — keys a SUCCESSFUL stamp query did not list: confirmed to have
+ *             no row (the dashboard prunes those, and only those);
+ *   failed  — keys that could not be read or refreshed: unavailable, never
+ *             to be pruned, written or defaulted;
+ *   error   — null, or a short reason when something in `failed` remains.
+ */
+export async function readQuoteSummariesDetailed(storageKeys) {
+  if (storageKeys.length === 0) return { map: {}, missing: [], failed: [], error: null };
+  if (!supabaseEnabled) {
+    const map = await readQuotes(storageKeys);
+    return { map, missing: storageKeys.filter((k) => !(k in map)), failed: [], error: null };
+  }
+  try {
+    let stamps = null;
+    if (stampsPrefetch) {
+      // the boot-time stamp query (a few bytes) covers every gradcon-quote-* row;
+      // consumed once, and only when it can answer for every requested key
+      const pending = stampsPrefetch;
+      stampsPrefetch = null;
+      const pre = await pending;
+      if (pre && storageKeys.every((k) => k.startsWith(`${LEGACY_QUOTE_KEY}-`))) stamps = pre;
+    }
+    if (!stamps) stamps = await readQuoteStamps(storageKeys);
+    if (!stamps) return summariesUnavailable(storageKeys, "stamps");
+    return await summariesFromStamps(storageKeys, stamps);
+  } catch {
+    return summariesUnavailable(storageKeys, "network");
+  }
+}
+/** `{ storageKey: quote-without-drawing-data }` — the map of
+ * readQuoteSummariesDetailed() for callers that need no error state. */
+export async function readQuoteSummaries(storageKeys) {
+  return (await readQuoteSummariesDetailed(storageKeys)).map;
 }
 /**
  * Merge a few top-level fields (status, clientName, planner, communications,
@@ -186,28 +284,20 @@ export function readQuotesCached(storageKeys) {
   return map;
 }
 
-// Boot-time prefetch for the FIRST summary read (the dashboard): stamps for
-// every project row, then only the rows whose summary mirror is missing or
-// stale. Consumed once; the values are drawing-stripped summaries.
-let summariesPrefetch = null;
+// Boot-time prefetch for the FIRST summary read (the dashboard): the
+// key/updated_at STAMPS of every project row — a few bytes, fired the moment
+// this module evaluates, in parallel with the index fetch. Deliberately no
+// row data: which rows are needed is decided by the first read, against the
+// mirror, and fetched drawing-free (see fetchSummaries). Consumed once.
+let stampsPrefetch = null;
 if (supabaseEnabled) {
-  summariesPrefetch = (async () => {
+  stampsPrefetch = (async () => {
     try {
-      const { data, error } = await supabase.from(TABLE).select("key, updated_at").like("key", "gradcon-quote-%");
+      const { data, error } = await supabase.from(TABLE).select("key, updated_at").like("key", `${LEGACY_QUOTE_KEY}-%`);
       if (error || !data) return null;
       const stamps = {};
       data.forEach((row) => { stamps[row.key] = row.updated_at; });
-      const map = {};
-      const stale = [];
-      Object.keys(stamps).forEach((k) => {
-        const hit = readMirror(summaryMirrorKey(k));
-        if (hit && hit.value && hit.updatedAt && hit.updatedAt === stamps[k]) map[k] = hit.value;
-        else stale.push(k);
-      });
-      const fresh = await fetchAndMirror(stale, stamps);
-      if (!fresh) return null;
-      Object.assign(map, fresh);
-      return map;
+      return stamps;
     } catch {
       return null;
     }
@@ -240,23 +330,25 @@ export async function readQuote(storageKey) {
   }
 }
 
-/** Reads many quotes in one round trip — `{ storageKey: quote }` — so the
- * dashboard can summarize every project without one request per row. */
+/** Reads many FULL quotes — `{ storageKey: quote }`. Only for callers that
+ * must write a whole quote back; summary pages never use it. */
 export async function readQuotes(storageKeys) {
   if (storageKeys.length === 0) return {};
   if (supabaseEnabled) {
     // FULL rows, drawings included — for callers that must write a whole
     // quote back (the Estimates import merge). Summary pages use
-    // readQuoteSummaries() instead and never pay for the drawings.
-    try {
-      const { data, error } = await supabase.from(TABLE).select("key, value, updated_at").in("key", storageKeys);
-      const map = {}; const stamps = {};
-      if (!error && data) data.forEach((row) => { map[row.key] = row.value; stamps[row.key] = row.updated_at; });
-      if (!error && data) mirrorSummaries(map, stamps);
-      return map;
-    } catch {
-      return {};
+    // readQuoteSummariesDetailed() instead and never pay for the drawings.
+    // One row per request, in sequence: a single select of every row is
+    // ~30 MB and trips the database statement timeout. A row that cannot be
+    // read is simply absent from the map — never a blank stand-in.
+    const map = {};
+    for (const k of storageKeys) {
+      const row = await readFullRowBounded(k);
+      if (!row) continue; // unavailable — leave it out
+      map[k] = row.value;
+      writeMirror(summaryMirrorKey(k), stripForSummary(row.value), row.updated_at);
     }
+    return map;
   }
   const map = {};
   storageKeys.forEach((k) => {

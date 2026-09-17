@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { Plus, Trash2, ArrowRight, LayoutDashboard, Loader2, FolderOpen } from "lucide-react";
 import { QUOTE_STATUSES, QUOTE_STATUS_STYLES } from "../data/catalog.js";
 import { computeGrandTotal, computeMarginLadder, money, getDefaultMargin, getMarginSteps } from "../lib/costing.js";
-import { readQuoteSummaries, readQuotesCached, patchQuoteFields } from "../lib/projects.js";
+import { readQuoteSummariesDetailed, readQuotesCached, patchQuoteFields } from "../lib/projects.js";
+import { SummaryLoadNotice } from "./atoms.jsx";
 import { dashboardDueLabel } from "../lib/planner.js";
 
 const SORT_OPTIONS = [
@@ -80,24 +81,30 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete,
     setTimeout(() => setConfirmDeleteId((cur) => (cur === id ? null : cur)), 3000);
   };
 
+  // Rows that could not be read this time (never treated as missing) and
+  // the tick that re-runs the load when Retry is pressed.
+  const [failedCount, setFailedCount] = useState(0);
+  const [reloadTick, setReloadTick] = useState(0);
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    readQuoteSummaries(projects.map((p) => p.storageKey)).then((map) => {
+    readQuoteSummariesDetailed(projects.map((p) => p.storageKey)).then(({ map, missing, failed }) => {
       if (cancelled) return;
       setQuotesByKey(map);
       setLoading(false);
+      setFailedCount(failed.length);
       // An index entry whose data row does not exist is an "Untitled
       // project" that can never be opened or edited — a project whose first
       // save never landed, or a delete that only half-completed. Drop it.
-      // Only when the fetch plainly succeeded (it returned at least one
-      // quote): an empty map is also what a failed fetch looks like, and
-      // that must never prune anything. A brand-new entry is left alone
-      // for an hour so a slow first save cannot be mistaken for an orphan.
-      if (onPrune && Object.keys(map).length > 0) {
+      // ONLY entries the database confirmed have no row (`missing`: absent
+      // from a successful stamp query). A row that merely could not be read
+      // (a timeout, a network failure, an error) is in `failed` instead and
+      // is never pruned. A brand-new entry is left alone for an hour so a
+      // slow first save cannot be mistaken for an orphan.
+      if (onPrune && missing.length > 0) {
         const cutoff = Date.now() - 60 * 60 * 1000;
         const orphans = projects
-          .filter((p) => !map[p.storageKey] && Date.parse(p.createdAt || 0) < cutoff)
+          .filter((p) => missing.includes(p.storageKey) && Date.parse(p.createdAt || 0) < cutoff)
           .map((p) => p.id);
         if (orphans.length) onPrune(orphans);
       }
@@ -105,7 +112,7 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete,
     return () => {
       cancelled = true;
     };
-  }, [projects]);
+  }, [projects, reloadTick]);
 
   const summaries = useMemo(
     () => projects.map((p) => ({ project: p, ...summarizeQuote(quotesByKey[p.storageKey], rates) })),
@@ -255,6 +262,7 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete,
           </button>
         </div>
       </div>
+      <SummaryLoadNotice failedCount={failedCount} onRetry={() => setReloadTick((t) => t + 1)} />
 
       {/* Status filter tiles — one per status plus All projects. Each tile is
           FILLED with its status's own solid colour (the same `bar` shade the
