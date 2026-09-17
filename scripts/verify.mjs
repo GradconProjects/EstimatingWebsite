@@ -43,10 +43,15 @@ const C25 = RATE("CONCRETE", "25 mpa", "m3");
 const C32 = RATE("CONCRETE", "32 mpa", "m3");
 
 /* ---------- catalog shape ---------- */
-check("79 element types, 13 categories, 19 sections (SCREEDS 14, TOPPINGS 7, HYDRONIC HEATING 3, SPECIALIST FINISHING CONCRETE 10 — each its own category)", () => {
-  assert.equal(ELEMENT_TYPES.length, 79);
-  assert.equal(CATEGORY_ORDER.length, 13);
-  assert.equal(SECTION_ORDER.length, 19);
+check("96 element types, 14 categories, 22 sections (PRELIMINARIES 17 first; SCREEDS 14, TOPPINGS 7, HYDRONIC HEATING 3, SPECIALIST FINISHING CONCRETE 10 — each its own category)", () => {
+  assert.equal(ELEMENT_TYPES.length, 96);
+  assert.equal(CATEGORY_ORDER.length, 14);
+  assert.equal(SECTION_ORDER.length, 22);
+  assert.equal(ELEMENT_TYPES.filter((t) => t.category === "PRELIMINARIES").length, 17);
+  assert.equal(CATEGORY_ORDER[0], "PRELIMINARIES", "preliminaries come before earthworks");
+  assert.deepEqual(SECTION_ORDER.slice(0, 3), ["TRAFFIC & ACCESS", "SITE ESTABLISHMENT", "SITE MANAGEMENT & COMPLIANCE"]);
+  assert.ok(ELEMENT_TYPES.some((t) => t.id === "prelim_traffic_management") && ELEMENT_TYPES.some((t) => t.id === "prelim_temporary_access"));
+  assert.ok(ELEMENT_TYPES.filter((t) => t.category === "PRELIMINARIES").every((t) => t.labour === "prelims"), "prelims use their own crew-sheet tasks");
   assert.equal(ELEMENT_TYPES.filter((t) => t.category === "SPECIALIST FINISHING CONCRETE").length, 10);
   assert.equal(ELEMENT_TYPES.filter((t) => t.category === "SCREEDS").length, 14);
   assert.equal(ELEMENT_TYPES.filter((t) => t.category === "TOPPINGS").length, 7);
@@ -68,10 +73,14 @@ check("every element type has both a category and a section", () => {
   });
 });
 
-check("17 material categories, 276 products (incl. CONCRETE PUMPING, REINFORCEMENT BY RATE, the 32-board INSULATION range, 31 SCREEDS, 17 HYDRONIC HEATING, 48 SPECIALIST FINISHING CONCRETE, the full 24-size TRENCH MESH grid, Bored Piers subcontract, minimum cartage, levy, surcharge)", () => {
-  assert.equal(FULL_CATALOG.length, 17);
+check("18 material categories, 321 products (incl. CONCRETE PUMPING, REINFORCEMENT BY RATE, the 32-board INSULATION range, 31 SCREEDS, 17 HYDRONIC HEATING, 48 SPECIALIST FINISHING CONCRETE, 45 PRELIMINARIES, the full 24-size TRENCH MESH grid, Bored Piers subcontract, minimum cartage, levy, surcharge)", () => {
+  assert.equal(FULL_CATALOG.length, 18);
   const total = FULL_CATALOG.reduce((s, c) => s + c.products.length, 0);
-  assert.equal(total, 276);
+  assert.equal(total, 321);
+  const pre = FULL_CATALOG.find((c) => c.key === "PRELIMINARIES");
+  assert.equal(pre.products.length, 45);
+  assert.ok(!pre.weightBasis && !pre.areaBasis && !pre.lengthBasis && !pre.volumeRateBasis, "preliminaries cost plain qty × rate");
+  assert.ok(pre.products.some((p) => /^Traffic controller/.test(p.name)) && pre.products.some((p) => /crossover/.test(p.name)) && pre.products.some((p) => p.unit === "quote"));
   const scr = FULL_CATALOG.find((c) => c.key === "SCREEDS"), hyd = FULL_CATALOG.find((c) => c.key === "HYDRONIC HEATING");
   assert.equal(scr.products.length, 31); assert.equal(hyd.products.length, 17);
   assert.ok(!scr.weightBasis && !scr.areaBasis && !scr.lengthBasis && !scr.volumeRateBasis && !hyd.weightBasis && !hyd.areaBasis, "both cost plain qty × rate");
@@ -1606,7 +1615,8 @@ check("the SPECIALIST FINISHING CONCRETE band is on its own elements ONLY: hidde
   const footing = newElementItem(ELEMENT_TYPES.find((t) => t.id === "strip_footings"));
   const finish = newElementItem(ELEMENT_TYPES.find((t) => t.id === "finish_polished"));
   assert.equal(categoryAppliesTo(cat, footing), false); assert.equal(categoryAppliesTo(cat, finish), true);
-  FULL_CATALOG.filter((c) => c.key !== cat.key).forEach((c) => { assert.ok(categoryAppliesTo(c, footing) && categoryAppliesTo(c, finish), `${c.key} must be on every card`); });
+  FULL_CATALOG.filter((c) => !c.visibleFor).forEach((c) => { assert.ok(categoryAppliesTo(c, footing) && categoryAppliesTo(c, finish), `${c.key} must be on every card`); });
+  assert.deepEqual(FULL_CATALOG.filter((c) => c.visibleFor).map((c) => c.key).sort(), ["PRELIMINARIES", "SPECIALIST FINISHING CONCRETE"], "exactly two element-scoped bands");
   // a stale VicMix quantity on a footing (entered before the band moved) can never carry invisible money
   footing.qtys[mixKey] = 10;
   const fc = computeElementCost(footing, rates);
@@ -1617,6 +1627,26 @@ check("the SPECIALIST FINISHING CONCRETE band is on its own elements ONLY: hidde
   finish.qtys[mixKey] = 10;
   const sc = computeElementCost(finish, rates);
   assert.equal(sc.categoryTotals[cat.key], 10 * 395 + 80); assert.equal(sc.concreteQty, 10);
+});
+
+check("the PRELIMINARIES band is on the PRELIMINARIES elements ONLY: hidden and free elsewhere, priced in full there, never poured concrete", () => {
+  const cat = FULL_CATALOG.find((c) => c.key === "PRELIMINARIES");
+  const rates = defaultRates();
+  const controller = cat.products.find((p) => p.name.startsWith("Traffic controller"));
+  const key = rateKey(cat.key, controller.name, controller.unit);
+  const footing = newElementItem(ELEMENT_TYPES.find((t) => t.id === "strip_footings"));
+  const finish = newElementItem(ELEMENT_TYPES.find((t) => t.id === "finish_polished"));
+  const traffic = newElementItem(ELEMENT_TYPES.find((t) => t.id === "prelim_traffic_management"));
+  assert.equal(categoryAppliesTo(cat, footing), false); assert.equal(categoryAppliesTo(cat, finish), false); assert.equal(categoryAppliesTo(cat, traffic), true);
+  assert.equal(categoryAppliesTo(FULL_CATALOG.find((c) => c.key === "SPECIALIST FINISHING CONCRETE"), traffic), false, "the VicMix band stays off a prelim element");
+  assert.equal(categoryAppliesTo(FULL_CATALOG.find((c) => c.key === "CONCRETE"), traffic), true, "every plain band is still on a prelim element (rule 1)");
+  footing.qtys[key] = 8;
+  const fc = computeElementCost(footing, rates);
+  assert.equal(fc.categoryTotals[cat.key], 0); assert.equal(fc.total, 0);
+  traffic.qtys[key] = 8;
+  const tc = computeElementCost(traffic, rates);
+  assert.equal(tc.categoryTotals[cat.key], 8 * controller.unitCost); assert.equal(tc.total, 8 * controller.unitCost); assert.equal(tc.concreteQty, 0);
+  assert.deepEqual(traffic.tasks.map((t) => t.name).slice(0, 2), ["Site establishment / mobilisation", "Traffic management / control"]);
 });
 
 console.log(`\n${passed} check(s) passed.`);

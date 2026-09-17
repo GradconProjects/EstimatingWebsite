@@ -63,8 +63,11 @@ safety net silently. Keep all cost arithmetic in `lib/costing.js`.
    version tried to curate a subset per element type. **One explicit
    exception, by request (15 Sep 2026):** a category carrying `visibleFor:
    [<element categories>]` renders and costs ONLY on elements of those
-   categories — today only `SPECIALIST FINISHING CONCRETE`, which lives on
-   the Specialist Finishing Concrete elements. `categoryAppliesTo(cat, item)`
+   categories — today `SPECIALIST FINISHING CONCRETE` (on the Specialist
+   Finishing Concrete elements) and `PRELIMINARIES` (on the Preliminaries
+   elements — traffic management, temporary access, site establishment,
+   supervision and so on, added 17 Sep 2026; those elements are first in the
+   dropdown and use the `prelims` crew-sheet template). `categoryAppliesTo(cat, item)`
    in `costing.js` is the ONE test; `computeElementCost`, `ElementCard`,
    `PrintQuoteReport`, `exportQuote` and the Cost Planner publish all use it,
    so a hidden band can never carry invisible money (verify-covered).

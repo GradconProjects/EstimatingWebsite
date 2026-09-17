@@ -123,7 +123,20 @@ const CREW_SHEET_TASKS = [
   "Additional labour / plant",
   "Additional labour / plant",
 ];
+// Preliminaries have no pour: their crew sheet lists the site-management
+// work instead (the only template whose task sequence genuinely differs).
+const PRELIM_TASKS = [
+  "Site establishment / mobilisation",
+  "Traffic management / control",
+  "Temporary access, protection & hoarding",
+  "Site services, amenities & cleaning",
+  "Supervision, safety & compliance",
+  "Demobilisation / make good",
+  "Additional labour / plant",
+  "Additional labour / plant",
+];
 export const LABOUR_TEMPLATES = {
+  prelims: PRELIM_TASKS,
   excavation: CREW_SHEET_TASKS,
   footing: CREW_SHEET_TASKS,
   wall: CREW_SHEET_TASKS,
@@ -420,6 +433,70 @@ export const FULL_CATALOG = [
     ["Thermal break strip 20mm", "m", null, 9],
     ["Insulation (other — specify in description)", "m2", null, 25],
   ]},
+  /* Preliminaries — the site-wide items a job needs before and around the
+   * concrete work: traffic management, temporary access and protection,
+   * site establishment, services and amenities, supervision, survey,
+   * environmental controls, permits and clean-up. Like the specialist band,
+   * this one carries visibleFor and is rendered and costed ONLY on the
+   * PRELIMINARIES elements in the Add-Element dropdown (rule 1 exception);
+   * it would be noise on a footing card. Every product costs plain
+   * qty × rate; defaults are placeholders to be set in the Rates modal, and
+   * "+ Add item under PRELIMINARIES" takes anything not listed. The Cost
+   * Planner keeps its own Preliminaries list; a published Quotes line that
+   * has no name match there lands as a custom BOQ row, so nothing is lost. */
+  { key: "PRELIMINARIES", weightBasis: false, visibleFor: ["PRELIMINARIES"], products: [
+    // Traffic management
+    ["Traffic management plan (TMP) & permits — prepare / lodge", "each", null, 1800],
+    ["Traffic controller (accredited)", "hr", null, 68],
+    ["Traffic control crew (2 controllers + ute + signs)", "day", null, 1500],
+    ["Traffic signage & barrier set (hire)", "day", null, 180],
+    ["Variable message sign (VMS) board hire", "week", null, 550],
+    ["Water-filled / concrete road barriers (hire)", "m/week", null, 9],
+    ["Pedestrian detour / walkway & fencing", "m", null, 45],
+    ["Road / lane / footpath occupation fee (council)", "day", null, 350],
+    // Temporary access
+    ["Temporary vehicle crossover / access ramp", "each", null, 2200],
+    ["Road plates / trench covers (hire)", "each/week", null, 220],
+    ["Temporary haul road / hardstand (crushed rock)", "m2", null, 38],
+    ["Temporary access stairs / walkways / gantry", "each", null, 1500],
+    ["Ground protection mats (hire)", "each/week", null, 45],
+    ["Tree / asset protection", "each", null, 350],
+    // Site establishment
+    ["Site establishment & set-up", "each", null, 3500],
+    ["Demobilisation & make good", "each", null, 2000],
+    ["Temporary fencing (hire)", "m/week", null, 2.5],
+    ["Hoarding / solid site fence", "m", null, 95],
+    ["Site gates (vehicle / pedestrian)", "each", null, 650],
+    ["Site shed / office hire", "week", null, 150],
+    ["Toilet / amenities hire", "week", null, 120],
+    ["Lunchroom / first-aid room hire", "week", null, 140],
+    ["Site signage & project board", "each", null, 400],
+    // Temporary services
+    ["Temporary power connection", "each", null, 1200],
+    ["Generator hire (incl. fuel)", "week", null, 650],
+    ["Temporary water connection / water cart", "each", null, 800],
+    ["Site lighting / towers (hire)", "week", null, 380],
+    // Temporary works, protection & cranage
+    ["Scaffold / edge protection (hire)", "m/week", null, 12],
+    ["Temporary propping / shoring (hire)", "week", null, 900],
+    ["Crane hire (incl. operator)", "day", null, 2800],
+    ["Franna / pick-and-carry crane", "hr", null, 220],
+    ["Forklift / telehandler hire", "day", null, 550],
+    // Site management & compliance
+    ["Site supervision / foreman", "week", null, 1800],
+    ["Project / contract management", "week", null, 1200],
+    ["Survey & set-out (visit)", "each", null, 1500],
+    ["Site inductions / WHS management", "week", null, 300],
+    ["Environmental controls (sediment fence, wheel wash, dust)", "m", null, 18],
+    ["Dust / noise / vibration monitoring", "week", null, 450],
+    ["Permits, fees & council requirements", "each", null, 900],
+    ["Insurances (public liability & contract works)", "each", null, 2500],
+    ["Site cleaning & rubbish removal", "week", null, 250],
+    ["Skip bin / waste disposal", "each", null, 600],
+    ["As-built documentation / handover", "each", null, 800],
+    ["Preliminaries — subcontract quote (specify)", "quote", null, 0],
+    ["Preliminaries — other (specify)", "each", null, 0],
+  ]},
   /* Screeds — every common Australian floor screed, supply-and-lay $/m² at
    * the stated thickness (placeholder defaults: edit in the Rates modal or
    * type a received quote straight onto the "subcontract quote" row). Costed
@@ -517,6 +594,27 @@ export const FULL_CATALOG = [
  * arbitrary. See CLAUDE.md → "How to extend" before adding to this list.
  */
 export const ELEMENT_TYPES = [
+  // Preliminaries — site-wide items before and around the concrete work.
+  // They come first (nothing is poured before the site is set up), carry the
+  // PRELIMINARIES band only (visibleFor) and their own crew-sheet tasks.
+  { id: "prelim_traffic_management", category: "PRELIMINARIES", section: "TRAFFIC & ACCESS", name: "Traffic Management (TMP, controllers, signage, barriers)", labour: "prelims" },
+  { id: "prelim_pedestrian_management", category: "PRELIMINARIES", section: "TRAFFIC & ACCESS", name: "Pedestrian Management & Protection", labour: "prelims" },
+  { id: "prelim_temporary_access", category: "PRELIMINARIES", section: "TRAFFIC & ACCESS", name: "Temporary Access (crossovers, ramps, road plates, haul roads)", labour: "prelims" },
+  { id: "prelim_temporary_works", category: "PRELIMINARIES", section: "TRAFFIC & ACCESS", name: "Temporary Works (propping, shoring, scaffold, edge protection)", labour: "prelims" },
+  { id: "prelim_cranage", category: "PRELIMINARIES", section: "TRAFFIC & ACCESS", name: "Cranage & Hoisting", labour: "prelims" },
+  { id: "prelim_site_establishment", category: "PRELIMINARIES", section: "SITE ESTABLISHMENT", name: "Site Establishment & Set-Up", labour: "prelims" },
+  { id: "prelim_fencing_hoarding", category: "PRELIMINARIES", section: "SITE ESTABLISHMENT", name: "Site Fencing, Hoarding & Gates", labour: "prelims" },
+  { id: "prelim_amenities", category: "PRELIMINARIES", section: "SITE ESTABLISHMENT", name: "Site Sheds & Amenities", labour: "prelims" },
+  { id: "prelim_temporary_services", category: "PRELIMINARIES", section: "SITE ESTABLISHMENT", name: "Temporary Services (power, water, lighting)", labour: "prelims" },
+  { id: "prelim_demobilisation", category: "PRELIMINARIES", section: "SITE ESTABLISHMENT", name: "Demobilisation & Make Good", labour: "prelims" },
+  { id: "prelim_supervision", category: "PRELIMINARIES", section: "SITE MANAGEMENT & COMPLIANCE", name: "Supervision & Site Management", labour: "prelims" },
+  { id: "prelim_survey_setout", category: "PRELIMINARIES", section: "SITE MANAGEMENT & COMPLIANCE", name: "Survey & Set-Out", labour: "prelims" },
+  { id: "prelim_environmental", category: "PRELIMINARIES", section: "SITE MANAGEMENT & COMPLIANCE", name: "Environmental Controls (sediment, dust, noise)", labour: "prelims" },
+  { id: "prelim_permits", category: "PRELIMINARIES", section: "SITE MANAGEMENT & COMPLIANCE", name: "Permits, Fees & Council Requirements", labour: "prelims" },
+  { id: "prelim_whs", category: "PRELIMINARIES", section: "SITE MANAGEMENT & COMPLIANCE", name: "WHS, Safety & Inductions", labour: "prelims" },
+  { id: "prelim_cleaning_waste", category: "PRELIMINARIES", section: "SITE MANAGEMENT & COMPLIANCE", name: "Site Cleaning & Waste Removal", labour: "prelims" },
+  { id: "prelim_other", category: "PRELIMINARIES", section: "SITE MANAGEMENT & COMPLIANCE", name: "Preliminaries (Other - specify)", labour: "prelims" },
+
   // Earthworks — standalone excavation/backfill, not bundled into a pour's labour tasks.
   { id: "excavation_bulk", category: "EARTHWORKS", section: "EXCAVATION", name: "Bulk Excavation", labour: "excavation" },
   { id: "excavation_trench", category: "EARTHWORKS", section: "EXCAVATION", name: "Trench Excavation", labour: "excavation" },
