@@ -1853,14 +1853,16 @@ const LIBRARY = [
    {id:"anchorblock", label:"Anchor Block", calc:"padfooting"},
    {id:"columnbaseplate", label:"Column Base Plate / Grout Pad", calc:"padfooting"},
  ]},
+ {group:"Retention Walls", items:[
+   {id:"retainingwall", label:"Retaining Wall", calc:"retwall"},
+   {id:"shotcretewall", label:"Shotcrete Wall", calc:"shotwall"},
+ ]},
  {group:"Ground Structure", items:[
    {id:"raftslab", label:"Raft Slab", calc:"slab", slabCategory:"Raft Slab"},
    {id:"waffleslab", label:"Waffle Slab", calc:"slab", slabCategory:"Waffle Slab"},
    {id:"industrialslab", label:"Industrial Slab", calc:"slab", slabCategory:"Industrial Slab"},
    {id:"slabonground", label:"Slab on Ground", calc:"slab", slabCategory:"Slab on Ground"},
    {id:"basementslab", label:"Basement Slab", calc:"slab", slabCategory:"Basement Slab"},
-   {id:"retainingwall", label:"Retaining Wall", calc:"retwall"},
-   {id:"shotcretewall", label:"Shotcrete Wall", calc:"shotwall"},
    {id:"liftpit", label:"Lift Pit / Shaft", calc:"tankbox", kind:"Lift Pit"},
    {id:"stairs", label:"Concrete Stair", calc:"stairs"},
    {id:"tempshoring", label:"Temporary Shoring", calc:"generic", kind:"temporary"},
@@ -5288,8 +5290,21 @@ function shotWallDefaults(){ return {
   meshType:"SL82", meshLayers:1, meshLap:false,
   starters:false, connTarget:"", connQty:0, connDia:"N16", connEmbed:400, connProj:400,
   dowelsOut:"", outQty:0, outDia:"N16", outEmbed:500, outProj:600,
+  // Clickable connections: horizontal bars tying the wall into a slab (bars
+  // along the wall at a spacing) and dowels into the adjoining bored piers
+  // (per pier × number of piers, taken from the linked pier element unless
+  // typed). Off until ticked — an unticked section emits nothing.
+  slabTieOn:false, slabTieTarget:"", slabTieSpacing:300, slabTieDia:"N12", slabTieEmbed:500, slabTieProj:600,
+  pierDowelOn:false, pierDowelTarget:"", pierDowelPiers:0, pierDowelQty:4, pierDowelDia:"N16", pierDowelEmbed:400, pierDowelProj:600,
   stripDrain:false, stripDrainLength:0
 };}
+/* Number of piers the shotcrete wall's dowels go into: typed, else the
+ * linked pier element's own quantity, else 0. */
+function shotPierCount(d){
+  let typed=num(d.pierDowelPiers); if(typed>0) return Math.round(typed);
+  let tgt=INSTANCES.find(x=>x.id===d.pierDowelTarget); if(!tgt) return 0;
+  return Math.max(0,Math.round(num(tgt.data.qty,1)));
+}
 function renderShotWall(inst){
   let d=inst.data;
   let geom=`<div class="grid cols4">${LF("Wall length (mm)","length",d.length)}${LF("Wall height (mm)","height",d.height)}${F("Thickness (mm)",inpNum("thickness",d.thickness))}${coverField(inst)}</div>`;
@@ -5300,6 +5315,14 @@ function renderShotWall(inst){
   <p class="small">Central mesh layer(s) across the full wall face — sprayed walls are typically single-face-mesh, not two independent faces like a formed wall.</p>`;
   let conns=`${chk("starters",d.starters,"Starter bars / dowels in (from footing or pier below)","starters")}
   <div class="subsec ${d.starters?'':'hidden'}" data-show-if="starters"><div class="grid cols4">${F("Connects to",targetSelect("connTarget",d.connTarget,inst.id))}${F("Qty",inpNum("connQty",d.connQty))}${F("Dia",barSizeSel("connDia",d.connDia))}${F("Embedment (mm)",inpNum("connEmbed",d.connEmbed))}${F("Projection (mm)",inpNum("connProj",d.connProj))}</div></div>
+  <div class="subsec"><div class="sechead">Horizontal bars into slab</div>
+  ${chk("slabTieOn",d.slabTieOn,"Horizontal bars tie this wall into a slab (bars along the wall at a spacing, cast into the slab edge)","slabTieOn")}
+  <div class="subsec ${d.slabTieOn?'':'hidden'}" data-show-if="slabTieOn"><div class="grid cols4">${F("Slab",targetSelect("slabTieTarget",d.slabTieTarget,inst.id,"slab"))}${F("Spacing along wall (mm)",inpNum("slabTieSpacing",d.slabTieSpacing===undefined?300:d.slabTieSpacing))}${F("Dia",barSizeSel("slabTieDia",d.slabTieDia||"N12"))}${F("Embedment into slab (mm)",inpNum("slabTieEmbed",d.slabTieEmbed===undefined?500:d.slabTieEmbed))}${F("Projection / lap into wall (mm)",inpNum("slabTieProj",d.slabTieProj===undefined?600:d.slabTieProj))}</div>
+  <p class="small">Bars = wall length ÷ spacing + 1, each embedment + projection. Counted here, on the wall — the slab's own register never repeats them. Only slab elements are listed.</p></div></div>
+  <div class="subsec"><div class="sechead">Dowel bars into adjoining bored piers</div>
+  ${chk("pierDowelOn",d.pierDowelOn,"Dowel bars tie this wall into the adjoining bored piers (per pier)","pierDowelOn")}
+  <div class="subsec ${d.pierDowelOn?'':'hidden'}" data-show-if="pierDowelOn"><div class="grid cols4">${F("Bored piers",targetSelect("pierDowelTarget",d.pierDowelTarget,inst.id,"pier"))}${F("Number of piers (0 = from the linked pier element)",inpNum("pierDowelPiers",d.pierDowelPiers))}${F("Dowels per pier",inpNum("pierDowelQty",d.pierDowelQty===undefined?4:d.pierDowelQty))}${F("Dia",barSizeSel("pierDowelDia",d.pierDowelDia||"N16"))}${F("Embedment into pier (mm)",inpNum("pierDowelEmbed",d.pierDowelEmbed===undefined?400:d.pierDowelEmbed))}${F("Projection into wall (mm)",inpNum("pierDowelProj",d.pierDowelProj===undefined?600:d.pierDowelProj))}</div>
+  <p class="small">Dowels = piers × dowels per pier, each embedment + projection — ${shotPierCount(d)} pier(s) at present. Only bored-pier / pile elements are listed.</p></div></div>
   <div class="subsec"><div class="sechead">Dowels out (to slab or wall above)</div><div class="grid cols4">${F("Connects to",targetSelect("dowelsOut",d.dowelsOut,inst.id))}${F("Qty",inpNum("outQty",d.outQty))}${F("Dia",barSizeSel("outDia",d.outDia))}${F("Embedment (mm)",inpNum("outEmbed",d.outEmbed))}${F("Projection (mm)",inpNum("outProj",d.outProj))}</div></div>
   <div class="subsec"><div class="sechead">Strip Drain (behind wall, out of scope by default)</div>${chk("stripDrain",d.stripDrain,"Include strip drain — verify scope","stripDrain")}
   <div class="subsec ${d.stripDrain?'':'hidden'}" data-show-if="stripDrain">${F("Strip drain length (mm)",inpNum("stripDrainLength",d.stripDrainLength))}</div></div>`;
@@ -5330,6 +5353,18 @@ function computeShotWall(inst,def){
     let dia=barDiaOf(d.outDia); let outLen=(num(d.outEmbed)+num(d.outProj))/1000;
     let totLen=num(d.outQty)*outLen; let wt2=totLen*massPerM(dia);
     lines.push(baseLine(inst,def,{materialGroup:"Connections",material:d.outDia,spec:"Dowels out → "+tgtOut,qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`${d.outQty}×(embed ${d.outEmbed}+proj ${d.outProj})/1000`,linkedElement:tgtOut,notes:`${fmt(wt2,1)} kg`}));
+  }
+  if(d.slabTieOn){
+    let sp=num(d.slabTieSpacing,300); let count=sp>0? Math.floor(num(d.length)/sp)+1 : 0;
+    let dia=barDiaOf(d.slabTieDia||"N12"); let each=(num(d.slabTieEmbed,500)+num(d.slabTieProj,600))/1000;
+    let totLen=count*each; let wt2=totLen*massPerM(dia); let tgt=targetLabelOf(d.slabTieTarget);
+    if(totLen>0) lines.push(baseLine(inst,def,{materialGroup:"Connections",material:d.slabTieDia||"N12",spec:"Horizontal bars into slab → "+(tgt||"(unlinked)"),qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`${count} bars (L ${num(d.length)} ÷ ${sp} + 1) × (embed ${num(d.slabTieEmbed,500)} + proj ${num(d.slabTieProj,600)})/1000`,linkedElement:tgt,notes:`${fmt(wt2,1)} kg`}));
+  }
+  if(d.pierDowelOn){
+    let piers=shotPierCount(d), per=num(d.pierDowelQty,4);
+    let dia=barDiaOf(d.pierDowelDia||"N16"); let each=(num(d.pierDowelEmbed,400)+num(d.pierDowelProj,600))/1000;
+    let totLen=piers*per*each; let wt2=totLen*massPerM(dia); let tgt=targetLabelOf(d.pierDowelTarget);
+    if(totLen>0) lines.push(baseLine(inst,def,{materialGroup:"Connections",material:d.pierDowelDia||"N16",spec:"Dowels into bored piers → "+(tgt||"(unlinked)"),qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`${piers} piers × ${per} dowels × (embed ${num(d.pierDowelEmbed,400)} + proj ${num(d.pierDowelProj,600)})/1000`,linkedElement:tgt,notes:`${fmt(wt2,1)} kg`}));
   }
   if(d.stripDrain && num(d.stripDrainLength)>0){
     lines.push(baseLine(inst,def,{materialGroup:"Drainage",material:"Strip drain (out of scope — verify)",spec:"",qty:num(d.stripDrainLength)/1000,unit:"m",waste:0,finalQty:num(d.stripDrainLength)/1000,formula:"manual entry"}));
@@ -6054,9 +6089,12 @@ function diagShotWall(inst){ let d=inst.data;
    ${DG.ticksH(ex+2,ex+w-2,ey+2,ey+h-2,Math.max(200,L/40),s,40)}
    ${DG.ticksV(ey+2,ey+h-2,ex+2,ex+w-2,Math.max(200,H/14),s,14)}
    ${d.stripDrain?[0.25,0.5,0.75].map(p=>`<line x1="${ex+w*p}" y1="${ey+2}" x2="${ex+w*p}" y2="${ey+h-2}" stroke="${DWG.gl}" stroke-width="2" opacity="0.6"/>`).join(''):''}
+   ${d.slabTieOn?Array.from({length:Math.min(14,Math.max(2,Math.round(L/Math.max(100,N_(d.slabTieSpacing,300)))))}).map((_,i,a)=>`<line x1="${ex+4+(w-8)*i/(a.length-1)}" y1="${ey-10}" x2="${ex+4+(w-8)*i/(a.length-1)}" y2="${ey+6}" stroke="${DWG.bar}" stroke-width="1.2"/>`).join(''):''}
+   ${d.pierDowelOn?[ex-8,ex+w+8].map(x=>`<line x1="${x}" y1="${ey+h*0.3}" x2="${x<ex+w/2?ex+10:ex+w-10}" y2="${ey+h*0.3}" stroke="${DWG.bar}" stroke-width="1.2"/><line x1="${x}" y1="${ey+h*0.7}" x2="${x<ex+w/2?ex+10:ex+w-10}" y2="${ey+h*0.7}" stroke="${DWG.bar}" stroke-width="1.2"/>`).join(''):''}
    ${dimH(ex,ex+w,ey-6,`L ${L}`)}
    ${dimV(ey,ey+h,ex+w+12,`H ${H}`)}
-   ${specLine(ex,ey+h+14,`${d.meshType||'SL82'}${N_(d.meshLayers,1)>1?' ×'+d.meshLayers:''} CENTRAL${d.xypex?' · XYPEX ADMIX':''}${d.stripDrain?' · STRIP DRAINS':''}`)}`;
+   ${specLine(ex,ey+h+14,`${d.meshType||'SL82'}${N_(d.meshLayers,1)>1?' ×'+d.meshLayers:''} CENTRAL${d.xypex?' · XYPEX ADMIX':''}${d.stripDrain?' · STRIP DRAINS':''}`)}
+   ${d.slabTieOn||d.pierDowelOn?specLine(ex,ey+h+24,`${d.slabTieOn?`${d.slabTieDia||'N12'}@${N_(d.slabTieSpacing,300)} INTO SLAB`:''}${d.slabTieOn&&d.pierDowelOn?' · ':''}${d.pierDowelOn?`${N_(d.pierDowelQty,4)}×${d.pierDowelDia||'N16'} DOWELS/PIER`:''}`):''}`;
   const sx=268, s2=DG.fit(T*3,H,26,96), tw=T*s2, th=H*s2, sx0=sx-tw/2, cv2=Math.max(1,cov*s2);
   let section=`${DG.title(sx-18,ey-16,"SECTION")}
    ${DG.soil(sx0-14,ey,14,th)}

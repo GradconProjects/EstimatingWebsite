@@ -522,6 +522,14 @@ element families waits on the owner's approval of the pad footing.
   before 17 Sep 2026 the stem bars counted one face vertically and used the
   wall length as the row count horizontally, so those two lines changed for
   existing takeoffs (review status flags it).
+- **Retention Walls** is its own library group (Retaining Wall, Shotcrete
+  Wall — moved out of Ground Structure 22 Sep 2026; `stage` on their lines
+  follows the group name). The shotcrete wall's Connections tab has two
+  clickable ties: `slabTieOn` (horizontal bars into a slab — `targetSelect`
+  filtered to `slab`, bars = L ÷ spacing + 1) and `pierDowelOn` (dowels
+  into adjoining bored piers — filtered to `pier`, piers = typed or the
+  linked pier element's qty via `shotPierCount`), each emitting one
+  Connections line counted on the wall only.
 - **Stairs** (`stairGeom(d)`, `STAIR_SHAPES`): straight, L (quarter-turn),
   U / dog-leg, multi-flight, winder, spiral (newel + outer radius, turn), curved
   (centreline radius, turn) and irregular (measured overrides; an old
