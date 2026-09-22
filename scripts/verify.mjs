@@ -43,8 +43,9 @@ const C25 = RATE("CONCRETE", "25 mpa", "m3");
 const C32 = RATE("CONCRETE", "32 mpa", "m3");
 
 /* ---------- catalog shape ---------- */
-check("96 element types, 14 categories, 22 sections (PRELIMINARIES 17 first; SCREEDS 14, TOPPINGS 7, HYDRONIC HEATING 3, SPECIALIST FINISHING CONCRETE 10 — each its own category)", () => {
-  assert.equal(ELEMENT_TYPES.length, 96);
+check("97 element types, 14 categories, 22 sections (PRELIMINARIES 17 first; Basement Ramp beside Ramp; SCREEDS 14, TOPPINGS 7, HYDRONIC HEATING 3, SPECIALIST FINISHING CONCRETE 10 — each its own category)", () => {
+  assert.equal(ELEMENT_TYPES.length, 97);
+  assert.ok(ELEMENT_TYPES.some((t) => t.id === "basement_ramp" && t.section === "GROUND-BEARING SLABS"), "Basement Ramp is its own selectable element");
   assert.equal(CATEGORY_ORDER.length, 14);
   assert.equal(SECTION_ORDER.length, 22);
   assert.equal(ELEMENT_TYPES.filter((t) => t.category === "PRELIMINARIES").length, 17);

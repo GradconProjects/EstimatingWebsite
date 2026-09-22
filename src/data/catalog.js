@@ -651,6 +651,7 @@ export const ELEMENT_TYPES = [
   { id: "slab_on_ground", category: "SUBSTRUCTURE", section: "GROUND-BEARING SLABS", name: "Slab on Ground (Garage / Tennis Court / Plant Room / Hardstand)", labour: "slab_ground" },
   { id: "basement_slab", category: "SUBSTRUCTURE", section: "GROUND-BEARING SLABS", name: "Basement Slab", labour: "slab_ground" },
   { id: "ramp", category: "SUBSTRUCTURE", section: "GROUND-BEARING SLABS", name: "Ramp", labour: "slab_ground" },
+  { id: "basement_ramp", category: "SUBSTRUCTURE", section: "GROUND-BEARING SLABS", name: "Basement Ramp", labour: "slab_ground" },
 
   // Vertical structure — columns and load-bearing/core walls carrying floors above.
   { id: "rc_columns", category: "VERTICAL STRUCTURE", section: "COLUMNS", name: "RC Columns - Fence Post Columns", labour: "footing" },

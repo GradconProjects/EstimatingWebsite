@@ -53,6 +53,7 @@ export const ESTIMATE_TYPE_MAP = {
   "Retaining Wall": "retaining_wall",
   "Concrete Stair": "staircase",
   "Ramp / External Sloped Slab": "ramp",
+  "Basement Ramp": "basement_ramp",
   "RC Roof Slab": "suspended_slab",
   "Driveway": "driveway_hardstand",
   "Path": "paths_paving",
