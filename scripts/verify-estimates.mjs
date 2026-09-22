@@ -148,7 +148,7 @@ console.log("\nOrders, pour schedule and reconciliation (portal/estimates-orders
   vm.runInNewContext(ordersSrc, box, { filename: "estimates-orders.js" });
   const O = box;
   const TRENCH = ["3 Bar-L8TM", "4 Bar-L11TM", "5 Bar-L12TM", "6 Bar-L12TM"];
-  const MESH = ["SL52", "SL62", "SL72", "SL81", "SL82", "SL92", "SL102", "RL818", "RL1018", "RL1118"];
+  const MESH = ["SL52", "SL62", "SL72", "SL81", "SL82", "SL92", "SL102", "RL718", "RL818", "RL918", "RL1018", "RL1118", "RL1218"];
   const ctx = { barStockMm: 12000, trenchStockM: 6, meshSheetAreaM2: 14.4, meshSheetLengthM: 6, concreteStepM3: 0.2, isTrenchMesh: (m) => TRENCH.includes(m), isSquareMesh: (m) => MESH.includes(m), massPerM: (d) => d * d / 162 };
   const L = (o) => Object.assign({ elementId: "E1", element: "Elem 1", stage: "S", category: "C", spec: "", qty: 0, finalQty: 0, weightKg: 0, unit: "" }, o);
 
@@ -260,6 +260,22 @@ console.log("\nEstimates → Quotes bridge (src/lib/estimateImport.js)\n");
     const empty = buildImportFromEstimate({ project: {}, lines: [] });
     check("an empty register imports to an empty, flag-free project", !!empty);
   }
+}
+
+// ---- Mesh range parity: Estimates MESHTYPES ⇔ Quotes SQUARE MESH catalog ----
+{
+  const appSrc = fs.readFileSync(path.join(root, "portal", "estimates-app.html"), "utf8");
+  const mm = appSrc.match(/const MESHTYPES = (\{[^}]*\});/);
+  const MESHTYPES = mm ? JSON.parse(mm[1]) : null;
+  const { FULL_CATALOG } = await import(path.join(root, "src", "data", "catalog.js"));
+  const cat = FULL_CATALOG.find((c) => c.key === "SQUARE MESH");
+  const catNames = cat.products.map((p) => p.name);
+  check("Estimates MESHTYPES lists exactly the Quotes SQUARE MESH products (full SL and RL718–RL1218 range)", !!MESHTYPES && Object.keys(MESHTYPES).sort().join() === catNames.slice().sort().join() && catNames.includes("RL918") && catNames.includes("RL1218"), `${MESHTYPES ? Object.keys(MESHTYPES).join() : "?"} vs ${catNames.join()}`);
+  const drift = cat.products.filter((p) => Math.abs((MESHTYPES || {})[p.name] - p.unitWeight / 14.4) > 0.006).map((p) => `${p.name}: ${MESHTYPES[p.name]} vs ${(p.unitWeight / 14.4).toFixed(2)}`);
+  check("every mesh kg/m² in Estimates equals the catalog sheet weight ÷ 14.4 m²", !!MESHTYPES && drift.length === 0, drift.join("; "));
+  const shell = fs.readFileSync(path.join(root, "portal", "portal-shell.html"), "utf8");
+  const missing = catNames.filter((n) => !shell.includes(`<option value="${n}">`));
+  check("portal Settings default-mesh select offers every mesh size", missing.length === 0, missing.join());
 }
 
 console.log(`\n${passed} check(s) passed${failed ? `, ${failed} FAILED` : ""}.`);

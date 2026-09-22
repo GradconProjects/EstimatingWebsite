@@ -238,6 +238,14 @@ safety net silently. Keep all cost arithmetic in `lib/costing.js`.
   with, so an older element gets the spoil row by renaming one of its
   "Additional labour / plant" rows.
 
+- **Mesh sizes live in one catalog, mirrored in two places:** `SQUARE MESH`
+  in `catalog.js` (name, sheet weight, $/sheet) is the source; the
+  Estimates `MESHTYPES` table (kg/m² = sheet weight ÷ 14.4) and the portal
+  Settings default-mesh select must list the same names —
+  `scripts/verify-estimates.mjs` fails if they drift. Rates Library and
+  Cost Planner carry their own copies of the same list. Add a new size to
+  the catalog first, then the two mirrors.
+
 - **Add a new labour resource:** add to `RESOURCE_COLS` with a unique
   `key`. It appears as a new column in every element's Labour/Equipment
   matrix and in the Rates modal automatically.

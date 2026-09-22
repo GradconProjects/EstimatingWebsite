@@ -1739,7 +1739,13 @@ function defaultCoverFor(typeId){
 }
 
 const BARSIZES = ["N10","N12","N16","N20","N24","N28","N32","N36","N40","R6","R10"];
-const MESHTYPES = {"SL52":1.87,"SL62":2.42,"SL72":3.05,"SL81":3.11,"SL82":3.70,"SL92":4.68,"SL102":5.60,"RL818":2.98,"RL1018":3.85,"RL1118":4.63};
+// kg per m² of each mesh = the Quotes catalog's sheet weight (SQUARE MESH,
+// src/data/catalog.js — Gradcon's real product weights) ÷ the 14.4 m² sheet,
+// so a takeoff's mesh tonnage and its priced quote agree. The full SL and RL
+// ranges (RL718 … RL1218) are listed; scripts/verify-estimates.mjs fails if
+// this table and the catalog drift. Before 22 Sep 2026 the RL masses here
+// were roughly half the real figures and SL81 was under-weighted.
+const MESHTYPES = {"SL52":1.46,"SL62":2.29,"SL72":2.85,"SL81":7.29,"SL82":3.61,"SL92":4.58,"SL102":5.56,"RL718":4.65,"RL818":5.49,"RL918":6.46,"RL1018":7.57,"RL1118":9.06,"RL1218":10.90};
 // A standard mesh sheet is 6.0m x 2.4m = 14.4m² — every "convert area to whole
 // sheets" line in this file (Slab, Pad Footing, Stairs, Shotcrete Wall) divides
 // by this same figure so a sheet count is never quietly wrong in one place and
@@ -5309,7 +5315,8 @@ function shotPierCount(d){
 function renderShotWall(inst){
   let d=inst.data;
   let geom=`<div class="grid cols4">${LF("Wall length (mm)","length",d.length)}${LF("Wall height (mm)","height",d.height)}${F("Thickness (mm)",inpNum("thickness",d.thickness))}${coverField(inst)}</div>`;
-  let conc=`<p class="small">Concrete = length × height × thickness, sprayed application (higher rebound/overspray waste than a formed pour).</p>
+  let conc=`<div class="grid cols3">${F("Shotcrete strength grade (N/MPa)",inpNum("grade",d.grade===undefined?PROJECT.grade:d.grade))}${F("Rebound / overspray waste % (blank = 20%)",inpNum("concreteWasteOverride",d.concreteWasteOverride))}</div>
+  <p class="small">Concrete = length × height × thickness, sprayed application — the register line carries the grade you choose (N32 / N40 / N50 shotcrete mixes are common) and the sprayed waste, which is higher than a formed pour.</p>
   <div class="grid cols3">${chk("xypex",d.xypex,"Penetron (Xypex) waterproofing additive","xypex")}</div>`;
   let reo=`<div class="grid cols3">${F("Mesh type",selOpts("meshType",d.meshType,Object.keys(MESHTYPES).map(m=>[m,m]),true))}${F("Layers",inpNumR("meshLayers",d.meshLayers))}${chk("meshLap",d.meshLap,"Include lap allowance (%)","meshLap")}</div>
   ${layerTypeSelects(d,"meshLayers","meshType","meshLayerTypes",(f,v)=>selOpts(f,v,Object.keys(MESHTYPES).map(m=>[m,m])),"mesh type")}
@@ -5333,7 +5340,9 @@ function computeShotWall(inst,def){
   let d=inst.data, lines=[];
   let Lm=num(d.length)/1000, Hm=num(d.height)/1000, Tm=num(d.thickness)/1000;
   let area=Lm*Hm, vol=area*Tm;
-  lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete (shotcrete)`,spec:`${d.thickness}mm thick, sprayed`,qty:vol,unit:"m³",waste:20,finalQty:withWaste(vol,20),formula:`${fmt(Lm,1)}×${fmt(Hm,1)}×${fmt(Tm,2)} (+20% overspray/rebound)`}));
+  let grade=(d.grade===undefined||d.grade==="")? PROJECT.grade : d.grade;
+  let sprayWaste=(d.concreteWasteOverride===undefined||d.concreteWasteOverride==="")? 20 : num(d.concreteWasteOverride);
+  lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${grade} concrete (shotcrete)`,spec:`${d.thickness}mm thick, sprayed`,qty:vol,unit:"m³",waste:sprayWaste,finalQty:withWaste(vol,sprayWaste),formula:`${fmt(Lm,1)}×${fmt(Hm,1)}×${fmt(Tm,2)} (+${fmt(sprayWaste,0)}% overspray/rebound)`}));
   if(d.xypex) lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:"Penetron (Xypex) additive",spec:"Waterproofing admixture",qty:vol,unit:"m³",waste:0,finalQty:vol,formula:"same volume as shotcrete"}));
   // one line per DISTINCT layer material — layers can be different products
   let meshLapPct=d.meshLap?MESH_LAP_PCT:0;
