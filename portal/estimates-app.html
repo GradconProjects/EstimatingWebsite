@@ -4132,6 +4132,7 @@ function extraBeamGroupBlock(inst,d,arrName,g,i){
     ${F("Run length (m) — manual, from the drawing",inpNum(base+"len",g.len))}
     ${F("Beam width (mm)",inpNum(base+"width",g.width))}
     ${F("Cover (mm, blank = element cover)",inpNum(base+"cover",g.cover))}
+    ${F("Concrete grade (N, blank = beam grade / slab grade)",inpNum(base+"grade",g.grade))}
    </div>
    <div class="grid cols4">
     ${F("Depth entered as",selOpts(base+"depthMode",geo.mode,[["extra","Extra depth below slab (drop)"],["overall","Overall beam depth (incl. slab)"]],true))}
@@ -4653,7 +4654,7 @@ function renderSlab(inst,def){
    ${F("Total step-down length (m)",inpNum("sdLength",d.sdLength))}${F("Step depth (mm)",inpNum("sdDepth",d.sdDepth))}${F("Dowel size",barSizeSel("sdDia",d.sdDia))}${F("Spacing (mm)",inpNum("sdSpacing",d.sdSpacing))}
   </div>${sdBarShapeUI(d,num(d.sdProj1)+num(d.sdProj2))}${sdSetupFields(d)}<div class="tip"><span class="ico">🏗️</span><div>Split-level slabs (a sunken wet area, a stepped car park deck) need dowels across the step or the two pours act independently under load. Size and space dowels the same way you'd detail a construction joint — this is the item estimators most often forget because it's buried in a section detail, not called up on the reinforcement schedule.</div></div></div>`;
   let concExtras = `<div class="subsec"><div class="sechead">Pour Details</div><div class="grid cols4">${chk("drops",d.drops,"Drops")}${chk("setdowns",d.setdowns,"Setdowns / recesses")}${chk("upstands",d.upstands,"Upstands")}</div></div>`;
-  return {geom: geom + edgeThickenGeom + wallThickenGeom, conc:concSection(d,"<p class='small'>Concrete = area × thickness (area = L×W unless manually entered)</p>")+concExtras,reo:reo+steps,
+  return {geom: geom + edgeThickenGeom + wallThickenGeom, conc:concSection(d,"<p class='small'>Concrete = area × thickness (area = L×W unless manually entered)</p>")+`<div class="grid cols3">${F("Beam / thickening concrete grade (N/MPa, blank = slab grade)",inpNum("beamGrade",d.beamGrade))}</div><p class="small">Edge beams, internal beams / raft ribs, edge and wall thickenings are often poured at a different grade to the slab — enter it here and every beam line carries it as its own concrete product (each beam group can also set its own grade on its tab). Blank keeps the slab grade.</p>`+concExtras,reo:reo+steps,
    edgebeams: edgeBeamGeom + edgeBeamReoBlock + extraBeamGroupsSection(inst,d,"edgeBeamGroups"),
    intbeams: stripGeom + stripReoBlock + extraBeamGroupsSection(inst,d,"intBeamGroups"),
    form,
@@ -4666,6 +4667,15 @@ function openRowHtml(i,r){
 function barSchedRowHtml(prefix,i,r){
   let count = Math.max(0,Math.floor((num(r.span)*1000)/Math.max(1,num(r.spacing,200)))+1);
   return `<tr data-row="${prefix}Bars.${i}"><td>${inpText(`${prefix}Bars.${i}.mark`,r.mark)}</td><td style="width:110px">${barSizeSel(`${prefix}Bars.${i}.dia`,r.dia)}</td><td style="width:90px">${inpNum(`${prefix}Bars.${i}.span`,r.span)}</td><td style="width:90px">${inpNum(`${prefix}Bars.${i}.spacing`,r.spacing)}</td><td style="width:90px">${inpNum(`${prefix}Bars.${i}.len`,r.len)}</td><td style="width:70px" class="small">${count}</td><td><button class="btn small danger" data-action="delRow" data-target="${prefix}Bars" data-idx="${i}">✕</button></td></tr>`;
+}
+/* Concrete grade for a slab's beam-type pours: the beam group's own grade,
+ * else the element's beam / thickening grade, else the slab grade — so a
+ * raft with N32 slab and N40 edge beams lists two concrete products and the
+ * pour schedule keeps them apart. */
+function slabBeamGrade(d,g){
+  if(g && g.grade!==undefined && g.grade!=="" && g.grade!==null) return g.grade;
+  if(d.beamGrade!==undefined && d.beamGrade!=="" && d.beamGrade!==null) return d.beamGrade;
+  return d.grade;
 }
 function computeSlab(inst,def){
   let d=inst.data, lines=[];
@@ -4717,7 +4727,7 @@ function computeSlab(inst,def){
     let secArea = sectionAreaM2(shape,d.edgeThickenWidth,d.edgeThickenExtraDepth,d.etBaseW,sketchArea);
     let shapeLabel = sectionLabel(shape,d.edgeThickenWidth,d.edgeThickenExtraDepth,d.etBaseW,sketchArea,d.etSides);
     let edgeVol=etRun*secArea;
-    if(edgeVol>0) lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:"Edge thickening (perimeter strip)",qty:edgeVol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(edgeVol,concWastePct(d)),formula:`${runSrc}(${fmt(etRun,1)}m)×${shapeLabel}`}));
+    if(edgeVol>0) lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${slabBeamGrade(d)} concrete`,spec:"Edge thickening (perimeter strip)",qty:edgeVol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(edgeVol,concWastePct(d)),formula:`${runSrc}(${fmt(etRun,1)}m)×${shapeLabel}`}));
   }
   // THICKENING UNDER LOAD-BEARING WALLS — a band of extra concrete where an
   // internal wall lands on the slab, on every slab type. Run is measured off
@@ -4728,7 +4738,7 @@ function computeSlab(inst,def){
     let wArea=sectionAreaM2(wShape,d.wallThickenWidth,d.wallThickenDepth,d.wallThickenBaseW,etSectionAreaM2(d));
     let wVol=wRun*wArea;
     if(wVol>0){
-      lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:"Thickening under load-bearing walls",qty:wVol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(wVol,concWastePct(d)),formula:`wall run(${fmt(wRun,1)}m)×${sectionLabel(wShape,d.wallThickenWidth,d.wallThickenDepth,d.wallThickenBaseW,etSectionAreaM2(d),d.wallThickenSides)}`}));
+      lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${slabBeamGrade(d)} concrete`,spec:"Thickening under load-bearing walls",qty:wVol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(wVol,concWastePct(d)),formula:`wall run(${fmt(wRun,1)}m)×${sectionLabel(wShape,d.wallThickenWidth,d.wallThickenDepth,d.wallThickenBaseW,etSectionAreaM2(d),d.wallThickenSides)}`}));
     }
     if(d.wallThickenReo && wRun>0){
       let n=num(d.wallThickenBars,2), dia=d.wallThickenDia||"N12";
@@ -4760,7 +4770,7 @@ function computeSlab(inst,def){
       let ebShape=d.edgeBeamShape||"rect";
       let ebArea=sectionAreaM2(ebShape,ebW,extraMm,d.edgeBeamBaseW,etSectionAreaM2(d));
       let vol=ebRun*ebArea;
-      if(vol>0 && !legacy) lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:"Edge beam",qty:vol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(vol,concWastePct(d)),formula:`run(${fmt(ebRun,1)}m)×${sectionLabel(ebShape,ebW,extraMm,d.edgeBeamBaseW,etSectionAreaM2(d),d.edgeBeamSides)}${mode==="overall"?` (overall ${entered}−slab ${num(d.thickness,150)})`:""}`}));
+      if(vol>0 && !legacy) lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${slabBeamGrade(d)} concrete`,spec:"Edge beam",qty:vol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(vol,concWastePct(d)),formula:`run(${fmt(ebRun,1)}m)×${sectionLabel(ebShape,ebW,extraMm,d.edgeBeamBaseW,etSectionAreaM2(d),d.edgeBeamSides)}${mode==="overall"?` (overall ${entered}−slab ${num(d.thickness,150)})`:""}`}));
       raftBeamGroupLines(inst,def,lines,d,{
         label:"Edge beam", runM:ebRun, widthMm:ebW, coverMm:d.edgeBeamCover, secDepthMm:secD,
         reoOn:d.edgeBeamReo, trench:d.edgeBeamTrenchMesh, trenchLap:d.edgeBeamLap,
@@ -4780,7 +4790,7 @@ function computeSlab(inst,def){
     let bsShape=d.beamStripsShape||"rect";
     let bsArea=sectionAreaM2(bsShape,d.beamStripsWidth,d.beamStripsExtraDepth,d.beamStripsBaseW,etSectionAreaM2(d));
     let beamVol=num(d.beamStripsLength)*bsArea;
-    lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:"Internal beam strips (raft ribs)",qty:beamVol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(beamVol,concWastePct(d)),formula:`run length(${fmt(num(d.beamStripsLength),1)}m)×${sectionLabel(bsShape,d.beamStripsWidth,d.beamStripsExtraDepth,d.beamStripsBaseW,etSectionAreaM2(d),d.beamStripsSides||"both")}`}));
+    lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${slabBeamGrade(d)} concrete`,spec:"Internal beam strips (raft ribs)",qty:beamVol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(beamVol,concWastePct(d)),formula:`run length(${fmt(num(d.beamStripsLength),1)}m)×${sectionLabel(bsShape,d.beamStripsWidth,d.beamStripsExtraDepth,d.beamStripsBaseW,etSectionAreaM2(d),d.beamStripsSides||"both")}`}));
     // Internal beams — the FULL standalone-Ground-Beam parameter set over
     // the combined run: per-row bar sets with anchorages, trench mesh with
     // per-layer products, ligature zones, optional trench excavation.
@@ -4811,7 +4821,7 @@ function computeSlab(inst,def){
       let sides=g.secSides||kind.dfltSides;
       let area=sectionAreaM2(shape,geo.widthMm,geo.extraMm,g.secBaseW,etSectionAreaM2(d));
       let vol=geo.runM*area;
-      if(vol>0) lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:label,qty:vol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(vol,concWastePct(d)),formula:`run(${fmt(geo.runM,1)}m)×${sectionLabel(shape,geo.widthMm,geo.extraMm,g.secBaseW,etSectionAreaM2(d),sides)}${geo.mode==="overall"?` (overall ${geo.entered}−slab ${geo.slabT})`:""}`}));
+      if(vol>0) lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${slabBeamGrade(d,g)} concrete`,spec:label,qty:vol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(vol,concWastePct(d)),formula:`run(${fmt(geo.runM,1)}m)×${sectionLabel(shape,geo.widthMm,geo.extraMm,g.secBaseW,etSectionAreaM2(d),sides)}${geo.mode==="overall"?` (overall ${geo.entered}−slab ${geo.slabT})`:""}`}));
       raftBeamGroupLines(inst,def,lines,d,{
         src:g,
         label, runM:geo.runM, widthMm:geo.widthMm, coverMm:g.cover, secDepthMm:geo.secDepthMm,

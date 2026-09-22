@@ -538,6 +538,11 @@ element families waits on the owner's approval of the pad footing.
   into adjoining bored piers — filtered to `pier`, piers = typed or the
   linked pier element's qty via `shotPierCount`), each emitting one
   Connections line counted on the wall only.
+- **Slab beam grades** (`slabBeamGrade(d, g)`): edge beams, internal beams
+  / raft ribs, edge and wall thickenings take `beamGrade` (Concrete tab,
+  blank = slab `grade`) and each extra beam group can carry its own `grade`;
+  the slab line and blinding keep the slab grade, so the pour schedule
+  separates the products.
 - **Stairs** (`stairGeom(d)`, `STAIR_SHAPES`): straight, L (quarter-turn),
   U / dog-leg, multi-flight, winder, spiral (newel + outer radius, turn), curved
   (centreline radius, turn) and irregular (measured overrides; an old
