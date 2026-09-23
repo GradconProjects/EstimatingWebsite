@@ -507,7 +507,15 @@ element families waits on the owner's approval of the pad footing.
   project; rows jump to their source section (`openLineSource` →
   `lineSection`); saved views (`gradcon-estimate-register-views`) and hidden
   columns (`gradcon-estimate-register-cols`) are per-browser preferences;
-  "Export filtered view" exports exactly the rows shown.
+  "Export filtered view" exports exactly the rows shown. **Materials
+  Summary** (`summarizeByMaterial`, `renderMaterialSummary`): one row per
+  group::material::unit for the rows shown — every concrete grade, bar size,
+  mesh type, formwork type, blinding material… on its own line with net,
+  final, kg and element count, an "All <group>" row when the units agree,
+  a CSV export, and a click that sets the **Material** select
+  (`filterMaterial`, `matKey(l)`, saved in views as `mat`).
+  `concreteGradeStr` puts the per-grade split on element heads (card and
+  register) and in the totals whenever more than one grade is present.
 
 ## Estimates geometry options: wall shapes, stair forms, reinforcement by rate
 

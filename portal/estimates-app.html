@@ -465,6 +465,12 @@ table.results tr[data-line-inst]:hover td{background:rgba(217,161,59,.16);}
 .reg-elpanel label.el{display:flex;gap:6px;align-items:center;padding:2px 4px;border-radius:6px;cursor:pointer;}
 .reg-elpanel label.el:hover{background:rgba(0,0,0,.05);}
 .reg-elpanel label.el input{width:14px;height:14px;}
+.mat-summary{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start;}
+.mat-table{width:auto;min-width:300px;font-size:12px;}
+.mat-table tr.mat-row{cursor:pointer;}
+.mat-table tr.mat-row:hover td{background:rgba(0,0,0,.04);}
+.mat-table tr.mat-row.on td{background:rgba(207,75,68,.12);}
+.mat-table tr.mat-total td{font-weight:700;border-top:1px solid var(--line);}
 .reg-cols{display:flex;gap:8px;flex-wrap:wrap;font-size:11px;}
 .reg-cols label{display:inline-flex;gap:3px;align-items:center;}
 table.results.hide-col-1 th:nth-child(1),table.results.hide-col-1 td:nth-child(1),table.results.hide-col-2 th:nth-child(2),table.results.hide-col-2 td:nth-child(2),table.results.hide-col-10 th:nth-child(10),table.results.hide-col-10 td:nth-child(10),table.results.hide-col-11 th:nth-child(11),table.results.hide-col-11 td:nth-child(11),table.results.hide-col-12 th:nth-child(12),table.results.hide-col-12 td:nth-child(12),table.results.hide-col-13 th:nth-child(13),table.results.hide-col-13 td:nth-child(13),table.results.hide-col-15 th:nth-child(15),table.results.hide-col-15 td:nth-child(15),table.results.hide-col-16 th:nth-child(16),table.results.hide-col-16 td:nth-child(16),table.results.hide-col-17 th:nth-child(17),table.results.hide-col-17 td:nth-child(17){display:none;}
@@ -600,6 +606,7 @@ table.results th:nth-child(3),table.results td:nth-child(3){position:sticky;left
     <div class="filterbar">
       <select id="filterCategory"></select>
       <select id="filterMaterialGroup"></select>
+      <select id="filterMaterial" title="One material — a concrete grade, a bar size, a mesh type, a formwork type…"></select>
       <input type="text" id="filterSearch" placeholder="Search element / material / warning...">
       <details class="reg-elpick" id="regElPick"><summary class="btn small" id="regElSummary" title="Tick the elements to show — any mix of the elements entered in the Workspace">Elements: all ▾</summary><div class="reg-elpanel" id="regElPanel"></div></details>
       <select id="regGroupBy" title="Group rows by"><option value="element">Group: element</option><option value="materialGroup">Group: material group</option><option value="category">Group: category</option><option value="level">Group: level</option><option value="zone">Group: zone</option><option value="pour">Group: pour</option></select>
@@ -614,7 +621,9 @@ table.results th:nth-child(3),table.results td:nth-child(3){position:sticky;left
       <span style="flex:1"></span>
       <button class="btn small" type="button" onclick="exportRegisterCSV(true)" title="CSV of exactly the rows shown, in this order">⬇ Export filtered view</button>
       <button class="btn small" type="button" onclick="exportRegisterCSV(false)" title="CSV of the complete register">⬇ Export complete register</button>
+      <button class="btn small" type="button" onclick="exportMaterialSummaryCSV()" title="CSV of the Materials Summary below — one row per material, for the rows currently shown">⬇ Export materials summary</button>
     </div>
+    <div class="subsec" id="registerMaterialSummary"></div>
     <div class="subsec" id="registerReoSummary"></div>
     <div style="overflow-x:auto;max-height:70vh;overflow-y:auto;border:1px solid var(--line);border-radius:8px;">
       <table class="results" id="registerTable"></table>
@@ -6779,8 +6788,8 @@ const REG_COLUMNS=[[1,"Stage"],[2,"Category"],[10,"Waste %"],[11,"Lap %"],[12,"M
 function regHiddenCols(){ try{ return JSON.parse(localStorage.getItem(REG_COLS_KEY))||[]; }catch(e){ return []; } }
 function setRegHiddenCols(list){ try{ localStorage.setItem(REG_COLS_KEY, JSON.stringify(list)); }catch(e){} }
 function regViews(){ try{ return JSON.parse(localStorage.getItem(REG_VIEWS_KEY))||[]; }catch(e){ return []; } }
-function regState(){ return { cat:document.getElementById("filterCategory").value, mg:document.getElementById("filterMaterialGroup").value, q:document.getElementById("filterSearch").value, groupBy:document.getElementById("regGroupBy").value, chip:REG_CHIP, els:regElementsSelected(), cols:regHiddenCols() }; }
-function applyRegState(v){ document.getElementById("filterCategory").value=v.cat||""; document.getElementById("filterMaterialGroup").value=v.mg||""; document.getElementById("filterSearch").value=v.q||""; document.getElementById("regGroupBy").value=v.groupBy||"element"; REG_CHIP=v.chip||{}; setRegElements(Array.isArray(v.els)? v.els : []); renderRegElementPicker(); if(Array.isArray(v.cols)) setRegHiddenCols(v.cols); renderRegisterTable(); }
+function regState(){ return { cat:document.getElementById("filterCategory").value, mg:document.getElementById("filterMaterialGroup").value, mat:document.getElementById("filterMaterial").value, q:document.getElementById("filterSearch").value, groupBy:document.getElementById("regGroupBy").value, chip:REG_CHIP, els:regElementsSelected(), cols:regHiddenCols() }; }
+function applyRegState(v){ document.getElementById("filterCategory").value=v.cat||""; document.getElementById("filterMaterialGroup").value=v.mg||""; document.getElementById("filterMaterial").value=v.mat||""; document.getElementById("filterSearch").value=v.q||""; document.getElementById("regGroupBy").value=v.groupBy||"element"; REG_CHIP=v.chip||{}; setRegElements(Array.isArray(v.els)? v.els : []); renderRegElementPicker(); if(Array.isArray(v.cols)) setRegHiddenCols(v.cols); renderRegisterTable(); }
 function saveRegisterView(){
   const host=document.getElementById("regViews");
   const m=openMiniMenu(host, `<div class="mm-head">Save view</div><input type="text" data-mm-name placeholder="View name"><button class="item" data-mm="save">💾 Save</button>`, (b,m)=>{ const name=(m.querySelector('[data-mm-name]').value||"").trim(); if(!name) return true; const views=regViews().filter(x=>x.name!==name); views.push({name, state:regState()}); try{ localStorage.setItem(REG_VIEWS_KEY, JSON.stringify(views)); }catch(e){} renderRegisterViews(name); });
@@ -6812,11 +6821,12 @@ function exportRegisterCSV(filteredOnly){
 }
 function registerFilteredLines(){
   const lines=allLines();
-  const cat=document.getElementById("filterCategory").value, mg=document.getElementById("filterMaterialGroup").value, q=(document.getElementById("filterSearch").value||"").toLowerCase();
+  const cat=document.getElementById("filterCategory").value, mg=document.getElementById("filterMaterialGroup").value, mat=document.getElementById("filterMaterial").value, q=(document.getElementById("filterSearch").value||"").toLowerCase();
   return lines.filter(l=>{
     if(REG_ELEMENTS && !REG_ELEMENTS.has(l.elementId)) return false;
     if(cat && l.category!==cat) return false;
     if(mg && l.materialGroup!==mg) return false;
+    if(mat && matKey(l)!==mat) return false;
     if(REG_CHIP.mg && l.materialGroup!==REG_CHIP.mg) return false;
     if(REG_CHIP.manual && !l.manualOverride) return false;
     if(REG_CHIP.unreviewed){ const inst=INSTANCES.find(i=>i.id===l.elementId); if(inst && isReviewed(inst)) return false; }
@@ -8145,6 +8155,52 @@ function summarizeReinforcement(lines){
 // quantity ALONGSIDE the kg: bars and trench strips in lm, sheet mesh in m²
 // (+ sheet count). Bar/strip kg still sums exactly to the lump register kg
 // (sheet mesh is deliberately weightless there — it's bought per sheet).
+/* One row per MATERIAL — every concrete grade, bar size, mesh type, formwork
+ * type, blinding material, insulation product… — so nothing has to be added
+ * up by hand. Keyed by group, material and unit (a product measured two ways
+ * stays two rows); kg rides along wherever a line carries weight. */
+function matKey(l){ return `${l.materialGroup||""}::${l.material||""}::${l.unit||""}`; }
+function summarizeByMaterial(lines){
+  const groups=new Map();
+  (lines||[]).forEach(l=>{
+    if(!l) return;
+    const g=l.materialGroup||"(none)";
+    if(!groups.has(g)) groups.set(g,new Map());
+    const k=matKey(l); const m=groups.get(g);
+    let e=m.get(k); if(!e){ e={key:k, group:g, material:l.material||"", unit:l.unit||"", qty:0, finalQty:0, kg:0, sheets:0, n:0, elements:new Set()}; m.set(k,e); }
+    e.qty+=num(l.qty); e.finalQty+=num(l.finalQty); e.kg+=num(l.weightKg); e.n++; e.elements.add(l.elementId);
+    if(g==="Reinforcement" && l.unit==="m²") e.sheets+=(l.sheets!==undefined? l.sheets : Math.ceil(num(l.finalQty)/MESH_SHEET_AREA_M2));
+  });
+  const order=["Concrete","Reinforcement","Formwork","Base/Blinding","Vapour Barrier","Insulation","Excavation","Connections"];
+  const gi=(g)=>{ const i=order.indexOf(g); return i<0? order.length : i; };
+  return [...groups.keys()].sort((a,b)=>gi(a)-gi(b) || a.localeCompare(b)).map(g=>({group:g, rows:[...groups.get(g).values()].sort((a,b)=>a.material.localeCompare(b.material,undefined,{numeric:true}) || a.unit.localeCompare(b.unit))}));
+}
+/* "N25 30.2m³ · N32 6.47m³" — concrete by grade, for element heads and totals */
+function concreteGradeStr(lines){
+  const byG=new Map();
+  (lines||[]).forEach(l=>{ if(!l || l.materialGroup!=="Concrete" || !(num(l.finalQty)>0)) return; const k=l.material||"Concrete"; byG.set(k,(byG.get(k)||0)+num(l.finalQty)); });
+  if(byG.size<2) return "";
+  return [...byG.entries()].sort((a,b)=>a[0].localeCompare(b[0],undefined,{numeric:true})).map(([m,v])=>`${m.replace(/\s*concrete\s*/i,' ').trim()} ${fmt(v,2)}m³`).join(' · ');
+}
+function renderMaterialSummary(filtered, lines){
+  const host=document.getElementById("registerMaterialSummary"); if(!host) return;
+  const sum=summarizeByMaterial(filtered);
+  if(!sum.length){ host.innerHTML=""; return; }
+  const scope=filtered.length===lines.length? "project-wide" : "filtered rows";
+  const cur=document.getElementById("filterMaterial").value;
+  host.innerHTML=`<div class="sechead">Materials Summary — ${scope}, one row per material (every concrete grade, bar size, mesh type, formwork type… on its own line; click a row to show only that material)</div>
+   <div class="mat-summary">${sum.map(({group,rows})=>`<table class="results mat-table" data-mat-group="${bpEsc(group)}"><thead><tr><th><span class="pill ${pillClass(group)}">${bpEsc(group)}</span></th><th>Net</th><th>Final</th><th>Unit</th><th>kg</th><th>Elem.</th></tr></thead><tbody>
+     ${rows.map(r=>`<tr class="mat-row ${cur===r.key?'on':''}" data-mat-key="${bpEsc(r.key)}" title="Show only this material"><td>${bpEsc(r.material)}${r.sheets?` <span class="small">(${r.sheets} sheet${r.sheets===1?'':'s'})</span>`:''}</td><td style="text-align:right;">${fmt(r.qty,2)}</td><td style="text-align:right;"><b>${fmt(r.finalQty,2)}</b></td><td>${bpEsc(r.unit)}</td><td style="text-align:right;">${r.kg? fmt(r.kg,1):''}</td><td style="text-align:right;">${r.elements.size}</td></tr>`).join('')}
+     ${rows.length>1 && new Set(rows.map(r=>r.unit)).size===1? `<tr class="mat-total"><td>All ${bpEsc(group.toLowerCase())}</td><td style="text-align:right;">${fmt(rows.reduce((s,r)=>s+r.qty,0),2)}</td><td style="text-align:right;"><b>${fmt(rows.reduce((s,r)=>s+r.finalQty,0),2)}</b></td><td>${bpEsc(rows[0].unit)}</td><td style="text-align:right;">${rows.some(r=>r.kg)? fmt(rows.reduce((s,r)=>s+r.kg,0),1):''}</td><td></td></tr>` : ''}
+   </tbody></table>`).join('')}</div>`;
+  host.onclick=(e)=>{ const tr=e.target.closest('tr.mat-row'); if(!tr) return; const sel=document.getElementById("filterMaterial"); sel.value = sel.value===tr.dataset.matKey? "" : tr.dataset.matKey; renderRegisterTable(); };
+}
+function exportMaterialSummaryCSV(){
+  const filtered=registerFilteredLines(), all=allLines();
+  const rows=[]; summarizeByMaterial(filtered).forEach(({group,rows:rs})=>rs.forEach(r=>rows.push([group, r.material, numCell(r.qty), numCell(r.finalQty), r.unit, r.kg? numCell(r.kg,1):"", r.sheets||"", r.elements.size, r.n])));
+  const name=`${(PROJECT.name||"Project").replace(/[^a-z0-9]+/gi,'_')}_materials_summary${filtered.length===all.length?'':'_filtered'}.csv`;
+  download(name, toCSV(["Material Group","Material","Net Qty","Final Qty","Unit","Kg","Sheets","Elements","Lines"], rows));
+}
 function reoTypeBreakdownStr(lines){
   let {bars,mesh,strips}=summarizeReinforcement(lines);
   let parts=[];
@@ -8190,7 +8246,7 @@ function refreshCardResults(card,inst){
   let totR=out.lines.filter(l=>l.materialGroup==="Reinforcement").reduce((s,l)=>s+(l.weightKg||0),0);
   let bv=blindingVapourTotals(out.lines);
   let headStats=card.querySelector('.headStats');
-  if(headStats) headStats.innerHTML = ` · ${fmt(totC,2)}m³ concrete · ${fmt(totR,1)}kg reo · ${fmt(totF,2)}m² formwork${bv.blind?` · ${fmt(bv.blind,2)}m³ blinding/base`:''}${bv.vap?` · ${fmt(bv.vap,2)}m² vapour barrier`:''}`;
+  if(headStats) headStats.innerHTML = ` · ${fmt(totC,2)}m³ concrete${concreteGradeStr(out.lines)?` (${concreteGradeStr(out.lines)})`:''} · ${fmt(totR,1)}kg reo · ${fmt(totF,2)}m² formwork${bv.blind?` · ${fmt(bv.blind,2)}m³ blinding/base`:''}${bv.vap?` · ${fmt(bv.vap,2)}m² vapour barrier`:''}`;
   refreshSectionRail(card,inst,out);
   if(SHELL_MODE==="blueprint" && hasAssembly(inst)){
     refresh3D(card,inst);
@@ -8417,10 +8473,14 @@ function renderRegister(){
   let mgs=[...new Set(lines.map(l=>l.materialGroup))];
   if(catSel.options.length!==cats.length+1) catSel.innerHTML=`<option value="">All categories</option>`+cats.map(c=>`<option>${c}</option>`).join('');
   if(mgSel.options.length!==mgs.length+1) mgSel.innerHTML=`<option value="">All material groups</option>`+mgs.map(c=>`<option>${c}</option>`).join('');
+  const matSel=document.getElementById("filterMaterial");
+  { const keep=matSel.value; const sum=summarizeByMaterial(lines);
+    matSel.innerHTML=`<option value="">All materials</option>`+sum.map(({group,rows})=>`<optgroup label="${bpEsc(group)}">${rows.map(r=>`<option value="${bpEsc(r.key)}">${bpEsc(r.material)} (${bpEsc(r.unit)})</option>`).join('')}</optgroup>`).join('');
+    matSel.value=keep; if(matSel.value!==keep) matSel.value=""; }
   if(!document.getElementById("regViews").options.length || document.getElementById("regViews").dataset.ready!=="1"){ renderRegisterViews(""); document.getElementById("regViews").dataset.ready="1"; }
   renderRegElementPicker();
   renderRegisterTable();
-  catSel.oninput=renderRegisterTable; mgSel.oninput=renderRegisterTable;
+  catSel.oninput=renderRegisterTable; mgSel.oninput=renderRegisterTable; matSel.oninput=renderRegisterTable;
   document.getElementById("filterSearch").oninput=renderRegisterTable;
   document.getElementById("regGroupBy").oninput=renderRegisterTable;
   document.getElementById("regViews").onchange=(e)=>{ const v=regViews().find(x=>x.name===e.target.value); if(v) applyRegState(v.state); };
@@ -8465,7 +8525,7 @@ function renderRegisterTable(){
       <tr class="reg-group-head"><td colspan="${REG_COLS}">
         <button class="btn small ghost" data-action="regCollapseToggle" data-key="${bpEsc(mode+":"+key)}" title="Collapse/expand">${collapsed?'▸':'▾'}</button>
         ${title}
-        <span class="small"> · ${fmt(totC,2)}m³ concrete · ${fmt(totR,1)}kg reo${typeStr?` <span style="opacity:.72;">(${typeStr})</span>`:''} · ${fmt(totF,2)}m² formwork${gbv.blind?` · ${fmt(gbv.blind,2)}m³ blinding/base`:''}${gbv.vap?` · ${fmt(gbv.vap,2)}m² vapour barrier`:''} · ${glines.length} line${glines.length===1?'':'s'}</span>
+        <span class="small"> · ${fmt(totC,2)}m³ concrete${concreteGradeStr(glines)?` <span style="opacity:.72;">(${concreteGradeStr(glines)})</span>`:''} · ${fmt(totR,1)}kg reo${typeStr?` <span style="opacity:.72;">(${typeStr})</span>`:''} · ${fmt(totF,2)}m² formwork${gbv.blind?` · ${fmt(gbv.blind,2)}m³ blinding/base`:''}${gbv.vap?` · ${fmt(gbv.vap,2)}m² vapour barrier`:''} · ${glines.length} line${glines.length===1?'':'s'}</span>
         ${inst?`<button class="btn small danger" data-action="regDelete" data-id="${inst.id}" style="float:right;">✕ Remove element</button><button class="btn small" data-action="regOpen" data-id="${inst.id}" style="float:right;margin-right:6px;" title="Open this element in the workspace">↗ Open</button>`:''}
       </td></tr>
       ${collapsed? '' : glines.map(l=>{
@@ -8505,6 +8565,7 @@ function renderRegisterTable(){
     UNDO_CTX=instId+":manualOverrides."+key+"."+sub;
     computeAllAndRefresh();
   };
+  renderMaterialSummary(filtered, lines);
   let reoSummaryHost=document.getElementById("registerReoSummary");
   if(reoSummaryHost){
     let {bars,mesh,strips}=summarizeReinforcement(filtered);
@@ -8539,7 +8600,9 @@ function renderRegisterTable(){
    <div class="stat"><div class="n">${st.n}</div><div class="l">quantity lines</div></div>`;
   const isFiltered=filtered.length!==lines.length;
   let totalsTypeStr=reoTypeBreakdownStr(filtered);
+  const gradeStr=concreteGradeStr(filtered);
   totals.innerHTML = (isFiltered? block(statsOf(filtered),"Filtered rows") : "") + block(statsOf(lines), isFiltered? "Whole project" : "") +
+   (gradeStr? `<div class="small" style="flex-basis:100%;margin-top:2px;"><b>Concrete by grade${isFiltered?' (filtered)':''}:</b> ${gradeStr}</div>` : '') +
    (totalsTypeStr? `<div class="small" style="flex-basis:100%;margin-top:2px;"><b>Reinforcement by type${isFiltered?' (filtered)':''}:</b> ${totalsTypeStr}</div>` : '');
 }
 
