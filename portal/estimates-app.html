@@ -2347,10 +2347,15 @@ function shapeCornerAngle(dirs,lens,k){ const n=dirs.length; if(n<3) return 90; 
 function setShapeCornerAngle(dirs,lens,k,deg){ const n=dirs.length; if(k<0||k>=n-1) return; const turnNew=shapeWinding(dirs,lens)*(180-deg)*Math.PI/180; const turnCur=normTurn(dirs[k+1]-dirs[k]); const delta=turnNew-turnCur; for(let j=k+1;j<n;j++) dirs[j]=dirs[j]+delta; }
 /** The sketched elevation, or null when the wall is not sketched: face area
  * (m²), overall length L and tallest height H (m), misclose (mm). */
-function elevGeom(d){
-  if(!(d && d.elevOn && Array.isArray(d.elevDirs) && d.elevDirs.length>=3)) return null;
-  const dirs=d.elevDirs, lens=d.elevLens||[]; const b=shapeBounds(dirs,lens);
-  return {areaM2: shapeArea(dirs,lens)/1e6, L: b.w/1000, H: b.h/1000, misclose: shapeMisclose(dirs,lens), sides: dirs.length};
+function elevGeom(d,fbL,fbH){
+  if(!(d && d.elevOn)) return null;
+  const has=Array.isArray(d.elevDirs) && d.elevDirs.length>=3, ov=num(d.elevAreaM2);
+  if(!has && !(ov>0)) return null;
+  let g;
+  if(has){ const dirs=d.elevDirs, lens=d.elevLens||[]; const b=shapeBounds(dirs,lens); g={areaM2: shapeArea(dirs,lens)/1e6, L: b.w/1000, H: b.h/1000, misclose: shapeMisclose(dirs,lens), sides: dirs.length}; }
+  else g={areaM2:0, L:num(fbL), H:num(fbH), misclose:0, sides:0};   // an entered area with no sketch: length and height stay the wall's own
+  if(ov>0){ g.sketchArea=g.areaM2; g.areaM2=ov; g.manual=true; }   // the typed face area beats the sketch and length × height
+  return g;
 }
 /* The labelled drawing: sides A, B, C… with their lengths, the interior angle
  * at every corner, the overall length and height as dimension lines, and the
@@ -2372,7 +2377,7 @@ function elevSVG(d,title){
   return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:380px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;">
     <text x="${W/2}" y="14" font-size="10" font-weight="700" text-anchor="middle" fill="var(--text)">${bpEsc(title||"Wall elevation — one face")}</text>
     <path d="${path}" fill="rgba(47,84,72,.12)" stroke="var(--accent)" stroke-width="1.6"/>${corners}${sides}${dims}</svg>
-   <div class="small" style="margin-top:4px;">Measured off the sketch: <b>${fmt(g.areaM2,2)} m²</b> face area · <b>${fmt(g.L,2)} m</b> long · <b>${fmt(g.H,2)} m</b> tallest${g.misclose>25?` · <span style="color:var(--danger);">misclose ${Math.round(g.misclose)} mm — the typed lengths don't quite close the shape</span>`:''}</div>`;
+   <div class="small" style="margin-top:4px;">${g.manual? `Priced off the entered area <b>${fmt(g.areaM2,2)} m²</b> (sketch measures ${fmt(g.sketchArea,2)} m²)` : `Measured off the sketch: <b>${fmt(g.areaM2,2)} m²</b> face area`} · <b>${fmt(g.L,2)} m</b> long · <b>${fmt(g.H,2)} m</b> tallest${g.misclose>25?` · <span style="color:var(--danger);">misclose ${Math.round(g.misclose)} mm — the typed lengths don't quite close the shape</span>`:''}</div>`;
 }
 /** The sketch section every wall carries: the tick, the sketch button, the
  * sides table (length in mm, corner angle after each side) and the drawing. */
@@ -2385,6 +2390,8 @@ function elevationSketchUI(inst,what,tickLabel){
     ${has?`<button class="btn small ghost" data-action="clearElev" type="button">Clear the sketch</button>`:''}
    </div>
    <div class="subsec ${on?'':'hidden'}" data-show-if="elevOn">
+   <div class="grid cols3">${F("Face area override (m², one face — beats the sketch and length × height)",inpNum("elevAreaM2",d.elevAreaM2))}</div>
+   ${!has && num(d.elevAreaM2)>0? `<p class="small">Priced off the entered face area <b>${fmt(num(d.elevAreaM2),2)} m²</b>; the wall's own length and height still set the bar counts.</p>` : ''}
    ${has? `<div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start;">
     <div style="flex:1;min-width:240px;">
      <table class="rows"><thead><tr><th>Side</th><th>Length (mm)</th><th>Corner ∠ after (°)</th></tr></thead>
@@ -2394,7 +2401,7 @@ function elevationSketchUI(inst,what,tickLabel){
      <p class="small">Type each side's TRUE length in mm off the elevation; the shape is rebuilt from the sketched directions. A corner angle can be corrected — every later side turns with it.</p>
     </div>
     <div class="elevHost" style="flex:1;min-width:240px;">${elevSVG(d,`${what[0].toUpperCase()+what.slice(1)} — one face`)}</div>
-   </div>` : `<p class="small">No sketch yet — press <b>Sketch the ${what}</b> and draw the face in one stroke off the elevation: a raked top, a stepped soffit, a gable, a wall that follows the ground. Until then the wall prices as length × height.</p>`}
+   </div>` : (num(d.elevAreaM2)>0? '' : `<p class="small">No sketch yet — press <b>Sketch the ${what}</b> and draw the face in one stroke off the elevation (a raked top, a stepped soffit, a gable, a wall that follows the ground), or type the face area above. Until then the wall prices as length × height.</p>`)}
    </div></div>`;
 }
 function outlinePtRow(i,pt){
@@ -5164,13 +5171,13 @@ function computeWall(inst,def){
   let N=num(d.qty,1), Lm=num(d.length)/1000, Hm=num(d.height)/1000, Tm=num(d.thickness)/1000, cover=num(d.cover);
   // A sketched elevation replaces length × height with the measured face:
   // its bounds give the overall length and tallest height the bar counts use.
-  let ev=elevGeom(d);
+  let ev=elevGeom(d,Lm,Hm);
   if(ev){ Lm=ev.L; Hm=ev.H; }
   let hAvg = ev && Lm>0? ev.areaM2/Lm : Hm;
   let openArea=0; (d.openings||[]).forEach(o=>{ openArea+=(num(o.w)/1000)*(num(o.h)/1000)*num(o.qty,1); });
   let grossArea=(ev? ev.areaM2 : Lm*Hm)-openArea;
   let vol=N*grossArea*Tm;
-  lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:`${d.thickness}mm thick${ev?` — sketched face ${fmt(ev.areaM2,2)} m² (${ev.sides} sides)`:''}`,qty:vol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(vol,concWastePct(d)),formula:`${N}×(${fmt(Lm,1)}×${fmt(Hm,1)} − openings ${fmt(openArea,2)})×${fmt(Tm,2)}`}));
+  lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:`${d.thickness}mm thick${ev?(ev.manual?` — entered face area ${fmt(ev.areaM2,2)} m²`:` — sketched face ${fmt(ev.areaM2,2)} m² (${ev.sides} sides)`):''}`,qty:vol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(vol,concWastePct(d)),formula:`${N}×(${fmt(Lm,1)}×${fmt(Hm,1)} − openings ${fmt(openArea,2)})×${fmt(Tm,2)}`}));
   let fArea=0;
   if(d.formA) fArea+=N*grossArea; if(d.formB) fArea+=N*grossArea;
   if(d.formEnds) fArea+=N*2*Tm*Hm;
@@ -5277,7 +5284,7 @@ function retStemGeom(d){
     else area=L*H;
   }
   else if(shape==="manual"){ area=num(d.stemArea); hMax=H; }
-  else if(shape==="sketch"){ const ev=elevGeom(d); if(ev){ area=ev.areaM2; hMax=ev.H; if(plan==="straight") L=ev.L; } else area=L*H; }
+  else if(shape==="sketch"){ const ev=elevGeom(d,L,H); if(ev){ area=ev.areaM2; hMax=ev.H; if(plan==="straight" && ev.sides) L=ev.L; } else area=L*H; }
   else area=L*H;
   let hAvg=L>0? area/L : 0;
   let footArea = (d.footShape||"rect")==="area"? num(d.footPlanArea) : L*num(d.footL)/1000;   // footing footprint (m²)
@@ -6727,7 +6734,7 @@ function updateUndoButtons(){ const u=document.getElementById("undoBtn"), r=docu
 /* ---- 3. Templates + copy from element + duplicate choices ---- */
 const TEMPLATES_KEY="gradcon-estimate-templates";
 let TEMPLATES=[]; try{ TEMPLATES=JSON.parse(localStorage.getItem(TEMPLATES_KEY))||[]; }catch(e){ TEMPLATES=[]; }
-const DIM_FIELDS=new Set(["qty","length","width","depth","height","dia","diameter","thickness","areaOverride","manualArea","outlinePts","outlineOn","outlineDirs","outlineSideLens","elevOn","elevDirs","elevLens","perimeterOverride","L","W","D","stemH","footL","risers","excDepth","pedW","pedD","pedH"]);
+const DIM_FIELDS=new Set(["qty","length","width","depth","height","dia","diameter","thickness","areaOverride","manualArea","outlinePts","outlineOn","outlineDirs","outlineSideLens","elevOn","elevDirs","elevLens","elevAreaM2","perimeterOverride","L","W","D","stemH","footL","risers","excDepth","pedW","pedD","pedH"]);
 function templateDataFrom(inst){ const d=JSON.parse(JSON.stringify(inst.data||{})); delete d.manualOverrides; delete d.__csvImport; delete d.__csvMeasurement; Object.keys(d).forEach(k=>{ if(/^_/.test(k)) delete d[k]; }); return d; }
 function saveTemplates(){ try{ localStorage.setItem(TEMPLATES_KEY, JSON.stringify(TEMPLATES)); }catch(e){} if(SUPABASE_URL) kvPush(TEMPLATES_KEY, TEMPLATES); }
 async function syncTemplatesFromCloud(){ if(!SUPABASE_URL) return; const row=await kvFetch(TEMPLATES_KEY); if(row && Array.isArray(row.value)){ const byId={}; TEMPLATES.forEach(t=>byId[t.id]=t); row.value.forEach(t=>{ if(!byId[t.id] || (t.updatedAt||"")>(byId[t.id].updatedAt||"")) byId[t.id]=t; }); TEMPLATES=Object.values(byId).sort((a,b)=>(a.name||"").localeCompare(b.name||"")); try{ localStorage.setItem(TEMPLATES_KEY, JSON.stringify(TEMPLATES)); }catch(e){} renderAddToolbar(); } }
@@ -8029,6 +8036,13 @@ function attachCardEvents(card,inst){
       rebuildOutlineFromSides(inst.data);
       let host=card.querySelector('.outlineHost');
       if(host) host.innerHTML=slabOutlineSVG(inst.data);
+    }
+    // live-update the wall elevation sketch as side lengths or the area override are typed
+    if(/^elevLens\./.test(f) || f==="elevAreaM2"){
+      let host=card.querySelector('.elevHost');
+      if(host) host.innerHTML=elevSVG(inst.data, LIB_INDEX[inst.typeKey].calc==="retwall"? "Stem elevation — one face" : "Wall elevation — one face");
+      let closeCell=card.querySelector('.elevCloseAng');
+      if(closeCell && Array.isArray(inst.data.elevDirs)) closeCell.textContent=Math.round(shapeCornerAngle(inst.data.elevDirs,inst.data.elevLens||[],inst.data.elevDirs.length-1))+"° (closes)";
     }
     // live-update the calculated bar count next to a manual bar-schedule row's span/spacing inputs
     let barsRowM = f.match(/^(\w+Bars)\.(\d+)\.(span|spacing)$/);
@@ -9645,6 +9659,33 @@ document.getElementById("bluebeamCsvFile").addEventListener("change",e=>{
 // to 15°, sides labelled A, B, C… and handed back to the card for true
 // lengths to be typed per side.
 let SKETCH={inst:null,card:null,stroke:[],drawing:false};
+/* Snap a side's direction. Square: every side to the nearest 90°. Smart
+ * square (wall faces): a side within 15° of an axis is squared, any other
+ * side is a genuine rake and keeps its angle to the nearest 5° — before this
+ * a raked top was flattened into a rectangle whenever the box was ticked. */
+function snapDir(ang,square,smart){
+  const q=Math.PI/2;
+  if(!square) return Math.round(ang/(Math.PI/12))*(Math.PI/12);
+  const near=Math.round(ang/q)*q;
+  if(!smart || Math.abs(normTurn(ang-near))<=Math.PI/12) return near;
+  return Math.round(ang/(Math.PI/36))*(Math.PI/36);
+}
+/* The stroke → a closed polygon of straight sides: simplify, snap, merge
+ * collinear neighbours. Returns {dirs, lens} in canvas units or {error}. */
+function straightenClosed(stroke,square,smart){
+  let simp=rdpSimplify(stroke,14);
+  if(simp.length>3){ let a=simp[0], b=simp[simp.length-1]; if(Math.hypot(a.x-b.x,a.y-b.y)<40) simp=simp.slice(0,-1); }
+  if(simp.length<3) return {error:"Need at least 3 corners — draw a closed-ish shape."};
+  if(simp.length>14) simp=rdpSimplify(stroke,26).slice(0,14);
+  let pts=simp.map(p=>({x:p.x, y:-p.y}));   // canvas y grows downward — flip so the shape reads like a drawing
+  let n=pts.length, dirs=[], lens=[];
+  for(let i=0;i<n;i++){ let a=pts[i], b=pts[(i+1)%n]; dirs.push(snapDir(Math.atan2(b.y-a.y,b.x-a.x),square,smart)); lens.push(Math.hypot(b.x-a.x,b.y-a.y)); }
+  let mdirs=[],mlens=[];
+  for(let i=0;i<dirs.length;i++){ if(mdirs.length && Math.abs(normTurn(dirs[i]-mdirs[mdirs.length-1]))<1e-9){ mlens[mlens.length-1]+=lens[i]; } else { mdirs.push(dirs[i]); mlens.push(lens[i]); } }
+  if(mdirs.length>3 && Math.abs(normTurn(mdirs[0]-mdirs[mdirs.length-1]))<1e-9){ mlens[0]+=mlens.pop(); mdirs.pop(); }
+  if(mdirs.length<3) return {error:"Squaring the corners flattened this into a line — draw the corners more distinctly, or untick Square corners."};
+  return {dirs:mdirs, lens:mlens, origin:pts[0]};
+}
 function ensureSketchPad(){
   if(document.getElementById("sketchPad")) return;
   let div=document.createElement("div");
@@ -9668,12 +9709,28 @@ function ensureSketchPad(){
   let redraw=()=>{ ctx.clearRect(0,0,cv.width,cv.height); if(SKETCH.stroke.length<2) return;
     ctx.strokeStyle="#cf4b44"; ctx.lineWidth=2.5; ctx.lineJoin="round"; ctx.beginPath();
     SKETCH.stroke.forEach((p,i)=> i? ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y)); ctx.stroke(); };
+  // What the pad READ, drawn over the stroke as soon as the pen lifts (and
+  // again when Square corners is toggled): the straightened sides with their
+  // letters, so a flattened rake is seen before Use, not after.
+  let preview=()=>{ redraw(); const hint=div.querySelector("#sketchHint"); if(SKETCH.stroke.length<3 || SKETCH.mode==="stepbar" || SKETCH.mode==="etrun"){ if(SKETCH.mode!=="stepbar"&&SKETCH.mode!=="etrun") hint.textContent=""; return; }
+    const r=straightenClosed(SKETCH.stroke, div.querySelector("#sketchSquare").checked, SKETCH.mode==="elev");
+    if(r.error){ hint.textContent=r.error; return; }
+    let pts=[{x:r.origin.x, y:r.origin.y}];
+    for(let i=0;i<r.dirs.length-1;i++){ const q=pts[i]; pts.push({x:q.x+Math.cos(r.dirs[i])*r.lens[i], y:q.y+Math.sin(r.dirs[i])*r.lens[i]}); }
+    ctx.save(); ctx.strokeStyle="#2f5448"; ctx.fillStyle="rgba(47,84,72,.10)"; ctx.lineWidth=2; ctx.setLineDash([6,4]); ctx.beginPath();
+    pts.forEach((q,i)=> i? ctx.lineTo(q.x,-q.y):ctx.moveTo(q.x,-q.y)); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.setLineDash([]);
+    ctx.font="bold 13px sans-serif"; ctx.fillStyle="#2f5448"; ctx.textAlign="center";
+    pts.forEach((q,i)=>{ const nx=pts[(i+1)%pts.length]; ctx.fillText(String.fromCharCode(65+i), (q.x+nx.x)/2, -(q.y+nx.y)/2-6); });
+    ctx.restore();
+    const raked=r.dirs.filter(a=>Math.abs(normTurn(a-Math.round(a/(Math.PI/2))*(Math.PI/2)))>1e-6).length;
+    hint.textContent=`Read as ${r.dirs.length} sides A–${String.fromCharCode(64+r.dirs.length)}${raked?` (${raked} raked)`:''} — press Use sketch, then type the true lengths.`; };
   let start=(e)=>{ e.preventDefault(); SKETCH.drawing=true; SKETCH.stroke=[pos(e)]; redraw(); };
   let move=(e)=>{ if(!SKETCH.drawing) return; e.preventDefault(); SKETCH.stroke.push(pos(e)); redraw(); };
-  let end=(e)=>{ SKETCH.drawing=false; };
+  let end=(e)=>{ if(!SKETCH.drawing) return; SKETCH.drawing=false; preview(); };
+  div.querySelector("#sketchSquare").addEventListener("change", preview);
   cv.addEventListener("mousedown",start); cv.addEventListener("mousemove",move); window.addEventListener("mouseup",end);
   cv.addEventListener("touchstart",start,{passive:false}); cv.addEventListener("touchmove",move,{passive:false}); cv.addEventListener("touchend",end);
-  div.querySelector("#sketchClear").onclick=()=>{ SKETCH.stroke=[]; redraw(); };
+  div.querySelector("#sketchClear").onclick=()=>{ SKETCH.stroke=[]; redraw(); div.querySelector("#sketchHint").textContent=""; };
   div.querySelector("#sketchCancel").onclick=()=>{ div.style.display="none"; };
   div.querySelector("#sketchUse").onclick=()=>{
     if(SKETCH.mode==="stepbar" || SKETCH.mode==="etrun"){
@@ -9725,39 +9782,9 @@ function ensureSketchPad(){
       rerenderCardKeepTab(SKETCH.card,SKETCH.inst);
       return;
     }
-    let simp=rdpSimplify(SKETCH.stroke,14);
-    // drop the duplicate closing point if the stroke came back near the start
-    if(simp.length>3){
-      let a=simp[0], b=simp[simp.length-1];
-      if(Math.hypot(a.x-b.x,a.y-b.y)<40) simp=simp.slice(0,-1);
-    }
-    if(simp.length<3){ div.querySelector("#sketchHint").textContent="Need at least 3 corners — draw a closed-ish shape."; return; }
-    if(simp.length>14) simp=rdpSimplify(SKETCH.stroke,26).slice(0,14);
-    // canvas y grows downward — flip so the plan reads like a drawing
-    let pts=simp.map(p=>({x:p.x, y:-p.y}));
-    // sides incl. the closing one. Square corners (the default — most slabs
-    // are rectilinear) snap every direction to 90°; unticked falls back to
-    // 15° so splayed/angled outlines keep their character.
-    let square=div.querySelector("#sketchSquare").checked;
-    let snap=square? Math.PI/2 : Math.PI/12;
-    let n=pts.length, dirs=[], lens=[];
-    for(let i=0;i<n;i++){
-      let a=pts[i], b=pts[(i+1)%n];
-      let ang=Math.atan2(b.y-a.y,b.x-a.x);
-      dirs.push(Math.round(ang/snap)*snap);
-      lens.push(Math.hypot(b.x-a.x,b.y-a.y));
-    }
-    // Snapping can leave consecutive sides pointing the same way (a wobble
-    // the 90° snap flattened) — merge them into one side so every remaining
-    // corner is a real turn.
-    let mdirs=[],mlens=[];
-    for(let i=0;i<dirs.length;i++){
-      if(mdirs.length && Math.abs(normTurn(dirs[i]-mdirs[mdirs.length-1]))<1e-9){ mlens[mlens.length-1]+=lens[i]; }
-      else { mdirs.push(dirs[i]); mlens.push(lens[i]); }
-    }
-    if(mdirs.length>3 && Math.abs(normTurn(mdirs[0]-mdirs[mdirs.length-1]))<1e-9){ mlens[0]+=mlens.pop(); mdirs.pop(); }
-    if(mdirs.length<3){ div.querySelector("#sketchHint").textContent="Squaring the corners flattened this into a line — draw the corners more distinctly, or untick Square corners."; return; }
-    dirs=mdirs; lens=mlens;
+    const read=straightenClosed(SKETCH.stroke, div.querySelector("#sketchSquare").checked, SKETCH.mode==="elev");
+    if(read.error){ div.querySelector("#sketchHint").textContent=read.error; return; }
+    let dirs=read.dirs, lens=read.lens;
     // seed side lengths keeping sketch proportions, longest side = 10 m
     let maxL=Math.max(...lens)||1;
     let seed=lens.map(L=>+(Math.max(0.5,L/maxL*10).toFixed(1)));
@@ -9789,7 +9816,7 @@ function openSketchPad(inst,card,mode){
     div.querySelector("#sketchCopy").textContent="Draw the thickening's CLOSED cross-section in one stroke off the section detail — go right round the profile and finish near where you started. It's straightened into sides A, B, C… including the side that closes the shape, you type each side's true length in mm, and the enclosed AREA × the run prices the concrete.";
   } else if(SKETCH.mode==="elev"){
     div.querySelector("#sketchTitle").textContent="Sketch the wall elevation (one face)";
-    div.querySelector("#sketchCopy").textContent="Draw the wall's FACE in one stroke off the elevation — go right round it and finish near where you started: a raked or stepped top, a soffit that follows the ground, a gable, a notch. It's straightened into sides A, B, C…; you then type each side's true length in mm. Square corners is on for rectilinear walls; untick it for raked lines.";
+    div.querySelector("#sketchCopy").textContent="Draw the wall's FACE in one stroke off the elevation — go right round it and finish near where you started: a raked or stepped top, a soffit that follows the ground, a gable, a notch. It's straightened into sides A, B, C… — sides close to level or plumb are squared, a raked side keeps its slope — and the reading is shown over your stroke before you press Use. You then type each side's true length in mm.";
   } else {
     div.querySelector("#sketchTitle").textContent="Sketch the slab outline";
     div.querySelector("#sketchCopy").textContent="Draw the shape roughly in one stroke — corners don't need to be neat. The app straightens it into sides labelled A, B, C…; you then type the true length of each side, and can adjust any corner's angle afterwards.";

@@ -564,6 +564,16 @@ element families waits on the owner's approval of the pad footing.
   plan) and tallest height come from the sketch. The generic closed-shape
   helpers (`shapePts`, `shapeArea`, `shapeBounds`, `shapeCornerAngle`,
   `setShapeCornerAngle`) are what any future face sketch should reuse.
+  `straightenClosed(stroke, square, smart)` is the ONE stroke → polygon
+  reader for closed sketches (slab outline and wall face): with `smart`
+  (wall faces) a side within 15° of level or plumb is squared and any other
+  side keeps its slope to 5°, so a raked top survives "Square corners"
+  (23 Sep 2026: it used to flatten into a rectangle); the pad previews the
+  reading over the stroke on pen-up. `elevAreaM2` is the face-area
+  override: it beats the sketch and length × height, and with no sketch the
+  wall's own length and height still set the bar counts. Typing a side
+  length or the override refreshes `.elevHost` live through the field
+  handler, like the slab's `.outlineHost`.
 - **Retaining wall scope** (`incStem`, `incBase`, both true when absent):
   the estimator prices the stem alone or the base alone — `baseOff` (a
   linked footing OR base excluded) drops the footing concrete, key,
