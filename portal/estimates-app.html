@@ -2330,6 +2330,73 @@ function setOutlineCornerAngle(d,k,deg){
   for(let j=k+1;j<n;j++) dirs[j]=dirs[j]+delta;
   rebuildOutlineFromSides(d);
 }
+/* ---- WALL ELEVATION SKETCH (concrete wall, retaining wall stem) ----
+ * The wall's FACE drawn on the sketch pad as a closed shape, straightened
+ * into sides A, B, C… whose true lengths are typed in mm — the same machinery
+ * as the slab outline, stored under its own fields (elevOn, elevDirs,
+ * elevLens) so a wall and a slab never share state. The face AREA (shoelace)
+ * is what the wall prices off: concrete = area × thickness, formwork = area
+ * per face, bars from the average height and the area. The overall length
+ * and tallest height fall out of the shape's bounds. */
+function shapePts(dirs,lens){ let pts=[{x:0,y:0}]; for(let i=0;i<dirs.length-1;i++){ let p=pts[i], L=Math.max(0,num(lens[i])); pts.push({x:p.x+Math.cos(dirs[i])*L, y:p.y+Math.sin(dirs[i])*L}); } return pts; }
+function shapeArea(dirs,lens){ return polyArea(shapePts(dirs,lens)); }
+function shapeMisclose(dirs,lens){ const pts=shapePts(dirs,lens); if(pts.length<3) return 0; const closing=Math.hypot(pts[0].x-pts[pts.length-1].x, pts[0].y-pts[pts.length-1].y); return Math.abs(closing-num(lens[dirs.length-1])); }
+function shapeBounds(dirs,lens){ const pts=shapePts(dirs,lens); const xs=pts.map(p=>p.x), ys=pts.map(p=>p.y); return {minX:Math.min(...xs),maxX:Math.max(...xs),minY:Math.min(...ys),maxY:Math.max(...ys),w:Math.max(...xs)-Math.min(...xs),h:Math.max(...ys)-Math.min(...ys)}; }
+function shapeWinding(dirs,lens){ const pts=shapePts(dirs,lens); let t=0; for(let i=0;i<pts.length;i++){ const a=pts[i],b=pts[(i+1)%pts.length]; t+=a.x*b.y-b.x*a.y; } return t>=0? 1 : -1; }
+function shapeCornerAngle(dirs,lens,k){ const n=dirs.length; if(n<3) return 90; const turn=normTurn(dirs[(k+1)%n]-dirs[k]); const interior=180 - shapeWinding(dirs,lens)*turn*180/Math.PI; return ((interior%360)+360)%360; }
+function setShapeCornerAngle(dirs,lens,k,deg){ const n=dirs.length; if(k<0||k>=n-1) return; const turnNew=shapeWinding(dirs,lens)*(180-deg)*Math.PI/180; const turnCur=normTurn(dirs[k+1]-dirs[k]); const delta=turnNew-turnCur; for(let j=k+1;j<n;j++) dirs[j]=dirs[j]+delta; }
+/** The sketched elevation, or null when the wall is not sketched: face area
+ * (m²), overall length L and tallest height H (m), misclose (mm). */
+function elevGeom(d){
+  if(!(d && d.elevOn && Array.isArray(d.elevDirs) && d.elevDirs.length>=3)) return null;
+  const dirs=d.elevDirs, lens=d.elevLens||[]; const b=shapeBounds(dirs,lens);
+  return {areaM2: shapeArea(dirs,lens)/1e6, L: b.w/1000, H: b.h/1000, misclose: shapeMisclose(dirs,lens), sides: dirs.length};
+}
+/* The labelled drawing: sides A, B, C… with their lengths, the interior angle
+ * at every corner, the overall length and height as dimension lines, and the
+ * measured area — everything an estimator checks back against the detail. */
+function elevSVG(d,title){
+  const g=elevGeom(d); if(!g) return `<p class="small">Sketch the face to see it here.</p>`;
+  const dirs=d.elevDirs, lens=d.elevLens||[]; const pts=shapePts(dirs,lens); const b=shapeBounds(dirs,lens);
+  const W=360, H=250, pad=40, sc=Math.min((W-2*pad)/Math.max(1,b.w),(H-2*pad)/Math.max(1,b.h));
+  const X=v=>pad+(v-b.minX)*sc, Y=v=>H-pad-(v-b.minY)*sc;
+  const path=pts.map((p,i)=>`${i?'L':'M'}${X(p.x).toFixed(1)},${Y(p.y).toFixed(1)}`).join(' ')+' Z';
+  const cx=pts.reduce((s,p)=>s+p.x,0)/pts.length, cy=pts.reduce((s,p)=>s+p.y,0)/pts.length;
+  const sides=pts.map((p,i)=>{ const q=pts[(i+1)%pts.length]; const mx=(p.x+q.x)/2, my=(p.y+q.y)/2; const ox=mx-cx, oy=my-cy, n=Math.hypot(ox,oy)||1;
+    return `<text x="${(X(mx)+ox/n*12).toFixed(1)}" y="${(Y(my)-oy/n*12+3).toFixed(1)}" font-size="9.5" font-weight="700" text-anchor="middle" fill="var(--text)">${String.fromCharCode(65+i)} ${Math.round(num(lens[i]))}</text>`; }).join('');
+  const corners=pts.map((p,i)=>{ const k=(i-1+pts.length)%pts.length; const ang=Math.round(shapeCornerAngle(dirs,lens,k)); const ox=p.x-cx, oy=p.y-cy, n=Math.hypot(ox,oy)||1;
+    return `<circle cx="${X(p.x).toFixed(1)}" cy="${Y(p.y).toFixed(1)}" r="2.8" fill="var(--accent)"/><text x="${(X(p.x)-ox/n*11).toFixed(1)}" y="${(Y(p.y)+oy/n*11+3).toFixed(1)}" font-size="8" fill="var(--muted)" text-anchor="middle">${ang}°</text>`; }).join('');
+  const dimY=H-pad+18, dimX=pad-18;
+  const dims=`<line x1="${X(b.minX)}" y1="${dimY}" x2="${X(b.maxX)}" y2="${dimY}" stroke="var(--muted)" stroke-width="1"/><text x="${((X(b.minX)+X(b.maxX))/2).toFixed(1)}" y="${dimY+10}" font-size="9" text-anchor="middle" fill="var(--muted)">length along wall ${Math.round(b.w)} mm →</text>
+    <line x1="${dimX}" y1="${Y(b.minY)}" x2="${dimX}" y2="${Y(b.maxY)}" stroke="var(--muted)" stroke-width="1"/><text transform="translate(${dimX-6},${((Y(b.minY)+Y(b.maxY))/2).toFixed(1)}) rotate(-90)" font-size="9" text-anchor="middle" fill="var(--muted)">height ${Math.round(b.h)} mm ↑</text>`;
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:380px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;">
+    <text x="${W/2}" y="14" font-size="10" font-weight="700" text-anchor="middle" fill="var(--text)">${bpEsc(title||"Wall elevation — one face")}</text>
+    <path d="${path}" fill="rgba(47,84,72,.12)" stroke="var(--accent)" stroke-width="1.6"/>${corners}${sides}${dims}</svg>
+   <div class="small" style="margin-top:4px;">Measured off the sketch: <b>${fmt(g.areaM2,2)} m²</b> face area · <b>${fmt(g.L,2)} m</b> long · <b>${fmt(g.H,2)} m</b> tallest${g.misclose>25?` · <span style="color:var(--danger);">misclose ${Math.round(g.misclose)} mm — the typed lengths don't quite close the shape</span>`:''}</div>`;
+}
+/** The sketch section every wall carries: the tick, the sketch button, the
+ * sides table (length in mm, corner angle after each side) and the drawing. */
+function elevationSketchUI(inst,what,tickLabel){
+  const d=inst.data, on=!!d.elevOn, has=Array.isArray(d.elevDirs)&&d.elevDirs.length>=3;
+  return `<div class="subsec"><div class="sechead">Irregular ${what} — sketch it</div>
+   <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
+    ${chk("elevOn",on,tickLabel||`Irregular ${what}: price off a sketched face instead of length × height`,undefined,true)}
+    <button class="btn small primary" data-action="sketchElev" type="button" title="Draw the face roughly in one stroke — the app straightens it into sides A, B, C… and you type each side's true length in mm">✏️ ${has?'Re-sketch':'Sketch'} the ${what}</button>
+    ${has?`<button class="btn small ghost" data-action="clearElev" type="button">Clear the sketch</button>`:''}
+   </div>
+   <div class="subsec ${on?'':'hidden'}" data-show-if="elevOn">
+   ${has? `<div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start;">
+    <div style="flex:1;min-width:240px;">
+     <table class="rows"><thead><tr><th>Side</th><th>Length (mm)</th><th>Corner ∠ after (°)</th></tr></thead>
+     <tbody>${d.elevDirs.map((ang,i)=>{ const n=d.elevDirs.length; const cAng=Math.round(shapeCornerAngle(d.elevDirs,d.elevLens||[],i));
+       const angCell = i<n-1 ? `<input type="number" step="1" min="1" max="359" value="${cAng}" data-elevang="${i}" style="width:80px" title="Interior angle between side ${String.fromCharCode(65+i)} and side ${String.fromCharCode(65+i+1)}">` : `<span class="small elevCloseAng">${cAng}° (closes)</span>`;
+       return `<tr><td><b>${String.fromCharCode(65+i)}</b> <span class="small">${Math.round((ang*180/Math.PI+360)%360)}°</span></td><td style="width:120px">${inpNum(`elevLens.${i}`,(d.elevLens||[])[i])}</td><td>${angCell}</td></tr>`; }).join('')}</tbody></table>
+     <p class="small">Type each side's TRUE length in mm off the elevation; the shape is rebuilt from the sketched directions. A corner angle can be corrected — every later side turns with it.</p>
+    </div>
+    <div class="elevHost" style="flex:1;min-width:240px;">${elevSVG(d,`${what[0].toUpperCase()+what.slice(1)} — one face`)}</div>
+   </div>` : `<p class="small">No sketch yet — press <b>Sketch the ${what}</b> and draw the face in one stroke off the elevation: a raked top, a stepped soffit, a gable, a wall that follows the ground. Until then the wall prices as length × height.</p>`}
+   </div></div>`;
+}
 function outlinePtRow(i,pt){
   return `<tr data-row="outlinePts.${i}"><td class="small">${i+1}</td><td style="width:110px">${inpNum(`outlinePts.${i}.x`,pt.x)}</td><td style="width:110px">${inpNum(`outlinePts.${i}.y`,pt.y)}</td><td><button class="btn small danger" data-action="delRow" data-target="outlinePts" data-idx="${i}">✕</button></td></tr>`;
 }
@@ -5075,6 +5142,7 @@ function wallDefaults(){ return {
 function renderWall(inst){
   let d=inst.data;
   let geom=`<div class="grid cols4">${F("Quantity",inpNum("qty",d.qty))}${LF("Length (mm)","length",d.length)}${F("Thickness (mm)",inpNum("thickness",d.thickness))}${LF("Height (mm)","height",d.height)}${coverField(inst)}</div>
+  ${elevationSketchUI(inst,"wall elevation")}
   <div class="subsec"><div class="sechead">Openings</div>
   <table class="rows"><thead><tr><th>Label</th><th>Width (mm)</th><th>Height (mm)</th><th>Qty</th><th></th></tr></thead>
   <tbody>${d.openings.map((r,i)=>openRowHtml(i,r)).join('')}</tbody></table>
@@ -5094,10 +5162,15 @@ function renderWall(inst){
 function computeWall(inst,def){
   let d=inst.data, lines=[];
   let N=num(d.qty,1), Lm=num(d.length)/1000, Hm=num(d.height)/1000, Tm=num(d.thickness)/1000, cover=num(d.cover);
+  // A sketched elevation replaces length × height with the measured face:
+  // its bounds give the overall length and tallest height the bar counts use.
+  let ev=elevGeom(d);
+  if(ev){ Lm=ev.L; Hm=ev.H; }
+  let hAvg = ev && Lm>0? ev.areaM2/Lm : Hm;
   let openArea=0; (d.openings||[]).forEach(o=>{ openArea+=(num(o.w)/1000)*(num(o.h)/1000)*num(o.qty,1); });
-  let grossArea=Lm*Hm-openArea;
+  let grossArea=(ev? ev.areaM2 : Lm*Hm)-openArea;
   let vol=N*grossArea*Tm;
-  lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:`${d.thickness}mm thick`,qty:vol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(vol,concWastePct(d)),formula:`${N}×(${fmt(Lm,1)}×${fmt(Hm,1)} − openings ${fmt(openArea,2)})×${fmt(Tm,2)}`}));
+  lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:`${d.thickness}mm thick${ev?` — sketched face ${fmt(ev.areaM2,2)} m² (${ev.sides} sides)`:''}`,qty:vol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(vol,concWastePct(d)),formula:`${N}×(${fmt(Lm,1)}×${fmt(Hm,1)} − openings ${fmt(openArea,2)})×${fmt(Tm,2)}`}));
   let fArea=0;
   if(d.formA) fArea+=N*grossArea; if(d.formB) fArea+=N*grossArea;
   if(d.formEnds) fArea+=N*2*Tm*Hm;
@@ -5109,14 +5182,15 @@ function computeWall(inst,def){
   }
   function barCalc(vflag,vdia,vsp,vlap,hflag,hdia,hsp,hlap,faceLabel){
     if(vflag){
-      let dia=barDiaOf(vdia); let count=Math.floor(num(d.length)/vsp)+1; let barLen=Hm-2*cover/1000+0.4;
+      let dia=barDiaOf(vdia); let count=Math.floor(Lm*1000/vsp)+1; let barLen=hAvg-2*cover/1000+0.4;   // sketched face: bars along the length at the AVERAGE height
       let totLen=N*count*barLen; let wt=totLen*massPerM(dia);
       let lapPct=vlap?PROJECT.lapPct:0;
       lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:vdia,spec:`${faceLabel} vertical`,qty:totLen,unit:"m",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,lapPct),formula:`count(${count})×len×${N}`,notes:`${fmt(wt,1)} kg`}));
     }
     if(hflag){
-      let dia=barDiaOf(hdia); let count=Math.floor(num(d.height)/hsp)+1; let barLen=Lm-2*cover/1000+0.4;
-      let totLen=N*count*barLen; let wt=totLen*massPerM(dia);
+      let dia=barDiaOf(hdia); let count=Math.floor(Hm*1000/hsp)+1; let barLen=Lm-2*cover/1000+0.4;
+      // sketched face: total row length = face area ÷ spacing (+ one bottom row), so a raked or stepped wall is not costed as its bounding rectangle
+      let totLen= ev? N*(grossArea/(hsp/1000)+Lm) : N*count*barLen; let wt=totLen*massPerM(dia);
       let lapPct=hlap?PROJECT.lapPct:0;
       lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:hdia,spec:`${faceLabel} horizontal`,qty:totLen,unit:"m",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,lapPct),formula:`count(${count})×len×${N}`,notes:`${fmt(wt,1)} kg`}));
     }
@@ -5203,30 +5277,35 @@ function retStemGeom(d){
     else area=L*H;
   }
   else if(shape==="manual"){ area=num(d.stemArea); hMax=H; }
+  else if(shape==="sketch"){ const ev=elevGeom(d); if(ev){ area=ev.areaM2; hMax=ev.H; if(plan==="straight") L=ev.L; } else area=L*H; }
   else area=L*H;
   let hAvg=L>0? area/L : 0;
   let footArea = (d.footShape||"rect")==="area"? num(d.footPlanArea) : L*num(d.footL)/1000;   // footing footprint (m²)
   let stemVol = segs.length? segs.reduce((a,g)=>a+g.l*g.h*g.t,0) : area*T;                  // per-segment sections when stepped
   return {shape,plan,L,T,area,hMax,hAvg,segs,footArea,stemVol,battered:!!d.stemBatter};
 }
-function retShapeLabel(shape){ return {rect:"uniform height",taper:"tapered",stepped:"stepped",manual:"irregular (entered area)"}[shape]||"uniform height"; }
+function retShapeLabel(shape){ return {rect:"uniform height",taper:"tapered",stepped:"stepped",manual:"irregular (entered area)",sketch:"irregular (sketched elevation)"}[shape]||"uniform height"; }
 function renderRetWall(inst){
   let d=inst.data;
   let shape=d.stemShape||"rect";
   let thickFields = `${F(d.stemBatter?"Stem thickness at base (mm)":"Stem thickness (mm)",inpNum("stemT",d.stemT))}${d.stemBatter?F("Stem thickness at top (mm)",inpNum("stemTt",d.stemTt===undefined?d.stemT:d.stemTt)):""}`;
   let shapeFields = shape==="taper"? `<div class="grid cols4">${LF("Stem height at start (mm)","stemH",d.stemH)}${LF("Stem height at end (mm)","stemH2",d.stemH2===undefined?1200:d.stemH2)}${thickFields}</div><p class="small">Sloping top: the stem face area is length × the average of the two heights; horizontal bars are taken over that area, vertical bars average the two heights.</p>`
    : shape==="stepped"? `${[1,2,3,4,5,6].map(i=>`<div class="grid cols4">${LF(`Segment ${i} length (mm)`,"segL"+i,d["segL"+i]===undefined?0:d["segL"+i])}${LF(`Segment ${i} height (mm)`,"segH"+i,d["segH"+i]===undefined?0:d["segH"+i])}${F(`Segment ${i} ${d.stemBatter?"base ":""}thickness (mm, blank = ${num(d.stemT)})`,inpNum("segT"+i,d["segT"+i]===undefined?"":d["segT"+i]))}${d.stemBatter?F(`Segment ${i} top thickness (mm, blank = ${num(d.stemTt,num(d.stemT))})`,inpNum("segTt"+i,d["segTt"+i]===undefined?"":d["segTt"+i])):""}</div>`).join('')}<div class="grid cols3">${thickFields}</div><p class="small">Up to six sections along the run, each with its own height and thickness (tick battered for a base and top thickness per section) — a segment with a blank length is ignored, a blank thickness uses the wall thickness above. Stem concrete is the sum of the segments; the wall length becomes the sum of their lengths (the footing, backfill, waterstop and horizontal bars follow it); split a longer wall into two elements if six sections are not enough.</p>`
+   : shape==="sketch"? `${elevationSketchUI(inst,"stem elevation","Price the stem off the sketched face (length and tallest height come from the sketch)")}<div class="grid cols4">${thickFields}</div>`
    : shape==="manual"? `<div class="grid cols4">${F("Stem face area (m², one face, measured off the drawing)",inpNum("stemArea",d.stemArea))}${LF("Tallest stem height (mm)","stemH",d.stemH)}${thickFields}</div><p class="small">Irregular walls — curved tops, raking ends, cut-outs: measure the stem face area straight off the elevation (or a 3D takeoff) and enter it. Stem concrete = area × thickness, stem formwork = 2 × area, vertical bars spread along the wall length at their spacing (average height = area ÷ length), horizontal bars = area ÷ spacing per face. The tallest height only sizes the drawing and the starter lap.</p>`
    : `<div class="grid cols3">${LF("Stem height (mm)","stemH",d.stemH)}${thickFields}</div>`;
   let g=retStemGeom(d), plan=d.planShape||"straight";
   let planFields = plan==="curved"? `<div class="grid cols4">${LF("Centreline radius (mm)","planRadius",d.planRadius===undefined?6000:d.planRadius)}${F("Angle swept (°)",inpNum("planAngle",d.planAngle===undefined?90:d.planAngle))}</div><p class="small">Developed length on the centreline = radius × angle = <b>${fmt(g.L,3)} m</b>; the footing, stem, backfill, waterstop and bars all follow it.</p>`
    : plan==="irregular"? `<div class="grid cols4">${LF("Developed length along the wall (mm)","length",d.length)}${coverField(inst)}</div><p class="small">Dog-legs, kinks, several arcs: enter the total length measured along the wall's centreline.</p>`
    : `<div class="grid cols4">${LF("Wall length (mm)","length",d.length)}${coverField(inst)}</div>`;
-  let geom=`<div class="sechead">Plan shape</div>
+  let geom=`<div class="sechead">Scope — what this element prices</div>
+  <div class="grid cols3">${chk("incStem",d.incStem!==false,"Include the stem",null,true)}${chk("incBase",d.incBase!==false,"Include the base / footing (and its key)",null,true)}</div>
+  <p class="small">${d.incStem===false && d.incBase===false? "Nothing is priced — tick the stem, the base, or both." : d.incStem===false? "Base only: the stem is priced elsewhere (precast, shotcrete, another trade) — no stem concrete, bars, formwork or dowels out." : d.incBase===false? "Stem only: the base is priced elsewhere — no footing concrete, bars, key, excavation or footing formwork." : "Stem and base priced together as one compound element."}</p>
+  <div class="sechead">Plan shape</div>
   <div class="grid cols3">${F("Plan",selOpts("planShape",plan,[["straight","Straight"],["curved","Curved — centreline radius and angle"],["irregular","Irregular — enter the developed length"]],true))}</div>
   ${planFields}${plan==="curved"?`<div class="grid cols4">${coverField(inst)}</div>`:""}
   <div class="sechead">Stem shape</div>
-  <div class="grid cols3">${F("Stem elevation",selOpts("stemShape",shape,[["rect","Uniform section (rectangular elevation)"],["taper","Tapered / sloping top (height varies end to end)"],["stepped","Varying sections along the run (up to 6 segments, each its own height and thickness)"],["manual","Irregular — enter the stem face area"]],true))}</div>
+  <div class="grid cols3">${F("Stem elevation",selOpts("stemShape",shape,[["rect","Uniform section (rectangular elevation)"],["taper","Tapered / sloping top (height varies end to end)"],["stepped","Varying sections along the run (up to 6 segments, each its own height and thickness)"],["manual","Irregular — enter the stem face area"],["sketch","Irregular — sketch the stem elevation (labelled sides, true lengths typed)"]],true))}</div>
   <div class="sechead">Footing Source</div>
   <div class="grid cols3">${F("Footing is",selOpts("footingSource",d.footingSource,[["compound","Cast as part of this element (compound)"],["linked","Already exists — sits on an existing Strip Footing / Ground Beam / Pile Cap"]]))}</div>
   <div class="subsec ${d.footingSource=='linked'?'':'hidden'}" data-show-if="footingSource_linked">
@@ -5260,15 +5339,22 @@ function computeRetWall(inst,def){
   let g=retStemGeom(d);
   let Lm=g.L;
   let linked = d.footingSource==="linked";
-  let footVol = linked? 0 : g.footArea*(num(d.footD)/1000);
-  let stemVol = g.stemVol;
-  let keyVol = (!linked && d.key)? Lm*(num(d.keyD)/1000)*(num(d.keyW)/1000) : 0;
+  // Scope: the estimator can price the stem alone or the base alone (the
+  // other part belongs to another element or trade). A linked footing is a
+  // base priced elsewhere too, so it reads as "base off" for the footing
+  // quantities while keeping its reference line and stem starters.
+  let incStem = d.incStem!==false, baseOff = linked || d.incBase===false;
+  let warnings=[]; if(!incStem && d.incBase===false) warnings.push({text:"Retaining wall scope excludes both the stem and the base — nothing is priced", section:"geom", level:"completeness"});
+  let footVol = baseOff? 0 : g.footArea*(num(d.footD)/1000);
+  let stemVol = incStem? g.stemVol : 0;
+  let keyVol = (!baseOff && d.key)? Lm*(num(d.keyD)/1000)*(num(d.keyW)/1000) : 0;
   let totVol=footVol+stemVol+keyVol;
   let stemNote = (g.shape==="rect" && !g.battered && g.plan==="straight")? "stem vol"
     : g.segs.length? `stem Σ segments ${g.segs.map(sg=>`${fmt(sg.l,2)}×${fmt(sg.h,2)}×${fmt(sg.t*1000,0)}`).join(" + ")} (${g.plan!=="straight"?`${g.plan} plan, `:""}face ${fmt(g.area,2)} m²)`
     : `stem face area ${fmt(g.area,2)} m² (${retShapeLabel(g.shape)}${g.plan!=="straight"?`, ${g.plan} plan ${fmt(Lm,2)} m`:""}) × ${fmt(g.T*1000,0)} ${g.battered?"mean ":""}thick`;
   let footNote = (d.footShape||"rect")==="area"? `footing plan area ${fmt(g.footArea,2)} m² × ${fmt(num(d.footD),0)} deep` : "footing vol";
-  lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:linked?"Stem only (footing linked)":"Footing+stem+key",qty:totVol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(totVol,concWastePct(d)),formula:linked?`${stemNote} only`:`${footNote} + ${stemNote} + key vol`}));
+  let scopeSpec = linked? "Stem only (footing linked)" : (!incStem? "Base only (stem excluded)" : (d.incBase===false? "Stem only (base excluded)" : "Footing+stem+key"));
+  if(totVol>0) lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:scopeSpec,qty:totVol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(totVol,concWastePct(d)),formula:linked?`${stemNote} only`:`${footNote} + ${stemNote} + key vol`}));
   if(linked){
     let tgt=targetLabelOf(d.footingTarget);
     lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:"(reference only)",spec:"Footing concrete/reinforcement/excavation counted at linked element — not duplicated here",qty:0,unit:"",waste:0,finalQty:0,formula:"",linkedElement:tgt}));
@@ -5277,7 +5363,7 @@ function computeRetWall(inst,def){
       let totLen=Math.floor(num(d.length)/200)*len; let wt=totLen*massPerM(dia);
       lines.push(baseLine(inst,def,{materialGroup:"Connections",material:d.stemStarterDia,spec:"Stem starter bars → "+(tgt||"(unlinked)"),qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:"bars along length × (embed+lap)/1000",linkedElement:tgt,notes:`${fmt(wt,1)} kg`}));
     }
-  } else {
+  } else if(!baseOff){
     let excVol=(d.footShape||"rect")==="area"? (g.footArea+0.3*Lm+0.3*(g.footArea/Math.max(0.1,Lm)))*(num(d.footD)/1000+0.15) : Lm*(num(d.footL)/1000+0.3)*(num(d.footD)/1000+0.15);
     lines.push(baseLine(inst,def,{materialGroup:"Excavation",material:"Bulk excavation",spec:"",qty:excVol,unit:"m³",waste:0,finalQty:excVol,formula:"oversized footing envelope"}));
     lines.push(spoilLine(inst,def,excVol));
@@ -5303,7 +5389,7 @@ function computeRetWall(inst,def){
     let wt=totLen*massPerM(d2); let lapPct=lapFlag?PROJECT.lapPct:0;
     lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:dia,spec:label,qty:totLen,unit:"m",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,lapPct),formula,notes:`${fmt(wt,1)} kg`}));
   }
-  if(!linked){
+  if(!baseOff){
     bars(d.footBotX,d.footBotXSp,(num(d.footL))/1000,"Footing bottom X bars",d.footBotXLap);
     bars(d.footBotY,d.footBotYSp,Lm,"Footing bottom Y bars (distribution)",d.footBotYLap);
     if(d.footTop){
@@ -5311,18 +5397,21 @@ function computeRetWall(inst,def){
       bars(d.footTopY||"N16",num(d.footTopYSp,200),Lm,"Footing top Y bars (distribution)",d.footTopYLap);
     }
   }
-  stemBars(d.stemVertDia,d.stemVertSp,true,"Stem vertical bars (both faces, incl. lap into footing)",d.stemVertLap);
-  stemBars(d.stemHorDia,d.stemHorSp,false,"Stem horizontal bars (both faces)",d.stemHorLap);
-  if(!linked && d.waterstop) lines.push(baseLine(inst,def,{materialGroup:"Joints",material:"PVC waterstop",spec:"Footing/stem joint",qty:Lm,unit:"m",waste:5,finalQty:withWaste(Lm,5),formula:"wall length"}));
-  let formArea = linked? 2*g.area : (2*g.area+2*Lm*(num(d.footD)/1000));
-  lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:linked?"Stem formwork":"Footing + stem formwork",spec:"",qty:formArea,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(formArea,PROJECT.formworkWaste),formula:linked?`2 × stem face area ${fmt(g.area,2)} m²`:`2 × stem face area ${fmt(g.area,2)} m² + 2×L×footD`}));
+  if(incStem){
+    stemBars(d.stemVertDia,d.stemVertSp,true,"Stem vertical bars (both faces, incl. lap into footing)",d.stemVertLap);
+    stemBars(d.stemHorDia,d.stemHorSp,false,"Stem horizontal bars (both faces)",d.stemHorLap);
+  }
+  if(!baseOff && incStem && d.waterstop) lines.push(baseLine(inst,def,{materialGroup:"Joints",material:"PVC waterstop",spec:"Footing/stem joint",qty:Lm,unit:"m",waste:5,finalQty:withWaste(Lm,5),formula:"wall length"}));
+  let formArea = (incStem? 2*g.area : 0) + (baseOff? 0 : 2*Lm*(num(d.footD)/1000));
+  let formName = incStem && !baseOff? "Footing + stem formwork" : (incStem? "Stem formwork" : "Footing formwork");
+  if(formArea>0) lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:formName,spec:"",qty:formArea,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(formArea,PROJECT.formworkWaste),formula:linked?`2 × stem face area ${fmt(g.area,2)} m²`:`2 × stem face area ${fmt(g.area,2)} m² + 2×L×footD`}));
   let tgtOut=targetLabelOf(d.dowelsOut);
-  if(tgtOut && num(d.outQty)>0){
+  if(incStem && tgtOut && num(d.outQty)>0){
     let dia=barDiaOf(d.outDia); let outLen=(num(d.outEmbed)+num(d.outProj))/1000;
     let totLen=num(d.outQty)*outLen; let wt=totLen*massPerM(dia);
     lines.push(baseLine(inst,def,{materialGroup:"Connections",material:d.outDia,spec:"Dowels out → "+tgtOut,qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`${d.outQty}×(embed ${d.outEmbed}+proj ${d.outProj})/1000`,linkedElement:tgtOut,notes:`${fmt(wt,1)} kg`}));
   }
-  return {lines,warnings:[]};
+  return {lines,warnings};
 }
 
 /* ---- SHOTCRETE WALL ---- */
@@ -6638,7 +6727,7 @@ function updateUndoButtons(){ const u=document.getElementById("undoBtn"), r=docu
 /* ---- 3. Templates + copy from element + duplicate choices ---- */
 const TEMPLATES_KEY="gradcon-estimate-templates";
 let TEMPLATES=[]; try{ TEMPLATES=JSON.parse(localStorage.getItem(TEMPLATES_KEY))||[]; }catch(e){ TEMPLATES=[]; }
-const DIM_FIELDS=new Set(["qty","length","width","depth","height","dia","diameter","thickness","areaOverride","manualArea","outlinePts","outlineOn","outlineDirs","outlineSideLens","perimeterOverride","L","W","D","stemH","footL","risers","excDepth","pedW","pedD","pedH"]);
+const DIM_FIELDS=new Set(["qty","length","width","depth","height","dia","diameter","thickness","areaOverride","manualArea","outlinePts","outlineOn","outlineDirs","outlineSideLens","elevOn","elevDirs","elevLens","perimeterOverride","L","W","D","stemH","footL","risers","excDepth","pedW","pedD","pedH"]);
 function templateDataFrom(inst){ const d=JSON.parse(JSON.stringify(inst.data||{})); delete d.manualOverrides; delete d.__csvImport; delete d.__csvMeasurement; Object.keys(d).forEach(k=>{ if(/^_/.test(k)) delete d[k]; }); return d; }
 function saveTemplates(){ try{ localStorage.setItem(TEMPLATES_KEY, JSON.stringify(TEMPLATES)); }catch(e){} if(SUPABASE_URL) kvPush(TEMPLATES_KEY, TEMPLATES); }
 async function syncTemplatesFromCloud(){ if(!SUPABASE_URL) return; const row=await kvFetch(TEMPLATES_KEY); if(row && Array.isArray(row.value)){ const byId={}; TEMPLATES.forEach(t=>byId[t.id]=t); row.value.forEach(t=>{ if(!byId[t.id] || (t.updatedAt||"")>(byId[t.id].updatedAt||"")) byId[t.id]=t; }); TEMPLATES=Object.values(byId).sort((a,b)=>(a.name||"").localeCompare(b.name||"")); try{ localStorage.setItem(TEMPLATES_KEY, JSON.stringify(TEMPLATES)); }catch(e){} renderAddToolbar(); } }
@@ -7861,6 +7950,16 @@ function attachCardEvents(card,inst){
   card.addEventListener('input',e=>{
     // Corner-angle inputs on the outline sides table (not backed by a data
     // field — the angle is derived from the stored side directions).
+    if(e.target.dataset.elevang!==undefined){
+      let k=parseInt(e.target.dataset.elevang), v=parseFloat(e.target.value);
+      if(!isNaN(v) && v>0 && v<360 && Array.isArray(inst.data.elevDirs)){
+        setShapeCornerAngle(inst.data.elevDirs, inst.data.elevLens||[], k, v);
+        let host=card.querySelector('.elevHost'); if(host) host.innerHTML=elevSVG(inst.data, LIB_INDEX[inst.typeKey].calc==="retwall"? "Stem elevation — one face" : "Wall elevation — one face");
+        let closeCell=card.querySelector('.elevCloseAng'); if(closeCell) closeCell.textContent=Math.round(shapeCornerAngle(inst.data.elevDirs,inst.data.elevLens||[],inst.data.elevDirs.length-1))+"° (closes)";
+        UNDO_CTX=null; computeAllAndRefresh();
+      }
+      return;
+    }
     if(e.target.dataset.angfield!==undefined){
       let k=parseInt(e.target.dataset.angfield);
       let v=parseFloat(e.target.value);
@@ -8055,6 +8154,14 @@ function attachCardEvents(card,inst){
     } else if(act==="clearEtRun"){
       delete inst.data.etDirs; delete inst.data.etLens;
       inst.data.etShape="tri"; // back to the default preset, not a dead sketch mode
+      computeAllAndRefresh(); rerenderCardKeepTab(card,inst);
+    } else if(act==="sketchElev"){
+      inst.data.elevOn=true;
+      if(LIB_INDEX[inst.typeKey].calc==="retwall") inst.data.stemShape="sketch";   // drawing the face IS choosing the sketched shape
+      openSketchPad(inst,card,"elev");
+    } else if(act==="clearElev"){
+      delete inst.data.elevDirs; delete inst.data.elevLens; inst.data.elevOn=false;
+      if(inst.data.stemShape==="sketch") inst.data.stemShape="rect";
       computeAllAndRefresh(); rerenderCardKeepTab(card,inst);
     } else if(act==="sketchOutline"){
       openSketchPad(inst,card);
@@ -9655,6 +9762,14 @@ function ensureSketchPad(){
     let maxL=Math.max(...lens)||1;
     let seed=lens.map(L=>+(Math.max(0.5,L/maxL*10).toFixed(1)));
     let d=SKETCH.inst.data;
+    if(SKETCH.mode==="elev"){
+      // a wall FACE: sides in mm, longest side seeded at 6000 and typed over
+      d.elevOn=true; d.elevDirs=dirs; d.elevLens=lens.map(L=>Math.max(100,Math.round(L/maxL*6000/10)*10));
+      div.style.display="none";
+      computeAllAndRefresh();
+      rerenderCardKeepTab(SKETCH.card,SKETCH.inst);
+      return;
+    }
     d.outlineOn=true; d.outlineDirs=dirs; d.outlineSideLens=seed;
     rebuildOutlineFromSides(d);
     div.style.display="none";
@@ -9672,6 +9787,9 @@ function openSketchPad(inst,card,mode){
   } else if(SKETCH.mode==="etrun"){
     div.querySelector("#sketchTitle").textContent="Sketch the thickened-edge SECTION";
     div.querySelector("#sketchCopy").textContent="Draw the thickening's CLOSED cross-section in one stroke off the section detail — go right round the profile and finish near where you started. It's straightened into sides A, B, C… including the side that closes the shape, you type each side's true length in mm, and the enclosed AREA × the run prices the concrete.";
+  } else if(SKETCH.mode==="elev"){
+    div.querySelector("#sketchTitle").textContent="Sketch the wall elevation (one face)";
+    div.querySelector("#sketchCopy").textContent="Draw the wall's FACE in one stroke off the elevation — go right round it and finish near where you started: a raked or stepped top, a soffit that follows the ground, a gable, a notch. It's straightened into sides A, B, C…; you then type each side's true length in mm. Square corners is on for rectilinear walls; untick it for raked lines.";
   } else {
     div.querySelector("#sketchTitle").textContent="Sketch the slab outline";
     div.querySelector("#sketchCopy").textContent="Draw the shape roughly in one stroke — corners don't need to be neat. The app straightens it into sides labelled A, B, C…; you then type the true length of each side, and can adjust any corner's angle afterwards.";

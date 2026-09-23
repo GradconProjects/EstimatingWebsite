@@ -549,6 +549,27 @@ element families waits on the owner's approval of the pad footing.
   before 17 Sep 2026 the stem bars counted one face vertically and used the
   wall length as the row count horizontally, so those two lines changed for
   existing takeoffs (review status flags it).
+- **Wall elevation sketch** (`elevationSketchUI`, `elevGeom`, `elevSVG`,
+  sketch-pad mode `"elev"`; fields `elevOn`, `elevDirs`, `elevLens` in mm —
+  its own fields, never the slab's `outline*`): the concrete wall and the
+  retaining wall stem (`stemShape: "sketch"`) price off a FACE drawn on the
+  sketch pad and straightened into sides A, B, C… whose true lengths are
+  typed; the labelled drawing shows every side's length, every corner's
+  interior angle (editable through `data-elevang`, later sides turn with
+  it), the overall length and height as dimension lines and the shoelace
+  area, with a misclose warning over 25 mm. Concrete wall: concrete = face
+  area × thickness, formwork = area per face, vertical bars along the
+  overall length at the AVERAGE height, horizontal bars = area ÷ spacing +
+  one bottom row. Retaining wall: the face area, overall length (straight
+  plan) and tallest height come from the sketch. The generic closed-shape
+  helpers (`shapePts`, `shapeArea`, `shapeBounds`, `shapeCornerAngle`,
+  `setShapeCornerAngle`) are what any future face sketch should reuse.
+- **Retaining wall scope** (`incStem`, `incBase`, both true when absent):
+  the estimator prices the stem alone or the base alone — `baseOff` (a
+  linked footing OR base excluded) drops the footing concrete, key,
+  footing bars, footing formwork and excavation; `incStem` false drops the
+  stem concrete, stem bars, stem formwork, waterstop and dowels out;
+  backfill stays (site work); both off is a completeness warning.
 - **Retention Walls** is its own library group (Retaining Wall, Shotcrete
   Wall — moved out of Ground Structure 22 Sep 2026; `stage` on their lines
   follows the group name). The shotcrete wall's Connections tab has two
