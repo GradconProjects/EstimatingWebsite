@@ -6898,6 +6898,68 @@ function renderStandardsForm(){
 }
 
 /* ---- Site & placement allowances: scoped estimating items on every element ---- */
+/* ---- EXCAVATION — the estimator's call on every ground element ----
+ * Every element that sits in or on the ground carries an "Include
+ * excavation" decision that belongs to the estimator, not the calculator.
+ * Footings, piers, pile caps and retaining walls have always dug themselves:
+ * they keep doing so until the box is unticked (so an existing takeoff is
+ * unchanged), and unticking strips their excavation, spoil and backfill
+ * lines. Slabs, beams, tanks, kerbs and stairs never dug: the same box,
+ * unticked by default, adds ONE bulk excavation = (plan footprint, oversized
+ * each side) × depth, plus its spoil. Ground = the library group; the
+ * generic calculator (bulk excavation, backfill, temporary works) is itself
+ * the dig, so it never gets the box. */
+const GROUND_GROUPS=new Set(["Foundations","Retention Walls","Ground Structure","Ramps","External Works","Special Items"]);
+const NATIVE_EXC_CALCS=new Set(["stripfooting","padfooting","pilecap","pier","retwall"]);
+const NATIVE_EXC_LINE=/^(bulk excavation|trench excavation|spoil disposal|drilled spoil|bored spoil|backfill \(behind wall\))/i;
+function isGroundElement(def){ return !!def && GROUND_GROUPS.has(def.groupName) && def.calc!=="generic"; }
+function hasNativeExcavation(def){ return !!def && NATIVE_EXC_CALCS.has(def.calc); }
+function excavationIncluded(d,def){ return hasNativeExcavation(def)? d.excOn!==false : d.excOn===true; }
+/** The element's own plan footprint (m²) for an added excavation — the
+ * calculators that know it hand it over; anything else needs the area typed. */
+function elementFootprintM2(inst,def){
+  const d=inst.data||{};
+  if(def.calc==="slab") return num(d._autoInsArea);
+  if(def.calc==="beam") return num(d.qty,1)*(num(d.length)/1000)*(num(d.width)/1000);
+  if(def.calc==="tankbox"){ const N=num(d.qty,1); if(d.shape=="circular"){ const dia=num(d.dia)/1000; return N*Math.PI/4*dia*dia; } return N*(num(d.L)/1000)*(num(d.W)/1000); }
+  return 0;
+}
+function excavationOptionSection(inst,def){
+  const d=inst.data, native=hasNativeExcavation(def), on=excavationIncluded(d,def);
+  const fp=native? 0 : elementFootprintM2(inst,def);
+  const box=chk("excOn",on, native? "Include excavation &amp; spoil for this element" : "Add excavation &amp; spoil for this element","excOn",true);
+  if(native) return `<div class="subsec"><div class="sechead">Excavation — include?</div>
+   <div class="grid cols2">${box}</div>
+   <p class="small">${on? "Excavation, spoil and any backfill are taken off from the geometry below." : "Nothing is taken off for excavation, spoil or backfill on this element — untick when the ground is already prepared or the dig is priced on another element."}</p></div>`;
+  return `<div class="subsec"><div class="sechead">Excavation — include?</div>
+   <div class="grid cols2">${box}</div>
+   <div class="subsec ${on?'':'hidden'}" data-show-if="excOn"><div class="grid cols4">
+     ${F("Excavation depth (mm)",inpNum("excAddDepth",d.excAddDepth))}
+     ${F("Oversize each side (mm)",inpNum("excAddOversize",d.excAddOversize))}
+     ${F(`Plan area (m², blank = element footprint${fp>0?` ${fmt(fp,2)} m²`:''})`,inpNum("excAddArea",d.excAddArea))}
+     ${F("Bulking % (blank = project)",inpNum("excAddBulk",d.excAddBulk))}
+   </div><p class="small">Bulk excavation = plan area (oversized on every side, applied as to a square of the same area) × depth; spoil = excavation × (1 + bulking). A blank depth takes nothing off.</p></div>
+   ${on? "" : `<p class="small">Unticked: no excavation or spoil is taken off for this element.</p>`}</div>`;
+}
+function applyExcavationOption(inst,def,out){
+  if(!isGroundElement(def)) return;
+  const d=inst.data; out.lines=out.lines||[]; out.warnings=out.warnings||[];
+  if(!excavationIncluded(d,def)){
+    if(hasNativeExcavation(def)) out.lines=out.lines.filter(l=>!(l.materialGroup==="Excavation" && NATIVE_EXC_LINE.test(l.material||"")));
+    return;
+  }
+  if(hasNativeExcavation(def)) return;   // the calculator already dug
+  const depth=num(d.excAddDepth)/1000;
+  if(!(depth>0)){ out.warnings.push({text:"Excavation is ticked but no depth is entered — nothing is taken off yet", section:"exc", level:"completeness"}); return; }
+  const os=num(d.excAddOversize)/1000;
+  const A=num(d.excAddArea)>0? num(d.excAddArea) : elementFootprintM2(inst,def);
+  if(!(A>0)){ out.warnings.push({text:"Excavation is ticked but the plan area is unknown for this element — enter it", section:"exc", level:"completeness"}); return; }
+  const excArea=Math.pow(Math.sqrt(A)+2*os,2), exc=excArea*depth;
+  const bulk=num(d.excAddBulk)>0? num(d.excAddBulk) : PROJECT.bulking;
+  out.lines.push(baseLine(inst,def,{materialGroup:"Excavation",material:"Bulk excavation",spec:`${def.label} — footprint${os?` + ${num(d.excAddOversize)}mm each side`:''} × ${num(d.excAddDepth)}mm`,qty:exc,unit:"m³",waste:0,finalQty:exc,formula:`(√${fmt(A,2)}${os?`+2×${os}`:''})²×${depth}`}));
+  const sp=exc*(1+bulk/100);
+  out.lines.push(baseLine(inst,def,{materialGroup:"Excavation",material:"Spoil disposal (loose, bulked)",spec:`Bulking ${bulk}%`,qty:sp,unit:"m³",waste:0,finalQty:sp,formula:`exc vol × (1+${bulk}%)`}));
+}
 function siteAllowancesSection(inst){
   const d=inst.data;
   return `<div class="subsec" data-optional="1"><div class="sechead">Site &amp; Placement Allowances</div>
@@ -7532,6 +7594,8 @@ function buildCard(inst){
     parts.blind = blindingSection(ad) + `<div class="grid cols3" style="margin-top:6px;">${F("Blinding / membrane area (m², 0 = element footprint where known)",inpNum("blindArea",ad.blindArea))}</div>`;
   }
   parts.blind = parts.blind + insulationSubsection(inst.data);
+  // EVERY ground element decides its own excavation (see applyExcavationOption).
+  if(isGroundElement(def)) parts.exc = excavationOptionSection(inst,def) + (parts.exc||"");
   // EVERY element gets the additional reinforcement / elements catch-all.
   if(parts.addl===undefined) parts.addl = additionalItemsSection(inst);
   parts.addl += siteAllowancesSection(inst);   // Phase 4: scoped allowances on every element
@@ -8122,6 +8186,7 @@ function computeInstance(inst){
     }
   }
   // Phase 4: scoped site/placement allowances — estimating items, never design
+  applyExcavationOption(inst,def,out);   // the estimator's excavation decision — before the allowances, so overbreak follows it
   out.lines.push(...siteAllowanceLines(inst, def, out.lines));
   // Phase 2: every warning is {text, section}; the generic checks join the
   // calculator's own.

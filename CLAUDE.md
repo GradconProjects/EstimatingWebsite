@@ -570,6 +570,22 @@ element families waits on the owner's approval of the pad footing.
   23 Sep 2026 the typed qty ignored the count on no./kg/item rows. Selects in
   any `table.rows` keep their own width (`width:auto`, capped at 260 px) so a
   crowded row can never crush the bar-size dropdown to a sliver.
+- **Excavation is the estimator's decision on every ground element**
+  (`isGroundElement` = library group Foundations / Retention Walls / Ground
+  Structure / Ramps / External Works / Special Items, never the generic
+  calculator; `excavationOptionSection` heads the Excavation tab,
+  `applyExcavationOption` runs in `computeInstance` BEFORE
+  `siteAllowanceLines` so an overbreak % follows it). Calculators that have
+  always dug (`NATIVE_EXC_CALCS`: strip/pad footing, pile cap, pier,
+  retaining wall) keep digging until `excOn` is false, which strips their
+  excavation, spoil, drilled/bored spoil and backfill lines
+  (`NATIVE_EXC_LINE`) — an existing takeoff is unchanged. Everything else
+  (slabs, beams, tanks, kerbs, stairs) adds nothing until `excOn` is true,
+  then ONE bulk excavation = (footprint from `elementFootprintM2`, or the
+  typed `excAddArea`, oversized `excAddOversize` each side as a square of
+  the same area) × `excAddDepth`, plus spoil at `excAddBulk` or the project
+  bulking; a blank depth or unknown area is a completeness warning, never
+  a silent zero.
 - **Stairs** (`stairGeom(d)`, `STAIR_SHAPES`): straight, L (quarter-turn),
   U / dog-leg, multi-flight, winder, spiral (newel + outer radius, turn), curved
   (centreline radius, turn) and irregular (measured overrides; an old
