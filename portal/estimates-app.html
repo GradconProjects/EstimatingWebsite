@@ -110,6 +110,9 @@ table.rows{width:100%;border-collapse:collapse;margin-bottom:8px;}
 table.rows th{font-size:10.5px;color:var(--muted);text-align:left;padding:4px 6px;border-bottom:1px solid var(--line);text-transform:uppercase;letter-spacing:.06em;}
 table.rows td{padding:3px 4px;border-bottom:1px dotted rgba(33,56,47,.25);font-variant-numeric:tabular-nums;}
 table.rows input,table.rows select{padding:4px 6px;font-size:12px;}
+table.rows select{width:auto;max-width:260px;}
+table.rows input[data-num],table.rows input[type=number]{min-width:56px;}
+table.rows input[type=text]:not([data-num]){min-width:110px;}
 table.results{width:100%;border-collapse:collapse;font-size:12px;}
 table.results th{background:var(--panel2);text-align:left;padding:6px 8px;font-size:10.5px;color:var(--text);position:sticky;top:0;text-transform:uppercase;letter-spacing:.06em;}
 table.results td{padding:5px 8px;border-bottom:1px dotted rgba(33,56,47,.3);font-variant-numeric:tabular-nums;}
@@ -7162,35 +7165,44 @@ const ADDL_KINDS=[
   ["","Other / uncategorised"],
 ];
 const ADDL_UNITS=[["m","m (length)"],["m²","m² (area)"],["m³","m³ (volume)"],["no.","no. (count)"],["kg","kg"],["item","item / sum"]];
-/** One row's quantity from its geometry: count × length for a per-metre row,
- * count × area for an area row, else the typed quantity. */
-function addlRowQty(r){
-  let n=num(r.count), L=num(r.lengthMm), a=num(r.area), q=num(r.qty);
-  if(r.unit==="m" && n>0 && L>0) return n*L/1000;
-  if((r.unit==="m²"||r.unit==="m³") && a>0) return (n>0? n:1)*a;
+/** One row's quantity from its geometry. The COUNT multiplies whichever
+ * "each" value the unit reads: length each for a per-metre row, area for an
+ * area/volume row, otherwise the typed quantity each. A blank count is one, so
+ * a lone quantity still stands on its own; a count with nothing to multiply
+ * counts pieces only when the unit is "no." (23 Sep 2026: before this the
+ * typed quantity ignored the count on no./kg/item rows). */
+function addlRowEach(r){
+  let L=num(r.lengthMm), a=num(r.area), q=num(r.qty);
+  if(r.unit==="m" && L>0) return L/1000;
+  if((r.unit==="m²"||r.unit==="m³") && a>0) return a;
   if(q>0) return q;
-  if(n>0 && r.unit==="no.") return n;
+  if(r.unit==="no." && num(r.count)>0) return 1;
   return 0;
+}
+function addlRowQty(r){
+  let n=num(r.count), each=addlRowEach(r);
+  if(!(each>0)) return 0;
+  return (n>0? n:1)*each;
 }
 function additionalItemsSection(inst){
   let d=inst.data, rows=Array.isArray(d.addlRows)? d.addlRows : [];
   let body=rows.map((r,i)=>`<tr>
-    <td>${inpText(`addlRows.${i}.desc`,r.desc||"")}</td>
+    <td style="min-width:150px">${inpText(`addlRows.${i}.desc`,r.desc||"")}</td>
     <td>${selOpts(`addlRows.${i}.kind`,r.kind===undefined?"Reinforcement":r.kind,ADDL_KINDS)}</td>
     <td>${barSizeSel(`addlRows.${i}.dia`,r.dia||"N12")}</td>
-    <td style="width:80px">${inpNum(`addlRows.${i}.count`,r.count)}</td>
-    <td style="width:100px">${inpNum(`addlRows.${i}.lengthMm`,r.lengthMm)}</td>
-    <td style="width:90px">${inpNum(`addlRows.${i}.area`,r.area)}</td>
-    <td style="width:90px">${inpNum(`addlRows.${i}.qty`,r.qty)}</td>
+    <td style="width:72px;min-width:72px">${inpNum(`addlRows.${i}.count`,r.count)}</td>
+    <td style="width:96px;min-width:96px">${inpNum(`addlRows.${i}.lengthMm`,r.lengthMm)}</td>
+    <td style="width:84px;min-width:84px">${inpNum(`addlRows.${i}.area`,r.area)}</td>
+    <td style="width:84px;min-width:84px">${inpNum(`addlRows.${i}.qty`,r.qty)}</td>
     <td>${selOpts(`addlRows.${i}.unit`,r.unit||"m",ADDL_UNITS)}</td>
-    <td style="width:70px">${inpNum(`addlRows.${i}.waste`,r.waste)}</td>
+    <td style="width:64px;min-width:64px">${inpNum(`addlRows.${i}.waste`,r.waste)}</td>
     <td class="small" style="white-space:nowrap">${fmt(addlRowQty(r),2)}</td>
     <td><button class="btn small danger" data-action="addlDel" data-i="${i}" type="button">✕</button></td>
    </tr>`).join('');
   return `<div class="subsec"><div class="sechead">Additional Reinforcement / Elements</div>
-   <p class="small">Anything with no obvious home on the other tabs — a trimmer bar round a penetration, an extra pour, a one-off item. Give a row a <b>count × length each</b> for bars, an <b>area</b> for sheet items, or just a <b>quantity</b>; the unit decides which is used. A row needs a description and a quantity before it reaches the takeoff. Rows sized in metres against a bar diameter also report their mass.</p>
+   <p class="small">Anything with no obvious home on the other tabs — a trimmer bar round a penetration, an extra pour, a one-off item. The <b>count</b> multiplies the row: <b>count × length each</b> for bars (m), <b>count × area</b> for sheet or volume items (m², m³), <b>count × qty each</b> for anything else (no., kg, item). Leave the count blank for a single quantity. A row needs a description and a quantity before it reaches the takeoff. Rows sized in metres against a bar diameter also report their mass.</p>
    <div style="overflow-x:auto"><table class="rows"><thead><tr>
-     <th>Description</th><th>Goes under</th><th>Bar size</th><th>Count</th><th>Length each (mm)</th><th>Area (m²)</th><th>Qty</th><th>Unit</th><th>Waste %</th><th>Total</th><th></th>
+     <th>Description</th><th>Goes under</th><th>Bar size</th><th>Count</th><th>Length each (mm)</th><th>Area each (m²)</th><th>Qty each</th><th>Unit</th><th>Waste %</th><th>Total</th><th></th>
    </tr></thead><tbody>${body||`<tr><td colspan="11" class="small">No additional items yet.</td></tr>`}</tbody></table></div>
    <div class="toolbar" style="margin-top:8px;"><button class="btn small primary" data-action="addlAdd" type="button">+ Add row</button></div>
   </div>`;
@@ -8022,9 +8034,10 @@ function computeInstance(inst){
     let group=r.kind===undefined? "Reinforcement" : r.kind;
     let isBar = group==="Reinforcement" && unit==="m" && r.dia;
     let notes = isBar? `${fmt(qty*massPerM(barDiaOf(r.dia)),1)} kg` : "";
-    let formula = (unit==="m" && num(r.count)>0 && num(r.lengthMm)>0)
-      ? `${num(r.count)}×${num(r.lengthMm)}mm`
-      : ((unit==="m²"||unit==="m³") && num(r.area)>0 ? `${num(r.count)>0?num(r.count)+"×":""}${num(r.area)}` : "entered");
+    let cnt = num(r.count)>0? `${num(r.count)}×` : "";
+    let formula = (unit==="m" && num(r.lengthMm)>0) ? `${cnt}${num(r.lengthMm)}mm`
+      : ((unit==="m²"||unit==="m³") && num(r.area)>0) ? `${cnt}${num(r.area)}`
+      : (num(r.qty)>0 ? `${cnt}${num(r.qty)}` : (cnt? `${num(r.count)} no.` : "entered"));
     out.lines.push(baseLine(inst,def,{materialGroup:group,material:isBar? r.dia : desc,
       spec:isBar? desc : "Additional item",qty,unit,waste,finalQty:withWaste(qty,waste),formula,notes,source:"addl"}));
   });

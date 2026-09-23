@@ -543,6 +543,14 @@ element families waits on the owner's approval of the pad footing.
   blank = slab `grade`) and each extra beam group can carry its own `grade`;
   the slab line and blinding keep the slab grade, so the pour schedule
   separates the products.
+- **Additional Reinforcement / Elements rows** (`addlRowQty` / `addlRowEach`,
+  on every element): the COUNT multiplies whichever "each" value the unit
+  reads — length each (m), area each (m², m³), else qty each (no., kg, item).
+  A blank count is one; a count with nothing to multiply is pieces only on a
+  "no." row; no description or no quantity = not on the takeoff. Before
+  23 Sep 2026 the typed qty ignored the count on no./kg/item rows. Selects in
+  any `table.rows` keep their own width (`width:auto`, capped at 260 px) so a
+  crowded row can never crush the bar-size dropdown to a sliver.
 - **Stairs** (`stairGeom(d)`, `STAIR_SHAPES`): straight, L (quarter-turn),
   U / dog-leg, multi-flight, winder, spiral (newel + outer radius, turn), curved
   (centreline radius, turn) and irregular (measured overrides; an old
