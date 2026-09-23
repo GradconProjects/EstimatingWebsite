@@ -453,6 +453,18 @@ input[data-num].num-expr{background:#fffbea;}
 .reg-chip b{font-variant-numeric:tabular-nums;}
 table.results tr[data-line-inst]{cursor:pointer;}
 table.results tr[data-line-inst]:hover td{background:rgba(217,161,59,.16);}
+.reg-elpick{position:relative;}
+.reg-elpick>summary{list-style:none;cursor:pointer;display:inline-block;white-space:nowrap;}
+.reg-elpick>summary::-webkit-details-marker{display:none;}
+.reg-elpick[open]>summary{background:var(--accent);color:#fff;border-color:var(--accent);}
+.reg-elpanel{position:absolute;z-index:40;top:calc(100% + 4px);left:0;width:min(460px,92vw);max-height:420px;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px;box-shadow:0 10px 28px rgba(0,0,0,.14);font-size:12px;}
+.reg-elpanel .el-tools{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;align-items:center;}
+.reg-elpanel .el-tools input{max-width:170px;}
+.reg-elpanel .el-group{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:8px 0 2px;display:flex;justify-content:space-between;align-items:center;gap:6px;}
+.reg-elpanel .el-group button{text-transform:none;letter-spacing:0;}
+.reg-elpanel label.el{display:flex;gap:6px;align-items:center;padding:2px 4px;border-radius:6px;cursor:pointer;}
+.reg-elpanel label.el:hover{background:rgba(0,0,0,.05);}
+.reg-elpanel label.el input{width:14px;height:14px;}
 .reg-cols{display:flex;gap:8px;flex-wrap:wrap;font-size:11px;}
 .reg-cols label{display:inline-flex;gap:3px;align-items:center;}
 table.results.hide-col-1 th:nth-child(1),table.results.hide-col-1 td:nth-child(1),table.results.hide-col-2 th:nth-child(2),table.results.hide-col-2 td:nth-child(2),table.results.hide-col-10 th:nth-child(10),table.results.hide-col-10 td:nth-child(10),table.results.hide-col-11 th:nth-child(11),table.results.hide-col-11 td:nth-child(11),table.results.hide-col-12 th:nth-child(12),table.results.hide-col-12 td:nth-child(12),table.results.hide-col-13 th:nth-child(13),table.results.hide-col-13 td:nth-child(13),table.results.hide-col-15 th:nth-child(15),table.results.hide-col-15 td:nth-child(15),table.results.hide-col-16 th:nth-child(16),table.results.hide-col-16 td:nth-child(16),table.results.hide-col-17 th:nth-child(17),table.results.hide-col-17 td:nth-child(17){display:none;}
@@ -589,6 +601,7 @@ table.results th:nth-child(3),table.results td:nth-child(3){position:sticky;left
       <select id="filterCategory"></select>
       <select id="filterMaterialGroup"></select>
       <input type="text" id="filterSearch" placeholder="Search element / material / warning...">
+      <details class="reg-elpick" id="regElPick"><summary class="btn small" id="regElSummary" title="Tick the elements to show — any mix of the elements entered in the Workspace">Elements: all ▾</summary><div class="reg-elpanel" id="regElPanel"></div></details>
       <select id="regGroupBy" title="Group rows by"><option value="element">Group: element</option><option value="materialGroup">Group: material group</option><option value="category">Group: category</option><option value="level">Group: level</option><option value="zone">Group: zone</option><option value="pour">Group: pour</option></select>
     </div>
     <div class="reg-chips" id="regChips"></div>
@@ -6712,6 +6725,7 @@ function bpBulkBar(){
     <label>Level <input type="text" data-bulk-val="level" placeholder="e.g. L1"></label><button class="btn small" type="button" data-bulk-act="level">Set</button>
     <label>Pour <input type="text" data-bulk-val="pour" placeholder="e.g. P2"></label><button class="btn small" type="button" data-bulk-act="pour">Set</button>
     <label>Zone <input type="text" data-bulk-val="zone" placeholder="e.g. Nth"></label><button class="btn small" type="button" data-bulk-act="zone">Set</button>
+    <button class="btn small" type="button" data-bulk-act="register" title="Open the Quantity Register showing only the selected elements">☰ Register</button>
     <button class="btn small danger" type="button" data-bulk-act="delete" data-armed="0">✕ Delete selected</button>
     <button class="btn small" type="button" data-bulk-act="clear">Clear selection</button>
   </div>`;
@@ -6721,12 +6735,52 @@ function bpBulkBar(){
 const REG_VIEWS_KEY="gradcon-estimate-register-views", REG_COLS_KEY="gradcon-estimate-register-cols";
 const REG_GROUP_COLLAPSED={};
 let REG_CHIP={};   // {mg:"Concrete"} | {manual:true} | {unreviewed:true}
+/* The element picker: a Set of instance ids to show, or null for every
+ * element. Ticking narrows the register to exactly those elements (any mix —
+ * the two strip footings on the basement and none on the ground floor, say);
+ * unticking the last one returns to "all" rather than an empty register. */
+let REG_ELEMENTS=null;
+function regElementsSelected(){ return REG_ELEMENTS? [...REG_ELEMENTS].filter(id=>INSTANCES.some(i=>i.id===id)) : []; }
+function setRegElements(ids){ const live=(ids||[]).filter(id=>INSTANCES.some(i=>i.id===id)); REG_ELEMENTS = live.length? new Set(live) : null; }
+function renderRegElementPicker(){
+  const panel=document.getElementById("regElPanel"), sum=document.getElementById("regElSummary"); if(!panel||!sum) return;
+  const sel=new Set(regElementsSelected());
+  sum.textContent = sel.size? `Elements: ${sel.size} of ${INSTANCES.length} ▾` : `Elements: all${INSTANCES.length?` ${INSTANCES.length}`:''} ▾`;
+  const q=(panel.dataset.q||"").toLowerCase();
+  const groups=new Map();
+  INSTANCES.forEach(inst=>{ const def=LIB_INDEX[inst.typeKey]||{}; const g=`${def.groupName||"Other"} › ${def.label||inst.typeKey}`; if(!groups.has(g)) groups.set(g,[]); groups.get(g).push(inst); });
+  let html=`<div class="el-tools"><input type="text" data-el-q placeholder="Find element…" value="${bpEsc(panel.dataset.q||"")}"><button class="btn small" type="button" data-el="all" title="Clear the selection — every element shows">All</button><button class="btn small" type="button" data-el="invert" title="Swap ticked and unticked">Invert</button><span class="small" style="margin-left:auto;">${sel.size? `${sel.size} ticked` : "tick to narrow"}</span></div>`;
+  let shownAny=false;
+  groups.forEach((list,g)=>{
+    const shown=list.filter(i=>!q || (i.id+" "+i.label+" "+g+" "+Object.values(i.tags||{}).join(" ")).toLowerCase().includes(q));
+    if(!shown.length) return; shownAny=true;
+    const allOn=shown.every(i=>sel.has(i.id));
+    html+=`<div class="el-group"><span>${bpEsc(g)} <b>${list.length}</b></span><button class="btn small ghost" type="button" data-el="group" data-ids="${shown.map(i=>i.id).join(",")}" data-on="${allOn?0:1}">${allOn?"untick all":"tick all"}</button></div>`;
+    html+=shown.map(i=>{ const tags=[tagOf(i,'level'),tagOf(i,'zone'),tagOf(i,'pour')].filter(Boolean).join(' · '); return `<label class="el"><input type="checkbox" data-el-id="${i.id}" ${sel.has(i.id)?'checked':''}><span class="badge">${i.id}</span> <span>${bpEsc(i.label)}</span>${tags?` <span class="small">[${bpEsc(tags)}]</span>`:''}</label>`; }).join('');
+  });
+  if(!INSTANCES.length) html+=`<p class="small">No elements in the workspace yet.</p>`;
+  else if(!shownAny) html+=`<p class="small">No element matches "${bpEsc(panel.dataset.q||"")}".</p>`;
+  panel.innerHTML=html;
+  const search=panel.querySelector('[data-el-q]');
+  search.oninput=(e)=>{ panel.dataset.q=e.target.value; const pos=e.target.selectionStart; renderRegElementPicker(); const s2=panel.querySelector('[data-el-q]'); if(s2){ s2.focus(); try{ s2.setSelectionRange(pos,pos); }catch(err){} } };
+  panel.onchange=(e)=>{ const cb=e.target.closest('input[data-el-id]'); if(!cb) return; const ids=new Set(regElementsSelected()); if(cb.checked) ids.add(cb.dataset.elId); else ids.delete(cb.dataset.elId); setRegElements([...ids]); renderRegElementPicker(); renderRegisterTable(); };
+  panel.onclick=(e)=>{ const b=e.target.closest('button[data-el]'); if(!b) return; e.preventDefault(); e.stopPropagation(); // the re-render detaches the button before the document's close-on-outside-click handler sees it
+    const cur=new Set(regElementsSelected());
+    if(b.dataset.el==="all"){ setRegElements([]); }
+    else if(b.dataset.el==="invert"){ setRegElements(INSTANCES.map(i=>i.id).filter(id=>!cur.has(id))); }
+    else if(b.dataset.el==="group"){ const ids=b.dataset.ids.split(",").filter(Boolean); if(b.dataset.on==="1") ids.forEach(id=>cur.add(id)); else ids.forEach(id=>cur.delete(id)); setRegElements([...cur]); }
+    renderRegElementPicker(); renderRegisterTable(); };
+}
+/* Show exactly these elements in the register (the blueprint navigator's
+ * multi-select hands its selection over through this). */
+function showElementsInRegister(ids){ setRegElements(ids); document.querySelector('.tabs button[data-page="register"]').click(); }
+document.addEventListener("click",(e)=>{ const d=document.getElementById("regElPick"); if(d && d.open && !d.contains(e.target)) d.open=false; });
 const REG_COLUMNS=[[1,"Stage"],[2,"Category"],[10,"Waste %"],[11,"Lap %"],[12,"Manual?"],[13,"Override qty"],[15,"Kg"],[16,"Formula"],[17,"Linked"]];
 function regHiddenCols(){ try{ return JSON.parse(localStorage.getItem(REG_COLS_KEY))||[]; }catch(e){ return []; } }
 function setRegHiddenCols(list){ try{ localStorage.setItem(REG_COLS_KEY, JSON.stringify(list)); }catch(e){} }
 function regViews(){ try{ return JSON.parse(localStorage.getItem(REG_VIEWS_KEY))||[]; }catch(e){ return []; } }
-function regState(){ return { cat:document.getElementById("filterCategory").value, mg:document.getElementById("filterMaterialGroup").value, q:document.getElementById("filterSearch").value, groupBy:document.getElementById("regGroupBy").value, chip:REG_CHIP, cols:regHiddenCols() }; }
-function applyRegState(v){ document.getElementById("filterCategory").value=v.cat||""; document.getElementById("filterMaterialGroup").value=v.mg||""; document.getElementById("filterSearch").value=v.q||""; document.getElementById("regGroupBy").value=v.groupBy||"element"; REG_CHIP=v.chip||{}; if(Array.isArray(v.cols)) setRegHiddenCols(v.cols); renderRegisterTable(); }
+function regState(){ return { cat:document.getElementById("filterCategory").value, mg:document.getElementById("filterMaterialGroup").value, q:document.getElementById("filterSearch").value, groupBy:document.getElementById("regGroupBy").value, chip:REG_CHIP, els:regElementsSelected(), cols:regHiddenCols() }; }
+function applyRegState(v){ document.getElementById("filterCategory").value=v.cat||""; document.getElementById("filterMaterialGroup").value=v.mg||""; document.getElementById("filterSearch").value=v.q||""; document.getElementById("regGroupBy").value=v.groupBy||"element"; REG_CHIP=v.chip||{}; setRegElements(Array.isArray(v.els)? v.els : []); renderRegElementPicker(); if(Array.isArray(v.cols)) setRegHiddenCols(v.cols); renderRegisterTable(); }
 function saveRegisterView(){
   const host=document.getElementById("regViews");
   const m=openMiniMenu(host, `<div class="mm-head">Save view</div><input type="text" data-mm-name placeholder="View name"><button class="item" data-mm="save">💾 Save</button>`, (b,m)=>{ const name=(m.querySelector('[data-mm-name]').value||"").trim(); if(!name) return true; const views=regViews().filter(x=>x.name!==name); views.push({name, state:regState()}); try{ localStorage.setItem(REG_VIEWS_KEY, JSON.stringify(views)); }catch(e){} renderRegisterViews(name); });
@@ -6760,6 +6814,7 @@ function registerFilteredLines(){
   const lines=allLines();
   const cat=document.getElementById("filterCategory").value, mg=document.getElementById("filterMaterialGroup").value, q=(document.getElementById("filterSearch").value||"").toLowerCase();
   return lines.filter(l=>{
+    if(REG_ELEMENTS && !REG_ELEMENTS.has(l.elementId)) return false;
     if(cat && l.category!==cat) return false;
     if(mg && l.materialGroup!==mg) return false;
     if(REG_CHIP.mg && l.materialGroup!==REG_CHIP.mg) return false;
@@ -7289,6 +7344,7 @@ function renderBlueprintWorkspace(){
   const bulk=nav.querySelector('[data-bulk]');
   if(bulk) bulk.addEventListener('click',e=>{ const b=e.target.closest('[data-bulk-act]'); if(!b) return; const act=b.dataset.bulkAct;
     if(act==="clear"){ BP_MULTI.clear(); renderBlueprintWorkspace(); return; }
+    if(act==="register"){ showElementsInRegister([...BP_MULTI]); return; }
     if(act==="delete"){ if(b.dataset.armed!=="1" && portalPref("confirmDeletes")!==false){ b.dataset.armed="1"; b.textContent="✕ Confirm delete "+BP_MULTI.size; setTimeout(()=>{ b.dataset.armed="0"; b.textContent="✕ Delete selected"; },3000); return; } bulkApply("delete"); return; }
     const val=(bulk.querySelector(`[data-bulk-val="${act}"]`)||{}).value; const r=bulkApply(act,val);
     if(r.skipped) notifyStatus(`${r.n} marked reviewed · ${r.skipped} skipped — undecided assembly items`); });
@@ -8362,6 +8418,7 @@ function renderRegister(){
   if(catSel.options.length!==cats.length+1) catSel.innerHTML=`<option value="">All categories</option>`+cats.map(c=>`<option>${c}</option>`).join('');
   if(mgSel.options.length!==mgs.length+1) mgSel.innerHTML=`<option value="">All material groups</option>`+mgs.map(c=>`<option>${c}</option>`).join('');
   if(!document.getElementById("regViews").options.length || document.getElementById("regViews").dataset.ready!=="1"){ renderRegisterViews(""); document.getElementById("regViews").dataset.ready="1"; }
+  renderRegElementPicker();
   renderRegisterTable();
   catSel.oninput=renderRegisterTable; mgSel.oninput=renderRegisterTable;
   document.getElementById("filterSearch").oninput=renderRegisterTable;
@@ -8380,8 +8437,9 @@ function renderRegisterTable(){
     const counts={}; lines.forEach(l=>{ counts[l.materialGroup]=(counts[l.materialGroup]||0)+1; });
     const manualN=lines.filter(l=>l.manualOverride).length;
     const unrevN=lines.filter(l=>{ const i=INSTANCES.find(x=>x.id===l.elementId); return i && !isReviewed(i); }).length;
-    chips.innerHTML=`<button class="reg-chip ${!REG_CHIP.mg&&!REG_CHIP.manual&&!REG_CHIP.unreviewed?'on':''}" data-chip="all">All <b>${lines.length}</b></button>`+Object.keys(counts).sort().map(g=>`<button class="reg-chip ${REG_CHIP.mg===g?'on':''}" data-chip="mg" data-val="${bpEsc(g)}">${bpEsc(g)} <b>${counts[g]}</b></button>`).join('')+`<button class="reg-chip ${REG_CHIP.manual?'on':''}" data-chip="manual">✎ Manual overrides <b>${manualN}</b></button><button class="reg-chip ${REG_CHIP.unreviewed?'on':''}" data-chip="unreviewed">Unreviewed elements <b>${unrevN}</b></button>`;
-    chips.onclick=(e)=>{ const b=e.target.closest('.reg-chip'); if(!b) return; const k=b.dataset.chip; if(k==="all") REG_CHIP={}; else if(k==="mg") REG_CHIP= REG_CHIP.mg===b.dataset.val? {} : {mg:b.dataset.val}; else REG_CHIP= REG_CHIP[k]? {} : {[k]:true}; renderRegisterTable(); };
+    chips.innerHTML=`<button class="reg-chip ${!REG_CHIP.mg&&!REG_CHIP.manual&&!REG_CHIP.unreviewed?'on':''}" data-chip="all">All <b>${lines.length}</b></button>`+Object.keys(counts).sort().map(g=>`<button class="reg-chip ${REG_CHIP.mg===g?'on':''}" data-chip="mg" data-val="${bpEsc(g)}">${bpEsc(g)} <b>${counts[g]}</b></button>`).join('')+`<button class="reg-chip ${REG_CHIP.manual?'on':''}" data-chip="manual">✎ Manual overrides <b>${manualN}</b></button><button class="reg-chip ${REG_CHIP.unreviewed?'on':''}" data-chip="unreviewed">Unreviewed elements <b>${unrevN}</b></button>`
+      +(REG_ELEMENTS? `<button class="reg-chip on" data-chip="els" title="Only the ticked elements are showing — click to show every element">Elements <b>${regElementsSelected().length}</b> ✕</button>` : '');
+    chips.onclick=(e)=>{ const b=e.target.closest('.reg-chip'); if(!b) return; const k=b.dataset.chip; if(k==="els"){ setRegElements([]); renderRegElementPicker(); renderRegisterTable(); return; } if(k==="all") REG_CHIP={}; else if(k==="mg") REG_CHIP= REG_CHIP.mg===b.dataset.val? {} : {mg:b.dataset.val}; else REG_CHIP= REG_CHIP[k]? {} : {[k]:true}; renderRegisterTable(); };
   }
   // column chooser
   const colsHost=document.getElementById("regCols"); const hidden=regHiddenCols();

@@ -497,7 +497,11 @@ element families waits on the owner's approval of the pad footing.
 - **Tags** `inst.tags = {level, zone, pour}` are data (saved); the navigator's
   multi-select (`BP_MULTI`, session) drives `bulkApply` for tags, review,
   delete. Bulk review skips elements with undecided assembly items.
-- **Register**: `registerFilteredLines()` is the one filter (selects, chips,
+- **Register**: `registerFilteredLines()` is the one filter (the Elements
+  picker — `REG_ELEMENTS`, a Set of instance ids or null for all, any mix of
+  the workspace's elements ticked individually or per type group, carried in
+  saved views as `els`, handed over from the blueprint bulk bar by
+  `showElementsInRegister` — then selects, chips,
   search incl. warnings and tags); `regGroupKey` groups by element /
   material / category / level / zone / pour; totals show filtered vs whole
   project; rows jump to their source section (`openLineSource` →
