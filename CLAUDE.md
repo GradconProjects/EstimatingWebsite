@@ -516,6 +516,13 @@ element families waits on the owner's approval of the pad footing.
   (`filterMaterial`, `matKey(l)`, saved in views as `mat`).
   `concreteGradeStr` puts the per-grade split on element heads (card and
   register) and in the totals whenever more than one grade is present.
+  **Formwork is totalled by UNIT** (`formworkTotals` → `{m2, lm, no}`,
+  `formworkStr`): m² faces, lm edgeform / reveals / step-down faces and
+  no. penetration trimmers are never added together — card head and tiles,
+  register heads and tiles, the PDF totals and the m²-per-m³ sanity check
+  all use it (before 23 Sep 2026 the metres and pieces were summed into
+  "m²"). A Materials Summary group with mixed units closes with one
+  "All <group> (<unit>)" row per unit.
 
 ## Estimates geometry options: wall shapes, stair forms, reinforcement by rate
 
