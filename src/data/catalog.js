@@ -150,6 +150,8 @@ export const LABOUR_TEMPLATES = {
   topping: CREW_SHEET_TASKS,
   hydronic: CREW_SHEET_TASKS,
   finishing: CREW_SHEET_TASKS,
+  // Irregular concrete constructions (hearths, plinths, composite assemblies): full crew sheet.
+  composite: CREW_SHEET_TASKS,
 };
 
 /* ---------- Full material catalog ----------
@@ -714,6 +716,13 @@ export const ELEMENT_TYPES = [
   { id: "finish_other", category: "SPECIALIST FINISHING CONCRETE", section: "SPECIALIST FINISHING CONCRETE", name: "Specialist Finish (Other - specify)", labour: "finishing" },
 
   // External & landscape concrete — outside the building envelope.
+  // Irregular concrete constructions — a hearth, a plinth, a machine base,
+  // any assembly of slabs + RC walls + starters that no single element holds.
+  // Mirrors the Estimates "Irregular Concrete Constructions" group so a
+  // published takeoff lands on a priced element here (see estimateImport.js).
+  { id: "hearth_fireplace_base", category: "IRREGULAR CONCRETE CONSTRUCTIONS", section: "IRREGULAR CONCRETE CONSTRUCTIONS", name: "Hearth / Fireplace Base", labour: "composite" },
+  { id: "plinth_machine_base", category: "IRREGULAR CONCRETE CONSTRUCTIONS", section: "IRREGULAR CONCRETE CONSTRUCTIONS", name: "Plinth / Machine Base", labour: "composite" },
+  { id: "irregular_concrete_assembly", category: "IRREGULAR CONCRETE CONSTRUCTIONS", section: "IRREGULAR CONCRETE CONSTRUCTIONS", name: "Irregular Concrete Assembly (slabs + walls + starters)", labour: "composite" },
   { id: "planter_wall", category: "EXTERNAL & LANDSCAPE CONCRETE", section: "BOUNDARY & LANDSCAPE WALLS", name: "Planter Wall", labour: "wall" },
   { id: "boundary_wall", category: "EXTERNAL & LANDSCAPE CONCRETE", section: "BOUNDARY & LANDSCAPE WALLS", name: "Boundary Wall", labour: "wall" },
   { id: "retaining_wall_landscape", category: "EXTERNAL & LANDSCAPE CONCRETE", section: "BOUNDARY & LANDSCAPE WALLS", name: "Retaining Wall (Landscape)", labour: "wall" },

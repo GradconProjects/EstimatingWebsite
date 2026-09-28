@@ -642,7 +642,10 @@ element families waits on the owner's approval of the pad footing.
   `walls`; the group is a ground group (excavation option, footprint = the
   first slab). Starter runs everywhere gain `fix` = cast / epoxy: epoxy adds
   a "Drill & epoxy" Connections line in no. (one hole per bar,
-  `massPerUnit: 0`) beside the bar line.
+  `massPerUnit: 0`) beside the bar line. Quotes mirrors the group as the
+  `IRREGULAR CONCRETE CONSTRUCTIONS` category (hearth_fireplace_base,
+  plinth_machine_base, irregular_concrete_assembly; `labour: "composite"`)
+  and `ESTIMATE_TYPE_MAP` bridges the three Estimates labels onto them.
 - **Stairs** (`stairGeom(d)`, `STAIR_SHAPES`): straight, L (quarter-turn),
   U / dog-leg, multi-flight, winder, spiral (newel + outer radius, turn), curved
   (centreline radius, turn) and irregular (measured overrides; an old

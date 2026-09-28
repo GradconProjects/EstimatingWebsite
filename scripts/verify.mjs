@@ -43,11 +43,14 @@ const C25 = RATE("CONCRETE", "25 mpa", "m3");
 const C32 = RATE("CONCRETE", "32 mpa", "m3");
 
 /* ---------- catalog shape ---------- */
-check("97 element types, 14 categories, 22 sections (PRELIMINARIES 17 first; Basement Ramp beside Ramp; SCREEDS 14, TOPPINGS 7, HYDRONIC HEATING 3, SPECIALIST FINISHING CONCRETE 10 — each its own category)", () => {
-  assert.equal(ELEMENT_TYPES.length, 97);
+check("100 element types, 15 categories, 23 sections (PRELIMINARIES 17 first; Basement Ramp beside Ramp; IRREGULAR CONCRETE CONSTRUCTIONS 3 before External & Landscape; SCREEDS 14, TOPPINGS 7, HYDRONIC HEATING 3, SPECIALIST FINISHING CONCRETE 10 — each its own category)", () => {
+  assert.equal(ELEMENT_TYPES.length, 100);
+  assert.equal(ELEMENT_TYPES.filter((t) => t.category === "IRREGULAR CONCRETE CONSTRUCTIONS").length, 3);
+  assert.ok(ELEMENT_TYPES.some((t) => t.id === "hearth_fireplace_base" && t.labour === "composite"), "hearth is a priced Quotes element with a crew sheet");
+  assert.ok(CATEGORY_ORDER.indexOf("IRREGULAR CONCRETE CONSTRUCTIONS") < CATEGORY_ORDER.indexOf("EXTERNAL & LANDSCAPE CONCRETE"), "irregular constructions sit with the structure, before landscape works");
   assert.ok(ELEMENT_TYPES.some((t) => t.id === "basement_ramp" && t.section === "GROUND-BEARING SLABS"), "Basement Ramp is its own selectable element");
-  assert.equal(CATEGORY_ORDER.length, 14);
-  assert.equal(SECTION_ORDER.length, 22);
+  assert.equal(CATEGORY_ORDER.length, 15);
+  assert.equal(SECTION_ORDER.length, 23);
   assert.equal(ELEMENT_TYPES.filter((t) => t.category === "PRELIMINARIES").length, 17);
   assert.equal(CATEGORY_ORDER[0], "PRELIMINARIES", "preliminaries come before earthworks");
   assert.deepEqual(SECTION_ORDER.slice(0, 3), ["TRAFFIC & ACCESS", "SITE ESTABLISHMENT", "SITE MANAGEMENT & COMPLIANCE"]);
