@@ -626,6 +626,23 @@ element families waits on the owner's approval of the pad footing.
   the same area) × `excAddDepth`, plus spoil at `excAddBulk` or the project
   bulking; a blank depth or unknown area is a completeness warning, never
   a silent zero.
+- **Irregular Concrete Constructions** (library group; `composite`
+  calculator — `compositeDefaults` / `renderComposite` / `computeComposite`
+  / `diagComposite`; items hearth, plinth, compositeassembly): ONE element
+  built from parts — `slabs[]` (each L × W or a plan-area override, thickness,
+  own grade or the element grade, mesh × layers or bars each way, edge
+  formwork by the metre with an entered-length override, optional soffit
+  formwork and blinding) and `walls[]` (each L × H × T, own grade, vertical
+  and horizontal bars × reinforced faces with the wall calculator's 0.4 m
+  lap, formed faces 0/1/2 + ends), plus the SHARED starter runs
+  (`starterRunsUI` / `starterRunLines`, elemLenM = the longest part) for
+  starters in as many locations as the detail shows. One register line per
+  part, labelled with the part's name; a part missing its dimensions is a
+  completeness warning, never a silent zero. `addRow` templates `slabs` /
+  `walls`; the group is a ground group (excavation option, footprint = the
+  first slab). Starter runs everywhere gain `fix` = cast / epoxy: epoxy adds
+  a "Drill & epoxy" Connections line in no. (one hole per bar,
+  `massPerUnit: 0`) beside the bar line.
 - **Stairs** (`stairGeom(d)`, `STAIR_SHAPES`): straight, L (quarter-turn),
   U / dog-leg, multi-flight, winder, spiral (newel + outer radius, turn), curved
   (centreline radius, turn) and irregular (measured overrides; an old

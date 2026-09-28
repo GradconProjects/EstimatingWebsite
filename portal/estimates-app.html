@@ -1950,6 +1950,11 @@ const LIBRARY = [
       {id:"scabble",label:"Scabble / Surface Preparation",calc:"generic",kind:"alteration"},
       {id:"makegood",label:"Make Good / Patch",calc:"generic",kind:"alteration"},
  ]},
+ {group:"Irregular Concrete Constructions", items:[
+   {id:"hearth", label:"Hearth / Fireplace Base (slabs + walls + starters)", calc:"composite", kind:"hearth"},
+   {id:"plinth", label:"Plinth / Machine Base (composite)", calc:"composite", kind:"plinth"},
+   {id:"compositeassembly", label:"Irregular Concrete Assembly (any mix of slabs, walls, starters)", calc:"composite", kind:"assembly"},
+ ]},
  {group:"Special Items", items:[
    {id:"turntableslab", label:"Turntable Slab (vehicle turntable)", calc:"slab", slabCategory:"Turntable Slab", suspended:false},
    {id:"pool", label:"Swimming Pool (concrete shell)", calc:"tankbox", kind:"Swimming Pool"},
@@ -3744,6 +3749,7 @@ function starterRunsUI(inst,d,elemLenM,noun){
       ${bySpacing?F("Starts at (m from one end)",`<input type="text" inputmode="decimal" data-num="1" data-field="${base}startM" value="${r.startM===undefined?'':r.startM}" placeholder="0">`):""}
       ${bySpacing?F("Rows across the section",selOpts(base+"rows",Math.max(1,Math.round(num(r.rows,1))),[[1,"1 row (centre)"],[2,"2 rows (one each face)"]],true)):""}
       ${F("Embedment (mm)",inpNum(base+"embed",r.embed===undefined?500:r.embed))}${F("Projection (mm)",inpNum(base+"proj",r.proj===undefined?600:r.proj))}
+      ${F("Fixing",selOpts(base+"fix",r.fix||"cast",[["cast","Cast in (wet set)"],["epoxy","Drill & epoxy into existing"]]))}
      </div>
      ${bySpacing?`<p class="small">→ <b>${n}</b> per ${noun}: ${fmt(starterRunM(r,elemLenM),2)} m ÷ ${num(r.spacing,400)} mm + 1 end bar${num(r.rows,1)>1?` × ${Math.round(num(r.rows,1))} rows`:""}${num(d.qty,1)>1?` · × ${num(d.qty,1)} = <b>${n*num(d.qty,1)}</b>`:""}. Leave the run blank for the whole ${noun}; give a shorter run (and where it starts) for a wall or column line on part of it.</p>`:""}
     </div>`;
@@ -3760,7 +3766,8 @@ function starterRunLines(inst,def,d,N,elemLenM,label){
     let totLen=n*N*len; let wt=totLen*massPerM(bd);
     let tgt=targetLabelOf(r.target);
     let bySpacing=(r.mode||"spacing")!=="count";
-    out.push(baseLine(inst,def,{materialGroup:"Connections",material:r.dia||"N16",spec:`${label}${starterRunsOf(d).length>1?` (run ${i+1})`:""}: ${starterRunDesc(r,elemLenM)} → ${tgt||"(unlinked)"}`,qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:bySpacing?`(${fmt(starterRunM(r,elemLenM),2)}m/${num(r.spacing,400)}+1)${num(r.rows,1)>1?`×${Math.round(num(r.rows,1))}`:""}=${n} × ${N} × (embed+proj)/1000`:`${n}×${N}×(embed+proj)/1000`,linkedElement:tgt,notes:`${fmt(wt,1)} kg · ${n*N} bars`}));
+    if((r.fix||"cast")==="epoxy"){ const holes=n*N; out.push(baseLine(inst,def,{materialGroup:"Connections",material:"Drill & epoxy",spec:`${label}${starterRunsOf(d).length>1?` (run ${i+1})`:""}: ${holes} holes for ${r.dia||"N16"}, ${num(r.embed,500)}mm embedment → ${tgt||"(unlinked)"}`,qty:holes,unit:"no.",waste:0,finalQty:holes,massPerUnit:0,formula:"one hole per starter"})); }
+    out.push(baseLine(inst,def,{materialGroup:"Connections",material:r.dia||"N16",spec:`${label}${starterRunsOf(d).length>1?` (run ${i+1})`:""}: ${starterRunDesc(r,elemLenM)}${(r.fix||"cast")==="epoxy"?" (drill & epoxy)":""} → ${tgt||"(unlinked)"}`,qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:bySpacing?`(${fmt(starterRunM(r,elemLenM),2)}m/${num(r.spacing,400)}+1)${num(r.rows,1)>1?`×${Math.round(num(r.rows,1))}`:""}=${n} × ${N} × (embed+proj)/1000`:`${n}×${N}×(embed+proj)/1000`,linkedElement:tgt,notes:`${fmt(wt,1)} kg · ${n*N} bars`}));
   });
   return out;
 }
@@ -5727,6 +5734,107 @@ function computeKerb(inst,def){
 }
 
 /* ---- GENERIC (earthworks / alterations / fallback) ---- */
+/* ---- IRREGULAR CONCRETE CONSTRUCTION (composite) ----
+ * A hearth, a plinth, a machine base, a fireplace: one element made of ANY
+ * number of horizontal slabs (each its own size, thickness, grade, mesh or
+ * bars, edge / soffit formwork, blinding), ANY number of vertical RC walls
+ * (each its own size, grade, bars each face, formwork faces) and starter /
+ * dowel runs in as many locations as the detail shows (the shared starter-run
+ * machinery, cast-in or drilled and epoxied). Every part prices with the
+ * same rules the slab and wall calculators use, one register line per part,
+ * labelled with the part's own name so the takeoff reads like the detail. */
+function compositeDefaults(kind){
+  const slab=(label,L,W,t)=>({label, L, W, t, area:"", grade:"", reo:"mesh", meshType:"SL82", meshLayers:1, barDia:"N12", barSp:200, barLayers:1, edgeForm:true, edgeLm:"", soffitForm:false, blindOn:false, blindT:50});
+  const wall=(label,L,H,T)=>({label, L, H, T, grade:"", vertDia:"N12", vertSp:400, horDia:"N12", horSp:400, faces:2, formFaces:2, formEnds:true});
+  const base={ kind, qty:1, grade:32, cover:40, meshLap:false, barLap:false, slabs:[], walls:[], starterRuns:[] };
+  if(kind==="hearth"){ base.slabs=[slab("Hearth base slab",1.8,1.2,150), slab("Hearth top slab",1.8,0.6,120)]; base.walls=[wall("Back wall",1800,900,150), wall("Side wall (each)",600,900,150)]; }
+  else if(kind==="plinth"){ base.slabs=[slab("Plinth",1.5,1.0,300)]; }
+  else { base.slabs=[slab("Slab 1",2.0,1.0,150)]; base.walls=[wall("Wall 1",2000,600,150)]; }
+  return base;
+}
+function compositeSlabArea(sl){ return num(sl.area)>0? num(sl.area) : num(sl.L)*num(sl.W); }
+function compositeLenM(d){ let m=0; (d.slabs||[]).forEach(sl=>{ m=Math.max(m,num(sl.L)); }); (d.walls||[]).forEach(w=>{ m=Math.max(m,num(w.L)/1000); }); return m||1; }
+function renderComposite(inst){
+  const d=inst.data;
+  const slabsHtml=(d.slabs||[]).map((sl,i)=>{ const b=`slabs.${i}.`; const A=compositeSlabArea(sl); const reo=sl.reo||"mesh";
+    return `<div class="subsec" style="border-left:3px solid var(--accent);padding-left:10px;">
+     <div class="sechead" style="display:flex;align-items:center;justify-content:space-between;gap:8px;"><span>Slab ${i+1} — ${bpEsc(sl.label||"")} · ${fmt(A,2)} m² × ${num(sl.t)} mm = ${fmt(A*num(sl.t)/1000,3)} m³</span><button class="btn small danger" data-action="delRow" data-target="slabs" data-idx="${i}" type="button">✕ Remove</button></div>
+     <div class="grid cols4">${F("Label",inpText(b+"label",sl.label))}${F("Length (m)",inpNum(b+"L",sl.L))}${F("Width (m)",inpNum(b+"W",sl.W))}${F("Thickness (mm)",inpNum(b+"t",sl.t))}</div>
+     <div class="grid cols4">${F("Plan area override (m², irregular — beats L × W)",inpNum(b+"area",sl.area))}${F("Grade (N, blank = element grade)",inpNum(b+"grade",sl.grade))}${F("Reinforcement",selOpts(b+"reo",reo,[["mesh","Mesh"],["bars","Bars each way"],["none","None"]],true))}${F("Edge formwork length override (m, blank = perimeter)",inpNum(b+"edgeLm",sl.edgeLm))}</div>
+     ${reo==="mesh"? `<div class="grid cols4">${F("Mesh type",selOpts(b+"meshType",sl.meshType||"SL82",Object.keys(MESHTYPES).map(m=>[m,m])))}${F("Mesh layers",inpNum(b+"meshLayers",sl.meshLayers===undefined?1:sl.meshLayers))}</div>` : reo==="bars"? `<div class="grid cols4">${F("Bar",barSizeSel(b+"barDia",sl.barDia||"N12"))}${F("Spacing each way (mm)",inpNum(b+"barSp",sl.barSp===undefined?200:sl.barSp))}${F("Layers",inpNum(b+"barLayers",sl.barLayers===undefined?1:sl.barLayers))}</div>` : ""}
+     <div class="grid cols4">${chk(b+"edgeForm",sl.edgeForm!==false,"Edge formwork (by the metre)")}${chk(b+"soffitForm",!!sl.soffitForm,"Soffit formwork (suspended / cantilevered slab)")}${chk(b+"blindOn",!!sl.blindOn,"Concrete blinding under this slab",null,true)}${sl.blindOn?F("Blinding thickness (mm)",inpNum(b+"blindT",sl.blindT===undefined?50:sl.blindT)):""}</div>
+    </div>`; }).join("");
+  const wallsHtml=(d.walls||[]).map((w,i)=>{ const b=`walls.${i}.`; const vol=num(w.L)/1000*num(w.H)/1000*num(w.T)/1000;
+    return `<div class="subsec" style="border-left:3px solid var(--accent2,#2f5448);padding-left:10px;">
+     <div class="sechead" style="display:flex;align-items:center;justify-content:space-between;gap:8px;"><span>Wall ${i+1} — ${bpEsc(w.label||"")} · ${num(w.L)} × ${num(w.H)} × ${num(w.T)} mm = ${fmt(vol,3)} m³</span><button class="btn small danger" data-action="delRow" data-target="walls" data-idx="${i}" type="button">✕ Remove</button></div>
+     <div class="grid cols4">${F("Label",inpText(b+"label",w.label))}${F("Length (mm)",inpNum(b+"L",w.L))}${F("Height (mm)",inpNum(b+"H",w.H))}${F("Thickness (mm)",inpNum(b+"T",w.T))}</div>
+     <div class="grid cols4">${F("Grade (N, blank = element grade)",inpNum(b+"grade",w.grade))}${F("Vertical bars",barSizeSel(b+"vertDia",w.vertDia||"N12"))}${F("Vertical spacing (mm)",inpNum(b+"vertSp",w.vertSp===undefined?400:w.vertSp))}${F("Reinforced faces",selOpts(b+"faces",String(w.faces===undefined?2:w.faces),[["1","1 (central / one face)"],["2","2 (each face)"]]))}</div>
+     <div class="grid cols4">${F("Horizontal bars",barSizeSel(b+"horDia",w.horDia||"N12"))}${F("Horizontal spacing (mm)",inpNum(b+"horSp",w.horSp===undefined?400:w.horSp))}${F("Formed faces",selOpts(b+"formFaces",String(w.formFaces===undefined?2:w.formFaces),[["0","None (cast against block / ground)"],["1","One face"],["2","Both faces"]]))}${chk(b+"formEnds",w.formEnds!==false,"Form the ends")}</div>
+    </div>`; }).join("");
+  const geom=`<div class="grid cols3">${F("Quantity (identical assemblies)",inpNum("qty",d.qty))}${coverField(inst)}</div>
+   <div class="tip"><span class="ico">🏗️</span><div>Build the detail from its parts: add a slab for every horizontal pour (base, top, shelf, thickening), a wall for every vertical RC element, and a starter run wherever bars tie one part to another or to existing work. Block walls with core fill belong on their own element; this prices the reinforced concrete.</div></div>
+   <div class="sechead" style="display:flex;align-items:center;justify-content:space-between;gap:8px;"><span>Horizontal slabs (${(d.slabs||[]).length})</span><button class="btn small" data-action="addRow" data-target="slabs" type="button">+ Add slab</button></div>
+   ${slabsHtml||`<p class="small">No slabs yet.</p>`}
+   <div class="sechead" style="display:flex;align-items:center;justify-content:space-between;gap:8px;"><span>Vertical RC walls (${(d.walls||[]).length})</span><button class="btn small" data-action="addRow" data-target="walls" type="button">+ Add wall</button></div>
+   ${wallsHtml||`<p class="small">No walls yet.</p>`}`;
+  const reo=`<div class="grid cols3">${chk("meshLap",d.meshLap,"Mesh — include lap allowance (%)")}${chk("barLap",d.barLap,"Bars — include lap allowance (%)")}</div>
+   <p class="small">Each slab and wall carries its own reinforcement on the Geometry tab; the laps above apply to all of them. Slab bars each way = bars along the width at their spacing × length + bars along the length × width, per layer. Wall bars: verticals along the length at their spacing × (height + 0.4 m lap), horizontals along the height × length, × reinforced faces.</p>`;
+  const conns=starterRunsUI(inst,d,compositeLenM(d),"assembly");
+  const form=`<p class="small">Formwork is chosen per part on the Geometry tab: slab edges by the metre (perimeter or an entered length), soffits where a slab is suspended, wall faces and ends.</p>`;
+  return {geom, conc:concSection(d,"<p class='small'>Concrete = Σ slab area × thickness + Σ wall L × H × T, each part at its own grade (blank = the element grade above).</p>"), reo, form, conns};
+}
+function computeComposite(inst,def){
+  const d=inst.data, lines=[], warnings=[]; const N=num(d.qty,1), cover=num(d.cover,40)/1000;
+  const gradeOf=(g)=> (g!==undefined && g!=="" && g!==null)? num(g) : num(d.grade,32);
+  (d.slabs||[]).forEach((sl,i)=>{
+    const label=sl.label||`Slab ${i+1}`, A=compositeSlabArea(sl), t=num(sl.t)/1000, L=num(sl.L), W=num(sl.W);
+    if(!(A>0) || !(t>0)){ warnings.push({text:`${label}: enter a length and width (or plan area) and a thickness`, section:"geom", level:"completeness"}); return; }
+    const vol=N*A*t, g=gradeOf(sl.grade);
+    lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${g} concrete`,spec:`${label} — ${num(sl.t)}mm slab`,qty:vol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(vol,concWastePct(d)),formula:`${N}×${fmt(A,2)}m²×${num(sl.t)}mm`}));
+    const reo=sl.reo||"mesh";
+    if(reo==="mesh"){ const n=Math.max(1,Math.round(num(sl.meshLayers,1))), q=N*A*n, lap=d.meshLap?MESH_LAP_PCT:0;
+      lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:sl.meshType||"SL82",spec:`${label} — mesh${n>1?` × ${n} layers`:""}`,qty:q,unit:"m²",waste:PROJECT.reoWaste,lap,finalQty:withWasteLap(q,PROJECT.reoWaste,lap),formula:`${N}×${fmt(A,2)}m²${n>1?`×${n}`:""}`})); }
+    else if(reo==="bars" && L>0 && W>0){ const sp=num(sl.barSp,200), layers=Math.max(1,Math.round(num(sl.barLayers,1))), bd=barDiaOf(sl.barDia||"N12");
+      const cx=Math.floor(W*1000/sp)+1, cy=Math.floor(L*1000/sp)+1; const tot=N*layers*(cx*L+cy*W); const wt=tot*massPerM(bd); const lap=d.barLap?PROJECT.lapPct:0;
+      lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:sl.barDia||"N12",spec:`${label} — bars each way${layers>1?` × ${layers} layers`:""}`,qty:tot,unit:"m",waste:PROJECT.reoWaste,lap,finalQty:withWasteLap(tot,PROJECT.reoWaste,lap),formula:`(${cx}×${fmt(L,2)} + ${cy}×${fmt(W,2)})${layers>1?`×${layers}`:""}×${N}`,notes:`${fmt(wt,1)} kg`})); }
+    else if(reo==="bars") warnings.push({text:`${label}: bars each way need a length and width (an area alone cannot set the bar counts)`, section:"geom", level:"completeness"});
+    if(sl.edgeForm!==false){ const lm=N*(num(sl.edgeLm)>0? num(sl.edgeLm) : (L>0&&W>0? 2*(L+W) : 0)); if(lm>0) lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Edgeform — slab edge formwork",spec:`${label} — ${num(sl.t)}mm high edge`,qty:lm,unit:"m",waste:PROJECT.formworkWaste,finalQty:withWaste(lm,PROJECT.formworkWaste),formula:num(sl.edgeLm)>0?"entered length":"perimeter 2(L+W)"})); else warnings.push({text:`${label}: edge formwork needs a length and width or an entered edge length`, section:"geom", level:"completeness"}); }
+    if(sl.soffitForm){ const a=N*A; lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Soffit formwork",spec:`${label} — suspended slab soffit`,qty:a,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(a,PROJECT.formworkWaste),formula:"slab area"})); }
+    if(sl.blindOn) lines.push(blindingLine(inst,def,N*A,num(sl.blindT,50),"concrete",20));
+  });
+  (d.walls||[]).forEach((w,i)=>{
+    const label=w.label||`Wall ${i+1}`, L=num(w.L)/1000, H=num(w.H)/1000, T=num(w.T)/1000;
+    if(!(L>0&&H>0&&T>0)){ warnings.push({text:`${label}: enter length, height and thickness`, section:"geom", level:"completeness"}); return; }
+    const vol=N*L*H*T, g=gradeOf(w.grade);
+    lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${g} concrete`,spec:`${label} — ${num(w.T)}mm wall`,qty:vol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(vol,concWastePct(d)),formula:`${N}×${num(w.L)}×${num(w.H)}×${num(w.T)}mm`}));
+    const faces=Math.max(1,Math.round(num(w.faces,2))), lap=d.barLap?PROJECT.lapPct:0;
+    const vc=Math.floor(num(w.L)/num(w.vertSp,400))+1, vlen=H-2*cover+0.4, vtot=N*faces*vc*vlen, vd=barDiaOf(w.vertDia||"N12");
+    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:w.vertDia||"N12",spec:`${label} — vertical bars (${faces} face${faces>1?"s":""}, incl. 0.4 m lap)`,qty:vtot,unit:"m",waste:PROJECT.reoWaste,lap,finalQty:withWasteLap(vtot,PROJECT.reoWaste,lap),formula:`${faces}×${vc}×(${fmt(H,2)}−cover+0.4)×${N}`,notes:`${fmt(vtot*massPerM(vd),1)} kg`}));
+    const hc=Math.floor(num(w.H)/num(w.horSp,400))+1, hlen=L-2*cover+0.4, htot=N*faces*hc*hlen, hd=barDiaOf(w.horDia||"N12");
+    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:w.horDia||"N12",spec:`${label} — horizontal bars (${faces} face${faces>1?"s":""})`,qty:htot,unit:"m",waste:PROJECT.reoWaste,lap,finalQty:withWasteLap(htot,PROJECT.reoWaste,lap),formula:`${faces}×${hc}×(${fmt(L,2)}−cover+0.4)×${N}`,notes:`${fmt(htot*massPerM(hd),1)} kg`}));
+    const ff=Math.max(0,Math.round(num(w.formFaces,2))); let fa=N*ff*L*H; if(w.formEnds!==false) fa+=N*2*T*H;
+    if(fa>0) lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Wall formwork",spec:`${label} — ${ff} face${ff===1?"":"s"}${w.formEnds!==false?" + ends":""}`,qty:fa,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(fa,PROJECT.formworkWaste),formula:`${ff}×${fmt(L,2)}×${fmt(H,2)}${w.formEnds!==false?` + 2×${fmt(T,2)}×${fmt(H,2)}`:""}×${N}`}));
+  });
+  lines.push(...starterRunLines(inst,def,d,N,compositeLenM(d),"Starter bars"));
+  if(!(d.slabs||[]).length && !(d.walls||[]).length) warnings.push({text:"No slabs or walls yet — add the parts of the detail", section:"geom", level:"completeness"});
+  return {lines,warnings};
+}
+/** Section through the assembly: slabs stacked in order, walls standing on
+ * the first slab, every part labelled with its size — a check drawing, not
+ * a second calculator. */
+function diagComposite(inst){ const d=inst.data; const slabs=(d.slabs||[]).filter(sl=>compositeSlabArea(sl)>0), walls=(d.walls||[]).filter(w=>num(w.L)>0&&num(w.H)>0);
+  if(!slabs.length && !walls.length) return `<p class="small">Add a slab or a wall to see the section.</p>`;
+  const maxL=Math.max(1,...slabs.map(sl=>num(sl.L)>0?num(sl.L)*1000:Math.sqrt(compositeSlabArea(sl))*1000),...walls.map(w=>num(w.L)));
+  const totH=slabs.reduce((s,sl)=>s+num(sl.t),0)+Math.max(0,...walls.map(w=>num(w.H)),0)+slabs.length*60;
+  const W=420,H=260,pad=36, sc=Math.min((W-2*pad)/maxL,(H-2*pad)/Math.max(1,totH));
+  let y=H-pad, out="";
+  slabs.forEach((sl,i)=>{ const Lmm=num(sl.L)>0?num(sl.L)*1000:Math.sqrt(compositeSlabArea(sl))*1000, t=num(sl.t); const w=Lmm*sc, h=Math.max(3,t*sc); const x=pad+((maxL-Lmm)*sc)/2; y-=h;
+    out+=`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" fill="rgba(47,84,72,.14)" stroke="var(--accent)" stroke-width="1.4"/><text x="${(x+w/2).toFixed(1)}" y="${(y+h/2+3).toFixed(1)}" font-size="9" text-anchor="middle" fill="var(--text)">${bpEsc(sl.label||`Slab ${i+1}`)} ${fmt(compositeSlabArea(sl),2)} m² × ${t}</text>`;
+    if(i===0){ let wx=x+6; walls.forEach((wl,j)=>{ const ww=Math.max(4,num(wl.T)*sc), wh=num(wl.H)*sc; if(wx+ww>x+w-4) return; out+=`<rect x="${wx.toFixed(1)}" y="${(y-wh).toFixed(1)}" width="${ww.toFixed(1)}" height="${wh.toFixed(1)}" fill="rgba(207,75,68,.12)" stroke="var(--danger)" stroke-width="1.2"/><text transform="translate(${(wx+ww/2+3).toFixed(1)},${(y-wh/2).toFixed(1)}) rotate(-90)" font-size="8.5" text-anchor="middle" fill="var(--text)">${bpEsc(wl.label||`Wall ${j+1}`)} ${num(wl.L)}×${num(wl.H)}×${num(wl.T)}</text>`; wx+=Math.max(ww,14)+((x+w-6-wx)/Math.max(1,walls.length)); }); }
+    y-=60*sc*0.5; });
+  const runs=starterRunsOf(d).length;
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:440px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;"><text x="${W/2}" y="14" font-size="10" font-weight="700" text-anchor="middle" fill="var(--text)">Section — ${slabs.length} slab${slabs.length===1?"":"s"}, ${walls.length} wall${walls.length===1?"":"s"}${runs?`, ${runs} starter run${runs===1?"":"s"}`:""}</text>${out}</svg>`;
+}
 function genericDefaults(kind){ return {
   kind:kind, qty:1, length:10000, width:1000, depth:300, manualVolume:false, volumeOverride:0,
   formworkOn:false, formworkArea:0, reoOn:false, reoDia:"N12", reoLength:0, reoQty:0, reoLap:false, notes:""
@@ -7025,7 +7133,7 @@ function renderStandardsForm(){
  * each side) × depth, plus its spoil. Ground = the library group; the
  * generic calculator (bulk excavation, backfill, temporary works) is itself
  * the dig, so it never gets the box. */
-const GROUND_GROUPS=new Set(["Foundations","Retention Walls","Ground Structure","Ramps","External Works","Special Items"]);
+const GROUND_GROUPS=new Set(["Foundations","Retention Walls","Ground Structure","Ramps","External Works","Special Items","Irregular Concrete Constructions"]);
 const NATIVE_EXC_CALCS=new Set(["stripfooting","padfooting","pilecap","pier","retwall"]);
 const NATIVE_EXC_LINE=/^(bulk excavation|trench excavation|spoil disposal|drilled spoil|bored spoil|backfill \(behind wall\))/i;
 function isGroundElement(def){ return !!def && GROUND_GROUPS.has(def.groupName) && def.calc!=="generic"; }
@@ -7038,6 +7146,7 @@ function elementFootprintM2(inst,def){
   if(def.calc==="slab") return num(d._autoInsArea);
   if(def.calc==="beam") return num(d.qty,1)*(num(d.length)/1000)*(num(d.width)/1000);
   if(def.calc==="tankbox"){ const N=num(d.qty,1); if(d.shape=="circular"){ const dia=num(d.dia)/1000; return N*Math.PI/4*dia*dia; } return N*(num(d.L)/1000)*(num(d.W)/1000); }
+  if(def.calc==="composite"){ const first=(d.slabs||[])[0]; return first? num(d.qty,1)*compositeSlabArea(first) : 0; }   // the base slab's footprint
   return 0;
 }
 function excavationOptionSection(inst,def){
@@ -7159,6 +7268,7 @@ const CALC = {
   kerb:{defaults:kerbDefaults, render:renderKerb, compute:computeKerb, diagram:diagKerb},
   tankbox:{defaults:tankboxDefaults, render:renderTankbox, compute:computeTankbox, diagram:diagTankbox},
   generic:{defaults:genericDefaults, render:renderGeneric, compute:computeGeneric, diagram:diagGeneric},
+  composite:{defaults:compositeDefaults, render:renderComposite, compute:computeComposite, diagram:diagComposite},
 };
 
 /* ---- diagrams ---- */
@@ -8150,6 +8260,8 @@ function attachCardEvents(card,inst){
        : /Rows$/.test(leaf)? {position:"Additional",qty:2,dia:"N16",layers:1,startA:"straight",endA:"straight"}
        : leaf==="extraConn"? {target:"",role:"Dowel",qty:4,dia:"N16",embed:400,proj:400,hook:"straight"}
        : leaf==="starterRuns"? newStarterRun()
+       : leaf==="slabs"? {label:`Slab ${arr.length+1}`, L:1.0, W:1.0, t:150, area:"", grade:"", reo:"mesh", meshType:"SL82", meshLayers:1, barDia:"N12", barSp:200, barLayers:1, edgeForm:true, edgeLm:"", soffitForm:false, blindOn:false, blindT:50}
+       : leaf==="walls"? {label:`Wall ${arr.length+1}`, L:1000, H:600, T:150, grade:"", vertDia:"N12", vertSp:400, horDia:"N12", horSp:400, faces:2, formFaces:2, formEnds:true}
        : leaf==="sdExtraBars"? {orient:"vertical",dia:"N12",spacing:300,len:600}
        : leaf.endsWith("Bars")? {mark:"Section "+((arr.length)+1),dia:"N12",span:1,spacing:200,len:1}
        : leaf==="outlinePts"? {x:0,y:0}
