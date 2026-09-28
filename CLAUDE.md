@@ -238,6 +238,15 @@ safety net silently. Keep all cost arithmetic in `lib/costing.js`.
   with, so an older element gets the spoil row by renaming one of its
   "Additional labour / plant" rows.
 
+- **Every trench-reinforcement layer is one of three products**
+  (`trenchMeshTypeSel` is the ONE selector: L-series trench mesh, an SL/RL
+  sheet cut as strips, or straight stock bars encoded as `"<count> Bar-N<dia>"`
+  from `STOCK_BAR_LAYER_DIAS`; `layerProduct(type)` tells them apart). A bar
+  layer is priced by `stockBarLayerLine` as plain `N12` by the METRE (count ×
+  layers × run, bar lap %), never as a trench product by the lineal metre,
+  so the register, the orders schedule and the Quotes bridge see ordinary
+  bar. The beam calculator and every slab beam run (edge beams, internal
+  strips, extra groups) branch on it before `trenchReoMassPerM`.
 - **Mesh sizes live in one catalog, mirrored in two places:** `SQUARE MESH`
   in `catalog.js` (name, sheet weight, $/sheet) is the source; the
   Estimates `MESHTYPES` table (kg/m² = sheet weight ÷ 14.4) and the portal

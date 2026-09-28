@@ -1799,10 +1799,27 @@ const TRENCH_MESH_TYPES = [
 ];
 // Trench reinforcement can be a named L-series trench mesh OR a square-mesh
 // (SL/RL) sheet cut/laid as trench strips — both offered in one dropdown.
+const STOCK_BAR_LAYER_DIAS=["N10","N12","N16","N20","N24","N28"];
+/** Every layer of a trench run can be one of three products: an L-series
+ * trench mesh, a square-mesh sheet cut as strips, or N straight stock bars
+ * ("4 Bar-N12" — count × diameter, priced as bars by the metre so the
+ * register, orders and the Quotes bridge see plain N12 bar). */
+function layerProduct(type){
+  const m=/^(\d+) Bar-(N\d+)$/.exec(String(type||""));
+  if(m) return {kind:"bars", count:+m[1], dia:m[2]};
+  if(MESHTYPES[type]!==undefined) return {kind:"mesh"};
+  return {kind:"trench"};
+}
+function stockBarLayerLine(inst,def,lp,n,runM,label,lapOn){
+  const bd=barDiaOf(lp.dia); const totLen=runM*n*lp.count; const wt=totLen*massPerM(bd); const lapPct=lapOn?PROJECT.lapPct:0;
+  const layerNote=n>1?` × ${n} layers`:"";
+  return baseLine(inst,def,{materialGroup:"Reinforcement",material:lp.dia,spec:`${label} — ${lp.count} × ${lp.dia} straight stock bars${layerNote}`,qty:totLen,unit:"m",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,lapPct),formula:`${lp.count} bars × ${n} layer(s) × ${fmt(runM,2)} m run`,notes:`${fmt(wt,1)} kg`});
+}
 function trenchMeshTypeSel(field,val,rerender){
   let tm=TRENCH_MESH_TYPES.map(t=>`<option value="${t[0]}" ${String(val)===t[0]?'selected':''}>${t[0]}</option>`).join('');
   let sq=Object.keys(MESHTYPES).map(m=>`<option value="${m}" ${String(val)===m?'selected':''}>${m} (mesh strip)</option>`).join('');
-  return `<select data-field="${field}" ${rerender?'data-rerender="true"':''}><optgroup label="Trench mesh (L-series)">${tm}</optgroup><optgroup label="Square mesh laid as trench strips">${sq}</optgroup></select>`;
+  let bars=STOCK_BAR_LAYER_DIAS.map(dia=>[2,3,4,5,6,7,8].map(c=>{ const v=`${c} Bar-${dia}`; return `<option value="${v}" ${String(val)===v?'selected':''}>${c} × ${dia} straight bars</option>`; }).join('')).join('');
+  return `<select data-field="${field}" ${rerender?'data-rerender="true"':''}><optgroup label="Trench mesh (L-series)">${tm}</optgroup><optgroup label="Square mesh laid as trench strips">${sq}</optgroup><optgroup label="Straight stock bars (count × size per layer)">${bars}</optgroup></select>`;
 }
 /* ---- Per-layer reinforcement materials ----
    A multi-layer mesh / trench-mesh setup can use a DIFFERENT product per
@@ -1826,7 +1843,7 @@ function layerTypeSelects(d,layersField,typeField,storeField,selFn,label,pathPre
     let cur=(d[storeField]&&d[storeField][i])||d[typeField];
     out+=F(`Layer ${i} ${label}`,selFn(`${pathPrefix}${storeField}.${i}`,cur));
   }
-  return `<div class="grid cols3" style="margin-top:6px;">${out}</div><p class="small">Layer 1 uses the type selected above — every further layer can be a different product; they are quantified separately in the register.</p>`;
+  return `<div class="grid cols3" style="margin-top:6px;">${out}</div><p class="small">Layer 1 uses the type selected above — every further layer can be a different product (trench mesh, a mesh strip, or straight stock bars); they are quantified separately in the register.</p>`;
 }
 function layerTypeCounts(d,layersField,typeField,storeField){
   let layers=Math.max(1,Math.round(num(d[layersField],1)));
@@ -3868,6 +3885,7 @@ function computeStripFooting(inst,def){
     // one line per DISTINCT layer material — different layers can be different products
     let lapPct=d.trenchMeshLap?MESH_LAP_PCT:0;
     layerTypeCounts(d,"trenchMeshLayers","trenchMeshType","trenchMeshLayerTypes").forEach((n,type)=>{
+      const lp=layerProduct(type); if(lp.kind==="bars"){ lines.push(stockBarLayerLine(inst,def,lp,n,N*Lm,"Longitudinal",d.trenchMeshLap)); return; }
       let mpm=trenchReoMassPerM(type,d.width);
       let totLen=N*n*Lm; let wt=totLen*mpm;
       let layerNote=n>1?` × ${n} layers`:"";
@@ -4376,6 +4394,7 @@ function raftBeamGroupLines(inst,def,lines,d,g){
       // g.src lets an extra beam keep its trench-mesh fields on its OWN object
       // instead of the element data; the primary beams leave it unset.
       layerTypeCounts(g.src||d,g.layersField,g.typeField,g.layerTypesField).forEach((n,type)=>{
+        const lp=layerProduct(type); if(lp.kind==="bars"){ lines.push(stockBarLayerLine(inst,def,lp,n,g.runM,`${g.label} — longitudinal`,g.trenchLap)); return; }
         let mpm=trenchReoMassPerM(type,g.widthMm);
         let totLen=g.runM*n; let wt=totLen*mpm;
         let layerNote=n>1?` × ${n} layers`:"";
@@ -4460,6 +4479,7 @@ function computeBeam(inst,def){
     // one line per DISTINCT layer material — different layers can be different products
     let lapPct=d.trenchMeshLap?MESH_LAP_PCT:0;
     layerTypeCounts(d,"trenchMeshLayers","trenchMeshType","trenchMeshLayerTypes").forEach((n,type)=>{
+      const lp=layerProduct(type); if(lp.kind==="bars"){ lines.push(stockBarLayerLine(inst,def,lp,n,N*Lm,"Longitudinal",d.trenchMeshLap)); return; }
       let mpm=trenchReoMassPerM(type,d.width);
       let totLen=N*n*Lm; let wt=totLen*mpm;
       let layerNote=n>1?` × ${n} layers`:"";
