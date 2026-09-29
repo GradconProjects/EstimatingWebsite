@@ -199,6 +199,15 @@ tr.row-outofscope input, tr.row-outofscope select{background:#eef0f2;color:#9aa5
 .accordion[open] summary::after{transform:rotate(180deg);}
 .accordion .acc-body{padding:14px 16px;overflow-x:auto;}
 .acc-count{font-weight:400;font-size:11.5px;color:#5a7186;margin-left:8px;white-space:nowrap;}
+.validity-alarm{border:1px solid #f0c36d;background:#fff8e6;color:#6b4d00;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12.5px;}
+.validity-alarm.expired{border-color:#e39a9a;background:#fdeeee;color:#7a1f1f;}
+.validity-alarm ul{margin:6px 0 0 18px;padding:0;}
+.validity-alarm li{margin:2px 0;}
+.validity-table td .vstate{font-size:11px;font-weight:700;margin-left:8px;white-space:nowrap;}
+.validity-table td .vstate.ok{color:#5a7186;font-weight:400;}
+.validity-table td .vstate.expiring{color:#9a6400;}
+.validity-table td .vstate.expired{color:#a33;}
+.validity-table input[type=date]{font-size:12px;padding:3px 6px;border:1px solid var(--border);border-radius:4px;}
 .lib-header{display:flex;align-items:center;gap:16px;padding:16px 22px;background:#fff;border-bottom:2px solid var(--border);}
 .lib-header img{height:44px;}
 .lib-header h1{font-size:19px;margin:0;color:var(--navy2);}
@@ -595,6 +604,10 @@ function freshRates(){
     steel: JSON.parse(JSON.stringify(STEEL_BUILDUPS)),
     reinfAcc: {}, concrete: {}, concreteLabour: {...CONCRETE_LABOUR}, formwork: {},
     rateItems: {}, bciRef: {}, concreteGrade: {}, specialistConcrete: {}, formworkLegacy: {}, otherAcc: {}, otherAllow: {}, labourPlant: {}, prelim: {},
+    // "Valid until" dates on the time-limited rates, keyed by the Quotes
+    // catalog product name (see VALIDITY_ITEMS); Quotes takes them through
+    // src/lib/ratesLibrarySync.js and alarms as they near.
+    validity: {},
     reinforcementEstablished: {
       trenchMesh: {...GRADCON_TRENCH_MESH_RATES},
       squareMesh: {...GRADCON_SQUARE_MESH_RATES},
@@ -793,6 +806,47 @@ function section(id, navLabel, title, count, bodyHtml, openByDefault){
   return `<details class="accordion" id="${id}" ${openByDefault?"open":""}><summary>${title} <span class="acc-count">${count} item${count===1?"":"s"}</span></summary><div class="acc-body">${bodyHtml}</div></details>`;
 }
 
+/* ---- Validity of the time-limited rates ----
+ * Supplier surcharges, levies and fees are published FOR A PERIOD (Holcim
+ * reviews its Production & Transport Surcharge fortnightly). Each row here
+ * carries a "valid until" date under state.validity[<Quotes product name>];
+ * Quotes reads the same dates (src/lib/ratesLibrarySync.js → validUntil on
+ * the rate) and both apps raise the alarm below as a date nears or lapses.
+ * `value` reads the CURRENT figure from wherever this library keeps it. */
+const VALIDITY_WARN_DAYS = 14;
+const VALIDITY_ITEMS = [
+  { name:"Production & transport surcharge", label:"Holcim Production & Transport Surcharge", unit:"m3", value:()=>state.global.concreteSurchargePerM3, note:"reviewed fortnightly by Holcim" },
+  { name:"Minimum cartage (load under 4 m3)", label:"Holcim minimum cartage (per m³ short of 4 m³)", unit:"m3", value:()=>(state.concreteGrade["Minimum cartage (load under 4 m3)"]||{}).cost },
+  { name:"Environment levy", label:"Holcim environment levy", unit:"m3", value:()=>(state.concreteGrade["Environment levy"]||{}).cost },
+  { name:"VicMix pigment washout charge \u2014 per truck (+ GST, pigmented mixes)", label:"VicMix pigment washout charge (per truck)", unit:"truck", value:()=>(state.specialistConcrete["VicMix pigment washout charge \u2014 per truck (+ GST, pigmented mixes)"]||{}).cost },
+  { name:"VicMix short-load charge \u2014 delivery under the 4 m\u00b3 Maxi minimum", label:"VicMix short-load charge", unit:"load", value:()=>(state.specialistConcrete["VicMix short-load charge \u2014 delivery under the 4 m\u00b3 Maxi minimum"]||{}).cost },
+  { name:"VicMix delivery beyond 25 km of plant \u2014 per load", label:"VicMix delivery beyond 25 km (per load)", unit:"load", value:()=>(state.specialistConcrete["VicMix delivery beyond 25 km of plant \u2014 per load"]||{}).cost },
+];
+function parseValidUntil(v){ const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(String(v||"")); if(!m) return null; const d=new Date(+m[1],+m[2]-1,+m[3]); return isNaN(d.getTime())?null:d; }
+function validityState(v, today){
+  const d=parseValidUntil(v); if(!d) return {state:"none", daysLeft:null};
+  const t=today?new Date(today):new Date(); t.setHours(0,0,0,0); d.setHours(0,0,0,0);
+  const daysLeft=Math.round((d-t)/86400000);
+  return {state: daysLeft<0?"expired":daysLeft<=VALIDITY_WARN_DAYS?"expiring":"ok", daysLeft};
+}
+function validityLabel(v){ const n=v.daysLeft; if(n==null) return ""; if(n<0) return `expired ${-n} day${n===-1?"":"s"} ago`; if(n===0) return "expires today"; return `expires in ${n} day${n===1?"":"s"}`; }
+function fmtDate(v){ const d=parseValidUntil(v); return d? d.toLocaleDateString("en-AU",{day:"numeric",month:"short",year:"numeric"}) : ""; }
+function validityRows(){
+  return VALIDITY_ITEMS.map(it=>{ const until=(state.validity||{})[it.name]||""; return {...it, until, v:validityState(until), current:it.value()}; });
+}
+function validityAlarmHtml(){
+  const due=validityRows().filter(r=>r.v.state==="expired"||r.v.state==="expiring").sort((a,b)=>a.v.daysLeft-b.v.daysLeft);
+  if(!due.length) return "";
+  const expired=due.filter(r=>r.v.state==="expired").length;
+  const head=expired? `${expired} supplier rate${expired===1?" has":"s have"} lapsed` : `${due.length} supplier rate${due.length===1?"":"s"} about to lapse`;
+  return `<div class="validity-alarm ${expired?"expired":""}" role="alert"><b>⚠ ${head}</b> — check the supplier's latest notice, then update the figure AND its validity date in the Concrete section below. Open estimates in Quotes follow the new figure; finished ones keep their pinned rates.<ul>${due.map(r=>`<li><b>${r.label}</b>: ${fmt$(r.current)} / ${r.unit}, valid to ${fmtDate(r.until)} (${validityLabel(r.v)})</li>`).join("")}</ul></div>`;
+}
+function validityTableHtml(){
+  return `<div class="panel-block" style="margin-top:10px;"><h3>Validity of surcharges, levies &amp; fees</h3>
+     <p class="hint">Enter the date each supplier notice runs to. The library, the Quotes dashboard and every open project raise an alarm ${VALIDITY_WARN_DAYS} days out and again once it lapses — update the figure and the date together when the next notice arrives.</p>
+     <table class="item-table validity-table"><thead><tr><th>Rate</th><th>Current figure</th><th>Valid until</th></tr></thead><tbody>${validityRows().map(r=>`<tr><td>${r.label}${r.note?` <span class="acc-count">${r.note}</span>`:""}</td><td>${fmt$(r.current)} / ${r.unit}</td><td><input type="date" class="valid-input" data-name="${r.name.replace(/"/g,"&quot;")}" value="${r.until}"><span class="vstate ${r.v.state}">${validityLabel(r.v)}</span></td></tr>`).join("")}</tbody></table></div>`;
+}
+
 let navMeta = [];
 function renderApp(){
   let h = "";
@@ -805,8 +859,10 @@ function renderApp(){
     editableTable(CONCRETE_GRADE_ITEMS, state.concreteGrade, it=>it.p, [{field:"cost",label:"Rate ($/m3)"}], {mapName:"concreteGrade", showUnit:false}) +
     `<div class="panel-block" style="margin-top:10px;"><h3>Production &amp; Transport Surcharge</h3>
      <p class="hint">Holcim reviews this FORTNIGHTLY. Check their notice and update this number here — it applies on top of every concrete rate above.</p>
-     <table class="kv-table"><tbody><tr><td>Surcharge ($/m3)</td><td><input type="number" step="any" id="surcharge" value="${state.global.concreteSurchargePerM3}"></td></tr></tbody></table></div>
-     <div class="panel-block" style="margin-top:10px;"><h3>Concrete pour-type reference (used by Cost Planner's blended Substructure rate)</h3>` +
+     <table class="kv-table"><tbody><tr><td>Surcharge ($/m3)</td><td><input type="number" step="any" id="surcharge" value="${state.global.concreteSurchargePerM3}"></td></tr></tbody></table>
+     <p class="hint" style="margin:8px 0 0 0;">Quotes prices its "Production &amp; transport surcharge" row from this figure (every open project follows it; a project marked Completed Estimating or later keeps the figure it was finished with).</p></div>` +
+    validityTableHtml() +
+    `<div class="panel-block" style="margin-top:10px;"><h3>Concrete pour-type reference (used by Cost Planner's blended Substructure rate)</h3>` +
     editableTable(CONCRETE_ITEMS, state.concrete, it=>it.p, [{field:"supply",label:"Supply ($/m3)"}], {mapName:"concrete", showUnit:false}) +
     `</div>
      <div class="panel-block" style="margin-top:10px;"><h3>Shared concrete labour/plant assumptions</h3>
@@ -943,7 +999,7 @@ h += section("sec-reinforcement", "Reinforcement", "Reinforcement", REINFORCEMEN
      </tbody></table>`, false);
 
   const navHtml = `<nav class="lib-nav">` + navMeta.map(s=>`<button type="button" onclick="jumpTo('${s.id}')">${s.navLabel}</button>`).join("") + `</nav>`;
-  document.getElementById("app").innerHTML = navHtml + `<div class="acc-grid">${h}</div>`;
+  document.getElementById("app").innerHTML = navHtml + validityAlarmHtml() + `<div class="acc-grid">${h}</div>`;
   wireInputs();
 }
 
@@ -1009,6 +1065,22 @@ function wireInputs(){
     });
   };
   bind("surcharge", ["global","concreteSurchargePerM3"]);
+  // Validity dates: typed straight into state.validity[<Quotes product name>].
+  // The row's own state chip and the page-top alarm refresh in place — no
+  // re-render, so the date picker keeps focus.
+  document.querySelectorAll(".valid-input").forEach(inp=>{
+    inp.addEventListener("input", e=>{
+      if(!state.validity || typeof state.validity!=="object") state.validity = {};
+      const name = e.target.dataset.name, v = String(e.target.value||"");
+      if(v) state.validity[name] = v; else delete state.validity[name];
+      const chip = e.target.parentElement.querySelector(".vstate");
+      if(chip){ const vs = validityState(v); chip.className = "vstate "+vs.state; chip.textContent = validityLabel(vs); }
+      const old = document.querySelector(".validity-alarm"); const fresh = validityAlarmHtml();
+      if(old) old.remove();
+      if(fresh){ const nav = document.querySelector(".lib-nav"); if(nav) nav.insertAdjacentHTML("afterend", fresh); }
+      saveRates();
+    });
+  });
   bind("g_reodelivery", ["global","reinforcementDeliveryPerTonne"]);
   bind("g_reowaste", ["global","reoWastePct"]);
   bind("g_barlap", ["global","barLapPct"]);

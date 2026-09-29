@@ -102,6 +102,35 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
     }));
 
   const setQty = (qKey, v) => patch((it) => ({ ...it, qtys: { ...it.qtys, [qKey]: v } }));
+  // A rate that belongs to THIS element (a received subcontract quote, say):
+  // stored on the item under the same key as its quantity, read back through
+  // rowRate in lib/costing.js. Clearing removes the override, so the row
+  // falls back to the shared rate. Never touches the shared rates object.
+  const setRowRate = (qKey, v) =>
+    patch((it) => {
+      const next = { ...(it.rateOverrides || {}) };
+      const n = Number(v);
+      if (v === undefined || v === "" || !Number.isFinite(n)) delete next[qKey];
+      else next[qKey] = { ...(next[qKey] || {}), unitCost: n };
+      return { ...it, rateOverrides: Object.keys(next).length ? next : undefined };
+    });
+  // The amount cell of a "quote" row: the received quote lands as qty 1 ×
+  // that figure ON THIS ELEMENT, in ONE patch (`patch` builds from the
+  // rendered item, so two patches in a row would lose the first — the qty
+  // and the override must be written together). Clearing empties both.
+  const setQuoteAmount = (qKey, v) =>
+    patch((it) => {
+      const next = { ...(it.rateOverrides || {}) };
+      const qtys = { ...it.qtys };
+      const n = Number(v);
+      if (v === undefined || v === "" || !Number.isFinite(n)) { delete next[qKey]; delete qtys[qKey]; }
+      else {
+        const q = Number(qtys[qKey]) > 0 ? Number(qtys[qKey]) : 1;
+        qtys[qKey] = q;
+        next[qKey] = { ...(next[qKey] || {}), unitCost: n / q };
+      }
+      return { ...it, qtys, rateOverrides: Object.keys(next).length ? next : undefined };
+    });
   const setLabel = (v) => patch((it) => ({ ...it, label: v }));
   const addTask = () => patch((it) => ({ ...it, tasks: [...it.tasks, { id: uid(), name: "New task", qtys: {} }] }));
   const removeTask = (taskId) => patch((it) => ({ ...it, tasks: it.tasks.filter((t) => t.id !== taskId) }));
@@ -424,6 +453,8 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
               rates={rates}
               onQtyChange={setQty}
               onRateChange={onMaterialRateChange}
+              onRowRateChange={setRowRate}
+              onQuoteAmountChange={setQuoteAmount}
               catOpen={openCats[cat.key]}
               toggleCat={() => setOpenCats((o) => ({ ...o, [cat.key]: !o[cat.key] }))}
               catTotal={cost.categoryTotals[cat.key]}

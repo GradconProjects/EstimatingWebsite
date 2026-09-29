@@ -384,14 +384,16 @@ check("Formwork rates match the Rates Library: Conventional $150/m², Edgeform $
   assert.equal(rates[rateKey("CONCRETE", "40 mpa Agilia", "m3")].unitCost, 339);
 });
 
-check("Subcontract 'quote' items: the received quote is entered as the rate — qty 1 books the whole quote", () => {
+check("Subcontract 'quote' items: the received quote is entered ON THE ELEMENT — qty 1 books the whole quote, a piling row never reads a shared rate", () => {
   const rates = defaultRates();
   const item = newElementItem(ELEMENT_TYPES.find((t) => t.id === "slab_on_ground"));
   item.labourAuto = false;
   const key = rateKey("SUB CONTRACTORS / TEMPORARY WORKS", "Screw Piling", "quote");
   item.qtys[key] = 1;
   assert.equal(computeElementCost(item, rates).materialsTotal, 0); // no quote entered yet — costs nothing
-  rates[key] = { unitCost: 45000 }; // the quote received, typed straight on the row
+  rates[key] = { unitCost: 45000 }; // a figure in the SHARED rate (how it worked before 29 Sep 2026) — ignored for piling
+  assert.equal(computeElementCost(item, rates).materialsTotal, 0);
+  item.rateOverrides = { [key]: { unitCost: 45000 } }; // the quote received, typed straight on the row of THIS element
   assert.equal(computeElementCost(item, rates).materialsTotal, 45000);
 });
 
@@ -1670,6 +1672,156 @@ check("the PRELIMINARIES band is on the PRELIMINARIES elements ONLY: hidden and 
   const tc = computeElementCost(traffic, rates);
   assert.equal(tc.categoryTotals[cat.key], 8 * controller.unitCost); assert.equal(tc.total, 8 * controller.unitCost); assert.equal(tc.concreteQty, 0);
   assert.deepEqual(traffic.tasks.map((t) => t.name).slice(0, 2), ["Site establishment / mobilisation", "Traffic management / control"]);
+});
+
+
+/* ---- Per-element rate overrides, pinned rates on finished projects, validity dates (29 Sep 2026) ---- */
+const { rowRate, isManualQuoteKey } = await import("../src/lib/costing.js");
+const { RATES_LOCKED_STATUSES, isRatesLocked, effectiveRates, statusChangePatch, needsFreeze, freezeRates, frozenRateDrift, hasFrozenRates } = await import("../src/lib/rateFreeze.js");
+const { validityState, expiringRates, ratesWithValidity, isTimeLimited, validityLabel } = await import("../src/lib/rateValidity.js");
+const { GLOBAL_PRICES, libraryValidity } = await import("../src/lib/ratesLibrarySync.js");
+
+check("A subcontract 'quote' amount belongs to the ELEMENT (item.rateOverrides), never the shared rate — 25 Spindrift, 29 Sep 2026", () => {
+  const subs = FULL_CATALOG.find((c) => c.key === "SUB CONTRACTORS / TEMPORARY WORKS");
+  const screw = subs.products.find((p) => p.name === "Screw Piling");
+  const key = rateKey(subs.key, screw.name, screw.unit);
+  const rates = defaultRates();
+  rates[key] = { ...rates[key], unitCost: 15213 };                       // what the shared rate happens to hold
+  const spindrift = newElementItem(ELEMENT_TYPES.find((t) => t.id === "screw_piles"));
+  spindrift.qtys[key] = 1;
+  spindrift.rateOverrides = { [key]: { unitCost: 18400 } };              // the quote received for THIS job
+  const paringa = newElementItem(ELEMENT_TYPES.find((t) => t.id === "raft_foundation"));
+  paringa.qtys[key] = 1;                                                 // an older project with no override of its own
+  assert.equal(rowRate(spindrift, rates, key, {}).unitCost, 18400, "the element's own figure wins");
+  assert.equal(rowRate(paringa, rates, key, {}).unitCost, 0, "piling: no figure on the element → NOTHING, never the shared rate");
+  assert.equal(computeElementCost(spindrift, rates).categoryTotals[subs.key], 18400);
+  assert.equal(computeElementCost(paringa, rates).categoryTotals[subs.key], 0);
+  // the piling / bored pier rows are the manual-only ones; other subcontract quote rows still fall back to the shared rate
+  ["Screw Piling", "CFA Piling", "Bored Piers (subcontract)"].forEach((n) => assert.ok(isManualQuoteKey(rateKey(subs.key, n, "quote")), n));
+  ["Steel fix", "Steel supply", "Formwork (subcontract)", "Excavation (subcontract)"].forEach((n) => assert.equal(isManualQuoteKey(rateKey(subs.key, n, "quote")), false, n));
+  assert.equal(isManualQuoteKey(rateKey("CONCRETE", "Screw Piling", "m3")), false, "only a quote-unit row");
+  const sf = rateKey(subs.key, "Steel fix", "quote"); rates[sf] = { ...rates[sf], unitCost: 1650 };
+  const beach = newElementItem(ELEMENT_TYPES[0]); beach.qtys[sf] = 7;
+  assert.equal(computeElementCost(beach, rates).categoryTotals[subs.key], 7 * 1650, "a steel-fix quote row without an override still prices off the shared rate");
+  // the override carries only what it states — weights/areas still come from the shared rate
+  const mesh = FULL_CATALOG.find((c) => c.key === "SQUARE MESH"); const sl = mesh.products[0]; const mk = rateKey(mesh.key, sl.name, sl.unit);
+  const it = newElementItem(ELEMENT_TYPES[0]); it.rateOverrides = { [mk]: { unitCost: 99 } };
+  const r = rowRate(it, rates, mk, {});
+  assert.equal(r.unitCost, 99); assert.equal(r.sheetArea, rates[mk].sheetArea); assert.equal(r.unitWeight, rates[mk].unitWeight);
+  assert.equal(rowRate(it, rates, "no::such::key", { unitCost: 7 }).unitCost, 7, "falls back to the catalog default like lookupRate");
+});
+
+check("Finished statuses pin the rates: Completed Estimating onwards, never On Hold / Queued / Estimating", () => {
+  assert.deepEqual(RATES_LOCKED_STATUSES, ["Completed Estimating", "Quoting", "Submitted", "Tendered", "Successful", "Unsuccessful"]);
+  RATES_LOCKED_STATUSES.forEach((st) => assert.ok(catalogAll.QUOTE_STATUSES.includes(st), `${st} is a real status`));
+  ["Queued", "Estimating", "On Hold"].forEach((st) => assert.equal(isRatesLocked(st), false, st));
+  assert.equal(isRatesLocked(undefined), false);
+});
+
+check("statusChangePatch is the ONE status rule: open→locked pins live rates, locked→locked keeps the pin, locked→open drops it", () => {
+  const live = defaultRates();
+  const C32 = rateKey("CONCRETE", "32 mpa", "m3");
+  live[C32] = { ...live[C32], unitCost: 250 };
+  const open = { status: "Estimating", items: [] };
+  const p1 = statusChangePatch(open, "Completed Estimating", live, "2026-09-29T00:00:00.000Z");
+  assert.equal(p1.status, "Completed Estimating");
+  assert.equal(p1.ratesFrozen.at, "2026-09-29T00:00:00.000Z"); assert.equal(p1.ratesFrozen.status, "Completed Estimating");
+  assert.equal(p1.ratesFrozen.rates[C32].unitCost, 250);
+  const done = { ...open, ...p1 };
+  // the library moves on — the finished project does not
+  live[C32] = { ...live[C32], unitCost: 275 };
+  assert.equal(effectiveRates(done, live)[C32].unitCost, 250, "pinned copy governs while locked");
+  assert.equal(effectiveRates(open, live)[C32].unitCost, 275, "an open project follows the live rates");
+  assert.equal(computeGrandTotal([], effectiveRates(done, live)), 0);
+  // Submitted → Successful keeps the SAME pin (no silent re-price on the way through the pipeline)
+  const p2 = statusChangePatch(done, "Successful", live);
+  assert.deepEqual(p2, { status: "Successful" });
+  // back to an open status drops the pin (null so a field merge clears it)
+  const p3 = statusChangePatch(done, "Estimating", live);
+  assert.deepEqual(p3, { status: "Estimating", ratesFrozen: null });
+  assert.equal(effectiveRates({ ...done, ...p3 }, live)[C32].unitCost, 275);
+  // a locked project whose pin was lost gets a fresh one on the next status change too
+  assert.ok(statusChangePatch({ status: "Submitted" }, "Successful", live).ratesFrozen, "no pin → pins now");
+  // a product added to the catalog AFTER the pin still resolves through the live rates
+  const later = { ...live, "NEW::Thing::each": { unitCost: 5 } };
+  assert.equal(effectiveRates(done, later)["NEW::Thing::each"].unitCost, 5);
+});
+
+check("A project finished before pins existed is pinned on open (needsFreeze) and drift is reported, never applied", () => {
+  const live = defaultRates();
+  const C32 = rateKey("CONCRETE", "32 mpa", "m3");
+  assert.equal(needsFreeze({ status: "Submitted", items: [] }), true);
+  assert.equal(needsFreeze({ status: "Estimating", items: [] }), false);
+  const q = { status: "Submitted", ratesFrozen: freezeRates(live, "Submitted") };
+  assert.equal(needsFreeze(q), false); assert.ok(hasFrozenRates(q));
+  assert.deepEqual(frozenRateDrift(q, live), []);
+  const moved = { ...live, [C32]: { ...live[C32], unitCost: live[C32].unitCost + 10 } };
+  const drift = frozenRateDrift(q, moved);
+  assert.equal(drift.length, 1); assert.equal(drift[0].key, C32); assert.equal(drift[0].live, live[C32].unitCost + 10);
+  assert.equal(effectiveRates(q, moved)[C32].unitCost, live[C32].unitCost, "drift is information — the pin still governs");
+  assert.deepEqual(frozenRateDrift({ status: "Estimating" }, moved), [], "nothing pinned, nothing to report");
+});
+
+check("Validity dates: a time-limited rate alarms 14 days out and once lapsed, dates parse as LOCAL days", () => {
+  const today = new Date(2026, 8, 29);                                    // 29 Sep 2026
+  assert.deepEqual(validityState("2026-10-20", today), { state: "ok", daysLeft: 21 });
+  assert.deepEqual(validityState("2026-10-13", today), { state: "expiring", daysLeft: 14 });
+  assert.deepEqual(validityState("2026-09-29", today), { state: "expiring", daysLeft: 0 });
+  assert.deepEqual(validityState("2026-09-28", today), { state: "expired", daysLeft: -1 });
+  assert.deepEqual(validityState("", today), { state: "none", daysLeft: null });
+  assert.deepEqual(validityState("30/09/2026", today), { state: "none", daysLeft: null }, "an unreadable date is no date");
+  assert.equal(validityLabel({ daysLeft: -1 }), "expired 1 day ago"); assert.equal(validityLabel({ daysLeft: 0 }), "expires today"); assert.equal(validityLabel({ daysLeft: 5 }), "expires in 5 days");
+  ["Production & transport surcharge", "Environment levy", "Minimum cartage (load under 4 m3)", "VicMix pigment washout charge — per truck (+ GST, pigmented mixes)", "VicMix short-load charge — delivery under the 4 m³ Maxi minimum", "VicMix delivery beyond 25 km of plant — per load", "Delivery fee"].forEach((n) => assert.ok(isTimeLimited(n), n));
+  ["32 mpa", "Conventional", "Screw Piling", "N12"].forEach((n) => assert.equal(isTimeLimited(n), false, n));
+  const rates = defaultRates();
+  const SUR = rateKey("CONCRETE", "Production & transport surcharge", "m3");
+  const LEVY = rateKey("CONCRETE", "Environment levy", "m3");
+  const C32 = rateKey("CONCRETE", "32 mpa", "m3");
+  rates[SUR] = { ...rates[SUR], validUntil: "2026-10-05" };               // 6 days
+  rates[LEVY] = { ...rates[LEVY], validUntil: "2026-09-20" };             // lapsed
+  rates[C32] = { ...rates[C32], validUntil: "2026-09-20" };               // a grade is not time-limited: ignored even with a date
+  const due = expiringRates(rates, today);
+  assert.deepEqual(due.map((d) => [d.key, d.state, d.daysLeft]), [[LEVY, "expired", -9], [SUR, "expiring", 6]], "lapsed first, then soonest");
+  assert.equal(due[1].unitCost, rates[SUR].unitCost); assert.equal(due[1].unit, "m3");
+  rates[SUR].validUntil = "2026-12-01";
+  assert.deepEqual(expiringRates(rates, today).map((d) => d.key), [LEVY]);
+  assert.equal(ratesWithValidity(rates, today).length, 2, "every dated time-limited rate, ok ones included");
+  assert.deepEqual(expiringRates(defaultRates(), today), [], "no dates → no alarm");
+});
+
+check("Rates Library: the GLOBAL fuel/transport surcharge now governs Quotes' surcharge row, and validity dates sync as validUntil", () => {
+  const SUR = rateKey("CONCRETE", "Production & transport surcharge", "m3");
+  assert.deepEqual(GLOBAL_PRICES.map((g) => g.path.join(".")), ["global.concreteSurchargePerM3"]);
+  const lib = { global: { concreteSurchargePerM3: 11.4 }, validity: { "Production & transport surcharge": "2026-10-12", "Environment levy": "2026-12-31", "No Such Product": "2026-01-01", "32 mpa": "not a date" } };
+  assert.ok(libraryPrices(lib).some((p) => p.key === SUR && p.price === 11.4 && p.section === "global"));
+  assert.ok(libraryGovernedKeys(lib).has(SUR), "the modal shows the surcharge as library-governed");
+  let rates = defaultRates();
+  let up = pendingRateUpdates(rates, lib, {});
+  assert.deepEqual(up.find((u) => u.key === SUR && u.price !== undefined), { key: SUR, price: 11.4 }, "price entry keeps its {key, price} shape");
+  assert.deepEqual(up.find((u) => u.key === SUR && u.validUntil !== undefined), { key: SUR, validUntil: "2026-10-12" });
+  assert.deepEqual(up.find((u) => u.validUntil === "2026-12-31"), { key: rateKey("CONCRETE", "Environment levy", "m3"), validUntil: "2026-12-31" });
+  assert.equal(up.filter((u) => u.validUntil !== undefined).length, 2, "an unmatched name and an unreadable date are ignored");
+  assert.deepEqual(libraryValidity(lib).map((v) => v.name).sort(), ["Environment levy", "Production & transport surcharge"]);
+  // once applied, nothing is pending — the sync can never loop
+  rates[SUR] = { ...rates[SUR], unitCost: 11.4, validUntil: "2026-10-12" };
+  rates[rateKey("CONCRETE", "Environment levy", "m3")].validUntil = "2026-12-31";
+  assert.deepEqual(pendingRateUpdates(rates, lib, {}), []);
+  // clearing the date in the library clears it in Quotes
+  assert.deepEqual(pendingRateUpdates(rates, { ...lib, validity: { "Production & transport surcharge": "", "Environment levy": "2026-12-31" } }, {}), [{ key: SUR, validUntil: "" }]);
+  // a library without the block, or a global block without the figure, asks for nothing new
+  assert.deepEqual(pendingRateUpdates(defaultRates(), { global: {} }, {}), []);
+  assert.deepEqual(pendingRateUpdates(defaultRates(), { global: { concreteSurchargePerM3: "9.17" } }, {}), [], "a non-numeric global is ignored");
+});
+
+check("The Rates Library's validity rows name real Quotes catalog products (the two lists cannot drift)", () => {
+  const html = fs.readFileSync(new URL("../portal/rates-library.html", import.meta.url), "utf8");
+  const block = /const VALIDITY_ITEMS = \[([\s\S]*?)\n\];/.exec(html);
+  assert.ok(block, "VALIDITY_ITEMS found in rates-library.html");
+  const names = [...block[1].matchAll(/\{ name:"((?:[^"\\]|\\.)*)"/g)].map((m) => JSON.parse(`"${m[1]}"`));
+  assert.ok(names.length >= 6, `expected the surcharge, cartage, levy and the three VicMix charges; got ${names.length}`);
+  const catalogNames = new Set(); FULL_CATALOG.forEach((c) => c.products.forEach((p) => catalogNames.add(p.name)));
+  names.forEach((n) => { assert.ok(catalogNames.has(n), `library validity row "${n}" is not a Quotes catalog product`); assert.ok(isTimeLimited(n), `"${n}" is not a time-limited row`); });
+  assert.ok(names.includes("Production & transport surcharge"));
 });
 
 console.log(`\n${passed} check(s) passed.`);

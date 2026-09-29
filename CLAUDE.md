@@ -267,6 +267,81 @@ safety net silently. Keep all cost arithmetic in `lib/costing.js`.
   to catalog defaults" button; add one if that's needed (clear the
   relevant key from the stored rates object).
 
+## Rates: what is shared, what is per element, what is pinned (read before touching rates)
+
+Three rules, each from a real loss (25 Spindrift Ave, 29 Sep 2026: a screw
+piling quote typed on one project changed on its own, because the figure
+lived in the one shared rate that two other projects also carried):
+
+1. **A subcontract "quote" row's amount belongs to the ELEMENT.** Typing the
+   received quote onto a `unit: "quote"` row (the amount cell or the Unit $
+   cell in `CategoryBlock`) writes `item.rateOverrides[rateKey] = {unitCost}`
+   — never the shared `gradcon-rates` row. **`rowRate(item, rates, key,
+   fallback)` in `costing.js` is the ONE per-row rate read** (the shared
+   rate through `lookupRate`, with the element's override laid over it):
+   `computeElementCost`, `computeElementReinforcementTonnes`, the auto fee
+   rows, `CategoryBlock`, `PrintQuoteReport` and `exportQuote` all use it.
+   A new per-row costing path must call `rowRate`, not `lookupRate`, or an
+   overridden quote silently prices at the shared figure. Clearing the
+   amount removes the override. **Piling and bored pier quote rows are
+   manual-only** (`isManualQuoteKey`: a `quote`-unit row whose name matches
+   `MANUAL_QUOTE_MATCH` = piling / bored piers — Grady, 29 Sep 2026): `rowRate`
+   never reads the shared rate for them, a row with a qty but no figure
+   typed on the element costs NOTHING and shows a red "quote amount needed"
+   chip, and the Rates modal shows them as "entered per project". The other
+   subcontract quote rows (Steel fix, Steel supply, Formwork, Excavation)
+   keep the shared rate as their fallback, with a red "shared figure —
+   retype to keep it on this project" chip on a row that has a qty and no
+   override; nothing migrates either silently.
+   Rates have NO version history (quote versions hold items, not rates), so
+   an overwritten shared figure is unrecoverable — that is why this rule
+   exists. The other card-side rate edits (Holcim fees, kg/m³ steel, crew
+   rates) still write the shared rates through `setMaterialRate` /
+   `setLabourRate` in `App.jsx` (or the pinned copy, rule 3).
+
+2. **The Rates Library governs the live rates, including the fuel/transport
+   surcharge.** `lib/ratesLibrarySync.js` maps priced library sections by
+   product NAME onto catalog keys; `GLOBAL_PRICES` adds library figures that
+   live in its `global` block — today only `global.concreteSurchargePerM3`
+   → the CONCRETE "Production & transport surcharge" row (until 29 Sep 2026
+   nothing joined the two, so changing the surcharge in the library changed
+   no quote). The library's `validity` block (`{<catalog product name>:
+   "YYYY-MM-DD"}`, entered in its "Validity of surcharges, levies & fees"
+   panel — `VALIDITY_ITEMS`, whose names `verify.mjs` checks against the
+   catalog) syncs the same way as `rates[key].validUntil`;
+   `pendingRateUpdates` emits `{key, validUntil}` entries beside the
+   `{key, price}` ones. `lib/rateValidity.js` (pure): `isTimeLimited(name)`
+   (surcharge / levy / cartage / washout / short-load / delivery-beyond /
+   delivery-fee rows get a "Valid until" field in the Rates modal),
+   `validityState` (expiring within `VALIDITY_WARN_DAYS` = 14, or expired;
+   dates parse as LOCAL days), `expiringRates(rates, today)` → the alarm
+   `RateValidityBanner` shows on the Dashboard and in every open project, off
+   the LIVE rates; the library shows its own copy of the alarm at the top of
+   the page. Nothing changes a figure when its date lapses — the alarm is
+   the reminder to enter the supplier's next notice and date together.
+
+3. **A finished project keeps its own copy of the rates** (`lib/rateFreeze.js`,
+   pure): the moment a status enters `RATES_LOCKED_STATUSES` (Completed
+   Estimating, Quoting, Submitted, Tendered, Successful, Unsuccessful — never
+   Queued / Estimating / On Hold) `statusChangePatch` writes `quote.ratesFrozen
+   = {at, status, rates}` (a full copy of the live rates); moving between two
+   locked statuses keeps the pin; moving back to an open status sets
+   `ratesFrozen: null`. `statusChangePatch` is the ONE status rule — the
+   editor's select and the Dashboard's dropdown both go through it (the
+   Dashboard patches `{status, ratesFrozen}` through `patchQuoteFields`).
+   `effectiveRates(quote, liveRates)` (pinned copy over live, so a product
+   added later still resolves) is what `ProjectEditor` costs with and passes
+   to every child, report, export and the Rates modal, and what the
+   Dashboard's `summarizeQuote` uses. Inside a locked project every rate
+   write (`setRates`, card fee edits, crew rates, the Rates modal) lands on
+   the pinned copy — never the shared rates, and the library never touches
+   the copy. A project finished before pins existed is pinned the first time
+   it is opened (`needsFreeze`, once its row and the live rates have both
+   settled); until then the Dashboard prices it off the live rates. The
+   editor's blue "Rates pinned" banner reports `frozenRateDrift` and the
+   only way a pinned project re-prices is its "Re-price with current rates"
+   button (two clicks; a `before-reprice` version is kept first).
+
 ## Multi-project dashboard
 
 The app has two views, switched in `App.jsx` by whether `activeId` points

@@ -1,17 +1,30 @@
 import { useMemo, useState } from "react";
 import { X } from "lucide-react";
 import { FULL_CATALOG, RESOURCE_COLS, PRODUCTION_RATES } from "../data/catalog.js";
-import { rateKey } from "../lib/costing.js";
+import { rateKey, isManualQuoteKey } from "../lib/costing.js";
 import { NumInput } from "./atoms.jsx";
-import { libraryGovernedKeys, readLibraryState } from "../lib/ratesLibrarySync.js";
+import { libraryGovernedKeys, libraryValidity, readLibraryState } from "../lib/ratesLibrarySync.js";
+import { isTimeLimited, validityState, validityLabel, formatValidUntil } from "../lib/rateValidity.js";
 
-export default function RatesModal({ rates, setRates, onClose }) {
+/**
+ * `lockedFor`: the project's pinned-rates record ({ at, status, rates })
+ * when the modal is opened inside a FINISHED project. Every edit then lands
+ * on that project's own copy (App.jsx routes setRates there), so the
+ * library's ownership of a price does not apply — the library never
+ * touches a pinned copy — and every row is editable.
+ */
+export default function RatesModal({ rates, setRates, onClose, lockedFor = null }) {
   // Prices the Rates Library sets are shown, not edited, here: an edit would
   // be overwritten by the library on the next load anyway (the library
   // rules — see lib/ratesLibrarySync.js). Change them in the Rates Library.
-  const governed = useMemo(() => libraryGovernedKeys(readLibraryState()), []);
+  const libState = useMemo(() => readLibraryState(), []);
+  const governed = useMemo(() => (lockedFor ? new Set() : libraryGovernedKeys(libState)), [libState, lockedFor]);
+  // Validity dates the library states — shown, not edited, here for the same reason.
+  const libraryDated = useMemo(() => (lockedFor ? new Set() : new Set(libraryValidity(libState).map((v) => v.key))), [libState, lockedFor]);
   const update = (key, field, value) =>
     setRates((r) => ({ ...r, [key]: { ...r[key], [field]: value === "" ? null : Number(value) } }));
+  const updateDate = (key, value) =>
+    setRates((r) => ({ ...r, [key]: { ...r[key], validUntil: value || undefined } }));
 
   // Every stored price that no longer matches the catalog it came from. A
   // browser seeds `gradcon-rates` with the WHOLE catalog on first save, so a
@@ -96,9 +109,15 @@ export default function RatesModal({ rates, setRates, onClose }) {
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-xl max-w-3xl w-full max-h-[85vh] flex flex-col shadow-2xl">
         <div className="flex items-center justify-between px-5 py-3 border-b border-neutral-200">
-          <h2 className="font-semibold text-neutral-800">Rates — edit the Gradcon catalog</h2>
+          <h2 className="font-semibold text-neutral-800">{lockedFor ? "Rates — this project's pinned copy" : "Rates — edit the Gradcon catalog"}</h2>
           <button onClick={onClose} className="text-neutral-400 hover:text-neutral-700"><X size={20} /></button>
         </div>
+        {lockedFor && (
+          <div className="px-5 py-2.5 bg-blue-50 border-b border-blue-200 text-[12px] text-blue-950">
+            <b>This project's rates were pinned</b> on {new Date(lockedFor.at).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" })} when it was marked <b>{lockedFor.status}</b>.
+            {" "}Anything you change here changes this project only — the shared rates and the Rates Library are untouched, and they do not change this project either.
+          </div>
+        )}
         {/* A browser that has saved its rates keeps every price it saved, so a
             corrected catalog price never reaches it on its own (see
             CLAUDE.md "Change default prices"). Say so plainly, count the rows
@@ -140,6 +159,7 @@ export default function RatesModal({ rates, setRates, onClose }) {
                     <th className="text-left font-medium pb-1 w-28">Base rate ($/{baseRateLabel(cat)})</th>
                     {unitRateLabel(cat) && <th className="text-left font-medium pb-1 w-28">Unit rate ({unitRateLabel(cat)})</th>}
                     {showsTonneRate(cat) && <th className="text-left font-medium pb-1 w-28">Steel rate ($/tonne)</th>}
+                    {cat.products.some((p) => isTimeLimited(p.name)) && <th className="text-left font-medium pb-1 w-44">Valid until</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -166,7 +186,9 @@ export default function RatesModal({ rates, setRates, onClose }) {
                         ) : <td className="w-28"></td>}
                         <td className="py-1 pr-2 w-28">
                           <div className="flex items-center gap-1">
-                            {governed.has(k) ? (
+                            {isManualQuoteKey(k) ? (
+                              <span className="text-[11px] text-neutral-500 italic" title="Piling and bored pier quotes are typed on the element card of each project — there is no shared or library figure for them">entered per project</span>
+                            ) : governed.has(k) ? (
                               <div className="flex items-center gap-1.5" title="This price is set in the Rates Library and follows it automatically — change it there">
                                 <span className="font-mono tabular-nums text-neutral-800">{r.unitCost}</span>
                                 <span className="text-[9px] uppercase tracking-wide font-semibold text-blue-800 bg-blue-50 border border-blue-200 rounded px-1 py-0.5">Rates Library</span>
@@ -193,6 +215,30 @@ export default function RatesModal({ rates, setRates, onClose }) {
                         {showsTonneRate(cat) && (
                           <td className="py-1 w-28">
                             <NumInput value={tonneRateOf(r)} onChange={(v) => updateTonneRate(k, r, v)} />
+                          </td>
+                        )}
+                        {cat.products.some((q) => isTimeLimited(q.name)) && (
+                          <td className="py-1 w-44">
+                            {isTimeLimited(p.name) && (() => {
+                              const v = validityState(r.validUntil);
+                              const tone = v.state === "expired" ? "text-red-700" : v.state === "expiring" ? "text-amber-800" : "text-neutral-500";
+                              return (
+                                <div className="flex items-center gap-1.5">
+                                  {libraryDated.has(k) ? (
+                                    <span className="font-mono tabular-nums text-[12px] text-neutral-800" title="Set in the Rates Library — change it there">{r.validUntil ? formatValidUntil(r.validUntil) : "—"}</span>
+                                  ) : (
+                                    <input
+                                      type="date"
+                                      value={r.validUntil || ""}
+                                      onChange={(e) => updateDate(k, e.target.value)}
+                                      className="border border-neutral-200 rounded px-1.5 py-0.5 text-[12px]"
+                                      title="The date this supplier rate is published to — the dashboard and editor raise an alarm as it nears"
+                                    />
+                                  )}
+                                  {v.state !== "none" && <span className={`text-[10px] font-semibold ${tone}`}>{validityLabel(v)}</span>}
+                                </div>
+                              );
+                            })()}
                           </td>
                         )}
                       </tr>

@@ -111,6 +111,37 @@ export function lookupRate(rates, key, fallback) {
 }
 
 /**
+ * The rate ONE ROW on ONE ELEMENT prices at: the shared rate (lookupRate),
+ * with anything the element carries in `item.rateOverrides[key]` laid over
+ * it. This is how a subcontract "quote" row keeps its own figure per project
+ * — before 29 Sep 2026 typing a received quote onto such a row wrote the
+ * amount into the SHARED rate, so every project carrying that product (three
+ * of them carried "Screw Piling") silently took the last figure typed
+ * anywhere. Every per-row costing path (computeElementCost, the auto fee
+ * rows, CategoryBlock, the print report, the export) reads through here.
+ */
+export function rowRate(item, rates, key, fallback) {
+  const base = lookupRate(rates, key, fallback);
+  const ov = item && item.rateOverrides && item.rateOverrides[key];
+  const merged = ov && typeof ov === "object" ? { ...base, ...ov } : base;
+  // Piling quotes are per job, full stop: no shared figure, no library
+  // figure — only what was typed on this element, else nothing.
+  if (isManualQuoteKey(key)) return { ...merged, unitCost: ov && ov.unitCost != null ? Number(ov.unitCost) || 0 : 0 };
+  return merged;
+}
+
+/** The subcontract rows whose amount is ONLY ever the quote received for the
+ * job (Grady, 29 Sep 2026: "screw piling rates and bored pier rates should
+ * not be from the library, it should always be manually entered"): a
+ * "quote"-unit row for piling of any kind or bored piers. Such a row never
+ * reads the shared rate — a blank row costs nothing and the card says so. */
+export const MANUAL_QUOTE_MATCH = /piling|bored piers/i;
+export function isManualQuoteKey(key) {
+  const k = String(key || "");
+  return k.endsWith("::quote") && MANUAL_QUOTE_MATCH.test(k.split("::")[1] || "");
+}
+
+/**
  * The ONE place that turns a catalog row's quantity into a dollar figure —
  * computeElementCost, CategoryBlock.jsx and PrintQuoteReport.jsx all call
  * this rather than recomputing it themselves, so the three can never
@@ -231,7 +262,7 @@ export function autoPigmentWashout(item, rates) {
   const truck = prodRate(rates, "VicMix Maxi truck load size", "m³/load", 7);
   if (!(truck > 0)) return null;
   const trucks = Math.ceil(pig / truck - 1e-9);
-  const rate = lookupRate(rates, key, { unitCost: fee.unitCost ?? 0 });
+  const rate = rowRate(item, rates, key, { unitCost: fee.unitCost ?? 0 });
   return { key, qty: trucks, unitCost: rate.unitCost ?? 0, total: trucks * (rate.unitCost ?? 0), pigmentedM3: round2(pig), truckM3: truck };
 }
 /** VicMix short load: the published price needs a 4 m³ minimum delivery — a
@@ -246,7 +277,7 @@ export function autoSpecialistShortLoad(item, rates) {
   const vol = specialistVolume(item);
   const minimum = prodRate(rates, "VicMix minimum delivery (Maxi truck)", "m³/load", 4);
   if (!(vol > 0) || !(minimum > 0) || vol >= minimum - 1e-9) return null;
-  const rate = lookupRate(rates, key, { unitCost: fee.unitCost ?? 0 });
+  const rate = rowRate(item, rates, key, { unitCost: fee.unitCost ?? 0 });
   return { key, qty: 1, unitCost: rate.unitCost ?? 0, total: rate.unitCost ?? 0, volumeM3: round2(vol), minimumM3: minimum, shortByM3: round2(minimum - vol) };
 }
 /** The specialist band's auto rows, in display order (null entries dropped). */
@@ -298,7 +329,7 @@ export function autoMinimumCartage(item, rates) {
   if (!(remainder > 0)) return null; // divides evenly — every load is a full one
   const short = round2(threshold - remainder);
   if (!(short > 0)) return null;
-  const rate = lookupRate(rates, key, { unitCost: mc.unitCost ?? 0 });
+  const rate = rowRate(item, rates, key, { unitCost: mc.unitCost ?? 0 });
   return {
     key, qty: short, unitCost: rate.unitCost ?? 0, total: short * (rate.unitCost ?? 0),
     loads: wholeLoads + 1, remainder, lastLoad: remainder, threshold,
@@ -319,7 +350,7 @@ function autoConcreteFee(item, rates, match) {
   if (typed !== undefined && typed !== "") return null;
   const vol = pouredVolume(item);
   if (!(vol > 0)) return null;
-  const rate = lookupRate(rates, key, { unitCost: fee.unitCost ?? 0 });
+  const rate = rowRate(item, rates, key, { unitCost: fee.unitCost ?? 0 });
   return { key, qty: vol, unitCost: rate.unitCost ?? 0, total: vol * (rate.unitCost ?? 0) };
 }
 /** Holcim production & transport surcharge — $/m³ on every delivered m³. */
@@ -415,7 +446,7 @@ export function computeElementCost(item, rates) {
       const qKey = rateKey(cat.key, p.name, p.unit);
       const qty = Number(item.qtys[qKey]) || 0;
       if (qty > 0) {
-        const rate = lookupRate(rates, qKey, { unitCost: p.unitCost ?? 0, unitWeight: p.unitWeight, sheetArea: p.sheetArea });
+        const rate = rowRate(item, rates, qKey, { unitCost: p.unitCost ?? 0, unitWeight: p.unitWeight, sheetArea: p.sheetArea });
         const rowTotal = computeRowTotal(cat, rate, qty, ctx);
         catTotal += rowTotal;
         if (cat.key === "CONCRETE" && !CONCRETE_CHARGE_MATCH(p.name)) concreteQty += qty; // the delivery fees are $/m³ charges, not poured volume
@@ -522,7 +553,7 @@ export function computeElementReinforcementTonnes(item, rates) {
       const qKey = rateKey(cat.key, p.name, p.unit);
       const qty = Number(item.qtys[qKey]) || 0;
       if (qty <= 0) return;
-      const rate = lookupRate(rates, qKey, { unitCost: p.unitCost ?? 0, unitWeight: p.unitWeight, sheetArea: p.sheetArea, barLength: p.barLength });
+      const rate = rowRate(item, rates, qKey, { unitCost: p.unitCost ?? 0, unitWeight: p.unitWeight, sheetArea: p.sheetArea, barLength: p.barLength });
       if (rate.unitWeight == null) return;
       const sheets = cat.areaBasis && rate.sheetArea ? Math.ceil(qty / rate.sheetArea) : null;
       const bars = cat.lengthBasis && rate.barLength ? Math.ceil(qty / rate.barLength) : null;

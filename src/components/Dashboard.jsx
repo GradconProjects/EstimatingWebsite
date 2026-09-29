@@ -5,6 +5,8 @@ import { computeGrandTotal, computeMarginLadder, money, getDefaultMargin, getMar
 import { readQuoteSummariesDetailed, readQuotesCached, patchQuoteFields } from "../lib/projects.js";
 import { SummaryLoadNotice } from "./atoms.jsx";
 import { dashboardDueLabel } from "../lib/planner.js";
+import { effectiveRates, statusChangePatch } from "../lib/rateFreeze.js";
+import RateValidityBanner from "./RateValidityBanner.jsx";
 
 const SORT_OPTIONS = [
   { key: "added", label: "Recently added" },
@@ -19,9 +21,11 @@ const SORT_OPTIONS = [
  * the portfolio totals) needs. Mirrors the same costing calls
  * QuoteSummary.jsx uses so the figures always agree with what you'd see
  * inside the project itself. */
-function summarizeQuote(quote, rates) {
+function summarizeQuote(quote, liveRates) {
   quote = quote || {};
   const items = quote.items || [];
+  // A finished project costs off its own pinned rates, exactly as its editor does (lib/rateFreeze.js).
+  const rates = effectiveRates(quote, liveRates);
   const directCost = computeGrandTotal(items, rates);
   const { subtotal, rows } = computeMarginLadder(
     directCost,
@@ -177,9 +181,12 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete,
 
   const changeStatus = (project, status) => {
     const quote = quotesByKey[project.storageKey] || {};
-    const updated = { ...quote, status };
+    // The same status rule as the editor's select: moving into a finished
+    // status pins today's rates on the project, moving back out unpins it.
+    const patch = statusChangePatch(quote, status, rates);
+    const updated = { ...quote, ...patch };
     setQuotesByKey((m) => ({ ...m, [project.storageKey]: updated }));
-    patchQuoteFields(project.storageKey, { status }); // field merge: the summary copy here has no drawing data and must never be written whole
+    patchQuoteFields(project.storageKey, patch); // field merge: the summary copy here has no drawing data and must never be written whole
   };
 
   // The project's client/owner is edited HERE, beside the project name —
@@ -263,6 +270,7 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete,
         </div>
       </div>
       <SummaryLoadNotice failedCount={failedCount} onRetry={() => setReloadTick((t) => t + 1)} />
+      <RateValidityBanner rates={rates} />
 
       {/* Status filter tiles — one per status plus All projects. Each tile is
           FILLED with its status's own solid colour (the same `bar` shade the

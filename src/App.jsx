@@ -6,6 +6,8 @@ import VersionsModal from "./components/VersionsModal.jsx";
 import { ELEMENT_TYPES, QUOTE_STATUSES, QUOTE_STATUS_STYLES } from "./data/catalog.js";
 import { defaultRates, newElementItem, computeGrandTotal, uid, money, rateKey } from "./lib/costing.js";
 import { pendingRateUpdates, readLibraryState, readLastSynced, writeLastSynced, RATES_LIBRARY_KEY } from "./lib/ratesLibrarySync.js";
+import { effectiveRates, statusChangePatch, needsFreeze, freezeRates, frozenRateDrift, hasFrozenRates, isRatesLocked } from "./lib/rateFreeze.js";
+import RateValidityBanner from "./components/RateValidityBanner.jsx";
 import { buildQuoteExcelHtml, quoteExcelFilename, buildQuoteCsv } from "./lib/exportQuote.js";
 import { useStoredState } from "./lib/storage.js";
 import { PROJECTS_INDEX_KEY, newProjectEntry, migrateLegacyQuote, deleteQuote, writeQuote, readQuote, readQuoteSummariesDetailed, publishQuoteToCostPlanner, mirrorQuoteSummary } from "./lib/projects.js";
@@ -202,7 +204,8 @@ export default function App() {
       if (!updates.length) return;                 // nothing to do — never loops
       const next = { ...rates };
       const synced = { ...readLastSynced() };
-      updates.forEach(({ key, price }) => {
+      updates.forEach(({ key, price, validUntil }) => {
+        if (validUntil !== undefined) { next[key] = { ...(next[key] || {}), validUntil: validUntil || undefined }; return; }
         next[key] = { ...(next[key] || {}), unitCost: price };
         synced[key] = price;
       });
@@ -497,7 +500,37 @@ export default function App() {
   );
 }
 
-function ProjectEditor({ project, rates, setRates, ratesStatus, saveProjectsNow, onBack, isDraft, onPromote, elementTypes, categoryOrder, sectionOrder, customTypes, setCustomTypes }) {
+function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, ratesStatus, saveProjectsNow, onBack, isDraft, onPromote, elementTypes, categoryOrder, sectionOrder, customTypes, setCustomTypes }) {
+  const [quote, setQuote, quoteStatus, saveQuoteNow] = useStoredState(project.storageKey, blankQuote());
+
+  /* ---- Pinned rates on a finished project (see lib/rateFreeze.js) ----
+   * A project in a locked status costs off ITS OWN copy of the rates, taken
+   * the moment it was marked finished; the live (library-driven) rates never
+   * touch it. Every rate read below — the cards, the summary, the reports,
+   * the export, the Rates modal — goes through `rates`, and every rate WRITE
+   * from inside a locked project lands on the pinned copy, so a fee typed
+   * on a finished quote's card cannot leak into the live rates either. */
+  const locked = isRatesLocked(quote.status);
+  const rates = useMemo(() => effectiveRates(quote, liveRates), [quote, liveRates]);
+  const setRates = (updater) => {
+    if (!locked) { setLiveRates(updater); return; }
+    setQuote((q) => {
+      const cur = effectiveRates(q, liveRates);
+      const next = typeof updater === "function" ? updater(cur) : updater;
+      return { ...q, ratesFrozen: { ...(q.ratesFrozen || freezeRates(liveRates, q.status)), rates: next } };
+    });
+  };
+  // A project finished before pins existed gets its pin the first time it is
+  // opened — once its row AND the live rates have both settled, so the copy
+  // is the reconciled figure set, never the cache-first placeholder.
+  useEffect(() => {
+    if (quoteStatus === "loading" || ratesStatus === "loading" || ratesStatus === "syncing") return;
+    if (needsFreeze(quote)) setQuote((q) => (needsFreeze(q) ? { ...q, ratesFrozen: freezeRates(liveRates, q.status) } : q));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quoteStatus, ratesStatus, quote.status]);
+  const frozenDrift = useMemo(() => (locked ? frozenRateDrift(quote, liveRates) : []), [locked, quote, liveRates]);
+  const [repriceArmed, setRepriceArmed] = useState(false);
+
   // Editing a labour rate on any element's crew sheet writes the SAME rates
   // store the Rates modal shows — one library, one figure, everywhere.
   const setLabourRate = (res, v) => {
@@ -510,7 +543,6 @@ function ProjectEditor({ project, rates, setRates, ratesStatus, saveProjectsNow,
   const setMaterialRate = (key, v, fallback) => {
     setRates({ ...rates, [key]: { ...(rates[key] || {}), unitCost: v === undefined || v === "" ? fallback : Number(v) } });
   };
-  const [quote, setQuote, quoteStatus, saveQuoteNow] = useStoredState(project.storageKey, blankQuote());
 
   // Mirrors the project's name/GFA into Cost Planner automatically, the same way
   // Estimates already auto-publishes as you edit (see estimateImport.js's sibling
@@ -809,7 +841,8 @@ function ProjectEditor({ project, rates, setRates, ratesStatus, saveProjectsNow,
           <span>Status:</span>
           <select
             value={quote.status || QUOTE_STATUSES[0]}
-            onChange={(e) => setQuote((q) => ({ ...q, status: e.target.value }))}
+            onChange={(e) => { const status = e.target.value; setQuote((q) => ({ ...q, ...statusChangePatch(q, status, liveRates) })); }}
+            title="Completed Estimating and every status after it pin this project's rates: the Rates Library stops changing its figures until it is re-priced or moved back to an open status"
             className={`border border-neutral-200 rounded px-2 py-1 text-xs font-semibold ${QUOTE_STATUS_STYLES[quote.status || QUOTE_STATUSES[0]].text} ${QUOTE_STATUS_STYLES[quote.status || QUOTE_STATUSES[0]].bg}`}
           >
             {QUOTE_STATUSES.map((s) => (
@@ -871,6 +904,34 @@ function ProjectEditor({ project, rates, setRates, ratesStatus, saveProjectsNow,
 
       <div className="print:hidden max-w-7xl mx-auto px-4 pb-16 grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-4 items-start">
         <div className="space-y-3">
+          <RateValidityBanner rates={liveRates} />
+          {locked && hasFrozenRates(quote) && (
+            <div className="border border-blue-200 bg-blue-50 rounded-lg px-3 py-2 text-[12px] text-blue-950 flex items-start justify-between gap-3" role="status">
+              <div>
+                <b>Rates pinned</b> on {new Date(quote.ratesFrozen.at).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" })} when this project was marked <b>{quote.ratesFrozen.status}</b>.
+                {" "}Changes in the Rates Library do not touch this quote; a rate edited here changes this quote only.
+                {frozenDrift.length > 0 && (
+                  <span className="ml-1 text-amber-900">{frozenDrift.length} pinned rate{frozenDrift.length === 1 ? "" : "s"} now differ{frozenDrift.length === 1 ? "s" : ""} from the current library.</span>
+                )}
+              </div>
+              {frozenDrift.length > 0 && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!repriceArmed) { setRepriceArmed(true); setTimeout(() => setRepriceArmed(false), 4000); return; }
+                    setRepriceArmed(false);
+                    try { await keepVersion("before-reprice"); } catch { /* the live row is the moving copy; still re-price */ }
+                    setQuote((q) => ({ ...q, ratesFrozen: freezeRates(liveRates, q.status) }));
+                    note("Re-priced with the current rates — what you had before is kept as a version");
+                  }}
+                  className={`flex-none px-2.5 py-1.5 rounded-lg text-[11px] font-semibold ${repriceArmed ? "bg-red-600 hover:bg-red-700 text-white" : "bg-blue-900 hover:bg-blue-800 text-white"}`}
+                  title="Replace the pinned copy with today's rates (the previous figures are kept as a version first)"
+                >
+                  {repriceArmed ? "Confirm — re-price this quote" : "Re-price with current rates"}
+                </button>
+              )}
+            </div>
+          )}
           <ImportFlagsBanner
             flags={quote.importFlags}
             onDismiss={() => setQuote((q) => ({ ...q, importFlags: undefined }))}
@@ -961,7 +1022,7 @@ function ProjectEditor({ project, rates, setRates, ratesStatus, saveProjectsNow,
         />
       )}
 
-      {ratesOpen && <RatesModal rates={rates} setRates={setRates} onClose={() => setRatesOpen(false)} />}
+      {ratesOpen && <RatesModal rates={rates} setRates={setRates} lockedFor={locked && hasFrozenRates(quote) ? quote.ratesFrozen : null} onClose={() => setRatesOpen(false)} />}
       {elementTypesOpen && (
         <ManageElementTypesModal customTypes={customTypes} setCustomTypes={setCustomTypes} onClose={() => setElementTypesOpen(false)} />
       )}

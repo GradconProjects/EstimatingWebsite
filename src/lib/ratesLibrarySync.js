@@ -48,12 +48,37 @@ function catalogByName() {
   return out;
 }
 
+/* Prices the library keeps in its GLOBAL block rather than as a product row,
+ * mapped onto the catalog product they price. Holcim's Production & Transport
+ * Surcharge is the one that matters: the library has always held it as
+ * `global.concreteSurchargePerM3` (Cost Planner and Estimates read it there),
+ * but Quotes costs the surcharge off its own "Production & transport
+ * surcharge" CONCRETE row — and until 29 Sep 2026 nothing joined the two, so
+ * updating the fortnightly surcharge in the library changed no quote. */
+export const GLOBAL_PRICES = [
+  { path: ["global", "concreteSurchargePerM3"], name: "Production & transport surcharge", validityName: "Production & transport surcharge" },
+];
+
+/* The library's `validity` block: { "<catalog product name>": "YYYY-MM-DD" }
+ * — the date each time-limited rate is published to (see lib/rateValidity.js). */
+export const LIBRARY_VALIDITY_SECTION = "validity";
+
+const readPath = (obj, path) => path.reduce((o, k) => (o && typeof o === "object" ? o[k] : undefined), obj);
+
 /** Every {rateKey, price} the library currently states a price for. */
 export function libraryPrices(libraryState) {
   const byName = catalogByName();
   const out = [];
   const seen = new Set();
   if (!libraryState || typeof libraryState !== "object") return out;
+  GLOBAL_PRICES.forEach(({ path, name }) => {
+    const price = readPath(libraryState, path);
+    if (typeof price !== "number" || !Number.isFinite(price)) return;
+    const hit = byName.get(norm(name));
+    if (!hit || seen.has(hit.key)) return;
+    seen.add(hit.key);
+    out.push({ key: hit.key, price, catalogCost: hit.unitCost, name, section: "global" });
+  });
   PRICED_SECTIONS.forEach((section) => {
     const rows = libraryState[section];
     if (!rows || typeof rows !== "object") return;
@@ -104,7 +129,36 @@ export function pendingRateUpdates(rates, libraryState /* , lastSynced: kept for
     if (Number(cur) === Number(price)) return;      // already agrees
     updates.push({ key, price });
   });
+  // Validity dates travel the same way: a date the library states for a
+  // product lands on that product's rate as `validUntil` (a separate entry,
+  // so a price-only change keeps its {key, price} shape for older callers).
+  libraryValidity(libraryState).forEach(({ key, validUntil }) => {
+    const cur = rates && rates[key] ? rates[key].validUntil : undefined;
+    if (!rates || !rates[key]) return;
+    if ((cur || "") === (validUntil || "")) return;
+    updates.push({ key, validUntil });
+  });
   return updates;
+}
+
+/** Every {rateKey, validUntil} the library states a validity date for —
+ * keyed by catalog product name in its `validity` block; an empty string
+ * clears the date on the Quotes side. */
+export function libraryValidity(libraryState) {
+  const out = [];
+  if (!libraryState || typeof libraryState !== "object") return out;
+  const rows = libraryState[LIBRARY_VALIDITY_SECTION];
+  if (!rows || typeof rows !== "object") return out;
+  const byName = catalogByName();
+  Object.keys(rows).forEach((name) => {
+    const v = rows[name];
+    if (typeof v !== "string") return;
+    if (v && !/^\d{4}-\d{2}-\d{2}$/.test(v)) return;   // only a real date, or blank to clear
+    const hit = byName.get(norm(name));
+    if (!hit) return;
+    out.push({ key: hit.key, validUntil: v, name });
+  });
+  return out;
 }
 
 /* localStorage helpers — every read is guarded because a private window or a

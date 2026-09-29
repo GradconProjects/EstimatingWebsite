@@ -1,7 +1,21 @@
 import { ChevronDown, ChevronRight, Plus, X } from "lucide-react";
-import { rateKey, money2, lookupRate, computeRowTotal, rowContext, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, additionalRowsFor, additionalRowTotal, autoPigmentWashout, autoSpecialistShortLoad } from "../lib/costing.js";
+import { rateKey, money2, rowRate, isManualQuoteKey, computeRowTotal, rowContext, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, additionalRowsFor, additionalRowTotal, autoPigmentWashout, autoSpecialistShortLoad } from "../lib/costing.js";
 import { SPECIALIST_CONCRETE_KEY } from "../data/catalog.js";
 import { NumInput } from "./atoms.jsx";
+import { validityState, validityLabel, formatValidUntil } from "../lib/rateValidity.js";
+
+/** "valid to 30 Sep" beside a time-limited rate — grey while current, amber
+ * in the last fortnight, red once it has lapsed (see lib/rateValidity.js). */
+function ValidityChip({ validUntil }) {
+  const v = validityState(validUntil);
+  if (v.state === "none") return null;
+  const tone = v.state === "expired" ? "text-red-700 bg-red-50 border-red-200" : v.state === "expiring" ? "text-amber-800 bg-amber-50 border-amber-300" : "text-neutral-500 bg-neutral-50 border-neutral-200";
+  return (
+    <span className={`ml-1.5 text-[10px] font-semibold tracking-wide border rounded px-1 py-0.5 ${tone}`} title={`This rate is published to ${formatValidUntil(validUntil)} — ${validityLabel(v)}. Update it (and its date) in the Rates Library when the supplier issues the next notice.`}>
+      {v.state === "expired" ? "EXPIRED " : "valid to "}{formatValidUntil(validUntil)}
+    </span>
+  );
+}
 
 /**
  * Renders EVERY product in one catalog category as a line item, applicable
@@ -10,7 +24,7 @@ import { NumInput } from "./atoms.jsx";
  * shouldn't apply to a given job, the estimator just leaves those rows
  * blank (blank quantities cost nothing — see computeElementCost).
  */
-export default function CategoryBlock({ cat, item, rates, onQtyChange, onRateChange, catOpen, toggleCat, catTotal, onAddCustom, onRemoveCustom, onChangeCustom }) {
+export default function CategoryBlock({ cat, item, rates, onQtyChange, onRateChange, onRowRateChange, onQuoteAmountChange, catOpen, toggleCat, catTotal, onAddCustom, onRemoveCustom, onChangeCustom }) {
   const hasWeight = cat.products.some((p) => p.unitWeight != null);
   // Custom rows the estimator added under THIS category (item.additional
   // rows carrying cat === this key). They sit after the last catalog product,
@@ -70,7 +84,13 @@ export default function CategoryBlock({ cat, item, rates, onQtyChange, onRateCha
             <tbody>
               {cat.products.map((p) => {
                 const qKey = rateKey(cat.key, p.name, p.unit);
-                const rate = lookupRate(rates, qKey, { unitCost: p.unitCost ?? 0, unitWeight: p.unitWeight, sheetArea: p.sheetArea, barLength: p.barLength });
+                // The shared rate with this element's own figure laid over it —
+                // a subcontract "quote" row's amount belongs to THIS project.
+                const rate = rowRate(item, rates, qKey, { unitCost: p.unitCost ?? 0, unitWeight: p.unitWeight, sheetArea: p.sheetArea, barLength: p.barLength });
+                const pinnedHere = !!(item.rateOverrides && item.rateOverrides[qKey]);
+                const isQuoteRow = p.unit === "quote";
+                // A quote row types its figure onto the element, never the shared rate.
+                const setRowRate = isQuoteRow && onRowRateChange ? (v) => onRowRateChange(qKey, v) : (v) => onRateChange(qKey, v, p.unitCost ?? 0);
                 const qty = Number(item.qtys[qKey]) || 0;
                 const sheets = hasArea && rate.sheetArea ? Math.ceil(qty / rate.sheetArea) : null;
                 const bars = hasLength && rate.barLength ? Math.ceil(qty / rate.barLength) : null;
@@ -103,6 +123,22 @@ export default function CategoryBlock({ cat, item, rates, onQtyChange, onRateCha
                       {isAutoLevy && <span className="ml-1.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700">auto — per m³ of concrete</span>}
                       {isAutoWashout && <span className="ml-1.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700" title={`${washout.pigmentedM3} m³ of pigmented mix at ${washout.truckM3} m³ per Maxi truck (editable in the Rates modal: "VicMix Maxi truck load size") = ${washout.qty} truck${washout.qty === 1 ? "" : "s"}. Type a quantity to set the truck count yourself.`}>auto — {washout.qty} truck{washout.qty === 1 ? "" : "s"} of pigmented mix ({washout.pigmentedM3} m³), + GST</span>}
                       {isAutoShort && <span className="ml-1.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700" title={`VicMix's published price applies to a minimum ${shortLoad.minimumM3} m³ delivery; this element pours ${shortLoad.volumeM3} m³ (${shortLoad.shortByM3} m³ short). VicMix does not publish the charge — enter it on this row's rate. Type a quantity to take the row manual.`}>auto — {shortLoad.volumeM3} m³ is under the {shortLoad.minimumM3} m³ minimum</span>}
+                      {rate.validUntil && <ValidityChip validUntil={rate.validUntil} />}
+                      {isQuoteRow && qty > 0 && !pinnedHere && onRowRateChange && (isManualQuoteKey(qKey) ? (
+                        <span
+                          className="ml-1.5 text-[10px] font-semibold uppercase tracking-wide text-red-700 bg-red-50 border border-red-200 rounded px-1 py-0.5"
+                          title="Piling and bored pier amounts are never taken from the shared rates or the Rates Library — this row costs nothing until the quote received for THIS job is typed into its amount cell."
+                        >
+                          quote amount needed — enter the received quote
+                        </span>
+                      ) : (
+                        <span
+                          className="ml-1.5 text-[10px] font-semibold uppercase tracking-wide text-red-700 bg-red-50 border border-red-200 rounded px-1 py-0.5"
+                          title="This figure is the SHARED rate for this product — every project carrying it shows the same amount, and the last one typed anywhere wins. Type the quoted amount again on this row to keep it on this project only."
+                        >
+                          shared figure — retype to keep it on this project
+                        </span>
+                      ))}
                     </td>
                     <td className="px-2 py-1 text-neutral-400">{p.unit}</td>
                     <td className="px-2 py-1">
@@ -163,7 +199,7 @@ export default function CategoryBlock({ cat, item, rates, onQtyChange, onRateCha
                           step={p.unit === "quote" ? "50" : cat.volumeRateBasis ? "25" : "0.25"}
                           value={rate.unitCost}
                           placeholder={p.unit === "quote" ? "quote $" : undefined}
-                          onChange={(v) => onRateChange(qKey, v, p.unitCost ?? 0)}
+                          onChange={setRowRate}
                         />
                       ) : (
                         money2(rate.unitCost)
@@ -180,6 +216,8 @@ export default function CategoryBlock({ cat, item, rates, onQtyChange, onRateCha
                           value={qty > 0 ? rowTotal : undefined}
                           placeholder="quote $"
                           onChange={(v) => {
+                            // one patch for qty + the element's own figure (see ElementCard.setQuoteAmount)
+                            if (onQuoteAmountChange) { onQuoteAmountChange(qKey, v); return; }
                             const n = Number(v);
                             if (v === undefined || v === "" || !Number.isFinite(n)) {
                               onQtyChange(qKey, undefined);
