@@ -187,11 +187,14 @@ export default function CategoryBlock({ cat, item, rates, onQtyChange, onRateCha
                           steel rate moves with the market often enough that
                           it's worth editing on the row rather than only in the
                           Rates modal. Same key either way, so one figure. */}
-                      {onRateChange && ((cat.key === "CONCRETE" && (/minimum cartage|small load/i.test(p.name) || /transport surcharge/i.test(p.name) || /environment levy/i.test(p.name))) || (cat.key === SPECIALIST_CONCRETE_KEY && (/washout|short-load|delivery beyond/i.test(p.name))) || p.unit === "quote" || cat.volumeRateBasis) ? (
+                      {isQuoteRow ? (
+                        // A subcontract row has NO unit rate — nothing is shown or
+                        // entered here; the received quote goes in the amount cell.
+                        null
+                      ) : onRateChange && ((cat.key === "CONCRETE" && (/minimum cartage|small load/i.test(p.name) || /transport surcharge/i.test(p.name) || /environment levy/i.test(p.name))) || (cat.key === SPECIALIST_CONCRETE_KEY && (/washout|short-load|delivery beyond/i.test(p.name))) || cat.volumeRateBasis) ? (
                         <NumInput
-                          step={p.unit === "quote" ? "50" : cat.volumeRateBasis ? "25" : "0.25"}
-                          value={isQuoteRow && !pinnedHere ? undefined : rate.unitCost}
-                          placeholder={p.unit === "quote" ? "quote $" : undefined}
+                          step={cat.volumeRateBasis ? "25" : "0.25"}
+                          value={rate.unitCost}
                           onChange={setRowRate}
                         />
                       ) : (

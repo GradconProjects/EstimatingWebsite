@@ -288,8 +288,9 @@ lived in the one shared rate that two other projects also carried):
    unit rates for sub contractors … I have seen this replacing manually
    entered actual live quotes"): `rowRate` never reads the shared rate for
    them, a row with a qty but no figure typed on the element costs NOTHING
-   and shows a red "quote amount needed" chip, the Rates modal does not list
-   them, the Rates Library has no subcontractor section at all, and App.jsx
+   and shows a red "quote amount needed" chip, its Unit $ cell is EMPTY (no
+   input, no placeholder — the amount cell is the only place a quote goes),
+   the Rates modal does not list them, the Rates Library has no subcontractor section at all, and App.jsx
    wipes any figure such a key still holds in the shared rates on load. The
    band's only rated product is the tonne-priced temporary props row. Never
    add a subcontract price to `catalog.js`, the library or the shared rates.
