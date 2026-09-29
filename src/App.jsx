@@ -4,7 +4,7 @@ import { saveVersion, downloadQuoteFile, parseQuoteFile } from "./lib/quoteVersi
 import { quoteStorageKey } from "./lib/projects.js";
 import VersionsModal from "./components/VersionsModal.jsx";
 import { ELEMENT_TYPES, QUOTE_STATUSES, QUOTE_STATUS_STYLES } from "./data/catalog.js";
-import { defaultRates, newElementItem, computeGrandTotal, uid, money, rateKey } from "./lib/costing.js";
+import { defaultRates, newElementItem, computeGrandTotal, uid, money, rateKey, isManualQuoteKey } from "./lib/costing.js";
 import { pendingRateUpdates, readLibraryState, readLastSynced, writeLastSynced, RATES_LIBRARY_KEY } from "./lib/ratesLibrarySync.js";
 import { effectiveRates, statusChangePatch, needsFreeze, freezeRates, frozenRateDrift, hasFrozenRates, isRatesLocked } from "./lib/rateFreeze.js";
 import RateValidityBanner from "./components/RateValidityBanner.jsx";
@@ -180,9 +180,15 @@ export default function App() {
       [rateKey("REINFORCING ACCESSORIES", "Duct Tape", "roll"), 4.5, 4.2],
     ];
     const stale = fixes.filter(([key, oldSeed]) => rates[key] && rates[key].unitCost === oldSeed);
-    if (stale.length) {
+    // Subcontract "quote" rows carry NO shared figure any more (29 Sep 2026:
+    // a quote typed on one project used to land here and show on every
+    // project with that row). Whatever such a key still holds is wiped so no
+    // stale amount survives anywhere but on the element it belongs to.
+    const leftovers = Object.keys(rates).filter((key) => isManualQuoteKey(key) && rates[key] && rates[key].unitCost != null && Number(rates[key].unitCost) !== 0);
+    if (stale.length || leftovers.length) {
       const next = { ...rates };
       stale.forEach(([key, , now]) => { next[key] = { ...next[key], unitCost: now }; });
+      leftovers.forEach((key) => { next[key] = { ...next[key], unitCost: 0 }; });
       setRates(next);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

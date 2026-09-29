@@ -124,21 +124,20 @@ export function rowRate(item, rates, key, fallback) {
   const base = lookupRate(rates, key, fallback);
   const ov = item && item.rateOverrides && item.rateOverrides[key];
   const merged = ov && typeof ov === "object" ? { ...base, ...ov } : base;
-  // Piling quotes are per job, full stop: no shared figure, no library
+  // Subcontract quotes are per job, full stop: no shared figure, no library
   // figure — only what was typed on this element, else nothing.
   if (isManualQuoteKey(key)) return { ...merged, unitCost: ov && ov.unitCost != null ? Number(ov.unitCost) || 0 : 0 };
   return merged;
 }
 
-/** The subcontract rows whose amount is ONLY ever the quote received for the
- * job (Grady, 29 Sep 2026: "screw piling rates and bored pier rates should
- * not be from the library, it should always be manually entered"): a
- * "quote"-unit row for piling of any kind or bored piers. Such a row never
- * reads the shared rate — a blank row costs nothing and the card says so. */
-export const MANUAL_QUOTE_MATCH = /piling|bored piers/i;
+/** A subcontract row — every "quote"-unit product — whose amount is ONLY
+ * ever the quote received for the job (Grady, 29 Sep 2026: "remove all unit
+ * rates for sub contractors … I have seen this replacing manually entered
+ * actual live quotes"). Such a row never reads the shared rate or the Rates
+ * Library, never appears in the Rates modal, and a blank row costs nothing —
+ * the card says so. */
 export function isManualQuoteKey(key) {
-  const k = String(key || "");
-  return k.endsWith("::quote") && MANUAL_QUOTE_MATCH.test(k.split("::")[1] || "");
+  return String(key || "").endsWith("::quote");
 }
 
 /**

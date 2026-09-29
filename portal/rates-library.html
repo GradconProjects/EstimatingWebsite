@@ -510,14 +510,6 @@ const OTHER_ALLOWANCES = [
   {p:"Surveying",u:"each",cost:1500},
 ];
 
-const SUBCONTRACTOR_ITEMS = [
-  {p:"Formwork",u:"quote"},
-  {p:"Steel supply",u:"quote"},
-  {p:"Steel fix",u:"quote"},
-  {p:"Screw Piling",u:"quote"},
-  {p:"CFA Piling",u:"quote"},
-];
-
 const LABOUR_PLANT_ITEMS = [
   {p:"Steel fix",u:"tonne",cost:650},
   {p:"Factory labour",u:"hr",cost:150},
@@ -962,10 +954,6 @@ h += section("sec-reinforcement", "Reinforcement", "Reinforcement", REINFORCEMEN
 
   h += section("sec-prelim", "Preliminaries", "Preliminaries", PRELIMINARIES_ITEMS.length,
     editableTable(PRELIMINARIES_ITEMS, state.prelim, it=>it.p, [{field:"cost",label:"Cost ($)"}], {mapName:"prelim"}));
-
-  h += section("sec-subbies", "Subcontractors", "Subcontractor Quotes (reference — quote-based, no established rate)", SUBCONTRACTOR_ITEMS.length,
-    `<p class="hint">These are priced per job by the subcontractor at quote time — enter the actual quote directly on the BOQ line in Cost Planner, not here.</p>
-     <table class="item-table"><thead><tr><th>Item</th><th>Unit</th></tr></thead><tbody>${SUBCONTRACTOR_ITEMS.map(it=>`<tr><td>${it.p}</td><td>${it.u}</td></tr>`).join("")}</tbody></table>`);
 
   h += section("sec-rate-items", "Rate Items", "Rate Items — composite build-up factors (Concrete/Steel/Formwork sub-quantities per unit)", RATE_ITEMS.length,
     `<p class="hint">Concrete (m3), Steel (kg) and Formwork (m2) consumed per unit of each in-situ item, plus extra trade labour hours — these blend live with the rates above rather than being their own flat $ rate.</p>` +

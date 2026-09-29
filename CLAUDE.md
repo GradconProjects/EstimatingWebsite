@@ -283,16 +283,16 @@ lived in the one shared rate that two other projects also carried):
    rows, `CategoryBlock`, `PrintQuoteReport` and `exportQuote` all use it.
    A new per-row costing path must call `rowRate`, not `lookupRate`, or an
    overridden quote silently prices at the shared figure. Clearing the
-   amount removes the override. **Piling and bored pier quote rows are
-   manual-only** (`isManualQuoteKey`: a `quote`-unit row whose name matches
-   `MANUAL_QUOTE_MATCH` = piling / bored piers — Grady, 29 Sep 2026): `rowRate`
-   never reads the shared rate for them, a row with a qty but no figure
-   typed on the element costs NOTHING and shows a red "quote amount needed"
-   chip, and the Rates modal shows them as "entered per project". The other
-   subcontract quote rows (Steel fix, Steel supply, Formwork, Excavation)
-   keep the shared rate as their fallback, with a red "shared figure —
-   retype to keep it on this project" chip on a row that has a qty and no
-   override; nothing migrates either silently.
+   amount removes the override. **Every subcontract quote row is manual-only**
+   (`isManualQuoteKey`: any `quote`-unit key — Grady, 29 Sep 2026: "remove all
+   unit rates for sub contractors … I have seen this replacing manually
+   entered actual live quotes"): `rowRate` never reads the shared rate for
+   them, a row with a qty but no figure typed on the element costs NOTHING
+   and shows a red "quote amount needed" chip, the Rates modal does not list
+   them, the Rates Library has no subcontractor section at all, and App.jsx
+   wipes any figure such a key still holds in the shared rates on load. The
+   band's only rated product is the tonne-priced temporary props row. Never
+   add a subcontract price to `catalog.js`, the library or the shared rates.
    Rates have NO version history (quote versions hold items, not rates), so
    an overwritten shared figure is unrecoverable — that is why this rule
    exists. The other card-side rate edits (Holcim fees, kg/m³ steel, crew

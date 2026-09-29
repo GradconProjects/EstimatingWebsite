@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronRight, Plus, X } from "lucide-react";
-import { rateKey, money2, rowRate, isManualQuoteKey, computeRowTotal, rowContext, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, additionalRowsFor, additionalRowTotal, autoPigmentWashout, autoSpecialistShortLoad } from "../lib/costing.js";
+import { rateKey, money2, rowRate, computeRowTotal, rowContext, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, additionalRowsFor, additionalRowTotal, autoPigmentWashout, autoSpecialistShortLoad } from "../lib/costing.js";
 import { SPECIALIST_CONCRETE_KEY } from "../data/catalog.js";
 import { NumInput } from "./atoms.jsx";
 import { validityState, validityLabel, formatValidUntil } from "../lib/rateValidity.js";
@@ -124,21 +124,14 @@ export default function CategoryBlock({ cat, item, rates, onQtyChange, onRateCha
                       {isAutoWashout && <span className="ml-1.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700" title={`${washout.pigmentedM3} m³ of pigmented mix at ${washout.truckM3} m³ per Maxi truck (editable in the Rates modal: "VicMix Maxi truck load size") = ${washout.qty} truck${washout.qty === 1 ? "" : "s"}. Type a quantity to set the truck count yourself.`}>auto — {washout.qty} truck{washout.qty === 1 ? "" : "s"} of pigmented mix ({washout.pigmentedM3} m³), + GST</span>}
                       {isAutoShort && <span className="ml-1.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700" title={`VicMix's published price applies to a minimum ${shortLoad.minimumM3} m³ delivery; this element pours ${shortLoad.volumeM3} m³ (${shortLoad.shortByM3} m³ short). VicMix does not publish the charge — enter it on this row's rate. Type a quantity to take the row manual.`}>auto — {shortLoad.volumeM3} m³ is under the {shortLoad.minimumM3} m³ minimum</span>}
                       {rate.validUntil && <ValidityChip validUntil={rate.validUntil} />}
-                      {isQuoteRow && qty > 0 && !pinnedHere && onRowRateChange && (isManualQuoteKey(qKey) ? (
+                      {isQuoteRow && qty > 0 && !pinnedHere && onRowRateChange && (
                         <span
                           className="ml-1.5 text-[10px] font-semibold uppercase tracking-wide text-red-700 bg-red-50 border border-red-200 rounded px-1 py-0.5"
-                          title="Piling and bored pier amounts are never taken from the shared rates or the Rates Library — this row costs nothing until the quote received for THIS job is typed into its amount cell."
+                          title="Subcontract amounts are never taken from the shared rates or the Rates Library — this row costs nothing until the quote received for THIS job is typed into its amount cell."
                         >
                           quote amount needed — enter the received quote
                         </span>
-                      ) : (
-                        <span
-                          className="ml-1.5 text-[10px] font-semibold uppercase tracking-wide text-red-700 bg-red-50 border border-red-200 rounded px-1 py-0.5"
-                          title="This figure is the SHARED rate for this product — every project carrying it shows the same amount, and the last one typed anywhere wins. Type the quoted amount again on this row to keep it on this project only."
-                        >
-                          shared figure — retype to keep it on this project
-                        </span>
-                      ))}
+                      )}
                     </td>
                     <td className="px-2 py-1 text-neutral-400">{p.unit}</td>
                     <td className="px-2 py-1">
@@ -197,7 +190,7 @@ export default function CategoryBlock({ cat, item, rates, onQtyChange, onRateCha
                       {onRateChange && ((cat.key === "CONCRETE" && (/minimum cartage|small load/i.test(p.name) || /transport surcharge/i.test(p.name) || /environment levy/i.test(p.name))) || (cat.key === SPECIALIST_CONCRETE_KEY && (/washout|short-load|delivery beyond/i.test(p.name))) || p.unit === "quote" || cat.volumeRateBasis) ? (
                         <NumInput
                           step={p.unit === "quote" ? "50" : cat.volumeRateBasis ? "25" : "0.25"}
-                          value={rate.unitCost}
+                          value={isQuoteRow && !pinnedHere ? undefined : rate.unitCost}
                           placeholder={p.unit === "quote" ? "quote $" : undefined}
                           onChange={setRowRate}
                         />

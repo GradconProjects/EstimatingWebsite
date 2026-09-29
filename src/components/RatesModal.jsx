@@ -143,7 +143,10 @@ export default function RatesModal({ rates, setRates, onClose, lockedFor = null 
           </div>
         )}
         <div className="overflow-y-auto p-4 space-y-4">
-          {FULL_CATALOG.map((cat) => (
+          {/* Subcontract "quote" rows have NO rate anywhere but the element they
+              are typed on (lib/costing.js rowRate / isManualQuoteKey) — they are
+              not listed here, and a band made only of them is skipped. */}
+          {FULL_CATALOG.map((cat) => ({ ...cat, products: cat.products.filter((p) => !isManualQuoteKey(rateKey(cat.key, p.name, p.unit))) })).filter((cat) => cat.products.length > 0).map((cat) => (
             <div key={cat.key}>
               <div className="text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-1">
                 {cat.label}
@@ -186,9 +189,7 @@ export default function RatesModal({ rates, setRates, onClose, lockedFor = null 
                         ) : <td className="w-28"></td>}
                         <td className="py-1 pr-2 w-28">
                           <div className="flex items-center gap-1">
-                            {isManualQuoteKey(k) ? (
-                              <span className="text-[11px] text-neutral-500 italic" title="Piling and bored pier quotes are typed on the element card of each project — there is no shared or library figure for them">entered per project</span>
-                            ) : governed.has(k) ? (
+                            {governed.has(k) ? (
                               <div className="flex items-center gap-1.5" title="This price is set in the Rates Library and follows it automatically — change it there">
                                 <span className="font-mono tabular-nums text-neutral-800">{r.unitCost}</span>
                                 <span className="text-[9px] uppercase tracking-wide font-semibold text-blue-800 bg-blue-50 border border-blue-200 rounded px-1 py-0.5">Rates Library</span>

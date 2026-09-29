@@ -1693,16 +1693,19 @@ check("A subcontract 'quote' amount belongs to the ELEMENT (item.rateOverrides),
   const paringa = newElementItem(ELEMENT_TYPES.find((t) => t.id === "raft_foundation"));
   paringa.qtys[key] = 1;                                                 // an older project with no override of its own
   assert.equal(rowRate(spindrift, rates, key, {}).unitCost, 18400, "the element's own figure wins");
-  assert.equal(rowRate(paringa, rates, key, {}).unitCost, 0, "piling: no figure on the element → NOTHING, never the shared rate");
+  assert.equal(rowRate(paringa, rates, key, {}).unitCost, 0, "no figure on the element → NOTHING, never the shared rate");
   assert.equal(computeElementCost(spindrift, rates).categoryTotals[subs.key], 18400);
   assert.equal(computeElementCost(paringa, rates).categoryTotals[subs.key], 0);
-  // the piling / bored pier rows are the manual-only ones; other subcontract quote rows still fall back to the shared rate
-  ["Screw Piling", "CFA Piling", "Bored Piers (subcontract)"].forEach((n) => assert.ok(isManualQuoteKey(rateKey(subs.key, n, "quote")), n));
-  ["Steel fix", "Steel supply", "Formwork (subcontract)", "Excavation (subcontract)"].forEach((n) => assert.equal(isManualQuoteKey(rateKey(subs.key, n, "quote")), false, n));
+  // EVERY subcontract quote row is manual-only — no shared figure, no library figure, ever
+  subs.products.filter((q) => q.unit === "quote").forEach((q) => assert.ok(isManualQuoteKey(rateKey(subs.key, q.name, q.unit)), q.name));
+  assert.ok(subs.products.filter((q) => q.unit === "quote").length >= 7, "the whole subcontract band is quote rows");
   assert.equal(isManualQuoteKey(rateKey("CONCRETE", "Screw Piling", "m3")), false, "only a quote-unit row");
+  assert.equal(isManualQuoteKey(rateKey(subs.key, "Temporary steel props/struts (150UC23.4) — supply/hire", "tonne")), false, "a tonne-priced row on the band keeps its rate");
   const sf = rateKey(subs.key, "Steel fix", "quote"); rates[sf] = { ...rates[sf], unitCost: 1650 };
   const beach = newElementItem(ELEMENT_TYPES[0]); beach.qtys[sf] = 7;
-  assert.equal(computeElementCost(beach, rates).categoryTotals[subs.key], 7 * 1650, "a steel-fix quote row without an override still prices off the shared rate");
+  assert.equal(computeElementCost(beach, rates).categoryTotals[subs.key], 0, "a steel-fix quote row without a figure on the element costs nothing, whatever the shared rate holds");
+  beach.rateOverrides = { [sf]: { unitCost: 1650 } };
+  assert.equal(computeElementCost(beach, rates).categoryTotals[subs.key], 7 * 1650, "…and prices off the element's own figure");
   // the override carries only what it states — weights/areas still come from the shared rate
   const mesh = FULL_CATALOG.find((c) => c.key === "SQUARE MESH"); const sl = mesh.products[0]; const mk = rateKey(mesh.key, sl.name, sl.unit);
   const it = newElementItem(ELEMENT_TYPES[0]); it.rateOverrides = { [mk]: { unitCost: 99 } };
@@ -1811,6 +1814,12 @@ check("Rates Library: the GLOBAL fuel/transport surcharge now governs Quotes' su
   // a library without the block, or a global block without the figure, asks for nothing new
   assert.deepEqual(pendingRateUpdates(defaultRates(), { global: {} }, {}), []);
   assert.deepEqual(pendingRateUpdates(defaultRates(), { global: { concreteSurchargePerM3: "9.17" } }, {}), [], "a non-numeric global is ignored");
+});
+
+check("The Rates Library carries NO subcontractor rates or list (29 Sep 2026)", () => {
+  const html = fs.readFileSync(new URL("../portal/rates-library.html", import.meta.url), "utf8");
+  assert.ok(!/SUBCONTRACTOR_ITEMS|sec-subbies|Subcontractor Quotes/.test(html), "the subcontractor section is gone from the library");
+  ["Screw Piling", "CFA Piling", "Bored Piers"].forEach((n) => assert.ok(!html.includes(`p:"${n}"`), `${n} is not a library item`));
 });
 
 check("The Rates Library's validity rows name real Quotes catalog products (the two lists cannot drift)", () => {
