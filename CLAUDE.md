@@ -626,7 +626,15 @@ element families waits on the owner's approval of the pad footing.
   width ÷ width, while bars, cross bars, ligatures, formwork faces and
   starter runs follow the RUN LENGTH — the typed `length`, or area ÷ width
   when it is blank. Area mode with no area typed is a completeness warning,
-  never a silent zero.
+  never a silent zero. **Footing formwork can be a typed perimeter** (strip
+  and pad footings, `formMode`: `"faces"` = the ticked faces × run × depth,
+  the default; `"manual"` = `formLm`, the formed perimeter / total formed
+  length in lm per footing, × `formDepthMm` (blank = footing depth) —
+  `manualFormworkUI` / `manualFormworkLines` are the ONE pair). Manual mode
+  emits ONE m² line with the lm figure in its spec and notes — never an m²
+  line AND an lm line for the same faces, which the order schedule and the
+  Quotes bridge would price twice; no perimeter typed is a completeness
+  warning.
 - **Retaining walls** also carry a plan shape (`planShape`: straight, curved —
   `planRadius` × `planAngle` gives the developed length, or irregular —
   the developed length is typed), a battered stem (`stemBatter`: mean of

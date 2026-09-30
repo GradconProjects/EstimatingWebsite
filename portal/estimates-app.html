@@ -3803,7 +3803,7 @@ function renderStripFooting(inst){
    ${F("Trench width (mm)",inpNum("trenchWidth",d.trenchWidth))}${F("Excavation depth (mm)",inpNum("excDepth",d.excDepth))}${coverField(inst)}
    
   </div>`;
-  let form=`<p class="small">None (cast against trench face) up to all 4 sides.</p>${faceRow([["formLeft","Left side"],["formRight","Right side"],["formStart","Start end"],["formFinish","Finish end"]],d)}`;
+  let form=`${manualFormworkUI(d)}${formworkManual(d)?"":`<p class="small">None (cast against trench face) up to all 4 sides.</p>${faceRow([["formLeft","Left side"],["formRight","Right side"],["formStart","Start end"],["formFinish","Finish end"]],d)}`}`;
   let reo=`<div class="grid cols4">
     ${chk("botLong",d.botLong,"Bottom longitudinal bars","botLong")}${chk("topLong",d.topLong,"Top longitudinal bars","topLong")}
   </div>
@@ -3837,6 +3837,28 @@ function renderStripFooting(inst){
  * the formwork faces and the starter runs still follow a RUN LENGTH: the
  * typed length, or area ÷ width when it is left blank. `stripGeom` is the
  * ONE reading of these fields (compute, validation and the diagram). */
+/* ---- Manual formwork on footings (strip and pad) ----
+ * `formMode` "faces" (the default, every older takeoff): the ticked faces ×
+ * run × depth. "manual": the estimator types the FORMED PERIMETER — the total
+ * run of formed faces in lineal metres, measured off the drawing, per
+ * footing — and a formed depth (blank = the footing depth); the register
+ * line is that perimeter × depth in m², with the perimeter kept on the line
+ * (spec and notes) so the lm figure is always readable. One line, never an
+ * m² line AND an lm line for the same faces — the order schedule and the
+ * Quotes bridge would price the formwork twice. */
+function formworkManual(d){ return (d.formMode||"faces")==="manual"; }
+function manualFormworkUI(d,depthLabel){
+  const manual=formworkManual(d);
+  return `<div class="grid cols3">${F("Formwork take-off",selOpts("formMode",d.formMode||"faces",[["faces","From the selected faces × run × depth"],["manual","Manual — enter the formed perimeter (lm) and depth"]],true))}</div>
+  ${manual? `<div class="grid cols3">${F("Formed perimeter / length (lm, per footing)",inpNum("formLm",d.formLm))}${F(depthLabel||"Formed depth (mm, blank = footing depth)",inpNum("formDepthMm",d.formDepthMm))}</div>
+  <p class="small">Formwork = formed perimeter × formed depth. Measure the total run of formed faces off the drawing — an irregular footing's perimeter, or just the faces that are formed — and the tool keeps that lm figure on the line beside the m².</p>`:""}`;
+}
+function manualFormworkLines(inst,def,d,N,depthM,material,warnings){
+  const lm=num(d.formLm), Dm=num(d.formDepthMm)>0? num(d.formDepthMm)/1000 : depthM;
+  if(!(lm>0)){ if(warnings) warnings.push({text:"Formwork is set to a manual perimeter but no formed perimeter is typed — no formwork is taken off until it is.",section:"form",level:"completeness"}); return []; }
+  const area=N*lm*Dm;
+  return [baseLine(inst,def,{materialGroup:"Formwork",material,spec:`Manual — ${fmt(lm,2)} lm formed × ${fmt(Dm*1000,0)} deep`,qty:area,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(area,PROJECT.formworkWaste),formula:`${N}×${fmt(lm,2)} lm×${fmt(Dm,3)}`,notes:`${fmt(N*lm,2)} lm formed`})];
+}
 function stripAreaMode(d){ return (d.footShape||"run")==="area"; }
 function stripGeom(d){
   const N=num(d.qty,1), Wm=num(d.width)/1000, Dm=num(d.depth)/1000, TWm=num(d.trenchWidth)/1000, EDm=num(d.excDepth)/1000;
@@ -3861,12 +3883,16 @@ function computeStripFooting(inst,def){
   lines.push(baseLine(inst,def,{materialGroup:"Excavation",material:"Trench excavation",spec:"",qty:exc,unit:"m³",waste:0,finalQty:exc,formula:g.areaMode?"plan area×(trench W÷W)×exc depth":"L×trench W×exc depth"}));
   lines.push(spoilLine(inst,def,exc));
   lines.push(...blindingAndVapourLines(inst,def,d,g.footArea,g.excArea,"foot"));
-  let formArea=0;
-  if(d.formLeft) formArea+=N*Lm*Dm;
-  if(d.formRight) formArea+=N*Lm*Dm;
-  if(d.formStart) formArea+=N*Wm*Dm;
-  if(d.formFinish) formArea+=N*Wm*Dm;
-  if(formArea>0) lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Trench formwork",spec:"Selected faces",qty:formArea,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(formArea,PROJECT.formworkWaste),formula:"selected faces × L×D"}));
+  if(formworkManual(d)){
+    lines.push(...manualFormworkLines(inst,def,d,N,Dm,"Trench formwork",warnings));
+  } else {
+    let formArea=0;
+    if(d.formLeft) formArea+=N*Lm*Dm;
+    if(d.formRight) formArea+=N*Lm*Dm;
+    if(d.formStart) formArea+=N*Wm*Dm;
+    if(d.formFinish) formArea+=N*Wm*Dm;
+    if(formArea>0) lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Trench formwork",spec:"Selected faces",qty:formArea,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(formArea,PROJECT.formworkWaste),formula:"selected faces × L×D"}));
+  }
   function longBar(flag,qty,dia,label,lapFlag){
     if(!flag) return;
     let bd=barDiaOf(dia); let len=N*num(qty)*Lm; let wt=len*massPerM(bd);
@@ -4000,13 +4026,13 @@ function renderPadFooting(inst){
    ${chk("ligLap",d.ligLap,"Include lap allowance (%)","ligLap")}
   </div>
   <div class="tip"><span class="ico">🏗️</span><div>The starter bars projecting from a pad footing into a column (and any pedestal) are tied into a cage with ligatures over the footing depth${'+'}pedestal height — the item most often missed because it appears only in the column base detail, not the footing schedule. Tie width/depth is the cage's cross-section (typically column size − 2×cover).</div></div></div>`;
-  let cast=`<div class="sechead">Side Formwork</div><p class="small">None (cast against ground/oversized excavation) up to fully formed.</p>
+  let cast=`<div class="sechead">Side Formwork</div>${manualFormworkUI(d)}${formworkManual(d)?"":`<p class="small">None (cast against ground/oversized excavation) up to fully formed.</p>
   <div class="subsec ${shape=='rect'?'':'hidden'}" data-show-if="shape_rect">
   ${faceRow([["formA","Face A (long side 1) — L×D"],["formB","Face B (long side 2) — L×D"],["formC","Face C (end 1) — W×D"],["formD","Face D (end 2) — W×D"]],d)}
   </div>
   <div class="subsec ${shape=='round'?'':'hidden'}" data-show-if="shape_round"><div class="grid cols2">
   ${chk("formRound",d.formRound,"Circular edge formwork — full perimeter (π×Ø×D)")}
-  </div></div>
+  </div></div>`}
   <div class="sechead" style="margin-top:10px;">Cast-in Items</div><div class="grid cols4">${chk("anchorBolts",d.anchorBolts,"Anchor bolts")}${chk("holdDown",d.holdDown,"Hold-down bolts")}${chk("ferrules",d.ferrules,"Ferrules")}${chk("plates",d.plates,"Cast-in plates")}${chk("boltTemplate",d.boltTemplate,"Bolt template")}</div>`;
   let conns=`${chk("starters",d.starters,"Column starter bars","starters")}
   <div class="subsec ${d.starters?'':'hidden'}" data-show-if="starters"><div class="grid cols4">
@@ -4015,7 +4041,7 @@ function renderPadFooting(inst){
   return {geom,conc:concSection(d,"<p class='small'>Concrete = qty × plan area × D (+ pedestal if present). Plan area: L×W rectangular, π×Ø²/4 round.</p>"),reo,form:cast,exc:"<p class='small'>Excavation = qty × oversized plan area × excavation depth (oversize added to each side / the diameter).</p>",blind:blindingSection(d),conns};
 }
 function computePadFooting(inst,def){
-  let d=inst.data, lines=[];
+  let d=inst.data, lines=[], warnings=[];
   let N=num(d.qty,1),L=num(d.length)/1000,W=num(d.width)/1000,D=num(d.depth)/1000,cover=num(d.cover);
   // Round cross section: everything plan-area-based (concrete, excavation,
   // blinding, membrane, mesh) swaps L×W for π×Ø²/4; bar mats and edge
@@ -4095,7 +4121,9 @@ function computePadFooting(inst,def){
     let scLapPct=d.ligLap?PROJECT.lapPct:0;
     lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.ligDia,spec:"Starter-cage ligatures / ties",qty:count,unit:"no.",waste:PROJECT.reoWaste,lap:scLapPct,finalQty:Math.ceil(withWasteLap(count,PROJECT.reoWaste,scLapPct)),massPerUnit:(count? wt/count:0),lengthM:withWasteLap(totLen,PROJECT.reoWaste,scLapPct),formula:`(footing D${d.pedestal?'+pedestal H':''} / spacing +1)×${N} (+${PROJECT.reoWaste}% waste${scLapPct?`, +${scLapPct}% lap`:''})`,notes:`${fmt(totLen,1)}m, ${fmt(wt,1)} kg`}));
   }
-  if(round){
+  if(formworkManual(d)){
+    lines.push(...manualFormworkLines(inst,def,d,N,D,"Side formwork",warnings));
+  } else if(round){
     if(d.formRound){
       let fArea=N*Math.PI*diaM*D;
       lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Side formwork",spec:"Circular edge form — full perimeter",qty:fArea,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(fArea,PROJECT.formworkWaste),formula:`${N}×π×Ø×D`}));
@@ -4118,7 +4146,7 @@ function computePadFooting(inst,def){
     let tgt=targetLabelOf(d.connTarget);
     lines.push(baseLine(inst,def,{materialGroup:"Connections",material:d.connDia,spec:"Column starters → "+(tgt||"(unlinked)"),qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`${d.connQty}×${N}×len/1000`,linkedElement:tgt,notes:`${fmt(wt,1)} kg`}));
   }
-  return {lines,warnings:[]};
+  return {lines,warnings};
 }
 
 /* ---- BEAM (ground/suspended) ---- */
