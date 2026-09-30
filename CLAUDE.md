@@ -618,6 +618,15 @@ element families waits on the owner's approval of the pad footing.
   and "(reference only)" pointers untouched). It runs BEFORE `applyReoRate`,
   so a rate follows the entered volume. Formwork keeps its own override on
   the Formwork tab.
+- **Strip footing footprint** (`footShape`: `"run"` = length × width, the
+  default and every older takeoff; `"area"` = the plan area typed off the
+  drawing, `footPlanArea` m² per footing — 30 Sep 2026). `stripGeom(d)` is
+  the ONE reading (compute, render, diagram): in area mode concrete = area ×
+  depth, blinding covers the area, the trench is the area widened by trench
+  width ÷ width, while bars, cross bars, ligatures, formwork faces and
+  starter runs follow the RUN LENGTH — the typed `length`, or area ÷ width
+  when it is blank. Area mode with no area typed is a completeness warning,
+  never a silent zero.
 - **Retaining walls** also carry a plan shape (`planShape`: straight, curved —
   `planRadius` × `planAngle` gives the developed length, or irregular —
   the developed length is typed), a battered stem (`stemBatter`: mean of

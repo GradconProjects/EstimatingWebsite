@@ -3695,6 +3695,7 @@ function incomingStarters(targetId){
 /* ---- STRIP FOOTING ---- */
 function stripFootingDefaults(){ return {
   qty:1, length:10000, width:600, depth:400, trenchWidth:650, excDepth:450, blinding:50, blindingMaterial:"concrete", vapourMembrane:false, cover:PROJECT.cover, grade:PROJECT.grade,
+  footShape:"run", footPlanArea:0,
   formLeft:true, formRight:true, formStart:true, formFinish:true,
   botLong:true, botLongQty:4, botLongDia:"N16", botLongLap:false, topLong:false, topLongQty:2, topLongDia:"N12", topLongLap:false,
   cross:true, crossDia:"N12", crossSpacing:300, crossLap:false, topCross:false, topCrossDia:"N12", topCrossSpacing:300, topCrossLap:false, trenchMesh:false, trenchMeshType:"4 Bar-L12TM", trenchMeshLayers:1, trenchMeshLap:false,
@@ -3793,8 +3794,12 @@ function starterRunSpecLines(d,elemLenM,x,y,step){
 }
 function renderStripFooting(inst){
   let d=inst.data;
-  let geom=`<div class="grid cols4">
-   ${F("Quantity",inpNum("qty",d.qty))}${LF("Length (mm)","length",d.length)}${F("Width (mm)",inpNum("width",d.width))}${F("Depth (mm)",inpNum("depth",d.depth))}
+  const areaMode=stripAreaMode(d);
+  let geom=`<div class="grid cols3">${F("Footprint",selOpts("footShape",d.footShape||"run",[["run","Straight run — length × width"],["area","Irregular — enter the plan area (m²)"]],true))}</div>
+  ${areaMode? `<div class="grid cols4">${F("Footing plan area (m², measured off the drawing)",inpNum("footPlanArea",d.footPlanArea))}</div>
+  <p class="small">The entered plan area × depth is the concrete (blinding covers the same area; the trench is that footprint widened to the trench width). Bars, formwork and starters still run along the footing — enter the run length below, or leave it blank to take area ÷ width.</p>`:""}
+  <div class="grid cols4">
+   ${F("Quantity",inpNum("qty",d.qty))}${LF(areaMode?"Run length for bars &amp; formwork (mm, blank = area ÷ width)":"Length (mm)","length",d.length)}${F("Width (mm)",inpNum("width",d.width))}${F("Depth (mm)",inpNum("depth",d.depth))}
    ${F("Trench width (mm)",inpNum("trenchWidth",d.trenchWidth))}${F("Excavation depth (mm)",inpNum("excDepth",d.excDepth))}${coverField(inst)}
    
   </div>`;
@@ -3812,7 +3817,7 @@ function renderStripFooting(inst){
   <div class="subsec ${d.trenchMesh?'':'hidden'}" data-show-if="trenchMesh"><div class="grid cols3">${F("Trench mesh type",trenchMeshTypeSel("trenchMeshType",d.trenchMeshType,true))}${F("Layers",inpNumR("trenchMeshLayers",d.trenchMeshLayers===undefined?1:d.trenchMeshLayers))}${chk("trenchMeshLap",d.trenchMeshLap,"Include lap allowance (%)","trenchMeshLap")}</div>
   ${layerTypeSelects(d,"trenchMeshLayers","trenchMeshType","trenchMeshLayerTypes",trenchMeshTypeSel,"trench mesh type")}
   <p class="small">Trench mesh is priced and ordered by the metre (a welded strip of longitudinal bars run the length of the trench), not by sheet area — this counts it the same way as any other run of bars. Same named types as Quotes' own Trench Mesh catalog. Layers &gt; 1 stacks that many mesh strips — each layer can be its own product, and steel quantities follow per material. Lap allowance is off by default (a single continuous mesh strip laid the trench's own run length usually needs none) — turn it on if this run is spliced from more than one length and needs the project's lap % (Defaults &amp; Rules) added.</p></div>`;
-  let conns=starterRunsUI(inst,d,num(d.length)/1000,"footing");
+  let conns=starterRunsUI(inst,d,stripGeom(d).Lm,"footing");
   let steps=`<div class="sechead">Stepped Footing (step-downs on sloping ground)</div>
   ${chk("stepdown",d.stepdown,"Footing steps down along its run","stepdown")}
   <div class="subsec ${d.stepdown?'':'hidden'}" data-show-if="stepdown"><div class="grid cols4">
@@ -3822,17 +3827,40 @@ function renderStripFooting(inst){
   // bars had no UI at all, even though computeStripFooting has always costed
   // d.starters. Returning it makes the section reachable; the default stays
   // false, so no existing takeoff changes.
-  return {geom,conc:concSection(d,"<p class='small'>Concrete = length × width × depth</p>"),reo:reo+steps,form,exc:"<p class='small'>Excavation = length × trench width × excavation depth</p>",blind:blindingSection(d),conns};
+  return {geom,conc:concSection(d,areaMode?"<p class='small'>Concrete = entered plan area × depth</p>":"<p class='small'>Concrete = length × width × depth</p>"),reo:reo+steps,form,exc:areaMode?"<p class='small'>Excavation = plan area × (trench width ÷ width) × excavation depth</p>":"<p class='small'>Excavation = length × trench width × excavation depth</p>",blind:blindingSection(d),conns};
+}
+/* ---- Strip footing footprint ----
+ * "run" (the default, and every takeoff from before 30 Sep 2026): the footing
+ * is length × width. "area": the estimator measures an irregular footing's
+ * plan area off the drawing and types it — concrete = area × depth, blinding
+ * = area, the trench = the area widened to the trench width — while the bars,
+ * the formwork faces and the starter runs still follow a RUN LENGTH: the
+ * typed length, or area ÷ width when it is left blank. `stripGeom` is the
+ * ONE reading of these fields (compute, validation and the diagram). */
+function stripAreaMode(d){ return (d.footShape||"run")==="area"; }
+function stripGeom(d){
+  const N=num(d.qty,1), Wm=num(d.width)/1000, Dm=num(d.depth)/1000, TWm=num(d.trenchWidth)/1000, EDm=num(d.excDepth)/1000;
+  if(!stripAreaMode(d)){
+    const Lm=num(d.length)/1000;
+    return {areaMode:false, N, Lm, Wm, Dm, footArea:N*Lm*Wm, excArea:N*Lm*TWm, vol:N*Lm*Wm*Dm, exc:N*Lm*TWm*EDm, runTyped:true};
+  }
+  const A=num(d.footPlanArea);                                   // per footing, m²
+  const runTyped=num(d.length)>0;
+  const Lm=runTyped? num(d.length)/1000 : (Wm>0? A/Wm : 0);
+  const excArea=Wm>0? N*A*(TWm/Wm) : N*A;
+  return {areaMode:true, N, Lm, Wm, Dm, A, footArea:N*A, excArea, vol:N*A*Dm, exc:excArea*EDm, runTyped};
 }
 function computeStripFooting(inst,def){
-  let d=inst.data, lines=[];
-  let N=num(d.qty,1), Lm=num(d.length)/1000, Wm=num(d.width)/1000, Dm=num(d.depth)/1000, cover=num(d.cover);
-  let vol=N*Lm*Wm*Dm;
-  lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:`${d.width}x${d.depth}`,qty:vol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(vol,concWastePct(d)),formula:`${N}×${Lm}×${Wm}×${Dm}`}));
-  let exc=N*(num(d.length)/1000)*(num(d.trenchWidth)/1000)*(num(d.excDepth)/1000);
-  lines.push(baseLine(inst,def,{materialGroup:"Excavation",material:"Trench excavation",spec:"",qty:exc,unit:"m³",waste:0,finalQty:exc,formula:"L×trench W×exc depth"}));
+  let d=inst.data, lines=[], warnings=[];
+  const g=stripGeom(d);
+  let N=g.N, Lm=g.Lm, Wm=g.Wm, Dm=g.Dm, cover=num(d.cover);
+  let vol=g.vol;
+  if(g.areaMode && !(g.A>0)) warnings.push({text:"Footprint is set to an entered plan area but no area is typed — the concrete, blinding and excavation are zero until it is.",section:"geom",level:"completeness"});
+  lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:`${d.width}x${d.depth}`,qty:vol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(vol,concWastePct(d)),formula:g.areaMode?`${N}×plan area ${fmt(g.A,2)} m²×${Dm}`:`${N}×${Lm}×${Wm}×${Dm}`}));
+  let exc=g.exc;
+  lines.push(baseLine(inst,def,{materialGroup:"Excavation",material:"Trench excavation",spec:"",qty:exc,unit:"m³",waste:0,finalQty:exc,formula:g.areaMode?"plan area×(trench W÷W)×exc depth":"L×trench W×exc depth"}));
   lines.push(spoilLine(inst,def,exc));
-  lines.push(...blindingAndVapourLines(inst,def,d,N*Lm*Wm,N*Lm*(num(d.trenchWidth)/1000),"foot"));
+  lines.push(...blindingAndVapourLines(inst,def,d,g.footArea,g.excArea,"foot"));
   let formArea=0;
   if(d.formLeft) formArea+=N*Lm*Dm;
   if(d.formRight) formArea+=N*Lm*Dm;
@@ -3863,7 +3891,7 @@ function computeStripFooting(inst,def){
   }
   if(d.cross){
     let bd=barDiaOf(d.crossDia);
-    let count=Math.floor(num(d.length)/num(d.crossSpacing))+1;
+    let count=Math.floor(Lm*1000/num(d.crossSpacing))+1;
     let barLen=(num(d.width)-2*cover)/1000;
     let totLen=N*count*barLen; let wt=totLen*massPerM(bd);
     let lapPct=d.crossLap?PROJECT.lapPct:0;
@@ -3871,7 +3899,7 @@ function computeStripFooting(inst,def){
   }
   if(d.topCross){
     let bd=barDiaOf(d.topCrossDia||"N12");
-    let count=Math.floor(num(d.length)/num(d.topCrossSpacing,300))+1;
+    let count=Math.floor(Lm*1000/num(d.topCrossSpacing,300))+1;
     let barLen=(num(d.width)-2*cover)/1000;
     let totLen=N*count*barLen; let wt=totLen*massPerM(bd);
     let lapPct=d.topCrossLap?PROJECT.lapPct:0;
@@ -3881,7 +3909,7 @@ function computeStripFooting(inst,def){
     // Closed stirrups around the footing cage: cross-section perimeter less
     // cover plus two 135° fitment hooks, at the entered spacing along the run.
     let bd=barDiaOf(d.ligDia||"N10");
-    let count=Math.floor(num(d.length)/num(d.ligSpacing,300))+1;
+    let count=Math.floor(Lm*1000/num(d.ligSpacing,300))+1;
     let hookExt=anchorLen("hook135",bd,0)/1000;
     let ligPerim=(2*((num(d.width)-2*cover)+(num(d.depth)-2*cover))/1000)+2*hookExt;
     let totLen=N*count*ligPerim; let wt=totLen*massPerM(bd);
@@ -3899,8 +3927,8 @@ function computeStripFooting(inst,def){
       lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:type,spec:`Trench mesh${layerNote}`,qty:totLen,unit:"lm",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,lapPct),massPerUnit:mpm,formula:`${N}×${n}L×${Lm}`,notes:`${fmt(wt,1)} kg`}));
     });
   }
-  lines.push(...starterRunLines(inst,def,d,N,num(d.length)/1000,"Starter bars"));
-  return {lines,warnings:[]};
+  lines.push(...starterRunLines(inst,def,d,N,Lm,"Starter bars"));
+  return {lines,warnings};
 }
 
 /* ---- PAD FOOTING ---- */
@@ -7279,7 +7307,7 @@ const CALC = {
 function diagStripFooting(inst){ let d=inst.data;
   const W=Math.max(1,num(d.width,600)), D=Math.max(1,num(d.depth,400));
   const TW=Math.max(num(d.trenchWidth,650),W), ED=Math.max(num(d.excDepth,450),D), BL=Math.max(0,num(d.blinding,0));
-  const L=Math.max(1,num(d.length,10000)), cov=num(d.cover!==undefined&&d.cover!==""?d.cover:PROJECT.cover,50), N=num(d.qty,1);
+  const L=Math.max(1,stripAreaMode(d)? Math.round(stripGeom(d).Lm*1000)||10000 : num(d.length,10000)), cov=num(d.cover!==undefined&&d.cover!==""?d.cover:PROJECT.cover,50), N=num(d.qty,1);
   /* ---- section (left) ---- */
   const sx=64, sy=58, s=Math.min(118/TW, 76/Math.max(ED,D+BL));
   const tw=TW*s, ed=Math.max(ED,D+BL)*s, w=W*s, dd=D*s, bl=BL*s, cv=Math.max(1.5,cov*s);
