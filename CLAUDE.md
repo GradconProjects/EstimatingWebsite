@@ -448,6 +448,17 @@ row does not exist (older than an hour, and only when the fetch plainly
 succeeded) — an entry with no row is the other way "Untitled project" used
 to appear.
 
+**A tab keeps running the build it loaded.** The Quotes bundle runs from a
+blob: URL and every other panel is inlined, so switching panels never picks
+up a newer deploy — only a page reload does (30 Sep 2026: a tab open across
+three deploys kept showing subcontractor rates the live site no longer
+had). The shell's stale-build notice (`#stale-build`, end of
+`portal-shell.html`) fetches the page with `?build-check=` on focus and
+every 3 minutes, compares the `Build <b>sha` stamp with the one baked in
+(`__BUILD_STAMP__`) and offers "Reload now" when they differ. When a user
+reports behaviour the current build cannot produce, check the Build number
+in their footer first.
+
 The Quotes bundle is inlined into the portal and runs from a blob: URL, so
 a relative chunk import cannot resolve there: `scripts/assemble-portal.mjs`
 rewrites each lazily-loaded chunk (today only the PDF renderer) to

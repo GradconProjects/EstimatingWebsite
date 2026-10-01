@@ -1271,3 +1271,44 @@
   })();
 })();
 </script>
+
+<!-- ===================== STALE BUILD NOTICE =====================
+     The Quotes app runs from an in-memory blob: URL and the other panels are
+     inlined too, so a tab left open keeps running whatever build it loaded —
+     a newer deploy never reaches it until the page is reloaded (30 Sep 2026:
+     a tab open across three deploys kept showing subcontractor rates that the
+     live site no longer had). This asks the server for the current build on
+     focus and every few minutes and, when it differs from the one running
+     here, says so and offers the reload. -->
+<div id="stale-build" style="display:none;position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:99999;background:#7a1f1f;color:#fff;padding:10px 14px;border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.35);font:600 13px/1.4 system-ui,sans-serif;align-items:center;gap:12px;max-width:min(92vw,720px);">
+  <span id="stale-build-text">A newer build of the portal is live. This tab is still running an older copy.</span>
+  <button type="button" id="stale-build-reload" style="background:#fff;color:#7a1f1f;border:0;border-radius:6px;padding:6px 12px;font-weight:700;cursor:pointer;white-space:nowrap;">Reload now</button>
+</div>
+<script>
+(function(){
+  const RUNNING = "__BUILD_STAMP__";
+  const shaOf = (stamp)=>String(stamp||"").split(" ")[0].trim();
+  let shown=false;
+  async function checkBuild(){
+    if(shown || !/^[0-9a-f]{7}$/.test(shaOf(RUNNING))) return;
+    try{
+      const res = await fetch(location.pathname + "?build-check=" + Date.now(), {cache:"no-store", headers:{"Accept":"text/html"}});
+      if(!res.ok) return;
+      const html = await res.text();
+      const m = /Build <b>([^<]+)<\/b>/.exec(html);
+      if(!m) return;
+      const live = shaOf(m[1]);
+      if(live && live !== shaOf(RUNNING)){
+        shown=true;
+        document.getElementById("stale-build-text").textContent = `A newer build (${live}) is live — this tab is still running ${shaOf(RUNNING)}. Reload to get the current version; everything is saved automatically first.`;
+        document.getElementById("stale-build").style.display="flex";
+      }
+    }catch(e){ /* offline or blocked — try again next time */ }
+  }
+  document.getElementById("stale-build-reload").addEventListener("click", ()=>{ location.reload(); });
+  window.addEventListener("focus", checkBuild);
+  document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) checkBuild(); });
+  setTimeout(checkBuild, 15000);
+  setInterval(checkBuild, 3*60*1000);
+})();
+</script>
