@@ -692,6 +692,19 @@ function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, rate
       next.splice(to, 0, moved);
       return next;
     });
+  // One step up or down the list — the card header's arrows. Same list
+  // reorderItems (drag) edits; both land in quote.items, so every reader of
+  // the order (summary rail, print, export) follows.
+  const moveItem = (id, dir) =>
+    setItems((its) => {
+      const from = its.findIndex((it) => it.id === id);
+      const to = from + dir;
+      if (from === -1 || to < 0 || to >= its.length) return its;
+      const next = [...its];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      return next;
+    });
   const duplicateItem = (id) =>
     setItems((its) => {
       const src = its.find((it) => it.id === id);
@@ -951,7 +964,7 @@ function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, rate
             assumptions={quote.assumptions}
             onChangeAssumptions={(assumptions) => setQuote((q) => ({ ...q, assumptions }))}
           />
-          {items.map((item) => (
+          {items.map((item, idx) => (
             <ElementCard
               key={item.id}
               item={item}
@@ -959,6 +972,9 @@ function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, rate
               onChange={(next) => updateItem(item.id, next)}
               onRemove={() => removeItem(item.id)}
               onDuplicate={() => duplicateItem(item.id)}
+              onMoveUp={idx > 0 ? () => moveItem(item.id, -1) : null}
+              onMoveDown={idx < items.length - 1 ? () => moveItem(item.id, 1) : null}
+              onReorder={reorderItems}
               onLabourRateChange={setLabourRate}
               onMaterialRateChange={setMaterialRate}
             />

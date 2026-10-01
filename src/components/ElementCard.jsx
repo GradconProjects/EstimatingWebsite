@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from "react";
-import { ChevronDown, ChevronRight, Copy, Trash2, Paperclip, X, RotateCw, ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Copy, Trash2, Paperclip, X, RotateCw, ZoomIn, ZoomOut, Maximize2, ArrowUp, ArrowDown, GripVertical } from "lucide-react";
 import { FULL_CATALOG, LABOUR_TEMPLATES } from "../data/catalog.js";
 import { uid, money2, computeElementCost, computeElementUnitRates, autoLabourQtys, labourQuantities, categoryAppliesTo } from "../lib/costing.js";
 import { pdfToJpegPages } from "../lib/pdfToImages.js";
@@ -7,7 +7,15 @@ import CategoryBlock from "./CategoryBlock.jsx";
 import LabourMatrix from "./LabourMatrix.jsx";
 import AdditionalItems from "./AdditionalItems.jsx";
 
-export default function ElementCard({ item, rates, onChange, onRemove, onDuplicate, onLabourRateChange, onMaterialRateChange }) {
+/**
+ * `onMoveUp` / `onMoveDown` (null at either end) and `onReorder(draggedId,
+ * targetId)` let the estimator put the cards in any order at any time — the
+ * arrows on the header, or drag a header onto another card. The order IS
+ * the quote's item order (the summary rail, the print report and the
+ * export all follow it), the same order QuoteSummary's own drag edits.
+ */
+export default function ElementCard({ item, rates, onChange, onRemove, onDuplicate, onLabourRateChange, onMaterialRateChange, onMoveUp, onMoveDown, onReorder }) {
+  const [dragOver, setDragOver] = useState(false);
   // Every material category starts collapsed — only Labour/Equipment starts
   // expanded (it's still collapsible too, just defaults open).
   const [openCats, setOpenCats] = useState({});
@@ -267,7 +275,16 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
         cardOpen ? "bg-white" : "bg-blue-950"
       }`}
     >
-      <div className="bg-blue-950 text-white px-4 py-3 flex flex-1 items-center gap-3">
+      <div
+        className={`bg-blue-950 text-white px-4 py-3 flex flex-1 items-center gap-3 ${dragOver ? "ring-2 ring-inset ring-orange-400" : ""}`}
+        draggable={!!onReorder}
+        onDragStart={(e) => { if (!onReorder) return; e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", item.id); }}
+        onDragOver={(e) => { if (onReorder) { e.preventDefault(); setDragOver(true); } }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={(e) => { setDragOver(false); if (!onReorder) return; e.preventDefault(); const draggedId = e.dataTransfer.getData("text/plain"); if (draggedId && draggedId !== item.id) onReorder(draggedId, item.id); }}
+        title={onReorder ? "Drag this header onto another element to reorder" : undefined}
+      >
+        {onReorder && <GripVertical size={14} className="text-blue-400 flex-none cursor-grab active:cursor-grabbing" aria-hidden="true" />}
         <button onClick={() => setCardOpen(!cardOpen)} className="text-blue-300 hover:text-white transition-colors flex-none">
           {cardOpen ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
         </button>
@@ -290,6 +307,16 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
           <div className="text-[10px] uppercase tracking-widest text-blue-300">Total</div>
           <div className="font-mono tabular-nums text-lg font-bold text-orange-400">{money2(cost.total)}</div>
         </div>
+        {(onMoveUp !== undefined || onMoveDown !== undefined) && (
+          <div className="flex flex-col flex-none -my-1" aria-label="Reorder">
+            <button onClick={onMoveUp || undefined} disabled={!onMoveUp} title="Move up" className="text-blue-300 hover:text-white disabled:opacity-25 disabled:hover:text-blue-300 transition-colors leading-none p-0.5">
+              <ArrowUp size={14} />
+            </button>
+            <button onClick={onMoveDown || undefined} disabled={!onMoveDown} title="Move down" className="text-blue-300 hover:text-white disabled:opacity-25 disabled:hover:text-blue-300 transition-colors leading-none p-0.5">
+              <ArrowDown size={14} />
+            </button>
+          </div>
+        )}
         <button onClick={onDuplicate} title="Duplicate" className="text-blue-300 hover:text-white transition-colors flex-none">
           <Copy size={16} />
         </button>

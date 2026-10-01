@@ -4,9 +4,11 @@ import { QUOTE_STATUSES, QUOTE_STATUS_STYLES } from "../data/catalog.js";
 import { computeGrandTotal, computeMarginLadder, money, getDefaultMargin, getMarginSteps } from "../lib/costing.js";
 import { readQuoteSummariesDetailed, readQuotesCached, patchQuoteFields } from "../lib/projects.js";
 import { SummaryLoadNotice } from "./atoms.jsx";
-import { dashboardDueLabel } from "../lib/planner.js";
+import { dashboardDueLabel, OPEN_STATUSES } from "../lib/planner.js";
 import { effectiveRates, statusChangePatch } from "../lib/rateFreeze.js";
 import RateValidityBanner from "./RateValidityBanner.jsx";
+
+const OPEN_FILTER = "__open";   // the tile value for OPEN_STATUSES (lib/planner.js)
 
 const SORT_OPTIONS = [
   { key: "added", label: "Recently added" },
@@ -44,6 +46,7 @@ function summarizeQuote(quote, liveRates) {
     // single quote would otherwise take the whole dashboard down.
     status: QUOTE_STATUSES.includes(quote.status) ? quote.status : QUOTE_STATUSES[0],
     deadline: quote.planner?.deadline || null,
+    submittedAt: quote.submittedAt || null,
     gfa: Number(quote.gfa) || 0,
     elementCount: items.length,
     directCost,
@@ -154,15 +157,22 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete,
     return arr;
   }, [summaries, sortBy]);
 
-  // Filter row: status dropdown + free-text name search, applied on top of
-  // the chosen sort. Session-local — a fresh load shows everything.
-  const [statusFilter, setStatusFilter] = useState("");
+  // Filter row: status tiles + free-text name search, applied on top of the
+  // chosen sort. Session-local. A fresh load shows ONLY the open work —
+  // Queued and Estimating — so a quote that has gone out leaves the main
+  // screen and lives under its own status tile (or "All projects"); Grady,
+  // 1 Oct 2026: "submitted quotes should leave the main screen and remain
+  // under the submitted button so only queued and estimating projects are
+  // visible upon opening … one should be able to filter all to see those".
+  const [statusFilter, setStatusFilter] = useState(OPEN_FILTER);
   const [search, setSearch] = useState("");
+  const matchesStatus = (s) => (statusFilter === OPEN_FILTER ? OPEN_STATUSES.includes(s.status) : !statusFilter || s.status === statusFilter);
   const visibleSummaries = useMemo(() => {
     const q = search.trim().toLowerCase();
     return sortedSummaries.filter(
-      (s) => (!statusFilter || s.status === statusFilter) && (!q || s.name.toLowerCase().includes(q) || s.client.toLowerCase().includes(q))
+      (s) => matchesStatus(s) && (!q || s.name.toLowerCase().includes(q) || s.client.toLowerCase().includes(q))
     );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sortedSummaries, statusFilter, search]);
   const filtering = !!statusFilter || !!search.trim();
   // One count per status, off the SEARCHED set rather than the fully filtered
@@ -173,7 +183,7 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete,
     const searched = sortedSummaries.filter(
       (s) => !q || s.name.toLowerCase().includes(q) || s.client.toLowerCase().includes(q)
     );
-    const counts = { "": searched.length };
+    const counts = { "": searched.length, [OPEN_FILTER]: searched.filter((s) => OPEN_STATUSES.includes(s.status)).length };
     QUOTE_STATUSES.forEach((st) => { counts[st] = 0; });
     searched.forEach((s) => { counts[s.status] = (counts[s.status] || 0) + 1; });
     return counts;
@@ -281,13 +291,14 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete,
           marked by a dark ring and shadow rather than by a colour change —
           colour is spoken for by the status itself. */}
       <div className="flex flex-wrap gap-2">
-        {[["", "All projects"], ...QUOTE_STATUSES.map((s2) => [s2, s2])].map(([value, label]) => {
+        {[[OPEN_FILTER, "Open — Queued & Estimating"], ["", "All projects"], ...QUOTE_STATUSES.map((s2) => [s2, s2])].map(([value, label]) => {
           const active = statusFilter === value;
-          // "All projects" has no catalog status colour — give it the app's
-          // own navy so the row reads as one set rather than one odd tile.
-          const style = QUOTE_STATUS_STYLES[value] || {
-            bar: "bg-blue-950", dot: "bg-blue-950", text: "text-blue-900", bg: "bg-blue-50",
-          };
+          // "All projects" and the Open tile have no catalog status colour —
+          // the app's own navy (All) and the Estimating orange's darker
+          // sibling (Open) so the row reads as one set rather than odd tiles.
+          const style = QUOTE_STATUS_STYLES[value] || (value === OPEN_FILTER
+            ? { bar: "bg-orange-700", dot: "bg-orange-700", text: "text-orange-900", bg: "bg-orange-50" }
+            : { bar: "bg-blue-950", dot: "bg-blue-950", text: "text-blue-900", bg: "bg-blue-50" });
           // Every status bar is dark enough to carry white text except On
           // Hold's deliberately washed-out neutral — that one needs dark ink.
           const light = style.bar === "bg-neutral-300";
@@ -296,7 +307,7 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete,
           return (
             <button
               key={value || "__all"}
-              onClick={() => setStatusFilter(active ? "" : value)}
+              onClick={() => setStatusFilter(active ? (value === "" ? OPEN_FILTER : "") : value)}
               aria-pressed={active}
               title={`${label} — ${count} project${count === 1 ? "" : "s"}`}
               className={`relative overflow-hidden flex-1 min-w-[112px] max-w-[168px] min-h-[92px] rounded-xl border border-transparent flex flex-col items-center justify-center gap-1.5 px-3 py-3 transition-all ${style.bar} ${ink} ${
@@ -374,7 +385,7 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete,
                 <td className="px-3 py-2.5 text-neutral-400 text-xs">{s.date || "—"}</td>
                 <td className="px-3 py-2.5 text-xs">
                   {(() => {
-                    const due = dashboardDueLabel(s.deadline);
+                    const due = dashboardDueLabel(s.deadline, s.status, s.submittedAt);
                     return due ? <span className={due.cls}>{due.text}</span> : <span className="text-neutral-300">—</span>;
                   })()}
                 </td>
@@ -474,7 +485,9 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete,
             <tfoot>
               <tr className="border-t-2 border-neutral-200 bg-neutral-50 font-semibold">
                 <td className="px-4 py-2.5" colSpan={6}>
-                  {filtering ? `Filtered projects (${visibleSummaries.length} of ${summaries.length})` : "All projects"}
+                  {statusFilter === OPEN_FILTER && !search.trim()
+                    ? `Open projects — Queued & Estimating (${visibleSummaries.length} of ${summaries.length}; the rest are under their status tiles or All projects)`
+                    : filtering ? `Filtered projects (${visibleSummaries.length} of ${summaries.length})` : "All projects"}
                 </td>
                 <td className="px-3 py-2.5 text-right font-mono tabular-nums">{ft.elementCount}</td>
                 <td className="px-3 py-2.5 text-right font-mono tabular-nums">{money(ft.directCost)}</td>

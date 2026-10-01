@@ -5,7 +5,7 @@ import { readQuoteSummariesDetailed, patchQuoteFields } from "../lib/projects.js
 import { SummaryLoadNotice } from "./atoms.jsx";
 import { uid, money2 } from "../lib/costing.js";
 import { useStoredState } from "../lib/storage.js";
-import { isUrgent, daysLabel, priorityRank } from "../lib/planner.js";
+import { isUrgent, daysLabel, priorityRank, isOverdue } from "../lib/planner.js";
 
 const CHANNELS = ["Call", "Email", "Site meeting", "Text/WhatsApp", "Other"];
 const VARIATION_STATUSES = ["Draft", "Submitted", "Approved", "Rejected"];
@@ -190,7 +190,7 @@ export default function PlannerView({ projects, onOpen }) {
 function AtAGlance({ projects, quotesByKey, goTo }) {
   const quotes = projects.map((p) => quotesByKey[p.storageKey] || {});
   const today = new Date().toISOString().slice(0, 10);
-  const overdue = quotes.filter((q) => q.planner?.deadline && q.planner.deadline < today).length;
+  const overdue = quotes.filter((q) => isOverdue(q, today)).length;   // a submitted quote is never overdue
   const openRfis = quotes.reduce((s, q) => s + (q.rfis || []).filter((r) => r.status === "Open").length, 0);
   const openDefects = quotes.reduce((s, q) => s + (q.defects || []).filter((d) => d.status === "Open" || d.status === "In progress").length, 0);
   const approvedVars = quotes.reduce((s, q) => s + (q.variations || []).filter((v) => v.status === "Approved").reduce((t, v) => t + (Number(v.cost) || 0), 0), 0);
@@ -229,6 +229,8 @@ function PlannerTab({ projects, quotesByKey, onOpen, patchQuote }) {
         project: p,
         name: quote.projectName || "Untitled project",
         planner: quote.planner || { deadline: "", priority: defaultPriority(), requirements: "" },
+        status: quote.status,
+        submittedAt: quote.submittedAt || null,
         communications: quote.communications || [],
       };
     }),
@@ -246,11 +248,11 @@ function PlannerTab({ projects, quotesByKey, onOpen, patchQuote }) {
   };
 
   const attend = rows
-    .filter((r) => isUrgent(r.planner))
+    .filter((r) => isUrgent(r.planner, r.status))
     .sort((a, b) => priorityRank(a.planner.priority) - priorityRank(b.planner.priority)
       || (a.planner.deadline || "9999").localeCompare(b.planner.deadline || "9999"));
   const defer = rows
-    .filter((r) => !isUrgent(r.planner))
+    .filter((r) => !isUrgent(r.planner, r.status))
     .sort((a, b) => (a.planner.deadline || "9999").localeCompare(b.planner.deadline || "9999"));
 
   return (
@@ -710,9 +712,9 @@ function Section({ title, count, tone, children }) {
 }
 
 function ProjectPlannerCard({ row, onOpen, onPatchPlanner, onAddCommunication, commsOpen, setCommsOpen }) {
-  const { project, name, planner, communications } = row;
+  const { project, name, planner, communications, status, submittedAt } = row;
   const style = PLANNER_PRIORITY_STYLES[planner.priority] || PLANNER_PRIORITY_STYLES[defaultPriority()] || PLANNER_PRIORITY_STYLES.Medium;
-  const due = daysLabel(planner.deadline);
+  const due = daysLabel(planner.deadline, status, submittedAt);
   const [open, setOpen] = useState(false);
   const [logging, setLogging] = useState(false);
   const [draft, setDraft] = useState({ date: new Date().toISOString().slice(0, 10), contact: "", channel: CHANNELS[0], summary: "" });

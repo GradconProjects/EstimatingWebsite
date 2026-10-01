@@ -19,6 +19,10 @@
  *
  * Pure module: no React, no DOM — scripts/verify.mjs runs it in Node.
  */
+import { isSubmittedStatus } from "./planner.js";
+
+/** Today as the "YYYY-MM-DD" the deadline fields use (local day). */
+const localDay = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
 /** Statuses whose projects keep their own copy of the rates. "On Hold" is
  * not finished — a project on hold follows the live rates like an open one. */
@@ -63,9 +67,18 @@ export function freezeRates(liveRates, status, at = new Date().toISOString()) {
 export function statusChangePatch(quote, nextStatus, liveRates, at) {
   const wasLocked = isRatesLocked(quote && quote.status);
   const willLock = isRatesLocked(nextStatus);
-  if (willLock && !(wasLocked && hasFrozenRates(quote))) return { status: nextStatus, ratesFrozen: freezeRates(liveRates, nextStatus, at) };
-  if (!willLock && quote && quote.ratesFrozen) return { status: nextStatus, ratesFrozen: null };
-  return { status: nextStatus };
+  const patch = { status: nextStatus };
+  if (willLock && !(wasLocked && hasFrozenRates(quote))) patch.ratesFrozen = freezeRates(liveRates, nextStatus, at);
+  else if (!willLock && quote && quote.ratesFrozen) patch.ratesFrozen = null;
+  // The deadline clock stops the day the quote goes out (lib/planner.js):
+  // entering Submitted (or later) from an open status records the day; a
+  // move between submitted statuses keeps it; moving back to an open status
+  // clears it so the countdown runs again.
+  const wasSubmitted = isSubmittedStatus(quote && quote.status) && !!(quote && quote.submittedAt);
+  const willSubmit = isSubmittedStatus(nextStatus);
+  if (willSubmit && !wasSubmitted) patch.submittedAt = at ? localDay(new Date(at)) : localDay();
+  else if (!willSubmit && quote && quote.submittedAt) patch.submittedAt = null;
+  return patch;
 }
 
 /** A project already in a locked status but without a pin (it was finished

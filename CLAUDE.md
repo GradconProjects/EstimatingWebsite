@@ -343,6 +343,30 @@ lived in the one shared rate that two other projects also carried):
    only way a pinned project re-prices is its "Re-price with current rates"
    button (two clicks; a `before-reprice` version is kept first).
 
+## Dashboard opens on the open work only
+
+`OPEN_STATUSES` (`lib/planner.js`, used by `Dashboard.jsx`) = Queued, Estimating: the status filter
+starts on the "Open — Queued & Estimating" tile, so a quote that has gone out
+(or is finished, quoting, on hold, won or lost) leaves the main screen and
+sits under its own status tile and under "All projects" — never deleted,
+never hidden from the tiles' counts. Clicking the active tile again toggles
+between Open and All. Session-local; every fresh load starts on Open.
+Grady, 1 Oct 2026.
+
+## Deadlines stop at submission
+
+`lib/planner.js`: `SUBMITTED_STATUSES` (Submitted, Tendered, Successful,
+Unsuccessful). `statusChangePatch` (`lib/rateFreeze.js`, the ONE status rule)
+writes `quote.submittedAt` (a local "YYYY-MM-DD") the moment a status enters
+that set, keeps it through the pipeline and clears it (`null`) on a move back
+to an open status. `daysLabel` / `dashboardDueLabel` take `(deadline, status,
+submittedAt)` and, for a submitted quote, show the FROZEN result
+(`submittedLabel`: "Submitted 2d early / on the day / 3d late", or plain
+"Submitted" when no day was recorded — never a count invented from today);
+`isUrgent(planner, status)` and the Planner's "Projects overdue" tile
+(`isOverdue`) ignore submitted quotes. Grady, 1 Oct 2026: "when a quote is
+submitted, the days overdue should cease counting".
+
 ## Multi-project dashboard
 
 The app has two views, switched in `App.jsx` by whether `activeId` points
@@ -933,6 +957,12 @@ if Estimates gains an element type Quotes already has a match for.
   it rather than writing a new number input, it already handles the
   "empty string vs. 0" distinction correctly (an empty cell means "not
   entered", not "zero").
+- Element cards can be put in any order at any time: the ▲ ▼ arrows on a
+  card's header (`onMoveUp` / `onMoveDown` → `moveItem` in App.jsx) or
+  dragging a header onto another card (`onReorder` → `reorderItems`, the
+  same handler the Quote Summary rail's drag uses). The order is
+  `quote.items` itself, so the rail, the print report and the export follow
+  it — never keep a second, display-only order anywhere.
 - Category blocks and the whole element card are independently
   collapsible — this was a deliberate response to "the full catalog on
   every tab is a lot of rows"; don't remove the ability to collapse in

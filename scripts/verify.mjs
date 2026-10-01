@@ -1736,9 +1736,9 @@ check("statusChangePatch is the ONE status rule: open→locked pins live rates, 
   assert.equal(effectiveRates(done, live)[C32].unitCost, 250, "pinned copy governs while locked");
   assert.equal(effectiveRates(open, live)[C32].unitCost, 275, "an open project follows the live rates");
   assert.equal(computeGrandTotal([], effectiveRates(done, live)), 0);
-  // Submitted → Successful keeps the SAME pin (no silent re-price on the way through the pipeline)
+  // Completed Estimating → Successful keeps the SAME pin (no silent re-price on the way through the pipeline); it only records the submission day
   const p2 = statusChangePatch(done, "Successful", live);
-  assert.deepEqual(p2, { status: "Successful" });
+  assert.equal(p2.status, "Successful"); assert.equal(p2.ratesFrozen, undefined); assert.ok(/^\d{4}-\d{2}-\d{2}$/.test(p2.submittedAt));
   // back to an open status drops the pin (null so a field merge clears it)
   const p3 = statusChangePatch(done, "Estimating", live);
   assert.deepEqual(p3, { status: "Estimating", ratesFrozen: null });
@@ -1831,6 +1831,55 @@ check("The Rates Library's validity rows name real Quotes catalog products (the 
   const catalogNames = new Set(); FULL_CATALOG.forEach((c) => c.products.forEach((p) => catalogNames.add(p.name)));
   names.forEach((n) => { assert.ok(catalogNames.has(n), `library validity row "${n}" is not a Quotes catalog product`); assert.ok(isTimeLimited(n), `"${n}" is not a time-limited row`); });
   assert.ok(names.includes("Production & transport surcharge"));
+});
+
+
+const { SUBMITTED_STATUSES, isSubmittedStatus, submittedLabel, daysLabel, dashboardDueLabel, isUrgent, isOverdue, OPEN_STATUSES } = await import("../src/lib/planner.js");
+
+check("Dashboard opens on Queued + Estimating only; submitted work lives under its tile / All projects", () => {
+  assert.deepEqual(OPEN_STATUSES, ["Queued", "Estimating"]);
+  OPEN_STATUSES.forEach((st) => assert.ok(catalogAll.QUOTE_STATUSES.includes(st), st));
+  SUBMITTED_STATUSES.forEach((st) => assert.ok(!OPEN_STATUSES.includes(st), `${st} is never on the opening screen`));
+});
+
+check("Deadline clock stops at submission: Submitted and later statuses count to the submission day, never to today (1 Oct 2026)", () => {
+  assert.deepEqual(SUBMITTED_STATUSES, ["Submitted", "Tendered", "Successful", "Unsuccessful"]);
+  SUBMITTED_STATUSES.forEach((st) => assert.ok(catalogAll.QUOTE_STATUSES.includes(st), st));
+  ["Queued", "Estimating", "Completed Estimating", "Quoting", "On Hold"].forEach((st) => assert.equal(isSubmittedStatus(st), false, st));
+  const past = "2020-01-10";                                           // a deadline long gone — the live count would be thousands of days
+  assert.equal(submittedLabel(past, "2020-01-08").text, "Submitted 2d early");
+  assert.equal(submittedLabel(past, "2020-01-10").text, "Submitted on the day");
+  assert.equal(submittedLabel(past, "2020-01-13").text, "Submitted 3d late");
+  assert.equal(submittedLabel(past, null).text, "Submitted", "no recorded day → no invented count");
+  assert.equal(submittedLabel(null, "2020-01-13").text, "Submitted");
+  assert.equal(dashboardDueLabel(past, "Submitted", "2020-01-13").text, "Submitted 3d late");
+  assert.equal(dashboardDueLabel(past, "Successful", "2020-01-08").text, "Submitted 2d early");
+  assert.ok(/overdue/.test(dashboardDueLabel(past, "Quoting", null).text), "an open quote still counts up");
+  assert.ok(/overdue/.test(daysLabel(past, "Estimating").text));
+  assert.equal(daysLabel(past, "Tendered", "2020-01-10").text, "Submitted on the day");
+  assert.equal(dashboardDueLabel(null, "Estimating"), null);
+  // urgency and the Planner's overdue tile follow the same rule
+  assert.equal(isUrgent({ deadline: past, priority: "Urgent" }, "Submitted"), false);
+  assert.equal(isUrgent({ deadline: past, priority: "Low" }, "Estimating"), true);
+  assert.equal(isOverdue({ status: "Quoting", planner: { deadline: past } }, "2026-10-01"), true);
+  assert.equal(isOverdue({ status: "Submitted", planner: { deadline: past } }, "2026-10-01"), false);
+  assert.equal(isOverdue({ status: "Quoting", planner: { deadline: "2099-01-01" } }, "2026-10-01"), false);
+});
+
+check("statusChangePatch records submittedAt on entering Submitted, keeps it through the pipeline, clears it on the way back", () => {
+  const live = defaultRates();
+  const open = { status: "Quoting", items: [], ratesFrozen: freezeRates(live, "Quoting") };
+  const p1 = statusChangePatch(open, "Submitted", live, "2026-10-01T03:00:00.000Z");
+  assert.equal(p1.status, "Submitted");
+  assert.ok(/^\d{4}-\d{2}-\d{2}$/.test(p1.submittedAt), `a local day, got ${p1.submittedAt}`);
+  assert.equal(p1.ratesFrozen, undefined, "already pinned — the pin is kept untouched");
+  const sub = { ...open, ...p1 };
+  assert.deepEqual(statusChangePatch(sub, "Successful", live), { status: "Successful" }, "Submitted → Successful keeps the recorded day");
+  const back = statusChangePatch(sub, "Estimating", live);
+  assert.equal(back.submittedAt, null, "back to an open status clears it (null so a field merge removes it)");
+  assert.equal(back.ratesFrozen, null);
+  // a project that was submitted before the day was recorded gets today's when it next changes INTO a submitted status only
+  assert.deepEqual(statusChangePatch({ status: "Submitted", ratesFrozen: freezeRates(live, "Submitted") }, "Tendered", live).submittedAt && "set", "set", "an unrecorded day is filled in on the next move within the pipeline");
 });
 
 console.log(`\n${passed} check(s) passed.`);
