@@ -586,6 +586,41 @@ export const FULL_CATALOG = [
     ["Danley PD3 10mm plate dowel cradle @450 c/c, galvanised — 165–185mm slab (3 m length)", "each", null, 145.90],
     ["Danley PD3 10mm plate dowel cradle @450 c/c, galvanised — 190–210mm slab (3 m length)", "each", null, 168.90],
     ["Danley PD3 10mm plate dowel system — supply & install allowance (delivery, set-out, fixing, margin)", "m", null, 65],
+    ["Danley PD3 10mm black cradle @450 c/c — supply per lm (3 m length ÷ 3)", "m", null, 38.73],
+    ["Danley PD3 10mm galvanised cradle @450 c/c — supply per lm (3 m length ÷ 3)", "m", null, 48.63],
+    ["6mm plate / diamond dowel system @450 c/c — supply (allowance; install extra)", "m", null, 47.5],
+    /* Drilled & ChemSet dowels into existing concrete (2 Oct 2026): INSTALLED
+     * estimating allowances per dowel — supply, set-out, drill, clean the
+     * hole, inject Ramset ChemSet REO 502, insert and grease the free end —
+     * at the midpoint of Grady's Melbourne ranges (N12 $18–28, N16 $25–35,
+     * N20 $32–45, N24 $40–60). Not published supplier prices: access,
+     * drilling direction, existing reo, dust extraction and quantity move
+     * them. The per-lm row is the tender/BOQ rate for the N16 × 400 @ 300 c/c
+     * top-and-bottom detail (6.67 dowels/lm → $200/lm; 59 m = $11,800).
+     * The component rows below price the MATERIAL build-up of that detail
+     * for a check against the allowance (Ausreo N16 D500N 6 m $25.49;
+     * Bunnings REO502 XTREM 600 ml $78 incl GST → $70.91 ex; ~22.6 ml of
+     * resin per 20 mm × 200 mm hole before waste). */
+    ["N12 drilled & ChemSet dowel, 300–400 long — supply, drill, epoxy & install (allowance)", "each", null, 23],
+    ["N16 drilled & ChemSet dowel, 400 long / 200 embed — supply, drill, epoxy & install (allowance)", "each", null, 30],
+    ["N20 drilled & ChemSet dowel — supply, drill, epoxy & install (allowance)", "each", null, 38.5],
+    ["N24 drilled & ChemSet dowel — supply, drill, epoxy & install (allowance)", "each", null, 50],
+    ["N16 × 400 drilled & ChemSet dowels @300 c/c top & bottom (6.67/lm) — installed tender rate", "m", null, 200],
+    ["N16 dowel bar × 400 long (cut from 6 m D500N stock @ $25.49, 15 per bar)", "each", null, 1.70],
+    ["Ramset ChemSet REO 502 XTREM, 600 ml cartridge", "each", null, 70.91],
+    ["Dowel grease / debonding compound (allowance)", "each", null, 75],
+    ["Drill bits, mixing nozzles, hole brushes, blow-out consumables (allowance)", "each", null, 225],
+    /* Formed-joint dowels with sleeves — installed allowances per dowel
+     * (midpoints: R16 $15–25, R20 $20–30, R24 $25–40, 16 sq $20–30, 20/25 sq
+     * $30–50) and Danley published supply-only prices (incl GST ÷ 1.1). */
+    ["R16 round dowel + sleeve, formed construction joint — installed (allowance)", "each", null, 20],
+    ["R20 round dowel + sleeve, formed joint — installed (allowance)", "each", null, 25],
+    ["R24 round dowel + sleeve, heavier slab joint — installed (allowance)", "each", null, 32.5],
+    ["16mm square dowel + sleeve, formed joint — installed (allowance)", "each", null, 25],
+    ["20/25mm square dowel + sleeve, formed joint — installed (allowance)", "each", null, 40],
+    ["Danley 16mm square × 400 galvanised dowel — supply only", "each", null, 15.94],
+    ["Danley 25mm × 400 square galvanised dowel — supply only", "each", null, 41.45],
+    ["Danley 10mm × 110mm galvanised diamond dowel — supply only", "each", null, 22.10],
     ["Saw cutting (subcontract quote)", "quote", null, null],
     ["Saw cuts / dowels (other — specify in description)", "m", null, 0],
   ]},

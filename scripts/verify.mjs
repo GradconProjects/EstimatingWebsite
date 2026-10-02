@@ -79,10 +79,10 @@ check("every element type has both a category and a section", () => {
   });
 });
 
-check("19 material categories, 331 products (incl. the 9-row SAW CUTS & DOWELS band, CONCRETE PUMPING, REINFORCEMENT BY RATE, the 32-board INSULATION range, 31 SCREEDS, 17 HYDRONIC HEATING, 48 SPECIALIST FINISHING CONCRETE, 45 PRELIMINARIES, the full 24-size TRENCH MESH grid, Bored Piers subcontract, minimum cartage, levy, surcharge)", () => {
+check("19 material categories, 351 products (incl. the 29-row SAW CUTS & DOWELS band, CONCRETE PUMPING, REINFORCEMENT BY RATE, the 32-board INSULATION range, 31 SCREEDS, 17 HYDRONIC HEATING, 48 SPECIALIST FINISHING CONCRETE, 45 PRELIMINARIES, the full 24-size TRENCH MESH grid, Bored Piers subcontract, minimum cartage, levy, surcharge)", () => {
   assert.equal(FULL_CATALOG.length, 19);
   const total = FULL_CATALOG.reduce((s, c) => s + c.products.length, 0);
-  assert.equal(total, 331);
+  assert.equal(total, 351);
   const pre = FULL_CATALOG.find((c) => c.key === "PRELIMINARIES");
   assert.equal(pre.products.length, 45);
   assert.ok(!pre.weightBasis && !pre.areaBasis && !pre.lengthBasis && !pre.volumeRateBasis, "preliminaries cost plain qty × rate");
@@ -102,7 +102,7 @@ check("19 material categories, 331 products (incl. the 9-row SAW CUTS & DOWELS b
   assert.equal(cost.categoryTotals["SCREEDS"], 720); assert.equal(cost.categoryTotals["HYDRONIC HEATING"], 285); assert.equal(cost.materialsTotal, 1005);
   // Danley PD3 plate dowel cradles: supply per 3 m length at Allcon's ex-GST retail; the black 140–160 carries Allcon's 25-length MOQ as minQty
   const saw = FULL_CATALOG.find((c) => c.key === "SAW CUTS & DOWELS");
-  assert.equal(saw.products.length, 9);
+  assert.equal(saw.products.length, 29);
   assert.ok(!saw.weightBasis && !saw.areaBasis && !saw.lengthBasis && !saw.volumeRateBasis, "saw cuts & dowels cost plain qty × rate");
   const pd3 = (re) => saw.products.find((p) => re.test(p.name));
   assert.equal(pd3(/black — 140–160mm/).minQty, 25); assert.equal(pd3(/black — 140–160mm/).unitCost, 116.2); assert.equal(pd3(/black — 140–160mm/).unit, "each");
@@ -113,6 +113,16 @@ check("19 material categories, 331 products (incl. the 9-row SAW CUTS & DOWELS b
   dow.qtys[rateKey("SAW CUTS & DOWELS", pd3(/galvanised — 140–160mm/).name, "each")] = 20;
   const dowCost = computeElementCost(dow, defaultRates());
   assert.equal(Math.round(dowCost.categoryTotals["SAW CUTS & DOWELS"] * 100) / 100, 2905 + 2918, "black bills the 25-length MOQ ($2,905), galvanised the 20 typed ($2,918)");
+  // the N16 × 400 @ 300 c/c top-and-bottom detail: 59 m at the $200/lm tender rate = $11,800; drilled & ChemSet allowances per dowel; Danley supply rows ex GST
+  const n16 = newElementItem(ELEMENT_TYPES[0]);
+  n16.qtys[rateKey("SAW CUTS & DOWELS", pd3(/^N16 × 400 drilled/).name, "m")] = 59;
+  n16.qtys[rateKey("SAW CUTS & DOWELS", pd3(/^N16 drilled & ChemSet/).name, "each")] = 394;
+  const n16Cost = computeElementCost(n16, defaultRates());
+  assert.equal(n16Cost.categoryTotals["SAW CUTS & DOWELS"], 11800 + 394 * 30);
+  assert.equal(pd3(/REO 502 XTREM/).unitCost, 70.91, "$78 incl GST → $70.91 ex");
+  assert.equal(pd3(/16mm square × 400 galvanised/).unitCost, 15.94); assert.equal(pd3(/diamond dowel — supply/).unitCost, 22.1);
+  ["N12", "N20", "N24"].forEach((d) => assert.ok(pd3(new RegExp(`^${d} drilled & ChemSet`)), `${d} drilled dowel row`));
+  ["R16", "R20", "R24", "16mm square", "20/25mm square"].forEach((d) => assert.ok(pd3(new RegExp(`^${d} .*sleeve`)), `${d} sleeve dowel row`));
   const conc = FULL_CATALOG.find((c) => c.key === "CONCRETE");
   assert.ok(conc.products.some((p) => p.name === "Production & transport surcharge" && p.unit === "m3" && p.unitCost === 9.17), "concrete surcharge product seeded at $9.17/m³");
   // Vapour barrier is its own OTHER ACCESSORIES product, distinct from Insulation
