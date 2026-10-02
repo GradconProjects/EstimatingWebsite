@@ -567,6 +567,28 @@ export const FULL_CATALOG = [
     ["Packing sand", "m3", null, 50], ["Crushed Rock", "m3", null, 63], ["Insulation", "m2", null, 25], ["Vapour barrier", "m2", null, 3], ["Epoxy", "unit", null, 70],
     ["Marking Paint", "unit", null, 4], ["Sealers/Acid/MBT", "each", null, 400], ["Curing Products", "price", null, 100],
   ]},
+  /* Saw cuts & dowels — Danley PD3 10 mm tapered plate dowel cradles @ 450 mm
+   * max centres with RynoBar, SUPPLY ONLY at Allcon Melbourne (Croydon South)
+   * retail, ex GST, per 3 m cradle length (2 Oct 2026; Danley confirms the 10 mm
+   * PD3 is supplied in 3 m lengths, one part per slab-depth range — e.g.
+   * PD310450150B / PD310450150G for a 150 mm slab). Enter WHOLE lengths:
+   * 59 lm ÷ 3 m → 20 lengths. The black 140–160 mm cradle currently shows a
+   * minimum order of 25 lengths at Allcon, carried as `minQty` so 20 typed
+   * bills 25 (rule 8; edit the minimum in the Rates modal if it no longer
+   * applies). Delivery and installation are NOT in these prices — the
+   * supply-&-install allowance row carries Grady's $55–75/m budget figure at
+   * its midpoint for an installed set-up. */
+  { key: "SAW CUTS & DOWELS", weightBasis: false, products: [
+    ["Danley PD3 10mm plate dowel cradle @450 c/c, black — 140–160mm slab (PD310450150B, 3 m length; MOQ 25)", "each", null, 116.20, null, null, 25],
+    ["Danley PD3 10mm plate dowel cradle @450 c/c, black — 165–185mm slab (3 m length)", "each", null, 116.20],
+    ["Danley PD3 10mm plate dowel cradle @450 c/c, black — 190–210mm slab (3 m length)", "each", null, 116.20],
+    ["Danley PD3 10mm plate dowel cradle @450 c/c, galvanised — 140–160mm slab (PD310450150G, 3 m length)", "each", null, 145.90],
+    ["Danley PD3 10mm plate dowel cradle @450 c/c, galvanised — 165–185mm slab (3 m length)", "each", null, 145.90],
+    ["Danley PD3 10mm plate dowel cradle @450 c/c, galvanised — 190–210mm slab (3 m length)", "each", null, 168.90],
+    ["Danley PD3 10mm plate dowel system — supply & install allowance (delivery, set-out, fixing, margin)", "m", null, 65],
+    ["Saw cutting (subcontract quote)", "quote", null, null],
+    ["Saw cuts / dowels (other — specify in description)", "m", null, 0],
+  ]},
   { key: "OTHER ALLOWANCES", weightBasis: false, products: [
     // Excavation (bank m³ dug) and Soil removal (loose m³ carted away) are
     // SEPARATE quantities: each drives its own crew-sheet row (see

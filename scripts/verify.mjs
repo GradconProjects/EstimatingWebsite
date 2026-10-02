@@ -79,10 +79,10 @@ check("every element type has both a category and a section", () => {
   });
 });
 
-check("18 material categories, 322 products (incl. CONCRETE PUMPING, REINFORCEMENT BY RATE, the 32-board INSULATION range, 31 SCREEDS, 17 HYDRONIC HEATING, 48 SPECIALIST FINISHING CONCRETE, 45 PRELIMINARIES, the full 24-size TRENCH MESH grid, Bored Piers subcontract, minimum cartage, levy, surcharge)", () => {
-  assert.equal(FULL_CATALOG.length, 18);
+check("19 material categories, 331 products (incl. the 9-row SAW CUTS & DOWELS band, CONCRETE PUMPING, REINFORCEMENT BY RATE, the 32-board INSULATION range, 31 SCREEDS, 17 HYDRONIC HEATING, 48 SPECIALIST FINISHING CONCRETE, 45 PRELIMINARIES, the full 24-size TRENCH MESH grid, Bored Piers subcontract, minimum cartage, levy, surcharge)", () => {
+  assert.equal(FULL_CATALOG.length, 19);
   const total = FULL_CATALOG.reduce((s, c) => s + c.products.length, 0);
-  assert.equal(total, 322);
+  assert.equal(total, 331);
   const pre = FULL_CATALOG.find((c) => c.key === "PRELIMINARIES");
   assert.equal(pre.products.length, 45);
   assert.ok(!pre.weightBasis && !pre.areaBasis && !pre.lengthBasis && !pre.volumeRateBasis, "preliminaries cost plain qty × rate");
@@ -100,6 +100,19 @@ check("18 material categories, 322 products (incl. CONCRETE PUMPING, REINFORCEME
   item.qtys[rateKey("HYDRONIC HEATING", "Zone actuator", "each")] = 3;
   const cost = computeElementCost(item, defaultRates());
   assert.equal(cost.categoryTotals["SCREEDS"], 720); assert.equal(cost.categoryTotals["HYDRONIC HEATING"], 285); assert.equal(cost.materialsTotal, 1005);
+  // Danley PD3 plate dowel cradles: supply per 3 m length at Allcon's ex-GST retail; the black 140–160 carries Allcon's 25-length MOQ as minQty
+  const saw = FULL_CATALOG.find((c) => c.key === "SAW CUTS & DOWELS");
+  assert.equal(saw.products.length, 9);
+  assert.ok(!saw.weightBasis && !saw.areaBasis && !saw.lengthBasis && !saw.volumeRateBasis, "saw cuts & dowels cost plain qty × rate");
+  const pd3 = (re) => saw.products.find((p) => re.test(p.name));
+  assert.equal(pd3(/black — 140–160mm/).minQty, 25); assert.equal(pd3(/black — 140–160mm/).unitCost, 116.2); assert.equal(pd3(/black — 140–160mm/).unit, "each");
+  assert.equal(pd3(/black — 165–185mm/).minQty, undefined); assert.equal(pd3(/galvanised — 190–210mm/).unitCost, 168.9); assert.equal(pd3(/galvanised — 140–160mm/).unitCost, 145.9);
+  assert.ok(saw.products.some((p) => p.unit === "quote"), "a subcontract saw-cutting quote row");
+  const dow = newElementItem(ELEMENT_TYPES[0]);
+  dow.qtys[rateKey("SAW CUTS & DOWELS", pd3(/black — 140–160mm/).name, "each")] = 20;   // 59 lm → 20 lengths
+  dow.qtys[rateKey("SAW CUTS & DOWELS", pd3(/galvanised — 140–160mm/).name, "each")] = 20;
+  const dowCost = computeElementCost(dow, defaultRates());
+  assert.equal(Math.round(dowCost.categoryTotals["SAW CUTS & DOWELS"] * 100) / 100, 2905 + 2918, "black bills the 25-length MOQ ($2,905), galvanised the 20 typed ($2,918)");
   const conc = FULL_CATALOG.find((c) => c.key === "CONCRETE");
   assert.ok(conc.products.some((p) => p.name === "Production & transport surcharge" && p.unit === "m3" && p.unitCost === 9.17), "concrete surcharge product seeded at $9.17/m³");
   // Vapour barrier is its own OTHER ACCESSORIES product, distinct from Insulation
