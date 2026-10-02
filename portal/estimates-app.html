@@ -604,12 +604,12 @@ table.results th:nth-child(3),table.results td:nth-child(3){position:sticky;left
     <h2>Quantity Register</h2>
     <p class="small">Every calculated quantity, fully auditable — element, formula, quantity, waste and linked elements. This is the single source of truth behind every export. Rolled up by element, same as the Workspace — collapse a group to review it at a glance, or remove the element entirely from here.</p>
     <div class="filterbar">
+      <select id="regGroupBy" title="Group the rows — one roll-up per element (each element on its own, so two strip footings never merge), per material group, per category, or per level / zone / pour tag" style="font-weight:700;"><option value="element">Group rows by: element</option><option value="materialGroup">Group rows by: material group</option><option value="category">Group rows by: category</option><option value="level">Group rows by: level</option><option value="zone">Group rows by: zone</option><option value="pour">Group rows by: pour</option></select>
       <select id="filterCategory"></select>
       <select id="filterMaterialGroup"></select>
       <select id="filterMaterial" title="One material — a concrete grade, a bar size, a mesh type, a formwork type…"></select>
       <input type="text" id="filterSearch" placeholder="Search element / material / warning...">
       <details class="reg-elpick" id="regElPick"><summary class="btn small" id="regElSummary" title="Tick the elements to show — any mix of the elements entered in the Workspace">Elements: all ▾</summary><div class="reg-elpanel" id="regElPanel"></div></details>
-      <select id="regGroupBy" title="Group rows by"><option value="element">Group: element</option><option value="materialGroup">Group: material group</option><option value="category">Group: category</option><option value="level">Group: level</option><option value="zone">Group: zone</option><option value="pour">Group: pour</option></select>
     </div>
     <div class="reg-chips" id="regChips"></div>
     <div class="reg-tools">
