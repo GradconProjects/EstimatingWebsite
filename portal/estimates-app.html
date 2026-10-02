@@ -591,7 +591,7 @@ table.results th:nth-child(3),table.results td:nth-child(3){position:sticky;left
   <div class="panel">
     <h2>Workspace</h2>
     <div class="toolbar" id="addToolbar"></div>
-    <div class="toolbar"><button class="btn small" onclick="collapseAllCards(true)">▸ Roll up all elements</button><button class="btn small" onclick="collapseAllCards(false)">▾ Expand all</button></div>
+    <div class="toolbar"><button class="btn small" onclick="collapseAllCards(true)">▸ Roll up all elements</button><button class="btn small" onclick="collapseAllCards(false)">▾ Expand all</button><button class="btn small" type="button" onclick="openWasteApplyDialog()" title="Put chosen elements back on the Rates Library's concrete-waste class for their type">♻ Apply library waste settings…</button></div>
     <div class="tip"><span class="ico">💻</span><div>Each card rolls up to a one-line summary — name, ID and live concrete/reinforcement/formwork totals — once you're done with it. Click the ▾/▸ arrow to collapse or re-open any single card, or use the buttons above to roll up the whole workspace once your inputs are in.</div></div>
   </div>
   <div id="bpNav" class="bp-nav" style="display:none;"></div>
@@ -713,6 +713,16 @@ table.results th:nth-child(3),table.results td:nth-child(3){position:sticky;left
 
 <!-- Export preview (Phase 5): every export opens here first — the exact rows,
      columns and report metadata the file will carry — then downloads. -->
+<div id="wasteApply" role="dialog" aria-modal="true" aria-labelledby="wasteApplyTitle" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:80;align-items:center;justify-content:center;padding:24px;">
+  <div style="background:var(--panel);border:1px solid var(--line);border-radius:10px;max-width:980px;width:100%;max-height:88vh;display:flex;flex-direction:column;">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line);">
+      <div><h3 id="wasteApplyTitle" style="margin:0;">Apply Rates Library concrete-waste settings</h3><div class="small" style="margin:4px 0 0;">Work-type classes and percentages come from the Rates Library (Reinforcement → Concrete wastage by work type).</div></div>
+      <button class="btn small" type="button" onclick="closeWasteApply()">✕ Close</button>
+    </div>
+    <div id="wasteApplyBody" style="padding:12px 16px;overflow:auto;"></div>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 16px;border-top:1px solid var(--line);"><span id="wasteApplyStatus" class="small"></span><button class="btn primary" type="button" onclick="runWasteApply()">♻ Apply to ticked elements</button></div>
+  </div>
+</div>
 <div id="exportPreview" role="dialog" aria-modal="true" aria-labelledby="exportPreviewTitle" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:80;align-items:center;justify-content:center;padding:24px;">
   <div style="background:var(--panel);border:1px solid var(--line);border-radius:10px;max-width:1100px;width:100%;max-height:88vh;display:flex;flex-direction:column;">
     <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line);">
@@ -800,8 +810,12 @@ const CONC_WASTE_CLASSES=[
   {key:"shotcrete", label:"Shotcrete / irregular surfaces",      range:"10–20%+", def:15,  lib:"concreteWasteShotcretePct"},
 ];
 let CONC_WASTE={}; CONC_WASTE_CLASSES.forEach(c=>{ CONC_WASTE[c.key]=c.def; });
+let CONC_WASTE_TYPE_MAP={};   // Rates Library: element type id → class, where Grady moved a type off its built-in class
+/** The class a calculator implies, unless the Rates Library's "Concrete waste
+ * class by Estimates element type" table moved this type to another. */
 function autoConcWasteClass(def){
   if(!def) return "formed";
+  const m=CONC_WASTE_TYPE_MAP[def.id]; if(m && CONC_WASTE[m]!==undefined) return m;
   if(def.calc==="pier") return "pile";
   if(def.calc==="shotwall") return "shotcrete";
   if(def.calc==="slab") return "slab";
@@ -818,6 +832,7 @@ function refreshReoAllowances(){
   REO_WASTE_PCT=pick(g.reoWastePct,5); BAR_LAP_PCT=pick(g.barLapPct,8); MESH_LAP_PCT=pick(g.meshLapPct,5);
   FORM_WASTE_PCT=pick(g.formworkWastePct,5);
   CONC_WASTE_CLASSES.forEach(c=>{ CONC_WASTE[c.key]=pick(g[c.lib],c.def); });
+  CONC_WASTE_TYPE_MAP=(g.concreteWasteClassByType && typeof g.concreteWasteClassByType==="object")? g.concreteWasteClassByType : {};
   PROJECT.reoWaste=REO_WASTE_PCT; PROJECT.lapPct=BAR_LAP_PCT; PROJECT.formworkWaste=FORM_WASTE_PCT;
 }
 // Portal-wide Settings (portal-shell.html's Settings modal, stored under
@@ -7227,6 +7242,44 @@ function templateMenu(anchor){
 const BP_MULTI=new Set();
 const tagOf=(inst,k)=>((inst.tags||{})[k]||"").trim();
 function setTag(inst,k,v){ if(!inst.tags||typeof inst.tags!=="object") inst.tags={}; v=(v||"").trim(); if(v) inst.tags[k]=v; else delete inst.tags[k]; }
+/* "Apply library waste settings" — Grady, 2 Oct 2026: "a button in estimates
+ * that can apply such settings to selected elements". Puts the chosen
+ * elements back on the Rates Library rule: waste class → Auto (the class the
+ * library gives their type), optionally clears a typed % override, and can
+ * move a flat-basis project onto the work-type basis. Nothing else on the
+ * element changes. Returns what it touched. */
+function applyLibraryWasteSettings(ids, opts){
+  opts=opts||{}; const set=new Set(ids||[]); let classes=0, overrides=0;
+  INSTANCES.forEach(inst=>{ if(!set.has(inst.id)) return; const d=inst.data||(inst.data={});
+    if(d.concreteWasteClass!==undefined && d.concreteWasteClass!=="auto"){ classes++; } d.concreteWasteClass="auto";
+    if(opts.clearOverrides && d.concreteWasteOverride!==undefined && d.concreteWasteOverride!==""){ d.concreteWasteOverride=""; overrides++; }
+  });
+  let basis=false; if(opts.useClassBasis && concWasteFlat()){ PROJECT.concreteWasteMode="class"; basis=true; }
+  refreshReoAllowances();
+  UNDO_CTX=null; renderWorkspace(); computeAllAndRefresh();
+  return {n:set.size, classes, overrides, basis};
+}
+function openWasteApplyDialog(preselect){
+  refreshReoAllowances();
+  const pre=new Set(preselect && preselect.length? preselect : INSTANCES.map(i=>i.id));
+  const rows=INSTANCES.map(i=>{ const def=LIB_INDEX[i.typeKey]||{}; const auto=autoConcWasteClass(def); const d=i.data||{}; const cur=(d.concreteWasteClass&&d.concreteWasteClass!=="auto")? d.concreteWasteClass : null; const ov=(d.concreteWasteOverride!==undefined&&d.concreteWasteOverride!=="")? num(d.concreteWasteOverride) : null;
+    return `<tr><td><label><input type="checkbox" data-waste-id="${i.id}" ${pre.has(i.id)?'checked':''}> ${bpEsc(i.label)}</label></td><td class="small">${bpEsc(def.label||"")}</td><td class="small">${concWasteClassLabel(auto)} (${CONC_WASTE[auto]}%)</td><td class="small">${cur? `${concWasteClassLabel(cur)} (${CONC_WASTE[cur]}%)` : '—'}${ov!==null? ` · typed ${ov}%` : ''}</td></tr>`; }).join('');
+  const flat=concWasteFlat();
+  document.getElementById("wasteApplyBody").innerHTML=`<p class="small">Puts the ticked elements back on the Rates Library's concrete-waste rule: their class returns to <b>Auto</b> — the class the library gives their element type — so they follow the library from here on. ${flat? `<b>This project is on a flat ${PROJECT.concreteWaste}% basis</b>; tick the option below to move it onto the work-type basis as well.` : ''}</p>
+    <div class="grid cols2" style="margin:6px 0;"><label class="chk"><input type="checkbox" id="wasteApplyClear"> Also clear typed % overrides on the ticked elements</label>${flat? `<label class="chk"><input type="checkbox" id="wasteApplyBasis" checked> Switch the project to the by-work-type basis</label>` : ''}</div>
+    <div class="small" style="margin:4px 0;"><button class="btn small" type="button" onclick="document.querySelectorAll('[data-waste-id]').forEach(c=>c.checked=true)">Tick all</button> <button class="btn small" type="button" onclick="document.querySelectorAll('[data-waste-id]').forEach(c=>c.checked=false)">Untick all</button></div>
+    <div style="overflow:auto;max-height:46vh;"><table class="results"><thead><tr><th>Element</th><th>Type</th><th>Library class (Auto)</th><th>Currently set on the element</th></tr></thead><tbody>${rows||'<tr><td colspan="4" class="small">No elements in this takeoff yet.</td></tr>'}</tbody></table></div>`;
+  document.getElementById("wasteApplyStatus").textContent="";
+  document.getElementById("wasteApply").style.display="flex";
+}
+function closeWasteApply(){ document.getElementById("wasteApply").style.display="none"; }
+function runWasteApply(){
+  const ids=[...document.querySelectorAll('[data-waste-id]:checked')].map(c=>c.dataset.wasteId);
+  if(!ids.length){ document.getElementById("wasteApplyStatus").textContent="Tick at least one element."; return; }
+  const r=applyLibraryWasteSettings(ids,{clearOverrides:!!(document.getElementById("wasteApplyClear")||{}).checked, useClassBasis:!!(document.getElementById("wasteApplyBasis")||{}).checked});
+  closeWasteApply();
+  notifyStatus(`Library waste settings applied to ${r.n} element${r.n===1?'':'s'} — ${r.classes} class${r.classes===1?'':'es'} reset to Auto${r.overrides? `, ${r.overrides} typed override${r.overrides===1?'':'s'} cleared`:''}${r.basis? ', project moved to the by-work-type basis':''}`);
+}
 function bulkApply(action, value){
   const ids=[...BP_MULTI]; const targets=INSTANCES.filter(i=>ids.includes(i.id)); if(!targets.length) return {n:0};
   let n=0, skipped=0;
@@ -7236,6 +7289,7 @@ function bulkApply(action, value){
     else if(action==="level"||action==="zone"||action==="pour"){ setTag(inst,action,value); n++; }
     else if(action==="delete"){ n++; }
   });
+  if(action==="waste"){ const r=applyLibraryWasteSettings(ids,{}); return {n:r.n,skipped:0}; }
   if(action==="delete"){ INSTANCES=INSTANCES.filter(i=>!ids.includes(i.id)); BP_MULTI.clear(); if(!INSTANCES.find(i=>i.id===BP_SELECTED_ID)) BP_SELECTED_ID=null; }
   UNDO_CTX=null; renderWorkspace(); computeAllAndRefresh();
   return {n,skipped};
@@ -7250,6 +7304,7 @@ function bpBulkBar(){
     <label>Pour <input type="text" data-bulk-val="pour" placeholder="e.g. P2"></label><button class="btn small" type="button" data-bulk-act="pour">Set</button>
     <label>Zone <input type="text" data-bulk-val="zone" placeholder="e.g. Nth"></label><button class="btn small" type="button" data-bulk-act="zone">Set</button>
     <button class="btn small" type="button" data-bulk-act="register" title="Open the Quantity Register showing only the selected elements">☰ Register</button>
+    <button class="btn small" type="button" data-bulk-act="waste" title="Put the selected elements back on the Rates Library's concrete-waste class for their type (Auto)">♻ Library waste class</button>
     <button class="btn small danger" type="button" data-bulk-act="delete" data-armed="0">✕ Delete selected</button>
     <button class="btn small" type="button" data-bulk-act="clear">Clear selection</button>
   </div>`;

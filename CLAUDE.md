@@ -828,7 +828,21 @@ element families waits on the owner's approval of the pad footing.
   = `"class"` (new projects) or `"flat"` (one `concreteWaste` % everywhere —
   `applyLoadedEstimateState` sets it on any takeoff saved without the field,
   so nothing re-prices on its own; the estimator switches the basis in
-  Project Setup). The PDF prints `concWasteModeStr()`.
+  Project Setup). The PDF prints `concWasteModeStr()`. **The rule is stated
+  expressly in the library**: its "Concrete waste class by Estimates element
+  type" table (`EST_WASTE_TYPES`, a MIRROR of Estimates' `LIBRARY` ids,
+  labels, groups and built-in classes — `verify.mjs` fails on drift) shows
+  every type's class and lets Grady move a type to another class
+  (`global.concreteWasteClassByType`, only the moved types stored; "Reset
+  all to built-in"); `autoConcWasteClass` reads that map (`CONC_WASTE_TYPE_MAP`,
+  refreshed with the percentages) BEFORE its calculator rule, so a moved
+  type re-prices every element still on Auto, live. **Re-applying later**:
+  the Workspace toolbar's "♻ Apply library waste settings…" dialog
+  (`openWasteApplyDialog` → `applyLibraryWasteSettings(ids, {clearOverrides,
+  useClassBasis})`) and the blueprint bulk bar's "♻ Library waste class"
+  (`bulkApply("waste")`) put chosen elements back on Auto, optionally clear
+  typed % overrides, and can move a flat-basis project onto the work-type
+  basis; nothing else on the element changes.
 - **Screed (standalone)** (`Floor Finishes` library group, calc `screed`:
   `screedDefaults` / `screedGeom` / `renderScreed` / `computeScreed` /
   `diagScreed` — 2 Oct 2026, Grady: "the screed is standalone. add it as its

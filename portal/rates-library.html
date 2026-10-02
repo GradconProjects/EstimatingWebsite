@@ -254,6 +254,10 @@ const GLOBAL = {
   // 10–20%+. Each Estimates element takes the class its calculator implies
   // (switchable per element) and reads the figure from here LIVE.
   concreteWasteSlabPct: 2.5, concreteWasteFormedPct: 5, concreteWasteGroundPct: 7.5, concreteWastePilePct: 10, concreteWasteShotcretePct: 15,
+  // Which class each Estimates element TYPE takes, where it differs from the
+  // built-in rule (EST_WASTE_TYPES below). `{<element id>: <class key>}`,
+  // empty = every type on its built-in class. Edited in the same panel.
+  concreteWasteClassByType: {},
   wasteConcrete: 0.03, wasteFormwork: 0.10, wasteGeneral: 0.05,
   overheadsPct: 0.12, marginPct: 0.15, subbieMarginPct: 0.12,
   // Escalation defaults to 0% — Gradcon's own established rates (below,
@@ -847,6 +851,94 @@ function validityTableHtml(){
 }
 
 let navMeta = [];
+/* The five concrete-waste classes and EVERY Estimates element type with the
+ * class its calculator implies — a MIRROR of estimates-app.html's LIBRARY and
+ * autoConcWasteClass (verify.mjs fails if they drift). The panel below shows
+ * the rule expressly and lets Grady move any type to another class; the
+ * Estimates app reads the result live (concreteWasteClassByType). */
+const CONC_WASTE_CLASS_LIST = [
+  ["slab", "Large slabs / well-controlled pours", "concreteWasteSlabPct"],
+  ["formed", "Footings, pile caps, beams, walls", "concreteWasteFormedPct"],
+  ["ground", "Concrete against excavated ground", "concreteWasteGroundPct"],
+  ["pile", "Bored piles", "concreteWastePilePct"],
+  ["shotcrete", "Shotcrete / irregular surfaces", "concreteWasteShotcretePct"],
+];
+const EST_WASTE_TYPES = [
+  ["bulkexc", "Bulk Excavation", "Earthworks", "formed"],
+  ["footingexc", "Footing Excavation (standalone)", "Earthworks", "formed"],
+  ["slabtrim", "Slab Trim / Cut-to-fall", "Earthworks", "formed"],
+  ["backfill", "Backfill", "Earthworks", "formed"],
+  ["stripfooting", "Strip Footing", "Foundations", "formed"],
+  ["padfooting", "Pad Footing", "Foundations", "formed"],
+  ["stumpfooting", "Stump Footing Pad", "Foundations", "formed"],
+  ["boredpier", "Bored Pier", "Foundations", "pile"],
+  ["piles", "Piles", "Foundations", "pile"],
+  ["pilecap", "Pile Cap", "Foundations", "formed"],
+  ["groundbeam", "Ground Beam", "Foundations", "formed"],
+  ["cappingbeam", "Capping Beam", "Foundations", "formed"],
+  ["anchorblock", "Anchor Block", "Foundations", "formed"],
+  ["columnbaseplate", "Column Base Plate / Grout Pad", "Foundations", "formed"],
+  ["retainingwall", "Retaining Wall", "Retention Walls", "formed"],
+  ["shotcretewall", "Shotcrete Wall", "Retention Walls", "shotcrete"],
+  ["raftslab", "Raft Slab", "Ground Structure", "slab"],
+  ["waffleslab", "Waffle Slab", "Ground Structure", "slab"],
+  ["industrialslab", "Industrial Slab", "Ground Structure", "slab"],
+  ["slabonground", "Slab on Ground", "Ground Structure", "slab"],
+  ["basementslab", "Basement Slab", "Ground Structure", "slab"],
+  ["liftpit", "Lift Pit / Shaft", "Ground Structure", "formed"],
+  ["stairs", "Concrete Stair", "Ground Structure", "formed"],
+  ["tempshoring", "Temporary Shoring", "Ground Structure", "formed"],
+  ["tempprop", "Temporary Propping", "Ground Structure", "formed"],
+  ["falsework", "Falsework (allowance)", "Ground Structure", "formed"],
+  ["accessscaffold", "Access / Scaffold (allowance)", "Ground Structure", "formed"],
+  ["cranepump", "Crane / Pump Set-up (allowance)", "Ground Structure", "formed"],
+  ["suspslab", "Suspended Slab", "Suspended Structure", "slab"],
+  ["suspbeam", "Suspended Beam", "Suspended Structure", "formed"],
+  ["column", "Column", "Vertical Structure", "formed"],
+  ["concretewall", "Concrete Wall / Core", "Vertical Structure", "formed"],
+  ["ramp", "Ramp / External Sloped Slab", "Ramps", "slab"],
+  ["basementramp", "Basement Ramp", "Ramps", "slab"],
+  ["roofslab", "RC Roof Slab", "Roof", "slab"],
+  ["screed", "Screed (standalone)", "Floor Finishes", "formed"],
+  ["driveway", "Driveway", "External Works", "slab"],
+  ["path", "Path", "External Works", "slab"],
+  ["hardstand", "Hardstand", "External Works", "slab"],
+  ["equippad", "Equipment Pad", "External Works", "formed"],
+  ["kerb", "Kerb / Channel / Spoon Drain", "External Works", "formed"],
+  ["drilldowel", "Drill &amp; Dowel", "Alterations", "formed"],
+  ["concreterepair", "Concrete Repair", "Alterations", "formed"],
+  ["crackrepair", "Crack Repair / Sealing", "Alterations", "formed"],
+  ["sawcut", "Sawcut / Core Drill", "Alterations", "formed"],
+  ["demolition", "Demolition / Breakout", "Alterations", "formed"],
+  ["scabble", "Scabble / Surface Preparation", "Alterations", "formed"],
+  ["makegood", "Make Good / Patch", "Alterations", "formed"],
+  ["hearth", "Hearth / Fireplace Base (slabs + walls + starters)", "Irregular Concrete Constructions", "formed"],
+  ["plinth", "Plinth / Machine Base (composite)", "Irregular Concrete Constructions", "formed"],
+  ["compositeassembly", "Irregular Concrete Assembly (any mix of slabs, walls, starters)", "Irregular Concrete Constructions", "formed"],
+  ["turntableslab", "Turntable Slab (vehicle turntable)", "Special Items", "slab"],
+  ["pool", "Swimming Pool (concrete shell)", "Special Items", "formed"],
+  ["planter", "Concrete Planter / Garden Bed", "Special Items", "formed"],
+  ["watertank", "Water Tank (in-ground)", "Special Items", "formed"],
+  ["sumppit", "Sump Pit (drainage)", "Special Items", "formed"],
+  ["precastpanel", "Precast / Tilt-up Panel (supply-and-fix allowance)", "Precast / Tilt-up", "formed"],
+  ["precaststitch", "Precast Stitch / Grout / Embeds", "Precast / Tilt-up", "formed"],
+  ["headwall", "Headwall / Wingwall", "Civil / Bridge", "formed"],
+  ["culvert", "Culvert / Drainage Structure", "Civil / Bridge", "formed"],
+  ["thrustblock", "Thrust Block", "Civil / Bridge", "formed"],
+  ["barrier", "Barrier / Plinth / Kerb Unit", "Civil / Bridge", "formed"],
+];
+function wasteClassFor(id){ const o=(state.global.concreteWasteClassByType||{})[id]; const def=(EST_WASTE_TYPES.find(t=>t[0]===id)||[])[3]; return CONC_WASTE_CLASS_LIST.some(c=>c[0]===o)? o : def; }
+function wasteTypeTable(){
+  const pct=(k)=>{ const c=CONC_WASTE_CLASS_LIST.find(x=>x[0]===k); return c? (state.global[c[2]]??"") : ""; };
+  const groups=[...new Set(EST_WASTE_TYPES.map(t=>t[2]))];
+  const over=Object.keys(state.global.concreteWasteClassByType||{}).filter(id=>wasteClassFor(id)!==(EST_WASTE_TYPES.find(t=>t[0]===id)||[])[3]).length;
+  return `<div class="panel-block" style="margin-top:10px;"><h3>Concrete waste class by Estimates element type</h3>
+     <p class="hint">Expressly: the class (and so the %) every element type takes the moment it is added in Estimates, applied automatically to each element under calculation. Change a type's class here and every element of that type still on "Auto" re-prices live; an element's own Concrete tab can still pick another class or type its own %. ${over? `<b>${over} type${over===1?'':'s'} moved off the built-in class.</b>` : 'Every type is on its built-in class.'} <button class="btn small" type="button" id="g_cw_reset" style="margin-left:6px;">Reset all to built-in</button></p>
+     <table class="kv-table"><tbody>
+     ${groups.map(g=>`<tr><td colspan="2" style="font-weight:700;padding-top:8px;">${g}</td></tr>`+EST_WASTE_TYPES.filter(t=>t[2]===g).map(t=>{ const cur=wasteClassFor(t[0]); const moved=cur!==t[3];
+        return `<tr><td>${t[1]}${moved?` <span class="small" style="color:#b45309;">(built-in: ${(CONC_WASTE_CLASS_LIST.find(c=>c[0]===t[3])||[])[1]})</span>`:''}</td><td><select data-cw-type="${t[0]}">${CONC_WASTE_CLASS_LIST.map(c=>`<option value="${c[0]}" ${c[0]===cur?'selected':''}>${c[1]} — ${pct(c[0])}%</option>`).join('')}</select></td></tr>`; }).join('')).join('')}
+     </tbody></table></div>`;
+}
 function renderApp(){
   let h = "";
   navMeta = [];
@@ -894,7 +986,7 @@ function renderApp(){
       <tr><td>Concrete against excavated ground (typ. 5–10%)</td><td><input type="number" step="any" id="g_cw_ground" value="${state.global.concreteWasteGroundPct??7.5}"></td></tr>
       <tr><td>Bored piles (typ. 5–15%+)</td><td><input type="number" step="any" id="g_cw_pile" value="${state.global.concreteWastePilePct??10}"></td></tr>
       <tr><td>Shotcrete / irregular surfaces (typ. 10–20%+)</td><td><input type="number" step="any" id="g_cw_shotcrete" value="${state.global.concreteWasteShotcretePct??15}"></td></tr>
-     </tbody></table></div>`;
+     </tbody></table></div>` + wasteTypeTable();
   const reoMapFor = {"Trench mesh":"trenchMesh","Square Mesh":"squareMesh","Stock Bar":"stockBar","Processed Bar":"processedBar"};
   Object.keys(REINFORCEMENT_ITEMS).forEach(group=>{
     const g = REINFORCEMENT_ITEMS[group];
@@ -1095,6 +1187,13 @@ function wireInputs(){
   bind("g_cw_ground", ["global","concreteWasteGroundPct"]);
   bind("g_cw_pile", ["global","concreteWastePilePct"]);
   bind("g_cw_shotcrete", ["global","concreteWasteShotcretePct"]);
+  document.querySelectorAll("select[data-cw-type]").forEach(sel=>sel.addEventListener("change", e=>{
+    const id=e.target.dataset.cwType, v=e.target.value, def=(EST_WASTE_TYPES.find(t=>t[0]===id)||[])[3];
+    if(!state.global.concreteWasteClassByType || typeof state.global.concreteWasteClassByType!=="object") state.global.concreteWasteClassByType={};
+    if(v===def) delete state.global.concreteWasteClassByType[id]; else state.global.concreteWasteClassByType[id]=v;
+    saveRates(); renderApp();
+  }));
+  const cwReset=document.getElementById("g_cw_reset"); if(cwReset) cwReset.addEventListener("click", ()=>{ state.global.concreteWasteClassByType={}; saveRates(); renderApp(); });
   bind("cl_placing", ["concreteLabour","placingHrsPerM3"]);
   bind("cl_finishing", ["concreteLabour","finishingHrsPerM3"]);
   bind("cl_curing", ["concreteLabour","curingRate"]);

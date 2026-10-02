@@ -1717,6 +1717,16 @@ check("Concrete wastage by work type: the five classes, their defaults and range
   assert.deepEqual(rows.map((r) => r.range), ["2–3%", "5%", "5–10%", "5–15%+", "10–20%+"], "the typical ranges from the table");
   assert.ok(/pier"\) return "pile"/.test(est) && /shotwall"\) return "shotcrete"/.test(est) && /slab"\) return "slab"/.test(est), "auto class: piers → bored piles, shotcrete walls → shotcrete, slabs → large slabs, else formed");
   assert.ok(/concreteWasteMode==="flat"/.test(est) || /concreteWasteMode\|\|"class"\)==="flat"/.test(est), "a flat project-wide % remains available");
+
+  // the library's element-type table mirrors Estimates' LIBRARY exactly, with the class autoConcWasteClass implies
+  const libBlock = /const LIBRARY = \[([\s\S]*?)\n\];/.exec(est)[1];
+  let group = null; const estTypes = [];
+  libBlock.split("\n").forEach((line) => { const g = /\{group:"([^"]+)"/.exec(line); if (g) { group = g[1]; return; } const it = /\{id:"(\w+)",\s*label:"([^"]+)",\s*calc:"(\w+)"/.exec(line); if (it) estTypes.push([it[1], it[2], group, it[3] === "pier" ? "pile" : it[3] === "shotwall" ? "shotcrete" : it[3] === "slab" ? "slab" : "formed"]); });
+  const mirror = /const EST_WASTE_TYPES = \[([\s\S]*?)\n\];/.exec(lib); assert.ok(mirror, "EST_WASTE_TYPES in rates-library.html");
+  const libTypes = [...mirror[1].matchAll(/\["(\w+)", "([^"]+)", "([^"]+)", "(\w+)"\]/g)].map((m) => [m[1], m[2], m[3], m[4]]);
+  assert.deepEqual(libTypes, estTypes, "every Estimates element type, label, group and built-in class is listed in the library, in order");
+  assert.ok(/concreteWasteClassByType: \{\}/.test(lib) && /CONC_WASTE_TYPE_MAP=\(g\.concreteWasteClassByType/.test(est), "a moved type reaches Estimates through global.concreteWasteClassByType");
+  assert.ok(/function applyLibraryWasteSettings/.test(est) && /data-bulk-act="waste"/.test(est) && /openWasteApplyDialog\(\)/.test(est), "the apply-to-selected button and bulk action exist");
 });
 
 check("Estimates' standalone screed: SCREED_TYPES mirror every m² SCREEDS catalog product by exact name", () => {
