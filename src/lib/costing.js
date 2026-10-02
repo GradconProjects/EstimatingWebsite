@@ -614,13 +614,17 @@ export function labourQuantities(item, rates) {
  * element's own poured concrete volume, so it never needs recording.
  *
  * There is deliberately NO per-element-type logic here: a line appears if
- * and only if its measure exists, in the fixed order lm → m² → m³. An
+ * and only if its measure exists, in the fixed order no. → lm → m² → m³. An
  * element with no recorded geometry and no concrete simply has no rates.
+ * The COUNT (item.measureNo, "no.") is the number of the element on the job
+ * — 12 screw piles, 4 pad footings — so the card shows a cost per pile or
+ * per footing beside the per-metre and per-square-metre figures (2 Oct 2026).
  */
 export function computeElementUnitRates(item, rates) {
   const { total, concreteQty } = computeElementCost(item, rates);
   if (total <= 0) return [];
   const measures = [
+    ["no.", Number(item.measureNo) || 0],
     ["lm", Number(item.measureLm) || 0],
     ["m²", Number(item.measureM2) || 0],
     ["m³", concreteQty],
@@ -638,16 +642,17 @@ export function computeElementUnitRates(item, rates) {
  * measured totals.
  */
 export function computeProjectUnitRates(items, rates) {
-  let cost = 0, lm = 0, m2 = 0, m3 = 0;
+  let cost = 0, no = 0, lm = 0, m2 = 0, m3 = 0;
   (items || []).forEach((item) => {
     const c = computeElementCost(item, rates);
     cost += c.total;
     m3 += c.concreteQty;
+    no += Number(item.measureNo) || 0;
     lm += Number(item.measureLm) || 0;
     m2 += Number(item.measureM2) || 0;
   });
   if (cost <= 0) return [];
-  return [["lm", lm], ["m²", m2], ["m³", m3]]
+  return [["no.", no], ["lm", lm], ["m²", m2], ["m³", m3]]
     .filter(([, qty]) => qty > 0)
     .map(([unit, qty]) => ({ unit, qty: round2(qty), rate: cost / qty }));
 }

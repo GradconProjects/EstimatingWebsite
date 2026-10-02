@@ -1882,6 +1882,29 @@ check("statusChangePatch records submittedAt on entering Submitted, keeps it thr
   assert.deepEqual(statusChangePatch({ status: "Submitted", ratesFrozen: freezeRates(live, "Submitted") }, "Tendered", live).submittedAt && "set", "set", "an unrecorded day is filled in on the next move within the pipeline");
 });
 
+
+check("Project Geometry carries a COUNT: $/no. leads the benchmark rates, sums across the project, and travels from Estimates (2 Oct 2026)", () => {
+  const rates = defaultRates();
+  const piles = newElementItem(ELEMENT_TYPES.find((t) => t.id === "screw_piles"));
+  piles.labourAuto = false;
+  const subs = FULL_CATALOG.find((c) => c.key === "SUB CONTRACTORS / TEMPORARY WORKS");
+  const key = rateKey(subs.key, "Screw Piling", "quote");
+  piles.qtys[key] = 1; piles.rateOverrides = { [key]: { unitCost: 24000 } };
+  assert.deepEqual(computeElementUnitRates(piles, rates), [], "no count, no run, no area, no concrete → no rates");
+  piles.measureNo = 12;
+  const r = computeElementUnitRates(piles, rates);
+  assert.deepEqual(r.map((x) => x.unit), ["no."]);
+  assert.equal(r[0].qty, 12); assert.equal(r[0].rate, 2000, "$24,000 over 12 piles = $2,000 a pile");
+  piles.measureLm = 96;
+  assert.deepEqual(computeElementUnitRates(piles, rates).map((x) => x.unit), ["no.", "lm"], "fixed order: no. → lm → m² → m³");
+  const pr = computeProjectUnitRates([piles], rates);
+  assert.equal(pr.find((x) => x.unit === "no.").qty, 12); assert.equal(pr.find((x) => x.unit === "no.").rate, 2000);
+  // the bridge: the takeoff's count arrives as measureNo, sums on a combined card, and re-matches by name
+  const geo = [{ id: "e1", name: "Screw Piles 1", countNo: 8, runM: 0, areaM2: 0 }, { id: "e2", name: "Screw Piles 2", countNo: 4, runM: 0, areaM2: 0 }];
+  const g = geometryForLabel("Screw Piles", geo);
+  assert.equal(g.countNo, 12); assert.deepEqual(g.matched, ["Screw Piles 1", "Screw Piles 2"]);
+});
+
 console.log(`\n${passed} check(s) passed.`);
 if (process.exitCode) {
   console.error("\nSome checks FAILED — see above.");

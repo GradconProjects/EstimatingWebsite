@@ -970,6 +970,16 @@ if Estimates gains an element type Quotes already has a match for.
   it rather than writing a new number input, it already handles the
   "empty string vs. 0" distinction correctly (an empty cell means "not
   entered", not "zero").
+- **Project Geometry carries three measures per element, plus the concrete:**
+  `item.measureNo` (count — how many of the element, 12 screw piles →
+  $/no.), `item.measureLm` (run) and `item.measureM2` (area); the m³ is the
+  element's own poured concrete. `computeElementUnitRates` /
+  `computeProjectUnitRates` show a rate for every measure that exists, in
+  the fixed order no. → lm → m² → m³, never per element type. The Estimates
+  takeoff publishes `elementGeometry[id] = {countNo, runM, areaM2}`
+  (`autoGeometry`: the calculator's own Quantity, with `geomCountNo` /
+  `geomRunM` / `geomAreaM2` as typed overrides) and `geometryForLabel` sums
+  all three by name onto a card; a combined card sums them too.
 - Element cards can be put in any order at any time: the ▲ ▼ arrows on a
   card's header (`onMoveUp` / `onMoveDown` → `moveItem` in App.jsx) or
   dragging a header onto another card (`onReorder` → `reorderItems`, the

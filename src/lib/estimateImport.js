@@ -187,7 +187,7 @@ export function geometryForLabel(label, estimateGeometry) {
   });
   if (hits.length === 0) return null;
   const sum = (k) => Math.round(hits.reduce((s, g) => s + (Number(g[k]) || 0), 0) * 100) / 100;
-  return { runM: sum("runM"), areaM2: sum("areaM2"), matched: hits.map((h) => h.name) };
+  return { countNo: sum("countNo"), runM: sum("runM"), areaM2: sum("areaM2"), matched: hits.map((h) => h.name) };
 }
 
 export function buildImportFromEstimate(estimateExport) {
@@ -245,6 +245,7 @@ export function buildImportFromEstimate(estimateExport) {
     // Measured geometry from the takeoff's Project Geometry table — the
     // divisors behind this element's $/lm and $/m² benchmark rates.
     const geom = elementGeometry[elementId] || {};
+    if (Number(geom.countNo) > 0) item.measureNo = Number(geom.countNo);
     if (Number(geom.runM) > 0) item.measureLm = Number(geom.runM);
     if (Number(geom.areaM2) > 0) item.measureM2 = Number(geom.areaM2);
     // Marks this card as owned by the Estimates bridge: a re-publish replaces
@@ -456,7 +457,7 @@ export function buildImportFromEstimate(estimateExport) {
     });
     // Quantities combine, so their geometry must too: three strip footings
     // merged into one card divide by the three strips' TOTAL length/area.
-    ["measureLm", "measureM2"].forEach((k) => {
+    ["measureNo", "measureLm", "measureM2"].forEach((k) => {
       if (Number(item[k]) > 0) {
         prior.item[k] = Math.round(((Number(prior.item[k]) || 0) + Number(item[k])) * 100) / 100;
       }
@@ -487,9 +488,10 @@ export function buildImportFromEstimate(estimateExport) {
     estimateGeometry: Object.entries(elementGeometry).map(([id, g]) => ({
       id,
       name: (lines.find((l) => l.elementId === id) || {}).element || "",
+      countNo: Number(g.countNo) || 0,
       runM: Number(g.runM) || 0,
       areaM2: Number(g.areaM2) || 0,
-    })).filter((g) => g.name && (g.runM > 0 || g.areaM2 > 0)),
+    })).filter((g) => g.name && (g.countNo > 0 || g.runM > 0 || g.areaM2 > 0)),
   };
 
   return { quote, flags };

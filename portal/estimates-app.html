@@ -8754,8 +8754,11 @@ function autoGeometry(inst){
   // Area: the plan/footprint figure the compute already derives for the
   // insulation (slabs) and blinding (footings, beams) bolt-ons.
   const areaM2 = num(d._autoInsArea) || num(d._autoBlindArea) || 0;
+  // Count: every calculator's own Quantity — how many of the element there
+  // are (12 piles, 4 pad footings) — so Quotes can show a cost per one.
+  const countNo = Math.max(0, num(d.qty, 1));
   const r2 = (n)=>Math.round(n*100)/100;
-  return { runM: runM>0? r2(runM):0, areaM2: areaM2>0? r2(areaM2):0 };
+  return { countNo: countNo>0? r2(countNo):0, runM: runM>0? r2(runM):0, areaM2: areaM2>0? r2(areaM2):0 };
 }
 /* The figures actually published: a typed override wins, else the derived value. */
 function elementGeometry(inst){
@@ -8765,7 +8768,7 @@ function elementGeometry(inst){
     const v = parseFloat(override);
     return (override!=="" && override!==undefined && override!==null && !isNaN(v) && v>0) ? Math.round(v*100)/100 : fallback;
   };
-  return { runM: pick(d.geomRunM, auto.runM), areaM2: pick(d.geomAreaM2, auto.areaM2) };
+  return { countNo: pick(d.geomCountNo, auto.countNo), runM: pick(d.geomRunM, auto.runM), areaM2: pick(d.geomAreaM2, auto.areaM2) };
 }
 /* Re-render the geometry table as quantities change, but never while the
  * estimator is typing in one of its own cells (that would drop the caret). */
@@ -8792,15 +8795,16 @@ function renderGeometryForm(){
       style="width:100%;text-align:right;">`;
     return `<tr>
       <td>${inst.label||def.label||"Element"} <span class="proj-meta">${def.label||""}</span></td>
+      <td>${cell("geomCountNo",auto.countNo,"no.")}</td>
       <td>${cell("geomRunM",auto.runM,"m")}</td>
       <td>${cell("geomAreaM2",auto.areaM2,"m²")}</td>
     </tr>`;
   }).join("");
-  const tot = INSTANCES.reduce((a,inst)=>{ const g=elementGeometry(inst); return {runM:a.runM+g.runM, areaM2:a.areaM2+g.areaM2}; },{runM:0,areaM2:0});
+  const tot = INSTANCES.reduce((a,inst)=>{ const g=elementGeometry(inst); return {countNo:a.countNo+g.countNo, runM:a.runM+g.runM, areaM2:a.areaM2+g.areaM2}; },{countNo:0,runM:0,areaM2:0});
   host.innerHTML = `<div style="overflow-x:auto;"><table class="results">
-    <thead><tr><th style="text-align:left;">Element</th><th style="text-align:right;width:180px;">Total length (lm)</th><th style="text-align:right;width:180px;">Total area (m²)</th></tr></thead>
+    <thead><tr><th style="text-align:left;">Element</th><th style="text-align:right;width:140px;">Count (no.)</th><th style="text-align:right;width:180px;">Total length (lm)</th><th style="text-align:right;width:180px;">Total area (m²)</th></tr></thead>
     <tbody>${rows}</tbody>
-    <tfoot><tr><th style="text-align:left;">Project total</th><th style="text-align:right;">${fmt(tot.runM,2)} lm</th><th style="text-align:right;">${fmt(tot.areaM2,2)} m²</th></tr></tfoot>
+    <tfoot><tr><th style="text-align:left;">Project total</th><th style="text-align:right;">${fmt(tot.countNo,0)} no.</th><th style="text-align:right;">${fmt(tot.runM,2)} lm</th><th style="text-align:right;">${fmt(tot.areaM2,2)} m²</th></tr></tfoot>
   </table></div>`;
   // oninput (not addEventListener) for the same stacked-listener reason as
   // renderProjectForm; the row is NOT re-rendered on edit, so the caret stays

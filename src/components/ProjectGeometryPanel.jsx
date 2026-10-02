@@ -28,7 +28,7 @@ export default function ProjectGeometryPanel({ items, rates, estimateGeometry, o
   // one the table opens itself, so the figures are asked for rather than
   // hidden behind a fold nobody thinks to open.
   const missing = items.filter(
-    (it) => !(Number(it.measureLm) > 0) && !(Number(it.measureM2) > 0)
+    (it) => !(Number(it.measureNo) > 0) && !(Number(it.measureLm) > 0) && !(Number(it.measureM2) > 0)
   ).length;
   const hasMissing = missing > 0;
   const [open, setOpen] = useState(false);
@@ -47,10 +47,11 @@ export default function ProjectGeometryPanel({ items, rates, estimateGeometry, o
     () =>
       items.reduce(
         (a, it) => ({
+          no: a.no + (Number(it.measureNo) || 0),
           lm: a.lm + (Number(it.measureLm) || 0),
           m2: a.m2 + (Number(it.measureM2) || 0),
         }),
-        { lm: 0, m2: 0 }
+        { no: 0, lm: 0, m2: 0 }
       ),
     [items]
   );
@@ -61,7 +62,7 @@ export default function ProjectGeometryPanel({ items, rates, estimateGeometry, o
     const map = {};
     items.forEach((it) => {
       const g = geometryForLabel(it.label, estimateGeometry);
-      if (g && (g.runM > 0 || g.areaM2 > 0)) map[it.id] = g;
+      if (g && (g.countNo > 0 || g.runM > 0 || g.areaM2 > 0)) map[it.id] = g;
     });
     return map;
   }, [items, estimateGeometry]);
@@ -72,6 +73,7 @@ export default function ProjectGeometryPanel({ items, rates, estimateGeometry, o
       const g = suggestions[it.id];
       if (!g) return;
       const next = { ...it };
+      if (g.countNo > 0) next.measureNo = g.countNo;
       if (g.runM > 0) next.measureLm = g.runM;
       if (g.areaM2 > 0) next.measureM2 = g.areaM2;
       onChangeItem(it.id, next);
@@ -96,15 +98,15 @@ export default function ProjectGeometryPanel({ items, rates, estimateGeometry, o
           {open ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
         </button>
         <div className="flex-1 min-w-0">
-          <div className="font-semibold text-[15px]">Project Geometry — lengths &amp; areas</div>
-          <div className="text-[11px] text-amber-200">Enter each slab&apos;s area and each strip/beam run&apos;s length here</div>
+          <div className="font-semibold text-[15px]">Project Geometry — counts, lengths &amp; areas</div>
+          <div className="text-[11px] text-amber-200">Enter how many of each element, each strip/beam run&apos;s length and each slab&apos;s area here</div>
         </div>
         <div className="text-right flex-none">
           <div className="text-[10px] uppercase tracking-widest text-amber-200">
             {missing > 0 ? `${missing} element${missing === 1 ? "" : "s"} to measure` : "Project total"}
           </div>
           <div className="font-mono tabular-nums text-sm font-bold text-orange-300">
-            {fmt(totals.lm)} lm · {fmt(totals.m2)} m² · {fmt(m3Total)} m³
+            {fmt(totals.no)} no. · {fmt(totals.lm)} lm · {fmt(totals.m2)} m² · {fmt(m3Total)} m³
           </div>
           {projectRates.length > 0 && (
             <div className="font-mono tabular-nums text-[11px] text-amber-200">
@@ -118,8 +120,9 @@ export default function ProjectGeometryPanel({ items, rates, estimateGeometry, o
         <div className="p-3 bg-neutral-50 space-y-2">
           <div className="flex items-start justify-between gap-3">
             <p className="text-xs text-neutral-500 max-w-3xl">
-              The measured length and area behind each element — the divisors for its <b>$/lm</b> and <b>$/m²</b> rates
-              (the <b>$/m³</b> always uses that element&apos;s own concrete volume). Filled automatically when the project
+              The count, measured length and area behind each element — the divisors for its <b>$/no.</b>, <b>$/lm</b> and
+              <b>$/m²</b> rates (the <b>$/m³</b> always uses that element&apos;s own concrete volume). The count is how many of
+              the element there are on the job — 12 screw piles give a cost per pile. Filled automatically when the project
               is published from Estimates; type over any cell where the drawing measures differently.
             </p>
             {suggestionCount > 0 && (
@@ -138,6 +141,7 @@ export default function ProjectGeometryPanel({ items, rates, estimateGeometry, o
               <thead>
                 <tr className="bg-neutral-50 text-neutral-500 text-[11px] uppercase tracking-wide">
                   <th className="text-left px-3 py-2 font-medium">Element</th>
+                  <th className="text-right px-3 py-2 font-medium w-32">Count (no.)</th>
                   <th className="text-right px-3 py-2 font-medium w-40">Total length (lm)</th>
                   <th className="text-right px-3 py-2 font-medium w-40">Total area (m²)</th>
                   <th className="text-left px-3 py-2 font-medium">From the takeoff</th>
@@ -164,6 +168,7 @@ export default function ProjectGeometryPanel({ items, rates, estimateGeometry, o
                           {item.category} {item.category && item.section ? "›" : ""} {item.section}
                         </div>
                       </td>
+                      <td className="px-3 py-2">{cell("measureNo", g ? g.countNo : 0)}</td>
                       <td className="px-3 py-2">{cell("measureLm", g ? g.runM : 0)}</td>
                       <td className="px-3 py-2">{cell("measureM2", g ? g.areaM2 : 0)}</td>
                       <td className="px-3 py-2 text-[11px] text-neutral-400">
