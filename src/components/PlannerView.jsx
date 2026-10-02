@@ -737,7 +737,7 @@ function ProjectPlannerCard({ row, onOpen, onPatchPlanner, onAddCommunication, c
               <span className={`inline-block w-2.5 h-2.5 rounded-full flex-none ${style.dot}`} />
               <span className="font-semibold text-[15px] text-neutral-900">{name}</span>
             </div>
-            {due && <div className={`text-xs mt-0.5 ${due.cls}`}>{due.text}</div>}
+            {due && <div className={`text-xs mt-0.5 ${due.cls}`} title={due.title || undefined}>{due.text}</div>}
           </div>
         </div>
         <span

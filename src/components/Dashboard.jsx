@@ -386,7 +386,7 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete,
                 <td className="px-3 py-2.5 text-xs">
                   {(() => {
                     const due = dashboardDueLabel(s.deadline, s.status, s.submittedAt);
-                    return due ? <span className={due.cls}>{due.text}</span> : <span className="text-neutral-300">—</span>;
+                    return due ? <span className={due.cls} title={due.title || undefined}>{due.text}</span> : <span className="text-neutral-300">—</span>;
                   })()}
                 </td>
                 <td className="px-3 py-2.5">

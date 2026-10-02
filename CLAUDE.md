@@ -361,8 +361,11 @@ writes `quote.submittedAt` (a local "YYYY-MM-DD") the moment a status enters
 that set, keeps it through the pipeline and clears it (`null`) on a move back
 to an open status. `daysLabel` / `dashboardDueLabel` take `(deadline, status,
 submittedAt)` and, for a submitted quote, show the FROZEN result
-(`submittedLabel`: "Submitted 2d early / on the day / 3d late", or plain
-"Submitted" when no day was recorded — never a count invented from today);
+(`submittedLabel`: the text is the DAY it went out — "Submitted 1 Oct 2026",
+Grady, 2 Oct 2026 — with how it landed against the deadline as the hover
+`title` ("2d before / on the deadline day / 3d after the … deadline"), or
+plain "Submitted" when no day was recorded — never a date or count
+invented from today);
 `isUrgent(planner, status)` and the Planner's "Projects overdue" tile
 (`isOverdue`) ignore submitted quotes. Grady, 1 Oct 2026: "when a quote is
 submitted, the days overdue should cease counting".

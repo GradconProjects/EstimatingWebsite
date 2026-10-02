@@ -21,15 +21,26 @@ export const isSubmittedStatus = (status) => SUBMITTED_STATUSES.includes(status)
 
 const dayDiff = (a, b) => Math.ceil((new Date(a) - new Date(b)) / 86400000);
 
-/** The frozen label for a submitted quote: how it landed against its
- * deadline on the day it went out. A quote submitted before the date was
- * recorded (older data) just reads "Submitted" — no count is invented. */
+/** "1 Oct 2026" for a stored "YYYY-MM-DD" (parsed as a LOCAL day). */
+export function formatDay(s) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s || "").trim());
+  if (!m) return String(s || "");
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" });
+}
+
+/** The frozen label for a submitted quote: the DAY it went out ("Submitted
+ * 1 Oct 2026" — Grady, 2 Oct 2026: the date, not the word), with how it
+ * landed against its deadline as the `note` (shown on hover): "2d early",
+ * "on the day", "3d late". A quote submitted before the day was recorded
+ * (older data) just reads "Submitted" — no date or count is invented. */
 export function submittedLabel(deadline, submittedAt) {
-  if (!deadline || !submittedAt) return { text: "Submitted", days: null, cls: "text-neutral-500" };
+  if (!submittedAt) return { text: "Submitted", note: "", days: null, cls: "text-neutral-500" };
+  const text = `Submitted ${formatDay(submittedAt)}`;
+  if (!deadline) return { text, note: "no deadline was set", days: null, cls: "text-neutral-600" };
   const days = dayDiff(deadline, submittedAt);
-  if (days < 0) return { text: `Submitted ${Math.abs(days)}d late`, days, cls: "text-red-500" };
-  if (days === 0) return { text: "Submitted on the day", days, cls: "text-green-700" };
-  return { text: `Submitted ${days}d early`, days, cls: "text-green-700" };
+  if (days < 0) return { text, note: `${Math.abs(days)}d after the ${formatDay(deadline)} deadline`, days, cls: "text-red-500" };
+  if (days === 0) return { text, note: "on the deadline day", days, cls: "text-green-700" };
+  return { text, note: `${days}d before the ${formatDay(deadline)} deadline`, days, cls: "text-green-700" };
 }
 
 /** Overdue = past its deadline AND not yet submitted. */
@@ -55,7 +66,7 @@ export function isUrgent(planner, status) {
 }
 
 export function daysLabel(deadline, status, submittedAt) {
-  if (isSubmittedStatus(status)) { const f = submittedLabel(deadline, submittedAt); return { text: f.text, cls: `${f.cls} font-medium` }; }
+  if (isSubmittedStatus(status)) { const f = submittedLabel(deadline, submittedAt); return { text: f.text, title: f.note, cls: `${f.cls} font-medium` }; }
   if (!deadline) return null;
   const days = Math.ceil((new Date(deadline) - new Date()) / 86400000);
   if (days < 0) return { text: `${Math.abs(days)}d overdue`, cls: "text-red-600 font-semibold" };
@@ -70,7 +81,7 @@ export function daysLabel(deadline, status, submittedAt) {
  * urgency read): the Dashboard row is a narrower "at a glance" column,
  * not the Planner's full urgency triage. */
 export function dashboardDueLabel(deadline, status, submittedAt) {
-  if (isSubmittedStatus(status)) { const f = submittedLabel(deadline, submittedAt); return { text: f.text, cls: `italic ${f.cls}` }; }
+  if (isSubmittedStatus(status)) { const f = submittedLabel(deadline, submittedAt); return { text: f.text, title: f.note, cls: `italic ${f.cls}` }; }
   if (!deadline) return null;
   const days = Math.ceil((new Date(deadline) - new Date()) / 86400000);
   const text = days < 0 ? `${Math.abs(days)}d overdue` : days === 0 ? "Due today" : `Due in ${days}d`;

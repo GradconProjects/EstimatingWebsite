@@ -1847,16 +1847,17 @@ check("Deadline clock stops at submission: Submitted and later statuses count to
   SUBMITTED_STATUSES.forEach((st) => assert.ok(catalogAll.QUOTE_STATUSES.includes(st), st));
   ["Queued", "Estimating", "Completed Estimating", "Quoting", "On Hold"].forEach((st) => assert.equal(isSubmittedStatus(st), false, st));
   const past = "2020-01-10";                                           // a deadline long gone — the live count would be thousands of days
-  assert.equal(submittedLabel(past, "2020-01-08").text, "Submitted 2d early");
-  assert.equal(submittedLabel(past, "2020-01-10").text, "Submitted on the day");
-  assert.equal(submittedLabel(past, "2020-01-13").text, "Submitted 3d late");
-  assert.equal(submittedLabel(past, null).text, "Submitted", "no recorded day → no invented count");
-  assert.equal(submittedLabel(null, "2020-01-13").text, "Submitted");
-  assert.equal(dashboardDueLabel(past, "Submitted", "2020-01-13").text, "Submitted 3d late");
-  assert.equal(dashboardDueLabel(past, "Successful", "2020-01-08").text, "Submitted 2d early");
+  // the label is the DAY it went out; how it landed against the deadline is the hover note
+  assert.equal(submittedLabel(past, "2020-01-08").text, "Submitted 8 Jan 2020"); assert.equal(submittedLabel(past, "2020-01-08").note, "2d before the 10 Jan 2020 deadline");
+  assert.equal(submittedLabel(past, "2020-01-10").text, "Submitted 10 Jan 2020"); assert.equal(submittedLabel(past, "2020-01-10").note, "on the deadline day");
+  assert.equal(submittedLabel(past, "2020-01-13").text, "Submitted 13 Jan 2020"); assert.equal(submittedLabel(past, "2020-01-13").note, "3d after the 10 Jan 2020 deadline");
+  assert.equal(submittedLabel(past, null).text, "Submitted", "no recorded day → no invented date or count");
+  assert.equal(submittedLabel(null, "2020-01-13").text, "Submitted 13 Jan 2020"); assert.equal(submittedLabel(null, "2020-01-13").note, "no deadline was set");
+  assert.equal(dashboardDueLabel(past, "Submitted", "2020-01-13").text, "Submitted 13 Jan 2020"); assert.equal(dashboardDueLabel(past, "Submitted", "2020-01-13").title, "3d after the 10 Jan 2020 deadline");
+  assert.equal(dashboardDueLabel(past, "Successful", "2020-01-08").text, "Submitted 8 Jan 2020");
   assert.ok(/overdue/.test(dashboardDueLabel(past, "Quoting", null).text), "an open quote still counts up");
   assert.ok(/overdue/.test(daysLabel(past, "Estimating").text));
-  assert.equal(daysLabel(past, "Tendered", "2020-01-10").text, "Submitted on the day");
+  assert.equal(daysLabel(past, "Tendered", "2020-01-10").text, "Submitted 10 Jan 2020");
   assert.equal(dashboardDueLabel(null, "Estimating"), null);
   // urgency and the Planner's overdue tile follow the same rule
   assert.equal(isUrgent({ deadline: past, priority: "Urgent" }, "Submitted"), false);
