@@ -128,11 +128,16 @@
 
   /* ---------------- dashboard ---------------- */
   #screen-dashboard{ padding:28px clamp(20px,5vw,56px) 40px; }
-  .dash-top{ display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:8px; }
+  .dash-top{ display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:8px; flex-wrap:wrap; }
   .dash-brand{ display:flex; align-items:center; gap:12px; }
   .dash-brand .co{ font-size:10.5px; letter-spacing:.09em; text-transform:uppercase; color:var(--muted-2); font-weight:500; }
   .dash-brand .name{ font-size:15px; font-weight:700; }
-  .dash-actions{ display:flex; align-items:center; gap:10px; }
+  .dash-actions{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  @media (max-width:640px){
+    #screen-dashboard .brand-logo{ height:64px; }
+    .dash-hero{ margin:28px 0 24px; }
+    .dash-hero-art{ margin-bottom:24px; }
+  }
   .dash-user{ font-size:12.5px; color:var(--muted); font-family:var(--font-mono); margin-right:2px; }
   .dash-user b{ color:var(--text); font-family:var(--font-body); font-weight:600; }
   .logout{
@@ -204,25 +209,34 @@
   .dash-hero-art{ margin:0 0 40px; border-radius:var(--radius); overflow:hidden; box-shadow:0 30px 60px -30px rgba(35,31,32,.4); border:1px solid var(--line-soft); }
   .dash-hero-art img{ display:block; width:100%; height:clamp(160px,26vw,300px); object-fit:cover; }
 
-  .panel-grid{ display:grid; grid-template-columns:repeat(6, 1fr); gap:14px; max-width:1760px; }
-  @media (max-width:1100px){ .panel-grid{ grid-template-columns:repeat(3, 1fr); gap:16px; } }
-  @media (max-width:640px){ .panel-grid{ grid-template-columns:1fr; } }
+  /* Tool tiles by device: wide desktop 6 across; laptop / tablet landscape 3; tablet portrait and
+     large phones 2; phones 1 (2 Oct 2026). minmax(0,1fr) stops a long word widening a column. */
+  .panel-grid{ display:grid; grid-template-columns:repeat(6, minmax(0,1fr)); gap:14px; max-width:1760px; }
+  @media (max-width:1279px){ .panel-grid{ grid-template-columns:repeat(3, minmax(0,1fr)); gap:16px; } }
+  @media (max-width:899px){ .panel-grid{ grid-template-columns:repeat(2, minmax(0,1fr)); } }
+  @media (max-width:559px){ .panel-grid{ grid-template-columns:minmax(0,1fr); } }
 
+  /* A <button> centres its content vertically on its own, and the grid stretches every tile to the
+     tallest one — so a tile with a short blurb used to drop its icon lower than its neighbours.
+     Column flex, top-aligned: every icon sits at the same height and is centred on its tile, with
+     the CTA held to the bottom edge, whatever the text length (2 Oct 2026). */
   .panel-btn{
     position:relative; text-align:center; background:var(--surface); border:1px solid var(--line);
     border-radius:16px; padding:20px 16px 18px; overflow:hidden;
+    display:flex; flex-direction:column; align-items:center; justify-content:flex-start; height:100%;
     transition:transform .18s ease, border-color .18s ease, box-shadow .18s ease;
   }
   .panel-btn:hover{ transform:translateY(-3px); border-color:var(--text); box-shadow:0 22px 44px -26px rgba(35,31,32,.28); }
   .panel-btn:focus-visible{ outline:2px solid var(--focus); outline-offset:3px; }
   .panel-btn .glyph{
-    width:144px; height:144px; max-width:100%; border-radius:22px; background:var(--surface-2); border:1px solid var(--line-soft);
+    flex:none; width:min(144px, 100%); aspect-ratio:1 / 1; border-radius:22px; background:var(--surface-2); border:1px solid var(--line-soft);
     display:flex; align-items:center; justify-content:center; margin:0 auto 14px; color:var(--text); overflow:hidden;
   }
   .panel-btn .glyph svg{ width:76%; height:76%; }
   .panel-btn .glyph img{ width:100%; height:100%; object-fit:cover; display:block; }
-  .panel-btn h2{ font-size:15.5px; margin-bottom:6px; line-height:1.25; }
-  .panel-btn p{ margin:0 0 14px; color:var(--muted); font-size:12px; line-height:1.45; max-width:100%; }
+  .panel-btn h2{ font-size:15.5px; margin-bottom:6px; line-height:1.25; width:100%; }
+  .panel-btn p{ margin:0 0 14px; color:var(--muted); font-size:12px; line-height:1.45; max-width:100%; width:100%; }
+  .panel-btn .cta{ margin-top:auto; width:100%; }
   .panel-btn .cta{ display:flex; align-items:center; justify-content:center; gap:6px; font-size:11px; font-weight:700; color:var(--text); text-transform:uppercase; letter-spacing:.03em; }
   .panel-btn .cta svg{ width:12px; height:12px; transition:transform .18s ease; }
   .panel-btn:hover .cta svg{ transform:translateX(3px); }
@@ -230,14 +244,20 @@
     position:absolute; top:14px; right:14px; font-family:var(--font-mono); font-size:9.5px;
     color:var(--muted-2); letter-spacing:.04em;
   }
-  @media (max-width:1100px){
+  @media (max-width:1279px){
     .panel-btn{ padding:26px 24px 24px; }
-    .panel-btn .glyph{ width:192px; height:192px; margin-bottom:18px; }
+    .panel-btn .glyph{ width:min(192px, 72%); margin-bottom:18px; }
     .panel-btn .glyph svg{ width:76%; height:76%; }
     .panel-btn h2{ font-size:19px; }
     .panel-btn p{ font-size:13px; line-height:1.55; }
     .panel-btn .cta{ font-size:12px; }
   }
+  @media (max-width:559px){
+    .panel-btn{ padding:22px 18px 20px; }
+    .panel-btn h2{ font-size:17px; }
+  }
+  /* Touch devices have no hover: no lift, and the tap target stays where the finger is. */
+  @media (hover:none){ .panel-btn:hover{ transform:none; box-shadow:none; } }
 
   .dash-foot{ margin-top:40px; font-size:11.5px; color:var(--muted-2); font-family:var(--font-mono); }
 
