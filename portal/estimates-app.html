@@ -5923,13 +5923,27 @@ function computeGeneric(inst,def){
 }
 
 /* ---- TANKBOX: compound base+wall structures (pools, planters, tanks, sump pits) ---- */
+/* The in-ground tank/box kinds: a lift pit, sump, water tank or pool sits in
+ * a hole — it DIGS by default (its own excavation, like a footing: external
+ * footprint + working space × full depth to the underside of the blinding)
+ * and is BLINDED under its base slab by default. A planter is above ground:
+ * no dig unless the Excavation tab's option is ticked, no blinding unless
+ * entered. 2 Oct 2026 — before this the lift pit took nothing off for
+ * either unless the generic options were ticked AND an area was typed. */
+const TANKBOX_INGROUND = new Set(["Lift Pit","Sump Pit","Water Tank","Swimming Pool"]);
 const TANKBOX_PRESETS = {
-  "Swimming Pool":{shape:"rect",L:8000,W:4000,depth:1500,baseThickness:200,wallThickness:250,waterstop:true,membrane:true,coping:true,lid:false,grate:false,pipePenetrations:2},
+  "Swimming Pool":{shape:"rect",L:8000,W:4000,depth:1500,baseThickness:200,wallThickness:250,waterstop:true,membrane:true,coping:true,lid:false,grate:false,pipePenetrations:2, blinding:50,blindingMaterial:"concrete",excWorkingSpace:600,excExtraDepth:0},
   "Planter":{shape:"rect",L:2400,W:600,depth:450,baseThickness:150,wallThickness:150,waterstop:false,membrane:true,coping:false,lid:false,grate:false,pipePenetrations:1},
-  "Water Tank":{shape:"circular",dia:3000,L:3000,W:3000,depth:2500,baseThickness:200,wallThickness:200,waterstop:true,membrane:true,coping:false,lid:true,grate:false,pipePenetrations:2},
-  "Sump Pit":{shape:"rect",L:900,W:900,depth:900,baseThickness:150,wallThickness:150,waterstop:false,membrane:false,coping:false,lid:false,grate:true,pipePenetrations:2},
-  "Lift Pit":{shape:"rect",L:2200,W:2200,depth:1600,baseThickness:250,wallThickness:250,waterstop:true,membrane:true,coping:false,lid:false,grate:true,pipePenetrations:1},
+  "Water Tank":{shape:"circular",dia:3000,L:3000,W:3000,depth:2500,baseThickness:200,wallThickness:200,waterstop:true,membrane:true,coping:false,lid:true,grate:false,pipePenetrations:2, blinding:50,blindingMaterial:"concrete",excWorkingSpace:600,excExtraDepth:0},
+  "Sump Pit":{shape:"rect",L:900,W:900,depth:900,baseThickness:150,wallThickness:150,waterstop:false,membrane:false,coping:false,lid:false,grate:true,pipePenetrations:2, blinding:50,blindingMaterial:"concrete",excWorkingSpace:300,excExtraDepth:0},
+  "Lift Pit":{shape:"rect",L:2200,W:2200,depth:1600,baseThickness:250,wallThickness:250,waterstop:true,membrane:true,coping:false,lid:false,grate:true,pipePenetrations:1, blinding:50,blindingMaterial:"concrete",excWorkingSpace:300,excExtraDepth:0},
 };
+/** External plan of a tank/box: the base slab's footprint (walls included). */
+function tankboxExternal(d){
+  const N=num(d.qty,1), wallT=num(d.wallThickness)/1000;
+  if(d.shape=="circular"){ const dia=num(d.dia)/1000+2*wallT; return {N, area:N*Math.PI/4*dia*dia, L:dia, W:dia, circular:true}; }
+  const L=num(d.L)/1000+2*wallT, W=num(d.W)/1000+2*wallT; return {N, area:N*L*W, L, W, circular:false};
+}
 function tankboxDefaults(kind){
   let p=TANKBOX_PRESETS[kind]||TANKBOX_PRESETS["Planter"];
   return Object.assign({
@@ -5965,11 +5979,16 @@ function renderTankbox(inst){
   <div class="subsec ${d.starters?'':'hidden'}" data-show-if="starters"><div class="grid cols4">
    ${F("Connects to",targetSelect("connTarget",d.connTarget,inst.id))}${F("Quantity",inpNum("connQty",d.connQty))}${F("Diameter",barSizeSel("connDia",d.connDia))}${F("Embedment (mm)",inpNum("connEmbed",d.connEmbed))}${F("Projection (mm)",inpNum("connProj",d.connProj))}${F("Hook",anchorSel("connHook",d.connHook))}
   </div></div>`;
-  return {geom,conc:concSection(d,"<p class='small'>Concrete = base slab + perimeter walls</p>"),reo,form,conns};
+  const inGround=TANKBOX_INGROUND.has(d.kind);
+  const exc=inGround? `<div class="grid cols3">${F("Working space each side (mm)",inpNum("excWorkingSpace",d.excWorkingSpace===undefined?300:d.excWorkingSpace))}${F("Extra depth below blinding (mm)",inpNum("excExtraDepth",d.excExtraDepth))}</div>
+  <p class="small">Excavation = (external length + 2 × working space) × (external width + 2 × working space) × (internal depth + base thickness + blinding + extra depth). External = internal + two wall thicknesses. Spoil is bulked at the project rate; untick the option above when the hole is dug on another element.</p>` : undefined;
+  return {geom,conc:concSection(d,"<p class='small'>Concrete = base slab + perimeter walls</p>"),reo,form,conns,exc};
 }
 function computeTankbox(inst,def){
   let d=inst.data, lines=[];
   let N=num(d.qty,1), depth=num(d.depth)/1000, baseT=num(d.baseThickness)/1000, wallT=num(d.wallThickness)/1000, cover=num(d.cover);
+  const ext=tankboxExternal(d);
+  d._autoBlindArea = ext.area;   // blinding and the generic area fallback both read the base slab's footprint
   let baseArea, perim;
   if(d.shape=="circular"){
     let dia=num(d.dia)/1000; baseArea=Math.PI/4*dia*dia; perim=Math.PI*dia;
@@ -5979,6 +5998,21 @@ function computeTankbox(inst,def){
   let baseVol=N*baseArea*baseT;
   let wallVol=N*perim*wallT*depth;
   let totVol=baseVol+wallVol;
+  const blindT=(blindingEnabled(d) && num(d.blinding)>0)? num(d.blinding)/1000 : 0;
+  if(TANKBOX_INGROUND.has(d.kind)){
+    // The hole: external footprint + working space each side, down to the underside of the blinding (+ any extra).
+    const ws=num(d.excWorkingSpace===undefined?300:d.excWorkingSpace)/1000, extra=num(d.excExtraDepth)/1000;
+    const digDepth=depth+baseT+blindT+extra;
+    const digArea=ext.circular? N*Math.PI/4*Math.pow(ext.L+2*ws,2) : N*(ext.L+2*ws)*(ext.W+2*ws);
+    const dig=digArea*digDepth;
+    lines.push(baseLine(inst,def,{materialGroup:"Excavation",material:"Bulk excavation",spec:`${d.kind} — external footprint + ${fmt(ws*1000,0)}mm working space × ${fmt(digDepth*1000,0)}mm`,qty:dig,unit:"m³",waste:0,finalQty:dig,formula:ext.circular?`${N}×π/4×(Ø${fmt(ext.L*1000,0)}+2×${fmt(ws*1000,0)})²×depth`:`${N}×(${fmt(ext.L,2)}+2×${fmt(ws,2)})×(${fmt(ext.W,2)}+2×${fmt(ws,2)})×${fmt(digDepth,3)}`}));
+    lines.push(spoilLine(inst,def,dig));
+  }
+  // Blinding under the base slab (external footprint, or the entered area override).
+  if(blindT>0){
+    const bArea=num(d.blindArea)>0? num(d.blindArea) : ext.area;
+    lines.push(blindingLine(inst,def,bArea,d.blinding,d.blindingMaterial,(d.blindingMaterial==="concrete"||d.blindingMaterial===undefined)?(d.blindingGrade===undefined?20:d.blindingGrade):undefined));
+  }
   lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:`${d.kind} — base+walls`,qty:totVol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(totVol,concWastePct(d)),formula:`${N}×(base area×${d.baseThickness} + perimeter×${d.wallThickness}×${d.depth})`}));
   let formArea=N*perim*depth*2;
   lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Wall formwork (inner+outer)",spec:"",qty:formArea,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(formArea,PROJECT.formworkWaste),formula:"perimeter × depth × 2 faces"}));
@@ -7193,7 +7227,7 @@ const GROUND_GROUPS=new Set(["Foundations","Retention Walls","Ground Structure",
 const NATIVE_EXC_CALCS=new Set(["stripfooting","padfooting","pilecap","pier","retwall"]);
 const NATIVE_EXC_LINE=/^(bulk excavation|trench excavation|spoil disposal|drilled spoil|bored spoil|backfill \(behind wall\))/i;
 function isGroundElement(def){ return !!def && GROUND_GROUPS.has(def.groupName) && def.calc!=="generic"; }
-function hasNativeExcavation(def){ return !!def && NATIVE_EXC_CALCS.has(def.calc); }
+function hasNativeExcavation(def){ return !!def && (NATIVE_EXC_CALCS.has(def.calc) || (def.calc==="tankbox" && TANKBOX_INGROUND.has(def.kind))); }
 function excavationIncluded(d,def){ return hasNativeExcavation(def)? d.excOn!==false : d.excOn===true; }
 /** The element's own plan footprint (m²) for an added excavation — the
  * calculators that know it hand it over; anything else needs the area typed. */
@@ -7201,7 +7235,7 @@ function elementFootprintM2(inst,def){
   const d=inst.data||{};
   if(def.calc==="slab") return num(d._autoInsArea);
   if(def.calc==="beam") return num(d.qty,1)*(num(d.length)/1000)*(num(d.width)/1000);
-  if(def.calc==="tankbox"){ const N=num(d.qty,1); if(d.shape=="circular"){ const dia=num(d.dia)/1000; return N*Math.PI/4*dia*dia; } return N*(num(d.L)/1000)*(num(d.W)/1000); }
+  if(def.calc==="tankbox") return tankboxExternal(d).area;   // the base slab's footprint, walls included
   if(def.calc==="composite"){ const first=(d.slabs||[])[0]; return first? num(d.qty,1)*compositeSlabArea(first) : 0; }   // the base slab's footprint
   return 0;
 }

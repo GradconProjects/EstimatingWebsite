@@ -670,6 +670,19 @@ element families waits on the owner's approval of the pad footing.
   line AND an lm line for the same faces, which the order schedule and the
   Quotes bridge would price twice; no perimeter typed is a completeness
   warning.
+- **In-ground tanks and pits dig and blind by default** (`TANKBOX_INGROUND`:
+  Lift Pit, Sump Pit, Water Tank, Swimming Pool — 2 Oct 2026): the `tankbox`
+  calculator is NATIVE excavation for those kinds (`hasNativeExcavation`),
+  so the Excavation tab's option starts ticked and `computeTankbox` takes
+  off "Bulk excavation" = (external footprint + `excWorkingSpace` each side)
+  × (internal depth + base + blinding + `excExtraDepth`) plus bulked spoil
+  (`NATIVE_EXC_LINE` strips both when unticked); blinding under the base
+  slab is the external footprint (`tankboxExternal`, walls included; the
+  generic `blindArea` override wins) and the presets seed 50 mm. A planter
+  stays above ground: opt-in excavation, no blinding unless entered. A lift
+  pit saved before this gains the dig on next open (no `excOn` = native =
+  included) but keeps blinding off until it is entered — the card's
+  Blinding tab turns it on.
 - **Retaining walls** also carry a plan shape (`planShape`: straight, curved —
   `planRadius` × `planAngle` gives the developed length, or irregular —
   the developed length is typed), a battered stem (`stemBatter`: mean of
