@@ -812,6 +812,25 @@ element families waits on the owner's approval of the pad footing.
   `IRREGULAR CONCRETE CONSTRUCTIONS` category (hearth_fireplace_base,
   plinth_machine_base, irregular_concrete_assembly; `labour: "composite"`)
   and `ESTIMATE_TYPE_MAP` bridges the three Estimates labels onto them.
+- **Screed (standalone)** (`Floor Finishes` library group, calc `screed`:
+  `screedDefaults` / `screedGeom` / `renderScreed` / `computeScreed` /
+  `diagScreed` — 2 Oct 2026, Grady: "the screed is standalone. add it as its
+  own element"): a floor screed priced on its own, not as a slab's topping.
+  `SCREED_TYPES` MIRRORS the m² products of the Quotes `SCREEDS` catalog by
+  exact NAME (`verify.mjs` fails if they drift) and every extra (bonding
+  coat, galvanised mesh, fibres in kg, rails and joints in m, curing) is
+  emitted under `materialGroup: "Finishes"` with the Quotes product name, so
+  `estimateImport.js` prices each line 1:1 on `SCREEDS`
+  (`findScreedProduct`) and picks the Quotes element type from the screed
+  product (`screedQuotesTypeId`, `SCREED_TYPE_RULES`: unbonded before
+  bonded; granolithic / epoxy land on TOPPINGS). An SL sheet mesh in the
+  screed is an ordinary Reinforcement mesh line (whole sheets). Area = qty ×
+  (L × W or an entered plan area), priced by the m² at the average
+  thickness (min and max averaged when laid to falls); the m³ and tonnes
+  ride on the line as notes, never as a second quantity. It sets
+  `_autoInsArea` / `_autoInsPerim` so the shared insulation / acoustic-mat
+  section and Project Geometry take the screed area; it is not a ground
+  element (no excavation) and has no Concrete tab.
 - **Stairs** (`stairGeom(d)`, `STAIR_SHAPES`): straight, L (quarter-turn),
   U / dog-leg, multi-flight, winder, spiral (newel + outer radius, turn), curved
   (centreline radius, turn) and irregular (measured overrides; an old

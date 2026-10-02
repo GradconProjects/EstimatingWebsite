@@ -19,6 +19,7 @@ import {
   labourResourceRate, taskRowMeta, labourQuantities, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, computeRowTotal,
   computeElementUnitRates, computeProjectUnitRates, rowContext, computeElementReinforcementTonnes, getMarginSteps, additionalRowsFor, autoPigmentWashout, autoSpecialistShortLoad, autoSpecialistFees, categoryAppliesTo } from "../src/lib/costing.js";
 import { buildImportFromEstimate, normalizeElementName, geometryForLabel } from "../src/lib/estimateImport.js";
+import * as importAll from "../src/lib/estimateImport.js";
 import { PROJECT_SORTS, sortProjects, sortValue, defaultSortDir, preferredSortKey, isProjectSortKey } from "../src/lib/projectSort.js";
 
 let passed = 0;
@@ -1678,6 +1679,70 @@ check("the PRELIMINARIES band is on the PRELIMINARIES elements ONLY: hidden and 
 
 /* ---- Per-element rate overrides, pinned rates on finished projects, validity dates (29 Sep 2026) ---- */
 const { rowRate, isManualQuoteKey } = await import("../src/lib/costing.js");
+check("Estimates' standalone screed: SCREED_TYPES mirror every m² SCREEDS catalog product by exact name", () => {
+  const html = fs.readFileSync(new URL("../portal/estimates-app.html", import.meta.url), "utf8");
+  const block = /const SCREED_TYPES = \[([\s\S]*?)\];/.exec(html);
+  assert.ok(block, "SCREED_TYPES list present in estimates-app.html");
+  const names = [...block[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+  const cat = FULL_CATALOG.find((c) => c.key === "SCREEDS");
+  const m2 = cat.products.filter((p) => p.unit === "m2" && !/mesh|bonding|curing/i.test(p.name)).map((p) => p.name);
+  assert.deepEqual(names, m2, "Estimates lists exactly the m² screed products, in catalog order");
+  assert.ok(/id:"screed", label:"Screed \(standalone\)", calc:"screed"/.test(html), "library item present");
+  assert.ok(/screed:\{defaults:screedDefaults, render:renderScreed, compute:computeScreed, diagram:diagScreed\}/.test(html), "calculator registered");
+});
+
+check("Import: a standalone screed lands on the matching SCREEDS element type with every product line priced 1:1", () => {
+  const { screedQuotesTypeId } = importAll;
+  const scr = (over) => estLine({ stage: "Floor Finishes", category: "Screed (standalone)", element: "Screed 1", elementId: "EL07", materialGroup: "Finishes", unit: "m²", ...over });
+  const lines = [
+    scr({ material: "Sand/cement screed bonded — 20–30mm", spec: "25 mm", finalQty: 52.5, qty: 50 }),
+    scr({ material: "Bonding agent / SBR slurry coat", finalQty: 52.5 }),
+    scr({ material: "Screed reinforcement mesh (galv. 50x50)", finalQty: 55.1 }),
+    scr({ material: "Screed rails / levelling battens", unit: "m", finalQty: 30 }),
+    scr({ material: "Screed movement joint", unit: "m", finalQty: 12 }),
+    scr({ material: "Screed curing / sealing compound", finalQty: 50 }),
+  ];
+  assert.equal(screedQuotesTypeId(lines), "screed_bonded");
+  const { quote, flags } = buildImportFromEstimate({ project: { name: "Screed job" }, lines, elementGeometry: { EL07: { countNo: 1, areaM2: 50 } } });
+  assert.equal(quote.items.length, 1);
+  const item = quote.items[0];
+  assert.equal(item.typeId, "screed_bonded"); assert.equal(item.measureM2, 50);
+  assert.equal(item.qtys[rateKey("SCREEDS", "Sand/cement screed bonded — 20–30mm", "m2")], 52.5);
+  assert.equal(item.qtys[rateKey("SCREEDS", "Bonding agent / SBR slurry coat", "m2")], 52.5);
+  assert.equal(item.qtys[rateKey("SCREEDS", "Screed reinforcement mesh (galv. 50x50)", "m2")], 55.1);
+  assert.equal(item.qtys[rateKey("SCREEDS", "Screed rails / levelling battens", "m")], 30);
+  assert.equal(item.qtys[rateKey("SCREEDS", "Screed movement joint", "m")], 12);
+  assert.equal(item.qtys[rateKey("SCREEDS", "Screed curing / sealing compound", "m2")], 50);
+  assert.deepEqual(flags, [], "every line found its product — no flags");
+  // the type follows the product: unbonded, to falls, flowing, anhydrite, self-levelling, granolithic topping, other
+  const t = (material) => screedQuotesTypeId([scr({ material, finalQty: 1 })]);
+  assert.equal(t("Sand/cement screed unbonded — 65mm"), "screed_unbonded");
+  assert.equal(t("Screed to falls — wet areas / balconies"), "screed_falls_wet");
+  assert.equal(t("Screed to falls — roof / podium (lightweight)"), "screed_falls_roof");
+  assert.equal(t("Floating screed over insulation — 75mm"), "screed_floating");
+  assert.equal(t("Heated screed over hydronic pipes — 65mm"), "screed_heated");
+  assert.equal(t("Pumped liquid cement screed (flowing) — 50mm"), "screed_flowing");
+  assert.equal(t("Anhydrite / calcium sulphate flowing screed — 40mm"), "screed_anhydrite");
+  assert.equal(t("Rapid-drying / fast-set screed — 40mm"), "screed_rapid");
+  assert.equal(t("Lightweight foamed / bead screed — 50mm"), "screed_lightweight");
+  assert.equal(t("Acoustic screed over resilient mat — 50mm"), "screed_acoustic");
+  assert.equal(t("Fibre-reinforced screed — 50mm"), "screed_fibre_polymer");
+  assert.equal(t("Self-levelling compound — 5–10mm"), "self_levelling");
+  assert.equal(t("Granolithic / hard-wearing topping — 25mm"), "topping_granolithic");
+  assert.equal(t("Epoxy / resin screed — 6mm"), "topping_epoxy");
+  assert.equal(t("Screed (other — specify in description)"), "screed_other");
+  assert.equal(screedQuotesTypeId([]), "screed_other", "no screed line → the map's fallback");
+  // an SL mesh in the screed is a Reinforcement line and lands on SQUARE MESH; a finish Quotes has no product for is flagged, never dropped
+  const r = buildImportFromEstimate({ project: {}, lines: [
+    scr({ material: "Sand/cement screed unbonded — 50mm", finalQty: 20 }),
+    scr({ materialGroup: "Reinforcement", material: "SL62", spec: "Screed mesh — mesh sheets ×1 layer", finalQty: 22, sheets: 2 }),
+    scr({ material: "Mystery finish", finalQty: 3 }),
+  ] });
+  assert.equal(r.quote.items[0].typeId, "screed_unbonded");
+  assert.equal(r.quote.items[0].qtys[rateKey("SQUARE MESH", "SL62", "m2")], 22);
+  assert.equal(r.flags.length, 1); assert.match(r.flags[0], /Mystery finish/);
+});
+
 const rf = await import("../src/lib/rateFreeze.js");
 const { RATES_LOCKED_STATUSES, isRatesLocked, effectiveRates, statusChangePatch, needsFreeze, freezeRates, frozenRateDrift, hasFrozenRates } = rf;
 const { validityState, expiringRates, ratesWithValidity, isTimeLimited, validityLabel } = await import("../src/lib/rateValidity.js");

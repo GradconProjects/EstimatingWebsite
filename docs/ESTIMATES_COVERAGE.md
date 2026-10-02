@@ -24,6 +24,7 @@ yet. New schemas are added only where the measurement basis is different.
 | | nibs, blade walls, pilasters, corbels | calc (wall/column dims) / generic | narrow Wall or Column; Corbel via generic |
 | Precast / tilt-up | panels, stitches, grout, embeds, bracing | generic (kind precast) — **added Phase 4** | Precast / Tilt-up Panel; Precast Stitch / Grout / Embeds (proprietary engineering stays outside) |
 | Stairs | straight, L, U / dog-leg, multi-flight, winder, spiral, curved and irregular forms; flights, landings (optionally reinforced), waist, treads/risers, starters | calc | Concrete Stair |
+| Floor finishes | standalone screeds — bonded, unbonded, floating, to falls, heated, flowing / anhydrite, rapid, lightweight, acoustic, fibre / polymer, self-levelling, granolithic, epoxy; bonding coat, galv / SL mesh, fibres, rails, joints, curing | calc — **added 2 Oct 2026** | Screed (standalone) — Floor Finishes group; types mirror the Quotes SCREEDS products by name so the bridge prices 1:1 |
 | Water-retaining | pools, tanks, lift pits, sumps, planters | calc | Tank/Box family |
 | | channels, bunds | calc / generic | Kerb / Spoon Drain; generic |
 | Civil / bridge | headwalls, culverts, barriers, plinths, thrust blocks, drainage structures | generic (kind civil) — **added Phase 4**, shown only for civil/bridge/water profiles | Civil / Bridge group |

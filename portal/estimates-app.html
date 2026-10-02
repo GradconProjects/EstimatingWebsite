@@ -1934,6 +1934,12 @@ const LIBRARY = [
  {group:"Roof", items:[
    {id:"roofslab", label:"RC Roof Slab", calc:"slab", slabCategory:"RC Roof Slab", suspended:true},
  ]},
+ {group:"Floor Finishes", items:[
+   // A screed laid as its own job on an existing slab — not the slab's
+   // topping. Grady, 2 Oct 2026: "i have a case here where the screed is
+   // standalone. add it as its own element".
+   {id:"screed", label:"Screed (standalone)", calc:"screed"},
+ ]},
  {group:"External Works", items:[
    {id:"driveway", label:"Driveway", calc:"slab", slabCategory:"Driveway"},
    {id:"path", label:"Path", calc:"slab", slabCategory:"Path"},
@@ -5789,6 +5795,113 @@ function computeKerb(inst,def){
   return {lines,warnings:[]};
 }
 
+/* ---- SCREED (standalone floor screed on an existing slab) ----
+ * A screed priced as its own element — the floor finish laid on a slab that
+ * is already there (or priced on its own card). Grady, 2 Oct 2026: "i know
+ * it is bound up with the slabs but i have a case here where the screed is
+ * standalone. add it as its own element". The type list MIRRORS the Quotes
+ * SCREEDS catalog by exact product NAME (every m² product in it), so the
+ * Quotes bridge prices each register line 1:1 — `scripts/verify.mjs` fails
+ * if the two lists drift. Area from plan dimensions or a typed plan area;
+ * thickness editable (the product name gives the usual range), averaged
+ * with a maximum when laid to falls. Orders are by m²; the material volume
+ * and tonnage ride on the line as information. Nothing here digs, blinds or
+ * forms on its own — the shared Formwork / Blinding & Insulation sections
+ * (acoustic mat and insulation under a floating screed) do that on request.
+ */
+const SCREED_TYPES = [
+  "Sand/cement screed bonded — 20–30mm", "Sand/cement screed bonded — 30–40mm",
+  "Sand/cement screed unbonded — 50mm", "Sand/cement screed unbonded — 65mm", "Sand/cement screed unbonded — 75mm",
+  "Floating screed over insulation — 65mm", "Floating screed over insulation — 75mm",
+  "Screed to falls — wet areas / balconies", "Screed to falls — roof / podium (lightweight)",
+  "Heated screed over hydronic pipes — 65mm", "Heated screed over hydronic pipes — 75mm",
+  "Fibre-reinforced screed — 50mm", "Polymer-modified screed — 25mm",
+  "Pumped liquid cement screed (flowing) — 50mm", "Anhydrite / calcium sulphate flowing screed — 40mm",
+  "Rapid-drying / fast-set screed — 40mm", "Lightweight foamed / bead screed — 50mm",
+  "Acoustic screed over resilient mat — 50mm", "Granolithic / hard-wearing topping — 25mm",
+  "Epoxy / resin screed — 6mm", "Self-levelling compound — 3–5mm", "Self-levelling compound — 5–10mm",
+  "Screed (other — specify in description)",
+];
+/** The thickness a product's name carries (mm; the middle of a range), or "" when it names none. */
+function screedNamedThickness(name){
+  const m=String(name||"").match(/(\d+)\s*[–-]\s*(\d+)\s*mm|(\d+)\s*mm/);
+  if(!m) return "";
+  return m[3]? Number(m[3]) : (Number(m[1])+Number(m[2]))/2;
+}
+function screedDefaults(){ return {
+  qty:1, areaMode:"dims", length:6000, width:4000, planArea:"", perimeter:"",
+  screedType:SCREED_TYPES[0], thickness:25, fallsOn:false, thicknessMax:"", density:2000, wastePct:5,
+  bondingOn:true, reoType:"none", meshLap:true, fibreDose:0.9, railsM:"", jointsM:"", curingOn:false, notes:""
+};}
+/** The ONE reading of a screed's plan (compute, diagram, geometry). */
+function screedGeom(d){
+  const N=Math.max(0,num(d.qty,1)), Lm=num(d.length)/1000, Wm=num(d.width)/1000;
+  const areaMode=d.areaMode==="area";
+  const areaEach=areaMode? num(d.planArea) : Lm*Wm;
+  const perimEach=num(d.perimeter)>0? num(d.perimeter) : (areaMode? 0 : 2*(Lm+Wm));
+  const thk=num(d.thickness), thkMax=d.fallsOn? num(d.thicknessMax) : 0;
+  const avgThk=(d.fallsOn && thkMax>0)? (thk+thkMax)/2 : thk;
+  return {N, areaMode, areaEach, area:N*areaEach, perimEach, perim:N*perimEach, thk, thkMax, avgThk, vol:N*areaEach*avgThk/1000};
+}
+function renderScreed(inst){
+  let d=inst.data; const named=screedNamedThickness(d.screedType);
+  const typeOpts=SCREED_TYPES.map(t=>[t,t]);
+  let geom=`<div class="grid cols4">${F("Quantity (no. of areas)",inpNum("qty",d.qty))}
+   ${F("Area from",selOpts("areaMode",d.areaMode||"dims",[["dims","Plan dimensions (L × W)"],["area","Entered plan area"]],true))}
+   ${d.areaMode==="area"? F("Plan area each (m²)",inpNum("planArea",d.planArea)) : LF("Length (mm)","length",d.length)+LF("Width (mm)","width",d.width)}
+   ${F(`Perimeter each (m${d.areaMode==="area"?"":", blank = 2 × (L + W)"})`,inpNum("perimeter",d.perimeter))}</div>
+   <div class="sechead">Screed</div>
+   <div class="grid cols2">${F("Screed type (Quotes product)",selOpts("screedType",d.screedType||SCREED_TYPES[0],typeOpts,true))}
+   ${F(`Thickness (mm${named?`, the product names ${fmt(named,0)} mm`:''})`,inpNum("thickness",d.thickness))}</div>
+   <div class="grid cols4">${chk("fallsOn",d.fallsOn,"Laid to falls","fallsOn")}
+   <div class="subsec ${d.fallsOn?'':'hidden'}" data-show-if="fallsOn">${F("Max thickness at the high point (mm)",inpNum("thicknessMax",d.thicknessMax))}</div>
+   ${F("Density (kg/m³, information)",inpNum("density",d.density))}${F("Waste %",inpNum("wastePct",d.wastePct))}</div>
+   <p class="small">Screed = quantity × plan area, priced by the m² at the average thickness (the minimum and the maximum averaged when laid to falls). The m³ and tonnes on the line are for ordering bulk material, not a second quantity.</p>
+   <div class="sechead">Extras</div>
+   <div class="grid cols4">${chk("bondingOn",d.bondingOn,"Bonding agent / SBR slurry coat (bonded screeds)","bondingOn")}
+   ${chk("curingOn",d.curingOn,"Curing / sealing compound","curingOn")}
+   ${F("Screed rails / levelling battens (m, total)",inpNum("railsM",d.railsM))}
+   ${F("Movement joints (m, total)",inpNum("jointsM",d.jointsM))}</div>
+   <div class="grid cols2">${F("Notes",inpText("notes",d.notes))}</div>`;
+  const meshOpts=[["none","None"],["galv","Galvanised 50×50 screed mesh"],...Object.keys(MESHTYPES).filter(m=>/^SL[5678]2$/.test(m)).map(m=>[m,`${m} sheet mesh (${MESHTYPES[m]} kg/m²)`]),["fibres","Polypropylene fibres"]];
+  let reo=`<div class="grid cols4">${F("Screed reinforcement",selOpts("reoType",d.reoType||"none",meshOpts,true))}
+   ${(d.reoType==="galv"||MESHTYPES[d.reoType]!==undefined)? chk("meshLap",d.meshLap,"Include mesh lap allowance (%)","meshLap") : ''}
+   ${d.reoType==="fibres"? F("Fibre dose (kg per m³ of screed)",inpNum("fibreDose",d.fibreDose)) : ''}</div>
+   <p class="small">Galvanised screed mesh and fibres price by the m² / kg under SCREEDS in Quotes; an SL sheet mesh is ordered in whole 6.0 × 2.4 m sheets like a slab's.</p>`;
+  return {geom,reo};
+}
+function computeScreed(inst,def){
+  const d=inst.data, lines=[], warnings=[], g=screedGeom(d);
+  const type=SCREED_TYPES.includes(d.screedType)? d.screedType : SCREED_TYPES[0];
+  d._autoInsArea=g.area;    // the insulation / acoustic-mat bolt-on and Project Geometry take the screed area
+  d._autoInsPerim=g.perim;
+  if(!(g.area>0)) warnings.push({text:g.areaMode? "Screed area is set to an entered plan area but none is typed — nothing is priced until it is" : "Screed plan dimensions are blank — nothing is priced until they are entered", section:"geom", level:"completeness"});
+  if(!(g.avgThk>0)) warnings.push({text:"Screed thickness is blank — enter it (the product name gives the usual range)", section:"geom", level:"completeness"});
+  if(d.fallsOn && !(g.thkMax>0)) warnings.push({text:"Laid to falls but no maximum thickness is typed — the minimum is used throughout", section:"geom", level:"completeness"});
+  const named=screedNamedThickness(type);
+  if(named && g.avgThk>0 && (g.avgThk<named*0.6 || g.avgThk>named*1.6)) warnings.push({text:`Average thickness ${fmt(g.avgThk,0)} mm sits well outside the range the product names (${fmt(named,0)} mm) — confirm the product or the thickness`, section:"geom", level:"sanity"});
+  warnings.push({text:"Screed type, thickness, bonding and reinforcement to be confirmed against the specification / floor finish schedule", section:"geom", level:"verify"});
+  if(!(g.area>0)) return {lines,warnings};
+  const waste=num(d.wastePct,0), density=num(d.density,2000), tonnes=g.vol*density/1000;
+  const spec=`${fmt(g.avgThk,0)} mm${d.fallsOn?` average, laid to falls (${fmt(g.thk,0)}–${fmt(g.thkMax||g.thk,0)} mm)`:''}${d.notes?` · ${d.notes}`:''}`;
+  lines.push(baseLine(inst,def,{materialGroup:"Finishes",material:type,spec,qty:g.area,unit:"m²",waste,finalQty:withWaste(g.area,waste),formula:g.areaMode?"qty × plan area":"qty × L × W",notes:`${fmt(g.vol,2)} m³ screed material ≈ ${fmt(tonnes,2)} t at ${fmt(density,0)} kg/m³`}));
+  if(d.bondingOn) lines.push(baseLine(inst,def,{materialGroup:"Finishes",material:"Bonding agent / SBR slurry coat",spec:"under the screed",qty:g.area,unit:"m²",waste,finalQty:withWaste(g.area,waste),formula:"screed area"}));
+  const lapPct=d.meshLap?MESH_LAP_PCT:0;
+  if(d.reoType==="galv"){
+    lines.push(baseLine(inst,def,{materialGroup:"Finishes",material:"Screed reinforcement mesh (galv. 50x50)",spec:"in the screed",qty:g.area,unit:"m²",waste:REO_WASTE_PCT,lap:lapPct,finalQty:withWasteLap(g.area,REO_WASTE_PCT,lapPct),formula:`screed area (+${REO_WASTE_PCT}% waste${lapPct?`, +${lapPct}% lap`:''})`}));
+  } else if(MESHTYPES[d.reoType]!==undefined){
+    const wastedArea=withWasteLap(g.area,REO_WASTE_PCT,lapPct), sheets=Math.ceil(wastedArea/MESH_SHEET_AREA_M2);
+    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.reoType,spec:"Screed mesh — mesh sheets ×1 layer",qty:g.area,unit:"m²",waste:REO_WASTE_PCT,lap:lapPct,finalQty:wastedArea,sheets,formula:`screed area (+${REO_WASTE_PCT}% waste${lapPct?`, +${lapPct}% lap`:''}) → ceil(/${MESH_SHEET_AREA_M2}m²) = ${sheets} sheets`,notes:`${sheets} sheets (6.0×2.4m nominal) ≈ ${fmt(wastedArea*MESHTYPES[d.reoType],1)} kg`}));
+  } else if(d.reoType==="fibres"){
+    const kg=g.vol*num(d.fibreDose,0);
+    if(kg>0) lines.push(baseLine(inst,def,{materialGroup:"Finishes",material:"Polypropylene fibres",spec:`${fmt(num(d.fibreDose,0),2)} kg/m³`,qty:kg,unit:"kg",waste,finalQty:withWaste(kg,waste),formula:"dose × screed m³"}));
+  }
+  if(num(d.railsM)>0) lines.push(baseLine(inst,def,{materialGroup:"Finishes",material:"Screed rails / levelling battens",spec:"",qty:num(d.railsM),unit:"m",waste:0,finalQty:num(d.railsM),formula:"entered total"}));
+  if(num(d.jointsM)>0) lines.push(baseLine(inst,def,{materialGroup:"Finishes",material:"Screed movement joint",spec:"",qty:num(d.jointsM),unit:"m",waste:0,finalQty:num(d.jointsM),formula:"entered total"}));
+  if(d.curingOn) lines.push(baseLine(inst,def,{materialGroup:"Finishes",material:"Screed curing / sealing compound",spec:"",qty:g.area,unit:"m²",waste:0,finalQty:g.area,formula:"screed area"}));
+  return {lines,warnings};
+}
+
 /* ---- GENERIC (earthworks / alterations / fallback) ---- */
 /* ---- IRREGULAR CONCRETE CONSTRUCTION (composite) ----
  * A hearth, a plinth, a machine base, a fireplace: one element made of ANY
@@ -6523,6 +6636,42 @@ function diagStairs(inst){ let d=inst.data;
   return sheetFrame(inst, "Concrete Stair", [316,Math.max(200,Math.round(sy+rise*s+wt+off+40))], section+plan);
 }
 
+/** Screed: a dimensioned PLAN beside a SECTION through the screed on its
+ * substrate slab — thickness (and the high point when laid to falls), the
+ * mesh or fibres, the bonding coat; redraws as you type. */
+function diagScreed(inst){ const d=inst.data, g=screedGeom(d);
+  const areaEach=Math.max(0.01,g.areaEach||24);
+  const L=g.areaMode? Math.max(300,Math.round(Math.sqrt(areaEach)*1000)) : Math.max(300,N_(d.length,6000));
+  const W=g.areaMode? Math.max(300,Math.round(areaEach/(L/1000)*1000)) : Math.max(300,N_(d.width,4000));
+  const T=Math.max(3,N_(d.thickness,25)), TM=d.fallsOn? Math.max(T,N_(d.thicknessMax,T)) : T;
+  const type=String(d.screedType||SCREED_TYPES[0]);
+  /* plan (left) */
+  const px=40, py=46, s=DG.fit(L,W,112,80), pw=L*s, ph=W*s;
+  let plan=`${DG.title(px,py-24,"PLAN")}
+   ${DG.rect(px,py,pw,ph)}
+   ${dimH(px,px+pw,py-6,`${L}`)}
+   ${dimV(py,py+ph,px+pw+14,`${W}`)}
+   ${specLine(px,py+ph+26,`${fmt(areaEach,2)} m² EACH · ×${N_(d.qty,1)}`)}
+   ${specLine(px,py+ph+36,g.areaMode? "ENTERED PLAN AREA" : "L × W")}`;
+  /* section (right): substrate, screed layer, mesh */
+  const sx=192, sw=104, slabH=18, ss=Math.min(2.2, 34/Math.max(TM,1)), sh=Math.max(4,T*ss), shm=Math.max(4,TM*ss);
+  const sy=96-shm, botY=sy+shm;
+  const screed=d.fallsOn? `M${sx} ${botY-sh} L${sx+sw} ${sy} V${botY} H${sx} Z` : `M${sx} ${sy} H${sx+sw} V${botY} H${sx} Z`;
+  const floating=/floating|acoustic/i.test(type);
+  const mesh=(d.reoType==="galv"||MESHTYPES[d.reoType]!==undefined)? `<line x1="${sx+4}" y1="${botY-sh/2}" x2="${sx+sw-4}" y2="${d.fallsOn? sy+(shm-sh/2)*0.5 : botY-sh/2}" stroke="${DWG.bar}" stroke-width="1.2" stroke-dasharray="3 2"/>` : '';
+  let section=`${DG.title(sx,sy-24,"SECTION")}
+   <path d="${screed}" fill="rgba(232,163,61,0.16)" stroke="${DWG.ink}" stroke-width="1.6"/>
+   ${floating? `<rect x="${sx}" y="${botY}" width="${sw}" height="5" fill="rgba(120,160,220,0.35)" stroke="${DWG.ink}" stroke-width="0.8"/>` : ''}
+   ${DG.rect(sx,botY+(floating?5:0),sw,slabH,"rgba(0,0,0,0.07)",1.2)}
+   ${d.bondingOn&&!floating? `<line x1="${sx}" y1="${botY}" x2="${sx+sw}" y2="${botY}" stroke="${DWG.bar}" stroke-width="2"/>` : ''}
+   ${mesh}
+   ${dimV(botY-sh,botY,sx-10,`${T}`)}
+   ${d.fallsOn? dimV(sy,botY,sx+sw+14,`${TM}`) : ''}
+   ${specLine(sx,botY+slabH+(floating?5:0)+14,"EXISTING SLAB / SUBSTRATE")}
+   ${specLine(sx,botY+slabH+(floating?5:0)+24,type.replace(/\s*—.*$/,'').toUpperCase().slice(0,34))}
+   ${specLine(sx,botY+slabH+(floating?5:0)+34,(d.reoType==="galv"?"GALV 50×50 MESH":MESHTYPES[d.reoType]!==undefined?`${d.reoType} MESH`:d.reoType==="fibres"?"PP FIBRES":"UNREINFORCED")+(d.bondingOn?" · SBR BOND":""))}`;
+  return sheetFrame(inst, "Screed", [316,178], plan+section);
+}
 function diagKerb(inst){ let d=inst.data;
   const L=Math.max(500,N_(d.length,40000)), prof=String(d.profile||"150x300 kerb"), cov=coverOf(d);
   let m=prof.match(/(\d+)\s*[x×]\s*(\d+)/); let KW=m?N_(m[1],150):150, KH=m?N_(m[2],300):300;
@@ -7356,6 +7505,7 @@ const CALC = {
   shotwall:{defaults:shotWallDefaults, render:renderShotWall, compute:computeShotWall, diagram:diagShotWall},
   stairs:{defaults:stairsDefaults, render:renderStairs, compute:computeStairs, diagram:diagStairs},
   kerb:{defaults:kerbDefaults, render:renderKerb, compute:computeKerb, diagram:diagKerb},
+  screed:{defaults:screedDefaults, render:renderScreed, compute:computeScreed, diagram:diagScreed},
   tankbox:{defaults:tankboxDefaults, render:renderTankbox, compute:computeTankbox, diagram:diagTankbox},
   generic:{defaults:genericDefaults, render:renderGeneric, compute:computeGeneric, diagram:diagGeneric},
   composite:{defaults:compositeDefaults, render:renderComposite, compute:computeComposite, diagram:diagComposite},
@@ -7972,7 +8122,7 @@ function annotateProvenance(card,inst){
     } else if(rb) rb.remove();
   });
 }
-const RAIL_GROUP_TAB={Concrete:"conc",Reinforcement:"reo",Formwork:"form",Excavation:"exc","Base/Blinding":"blind","Vapour Barrier":"blind",Insulation:"blind",Connections:"conns"};
+const RAIL_GROUP_TAB={Concrete:"conc",Reinforcement:"reo",Formwork:"form",Excavation:"exc","Base/Blinding":"blind","Vapour Barrier":"blind",Insulation:"blind",Connections:"conns",Finishes:"geom"};
 /** Which card section a register line belongs to (for subtotals and links). */
 function lineSection(l, avail){
   let has=(t)=>avail.indexOf(t)>=0;

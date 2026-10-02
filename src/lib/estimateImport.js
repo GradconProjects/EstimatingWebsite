@@ -63,6 +63,10 @@ export const ESTIMATE_TYPE_MAP = {
   "Hardstand": "driveway_hardstand",
   "Equipment Pad": null,
   "Kerb / Channel / Spoon Drain": "kerbs_channels",
+  // Estimates' standalone screed: the Quotes type is refined from the screed
+  // PRODUCT on its register line (screedQuotesTypeId) — this entry is the
+  // fallback when no product line is present.
+  "Screed (standalone)": "screed_other",
   "Drill & Dowel": null,
   "Concrete Repair": null,
   "Crack Repair / Sealing": null,
@@ -77,6 +81,31 @@ const QUOTES_TYPE_BY_ID = {};
 ELEMENT_TYPES.forEach((t) => { QUOTES_TYPE_BY_ID[t.id] = t; });
 
 const CONCRETE_CAT = FULL_CATALOG.find((c) => c.key === "CONCRETE");
+const SCREEDS_CAT = FULL_CATALOG.find((c) => c.key === "SCREEDS");
+const SCREED_LABEL = "Screed (standalone)";
+
+/** A Finishes line whose material names a SCREEDS catalog product (exactly —
+ * Estimates' SCREED_TYPES mirror these names) lands on that product. */
+function findScreedProduct(name, unit) {
+  if (!SCREEDS_CAT) return null;
+  return SCREEDS_CAT.products.find((pr) => pr.name === name && pr.unit === unit) || null;
+}
+/** Which SCREEDS element type a standalone screed becomes in Quotes, from the
+ * product on its screed line (first match wins; "unbonded" before "bonded"). */
+const SCREED_TYPE_RULES = [
+  [/unbonded/i, "screed_unbonded"], [/\bbonded/i, "screed_bonded"], [/floating/i, "screed_floating"],
+  [/to falls — wet/i, "screed_falls_wet"], [/to falls — roof/i, "screed_falls_roof"], [/heated/i, "screed_heated"],
+  [/anhydrite|calcium sulphate/i, "screed_anhydrite"], [/flowing|pumped liquid/i, "screed_flowing"],
+  [/rapid|fast-set/i, "screed_rapid"], [/lightweight|foamed|bead/i, "screed_lightweight"], [/acoustic/i, "screed_acoustic"],
+  [/fibre|polymer/i, "screed_fibre_polymer"], [/self-levelling/i, "self_levelling"],
+  [/granolithic/i, "topping_granolithic"], [/epoxy|resin/i, "topping_epoxy"],
+];
+export function screedQuotesTypeId(group) {
+  const line = (group || []).find((l) => l.materialGroup === "Finishes" && findScreedProduct(l.material, "m2") && !/mesh|bonding|fibres|rails|joint|curing/i.test(l.material));
+  if (!line) return ESTIMATE_TYPE_MAP[SCREED_LABEL];
+  const hit = SCREED_TYPE_RULES.find(([re]) => re.test(line.material));
+  return hit ? hit[1] : "screed_other";
+}
 const PROCESSED_BAR_CAT = FULL_CATALOG.find((c) => c.key === "PROCESSED BAR");
 const SQUARE_MESH_CAT = FULL_CATALOG.find((c) => c.key === "SQUARE MESH");
 const FORMWORK_CAT = FULL_CATALOG.find((c) => c.key === "FORMWORK");
@@ -214,9 +243,10 @@ export function buildImportFromEstimate(estimateExport) {
     const first = group[0];
     const estimateLabel = first.category; // e.g. "Bored Pier"
     const elementLabel = first.element; // e.g. "Bored Pier 1"
-    const typeId = Object.prototype.hasOwnProperty.call(ESTIMATE_TYPE_MAP, estimateLabel)
+    let typeId = Object.prototype.hasOwnProperty.call(ESTIMATE_TYPE_MAP, estimateLabel)
       ? ESTIMATE_TYPE_MAP[estimateLabel]
       : undefined;
+    if (estimateLabel === SCREED_LABEL) typeId = screedQuotesTypeId(group);
 
     if (typeId === undefined) {
       flags.push(
@@ -404,6 +434,17 @@ export function buildImportFromEstimate(estimateExport) {
     // barrier" product — distinct from Insulation. ---
     group.filter((l) => (l.materialGroup === "Base/Blinding" || l.materialGroup === "Vapour Barrier") && /vapour|membrane/i.test(l.material || "") && (l.unit === "m²" || l.unit === "m2")).forEach((l) => {
       map(l, rateKey("OTHER ACCESSORIES", "Vapour barrier", "m2"), Number(l.finalQty) || 0);
+    });
+
+    // --- Finishes (the standalone screed): every line named after a SCREEDS
+    // catalog product lands on it — the screed itself by the m², the bonding
+    // coat, galvanised mesh, fibres (kg), rails and joints (m), curing. An
+    // SL sheet mesh in the screed is a Reinforcement line and took the mesh
+    // path above. Anything else under Finishes is flagged by the sweep. ---
+    group.filter((l) => l.materialGroup === "Finishes").forEach((l) => {
+      const unit = (l.unit === "m²" || l.unit === "m2") ? "m2" : l.unit;
+      const product = findScreedProduct(l.material, unit);
+      if (product) map(l, rateKey("SCREEDS", product.name, product.unit), Number(l.finalQty) || 0);
     });
 
     // --- Sweep: anything not yet mapped or flagged gets one now, so nothing
