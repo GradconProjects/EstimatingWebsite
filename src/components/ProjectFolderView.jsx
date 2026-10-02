@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowRight, ChevronDown, ChevronRight, File, FolderOpen, FolderUp, Loader2, MessageSquarePlus, Trash2, Upload } from "lucide-react";
 import { readQuoteSummariesDetailed, patchQuoteFields } from "../lib/projects.js";
-import { SummaryLoadNotice } from "./atoms.jsx";
+import { completedDay } from "../lib/rateFreeze.js";
+import { PROJECT_SORTS, sortProjects, defaultSortDir } from "../lib/projectSort.js";
+
+const VAULT_SORTS = PROJECT_SORTS.filter((o) => !o.costed);
+import { SummaryLoadNotice, ProjectSortBar } from "./atoms.jsx";
 import { uid } from "../lib/costing.js";
 import { supabaseEnabled } from "../lib/supabaseClient.js";
 import { OFFICE_FOLDER_PATH, projectFolderPath, listFiles, uploadFile, deleteFile, formatFileSize, groupFilesByMonthDay } from "../lib/storageFiles.js";
@@ -321,10 +325,23 @@ export default function ProjectFolderView({ projects, officeComms, setOfficeComm
   const rows = useMemo(
     () => projects.map((p) => {
       const quote = quotesByKey[p.storageKey] || {};
-      return { project: p, name: quote.projectName || "Untitled project", communications: quote.communications || [] };
+      return {
+        project: p,
+        name: quote.projectName || "Untitled project",
+        communications: quote.communications || [],
+        client: quote.clientName || "",
+        date: quote.projectDate || null,
+        status: quote.status,
+        deadline: (quote.planner && quote.planner.deadline) || null,
+        submittedAt: quote.submittedAt || null,
+        completedAt: completedDay(quote),
+      };
     }),
     [projects, quotesByKey]
   );
+  // Session-local; the same rule as the Dashboard and the planner (lib/projectSort.js).
+  const [sort, setSort] = useState({ key: "added", dir: defaultSortDir("added") });
+  const sortedRows = useMemo(() => sortProjects(rows, sort.key, sort.dir), [rows, sort]);
 
   const addProjectCommunication = (project, entry) => {
     const quote = quotesByKey[project.storageKey] || {};
@@ -365,7 +382,10 @@ export default function ProjectFolderView({ projects, officeComms, setOfficeComm
       </div>
 
       <div>
-        <div className="text-sm font-semibold text-neutral-700 mb-2">Project folders</div>
+        <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
+          <div className="text-sm font-semibold text-neutral-700">Project folders</div>
+          {rows.length > 0 && <ProjectSortBar sort={sort} setSort={setSort} options={VAULT_SORTS} />}
+        </div>
         {loading && rows.length === 0 ? (
           <div className="text-center py-8 text-neutral-400"><Loader2 size={16} className="inline animate-spin mr-1.5" /> Loading projects…</div>
         ) : rows.length === 0 ? (
@@ -374,7 +394,7 @@ export default function ProjectFolderView({ projects, officeComms, setOfficeComm
           </div>
         ) : (
           <div className="space-y-2">
-            {rows.map((r) => (
+            {sortedRows.map((r) => (
               <ProjectFolderCard
                 key={r.project.id}
                 project={r.project}

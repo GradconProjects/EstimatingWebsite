@@ -78,7 +78,28 @@ export function statusChangePatch(quote, nextStatus, liveRates, at) {
   const willSubmit = isSubmittedStatus(nextStatus);
   if (willSubmit && !wasSubmitted) patch.submittedAt = at ? localDay(new Date(at)) : localDay();
   else if (!willSubmit && quote && quote.submittedAt) patch.submittedAt = null;
+  // The day estimating finished (`completedAt`, a local day — what the
+  // project lists sort by as "Date completed"): recorded the moment a status
+  // enters the locked set (Completed Estimating or anything after it), kept
+  // through the pipeline, cleared on a move back to an open status. A
+  // project finished before this field existed reads its pin's `at` instead
+  // (`completedDay`), the same moment under an older name.
+  const wasDone = wasLocked && !!(quote && quote.completedAt);
+  if (willLock && !wasDone) patch.completedAt = at ? localDay(new Date(at)) : localDay();
+  else if (!willLock && quote && quote.completedAt) patch.completedAt = null;
   return patch;
+}
+
+/** The local day a project's estimating finished: `completedAt` when it was
+ * recorded, else the day its rates were pinned (a project finished before
+ * `completedAt` existed), else null — never a day invented from today. */
+export function completedDay(quote) {
+  if (!quote) return null;
+  if (quote.completedAt) return quote.completedAt;
+  const at = quote.ratesFrozen && quote.ratesFrozen.at;
+  if (!at) return null;
+  const d = new Date(at);
+  return Number.isNaN(d.getTime()) ? null : localDay(d);
 }
 
 /** A project already in a locked status but without a pin (it was finished

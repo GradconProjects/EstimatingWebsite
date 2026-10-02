@@ -1,23 +1,36 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Trash2, ArrowRight, LayoutDashboard, Loader2, FolderOpen } from "lucide-react";
+import { Plus, Trash2, ArrowRight, LayoutDashboard, Loader2, FolderOpen, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 import { QUOTE_STATUSES, QUOTE_STATUS_STYLES } from "../data/catalog.js";
 import { computeGrandTotal, computeMarginLadder, money, getDefaultMargin, getMarginSteps } from "../lib/costing.js";
 import { readQuoteSummariesDetailed, readQuotesCached, patchQuoteFields } from "../lib/projects.js";
 import { SummaryLoadNotice } from "./atoms.jsx";
-import { dashboardDueLabel, OPEN_STATUSES } from "../lib/planner.js";
-import { effectiveRates, statusChangePatch } from "../lib/rateFreeze.js";
+import { dashboardDueLabel, formatDay, OPEN_STATUSES } from "../lib/planner.js";
+import { effectiveRates, statusChangePatch, completedDay } from "../lib/rateFreeze.js";
+import { PROJECT_SORTS, sortProjects, defaultSortDir, preferredSortKey } from "../lib/projectSort.js";
 import RateValidityBanner from "./RateValidityBanner.jsx";
 
 const OPEN_FILTER = "__open";   // the tile value for OPEN_STATUSES (lib/planner.js)
 
-const SORT_OPTIONS = [
-  { key: "added", label: "Recently added" },
-  { key: "status", label: "Status (pipeline order)" },
-  { key: "name", label: "Project name" },
-  { key: "deadline", label: "Deadline (soonest first)" },
-  { key: "value", label: "Value (highest sell first)" },
-  { key: "date", label: "Project date (newest first)" },
-];
+/** A column heading that sorts the table: click to sort by `sortKey` (its
+ * own default direction), click again to flip. The active column carries
+ * the direction arrow; every other one shows the faint sort glyph. */
+function SortTh({ sortKey, label, align = "left", sort, onSort, className = "" }) {
+  const active = sort.key === sortKey;
+  const Icon = active ? (sort.dir === "asc" ? ArrowUp : ArrowDown) : ArrowUpDown;
+  return (
+    <th className={`px-3 py-2 font-medium ${align === "right" ? "text-right" : "text-left"} ${className}`} aria-sort={active ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}>
+      <button
+        type="button"
+        onClick={() => onSort(sortKey)}
+        className={`inline-flex items-center gap-1 uppercase tracking-wide hover:text-neutral-900 ${active ? "text-neutral-900" : ""}`}
+        title={active ? `Sorted ${sort.dir === "asc" ? "ascending" : "descending"} — click to flip` : `Sort by ${label.toLowerCase()}`}
+      >
+        {label}
+        <Icon size={11} className={active ? "text-orange-600" : "text-neutral-300"} />
+      </button>
+    </th>
+  );
+}
 
 /** Turns one pre-fetched quote object into the numbers a dashboard row (or
  * the portfolio totals) needs. Mirrors the same costing calls
@@ -47,6 +60,7 @@ function summarizeQuote(quote, liveRates) {
     status: QUOTE_STATUSES.includes(quote.status) ? quote.status : QUOTE_STATUSES[0],
     deadline: quote.planner?.deadline || null,
     submittedAt: quote.submittedAt || null,
+    completedAt: completedDay(quote),
     gfa: Number(quote.gfa) || 0,
     elementCount: items.length,
     directCost,
@@ -126,36 +140,18 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete,
     [projects, quotesByKey, rates]
   );
 
-  const [sortBy, setSortBy] = useState(() => {
-    // Initial sort from the portal Settings preference; session-local after that.
-    try {
-      const p = JSON.parse(localStorage.getItem("gradcon-preferences")) || {};
-      return SORT_OPTIONS.some((o) => o.key === p.quotesDefaultSort) ? p.quotesDefaultSort : "added";
-    } catch {
-      return "added";
-    }
+  // Sort: the ONE rule in lib/projectSort.js (shared with Project Management
+  // and the Vault). Initial key from the portal Settings preference, opening
+  // on that key's own direction; session-local after that. The "Sort by"
+  // select, the direction button and every column heading all drive it.
+  const [sort, setSort] = useState(() => {
+    let key = "added";
+    try { key = preferredSortKey(JSON.parse(localStorage.getItem("gradcon-preferences")) || {}); } catch { /* default */ }
+    return { key, dir: defaultSortDir(key) };
   });
-  const sortedSummaries = useMemo(() => {
-    const arr = [...summaries];
-    if (sortBy === "status") {
-      arr.sort((a, b) => QUOTE_STATUSES.indexOf(a.status) - QUOTE_STATUSES.indexOf(b.status) || a.name.localeCompare(b.name));
-    } else if (sortBy === "name") {
-      arr.sort((a, b) => a.name.localeCompare(b.name));
-    } else if (sortBy === "deadline") {
-      // Soonest deadline first; projects without one sink to the bottom.
-      const t = (s) => (s.deadline ? Number(new Date(s.deadline)) : Infinity);
-      arr.sort((a, b) => t(a) - t(b) || a.name.localeCompare(b.name));
-    } else if (sortBy === "value") {
-      arr.sort((a, b) => b.sellExGst - a.sellExGst || a.name.localeCompare(b.name));
-    } else if (sortBy === "date") {
-      arr.sort((a, b) => Number(new Date(b.date || 0)) - Number(new Date(a.date || 0)) || a.name.localeCompare(b.name));
-    } else {
-      // Recently added — newest first, by the project index's own immutable createdAt
-      // (not quote.projectDate, which the estimator can freely edit).
-      arr.sort((a, b) => Number(new Date(b.project.createdAt || 0)) - Number(new Date(a.project.createdAt || 0)));
-    }
-    return arr;
-  }, [summaries, sortBy]);
+  const sortBy = sort.key;
+  const chooseSort = (key) => setSort((s) => (s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: defaultSortDir(key) }));
+  const sortedSummaries = useMemo(() => sortProjects(summaries, sort.key, sort.dir), [summaries, sort]);
 
   // Filter row: status tiles + free-text name search, applied on top of the
   // chosen sort. Session-local. A fresh load shows ONLY the open work —
@@ -244,13 +240,23 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete,
             <span>Sort by:</span>
             <select
               value={sortBy}
-              onChange={(e) => setSortBy(e.target.value)}
+              onChange={(e) => setSort({ key: e.target.value, dir: defaultSortDir(e.target.value) })}
               className="border border-neutral-200 rounded px-2 py-1 text-xs"
             >
-              {SORT_OPTIONS.map((o) => (
+              {PROJECT_SORTS.map((o) => (
                 <option key={o.key} value={o.key}>{o.label}</option>
               ))}
             </select>
+            <button
+              type="button"
+              onClick={() => setSort((s) => ({ ...s, dir: s.dir === "asc" ? "desc" : "asc" }))}
+              className="inline-flex items-center gap-1 border border-neutral-200 rounded px-2 py-1 text-xs hover:bg-neutral-50"
+              title={sort.dir === "asc" ? "Ascending — click for descending" : "Descending — click for ascending"}
+              aria-label="Sort direction"
+            >
+              {sort.dir === "asc" ? <ArrowUp size={12} /> : <ArrowDown size={12} />}
+              {sort.dir === "asc" ? "Asc" : "Desc"}
+            </button>
           </div>
           {onImportFile && (
             <label
@@ -347,14 +353,15 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete,
           <thead>
             <tr className="bg-neutral-50 text-neutral-500 text-[11px] uppercase tracking-wide">
               <th className="px-3 py-2" />
-              <th className="text-left px-4 py-2 font-medium">Project</th>
-              <th className="text-left px-3 py-2 font-medium">Client</th>
-              <th className="text-left px-3 py-2 font-medium">Date</th>
-              <th className="text-left px-3 py-2 font-medium">Deadline</th>
-              <th className="text-left px-3 py-2 font-medium">Status</th>
-              <th className="text-right px-3 py-2 font-medium">Elements</th>
-              <th className="text-right px-3 py-2 font-medium">Direct cost</th>
-              <th className="text-right px-3 py-2 font-medium">Sell ({Math.round(getDefaultMargin() * 100)}%, ex GST)</th>
+              <SortTh sortKey="name" label="Project" sort={sort} onSort={chooseSort} className="!px-4" />
+              <SortTh sortKey="client" label="Client" sort={sort} onSort={chooseSort} />
+              <SortTh sortKey="date" label="Date" sort={sort} onSort={chooseSort} />
+              <SortTh sortKey="deadline" label="Deadline" sort={sort} onSort={chooseSort} />
+              <SortTh sortKey="completed" label="Completed" sort={sort} onSort={chooseSort} />
+              <SortTh sortKey="status" label="Status" sort={sort} onSort={chooseSort} />
+              <SortTh sortKey="elements" label="Elements" align="right" sort={sort} onSort={chooseSort} />
+              <SortTh sortKey="cost" label="Direct cost" align="right" sort={sort} onSort={chooseSort} />
+              <SortTh sortKey="value" label={`Sell (${Math.round(getDefaultMargin() * 100)}%, ex GST)`} align="right" sort={sort} onSort={chooseSort} />
               <th className="px-3 py-2" />
             </tr>
           </thead>
@@ -388,6 +395,9 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete,
                     const due = dashboardDueLabel(s.deadline, s.status, s.submittedAt);
                     return due ? <span className={due.cls} title={due.title || undefined}>{due.text}</span> : <span className="text-neutral-300">—</span>;
                   })()}
+                </td>
+                <td className="px-3 py-2.5 text-xs text-neutral-500 whitespace-nowrap" title={s.completedAt ? "The day estimating finished" : undefined}>
+                  {s.completedAt ? formatDay(s.completedAt) : <span className="text-neutral-300">—</span>}
                 </td>
                 <td className="px-3 py-2.5">
                   <select
@@ -448,21 +458,21 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete,
             ))}
             {summaries.length === 0 && loading && (
               <tr>
-                <td colSpan={10} className="text-center py-12 text-neutral-400">
+                <td colSpan={11} className="text-center py-12 text-neutral-400">
                   <Loader2 size={16} className="inline animate-spin mr-1.5" /> Loading projects…
                 </td>
               </tr>
             )}
             {summaries.length === 0 && !loading && (
               <tr>
-                <td colSpan={10} className="text-center py-12 text-neutral-400">
+                <td colSpan={11} className="text-center py-12 text-neutral-400">
                   No projects yet — click &quot;New project&quot; to start your first quote.
                 </td>
               </tr>
             )}
             {summaries.length > 0 && visibleSummaries.length === 0 && (
               <tr>
-                <td colSpan={10} className="text-center py-12 text-neutral-400">
+                <td colSpan={11} className="text-center py-12 text-neutral-400">
                   No projects match the current search/filter.
                 </td>
               </tr>
@@ -484,7 +494,7 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete,
             return (
             <tfoot>
               <tr className="border-t-2 border-neutral-200 bg-neutral-50 font-semibold">
-                <td className="px-4 py-2.5" colSpan={6}>
+                <td className="px-4 py-2.5" colSpan={7}>
                   {statusFilter === OPEN_FILTER && !search.trim()
                     ? `Open projects — Queued & Estimating (${visibleSummaries.length} of ${summaries.length}; the rest are under their status tiles or All projects)`
                     : filtering ? `Filtered projects (${visibleSummaries.length} of ${summaries.length})` : "All projects"}

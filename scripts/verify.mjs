@@ -19,6 +19,7 @@ import {
   labourResourceRate, taskRowMeta, labourQuantities, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, computeRowTotal,
   computeElementUnitRates, computeProjectUnitRates, rowContext, computeElementReinforcementTonnes, getMarginSteps, additionalRowsFor, autoPigmentWashout, autoSpecialistShortLoad, autoSpecialistFees, categoryAppliesTo } from "../src/lib/costing.js";
 import { buildImportFromEstimate, normalizeElementName, geometryForLabel } from "../src/lib/estimateImport.js";
+import { PROJECT_SORTS, sortProjects, sortValue, defaultSortDir, preferredSortKey, isProjectSortKey } from "../src/lib/projectSort.js";
 
 let passed = 0;
 const check = (name, fn) => {
@@ -1677,7 +1678,8 @@ check("the PRELIMINARIES band is on the PRELIMINARIES elements ONLY: hidden and 
 
 /* ---- Per-element rate overrides, pinned rates on finished projects, validity dates (29 Sep 2026) ---- */
 const { rowRate, isManualQuoteKey } = await import("../src/lib/costing.js");
-const { RATES_LOCKED_STATUSES, isRatesLocked, effectiveRates, statusChangePatch, needsFreeze, freezeRates, frozenRateDrift, hasFrozenRates } = await import("../src/lib/rateFreeze.js");
+const rf = await import("../src/lib/rateFreeze.js");
+const { RATES_LOCKED_STATUSES, isRatesLocked, effectiveRates, statusChangePatch, needsFreeze, freezeRates, frozenRateDrift, hasFrozenRates } = rf;
 const { validityState, expiringRates, ratesWithValidity, isTimeLimited, validityLabel } = await import("../src/lib/rateValidity.js");
 const { GLOBAL_PRICES, libraryValidity } = await import("../src/lib/ratesLibrarySync.js");
 
@@ -1741,7 +1743,7 @@ check("statusChangePatch is the ONE status rule: open→locked pins live rates, 
   assert.equal(p2.status, "Successful"); assert.equal(p2.ratesFrozen, undefined); assert.ok(/^\d{4}-\d{2}-\d{2}$/.test(p2.submittedAt));
   // back to an open status drops the pin (null so a field merge clears it)
   const p3 = statusChangePatch(done, "Estimating", live);
-  assert.deepEqual(p3, { status: "Estimating", ratesFrozen: null });
+  assert.deepEqual(p3, { status: "Estimating", ratesFrozen: null, completedAt: null });
   assert.equal(effectiveRates({ ...done, ...p3 }, live)[C32].unitCost, 275);
   // a locked project whose pin was lost gets a fresh one on the next status change too
   assert.ok(statusChangePatch({ status: "Submitted" }, "Successful", live).ratesFrozen, "no pin → pins now");
@@ -1865,6 +1867,66 @@ check("Deadline clock stops at submission: Submitted and later statuses count to
   assert.equal(isOverdue({ status: "Quoting", planner: { deadline: past } }, "2026-10-01"), true);
   assert.equal(isOverdue({ status: "Submitted", planner: { deadline: past } }, "2026-10-01"), false);
   assert.equal(isOverdue({ status: "Quoting", planner: { deadline: "2099-01-01" } }, "2026-10-01"), false);
+});
+
+check("statusChangePatch records completedAt the day a status enters the locked set, keeps it through the pipeline, clears it on the way back; completedDay falls back to the pin", () => {
+  const { completedDay } = rf;
+  const live = defaultRates();
+  const p1 = statusChangePatch({ status: "Estimating" }, "Completed Estimating", live, "2026-09-29T02:00:00.000Z");
+  assert.ok(/^\d{4}-\d{2}-\d{2}$/.test(p1.completedAt), `a local day, got ${p1.completedAt}`);
+  const done = { status: "Completed Estimating", ...p1 };
+  assert.equal(statusChangePatch(done, "Quoting", live).completedAt, undefined, "Completed → Quoting keeps the recorded day");
+  assert.equal(statusChangePatch(done, "Submitted", live).completedAt, undefined, "and so does Submitted");
+  assert.equal(statusChangePatch(done, "On Hold", live).completedAt, null, "back to an open status clears it (null so a field merge removes it)");
+  assert.equal(statusChangePatch({ status: "Queued" }, "On Hold", live).completedAt, undefined, "an open → open move never touches it");
+  // straight from Estimating to Submitted: finished AND submitted that day
+  const p2 = statusChangePatch({ status: "Estimating" }, "Submitted", live, "2026-10-01T02:00:00.000Z");
+  assert.ok(p2.completedAt && p2.submittedAt, "both days recorded");
+  // a project locked before the field existed is filled in on its next move within the pipeline
+  assert.ok(statusChangePatch({ status: "Quoting", ratesFrozen: freezeRates(live, "Quoting") }, "Submitted", live).completedAt, "unrecorded → set now");
+  // completedDay: the recorded day, else the pin's moment, else nothing — never today
+  assert.equal(completedDay({ completedAt: "2026-09-29" }), "2026-09-29");
+  assert.ok(/^2026-09-2[89]$/.test(completedDay({ ratesFrozen: { at: "2026-09-28T23:30:00.000Z", status: "Completed Estimating", rates: {} } })), "the pin's moment as a local day");
+  assert.equal(completedDay({ status: "Estimating" }), null);
+  assert.equal(completedDay({ ratesFrozen: { at: "garbage" } }), null);
+  assert.equal(completedDay(null), null);
+});
+
+check("sortProjects is the ONE project-list order: every key, both directions, missing dates sink either way, ties by name, stable", () => {
+  const row = (name, extra = {}) => ({ project: { createdAt: "2026-09-01T00:00:00.000Z" }, name, client: "", date: null, deadline: null, completedAt: null, submittedAt: null, status: "Queued", sellExGst: 0, directCost: 0, elementCount: 0, ...extra });
+  const rows = [
+    row("Beta", { project: { createdAt: "2026-09-10T00:00:00.000Z" }, completedAt: "2026-09-20", submittedAt: null, deadline: "2026-10-05", date: "2026-09-02", client: "Zed", status: "Submitted", sellExGst: 300, directCost: 200, elementCount: 2 }),
+    row("Alpha", { project: { createdAt: "2026-09-12T00:00:00.000Z" }, completedAt: null, submittedAt: "2026-09-30", deadline: null, date: "2026-09-01", client: "Ann", status: "Estimating", sellExGst: 100, directCost: 50, elementCount: 9 }),
+    row("Gamma", { project: { createdAt: "2026-09-11T00:00:00.000Z" }, completedAt: "2026-09-25", submittedAt: "2026-09-28", deadline: "2026-10-01", date: null, client: "Bob", status: "Completed Estimating", sellExGst: 300, directCost: 80, elementCount: 5 }),
+  ];
+  const names = (key, dir) => sortProjects(rows, key, dir).map((r) => r.name).join(",");
+  assert.equal(names("added"), "Alpha,Gamma,Beta", "newest added first by default");
+  assert.equal(names("added", "asc"), "Beta,Gamma,Alpha");
+  assert.equal(names("completed"), "Gamma,Beta,Alpha", "latest completed first; the unfinished one last");
+  assert.equal(names("completed", "asc"), "Beta,Gamma,Alpha", "ascending still leaves the unfinished one last");
+  assert.equal(names("submitted"), "Alpha,Gamma,Beta", "Beta never went out → last");
+  assert.equal(names("deadline"), "Gamma,Beta,Alpha", "soonest deadline first; no deadline last");
+  assert.equal(names("deadline", "desc"), "Beta,Gamma,Alpha");
+  assert.equal(names("date"), "Beta,Alpha,Gamma");
+  assert.equal(names("name"), "Alpha,Beta,Gamma"); assert.equal(names("name", "desc"), "Gamma,Beta,Alpha");
+  assert.equal(names("client"), "Alpha,Gamma,Beta");
+  assert.equal(names("status"), "Alpha,Gamma,Beta", "pipeline order: Estimating, Completed Estimating, Submitted");
+  assert.equal(names("value"), "Beta,Gamma,Alpha", "equal values tie on the name");
+  assert.equal(names("cost"), "Beta,Gamma,Alpha"); assert.equal(names("elements"), "Alpha,Gamma,Beta");
+  assert.equal(names("nonsense"), "Alpha,Beta,Gamma", "an unknown key: nothing to compare, names A→Z");
+  assert.deepEqual(sortProjects(null, "name"), []);
+  assert.equal(rows[0].name, "Beta", "the input is never reordered in place");
+  // the directions each key opens on, and the Settings preference read
+  assert.equal(defaultSortDir("completed"), "desc"); assert.equal(defaultSortDir("deadline"), "asc"); assert.equal(defaultSortDir("name"), "asc"); assert.equal(defaultSortDir("value"), "desc");
+  assert.equal(preferredSortKey({ quotesDefaultSort: "completed" }), "completed");
+  assert.equal(preferredSortKey({ quotesDefaultSort: "bogus" }), "added"); assert.equal(preferredSortKey(null), "added");
+  assert.ok(PROJECT_SORTS.every((o) => isProjectSortKey(o.key) && sortValue(rows[0], o.key) !== undefined));
+  assert.equal(sortValue({ status: "Not a status" }, "status"), catalogAll.QUOTE_STATUSES.length, "an unknown status sorts after the pipeline");
+  // the portal Settings "Dashboard sort order" select offers exactly these keys
+  const html = fs.readFileSync(new URL("../portal/portal-shell.html", import.meta.url), "utf8");
+  const sel = /<select id="settings-sort">([\s\S]*?)<\/select>/.exec(html)[1];
+  const opts = [...sel.matchAll(/<option value="([^"]+)"/g)].map((m) => m[1]);
+  assert.deepEqual(opts, PROJECT_SORTS.map((o) => o.key), "Settings lists every PROJECT_SORTS key in menu order");
 });
 
 check("statusChangePatch records submittedAt on entering Submitted, keeps it through the pipeline, clears it on the way back", () => {

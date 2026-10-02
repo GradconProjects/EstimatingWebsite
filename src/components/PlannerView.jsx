@@ -2,10 +2,18 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, ArrowRight, ChevronDown, ChevronRight, Clock, GitBranch, HardHat, HelpCircle, Loader2, MessageSquarePlus, Package, Plus, Radar, Receipt, Trash2 } from "lucide-react";
 import { PLANNER_PRIORITIES, PLANNER_PRIORITY_STYLES } from "../data/catalog.js";
 import { readQuoteSummariesDetailed, patchQuoteFields } from "../lib/projects.js";
-import { SummaryLoadNotice } from "./atoms.jsx";
+import { SummaryLoadNotice, ProjectSortBar } from "./atoms.jsx";
 import { uid, money2 } from "../lib/costing.js";
 import { useStoredState } from "../lib/storage.js";
-import { isUrgent, daysLabel, priorityRank, isOverdue } from "../lib/planner.js";
+import { isUrgent, daysLabel, priorityRank, isOverdue, formatDay } from "../lib/planner.js";
+import { completedDay } from "../lib/rateFreeze.js";
+import { PROJECT_SORTS, sortProjects } from "../lib/projectSort.js";
+
+/** The planner's own default order (priority, then the soonest deadline, with
+ * the overdue/urgent work in its own section) plus every shared project sort
+ * (lib/projectSort.js) that needs no costing. */
+const PLANNER_SORTS = [{ key: "priority", label: "Priority, then deadline", dir: "asc" }, ...PROJECT_SORTS.filter((o) => !o.costed)];
+
 
 const CHANNELS = ["Call", "Email", "Site meeting", "Text/WhatsApp", "Other"];
 const VARIATION_STATUSES = ["Draft", "Submitted", "Approved", "Rejected"];
@@ -231,11 +239,18 @@ function PlannerTab({ projects, quotesByKey, onOpen, patchQuote }) {
         planner: quote.planner || { deadline: "", priority: defaultPriority(), requirements: "" },
         status: quote.status,
         submittedAt: quote.submittedAt || null,
+        completedAt: completedDay(quote),
+        client: quote.clientName || "",
+        date: quote.projectDate || null,
+        deadline: (quote.planner && quote.planner.deadline) || null,
         communications: quote.communications || [],
       };
     }),
     [projects, quotesByKey]
   );
+  // Session-local sort over BOTH sections (lib/projectSort.js); "priority"
+  // is the planner's own order and the default.
+  const [sort, setSort] = useState({ key: "priority", dir: "asc" });
 
   const patchPlanner = (project, field, value) => {
     const quote = quotesByKey[project.storageKey] || {};
@@ -247,16 +262,23 @@ function PlannerTab({ projects, quotesByKey, onOpen, patchQuote }) {
     patchQuote(project, { communications: [{ id: uid(), ...entry }, ...list] });
   };
 
-  const attend = rows
-    .filter((r) => isUrgent(r.planner, r.status))
-    .sort((a, b) => priorityRank(a.planner.priority) - priorityRank(b.planner.priority)
-      || (a.planner.deadline || "9999").localeCompare(b.planner.deadline || "9999"));
-  const defer = rows
-    .filter((r) => !isUrgent(r.planner, r.status))
-    .sort((a, b) => (a.planner.deadline || "9999").localeCompare(b.planner.deadline || "9999"));
+  const byPriority = (list, withPriority) => {
+    const sign = sort.dir === "asc" ? 1 : -1;
+    return [...list].sort((a, b) => ((withPriority ? priorityRank(a.planner.priority) - priorityRank(b.planner.priority) : 0)
+      || (a.planner.deadline || "9999").localeCompare(b.planner.deadline || "9999")) * sign);
+  };
+  const urgent = rows.filter((r) => isUrgent(r.planner, r.status));
+  const calm = rows.filter((r) => !isUrgent(r.planner, r.status));
+  const attend = sort.key === "priority" ? byPriority(urgent, true) : sortProjects(urgent, sort.key, sort.dir);
+  const defer = sort.key === "priority" ? byPriority(calm, false) : sortProjects(calm, sort.key, sort.dir);
 
   return (
     <div className="space-y-6">
+      {rows.length > 0 && (
+        <div className="flex items-center justify-end gap-3 flex-wrap">
+          <ProjectSortBar sort={sort} setSort={setSort} options={PLANNER_SORTS} />
+        </div>
+      )}
       {rows.length === 0 && (
         <div className="text-center py-16 text-neutral-400 border-2 border-dashed border-neutral-200 rounded-xl">
           No projects yet — add one from the Dashboard first.
@@ -712,7 +734,7 @@ function Section({ title, count, tone, children }) {
 }
 
 function ProjectPlannerCard({ row, onOpen, onPatchPlanner, onAddCommunication, commsOpen, setCommsOpen }) {
-  const { project, name, planner, communications, status, submittedAt } = row;
+  const { project, name, planner, communications, status, submittedAt, completedAt } = row;
   const style = PLANNER_PRIORITY_STYLES[planner.priority] || PLANNER_PRIORITY_STYLES[defaultPriority()] || PLANNER_PRIORITY_STYLES.Medium;
   const due = daysLabel(planner.deadline, status, submittedAt);
   const [open, setOpen] = useState(false);
@@ -737,7 +759,12 @@ function ProjectPlannerCard({ row, onOpen, onPatchPlanner, onAddCommunication, c
               <span className={`inline-block w-2.5 h-2.5 rounded-full flex-none ${style.dot}`} />
               <span className="font-semibold text-[15px] text-neutral-900">{name}</span>
             </div>
-            {due && <div className={`text-xs mt-0.5 ${due.cls}`} title={due.title || undefined}>{due.text}</div>}
+            {(due || completedAt) && (
+              <div className="text-xs mt-0.5 flex items-center gap-2 flex-wrap">
+                {due && <span className={due.cls} title={due.title || undefined}>{due.text}</span>}
+                {completedAt && <span className="text-neutral-500" title="The day estimating finished">Completed {formatDay(completedAt)}</span>}
+              </div>
+            )}
           </div>
         </div>
         <span

@@ -370,6 +370,28 @@ invented from today);
 (`isOverdue`) ignore submitted quotes. Grady, 1 Oct 2026: "when a quote is
 submitted, the days overdue should cease counting".
 
+## Project lists sort by ONE rule
+
+`lib/projectSort.js` (pure): `PROJECT_SORTS` (date added, date completed,
+date submitted, deadline, project date, name, client, status, and — Dashboard
+only, `costed: true` — value, direct cost, elements), `sortProjects(rows, key,
+dir)` (stable, ties by name, a row with no value for a DATE key sinks to the
+bottom in either direction so "Date completed" never opens on the unfinished
+work), `defaultSortDir`, `preferredSortKey` (the portal Settings "Dashboard
+sort order", whose option list `verify.mjs` checks against `PROJECT_SORTS`).
+The Dashboard sorts through its "Sort by" select, the Asc/Desc button and
+every column heading (`SortTh`; click to sort, click again to flip); Project
+Management (`PLANNER_SORTS` = its own "Priority, then deadline" + the
+uncosted keys, applied inside BOTH sections) and the Vault use the shared
+`ProjectSortBar` (`atoms.jsx`). Session-local everywhere. **`completedAt`**
+(a local "YYYY-MM-DD") is the day estimating finished: `statusChangePatch`
+writes it when a status first enters `RATES_LOCKED_STATUSES`, keeps it through
+the pipeline and clears it (`null`) on a move back to an open status;
+`completedDay(quote)` is the ONE reader — the recorded day, else the day the
+rates were pinned (a project finished before the field existed), else null,
+never today. The Dashboard shows it in its "Completed" column and the planner
+card beside the deadline. Grady, 2 Oct 2026.
+
 ## Multi-project dashboard
 
 The app has two views, switched in `App.jsx` by whether `activeId` points
