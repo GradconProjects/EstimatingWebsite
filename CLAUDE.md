@@ -812,6 +812,23 @@ element families waits on the owner's approval of the pad footing.
   `IRREGULAR CONCRETE CONSTRUCTIONS` category (hearth_fireplace_base,
   plinth_machine_base, irregular_concrete_assembly; `labour: "composite"`)
   and `ESTIMATE_TYPE_MAP` bridges the three Estimates labels onto them.
+- **Concrete wastage goes by WORK TYPE** (2 Oct 2026, Grady's table):
+  `CONC_WASTE_CLASSES` in `estimates-app.html` — large slabs / well-controlled
+  pours 2.5% (typ. 2–3%), footings / pile caps / beams / walls 5%, concrete
+  against excavated ground 7.5% (5–10%), bored piles 10% (5–15%+), shotcrete /
+  irregular surfaces 15% (10–20%+) — each a whole percent edited in the Rates
+  Library's "Concrete wastage by work type" panel (`global.concreteWaste*Pct`,
+  `verify.mjs` keeps the two lists and defaults identical) and read LIVE by
+  `refreshReoAllowances` into `CONC_WASTE`. `autoConcWasteClass(def)` is the
+  class a calculator implies (pier → pile, shotwall → shotcrete, slab → slab,
+  everything else formed), written to `inst.data._concWasteAuto` by
+  `computeInstance` / `buildCard`; the Concrete tab's `concreteWasteClass`
+  select overrides it per element and `concreteWasteOverride` (a typed %)
+  beats both. `concWastePct(d)` is the ONE reading. `PROJECT.concreteWasteMode`
+  = `"class"` (new projects) or `"flat"` (one `concreteWaste` % everywhere —
+  `applyLoadedEstimateState` sets it on any takeoff saved without the field,
+  so nothing re-prices on its own; the estimator switches the basis in
+  Project Setup). The PDF prints `concWasteModeStr()`.
 - **Screed (standalone)** (`Floor Finishes` library group, calc `screed`:
   `screedDefaults` / `screedGeom` / `renderScreed` / `computeScreed` /
   `diagScreed` — 2 Oct 2026, Grady: "the screed is standalone. add it as its

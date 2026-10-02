@@ -1702,6 +1702,23 @@ check("the PRELIMINARIES band is on the PRELIMINARIES elements ONLY: hidden and 
 
 /* ---- Per-element rate overrides, pinned rates on finished projects, validity dates (29 Sep 2026) ---- */
 const { rowRate, isManualQuoteKey } = await import("../src/lib/costing.js");
+check("Concrete wastage by work type: the five classes, their defaults and ranges, mirrored between the Rates Library and Estimates", () => {
+  const lib = fs.readFileSync(new URL("../portal/rates-library.html", import.meta.url), "utf8");
+  const est = fs.readFileSync(new URL("../portal/estimates-app.html", import.meta.url), "utf8");
+  const want = { concreteWasteSlabPct: 2.5, concreteWasteFormedPct: 5, concreteWasteGroundPct: 7.5, concreteWastePilePct: 10, concreteWasteShotcretePct: 15 };
+  Object.entries(want).forEach(([k, v]) => {
+    const m = new RegExp(`${k}: ([0-9.]+)`).exec(lib); assert.ok(m, `${k} seeded in the library`); assert.equal(Number(m[1]), v, `${k} default`);
+    assert.ok(new RegExp(`bind\\("g_cw_\\w+", \\["global","${k}"\\]\\)`).test(lib), `${k} editable in the library`);
+  });
+  const block = /const CONC_WASTE_CLASSES=\[([\s\S]*?)\];/.exec(est); assert.ok(block, "CONC_WASTE_CLASSES in estimates-app.html");
+  const rows = [...block[1].matchAll(/key:"(\w+)",\s*label:"([^"]+)",\s*range:"([^"]+)",\s*def:([0-9.]+),\s*lib:"(\w+)"/g)].map((m) => ({ key: m[1], label: m[2], range: m[3], def: Number(m[4]), lib: m[5] }));
+  assert.deepEqual(rows.map((r) => r.lib), Object.keys(want), "Estimates reads exactly the library's five keys, in table order");
+  rows.forEach((r) => assert.equal(r.def, want[r.lib], `${r.key} default matches the library`));
+  assert.deepEqual(rows.map((r) => r.range), ["2–3%", "5%", "5–10%", "5–15%+", "10–20%+"], "the typical ranges from the table");
+  assert.ok(/pier"\) return "pile"/.test(est) && /shotwall"\) return "shotcrete"/.test(est) && /slab"\) return "slab"/.test(est), "auto class: piers → bored piles, shotcrete walls → shotcrete, slabs → large slabs, else formed");
+  assert.ok(/concreteWasteMode==="flat"/.test(est) || /concreteWasteMode\|\|"class"\)==="flat"/.test(est), "a flat project-wide % remains available");
+});
+
 check("Estimates' standalone screed: SCREED_TYPES mirror every m² SCREEDS catalog product by exact name", () => {
   const html = fs.readFileSync(new URL("../portal/estimates-app.html", import.meta.url), "utf8");
   const block = /const SCREED_TYPES = \[([\s\S]*?)\];/.exec(html);

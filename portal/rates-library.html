@@ -247,6 +247,13 @@ const GLOBAL = {
   // Takeoff allowances READ LIVE by the Estimates app on every recompute —
   // whole percents. Edit them here anytime and every element re-prices.
   reoWastePct: 5, barLapPct: 8, meshLapPct: 5, formworkWastePct: 5,
+  // Concrete wastage BY WORK TYPE (whole percents) — Grady's estimating
+  // allowances, 2 Oct 2026: large slabs / well-controlled pours 2–3%,
+  // footings / pile caps / beams / walls 5%, concrete against excavated
+  // ground 5–10%, bored piles 5–15%+, shotcrete / irregular surfaces
+  // 10–20%+. Each Estimates element takes the class its calculator implies
+  // (switchable per element) and reads the figure from here LIVE.
+  concreteWasteSlabPct: 2.5, concreteWasteFormedPct: 5, concreteWasteGroundPct: 7.5, concreteWastePilePct: 10, concreteWasteShotcretePct: 15,
   wasteConcrete: 0.03, wasteFormwork: 0.10, wasteGeneral: 0.05,
   overheadsPct: 0.12, marginPct: 0.15, subbieMarginPct: 0.12,
   // Escalation defaults to 0% — Gradcon's own established rates (below,
@@ -878,6 +885,15 @@ function renderApp(){
       <tr><td>Lap allowance — bars (%)</td><td><input type="number" step="any" id="g_barlap" value="${state.global.barLapPct??8}"></td></tr>
       <tr><td>Lap allowance — mesh sheets &amp; trench (%)</td><td><input type="number" step="any" id="g_meshlap" value="${state.global.meshLapPct??5}"></td></tr>
       <tr><td>Formwork wastage (%)</td><td><input type="number" step="any" id="g_formwaste" value="${state.global.formworkWastePct??5}"></td></tr>
+     </tbody></table></div>
+     <div class="panel-block" style="margin-top:10px;"><h3>Concrete wastage by work type</h3>
+     <p class="hint">Read LIVE by the Estimates takeoff: every element takes the class its calculator implies (slabs → large slabs; footings, pile caps, beams, walls, stairs, tanks → formed; bored piers &amp; piles → bored piles; shotcrete walls → shotcrete) and can be switched to another class or given its own % on its Concrete tab. The typical estimating range sits beside each figure; the factor is 1 + % ÷ 100.</p>
+     <table class="kv-table"><tbody>
+      <tr><td>Large slabs / well-controlled pours (typ. 2–3%)</td><td><input type="number" step="any" id="g_cw_slab" value="${state.global.concreteWasteSlabPct??2.5}"></td></tr>
+      <tr><td>Footings, pile caps, beams, walls (typ. 5%)</td><td><input type="number" step="any" id="g_cw_formed" value="${state.global.concreteWasteFormedPct??5}"></td></tr>
+      <tr><td>Concrete against excavated ground (typ. 5–10%)</td><td><input type="number" step="any" id="g_cw_ground" value="${state.global.concreteWasteGroundPct??7.5}"></td></tr>
+      <tr><td>Bored piles (typ. 5–15%+)</td><td><input type="number" step="any" id="g_cw_pile" value="${state.global.concreteWastePilePct??10}"></td></tr>
+      <tr><td>Shotcrete / irregular surfaces (typ. 10–20%+)</td><td><input type="number" step="any" id="g_cw_shotcrete" value="${state.global.concreteWasteShotcretePct??15}"></td></tr>
      </tbody></table></div>`;
   const reoMapFor = {"Trench mesh":"trenchMesh","Square Mesh":"squareMesh","Stock Bar":"stockBar","Processed Bar":"processedBar"};
   Object.keys(REINFORCEMENT_ITEMS).forEach(group=>{
@@ -1074,6 +1090,11 @@ function wireInputs(){
   bind("g_barlap", ["global","barLapPct"]);
   bind("g_meshlap", ["global","meshLapPct"]);
   bind("g_formwaste", ["global","formworkWastePct"]);
+  bind("g_cw_slab", ["global","concreteWasteSlabPct"]);
+  bind("g_cw_formed", ["global","concreteWasteFormedPct"]);
+  bind("g_cw_ground", ["global","concreteWasteGroundPct"]);
+  bind("g_cw_pile", ["global","concreteWastePilePct"]);
+  bind("g_cw_shotcrete", ["global","concreteWasteShotcretePct"]);
   bind("cl_placing", ["concreteLabour","placingHrsPerM3"]);
   bind("cl_finishing", ["concreteLabour","finishingHrsPerM3"]);
   bind("cl_curing", ["concreteLabour","curingRate"]);

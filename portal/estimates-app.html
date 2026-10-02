@@ -772,7 +772,7 @@ let PROJECT = {
   name:"", jobNumber:"", client:"", units_len:"mm/m", units_conc:"m3", units_form:"m2", units_reo:"kg", units_exc:"m3",
   units_len_pref:"m", // "mm" or "m" — preferred input unit for overall lengths/heights (beam, wall, column, pier, kerb runs). Metres by default: a 7.2m beam is typed as 7.2, not 7200 (cross-sections stay mm).
   cover:40, grade:32, reoStandard:"Australian D500N", lapMethod:"Project-defined", anchorMethod:"Project-defined",
-  barStock:12000, concreteWaste:20, reoWaste:5, formworkWaste:5, lapPct:8, bulking:15, revision:"Rev A", measurementRule:"gross",
+  barStock:12000, concreteWaste:20, concreteWasteMode:"class", reoWaste:5, formworkWaste:5, lapPct:8, bulking:15, revision:"Rev A", measurementRule:"gross",
   estimateSessionId: newEstimateSessionId(),
 };
 /* Reinforcement allowances — ONE company-wide set, edited in the RATES
@@ -783,12 +783,41 @@ let PROJECT = {
    (default 5%). Not per-project — change them in the Rates Library anytime
    and every element re-prices. */
 let REO_WASTE_PCT=5, BAR_LAP_PCT=8, MESH_LAP_PCT=5, FORM_WASTE_PCT=5;
+/* Concrete wastage BY WORK TYPE (Grady, 2 Oct 2026): the five estimating
+   classes, each a whole percent edited in the Rates Library ("Concrete
+   wastage by work type", gradcon-rates-library global block) and read LIVE
+   here. `autoConcWasteClass(def)` is the class a calculator implies; the
+   element's Concrete tab can pick another class (`concreteWasteClass`) or
+   type its own % (`concreteWasteOverride`, which always wins). A project
+   whose `concreteWasteMode` is "flat" (every takeoff saved before this
+   existed, so nothing re-prices on its own) keeps one `concreteWaste` %
+   on every element instead. `concWastePct(d)` is the ONE reading. */
+const CONC_WASTE_CLASSES=[
+  {key:"slab",      label:"Large slabs / well-controlled pours", range:"2–3%",    def:2.5, lib:"concreteWasteSlabPct"},
+  {key:"formed",    label:"Footings, pile caps, beams, walls",   range:"5%",      def:5,   lib:"concreteWasteFormedPct"},
+  {key:"ground",    label:"Concrete against excavated ground",   range:"5–10%",   def:7.5, lib:"concreteWasteGroundPct"},
+  {key:"pile",      label:"Bored piles",                         range:"5–15%+",  def:10,  lib:"concreteWastePilePct"},
+  {key:"shotcrete", label:"Shotcrete / irregular surfaces",      range:"10–20%+", def:15,  lib:"concreteWasteShotcretePct"},
+];
+let CONC_WASTE={}; CONC_WASTE_CLASSES.forEach(c=>{ CONC_WASTE[c.key]=c.def; });
+function autoConcWasteClass(def){
+  if(!def) return "formed";
+  if(def.calc==="pier") return "pile";
+  if(def.calc==="shotwall") return "shotcrete";
+  if(def.calc==="slab") return "slab";
+  return "formed";
+}
+function concWasteClassOf(d){ return (d && d.concreteWasteClass && CONC_WASTE[d.concreteWasteClass]!==undefined)? d.concreteWasteClass : ((d && d._concWasteAuto) || "formed"); }
+function concWasteFlat(){ return (PROJECT.concreteWasteMode||"class")==="flat"; }
+function concWasteClassLabel(key){ const c=CONC_WASTE_CLASSES.find(x=>x.key===key); return c? c.label : key; }
+function concWasteModeStr(){ return concWasteFlat()? `${PROJECT.concreteWaste}% flat` : `by work type — ${CONC_WASTE_CLASSES.map(c=>`${c.label.replace(/ \/.*$/,'')} ${CONC_WASTE[c.key]}%`).join(" · ")}`; }
 function refreshReoAllowances(){
   let g={};
   try{ g=(JSON.parse(localStorage.getItem("gradcon-rates-library"))||{}).global||{}; }catch(e){}
   const pick=(v,fb)=> (v!==undefined && v!==null && v!=="" && isFinite(+v))? +v : fb;
   REO_WASTE_PCT=pick(g.reoWastePct,5); BAR_LAP_PCT=pick(g.barLapPct,8); MESH_LAP_PCT=pick(g.meshLapPct,5);
   FORM_WASTE_PCT=pick(g.formworkWastePct,5);
+  CONC_WASTE_CLASSES.forEach(c=>{ CONC_WASTE[c.key]=pick(g[c.lib],c.def); });
   PROJECT.reoWaste=REO_WASTE_PCT; PROJECT.lapPct=BAR_LAP_PCT; PROJECT.formworkWaste=FORM_WASTE_PCT;
 }
 // Portal-wide Settings (portal-shell.html's Settings modal, stored under
@@ -1563,6 +1592,11 @@ function applyLoadedEstimateState(parsed, opts){
   opts = opts || {};
   if(!UNDO.applying) undoReset();   // a loaded / synced / restored takeoff starts a fresh history
   if(parsed.project) PROJECT = Object.assign({}, PROJECT, parsed.project);
+  // A takeoff saved before concrete waste went by work type carries one flat
+  // % and no basis: it keeps pricing exactly as it did ("flat") until the
+  // estimator switches the basis in Project Setup. Only a brand-new project
+  // starts on the work-type table.
+  if(parsed.project && parsed.project.concreteWasteMode===undefined) PROJECT.concreteWasteMode="flat";
   if(parsed.selectedTypes) SELECTED_TYPES = parsed.selectedTypes;
   if(Array.isArray(parsed.instances)){
     if(opts.collapseAll){
@@ -2760,9 +2794,19 @@ function sdBarShapeUI(d, legacyMm){
       <p class="small">A single straight length per dowel position. If the detail is an L / Z / cranked step bar, sketch the shape instead and type each leg's length.</p>`}
   </div>`;
 }
-function concWastePct(d){ return (d.concreteWasteOverride===undefined||d.concreteWasteOverride==="")? PROJECT.concreteWaste : num(d.concreteWasteOverride); }
+function concWastePct(d){
+  if(!(d.concreteWasteOverride===undefined||d.concreteWasteOverride==="")) return num(d.concreteWasteOverride);
+  if(concWasteFlat()) return PROJECT.concreteWaste;
+  return CONC_WASTE[concWasteClassOf(d)];
+}
 function concSection(d,note){
-  return `<div class="grid cols3">${F("Concrete grade (N/MPa)",inpNum("grade",d.grade))}${F(`Concrete waste % (blank = project default ${PROJECT.concreteWaste}%)`,inpNum("concreteWasteOverride",d.concreteWasteOverride))}</div>${note||""}`;
+  const auto=(d._concWasteAuto||"formed");
+  const classSel = concWasteFlat()
+    ? F("Concrete waste class", `<input type="text" value="Project set to a flat ${PROJECT.concreteWaste}% (Project Setup)" disabled>`)
+    : F("Concrete waste class (Rates Library %)", selOpts("concreteWasteClass", (d.concreteWasteClass&&CONC_WASTE[d.concreteWasteClass]!==undefined)? d.concreteWasteClass : "auto",
+        [["auto",`Auto — ${concWasteClassLabel(auto)} (${CONC_WASTE[auto]}%)`], ...CONC_WASTE_CLASSES.map(c=>[c.key,`${c.label} — ${CONC_WASTE[c.key]}% (typ. ${c.range})`])], true));
+  const eff = concWasteFlat()? PROJECT.concreteWaste : CONC_WASTE[concWasteClassOf(d)];
+  return `<div class="grid cols3">${F("Concrete grade (N/MPa)",inpNum("grade",d.grade))}${classSel}${F(`Concrete waste % override (blank = ${eff}%)`,inpNum("concreteWasteOverride",d.concreteWasteOverride))}</div>${note||""}`;
 }
 function vapourMembraneLine(inst,def,area,type,lapPct){
   let lap=lapPct===undefined?10:num(lapPct,10);
@@ -5535,7 +5579,12 @@ function shotPierCount(d){
 function renderShotWall(inst){
   let d=inst.data;
   let geom=`<div class="grid cols4">${LF("Wall length (mm)","length",d.length)}${LF("Wall height (mm)","height",d.height)}${F("Thickness (mm)",inpNum("thickness",d.thickness))}${coverField(inst)}</div>`;
-  let conc=`<div class="grid cols3">${F("Shotcrete strength grade (N/MPa)",inpNum("grade",d.grade===undefined?PROJECT.grade:d.grade))}${F("Rebound / overspray waste % (blank = 20%)",inpNum("concreteWasteOverride",d.concreteWasteOverride))}</div>
+  const shotAuto=(d._concWasteAuto||"shotcrete"), shotEff=concWasteFlat()? PROJECT.concreteWaste : CONC_WASTE[concWasteClassOf(d)];
+  const shotClassSel = concWasteFlat()
+    ? F("Concrete waste class", `<input type="text" value="Project set to a flat ${PROJECT.concreteWaste}% (Project Setup)" disabled>`)
+    : F("Concrete waste class (Rates Library %)", selOpts("concreteWasteClass", (d.concreteWasteClass&&CONC_WASTE[d.concreteWasteClass]!==undefined)? d.concreteWasteClass : "auto",
+        [["auto",`Auto — ${concWasteClassLabel(shotAuto)} (${CONC_WASTE[shotAuto]}%)`], ...CONC_WASTE_CLASSES.map(c=>[c.key,`${c.label} — ${CONC_WASTE[c.key]}% (typ. ${c.range})`])], true));
+  let conc=`<div class="grid cols3">${F("Shotcrete strength grade (N/MPa)",inpNum("grade",d.grade===undefined?PROJECT.grade:d.grade))}${shotClassSel}${F(`Rebound / overspray waste % override (blank = ${shotEff}%)`,inpNum("concreteWasteOverride",d.concreteWasteOverride))}</div>
   <p class="small">Concrete = length × height × thickness, sprayed application — the register line carries the grade you choose (N32 / N40 / N50 shotcrete mixes are common) and the sprayed waste, which is higher than a formed pour.</p>
   <div class="grid cols3">${chk("xypex",d.xypex,"Penetron (Xypex) waterproofing additive","xypex")}</div>`;
   let reo=`<div class="grid cols3">${F("Mesh type",selOpts("meshType",d.meshType,Object.keys(MESHTYPES).map(m=>[m,m]),true))}${F("Layers",inpNumR("meshLayers",d.meshLayers))}${chk("meshLap",d.meshLap,"Include lap allowance (%)","meshLap")}</div>
@@ -5561,7 +5610,10 @@ function computeShotWall(inst,def){
   let Lm=num(d.length)/1000, Hm=num(d.height)/1000, Tm=num(d.thickness)/1000;
   let area=Lm*Hm, vol=area*Tm;
   let grade=(d.grade===undefined||d.grade==="")? PROJECT.grade : d.grade;
-  let sprayWaste=(d.concreteWasteOverride===undefined||d.concreteWasteOverride==="")? 20 : num(d.concreteWasteOverride);
+  // Rebound / overspray: the "Shotcrete / irregular surfaces" work-type class
+  // (Rates Library, 15% seed; was a hard 20% before 2 Oct 2026), the project's
+  // flat % on a flat-basis takeoff, or the element's own typed override.
+  let sprayWaste=concWastePct(d);
   lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${grade} concrete (shotcrete)`,spec:`${d.thickness}mm thick, sprayed`,qty:vol,unit:"m³",waste:sprayWaste,finalQty:withWaste(vol,sprayWaste),formula:`${fmt(Lm,1)}×${fmt(Hm,1)}×${fmt(Tm,2)} (+${fmt(sprayWaste,0)}% overspray/rebound)`}));
   if(d.xypex) lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:"Penetron (Xypex) additive",spec:"Waterproofing admixture",qty:vol,unit:"m³",waste:0,finalQty:vol,formula:"same volume as shotcrete"}));
   // one line per DISTINCT layer material — layers can be different products
@@ -8024,6 +8076,7 @@ function applyReoRate(inst,def,out){
 function buildCard(inst){
   let def=LIB_INDEX[inst.typeKey];
   let calc=CALC[def.calc];
+  inst.data._concWasteAuto=autoConcWasteClass(def);
   let parts=calc.render(inst,def);
   // Reinforcement method heads every Reinforcement tab; the calculator's own
   // detailing sits under it and hides when the element is priced by rate.
@@ -8582,6 +8635,7 @@ function updateDiagramPane(card,inst){
 }
 function computeInstance(inst){
   let def=LIB_INDEX[inst.typeKey], calc=CALC[def.calc];
+  inst.data._concWasteAuto=autoConcWasteClass(def);   // the waste class this calculator implies (derived; concWastePct reads it)
   let out=calc.compute(inst,def);
   applyConcreteOverride(inst,def,out);                               // an entered volume replaces the geometry's concrete first…
   if(reoMethodOf(inst.data)==="rate") applyReoRate(inst,def,out);   // …so a rate follows it; before connections are added, so they are never replaced
@@ -8994,7 +9048,8 @@ function renderDefaultsForm(){
     F("Default lap methodology",inpText("lapMethod",PROJECT.lapMethod)),
     F("Anchorage methodology",inpText("anchorMethod",PROJECT.anchorMethod)),
     F("Bar stock length (mm)",inpNum("barStock",PROJECT.barStock)),
-    F("Concrete waste (%)",inpNum("concreteWaste",PROJECT.concreteWaste)),
+    F("Concrete waste basis",selOpts("concreteWasteMode",PROJECT.concreteWasteMode||"class",[["class",`By work type — Rates Library (slab ${CONC_WASTE.slab}% · formed ${CONC_WASTE.formed}% · ground ${CONC_WASTE.ground}% · pile ${CONC_WASTE.pile}% · shotcrete ${CONC_WASTE.shotcrete}%)`],["flat","Flat % on every element (below)"]])),
+    F(`Concrete waste — flat % (${(PROJECT.concreteWasteMode||"class")==="flat"? "in use" : "not in use while the basis is by work type"})`,inpNum("concreteWaste",PROJECT.concreteWaste)),
     F(`Reinforcement waste — from Rates Library: ${REO_WASTE_PCT}%`,`<input type="number" value="${REO_WASTE_PCT}" disabled title="Edited in the Rates Library app (Reinforcement → takeoff allowances) — applies live across every element">`),
     F(`Formwork waste — from Rates Library: ${FORM_WASTE_PCT}%`,`<input type="number" value="${FORM_WASTE_PCT}" disabled title="Edited in the Rates Library app (takeoff allowances) — applies live to every formwork line">`),
     F("Excavation bulking factor (%)",inpNum("bulking",PROJECT.bulking)),
@@ -9584,7 +9639,7 @@ function exportPDF(){
      <table style="width:100%;border-collapse:collapse;margin-bottom:14px;">
        <tr><td style="border:1px solid #999;padding:6px;"><b>Default cover</b><br>${PROJECT.cover} mm</td>
        <td style="border:1px solid #999;padding:6px;"><b>Default grade</b><br>N${PROJECT.grade}</td>
-       <td style="border:1px solid #999;padding:6px;"><b>Concrete waste</b><br>${PROJECT.concreteWaste}%</td>
+       <td style="border:1px solid #999;padding:6px;"><b>Concrete waste</b><br>${concWasteModeStr()}</td>
        <td style="border:1px solid #999;padding:6px;"><b>Reinforcement waste</b><br>${PROJECT.reoWaste}%</td>
        <td style="border:1px solid #999;padding:6px;"><b>Standard</b><br>${PROJECT.reoStandard}</td></tr>
      </table>
