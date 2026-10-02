@@ -1,11 +1,11 @@
 import { useMemo } from "react";
 import { CATEGORY_ORDER, SECTION_ORDER } from "../data/catalog.js";
-import { computeElementCost, computeGrandTotal, computeMarginLadder, money, money2, getDefaultMargin, getMarginSteps } from "../lib/costing.js";
+import { computeElementCost, computeGrandTotal, computeExcludedTotals, computeMarginLadder, money, money2, getDefaultMargin, getMarginSteps, scopeLabel } from "../lib/costing.js";
 import { NumInput } from "./atoms.jsx";
 
 export default function QuoteSummary({
   items, onReorder, rates, categoryOrder = CATEGORY_ORDER, sectionOrder = SECTION_ORDER,
-  gfa, setGfa, overheadPct, setOverheadPct, contingencyPct, setContingencyPct,
+  gfa, setGfa, overheadPct, setOverheadPct, contingencyPct, setContingencyPct, scope,
 }) {
   // Folded two levels deep — category (Foundations, Suspended Structure...)
   // then section within it — matching the Add-Element dropdown's grouping.
@@ -13,15 +13,17 @@ export default function QuoteSummary({
     const cats = {};
     categoryOrder.forEach((c) => { cats[c] = {}; });
     items.forEach((it) => {
-      const cost = computeElementCost(it, rates);
+      const cost = computeElementCost(it, rates, scope);
       cats[it.category] = cats[it.category] || {};
       cats[it.category][it.section] = cats[it.category][it.section] || [];
-      cats[it.category][it.section].push({ item: it, total: cost.total });
+      cats[it.category][it.section].push({ item: it, total: cost.total, scope: cost.scope });
     });
     return cats;
-  }, [items, rates, categoryOrder]);
+  }, [items, rates, categoryOrder, scope]);
 
-  const grandTotal = useMemo(() => computeGrandTotal(items, rates), [items, rates]);
+  const grandTotal = useMemo(() => computeGrandTotal(items, rates, scope), [items, rates, scope]);
+  const excluded = useMemo(() => computeExcludedTotals(items, rates, scope), [items, rates, scope]);
+  const projectScope = scope && scope !== "both" ? scope : "both";
   const { subtotal, rows } = useMemo(
     () => computeMarginLadder(grandTotal, overheadPct, contingencyPct, gfa, getMarginSteps()),
     [grandTotal, overheadPct, contingencyPct, gfa]
@@ -30,9 +32,17 @@ export default function QuoteSummary({
   return (
     <div className="space-y-3">
       <div className="rounded-xl border border-neutral-200 bg-white shadow-sm overflow-hidden">
-        <div className="bg-neutral-900 text-white px-4 py-2 text-xs font-semibold uppercase tracking-wide">
-          Quote Summary
+        <div className="bg-neutral-900 text-white px-4 py-2 text-xs font-semibold uppercase tracking-wide flex items-center justify-between gap-2">
+          <span>Quote Summary</span>
+          <span className={`normal-case tracking-normal font-medium text-[11px] ${projectScope !== "both" ? "text-orange-300" : "text-neutral-400"}`} title="The project's scope — set in the editor header; an element can differ on its own card">
+            {scopeLabel(projectScope)}
+          </span>
         </div>
+        {(excluded.materials > 0 || excluded.labour > 0) && (
+          <div className="px-4 py-1.5 text-[11px] text-orange-800 bg-orange-50 border-b border-orange-100">
+            Not charged under scope: {excluded.materials > 0 ? `materials ${money(excluded.materials)}` : ""}{excluded.materials > 0 && excluded.labour > 0 ? " · " : ""}{excluded.labour > 0 ? `labour ${money(excluded.labour)}` : ""}
+          </div>
+        )}
         <div className="p-3 max-h-[40vh] overflow-y-auto space-y-3">
           {categoryOrder.filter((c) => Object.values(byCategory[c] || {}).some((rows) => rows.length)).map((category) => {
             const sections = byCategory[category];
@@ -57,7 +67,7 @@ export default function QuoteSummary({
                         className={`flex justify-between text-[13px] py-0.5 ${onReorder ? "cursor-grab active:cursor-grabbing hover:bg-neutral-50 rounded" : ""}`}
                         title={onReorder ? "Drag to reorder" : undefined}
                       >
-                        <span className="text-neutral-600 truncate pr-2">{r.item.label}</span>
+                        <span className="text-neutral-600 truncate pr-2">{r.item.label}{r.scope !== projectScope && <span className="ml-1 text-[10px] text-orange-700 font-medium">({scopeLabel(r.scope)})</span>}</span>
                         <span className="font-mono tabular-nums text-neutral-800 flex-none">{money2(r.total)}</span>
                       </div>
                     ))}

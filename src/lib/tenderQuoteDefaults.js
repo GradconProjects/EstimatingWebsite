@@ -140,14 +140,14 @@ const LEVEL_PREFIX = /^(lower ground floor|lower ground|basement|ground floor|gr
 const titleCase = (s) => s.replace(/\w\S*/g, (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
 
 export function seedTenderItems(quote, items, rates) {
-  const { lines } = computeExternalScopeLines(items, rates, quote.overheadPct, quote.contingencyPct, getDefaultMargin());
+  const { lines } = computeExternalScopeLines(items, rates, quote.overheadPct, quote.contingencyPct, getDefaultMargin(), quote.scope);
   const sellById = {};
   lines.forEach((l) => { sellById[l.id] = l.sellExGst; });
   const fmt = (n, dp = 2) => Number(n).toLocaleString("en-AU", { maximumFractionDigits: dp });
 
   // one short summary point per element — name + its most telling figure
   const summarize = (item) => {
-    const cost = computeElementCost(item, rates);
+    const cost = computeElementCost(item, rates, quote.scope);
     const lq = labourQuantities(item, rates);
     const m = (item.label || "").match(LEVEL_PREFIX);
     let name = item.label || "Element";

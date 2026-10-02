@@ -19,7 +19,7 @@
  *   can't accept the HTML clipboard format still gets usable text).
  */
 import { FULL_CATALOG, RESOURCE_COLS, CATEGORY_ORDER, SECTION_ORDER } from "../data/catalog.js";
-import { computeElementCost, computeGrandTotal, computeMarginLadder, rateKey, rowRate, computeRowTotal, rowContext, getDefaultMargin, getMarginSteps, additionalRowsFor, additionalRowTotal, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, autoSpecialistFees, categoryAppliesTo } from "./costing.js";
+import { computeElementCost, computeGrandTotal, computeMarginLadder, rateKey, rowRate, computeRowTotal, rowContext, getDefaultMargin, getMarginSteps, additionalRowsFor, additionalRowTotal, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, autoSpecialistFees, categoryAppliesTo, elementScope, categoryChargedUnder, scopeLabel } from "./costing.js";
 import { GRADCON_LOGO_DATA_URI } from "./logo.js";
 
 /** Rate ($/unit) backed out from the line's own total ÷ qty — always exactly
@@ -41,9 +41,13 @@ function autoConcreteFeeLines(item, rates) {
 }
 
 /** Every line (material/labour/custom) actually filled in for one element, plus its total. */
-function buildElementLines(item, rates) {
+function buildElementLines(item, rates, projectScope) {
   const materialLines = [];
   const ctx = rowContext(item);
+  const scope = elementScope(item, projectScope);
+  // a band the scope does not charge still lists its lines (the client sees
+  // the quantities) but at $0, labelled, so the sheet's sums stay true
+  const scoped = (cat, line) => categoryChargedUnder(cat, scope) ? line : { ...line, label: `${line.label} — not charged (${scopeLabel(scope)})`, total: 0 };
   FULL_CATALOG.forEach((cat) => {
     if (!categoryAppliesTo(cat, item)) return;
     cat.products.forEach((p) => {
@@ -54,20 +58,21 @@ function buildElementLines(item, rates) {
           unitCost: p.unitCost ?? 0, unitWeight: p.unitWeight, sheetArea: p.sheetArea, barLength: p.barLength,
         });
         const rowTotal = computeRowTotal(cat, rate, qty, ctx);
-        materialLines.push({ label: `${p.name} (${cat.key})`, qty, unit: p.unit, total: rowTotal });
+        materialLines.push(scoped(cat, { label: `${p.name} (${cat.key})`, qty, unit: p.unit, total: rowTotal }));
       }
     });
     additionalRowsFor(item, cat.key).forEach((a) => {
       const qty = Number(a.qty) || 0;
-      if (qty > 0 && a.name) materialLines.push({ label: `${a.name} (${cat.key} — custom)`, qty, unit: a.unit || "", total: additionalRowTotal(a) });
+      if (qty > 0 && a.name) materialLines.push(scoped(cat, { label: `${a.name} (${cat.key} — custom)`, qty, unit: a.unit || "", total: additionalRowTotal(a) }));
     });
   });
 
   // the auto-applied supplier charges are real money in the totals, so the sheet lists them
-  autoConcreteFeeLines(item, rates).forEach((l) => materialLines.push(l));
-  const cost = computeElementCost(item, rates);
+  const concreteCat = FULL_CATALOG.find((c) => c.key === "CONCRETE"), specialistCat = FULL_CATALOG.find((c) => c.key === "SPECIALIST FINISHING CONCRETE");
+  autoConcreteFeeLines(item, rates).forEach((l) => materialLines.push(scoped(/VicMix/i.test(l.label) ? specialistCat : concreteCat, l)));
+  const cost = computeElementCost(item, rates, projectScope);
   const labourLines = RESOURCE_COLS.filter((res) => cost.resourceTotals[res.key] > 0).map((res) => ({
-    label: res.name, qty: cost.resourceTotals[res.key], unit: res.unit, total: cost.resourceCosts[res.key],
+    label: scope === "materials" ? `${res.name} — not charged (${scopeLabel(scope)})` : res.name, qty: cost.resourceTotals[res.key], unit: res.unit, total: scope === "materials" ? 0 : cost.resourceCosts[res.key],
   }));
 
   const customLines = additionalRowsFor(item, null)
@@ -78,7 +83,7 @@ function buildElementLines(item, rates) {
 }
 
 /** Groups items the same way QuoteSummary.jsx does: category > section, only groups that have items. */
-function groupItems(items, rates, categoryOrder, sectionOrder) {
+function groupItems(items, rates, categoryOrder, sectionOrder, projectScope) {
   return categoryOrder
     .map((category) => {
       const catItems = items.filter((it) => it.category === category);
@@ -87,7 +92,7 @@ function groupItems(items, rates, categoryOrder, sectionOrder) {
         .map((section) => {
           const secItems = catItems.filter((it) => it.section === section);
           if (secItems.length === 0) return null;
-          return { section, elements: secItems.map((item) => ({ item, ...buildElementLines(item, rates) })) };
+          return { section, elements: secItems.map((item) => ({ item, ...buildElementLines(item, rates, projectScope) })) };
         })
         .filter(Boolean);
       const catTotal = sections.flatMap((s) => s.elements).reduce((sum, e) => sum + e.cost.total, 0);
@@ -138,6 +143,7 @@ function buildMetaTable(quote) {
   const rows = [
     ["Project", esc(quote.projectName || "Untitled project")],
     ["Client", esc(quote.clientName || "—")],
+    ["Scope", esc(scopeLabel(quote.scope))],
     ["Date", esc(quote.projectDate || "")],
     ["GFA", quote.gfa ? `${esc(quote.gfa)} m²` : "—"],
     ["Overheads", `${Math.round((Number(quote.overheadPct) || 0) * 100)}%`],
@@ -151,8 +157,8 @@ ${rows.map(([label, value]) => tr(
 }
 
 export function buildQuoteExcelHtml(quote, items, rates, categoryOrder = CATEGORY_ORDER, sectionOrder = SECTION_ORDER) {
-  const groups = groupItems(items, rates, categoryOrder, sectionOrder);
-  const grandTotal = computeGrandTotal(items, rates);
+  const groups = groupItems(items, rates, categoryOrder, sectionOrder, quote.scope);
+  const grandTotal = computeGrandTotal(items, rates, quote.scope);
   const { subtotal, rows: marginRows } = computeMarginLadder(
     grandTotal, quote.overheadPct, quote.contingencyPct, quote.gfa, getMarginSteps()
   );
@@ -307,11 +313,12 @@ const csvField = (v) => {
 const csvRow = (...cells) => cells.map(csvField).join(",");
 
 export function buildQuoteCsv(quote, items, rates, categoryOrder = CATEGORY_ORDER, sectionOrder = SECTION_ORDER) {
-  const groups = groupItems(items, rates, categoryOrder, sectionOrder);
+  const groups = groupItems(items, rates, categoryOrder, sectionOrder, quote.scope);
   const lines = [];
   lines.push(csvRow("GRADCON CONCRETE CONSTRUCTIONS"));
   lines.push(csvRow("Project", quote.projectName || "Untitled project"));
   lines.push(csvRow("Client", quote.clientName || ""));
+  lines.push(csvRow("Scope", scopeLabel(quote.scope)));
   lines.push(csvRow("Date", quote.projectDate || ""));
   lines.push(csvRow("GFA", quote.gfa ? `${quote.gfa} m²` : ""));
   lines.push(csvRow("Overheads", `${Math.round((Number(quote.overheadPct) || 0) * 100)}%`));
@@ -342,7 +349,7 @@ export function buildQuoteCsv(quote, items, rates, categoryOrder = CATEGORY_ORDE
     lines.push(csvRow("", `${category} SUBTOTAL`, "", "", "", "", "", catTotal.toFixed(2)));
   });
 
-  const grandTotal = computeGrandTotal(items, rates);
+  const grandTotal = computeGrandTotal(items, rates, quote.scope);
   lines.push("");
   lines.push(csvRow("", "", "", "GRAND TOTAL (EX GST)", "", "", "", grandTotal.toFixed(2)));
 

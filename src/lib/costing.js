@@ -432,14 +432,50 @@ export function additionalRowsFor(item, catKey) {
  *  - `total` = materialsTotal + labourTotal + additionalTotal. Nothing
  *    else feeds into an element's total cost.
  */
-export function computeElementCost(item, rates) {
+/* ---------- Quote scope (labour only / materials only / both) ----------
+ * `elementScope(item, projectScope)` is the ONE resolution: the element's
+ * own `scope` when it is set to something other than "inherit", else the
+ * project's `quote.scope`, else "both". `categoryChargedUnder(cat, scope)`
+ * is the ONE test of whether a catalog band is money under that scope
+ * (catalog.js `scopeBucket`: material bands drop out of a labour-only quote,
+ * the pumping band drops out of a materials-only quote, "always" bands stay).
+ * The labour matrix drops out of a materials-only quote. Quantities are
+ * never touched — they still drive the crew days and the register — the
+ * excluded money is reported beside the total (`excludedMaterials`,
+ * `excludedLabour`, `excludedTotals[cat]`) so nothing vanishes silently. */
+export const SCOPE_KEYS = ["both", "labour", "materials"];
+export function elementScope(item, projectScope) {
+  const p = SCOPE_KEYS.includes(projectScope) ? projectScope : "both";
+  const s = item && item.scope;
+  return s && s !== "inherit" && SCOPE_KEYS.includes(s) ? s : p;
+}
+export function categoryChargedUnder(cat, scope) {
+  const b = (cat && cat.scopeBucket) || "material";
+  if (scope === "labour") return b !== "material";
+  if (scope === "materials") return b !== "labour";
+  return true;
+}
+export function scopeLabel(scope) {
+  return scope === "labour" ? "Labour only" : scope === "materials" ? "Materials only" : "Labour + materials";
+}
+
+export function computeElementCost(item, rates, projectScope) {
   const categoryTotals = {};
+  const excludedTotals = {};
+  const scope = elementScope(item, projectScope);
   let materialsTotal = 0;
+  let excludedMaterials = 0;
   let concreteQty = 0;
   const ctx = rowContext(item); // poured m³, for the kg/m³ reinforcement rows
+  // money a band earns lands in categoryTotals when the scope charges it, else in excludedTotals
+  const land = (cat, amount) => {
+    if (categoryChargedUnder(cat, scope)) { categoryTotals[cat.key] = (categoryTotals[cat.key] || 0) + amount; materialsTotal += amount; }
+    else { excludedTotals[cat.key] = (excludedTotals[cat.key] || 0) + amount; excludedMaterials += amount; }
+  };
 
   FULL_CATALOG.forEach((cat) => {
-    if (!categoryAppliesTo(cat, item)) { categoryTotals[cat.key] = 0; return; } // a band this element does not carry costs nothing
+    categoryTotals[cat.key] = 0;
+    if (!categoryAppliesTo(cat, item)) return; // a band this element does not carry costs nothing
     let catTotal = 0;
     cat.products.forEach((p) => {
       const qKey = rateKey(cat.key, p.name, p.unit);
@@ -455,9 +491,10 @@ export function computeElementCost(item, rates) {
     // custom rows the estimator added under this category ("Certification"
     // after the last Formwork product, say) — plain qty × rate, same band
     additionalRowsFor(item, cat.key).forEach((a) => { catTotal += additionalRowTotal(a); });
-    categoryTotals[cat.key] = catTotal;
-    materialsTotal += catTotal;
+    land(cat, catTotal);
   });
+  const concreteCat = FULL_CATALOG.find((c) => c.key === "CONCRETE");
+  const specialistCat = FULL_CATALOG.find((c) => c.key === SPECIALIST_CONCRETE_KEY);
 
   // Holcim service fees, applied automatically to the poured volume:
   // minimum cartage on a last load under 4 m³, then the per-m³ production &
@@ -467,13 +504,11 @@ export function computeElementCost(item, rates) {
   [autoMinimumCartage(item, rates), autoConcreteSurcharge(item, rates), autoEnvironmentLevy(item, rates)]
     .forEach((fee) => {
       if (!fee) return;
-      categoryTotals["CONCRETE"] = (categoryTotals["CONCRETE"] || 0) + fee.total;
-      materialsTotal += fee.total;
+      land(concreteCat, fee.total);
     });
   // VicMix charges on the specialist band: pigment washout per truck, short load under the minimum
   autoSpecialistFees(item, rates).forEach((fee) => {
-    categoryTotals[SPECIALIST_CONCRETE_KEY] = (categoryTotals[SPECIALIST_CONCRETE_KEY] || 0) + fee.total;
-    materialsTotal += fee.total;
+    land(specialistCat, fee.total);
   });
 
   // Seamless labour: with labourAuto on, empty matrix cells are driven live
@@ -512,15 +547,24 @@ export function computeElementCost(item, rates) {
     resourceCosts[res.key] = cost;
     labourTotal += cost;
   });
+  // A materials-only quote supplies and does not place: the crew sheet is
+  // still shown (the days are information for the client's own crew) but
+  // earns nothing here.
+  let excludedLabour = 0;
+  if (scope === "materials") { excludedLabour = labourTotal; labourTotal = 0; }
 
   const additionalTotal = additionalRowsFor(item, null).reduce((s, a) => s + additionalRowTotal(a), 0);
 
   return {
+    scope,
     categoryTotals,
+    excludedTotals,
     materialsTotal,
+    excludedMaterials,
     resourceTotals,
     resourceCosts,
     labourTotal,
+    excludedLabour,
     additionalTotal,
     concreteQty,
     total: materialsTotal + labourTotal + additionalTotal,
@@ -620,8 +664,8 @@ export function labourQuantities(item, rates) {
  * — 12 screw piles, 4 pad footings — so the card shows a cost per pile or
  * per footing beside the per-metre and per-square-metre figures (2 Oct 2026).
  */
-export function computeElementUnitRates(item, rates) {
-  const { total, concreteQty } = computeElementCost(item, rates);
+export function computeElementUnitRates(item, rates, projectScope) {
+  const { total, concreteQty } = computeElementCost(item, rates, projectScope);
   if (total <= 0) return [];
   const measures = [
     ["no.", Number(item.measureNo) || 0],
@@ -641,10 +685,10 @@ export function computeElementUnitRates(item, rates) {
  * Geometry header can print the project's $/lm, $/m² and $/m³ beside its
  * measured totals.
  */
-export function computeProjectUnitRates(items, rates) {
+export function computeProjectUnitRates(items, rates, projectScope) {
   let cost = 0, no = 0, lm = 0, m2 = 0, m3 = 0;
   (items || []).forEach((item) => {
-    const c = computeElementCost(item, rates);
+    const c = computeElementCost(item, rates, projectScope);
     cost += c.total;
     m3 += c.concreteQty;
     no += Number(item.measureNo) || 0;
@@ -781,8 +825,16 @@ export function suggestedLabourPrefill(item, rates) {
 }
 
 /** Grand total across every quote item. */
-export function computeGrandTotal(items, rates) {
-  return items.reduce((s, it) => s + computeElementCost(it, rates).total, 0);
+export function computeGrandTotal(items, rates, projectScope) {
+  return items.reduce((s, it) => s + computeElementCost(it, rates, projectScope).total, 0);
+}
+/** The money every scope leaves out, across the quote — shown beside the
+ * total so a labour-only quote states what the materials would have been. */
+export function computeExcludedTotals(items, rates, projectScope) {
+  return items.reduce((acc, it) => {
+    const c = computeElementCost(it, rates, projectScope);
+    return { materials: acc.materials + c.excludedMaterials, labour: acc.labour + c.excludedLabour };
+  }, { materials: 0, labour: 0 });
 }
 
 /**
@@ -823,10 +875,10 @@ export function computeMarginLadder(directCost, overheadPct, contingencyPct, gfa
  * an element with a total contributes proportionally to its own direct
  * cost's share of the whole quote's direct cost.
  */
-export function computeExternalScopeLines(items, rates, overheadPct, contingencyPct, marginPct) {
+export function computeExternalScopeLines(items, rates, overheadPct, contingencyPct, marginPct, projectScope) {
   if (marginPct === undefined) marginPct = getDefaultMargin();
   const costed = items
-    .map((item) => ({ id: item.id, label: item.label, directCost: computeElementCost(item, rates).total }))
+    .map((item) => ({ id: item.id, label: item.label, directCost: computeElementCost(item, rates, projectScope).total }))
     .filter((l) => l.directCost > 0);
   const directTotal = costed.reduce((s, l) => s + l.directCost, 0);
   const { rows } = computeMarginLadder(directTotal, overheadPct, contingencyPct, 0, [marginPct]);

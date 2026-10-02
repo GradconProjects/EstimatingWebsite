@@ -166,7 +166,7 @@ function Bullets({ text }) {
 }
 
 function ReportContent({ quote, items, rates, eq }) {
-  const { lines, totalExGst } = computeExternalScopeLines(items, rates, quote.overheadPct, quote.contingencyPct, getDefaultMargin());
+  const { lines, totalExGst } = computeExternalScopeLines(items, rates, quote.overheadPct, quote.contingencyPct, getDefaultMargin(), quote.scope);
 
   return (
     <>

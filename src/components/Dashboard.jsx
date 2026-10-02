@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Plus, Trash2, ArrowRight, LayoutDashboard, Loader2, FolderOpen, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 import { QUOTE_STATUSES, QUOTE_STATUS_STYLES } from "../data/catalog.js";
-import { computeGrandTotal, computeMarginLadder, money, getDefaultMargin, getMarginSteps } from "../lib/costing.js";
+import { computeGrandTotal, computeMarginLadder, money, getDefaultMargin, getMarginSteps, scopeLabel } from "../lib/costing.js";
 import { readQuoteSummariesDetailed, readQuotesCached, patchQuoteFields } from "../lib/projects.js";
 import { SummaryLoadNotice } from "./atoms.jsx";
 import { dashboardDueLabel, formatDay, OPEN_STATUSES } from "../lib/planner.js";
@@ -41,7 +41,7 @@ function summarizeQuote(quote, liveRates) {
   const items = quote.items || [];
   // A finished project costs off its own pinned rates, exactly as its editor does (lib/rateFreeze.js).
   const rates = effectiveRates(quote, liveRates);
-  const directCost = computeGrandTotal(items, rates);
+  const directCost = computeGrandTotal(items, rates, quote.scope);
   const { subtotal, rows } = computeMarginLadder(
     directCost,
     quote.overheadPct ?? 0.08,
@@ -61,6 +61,7 @@ function summarizeQuote(quote, liveRates) {
     deadline: quote.planner?.deadline || null,
     submittedAt: quote.submittedAt || null,
     completedAt: completedDay(quote),
+    scope: quote.scope && quote.scope !== "both" ? quote.scope : "both",
     gfa: Number(quote.gfa) || 0,
     elementCount: items.length,
     directCost,
@@ -378,7 +379,7 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete,
                     title={s.status}
                   />
                 </td>
-                <td className="px-4 py-3 font-semibold text-[15px] text-neutral-900">{s.name}</td>
+                <td className="px-4 py-3 font-semibold text-[15px] text-neutral-900">{s.name}{s.scope !== "both" && <span className="ml-2 align-middle text-[10px] font-medium px-1.5 py-0.5 rounded bg-orange-100 text-orange-800" title="Quote scope">{scopeLabel(s.scope)}</span>}</td>
                 <td className="px-3 py-2.5">
                   <input
                     value={s.client}

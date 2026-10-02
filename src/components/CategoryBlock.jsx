@@ -24,7 +24,7 @@ function ValidityChip({ validUntil }) {
  * shouldn't apply to a given job, the estimator just leaves those rows
  * blank (blank quantities cost nothing — see computeElementCost).
  */
-export default function CategoryBlock({ cat, item, rates, onQtyChange, onRateChange, onRowRateChange, onQuoteAmountChange, catOpen, toggleCat, catTotal, onAddCustom, onRemoveCustom, onChangeCustom }) {
+export default function CategoryBlock({ cat, item, rates, onQtyChange, onRateChange, onRowRateChange, onQuoteAmountChange, catOpen, toggleCat, catTotal, onAddCustom, onRemoveCustom, onChangeCustom, charged = true, excludedTotal = 0, scopeName = "" }) {
   const hasWeight = cat.products.some((p) => p.unitWeight != null);
   // Custom rows the estimator added under THIS category (item.additional
   // rows carrying cat === this key). They sit after the last catalog product,
@@ -58,9 +58,14 @@ export default function CategoryBlock({ cat, item, rates, onQtyChange, onRateCha
         <span className="flex items-center gap-1.5">
           {catOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
           {cat.label}
+          {!charged && excludedTotal > 0 && (
+            <span className="normal-case tracking-normal font-medium text-[10px] px-1.5 py-0.5 rounded bg-orange-200 text-orange-900" title="This band is not charged under the element's scope — its quantities are kept and still drive the crew days">
+              not charged — {scopeName}
+            </span>
+          )}
         </span>
-        <span className="font-mono tabular-nums normal-case font-semibold text-orange-300">
-          {money2(catTotal)}
+        <span className={`font-mono tabular-nums normal-case font-semibold ${charged ? "text-orange-300" : "text-neutral-400 line-through"}`} title={charged ? undefined : `${money2(excludedTotal)} would be charged under a labour + materials scope`}>
+          {charged ? money2(catTotal) : money2(excludedTotal)}
         </span>
       </button>
       {catOpen && (

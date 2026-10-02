@@ -17,7 +17,7 @@ import { NumInput } from "./atoms.jsx";
  */
 export default function LabourMatrix({
   item, rates, onTaskQtyChange, onTaskMetaChange, onAddTask, onRemoveTask, onRenameTask,
-  resourceTotals, resourceCosts, labourTotal, labourOpen, toggleLabour,
+  resourceTotals, resourceCosts, labourTotal, excludedLabour = 0, labourOpen, toggleLabour,
   labourAuto, autoQtys, onToggleAuto, onResetAuto, labourQtyCtx, onLabourRateChange,
 }) {
   return (
@@ -30,7 +30,8 @@ export default function LabourMatrix({
           {labourOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
           Labour / Equipment — crew, day &amp; hour counts
         </span>
-        <span className="font-mono tabular-nums normal-case font-semibold">{money2(labourTotal)}</span>
+        <span className={`font-mono tabular-nums normal-case font-semibold ${excludedLabour > 0 ? "text-neutral-400 line-through" : ""}`} title={excludedLabour > 0 ? "Crew sheet not charged — materials-only scope (days shown for information)" : undefined}>{excludedLabour > 0 ? money2(excludedLabour) : money2(labourTotal)}</span>
+        {excludedLabour > 0 && <span className="normal-case tracking-normal font-medium text-[10px] px-1.5 py-0.5 rounded bg-orange-200 text-orange-900 ml-2">not charged — materials only</span>}
       </button>
       {labourOpen && (
       <>

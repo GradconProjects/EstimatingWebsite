@@ -23,7 +23,7 @@ import { computeProjectUnitRates, money2 } from "../lib/costing.js";
 let assumptionSeq = 0;
 const newAssumptionId = () => `a${Date.now().toString(36)}${(assumptionSeq++).toString(36)}`;
 
-export default function ProjectGeometryPanel({ items, rates, estimateGeometry, onChangeItem, assumptions, onChangeAssumptions }) {
+export default function ProjectGeometryPanel({ items, rates, estimateGeometry, onChangeItem, assumptions, onChangeAssumptions, scope }) {
   // Elements still waiting on a length or an area — until every element has
   // one the table opens itself, so the figures are asked for rather than
   // hidden behind a fold nobody thinks to open.
@@ -41,7 +41,7 @@ export default function ProjectGeometryPanel({ items, rates, estimateGeometry, o
   // The whole project's cost over each of its measured totals — the same
   // $/lm · $/m² · $/m³ each row shows, taken across every element (the m³
   // comes from the elements' own concrete, so it needs nothing recorded).
-  const projectRates = useMemo(() => computeProjectUnitRates(items, rates), [items, rates]);
+  const projectRates = useMemo(() => computeProjectUnitRates(items, rates, scope), [items, rates, scope]);
 
   const totals = useMemo(
     () =>

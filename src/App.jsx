@@ -3,8 +3,8 @@ import { Settings2, ArrowLeft, Printer, ListPlus, FileSpreadsheet, LayoutDashboa
 import { saveVersion, downloadQuoteFile, parseQuoteFile } from "./lib/quoteVersions.js";
 import { quoteStorageKey } from "./lib/projects.js";
 import VersionsModal from "./components/VersionsModal.jsx";
-import { ELEMENT_TYPES, QUOTE_STATUSES, QUOTE_STATUS_STYLES } from "./data/catalog.js";
-import { defaultRates, newElementItem, computeGrandTotal, uid, money, rateKey, isManualQuoteKey } from "./lib/costing.js";
+import { ELEMENT_TYPES, QUOTE_STATUSES, QUOTE_STATUS_STYLES, QUOTE_SCOPES } from "./data/catalog.js";
+import { defaultRates, newElementItem, computeGrandTotal, uid, money, rateKey, isManualQuoteKey, SCOPE_KEYS, scopeLabel } from "./lib/costing.js";
 import { pendingRateUpdates, readLibraryState, readLastSynced, writeLastSynced, RATES_LIBRARY_KEY } from "./lib/ratesLibrarySync.js";
 import { effectiveRates, statusChangePatch, needsFreeze, freezeRates, frozenRateDrift, hasFrozenRates, isRatesLocked } from "./lib/rateFreeze.js";
 import RateValidityBanner from "./components/RateValidityBanner.jsx";
@@ -722,7 +722,7 @@ function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, rate
       return next;
     });
 
-  const grandTotal = useMemo(() => computeGrandTotal(items, rates), [items, rates]);
+  const grandTotal = useMemo(() => computeGrandTotal(items, rates, quote.scope), [items, rates, quote.scope]);
 
   const exportExcel = () => {
     const filename = quoteExcelFilename(quote);
@@ -784,9 +784,24 @@ function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, rate
               placeholder="Project name — click to edit"
               className="bg-transparent border-0 text-white font-semibold text-base w-full focus:outline-none focus:underline decoration-orange-400 placeholder:text-blue-400"
             />
+            {/* Quote SCOPE — set once for the project here, under the name so
+                the header row keeps its width; any element can differ on its
+                own card (Grady, 2 Oct 2026: "at project setup, one should be
+                able to select materials only or labour only"). */}
+            <label className="flex items-center gap-1.5 mt-0.5 text-[11px] text-blue-200" title="What this quote prices: labour and materials, labour only (materials supplied by others) or materials only (supply only). Any element card can differ from the project.">
+              <span className="uppercase tracking-widest text-[10px] text-blue-300">Scope</span>
+              <select
+                value={SCOPE_KEYS.includes(quote.scope) ? quote.scope : "both"}
+                onChange={(e) => setQuote((q) => ({ ...q, scope: e.target.value }))}
+                className={`bg-blue-900 border border-blue-800 rounded px-1.5 py-0.5 text-[11px] font-semibold ${quote.scope && quote.scope !== "both" ? "text-orange-300" : "text-white"}`}
+                aria-label="Quote scope"
+              >
+                {QUOTE_SCOPES.map((sc) => <option key={sc.key} value={sc.key} title={sc.label}>{sc.label}</option>)}
+              </select>
+            </label>
           </div>
           <div className="text-right flex-none">
-            <div className="text-[10px] uppercase tracking-widest text-blue-300">Live Quote Total (ex GST)</div>
+            <div className="text-[10px] uppercase tracking-widest text-blue-300">Live Quote Total (ex GST){quote.scope && quote.scope !== "both" ? ` · ${scopeLabel(quote.scope)}` : ""}</div>
             <div className="font-mono tabular-nums text-2xl font-bold text-orange-400">{money(grandTotal)}</div>
           </div>
           <button
@@ -960,6 +975,7 @@ function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, rate
             items={items}
             rates={rates}
             estimateGeometry={quote.estimateGeometry}
+            scope={quote.scope}
             onChangeItem={updateItem}
             assumptions={quote.assumptions}
             onChangeAssumptions={(assumptions) => setQuote((q) => ({ ...q, assumptions }))}
@@ -977,6 +993,7 @@ function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, rate
               onReorder={reorderItems}
               onLabourRateChange={setLabourRate}
               onMaterialRateChange={setMaterialRate}
+              projectScope={quote.scope}
             />
           ))}
           {items.length === 0 && (
@@ -994,6 +1011,7 @@ function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, rate
             rates={rates}
             categoryOrder={categoryOrder}
             sectionOrder={sectionOrder}
+            scope={quote.scope}
             gfa={quote.gfa}
             setGfa={(v) => setQuote((q) => ({ ...q, gfa: v }))}
             overheadPct={quote.overheadPct}

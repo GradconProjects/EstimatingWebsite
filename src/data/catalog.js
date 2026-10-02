@@ -357,7 +357,7 @@ export const FULL_CATALOG = [
     ["Specialist finishing concrete (subcontract quote)", "quote", null, 0],
     ["Specialist finish (other — specify in description)", "m2", null, 60],
   ]},
-  { key: "CONCRETE PUMPING", weightBasis: false, products: [
+  { key: "CONCRETE PUMPING", weightBasis: false, scopeBucket: "labour", products: [
     ["Line pump — up to 70m of line (4 hr min)", "hr", null, 200, null, null, 4],
     ["Line pump — 70-90m of line (4 hr min)", "hr", null, 240, null, null, 4],
     ["Line pump — over 90m of line (quote only)", "quote", null, 0],
@@ -373,7 +373,7 @@ export const FULL_CATALOG = [
     ["Saturday work (6 hr min, at the pump's hourly rate)", "hr", null, 220, null, null, 6],
     ["Cancellation (5 hr min, at the pump's hourly rate)", "hr", null, 220, null, null, 5],
   ]},
-  { key: "RATE ITEMS", weightBasis: false, products: [
+  { key: "RATE ITEMS", weightBasis: false, scopeBucket: "always", products: [
     ["Hobbs", "m", null, 105], ["Plinths", "m2", null, 610], ["0-50mm set downs", "m", null, 20], ["51-100mm set downs", "m", null, 45],
     ["101mm-150mm setdown", "m", null, 80], ["Steps", "m", null, 200], ["Screeds", "m2", null, 120], ["Screeds (decorative)", "m2", null, 140],
     ["Insitu Walls", "m2", null, 760], ["Stair (floor-floor)", "l/m risers", null, 682], ["Shotcrete", "m2", null, 300],
@@ -447,7 +447,7 @@ export const FULL_CATALOG = [
    * "+ Add item under PRELIMINARIES" takes anything not listed. The Cost
    * Planner keeps its own Preliminaries list; a published Quotes line that
    * has no name match there lands as a custom BOQ row, so nothing is lost. */
-  { key: "PRELIMINARIES", weightBasis: false, visibleFor: ["PRELIMINARIES"], products: [
+  { key: "PRELIMINARIES", weightBasis: false, visibleFor: ["PRELIMINARIES"], scopeBucket: "always", products: [
     // Traffic management
     ["Traffic management plan (TMP) & permits — prepare / lodge", "each", null, 1800],
     ["Traffic controller (accredited)", "hr", null, 68],
@@ -624,7 +624,7 @@ export const FULL_CATALOG = [
     ["Saw cutting (subcontract quote)", "quote", null, null],
     ["Saw cuts / dowels (other — specify in description)", "m", null, 0],
   ]},
-  { key: "OTHER ALLOWANCES", weightBasis: false, products: [
+  { key: "OTHER ALLOWANCES", weightBasis: false, scopeBucket: "always", products: [
     // Excavation (bank m³ dug) and Soil removal (loose m³ carted away) are
     // SEPARATE quantities: each drives its own crew-sheet row (see
     // labourQuantities / taskRowMeta in costing.js). Excavation seeds at $0
@@ -632,7 +632,7 @@ export const FULL_CATALOG = [
     ["Inspector", "each", null, 130], ["Excavation", "m3", null, 0], ["Soil removal", "m3", null, 40], ["Bin Hire", "each", null, 600], ["Sawcutting", "day", null, 450],
     ["Concrete test", "each", null, 241.5], ["Off-site washout fee", "each", null, 400], ["Truck washout fee", "each", null, 10.5],
   ]},
-  { key: "SUB CONTRACTORS / TEMPORARY WORKS", weightBasis: false, products: [
+  { key: "SUB CONTRACTORS / TEMPORARY WORKS", weightBasis: false, scopeBucket: "always", products: [
     ["Excavation (subcontract)", "quote", null, null], ["Formwork (subcontract)", "quote", null, null], ["Steel supply", "quote", null, null], ["Steel fix", "quote", null, null],
     ["Screw Piling", "quote", null, null], ["CFA Piling", "quote", null, null],
     // Bored piers: the DRILLING is a subcontract quote item — the pier's own
@@ -643,8 +643,31 @@ export const FULL_CATALOG = [
 ].map((c) => ({
   ...c,
   label: c.label || c.key,
+  // Quote SCOPE bucket (2 Oct 2026, Grady: "labour only options … some
+  // elements labour only and others including materials … at project setup
+  // select materials only or labour only"): "material" (the default — every
+  // supply band: reo, concrete, formwork, insulation, screeds, hydronic,
+  // accessories, dowels) is NOT charged on a labour-only quote; "labour"
+  // (concrete pumping — placement, Gradcon's side of the work) is NOT
+  // charged on a materials-only quote; "always" (rate items, preliminaries,
+  // other allowances, subcontract quotes — figures the estimator types
+  // deliberately) is charged under every scope. Quantities are ALWAYS kept:
+  // they still drive the crew days. See categoryChargedUnder in costing.js.
+  scopeBucket: c.scopeBucket || "material",
   products: c.products.map(([name, unit, unitWeight, unitCost, sheetArea, barLength, minQty]) => ({ name, unit, unitWeight, unitCost, sheetArea, barLength, minQty })),
 }));
+
+/* ---------- Quote scope ----------
+ * What a quote (or one element of it) PRICES: labour and materials (supply &
+ * install, the default), labour only (the client supplies the materials) or
+ * materials only (supply only). `quote.scope` is the project's setting;
+ * `item.scope` ("inherit" or unset = the project's) lets single elements
+ * differ, so a labour-only job can still supply, say, its dowels. */
+export const QUOTE_SCOPES = [
+  { key: "both", label: "Labour + materials (supply & install)", short: "Labour + materials" },
+  { key: "labour", label: "Labour only — materials supplied by others", short: "Labour only" },
+  { key: "materials", label: "Materials only — supply only, no labour", short: "Materials only" },
+];
 
 /* ---------- Element types ----------
  * Every concrete/structural element Gradcon might reasonably meet across

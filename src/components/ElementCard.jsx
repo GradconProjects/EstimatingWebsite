@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { ChevronDown, ChevronRight, Copy, Trash2, Paperclip, X, RotateCw, ZoomIn, ZoomOut, Maximize2, ArrowUp, ArrowDown, GripVertical } from "lucide-react";
-import { FULL_CATALOG, LABOUR_TEMPLATES } from "../data/catalog.js";
-import { uid, money2, computeElementCost, computeElementUnitRates, autoLabourQtys, labourQuantities, categoryAppliesTo } from "../lib/costing.js";
+import { FULL_CATALOG, LABOUR_TEMPLATES, QUOTE_SCOPES } from "../data/catalog.js";
+import { uid, money2, computeElementCost, computeElementUnitRates, autoLabourQtys, labourQuantities, categoryAppliesTo, elementScope, categoryChargedUnder, scopeLabel, SCOPE_KEYS } from "../lib/costing.js";
 import { pdfToJpegPages } from "../lib/pdfToImages.js";
 import CategoryBlock from "./CategoryBlock.jsx";
 import LabourMatrix from "./LabourMatrix.jsx";
@@ -14,7 +14,7 @@ import AdditionalItems from "./AdditionalItems.jsx";
  * the quote's item order (the summary rail, the print report and the
  * export all follow it), the same order QuoteSummary's own drag edits.
  */
-export default function ElementCard({ item, rates, onChange, onRemove, onDuplicate, onLabourRateChange, onMaterialRateChange, onMoveUp, onMoveDown, onReorder }) {
+export default function ElementCard({ item, rates, onChange, onRemove, onDuplicate, onLabourRateChange, onMaterialRateChange, onMoveUp, onMoveDown, onReorder, projectScope }) {
   const [dragOver, setDragOver] = useState(false);
   // Every material category starts collapsed — only Labour/Equipment starts
   // expanded (it's still collapsible too, just defaults open).
@@ -28,10 +28,10 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
   const [labourOpen, setLabourOpen] = useState(false);
   const [cardOpen, setCardOpen] = useState(false);
 
-  const cost = useMemo(() => computeElementCost(item, rates), [item, rates]);
+  const cost = useMemo(() => computeElementCost(item, rates, projectScope), [item, rates, projectScope]);
   // Benchmark rates for the panel beside this row — $/lm and $/m² over the
   // geometry measured in Estimates, $/m³ over this element's own concrete.
-  const unitRates = useMemo(() => computeElementUnitRates(item, rates), [item, rates]);
+  const unitRates = useMemo(() => computeElementUnitRates(item, rates, projectScope), [item, rates, projectScope]);
 
   const patch = (fn) => onChange(fn(item));
 
@@ -303,8 +303,23 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
             className="w-full bg-transparent border-0 text-white font-semibold text-[15px] focus:outline-none focus:underline decoration-orange-400"
           />
         </div>
+        {/* Element scope: the project's unless this card says otherwise —
+            a labour-only job can still SUPPLY one element, or price one
+            element supply-only. The select is the only control. */}
+        <label className="flex-none text-right" onClick={(e) => e.stopPropagation()} title={`Scope of this element: ${scopeLabel(cost.scope)}. "Project" follows the quote's own scope (${scopeLabel(elementScope({}, projectScope))}).`}>
+          <div className="text-[10px] uppercase tracking-widest text-blue-300">Scope</div>
+          <select
+            value={item.scope && item.scope !== "inherit" && SCOPE_KEYS.includes(item.scope) ? item.scope : "inherit"}
+            onChange={(e) => patch((it) => ({ ...it, scope: e.target.value === "inherit" ? undefined : e.target.value }))}
+            className={`bg-blue-900 border border-blue-800 rounded px-1.5 py-0.5 text-[11px] font-semibold ${item.scope && item.scope !== "inherit" ? "text-orange-300" : "text-blue-100"}`}
+            aria-label="Element scope"
+          >
+            <option value="inherit">Project ({scopeLabel(elementScope({}, projectScope))})</option>
+            {QUOTE_SCOPES.map((sc) => <option key={sc.key} value={sc.key}>{sc.short}</option>)}
+          </select>
+        </label>
         <div className="text-right flex-none">
-          <div className="text-[10px] uppercase tracking-widest text-blue-300">Total</div>
+          <div className="text-[10px] uppercase tracking-widest text-blue-300">Total{cost.scope !== "both" ? ` · ${scopeLabel(cost.scope)}` : ""}</div>
           <div className="font-mono tabular-nums text-lg font-bold text-orange-400">{money2(cost.total)}</div>
         </div>
         {(onMoveUp !== undefined || onMoveDown !== undefined) && (
@@ -329,8 +344,8 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
         <div className="p-3 space-y-2 bg-neutral-50">
           <div className="text-xs text-neutral-500 flex flex-wrap gap-x-4 gap-y-1 px-1">
             <span>Concrete qty: <b className="font-mono text-neutral-700">{cost.concreteQty.toFixed(2)} m³</b></span>
-            <span>Materials: <b className="font-mono text-neutral-700">{money2(cost.materialsTotal)}</b></span>
-            <span>Labour/Equipment: <b className="font-mono text-neutral-700">{money2(cost.labourTotal)}</b></span>
+            <span>Materials: <b className="font-mono text-neutral-700">{money2(cost.materialsTotal)}</b>{cost.excludedMaterials > 0 && <span className="text-orange-700" title="Supply bands not charged under this element's labour-only scope — quantities kept, they still drive the crew days"> · {money2(cost.excludedMaterials)} not charged ({scopeLabel(cost.scope)})</span>}</span>
+            <span>Labour/Equipment: <b className="font-mono text-neutral-700">{money2(cost.labourTotal)}</b>{cost.excludedLabour > 0 && <span className="text-orange-700" title="Crew sheet not charged under this element's materials-only scope"> · {money2(cost.excludedLabour)} not charged ({scopeLabel(cost.scope)})</span>}</span>
             <span>Custom items: <b className="font-mono text-neutral-700">{money2(cost.additionalTotal)}</b></span>
           </div>
 
@@ -485,6 +500,9 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
               catOpen={openCats[cat.key]}
               toggleCat={() => setOpenCats((o) => ({ ...o, [cat.key]: !o[cat.key] }))}
               catTotal={cost.categoryTotals[cat.key]}
+              charged={categoryChargedUnder(cat, cost.scope)}
+              excludedTotal={cost.excludedTotals[cat.key] || 0}
+              scopeName={scopeLabel(cost.scope)}
               onAddCustom={addAdditional}
               onRemoveCustom={removeAdditional}
               onChangeCustom={changeAdditional}
@@ -508,6 +526,7 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
             resourceTotals={cost.resourceTotals}
             resourceCosts={cost.resourceCosts}
             labourTotal={cost.labourTotal}
+            excludedLabour={cost.excludedLabour}
             labourOpen={labourOpen}
             toggleLabour={() => setLabourOpen((o) => !o)}
           />

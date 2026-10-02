@@ -343,6 +343,36 @@ lived in the one shared rate that two other projects also carried):
    only way a pinned project re-prices is its "Re-price with current rates"
    button (two clicks; a `before-reprice` version is kept first).
 
+## Quote scope: labour + materials, labour only, materials only
+
+Grady, 2 Oct 2026: "labour only options … some elements labour only and
+others including materials … at project setup select materials only or
+labour only". `quote.scope` ("both" default, "labour", "materials";
+`QUOTE_SCOPES` in catalog.js) is set in the editor header beside the live
+total; `item.scope` (unset / "inherit" = the project's) is the select on an
+element card's header, so one element can differ. `elementScope(item,
+projectScope)` in costing.js is the ONE resolution and
+`categoryChargedUnder(cat, scope)` the ONE test: every catalog band carries
+a `scopeBucket` — "material" (the default: every supply band) is NOT charged
+under labour-only, "labour" (CONCRETE PUMPING — placement) is NOT charged
+under materials-only, "always" (RATE ITEMS, PRELIMINARIES, OTHER
+ALLOWANCES, SUB CONTRACTORS / TEMPORARY WORKS — figures typed
+deliberately) is charged under every scope; the crew sheet drops out of
+materials-only. **Quantities are never touched** — they still drive the crew
+days, the register and the bridge — and the excluded money is returned
+beside the total (`excludedMaterials`, `excludedLabour`,
+`excludedTotals[cat]`, `computeExcludedTotals(items, rates, scope)`) so it
+can be stated, never lost. `computeElementCost`, `computeGrandTotal`,
+`computeElementUnitRates`, `computeProjectUnitRates` and
+`computeExternalScopeLines` all take the project scope as their LAST
+argument; every caller (ElementCard, QuoteSummary, ProjectGeometryPanel,
+PrintQuoteReport, exportQuote, tenderQuoteDefaults, ExternalQuoteReport,
+Dashboard's `summarizeQuote`) passes `quote.scope` — a new caller that omits
+it silently prices as labour + materials. Cards show a "not charged — <scope>"
+tag on an excluded band (its would-be figure struck through), the labour
+matrix likewise under materials-only; the summary rail, print report and
+exports state the scope and the figures not charged. Verify-covered.
+
 ## Dashboard opens on the open work only
 
 `OPEN_STATUSES` (`lib/planner.js`, used by `Dashboard.jsx`) = Queued, Estimating: the status filter

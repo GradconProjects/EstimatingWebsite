@@ -2,7 +2,7 @@ import {
   CATEGORY_ORDER, SECTION_ORDER, FULL_CATALOG, RESOURCE_COLS,
 } from "../data/catalog.js";
 import {
-  computeElementCost, computeGrandTotal, computeMarginLadder, rateKey, rowRate, computeRowTotal, rowContext, money, money2, getDefaultMargin, getMarginSteps, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, additionalRowsFor, additionalRowTotal, autoSpecialistFees, categoryAppliesTo } from "../lib/costing.js";
+  computeElementCost, computeGrandTotal, computeMarginLadder, rateKey, rowRate, computeRowTotal, rowContext, money, money2, getDefaultMargin, getMarginSteps, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, additionalRowsFor, additionalRowTotal, autoSpecialistFees, categoryAppliesTo, computeExcludedTotals, categoryChargedUnder, scopeLabel } from "../lib/costing.js";
 import { GRADCON_LOGO_DATA_URI } from "../lib/logo.js";
 
 /**
@@ -77,7 +77,8 @@ export default function PrintQuoteReport({ quote, items, rates, categoryOrder = 
 }
 
 function ReportContent({ quote, items, rates, categoryOrder, sectionOrder }) {
-  const grandTotal = computeGrandTotal(items, rates);
+  const grandTotal = computeGrandTotal(items, rates, quote.scope);
+  const excluded = computeExcludedTotals(items, rates, quote.scope);
   const { subtotal, rows } = computeMarginLadder(
     grandTotal, quote.overheadPct, quote.contingencyPct, quote.gfa, getMarginSteps()
   );
@@ -89,6 +90,10 @@ function ReportContent({ quote, items, rates, categoryOrder, sectionOrder }) {
         <div className="text-xl font-bold">{quote.projectName || "Untitled project"}</div>
         {quote.clientName && <div className="text-neutral-700">Client: {quote.clientName}</div>}
         <div className="text-neutral-600">Date: {quote.projectDate}</div>
+        <div className="text-neutral-700 font-semibold">Scope: {scopeLabel(quote.scope)}{quote.scope === "labour" ? " — materials supplied by others" : quote.scope === "materials" ? " — supply only, no labour" : ""}</div>
+        {(excluded.materials > 0 || excluded.labour > 0) && (
+          <div className="text-neutral-600 text-xs">Not charged under scope: {excluded.materials > 0 ? `materials ${money2(excluded.materials)}` : ""}{excluded.materials > 0 && excluded.labour > 0 ? " · " : ""}{excluded.labour > 0 ? `labour ${money2(excluded.labour)}` : ""}</div>
+        )}
       </div>
 
       {categoryOrder.map((category) => {
@@ -106,7 +111,7 @@ function ReportContent({ quote, items, rates, categoryOrder, sectionOrder }) {
                     {section}
                   </div>
                   {secItems.map((item) => (
-                    <ElementReportBlock key={item.id} item={item} rates={rates} />
+                    <ElementReportBlock key={item.id} item={item} rates={rates} projectScope={quote.scope} />
                   ))}
                 </div>
               );
@@ -182,8 +187,15 @@ function ReportContent({ quote, items, rates, categoryOrder, sectionOrder }) {
   );
 }
 
-function ElementReportBlock({ item, rates }) {
-  const cost = computeElementCost(item, rates);
+/** The catalog band a report line belongs to, read back off its label —
+ * "(CONCRETE)", "(FORMWORK — custom)", "(CONCRETE — auto, …)". */
+function catKeyFromLabel(label) {
+  const m = /\(([^()—]+?)(?: — [^()]*)?\)\s*$/.exec(label || "");
+  return m ? m[1].trim() : "";
+}
+function ElementReportBlock({ item, rates, projectScope }) {
+  const cost = computeElementCost(item, rates, projectScope);
+  const chargedCat = (key) => { const cat = FULL_CATALOG.find((c) => c.key === key); return cat ? categoryChargedUnder(cat, cost.scope) : true; };
 
   const materialLines = [];
   const ctx = rowContext(item);
@@ -239,16 +251,16 @@ function ElementReportBlock({ item, rates }) {
   return (
     <div className="mb-2 break-inside-avoid">
       <div className="flex justify-between font-semibold border-b border-neutral-300 py-0.5">
-        <span>{item.label}</span>
+        <span>{item.label}{cost.scope !== (projectScope && projectScope !== "both" ? projectScope : "both") ? ` (${scopeLabel(cost.scope)})` : ""}</span>
         <span>{money2(cost.total)}</span>
       </div>
       {item.description && (
         <div className="pl-2 text-neutral-600 italic whitespace-pre-wrap py-0.5">{item.description}</div>
       )}
-      {[...materialLines, ...labourLines].map((l) => (
-        <div key={l.key} className="flex justify-between pl-2 text-neutral-700">
+      {[...materialLines.map((l) => ({ ...l, charged: chargedCat(catKeyFromLabel(l.label)) })), ...labourLines.map((l) => ({ ...l, charged: cost.scope !== "materials" }))].map((l) => (
+        <div key={l.key} className={`flex justify-between pl-2 ${l.charged ? "text-neutral-700" : "text-neutral-400"}`}>
           <span>{l.label} — {l.qty.toLocaleString("en-AU", { maximumFractionDigits: 2 })} {l.unit}</span>
-          <span>{money2(l.total)}</span>
+          <span>{l.charged ? money2(l.total) : <span className="italic">not charged ({scopeLabel(cost.scope)}) — {money2(l.total)}</span>}</span>
         </div>
       ))}
       {customLines.map((a) => (

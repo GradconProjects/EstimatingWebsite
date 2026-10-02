@@ -20,6 +20,7 @@ import {
   computeElementUnitRates, computeProjectUnitRates, rowContext, computeElementReinforcementTonnes, getMarginSteps, additionalRowsFor, autoPigmentWashout, autoSpecialistShortLoad, autoSpecialistFees, categoryAppliesTo } from "../src/lib/costing.js";
 import { buildImportFromEstimate, normalizeElementName, geometryForLabel } from "../src/lib/estimateImport.js";
 import * as importAll from "../src/lib/estimateImport.js";
+import * as costingAll from "../src/lib/costing.js";
 import { PROJECT_SORTS, sortProjects, sortValue, defaultSortDir, preferredSortKey, isProjectSortKey } from "../src/lib/projectSort.js";
 
 let passed = 0;
@@ -1727,6 +1728,63 @@ check("Concrete wastage by work type: the five classes, their defaults and range
   assert.deepEqual(libTypes, estTypes, "every Estimates element type, label, group and built-in class is listed in the library, in order");
   assert.ok(/concreteWasteClassByType: \{\}/.test(lib) && /CONC_WASTE_TYPE_MAP=\(g\.concreteWasteClassByType/.test(est), "a moved type reaches Estimates through global.concreteWasteClassByType");
   assert.ok(/function applyLibraryWasteSettings/.test(est) && /data-bulk-act="waste"/.test(est) && /openWasteApplyDialog\(\)/.test(est), "the apply-to-selected button and bulk action exist");
+});
+
+check("Quote scope: labour-only drops the supply bands and keeps the crew; materials-only drops the crew and pumping; an element can differ from the project; nothing is lost silently", () => {
+  const { elementScope, categoryChargedUnder, scopeLabel, computeExcludedTotals } = costingAll;
+  const { QUOTE_SCOPES } = catalogAll;
+  assert.deepEqual(QUOTE_SCOPES.map((s) => s.key), ["both", "labour", "materials"]);
+  // buckets: supply bands are material; pumping is labour; rate items, prelims, other allowances and subcontract quotes are always
+  const bucket = (k) => FULL_CATALOG.find((c) => c.key === k).scopeBucket;
+  ["CONCRETE", "PROCESSED BAR", "SQUARE MESH", "FORMWORK", "INSULATION", "SCREEDS", "HYDRONIC HEATING", "OTHER ACCESSORIES", "SAW CUTS & DOWELS", "SPECIALIST FINISHING CONCRETE", "REINFORCEMENT BY RATE"].forEach((k) => assert.equal(bucket(k), "material", k));
+  assert.equal(bucket("CONCRETE PUMPING"), "labour");
+  ["RATE ITEMS", "PRELIMINARIES", "OTHER ALLOWANCES", "SUB CONTRACTORS / TEMPORARY WORKS"].forEach((k) => assert.equal(bucket(k), "always", k));
+  const conc = FULL_CATALOG.find((c) => c.key === "CONCRETE"), pump = FULL_CATALOG.find((c) => c.key === "CONCRETE PUMPING"), rate = FULL_CATALOG.find((c) => c.key === "RATE ITEMS");
+  assert.ok(categoryChargedUnder(conc, "both") && !categoryChargedUnder(conc, "labour") && categoryChargedUnder(conc, "materials"));
+  assert.ok(categoryChargedUnder(pump, "both") && categoryChargedUnder(pump, "labour") && !categoryChargedUnder(pump, "materials"));
+  assert.ok(categoryChargedUnder(rate, "labour") && categoryChargedUnder(rate, "materials"));
+  // resolution: element over project over "both"; "inherit" and junk fall through
+  assert.equal(elementScope({}, undefined), "both"); assert.equal(elementScope({}, "labour"), "labour");
+  assert.equal(elementScope({ scope: "inherit" }, "labour"), "labour"); assert.equal(elementScope({ scope: "materials" }, "labour"), "materials");
+  assert.equal(elementScope({ scope: "bogus" }, "bogus"), "both");
+  assert.equal(scopeLabel("labour"), "Labour only"); assert.equal(scopeLabel("materials"), "Materials only"); assert.equal(scopeLabel(undefined), "Labour + materials");
+  // a slab with concrete, formwork, pumping and a rate item; the crew sheet derives days from the concrete
+  const rates = defaultRates();
+  const item = newElementItem(ELEMENT_TYPES.find((t) => t.id === "slab_on_ground"));
+  item.qtys[rateKey("CONCRETE", "32 mpa", "m3")] = 10;
+  item.qtys[rateKey("FORMWORK", "Conventional", "m2")] = 20;
+  item.qtys[rateKey("CONCRETE PUMPING", "Line pump — up to 70m of line (4 hr min)", "hr")] = 4;
+  item.qtys[rateKey("RATE ITEMS", "Steps", "m")] = 2;
+  const both = computeElementCost(item, rates);
+  assert.ok(both.materialsTotal > 0 && both.labourTotal > 0, "the baseline has materials and labour");
+  assert.equal(both.scope, "both"); assert.equal(both.excludedMaterials, 0); assert.equal(both.excludedLabour, 0);
+  const lab = computeElementCost(item, rates, "labour");
+  assert.equal(lab.scope, "labour");
+  assert.equal(lab.categoryTotals["CONCRETE"], 0); assert.equal(lab.categoryTotals["FORMWORK"], 0);
+  assert.ok(lab.excludedTotals["CONCRETE"] > 0 && lab.excludedTotals["FORMWORK"] > 0, "the supply bands' money is reported, not lost");
+  assert.equal(lab.categoryTotals["CONCRETE PUMPING"], both.categoryTotals["CONCRETE PUMPING"], "pumping stays on a labour-only quote");
+  assert.equal(lab.categoryTotals["RATE ITEMS"], both.categoryTotals["RATE ITEMS"], "rate items stay under every scope");
+  assert.equal(lab.labourTotal, both.labourTotal, "the crew sheet is unchanged — the concrete quantity still drives it");
+  assert.equal(lab.concreteQty, 10, "quantities are never touched");
+  assert.ok(Math.abs(lab.materialsTotal + lab.excludedMaterials - both.materialsTotal) < 1e-6, "charged + excluded = the full materials figure");
+  assert.ok(Math.abs(lab.total - (both.total - lab.excludedMaterials)) < 1e-6);
+  const mat = computeElementCost(item, rates, "materials");
+  assert.equal(mat.scope, "materials"); assert.equal(mat.labourTotal, 0); assert.equal(mat.excludedLabour, both.labourTotal, "the crew sheet is reported, not charged");
+  assert.equal(mat.categoryTotals["CONCRETE PUMPING"], 0); assert.ok(mat.excludedTotals["CONCRETE PUMPING"] > 0, "pumping is placement — not supply");
+  assert.equal(mat.categoryTotals["CONCRETE"], both.categoryTotals["CONCRETE"]); assert.equal(mat.categoryTotals["RATE ITEMS"], both.categoryTotals["RATE ITEMS"]);
+  assert.deepEqual(mat.resourceCosts, both.resourceCosts, "crew days still shown for information");
+  // the Holcim fees ride with the concrete band: not charged under labour-only
+  item.qtys[rateKey("CONCRETE", "32 mpa", "m3")] = 11;   // a 3 m³ part load → minimum cartage
+  const lab2 = computeElementCost(item, rates, "labour"); const both2 = computeElementCost(item, rates);
+  assert.equal(lab2.categoryTotals["CONCRETE"], 0); assert.ok(Math.abs(lab2.excludedTotals["CONCRETE"] - both2.categoryTotals["CONCRETE"]) < 1e-6, "cartage, surcharge and levy are excluded with the concrete");
+  // an element can differ from the project, and the grand total follows every element's own scope
+  const supplyOne = { ...item, scope: "both", qtys: { ...item.qtys } };
+  const items = [item, supplyOne];
+  const g = computeGrandTotal(items, rates, "labour");
+  assert.ok(Math.abs(g - (lab2.total + both2.total)) < 1e-6, "labour-only project, one element priced labour + materials");
+  const ex = computeExcludedTotals(items, rates, "labour");
+  assert.ok(Math.abs(ex.materials - lab2.excludedMaterials) < 1e-6 && ex.labour === 0);
+  assert.ok(Math.abs(computeGrandTotal(items, rates) - 2 * both2.total) < 1e-6, "no project scope = labour + materials, as before");
 });
 
 check("Estimates' standalone screed: SCREED_TYPES mirror every m² SCREEDS catalog product by exact name", () => {
