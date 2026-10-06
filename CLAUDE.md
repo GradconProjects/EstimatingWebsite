@@ -1000,16 +1000,21 @@ element families waits on the owner's approval of the pad footing.
   asks for the ratio to be confirmed (verify). **A slab with no proper bar
   design is taken BY AREA instead** (`reoMethod: "area"`, 6 Oct 2026, Grady:
   "i want the square meter alone and the spacing and bar type only"):
-  `reoAreaM2` (blank = the element's own plan area from `reoRateArea(d)` =
-  `_autoAreaM2 || _autoInsArea || _autoBlindArea`, the same area Project
-  Geometry publishes), `reoAreaDia` (N12), `reoAreaSpacing` (200),
-  `reoAreaWays` ("each" = two directions, the default, or "one"),
-  `reoAreaLayers` (whole number, blank = 1 — a top and bottom mat is 2;
-  Grady: "it only has one layer") and a lap tick; `applyReoArea` emits ONE
-  bar line = area ÷ spacing × directions × layers,
-  replacing the detailed lines like the rate does. No area at all, or no
-  spacing, is a completeness warning. `out.reoRate` carries `{basis: "m3" |
-  "area", rate, conc, area, kg, metres, dia, spacing, ways, kgPerM3,
+  one row per LAYER in `reoAreaRows[]` (`{area, dia, spacing, ways}` — area
+  blank = the element's own plan area from `reoRateArea(d)` = `_autoAreaM2 ||
+  _autoInsArea || _autoBlindArea`, the same area Project Geometry publishes;
+  `ways` "each" = two directions or "one"; "+ Add layer" through `addRow`,
+  whose template sits BEFORE the generic `/Rows$/` rule) and a lap tick —
+  Grady: "it only has one layer" → "i want to be flexible with layers".
+  `reoAreaLayerRows(d)` is the ONE reading: the stored rows, else the single
+  field set a takeoff saved earlier on 6 Oct 2026 (`reoAreaM2`, `reoAreaDia`,
+  `reoAreaSpacing`, `reoAreaWays`) repeated `reoAreaLayers` times, seeded
+  into `reoAreaRows` the first time the table renders; `reoAreaRowMetres` is
+  the ONE row arithmetic (area ÷ spacing × directions). `applyReoArea` emits
+  ONE bar line PER LAYER, replacing the detailed lines like the rate does; the
+  table's metres cells refresh live. No layer, a layer with no area anywhere,
+  or no spacing, is a completeness warning. `out.reoRate` carries `{basis:
+  "m3" | "area", rate, conc, area, kg, metres, dia, layers, rows, kgPerM3,
   kgPerM2}` and `reoRateHintText` states the result both per m³ and per m²
   under either method (refreshed live by `refreshCardResults`); the card
   head and the Results totals show the element's steel rate in kg/m³ and,
