@@ -373,6 +373,31 @@ tag on an excluded band (its would-be figure struck through), the labour
 matrix likewise under materials-only; the summary rail, print report and
 exports state the scope and the figures not charged. Verify-covered.
 
+## Roof is its own element category (both apps)
+
+Grady, 6 Oct 2026: "INCLUDE ROOF as an element category to include all roof
+concrete elements, including box gutters, suspended slabs propped and
+cantilevered". Quotes: `ROOF` in `ELEMENT_TYPES`, right after SUSPENDED
+STRUCTURE (the roof sits on it; `verify.mjs` pins the order), sections ROOF
+SLABS (propped roof slab, cantilevered roof slab / canopy, plant deck, lift
+overrun), ROOF BEAMS (roof / band beam) and ROOF GUTTERS & PARAPETS (concrete
+box gutter, parapet / upstand, roof plinth / plant kerb / hob) — 8 types, all
+on the `slab_suspended` crew sheet except the parapet (`wall`). Estimates: the
+`Roof` library group carries the same eight (`roofslab` keeps its id, its
+label is now "RC Roof Slab (propped)"; `roofslabcant`, `plantdeck`,
+`liftoverrun` are suspended `slab`s; `roofbeam` is a `beam` with
+`beamCategory: "Roof"`; `parapet` a `wall`; `roofplinth` a `kerb`; `boxgutter`
+a `tankbox` of kind "Box Gutter"). **A box gutter is a SUSPENDED trough**:
+`TANKBOX_SUSPENDED` kinds never dig or blind (the Roof group is not a ground
+group) and emit "Soffit formwork" over the external footprint while the
+card's `soffitForm` box is ticked (default) — untick it when the gutter is
+cast integrally with the roof slab. `DEFAULT_COVERS` carries the new slab
+categories, the Roof beam and the Box Gutter; the library's `EST_WASTE_TYPES`
+mirror and `ESTIMATE_TYPE_MAP` (every roof label → its Quotes id) are
+verify-covered; the CSV importer's label rules match box gutter / parapet /
+plant deck / overrun / cantilever / roof beam before the generic slab and
+wall rules.
+
 ## Dashboard opens on the open work only
 
 `OPEN_STATUSES` (`lib/planner.js`, used by `Dashboard.jsx`) = Queued, Estimating: the status filter

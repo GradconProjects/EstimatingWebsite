@@ -18,7 +18,8 @@ yet. New schemas are added only where the measurement basis is different.
 | | combined / strap footings | calc (pad with L≠W) + beam | Pad Footing + Ground Beam, linked by starters |
 | Ground slabs | slab-on-ground, industrial, hardstand, pavement, driveway/path, pits | calc | Slab family, Sump Pit, Lift Pit |
 | | thickenings, joints, dowels, set-downs, steps | mod | slab: edge thickening, wall thickening, internal beams, joints, dowels, step-downs |
-| Suspended | one/two-way slab, flat slab/drop panels, RC roof, ramp, balcony, band/edge/transfer beams | calc + mod | Suspended Slab (`drops`, edge beams), RC Roof, Ramp, Suspended Beam |
+| Suspended | one/two-way slab, flat slab/drop panels, ramp, balcony, band/edge/transfer beams | calc + mod | Suspended Slab (`drops`, edge beams), Ramp, Suspended Beam |
+| Roof | propped roof slab, cantilevered roof slab / canopy, plant deck, lift overrun slab, roof / band beam, concrete box gutter, parapet / upstand, plant plinth / hob | calc + mod | Roof group: RC Roof Slab (propped), Cantilevered Roof Slab / Canopy, Plant Deck, Lift Overrun, Roof Beam (`beam`), Box Gutter (`tankbox`, suspended: soffit formwork, no dig), Parapet / Upstand (`wall`), Roof Plinth (`kerb`) |
 | | PT allowance | mod | Additional rows / allowances (no PT calculator — engineering item) |
 | Vertical | rect/circular columns, walls, cores, retaining (uniform / tapered / stepped / irregular entered-area stems), shotcrete (Retention Walls group; clickable horizontal bars into a slab and dowels into adjoining bored piers) | calc | Column, Concrete Wall / Core, Retaining Wall, Shotcrete Wall |
 | | nibs, blade walls, pilasters, corbels | calc (wall/column dims) / generic | narrow Wall or Column; Corbel via generic |

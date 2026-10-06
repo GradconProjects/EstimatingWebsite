@@ -1797,11 +1797,12 @@ async function prefetchTakeoffBlobs(){
 // Keyed by calc type, optionally refined by slab/beam category. Editable per element in every card.
 const DEFAULT_COVERS = {
   pier:65, pilecap:50, stripfooting:50, padfooting:50, retwall:50, kerb:45, shotwall:40,
-  beam:{Ground:50, Suspended:30},
+  beam:{Ground:50, Suspended:30, Roof:30},
   slab:{"Slab on Ground":30,"Raft Slab":50,"Waffle Slab":30,"Industrial Slab":40,"Suspended Slab":25,"RC Roof Slab":40,
+        "Cantilevered Roof Slab":40,"Plant Deck":40,"Lift Overrun Slab":40,
         "Driveway":45,"Path":40,"Hardstand":45,"Ramp":40,"Basement Slab":40},
   column:40, wall:35, stairs:30, generic:40,
-  tankbox:{"Swimming Pool":40,"Water Tank":40,"Sump Pit":40,"Planter":30,"Lift Pit":40}
+  tankbox:{"Swimming Pool":40,"Water Tank":40,"Sump Pit":40,"Planter":30,"Lift Pit":40,"Box Gutter":40}
 };
 function defaultCoverFor(typeId){
   let def=LIB_INDEX[typeId];
@@ -1981,7 +1982,17 @@ const LIBRARY = [
    {id:"basementramp", label:"Basement Ramp", calc:"slab", slabCategory:"Ramp"},
  ]},
  {group:"Roof", items:[
-   {id:"roofslab", label:"RC Roof Slab", calc:"slab", slabCategory:"RC Roof Slab", suspended:true},
+   // Every concrete element at roof level (Grady, 6 Oct 2026: "INCLUDE ROOF
+   // as an element category to include all roof concrete elements,
+   // including box gutters, suspended slabs propped and cantilevered").
+   {id:"roofslab", label:"RC Roof Slab (propped)", calc:"slab", slabCategory:"RC Roof Slab", suspended:true},
+   {id:"roofslabcant", label:"Cantilevered Roof Slab / Canopy", calc:"slab", slabCategory:"Cantilevered Roof Slab", suspended:true},
+   {id:"plantdeck", label:"Plant Deck / Plant Platform Slab", calc:"slab", slabCategory:"Plant Deck", suspended:true},
+   {id:"liftoverrun", label:"Lift Overrun / Motor Room Slab", calc:"slab", slabCategory:"Lift Overrun Slab", suspended:true},
+   {id:"roofbeam", label:"Roof Beam / Band Beam", calc:"beam", beamCategory:"Roof"},
+   {id:"boxgutter", label:"Box Gutter (concrete)", calc:"tankbox", kind:"Box Gutter"},
+   {id:"parapet", label:"Parapet / Upstand Wall", calc:"wall"},
+   {id:"roofplinth", label:"Roof Plinth / Plant Kerb / Hob", calc:"kerb"},
  ]},
  {group:"Floor Finishes", items:[
    // A screed laid as its own job on an existing slab — not the slab's
@@ -6169,7 +6180,13 @@ function computeGeneric(inst,def){
  * entered. 2 Oct 2026 — before this the lift pit took nothing off for
  * either unless the generic options were ticked AND an area was typed. */
 const TANKBOX_INGROUND = new Set(["Lift Pit","Sump Pit","Water Tank","Swimming Pool"]);
+/* A box gutter is the same trough — base slab + perimeter walls — but SUSPENDED
+ * at roof level: no dig, no blinding, and its underside is formed (soffit
+ * formwork over the external footprint) unless it is cast integrally with the
+ * roof slab, which the card's own checkbox turns off. 6 Oct 2026. */
+const TANKBOX_SUSPENDED = new Set(["Box Gutter"]);
 const TANKBOX_PRESETS = {
+  "Box Gutter":{shape:"rect",L:15000,W:450,depth:300,baseThickness:150,wallThickness:150,waterstop:true,membrane:true,coping:false,lid:false,grate:false,pipePenetrations:2, soffitForm:true},
   "Swimming Pool":{shape:"rect",L:8000,W:4000,depth:1500,baseThickness:200,wallThickness:250,waterstop:true,membrane:true,coping:true,lid:false,grate:false,pipePenetrations:2, blinding:50,blindingMaterial:"concrete",excWorkingSpace:600,excExtraDepth:0},
   "Planter":{shape:"rect",L:2400,W:600,depth:450,baseThickness:150,wallThickness:150,waterstop:false,membrane:true,coping:false,lid:false,grate:false,pipePenetrations:1},
   "Water Tank":{shape:"circular",dia:3000,L:3000,W:3000,depth:2500,baseThickness:200,wallThickness:200,waterstop:true,membrane:true,coping:false,lid:true,grate:false,pipePenetrations:2, blinding:50,blindingMaterial:"concrete",excWorkingSpace:600,excExtraDepth:0},
@@ -6204,7 +6221,7 @@ function renderTankbox(inst){
   <div class="grid cols4">${chk("membrane",d.membrane,"Waterproof membrane")}${chk("waterstop",d.waterstop,"Waterstop at base/wall joint")}${chk("coping",d.coping,"Coping / capping beam","coping")}${chk("lid",d.lid,"Concrete lid slab","lid")}${chk("grate",d.grate,"Grate / access cover")}</div>
   <div class="subsec ${d.coping?'':'hidden'}" data-show-if="coping">${F("Coping width (mm)",inpNum("copingWidth",d.copingWidth))}</div>
   <div class="grid cols3">${F("Pipe / service penetrations (no.)",inpNum("pipePenetrations",d.pipePenetrations))}</div>
-  <div class="tip"><span class="ico">🏗️</span><div>${d.kind==="Swimming Pool"?"Pool shells are the classic case where waterstop and membrane are not optional extras — any construction joint below water level needs a waterstop, and the whole wetted envelope needs waterproofing, not just the base.":d.kind==="Water Tank"?"Water-retaining structures are designed to AS 3735 principles in practice: waterstops at every joint, and reinforcement detailed to keep crack widths tight enough to stay watertight.":d.kind==="Sump Pit"?"Keep the pit big enough for the pump/ballvalve plus maintenance access, and always allow for the inlet/outlet pipe penetrations as trimmed openings, not afterthoughts.":"Planters usually skip waterstop but still want a membrane if garden bed drainage sits against a habitable space."}</div></div>`;
+  <div class="tip"><span class="ico">🏗️</span><div>${d.kind==="Swimming Pool"?"Pool shells are the classic case where waterstop and membrane are not optional extras — any construction joint below water level needs a waterstop, and the whole wetted envelope needs waterproofing, not just the base.":d.kind==="Water Tank"?"Water-retaining structures are designed to AS 3735 principles in practice: waterstops at every joint, and reinforcement detailed to keep crack widths tight enough to stay watertight.":d.kind==="Sump Pit"?"Keep the pit big enough for the pump/ballvalve plus maintenance access, and always allow for the inlet/outlet pipe penetrations as trimmed openings, not afterthoughts.":d.kind==="Box Gutter"?"A concrete box gutter is a water-retaining trough at roof level: the membrane and the base/wall waterstop are the waterproofing, the internal width and depth come off the hydraulic detail, and the outlets, overflows and sumps are the pipe penetrations. Enter the gutter's own run as the internal length — a gutter in several runs is several of this element, or one with the lengths summed.":"Planters usually skip waterstop but still want a membrane if garden bed drainage sits against a habitable space."}</div></div>`;
   let reo=`<div class="sechead">Base Mat</div><div class="grid cols4">${F("Bottom X dia",barSizeSel("baseXDia",d.baseXDia))}${F("Spacing (mm)",inpNum("baseXSpacing",d.baseXSpacing))}${F("Bottom Y dia",barSizeSel("baseYDia",d.baseYDia))}${F("Spacing (mm)",inpNum("baseYSpacing",d.baseYSpacing))}</div>
   <div class="grid cols3">${chk("baseXLap",d.baseXLap,"Bottom X — include lap allowance (%)","baseXLap")}${chk("baseYLap",d.baseYLap,"Bottom Y — include lap allowance (%)","baseYLap")}</div>
   <div class="grid cols3">${chk("baseTop",d.baseTop,"Top mat — base reinforced top and bottom, both ways","baseTop")}</div>
@@ -6212,7 +6229,10 @@ function renderTankbox(inst){
   <div class="grid cols3">${chk("baseTopXLap",d.baseTopXLap,"Top X — include lap allowance (%)","baseTopXLap")}${chk("baseTopYLap",d.baseTopYLap,"Top Y — include lap allowance (%)","baseTopYLap")}</div></div>
   <div class="sechead">Wall Reinforcement (both faces)</div><div class="grid cols4">${F("Vertical dia",barSizeSel("wallVertDia",d.wallVertDia))}${F("Spacing (mm)",inpNum("wallVertSpacing",d.wallVertSpacing))}${F("Horizontal dia",barSizeSel("wallHorDia",d.wallHorDia))}${F("Spacing (mm)",inpNum("wallHorSpacing",d.wallHorSpacing))}</div>
   <div class="grid cols3">${chk("wallVertLap",d.wallVertLap,"Vertical — include lap allowance (%)","wallVertLap")}${chk("wallHorLap",d.wallHorLap,"Horizontal — include lap allowance (%)","wallHorLap")}</div>`;
-  let form=`<p class="small">Formwork = inner + outer wall faces (perimeter × depth × 2). Base is typically cast against blinding/ground.</p>`;
+  let form=TANKBOX_SUSPENDED.has(d.kind)
+    ? `<div class="grid cols3">${chk("soffitForm",d.soffitForm!==false,"Soffit formwork under the gutter (formed separately from the roof slab)")}</div>
+  <p class="small">Formwork = inner + outer wall faces (perimeter × depth × 2) plus the soffit over the external footprint while the box is ticked. Untick it when the gutter is cast integrally with the roof slab, whose soffit formwork already covers it.</p>`
+    : `<p class="small">Formwork = inner + outer wall faces (perimeter × depth × 2). Base is typically cast against blinding/ground.</p>`;
   let conns=`${chk("starters",d.starters,"Starter bars / dowels into adjoining slab or wall","starters")}
   <div class="subsec ${d.starters?'':'hidden'}" data-show-if="starters"><div class="grid cols4">
    ${F("Connects to",targetSelect("connTarget",d.connTarget,inst.id))}${F("Quantity",inpNum("connQty",d.connQty))}${F("Diameter",barSizeSel("connDia",d.connDia))}${F("Embedment (mm)",inpNum("connEmbed",d.connEmbed))}${F("Projection (mm)",inpNum("connProj",d.connProj))}${F("Hook",anchorSel("connHook",d.connHook))}
@@ -6254,6 +6274,9 @@ function computeTankbox(inst,def){
   lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:`${d.kind} — base+walls`,qty:totVol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(totVol,concWastePct(d)),formula:`${N}×(base area×${d.baseThickness} + perimeter×${d.wallThickness}×${d.depth})`}));
   let formArea=N*perim*depth*2;
   lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Wall formwork (inner+outer)",spec:"",qty:formArea,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(formArea,PROJECT.formworkWaste),formula:"perimeter × depth × 2 faces"}));
+  if(TANKBOX_SUSPENDED.has(d.kind) && d.soffitForm!==false){
+    lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Soffit formwork",spec:`${d.kind} — underside, external footprint`,qty:ext.area,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(ext.area,PROJECT.formworkWaste),formula:`${N}×external length×external width`}));
+  }
   if(d.membrane) lines.push(baseLine(inst,def,{materialGroup:"Vapour Barrier",material:"Waterproof membrane",spec:"base + walls, incl. laps",qty:N*(baseArea+perim*depth),unit:"m²",waste:10,finalQty:withWaste(N*(baseArea+perim*depth),10),formula:"(base area + wall area) incl. 10% laps"}));
   if(d.waterstop) lines.push(baseLine(inst,def,{materialGroup:"Joints",material:"PVC waterstop",spec:"base/wall construction joint",qty:N*perim,unit:"m",waste:5,finalQty:withWaste(N*perim,5),formula:"perimeter"}));
   if(d.coping){ let copeVol=N*perim*(num(d.copingWidth)/1000)*0.15; lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:"Coping / capping beam",spec:`${d.copingWidth}mm wide`,qty:copeVol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(copeVol,concWastePct(d)),formula:"perimeter × coping width × 150mm nominal"})); }
@@ -9993,6 +10016,8 @@ const CSV_TYPE_KEYWORDS = [
   [/\bpiles?\b|screw\s*pile|driven\s*pile|cfa\b/i,"piles"],
   [/ground\s*beam/i,"groundbeam"], [/susp(ended)?\s*beam/i,"suspbeam"],
   [/raft/i,"raftslab"], [/waffle/i,"waffleslab"], [/industrial\s*slab/i,"industrialslab"],
+  [/box\s*gutter/i,"boxgutter"], [/parapet|upstand/i,"parapet"], [/plant\s*(deck|platform)/i,"plantdeck"], [/overrun|motor\s*room/i,"liftoverrun"],
+  [/cantilever|canopy|awning/i,"roofslabcant"], [/roof\s*beam|band\s*beam/i,"roofbeam"],
   [/susp(ended)?\s*slab/i,"suspslab"], [/roof\s*slab/i,"roofslab"],
   [/slab.*ground|ground.*slab|\bslab\b/i,"slabonground"],
   [/retain/i,"retainingwall"], [/\bwall\b|\bcore\b/i,"concretewall"],

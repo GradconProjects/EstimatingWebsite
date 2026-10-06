@@ -46,14 +46,14 @@ const C25 = RATE("CONCRETE", "25 mpa", "m3");
 const C32 = RATE("CONCRETE", "32 mpa", "m3");
 
 /* ---------- catalog shape ---------- */
-check("100 element types, 15 categories, 23 sections (PRELIMINARIES 17 first; Basement Ramp beside Ramp; IRREGULAR CONCRETE CONSTRUCTIONS 3 before External & Landscape; SCREEDS 14, TOPPINGS 7, HYDRONIC HEATING 3, SPECIALIST FINISHING CONCRETE 10 — each its own category)", () => {
-  assert.equal(ELEMENT_TYPES.length, 100);
+check("108 element types, 16 categories, 26 sections (ROOF 8 after SUSPENDED STRUCTURE; PRELIMINARIES 17 first; Basement Ramp beside Ramp; IRREGULAR CONCRETE CONSTRUCTIONS 3 before External & Landscape; SCREEDS 14, TOPPINGS 7, HYDRONIC HEATING 3, SPECIALIST FINISHING CONCRETE 10 — each its own category)", () => {
+  assert.equal(ELEMENT_TYPES.length, 108);
   assert.equal(ELEMENT_TYPES.filter((t) => t.category === "IRREGULAR CONCRETE CONSTRUCTIONS").length, 3);
   assert.ok(ELEMENT_TYPES.some((t) => t.id === "hearth_fireplace_base" && t.labour === "composite"), "hearth is a priced Quotes element with a crew sheet");
   assert.ok(CATEGORY_ORDER.indexOf("IRREGULAR CONCRETE CONSTRUCTIONS") < CATEGORY_ORDER.indexOf("EXTERNAL & LANDSCAPE CONCRETE"), "irregular constructions sit with the structure, before landscape works");
   assert.ok(ELEMENT_TYPES.some((t) => t.id === "basement_ramp" && t.section === "GROUND-BEARING SLABS"), "Basement Ramp is its own selectable element");
-  assert.equal(CATEGORY_ORDER.length, 15);
-  assert.equal(SECTION_ORDER.length, 23);
+  assert.equal(CATEGORY_ORDER.length, 16);
+  assert.equal(SECTION_ORDER.length, 26);
   assert.equal(ELEMENT_TYPES.filter((t) => t.category === "PRELIMINARIES").length, 17);
   assert.equal(CATEGORY_ORDER[0], "PRELIMINARIES", "preliminaries come before earthworks");
   assert.deepEqual(SECTION_ORDER.slice(0, 3), ["TRAFFIC & ACCESS", "SITE ESTABLISHMENT", "SITE MANAGEMENT & COMPLIANCE"]);
@@ -63,9 +63,14 @@ check("100 element types, 15 categories, 23 sections (PRELIMINARIES 17 first; Ba
   assert.equal(ELEMENT_TYPES.filter((t) => t.category === "SCREEDS").length, 14);
   assert.equal(ELEMENT_TYPES.filter((t) => t.category === "TOPPINGS").length, 7);
   assert.equal(ELEMENT_TYPES.filter((t) => t.category === "HYDRONIC HEATING").length, 3);
-  // all three follow SUSPENDED STRUCTURE (finishes and services follow the structure they sit on)
+  // ROOF follows SUSPENDED STRUCTURE (the roof sits on it), then the finishes and services follow the structure they sit on
   const i = CATEGORY_ORDER.indexOf("SUSPENDED STRUCTURE");
-  assert.deepEqual(CATEGORY_ORDER.slice(i + 1, i + 5), ["SCREEDS", "TOPPINGS", "HYDRONIC HEATING", "SPECIALIST FINISHING CONCRETE"]);
+  assert.deepEqual(CATEGORY_ORDER.slice(i + 1, i + 6), ["ROOF", "SCREEDS", "TOPPINGS", "HYDRONIC HEATING", "SPECIALIST FINISHING CONCRETE"]);
+  // Roof: every roof-level concrete element in its own category (6 Oct 2026)
+  const roof = ELEMENT_TYPES.filter((t) => t.category === "ROOF");
+  assert.deepEqual(roof.map((t) => t.id), ["roof_slab_propped", "roof_slab_cantilevered", "plant_deck_slab", "lift_overrun_slab", "roof_beam", "box_gutter", "parapet_upstand", "roof_plinth"]);
+  assert.deepEqual([...new Set(roof.map((t) => t.section))], ["ROOF SLABS", "ROOF BEAMS", "ROOF GUTTERS & PARAPETS"]);
+  assert.ok(roof.every((t) => LABOUR_TEMPLATES[t.labour]), "every roof type has a crew-sheet template");
   assert.equal(new Set(ELEMENT_TYPES.map((t) => t.id)).size, ELEMENT_TYPES.length, "element ids unique");
   // Stump Footings and Screw Piles are separate, individually selectable types.
   assert.ok(ELEMENT_TYPES.some((t) => t.name === "Stump Footings"), "Stump Footings present");

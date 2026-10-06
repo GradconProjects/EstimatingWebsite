@@ -750,6 +750,23 @@ export const ELEMENT_TYPES = [
   // suspended slab even though it's typically propped/formed the same way.
   { id: "staircase", category: "SUSPENDED STRUCTURE", section: "STAIRS", name: "Staircase", labour: "stairs" },
 
+  // Roof — every concrete element at roof level, its OWN category (Grady,
+  // 6 Oct 2026: "INCLUDE ROOF as an element category to include all roof
+  // concrete elements, including box gutters, suspended slabs propped and
+  // cantilevered"). Propped and cantilevered roof slabs are separate types
+  // because they are formed, propped and reinforced differently (a
+  // cantilever carries its steel in the top); box gutters, parapets /
+  // upstands and plant plinths are the roof's own trough, edge and hob
+  // concrete. Right after SUSPENDED STRUCTURE — the roof sits on it.
+  { id: "roof_slab_propped", category: "ROOF", section: "ROOF SLABS", name: "Roof Slab (propped)", labour: "slab_suspended" },
+  { id: "roof_slab_cantilevered", category: "ROOF", section: "ROOF SLABS", name: "Roof Slab / Canopy (cantilevered)", labour: "slab_suspended" },
+  { id: "plant_deck_slab", category: "ROOF", section: "ROOF SLABS", name: "Plant Deck / Plant Platform Slab", labour: "slab_suspended" },
+  { id: "lift_overrun_slab", category: "ROOF", section: "ROOF SLABS", name: "Lift Overrun / Motor Room Slab", labour: "slab_suspended" },
+  { id: "roof_beam", category: "ROOF", section: "ROOF BEAMS", name: "Roof Beam / Band Beam", labour: "slab_suspended" },
+  { id: "box_gutter", category: "ROOF", section: "ROOF GUTTERS & PARAPETS", name: "Box Gutter (concrete)", labour: "slab_suspended" },
+  { id: "parapet_upstand", category: "ROOF", section: "ROOF GUTTERS & PARAPETS", name: "Parapet / Upstand Wall", labour: "wall" },
+  { id: "roof_plinth", category: "ROOF", section: "ROOF GUTTERS & PARAPETS", name: "Roof Plinth / Plant Kerb / Hob", labour: "slab_suspended" },
+
   // Screeds, toppings and hydronic heating — finishes and services laid ON a
   // slab (ground or suspended), each its OWN category (like Foundations) so
   // they are selected and summarised in their own right rather than buried
