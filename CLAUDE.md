@@ -905,7 +905,11 @@ element families waits on the owner's approval of the pad footing.
   `blindingAndVapourLines`, the tankbox and the generic path; retaining
   walls (`_autoBlindArea` = footing footprint) and kerbs (`_autoBlindArea` =
   length × profile width) hand their footprint to that section so the box
-  works without typing an area.
+  works without typing an area. **The blinding concrete grade is the
+  estimator's**: every blinding line's grade field (`blindingGrade`,
+  `capBlindingGrade`, `slabBlindGrade`, composite parts' `blindGrade`) falls
+  back to Project Setup's `PROJECT.blindingGrade` (`blindGradeDefault()`,
+  20 when unset) rather than a fixed N20.
 - **Column vertical bars = bars × qty × HEIGHT** (`computeColumn`, 5 Oct
   2026): the lap onto the starters from below sits inside the height (those
   starters are counted on their source element) and the bars continuing up

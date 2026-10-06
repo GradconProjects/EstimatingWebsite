@@ -782,7 +782,7 @@ let PROJECT = {
   name:"", jobNumber:"", client:"", units_len:"mm/m", units_conc:"m3", units_form:"m2", units_reo:"kg", units_exc:"m3",
   units_len_pref:"m", // "mm" or "m" — preferred input unit for overall lengths/heights (beam, wall, column, pier, kerb runs). Metres by default: a 7.2m beam is typed as 7.2, not 7200 (cross-sections stay mm).
   cover:40, grade:32, reoStandard:"Australian D500N", lapMethod:"Project-defined", anchorMethod:"Project-defined",
-  barStock:12000, concreteWaste:20, concreteWasteMode:"class", reoWaste:5, formworkWaste:5, lapPct:8, bulking:15, revision:"Rev A", measurementRule:"gross",
+  barStock:12000, concreteWaste:20, concreteWasteMode:"class", blindingGrade:20, reoWaste:5, formworkWaste:5, lapPct:8, bulking:15, revision:"Rev A", measurementRule:"gross",
   estimateSessionId: newEstimateSessionId(),
 };
 /* Reinforcement allowances — ONE company-wide set, edited in the RATES
@@ -2835,6 +2835,11 @@ function vapourMembraneLine(inst,def,area,type,lapPct){
    without the new fields keep behaving exactly as before (blinding on when
    thickness > 0, footprint extent, 200um membrane, 10% laps). ---- */
 function blindingEnabled(d){ return d.blindingOn!==undefined? !!d.blindingOn : num(d.blinding)>0; }
+/** The blinding concrete grade every blinding line falls back to when its
+ * own grade field is blank — Project Setup's "Blinding concrete grade"
+ * (6 Oct 2026, Grady: "i should be able to determine grade of blinding
+ * concrete"); each element's own field still wins. */
+function blindGradeDefault(){ return num(PROJECT.blindingGrade,20)||20; }
 /** The blinding thickness the shared Blinding & Vapour Barrier section takes
  * off: nothing when the box is unticked; the typed thickness; 50 mm when the
  * box is ticked but no thickness has been typed yet (6 Oct 2026 — before
@@ -2855,7 +2860,7 @@ function blindingSection(d){
   <div class="subsec ${on?'':'hidden'}" data-show-if="blindingOn"><div class="grid cols4">
    ${F("Thickness (mm, blank = 50)",inpNum("blinding",d.blinding))}
    ${F("Blinding type",selOpts("blindingMaterial",d.blindingMaterial||"concrete",[["concrete","Concrete blinding"],["mudslab","Mud slab / lean-mix screed"],["sand","Sand blinding"],["crushedrock","Crushed rock"],["compacted","Base material — compacted"],["loose","Base material — loose"]]))}
-   ${F("Blinding concrete grade (N)",inpNum("blindingGrade",d.blindingGrade===undefined?20:d.blindingGrade))}
+   ${F("Blinding concrete grade (N)",inpNum("blindingGrade",(d.blindingGrade===undefined||d.blindingGrade==="")?blindGradeDefault():d.blindingGrade))}
    ${F("Extends to",selOpts("blindingExtent",d.blindingExtent||"foot",[["foot","Element footprint"],["exc","Excavation footprint (incl. oversize)"]]))}
   </div></div>
   ${vapourSubsection(d)}`;
@@ -2869,7 +2874,7 @@ function blindingAndVapourLines(inst,def,d,footArea,excArea,defaultExtent){
   let pick=(extent)=> (extent||defaultExtent||"foot")==="exc" && excArea!==undefined? excArea : footArea;
   const bThk=blindingThicknessMm(d);
   if(bThk>0){
-    out.push(blindingLine(inst,def,pick(d.blindingExtent),bThk,d.blindingMaterial,d.blindingMaterial==="concrete"||d.blindingMaterial===undefined? (d.blindingGrade===undefined?20:d.blindingGrade):undefined));
+    out.push(blindingLine(inst,def,pick(d.blindingExtent),bThk,d.blindingMaterial,d.blindingMaterial==="concrete"||d.blindingMaterial===undefined? ((d.blindingGrade===undefined||d.blindingGrade==="")?blindGradeDefault():d.blindingGrade):undefined));
   }
   if(d.vapourMembrane) out.push(vapourMembraneLine(inst,def,pick(d.vmExtent),d.vmType,d.vmLap));
   return out;
@@ -3527,7 +3532,7 @@ function capBlindingSection(inst){
   <div class="subsec ${d.capBlindOn!==false?'':'hidden'}" data-show-if="capBlindOn"><div class="grid cols4">
    ${F("Blinding thickness (mm, 0 = none)",inpNum("capBlinding",d.capBlinding===undefined?50:d.capBlinding))}
    ${F("Blinding type",selOpts("capBlindingMaterial",d.capBlindingMaterial||"concrete",[["concrete","Concrete blinding"],["mudslab","Mud slab / lean-mix screed"],["sand","Sand blinding"],["crushedrock","Crushed rock"],["compacted","Base material — compacted"],["loose","Base material — loose"]]))}
-   ${F("Blinding concrete grade (N)",inpNum("capBlindingGrade",d.capBlindingGrade===undefined?20:d.capBlindingGrade))}
+   ${F("Blinding concrete grade (N)",inpNum("capBlindingGrade",(d.capBlindingGrade===undefined||d.capBlindingGrade==="")?blindGradeDefault():d.capBlindingGrade))}
   </div></div>
   <p class="small">${(thick>0&&d.capBlindOn!==false)?`${thick}mm`:"No blinding"} over the oversized excavation footprint — the hole it's actually poured into, not the cap's own plan area. Turning the caps' excavation off on the Pile Cap tab removes the blinding with it.</p>
   ${chk("capVapour",d.capVapour,"Vapour barrier / membrane under the caps","capVapour")}
@@ -3597,7 +3602,7 @@ function capCapExcLines(inst,def,caps,L,W,D,beamLenM,bW,bD){
   // picks up the material naming (concrete / mud slab / sand / crushed rock)
   // and the membrane its lap allowance, rather than a second implementation.
   if(blind>0&&blindArea>0&&d.capBlindOn!==false){
-    out.push(blindingLine(inst,def,blindArea,num(d.capBlinding,50),d.capBlindingMaterial||"concrete",num(d.capBlindingGrade,20)));
+    out.push(blindingLine(inst,def,blindArea,num(d.capBlinding,50),d.capBlindingMaterial||"concrete",num(d.capBlindingGrade,blindGradeDefault())));
   }
   if(d.capVapour&&blindArea>0){
     out.push(vapourMembraneLine(inst,def,blindArea,d.capVmType,d.capVmLap));
@@ -4915,7 +4920,7 @@ function renderSlab(inst,def){
    blind: d.suspended? undefined : `<div class="sechead">Base Course</div><div class="grid cols3">${F("Base thickness (mm)",inpNum("baseThickness",d.baseThickness))}${F("Base material",selOpts("baseMaterialState",d.baseMaterialState,[["compacted","Compacted"],["loose","Loose"]]))}</div>
    <div class="sechead">Concrete Blinding</div>
    <div class="grid cols4">${chk("slabBlindOn",!!d.slabBlindOn,"Concrete blinding under slab","slabBlindOn")}
-   <div class="subsec ${d.slabBlindOn?'':'hidden'}" data-show-if="slabBlindOn" style="display:contents;">${F("Blinding thickness (mm, blank = 50)",inpNum("slabBlindT",d.slabBlindT))}${F("Blinding concrete grade (N)",inpNum("slabBlindGrade",d.slabBlindGrade===undefined?20:d.slabBlindGrade))}</div></div>
+   <div class="subsec ${d.slabBlindOn?'':'hidden'}" data-show-if="slabBlindOn" style="display:contents;">${F("Blinding thickness (mm, blank = 50)",inpNum("slabBlindT",d.slabBlindT))}${F("Blinding concrete grade (N)",inpNum("slabBlindGrade",(d.slabBlindGrade===undefined||d.slabBlindGrade==="")?blindGradeDefault():d.slabBlindGrade))}</div></div>
    <p class="small">Blinding concrete over the slab's net plan area (openings out), on top of the base course where the detail shows one — its own Base/Blinding line, ordered as concrete in the pour schedule. Untick when the slab pours straight onto the prepared base.</p>
    ${vapourSubsection(d,"Vapour barrier / membrane under slab")}`,
    conns};
@@ -4956,7 +4961,7 @@ function computeSlab(inst,def){
     // Express concrete blinding under the slab (6 Oct 2026, Grady: "blinding
     // concrete option check box expressly added for slabs and all ground
     // elements"): the ticked box takes a blinding line off over the net area.
-    if(d.slabBlindOn){ const sbT=(d.slabBlindT===undefined||d.slabBlindT==="")? 50 : Math.max(0,num(d.slabBlindT)); if(sbT>0) lines.push(blindingLine(inst,def,netArea,sbT,"concrete",num(d.slabBlindGrade,20))); }
+    if(d.slabBlindOn){ const sbT=(d.slabBlindT===undefined||d.slabBlindT==="")? 50 : Math.max(0,num(d.slabBlindT)); if(sbT>0) lines.push(blindingLine(inst,def,netArea,sbT,"concrete",num(d.slabBlindGrade,blindGradeDefault()))); }
     if(d.vapourMembrane) lines.push(vapourMembraneLine(inst,def,netArea,d.vmType,d.vmLap));
   }
   // Edge formwork is measured and priced by the METRE (matching the Quotes
@@ -6024,7 +6029,7 @@ function renderComposite(inst){
      <div class="grid cols4">${F("Label",inpText(b+"label",sl.label))}${F("Length (m)",inpNum(b+"L",sl.L))}${F("Width (m)",inpNum(b+"W",sl.W))}${F("Thickness (mm)",inpNum(b+"t",sl.t))}</div>
      <div class="grid cols4">${F("Plan area override (m², irregular — beats L × W)",inpNum(b+"area",sl.area))}${F("Grade (N, blank = element grade)",inpNum(b+"grade",sl.grade))}${F("Reinforcement",selOpts(b+"reo",reo,[["mesh","Mesh"],["bars","Bars each way"],["none","None"]],true))}${F("Edge formwork length override (m, blank = perimeter)",inpNum(b+"edgeLm",sl.edgeLm))}</div>
      ${reo==="mesh"? `<div class="grid cols4">${F("Mesh type",selOpts(b+"meshType",sl.meshType||"SL82",Object.keys(MESHTYPES).map(m=>[m,m])))}${F("Mesh layers",inpNum(b+"meshLayers",sl.meshLayers===undefined?1:sl.meshLayers))}</div>` : reo==="bars"? `<div class="grid cols4">${F("Bar",barSizeSel(b+"barDia",sl.barDia||"N12"))}${F("Spacing each way (mm)",inpNum(b+"barSp",sl.barSp===undefined?200:sl.barSp))}${F("Layers",inpNum(b+"barLayers",sl.barLayers===undefined?1:sl.barLayers))}</div>` : ""}
-     <div class="grid cols4">${chk(b+"edgeForm",sl.edgeForm!==false,"Edge formwork (by the metre)")}${chk(b+"soffitForm",!!sl.soffitForm,"Soffit formwork (suspended / cantilevered slab)")}${chk(b+"blindOn",!!sl.blindOn,"Concrete blinding under this slab",null,true)}${sl.blindOn?F("Blinding thickness (mm)",inpNum(b+"blindT",sl.blindT===undefined?50:sl.blindT)):""}</div>
+     <div class="grid cols4">${chk(b+"edgeForm",sl.edgeForm!==false,"Edge formwork (by the metre)")}${chk(b+"soffitForm",!!sl.soffitForm,"Soffit formwork (suspended / cantilevered slab)")}${chk(b+"blindOn",!!sl.blindOn,"Concrete blinding under this slab",null,true)}${sl.blindOn?F("Blinding thickness (mm)",inpNum(b+"blindT",sl.blindT===undefined?50:sl.blindT))+F("Blinding grade (N)",inpNum(b+"blindGrade",(sl.blindGrade===undefined||sl.blindGrade==="")?blindGradeDefault():sl.blindGrade)):""}</div>
     </div>`; }).join("");
   const wallsHtml=(d.walls||[]).map((w,i)=>{ const b=`walls.${i}.`; const vol=num(w.L)/1000*num(w.H)/1000*num(w.T)/1000;
     return `<div class="subsec" style="border-left:3px solid var(--accent2,#2f5448);padding-left:10px;">
@@ -6062,7 +6067,7 @@ function computeComposite(inst,def){
     else if(reo==="bars") warnings.push({text:`${label}: bars each way need a length and width (an area alone cannot set the bar counts)`, section:"geom", level:"completeness"});
     if(sl.edgeForm!==false){ const lm=N*(num(sl.edgeLm)>0? num(sl.edgeLm) : (L>0&&W>0? 2*(L+W) : 0)); if(lm>0) lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Edgeform — slab edge formwork",spec:`${label} — ${num(sl.t)}mm high edge`,qty:lm,unit:"m",waste:PROJECT.formworkWaste,finalQty:withWaste(lm,PROJECT.formworkWaste),formula:num(sl.edgeLm)>0?"entered length":"perimeter 2(L+W)"})); else warnings.push({text:`${label}: edge formwork needs a length and width or an entered edge length`, section:"geom", level:"completeness"}); }
     if(sl.soffitForm){ const a=N*A; lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Soffit formwork",spec:`${label} — suspended slab soffit`,qty:a,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(a,PROJECT.formworkWaste),formula:"slab area"})); }
-    if(sl.blindOn) lines.push(blindingLine(inst,def,N*A,num(sl.blindT,50),"concrete",20));
+    if(sl.blindOn) lines.push(blindingLine(inst,def,N*A,num(sl.blindT,50),"concrete",num(sl.blindGrade,blindGradeDefault())));
   });
   (d.walls||[]).forEach((w,i)=>{
     const label=w.label||`Wall ${i+1}`, L=num(w.L)/1000, H=num(w.H)/1000, T=num(w.T)/1000;
@@ -6217,7 +6222,7 @@ function computeTankbox(inst,def){
   // Blinding under the base slab (external footprint, or the entered area override).
   if(blindT>0){
     const bArea=num(d.blindArea)>0? num(d.blindArea) : ext.area;
-    lines.push(blindingLine(inst,def,bArea,blindingThicknessMm(d),d.blindingMaterial,(d.blindingMaterial==="concrete"||d.blindingMaterial===undefined)?(d.blindingGrade===undefined?20:d.blindingGrade):undefined));
+    lines.push(blindingLine(inst,def,bArea,blindingThicknessMm(d),d.blindingMaterial,(d.blindingMaterial==="concrete"||d.blindingMaterial===undefined)?((d.blindingGrade===undefined||d.blindingGrade==="")?blindGradeDefault():d.blindingGrade):undefined));
   }
   lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:`${d.kind} — base+walls`,qty:totVol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(totVol,concWastePct(d)),formula:`${N}×(base area×${d.baseThickness} + perimeter×${d.wallThickness}×${d.depth})`}));
   let formArea=N*perim*depth*2;
@@ -8773,7 +8778,7 @@ function computeInstance(inst){
     if(bArea>0){
       const gThk=blindingThicknessMm(d);
       if(gThk>0){
-        out.lines.push(blindingLine(inst,def,bArea,gThk,d.blindingMaterial,(d.blindingMaterial==="concrete"||d.blindingMaterial===undefined)?(d.blindingGrade===undefined?20:d.blindingGrade):undefined));
+        out.lines.push(blindingLine(inst,def,bArea,gThk,d.blindingMaterial,(d.blindingMaterial==="concrete"||d.blindingMaterial===undefined)?((d.blindingGrade===undefined||d.blindingGrade==="")?blindGradeDefault():d.blindingGrade):undefined));
       }
       if(d.vapourMembrane) out.lines.push(vapourMembraneLine(inst,def,bArea,d.vmType,d.vmLap));
     }
@@ -9130,6 +9135,7 @@ function renderDefaultsForm(){
     F("Default lap methodology",inpText("lapMethod",PROJECT.lapMethod)),
     F("Anchorage methodology",inpText("anchorMethod",PROJECT.anchorMethod)),
     F("Bar stock length (mm)",inpNum("barStock",PROJECT.barStock)),
+    F("Blinding concrete grade (N) — the default for every blinding line; an element's own field wins",inpNum("blindingGrade",PROJECT.blindingGrade)),
     F("Concrete waste basis",selOpts("concreteWasteMode",PROJECT.concreteWasteMode||"class",[["class",`By work type — Rates Library (slab ${CONC_WASTE.slab}% · formed ${CONC_WASTE.formed}% · ground ${CONC_WASTE.ground}% · pile ${CONC_WASTE.pile}% · shotcrete ${CONC_WASTE.shotcrete}%)`],["flat","Flat % on every element (below)"]])),
     F(`Concrete waste — flat % (${(PROJECT.concreteWasteMode||"class")==="flat"? "in use" : "not in use while the basis is by work type"})`,inpNum("concreteWaste",PROJECT.concreteWaste)),
     F(`Reinforcement waste — from Rates Library: ${REO_WASTE_PCT}%`,`<input type="number" value="${REO_WASTE_PCT}" disabled title="Edited in the Rates Library app (Reinforcement → takeoff allowances) — applies live across every element">`),
