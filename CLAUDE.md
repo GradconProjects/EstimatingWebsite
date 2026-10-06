@@ -852,7 +852,14 @@ element families waits on the owner's approval of the pad footing.
   reads — length each (m), area each (m², m³), else qty each (no., kg, item).
   A blank count is one; a count with nothing to multiply is pieces only on a
   "no." row; no description or no quantity = not on the takeoff. Before
-  23 Sep 2026 the typed qty ignored the count on no./kg/item rows. Selects in
+  23 Sep 2026 the typed qty ignored the count on no./kg/item rows. **A steel
+  row (Reinforcement / Connections with a bar size) counted in no. WITH a
+  length each, or weighed in kg, is that bar's steel** (6 Oct 2026, Grady:
+  "additional reinforcement doesnt seem to add up or shown in the material
+  summaries"): material = the bar, `lengthM` = pieces × length, kg through
+  `massPerUnit` (1 for a kg row), so the card kg, the Reinforcement Summary,
+  the Materials Summary and the orders schedule all count it; a no. row with
+  no length (chairs) stays a plain counted item. Selects in
   any `table.rows` keep their own width (`width:auto`, capped at 260 px) so a
   crowded row can never crush the bar-size dropdown to a sliver.
 - **Excavation is the estimator's decision on every ground element**

@@ -9055,14 +9055,30 @@ function computeInstance(inst){
     let unit=r.unit||"m";
     let waste=r.waste===undefined||r.waste===""? 0 : num(r.waste);
     let group=r.kind===undefined? "Reinforcement" : r.kind;
-    let isBar = group==="Reinforcement" && unit==="m" && r.dia;
-    let notes = isBar? `${fmt(qty*massPerM(barDiaOf(r.dia)),1)} kg` : "";
+    let steel = (group==="Reinforcement" || group==="Connections") && r.dia;
+    let isBar = steel && unit==="m";
+    // A steel row counted in PIECES with a length each (20 × 1200 mm trimmer
+    // bars) or weighed in kg is still that bar size's steel: it carries the
+    // bar as its material, its metres as `lengthM` and its kg through
+    // `massPerUnit`, so the card's kg, the Reinforcement Summary, the
+    // Materials Summary and the orders schedule all count it (6 Oct 2026,
+    // Grady: "additional reinforcement doesnt seem to add up or shown in the
+    // material summaries" — before this such a row was a nameless no./kg
+    // item at 0 kg).
+    let pieceLenM = steel && unit==="no." && num(r.lengthMm)>0 ? num(r.lengthMm)/1000 : 0;
+    let isPieces = pieceLenM>0, isKg = steel && unit==="kg";
+    let kgm = steel? massPerM(barDiaOf(r.dia)) : 0;
+    let notes = isBar? `${fmt(qty*kgm,1)} kg` : isPieces? `${fmt(qty*pieceLenM,2)} m, ${fmt(qty*pieceLenM*kgm,1)} kg` : "";
     let cnt = num(r.count)>0? `${num(r.count)}×` : "";
     let formula = (unit==="m" && num(r.lengthMm)>0) ? `${cnt}${num(r.lengthMm)}mm`
+      : isPieces ? `${num(r.count)||1} no. × ${num(r.lengthMm)}mm`
       : ((unit==="m²"||unit==="m³") && num(r.area)>0) ? `${cnt}${num(r.area)}`
       : (num(r.qty)>0 ? `${cnt}${num(r.qty)}` : (cnt? `${num(r.count)} no.` : "entered"));
-    out.lines.push(baseLine(inst,def,{materialGroup:group,material:isBar? r.dia : desc,
-      spec:isBar? desc : "Additional item",qty,unit,waste,finalQty:withWaste(qty,waste),formula,notes,source:"addl"}));
+    let line={materialGroup:group,material:(isBar||isPieces||isKg)? r.dia : desc,
+      spec:(isBar||isPieces||isKg)? desc : "Additional item",qty,unit,waste,finalQty:withWaste(qty,waste),formula,notes,source:"addl"};
+    if(isPieces){ line.massPerUnit=pieceLenM*kgm; line.lengthM=withWaste(qty,waste)*pieceLenM; }
+    if(isKg) line.massPerUnit=1;
+    out.lines.push(baseLine(inst,def,line));
   });
   if(d.insulationOn){
     let t = insulationType(null,d); // family + thickness off the card
