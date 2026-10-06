@@ -2835,6 +2835,11 @@ function vapourMembraneLine(inst,def,area,type,lapPct){
    without the new fields keep behaving exactly as before (blinding on when
    thickness > 0, footprint extent, 200um membrane, 10% laps). ---- */
 function blindingEnabled(d){ return d.blindingOn!==undefined? !!d.blindingOn : num(d.blinding)>0; }
+/** The blinding thickness the shared Blinding & Vapour Barrier section takes
+ * off: nothing when the box is unticked; the typed thickness; 50 mm when the
+ * box is ticked but no thickness has been typed yet (6 Oct 2026 — before
+ * this a ticked box with a blank thickness quietly took nothing off). */
+function blindingThicknessMm(d){ if(!blindingEnabled(d)) return 0; return (d.blinding===undefined||d.blinding==="")? 50 : Math.max(0,num(d.blinding)); }
 function vapourSubsection(d,label){
   return `${chk("vapourMembrane",d.vapourMembrane,label||"Vapour barrier / membrane under element","vapourMembrane")}
   <div class="subsec ${d.vapourMembrane?'':'hidden'}" data-show-if="vapourMembrane"><div class="grid cols3">
@@ -2848,8 +2853,8 @@ function blindingSection(d){
   return `<div class="sechead">Blinding &amp; Vapour Barrier</div>
   ${chk("blindingOn",on,"Blinding / base layer under element","blindingOn")}
   <div class="subsec ${on?'':'hidden'}" data-show-if="blindingOn"><div class="grid cols4">
-   ${F("Thickness (mm)",inpNum("blinding",d.blinding))}
-   ${F("Blinding type",selOpts("blindingMaterial",d.blindingMaterial,[["concrete","Concrete blinding"],["mudslab","Mud slab / lean-mix screed"],["sand","Sand blinding"],["crushedrock","Crushed rock"],["compacted","Base material — compacted"],["loose","Base material — loose"]]))}
+   ${F("Thickness (mm, blank = 50)",inpNum("blinding",d.blinding))}
+   ${F("Blinding type",selOpts("blindingMaterial",d.blindingMaterial||"concrete",[["concrete","Concrete blinding"],["mudslab","Mud slab / lean-mix screed"],["sand","Sand blinding"],["crushedrock","Crushed rock"],["compacted","Base material — compacted"],["loose","Base material — loose"]]))}
    ${F("Blinding concrete grade (N)",inpNum("blindingGrade",d.blindingGrade===undefined?20:d.blindingGrade))}
    ${F("Extends to",selOpts("blindingExtent",d.blindingExtent||"foot",[["foot","Element footprint"],["exc","Excavation footprint (incl. oversize)"]]))}
   </div></div>
@@ -2862,8 +2867,9 @@ function blindingAndVapourLines(inst,def,d,footArea,excArea,defaultExtent){
   // takeoffs that predate the extent field (pile caps always blinded the
   // oversized excavation; footings blinded the element footprint).
   let pick=(extent)=> (extent||defaultExtent||"foot")==="exc" && excArea!==undefined? excArea : footArea;
-  if(blindingEnabled(d) && num(d.blinding)>0){
-    out.push(blindingLine(inst,def,pick(d.blindingExtent),d.blinding,d.blindingMaterial,d.blindingMaterial==="concrete"||d.blindingMaterial===undefined? (d.blindingGrade===undefined?20:d.blindingGrade):undefined));
+  const bThk=blindingThicknessMm(d);
+  if(bThk>0){
+    out.push(blindingLine(inst,def,pick(d.blindingExtent),bThk,d.blindingMaterial,d.blindingMaterial==="concrete"||d.blindingMaterial===undefined? (d.blindingGrade===undefined?20:d.blindingGrade):undefined));
   }
   if(d.vapourMembrane) out.push(vapourMembraneLine(inst,def,pick(d.vmExtent),d.vmType,d.vmLap));
   return out;
@@ -3517,12 +3523,13 @@ function capBlindingSection(inst){
   let d=inst.data;
   let thick=num(d.capBlinding,50);
   return `<div class="sechead">Blinding &amp; Vapour Barrier — pile caps / capping beam</div>
-  <div class="grid cols4">
+  ${chk("capBlindOn",d.capBlindOn!==false,"Concrete blinding under the caps / capping beam","capBlindOn")}
+  <div class="subsec ${d.capBlindOn!==false?'':'hidden'}" data-show-if="capBlindOn"><div class="grid cols4">
    ${F("Blinding thickness (mm, 0 = none)",inpNum("capBlinding",d.capBlinding===undefined?50:d.capBlinding))}
    ${F("Blinding type",selOpts("capBlindingMaterial",d.capBlindingMaterial||"concrete",[["concrete","Concrete blinding"],["mudslab","Mud slab / lean-mix screed"],["sand","Sand blinding"],["crushedrock","Crushed rock"],["compacted","Base material — compacted"],["loose","Base material — loose"]]))}
    ${F("Blinding concrete grade (N)",inpNum("capBlindingGrade",d.capBlindingGrade===undefined?20:d.capBlindingGrade))}
-  </div>
-  <p class="small">${thick>0?`${thick}mm`:"No blinding"} over the oversized excavation footprint — the hole it's actually poured into, not the cap's own plan area. Turning the caps' excavation off on the Pile Cap tab removes the blinding with it.</p>
+  </div></div>
+  <p class="small">${(thick>0&&d.capBlindOn!==false)?`${thick}mm`:"No blinding"} over the oversized excavation footprint — the hole it's actually poured into, not the cap's own plan area. Turning the caps' excavation off on the Pile Cap tab removes the blinding with it.</p>
   ${chk("capVapour",d.capVapour,"Vapour barrier / membrane under the caps","capVapour")}
   <div class="subsec ${d.capVapour?'':'hidden'}" data-show-if="capVapour"><div class="grid cols3">
    ${F("Membrane type",selOpts("capVmType",d.capVmType||"200um polyethylene",[["200um polyethylene","200µm polyethylene (standard)"],["300um polyethylene","300µm polyethylene (heavy duty)"],["Fortecon 200um","Fortecon 200µm"],["Damp-proof membrane","Damp-proof membrane (other)"]]))}
@@ -3589,7 +3596,7 @@ function capCapExcLines(inst,def,caps,L,W,D,beamLenM,bW,bD){
   // Same builders every other blinded element uses, so the cap's blinding
   // picks up the material naming (concrete / mud slab / sand / crushed rock)
   // and the membrane its lap allowance, rather than a second implementation.
-  if(blind>0&&blindArea>0){
+  if(blind>0&&blindArea>0&&d.capBlindOn!==false){
     out.push(blindingLine(inst,def,blindArea,num(d.capBlinding,50),d.capBlindingMaterial||"concrete",num(d.capBlindingGrade,20)));
   }
   if(d.capVapour&&blindArea>0){
@@ -4905,7 +4912,12 @@ function renderSlab(inst,def){
    edgebeams: edgeBeamGeom + edgeBeamReoBlock + extraBeamGroupsSection(inst,d,"edgeBeamGroups"),
    intbeams: stripGeom + stripReoBlock + extraBeamGroupsSection(inst,d,"intBeamGroups"),
    form,
-   blind: d.suspended? undefined : `<div class="sechead">Base Course</div><div class="grid cols3">${F("Base thickness (mm)",inpNum("baseThickness",d.baseThickness))}${F("Base material",selOpts("baseMaterialState",d.baseMaterialState,[["compacted","Compacted"],["loose","Loose"]]))}</div>${vapourSubsection(d,"Vapour barrier / membrane under slab")}`,
+   blind: d.suspended? undefined : `<div class="sechead">Base Course</div><div class="grid cols3">${F("Base thickness (mm)",inpNum("baseThickness",d.baseThickness))}${F("Base material",selOpts("baseMaterialState",d.baseMaterialState,[["compacted","Compacted"],["loose","Loose"]]))}</div>
+   <div class="sechead">Concrete Blinding</div>
+   <div class="grid cols4">${chk("slabBlindOn",!!d.slabBlindOn,"Concrete blinding under slab","slabBlindOn")}
+   <div class="subsec ${d.slabBlindOn?'':'hidden'}" data-show-if="slabBlindOn" style="display:contents;">${F("Blinding thickness (mm, blank = 50)",inpNum("slabBlindT",d.slabBlindT))}${F("Blinding concrete grade (N)",inpNum("slabBlindGrade",d.slabBlindGrade===undefined?20:d.slabBlindGrade))}</div></div>
+   <p class="small">Blinding concrete over the slab's net plan area (openings out), on top of the base course where the detail shows one — its own Base/Blinding line, ordered as concrete in the pour schedule. Untick when the slab pours straight onto the prepared base.</p>
+   ${vapourSubsection(d,"Vapour barrier / membrane under slab")}`,
    conns};
 }
 function openRowHtml(i,r){
@@ -4941,6 +4953,10 @@ function computeSlab(inst,def){
     let baseVol=netArea*(num(d.baseThickness)/1000);
     let baseMatLabel = d.baseMaterialState==="loose"? "Base material (loose — enter loose thickness placed)" : "Base material (compacted)";
     lines.push(baseLine(inst,def,{materialGroup:"Base/Blinding",material:baseMatLabel,spec:`${d.baseThickness}mm`,qty:baseVol,unit:"m³",waste:5,finalQty:withWaste(baseVol,5),formula:"area×base thickness"}));
+    // Express concrete blinding under the slab (6 Oct 2026, Grady: "blinding
+    // concrete option check box expressly added for slabs and all ground
+    // elements"): the ticked box takes a blinding line off over the net area.
+    if(d.slabBlindOn){ const sbT=(d.slabBlindT===undefined||d.slabBlindT==="")? 50 : Math.max(0,num(d.slabBlindT)); if(sbT>0) lines.push(blindingLine(inst,def,netArea,sbT,"concrete",num(d.slabBlindGrade,20))); }
     if(d.vapourMembrane) lines.push(vapourMembraneLine(inst,def,netArea,d.vmType,d.vmLap));
   }
   // Edge formwork is measured and priced by the METRE (matching the Quotes
@@ -5509,6 +5525,7 @@ function computeRetWall(inst,def){
   let incStem = d.incStem!==false, baseOff = linked || d.incBase===false;
   let warnings=[]; if(!incStem && d.incBase===false) warnings.push({text:"Retaining wall scope excludes both the stem and the base — nothing is priced", section:"geom", level:"completeness"});
   let footVol = baseOff? 0 : g.footArea*(num(d.footD)/1000);
+  d._autoBlindArea = baseOff? 0 : g.footArea;   // the footing's footprint — the shared Blinding & Vapour Barrier tab blinds under it
   let stemVol = incStem? g.stemVol : 0;
   let keyVol = (!baseOff && d.key)? Lm*(num(d.keyD)/1000)*(num(d.keyW)/1000) : 0;
   let totVol=footVol+stemVol+keyVol;
@@ -5853,6 +5870,7 @@ function renderKerb(inst){
 function computeKerb(inst,def){
   let d=inst.data, lines=[];
   let Lm=num(d.length)/1000;
+  { const km=String(d.profile||"").match(/(\d+)\s*[x×]\s*(\d+)/); d._autoBlindArea = Lm*((km? num(km[1],150) : 300)/1000); }   // kerb footprint for the shared Blinding tab
   let vol=num(d.crossSectionArea)*Lm;
   lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:d.profile,qty:vol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(vol,concWastePct(d)),formula:"cross-section area × length"}));
   lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Profile formwork (both sides)",spec:d.profile,qty:2*Lm*0.3,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(2*Lm*0.3,PROJECT.formworkWaste),formula:"2 sides × length × nominal height"}));
@@ -6186,7 +6204,7 @@ function computeTankbox(inst,def){
   let baseVol=N*baseArea*baseT;
   let wallVol=N*perim*wallT*depth;
   let totVol=baseVol+wallVol;
-  const blindT=(blindingEnabled(d) && num(d.blinding)>0)? num(d.blinding)/1000 : 0;
+  const blindT=blindingThicknessMm(d)/1000;
   if(TANKBOX_INGROUND.has(d.kind)){
     // The hole: external footprint + working space each side, down to the underside of the blinding (+ any extra).
     const ws=num(d.excWorkingSpace===undefined?300:d.excWorkingSpace)/1000, extra=num(d.excExtraDepth)/1000;
@@ -6199,7 +6217,7 @@ function computeTankbox(inst,def){
   // Blinding under the base slab (external footprint, or the entered area override).
   if(blindT>0){
     const bArea=num(d.blindArea)>0? num(d.blindArea) : ext.area;
-    lines.push(blindingLine(inst,def,bArea,d.blinding,d.blindingMaterial,(d.blindingMaterial==="concrete"||d.blindingMaterial===undefined)?(d.blindingGrade===undefined?20:d.blindingGrade):undefined));
+    lines.push(blindingLine(inst,def,bArea,blindingThicknessMm(d),d.blindingMaterial,(d.blindingMaterial==="concrete"||d.blindingMaterial===undefined)?(d.blindingGrade===undefined?20:d.blindingGrade):undefined));
   }
   lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:`${d.kind} — base+walls`,qty:totVol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(totVol,concWastePct(d)),formula:`${N}×(base area×${d.baseThickness} + perimeter×${d.wallThickness}×${d.depth})`}));
   let formArea=N*perim*depth*2;
@@ -8753,8 +8771,9 @@ function computeInstance(inst){
   if(!(out.lines||[]).some(l=>l.materialGroup==="Base/Blinding"||l.materialGroup==="Vapour Barrier")){
     let bArea = num(d.blindArea)>0? num(d.blindArea) : (num(d._autoBlindArea)||num(d._autoInsArea)||0);
     if(bArea>0){
-      if(blindingEnabled(d) && num(d.blinding)>0){
-        out.lines.push(blindingLine(inst,def,bArea,d.blinding,d.blindingMaterial,(d.blindingMaterial==="concrete"||d.blindingMaterial===undefined)?(d.blindingGrade===undefined?20:d.blindingGrade):undefined));
+      const gThk=blindingThicknessMm(d);
+      if(gThk>0){
+        out.lines.push(blindingLine(inst,def,bArea,gThk,d.blindingMaterial,(d.blindingMaterial==="concrete"||d.blindingMaterial===undefined)?(d.blindingGrade===undefined?20:d.blindingGrade):undefined));
       }
       if(d.vapourMembrane) out.lines.push(vapourMembraneLine(inst,def,bArea,d.vmType,d.vmLap));
     }

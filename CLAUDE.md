@@ -892,6 +892,20 @@ element families waits on the owner's approval of the pad footing.
   `_autoInsArea` / `_autoInsPerim` so the shared insulation / acoustic-mat
   section and Project Geometry take the screed area; it is not a ground
   element (no excavation) and has no Concrete tab.
+- **Blinding concrete is an express checkbox on slabs and every ground
+  element** (6 Oct 2026): ground slabs (slab calc, not suspended) carry
+  "Concrete blinding under slab" (`slabBlindOn`, `slabBlindT` blank = 50 mm,
+  `slabBlindGrade` 20) beside the Base Course — its own Base/Blinding line
+  over the net plan area, separate from the base-material line; pier / pile
+  caps carry "Concrete blinding under the caps" (`capBlindOn`, on by default
+  as the 50 mm seed always was) gating `capCapExcLines`' blinding; every
+  other ground element uses the shared Blinding & Vapour Barrier section's
+  `blindingOn` box, whose thickness now reads through `blindingThicknessMm(d)`
+  (unticked = 0, blank-but-ticked = 50 mm, never a silent zero) in
+  `blindingAndVapourLines`, the tankbox and the generic path; retaining
+  walls (`_autoBlindArea` = footing footprint) and kerbs (`_autoBlindArea` =
+  length × profile width) hand their footprint to that section so the box
+  works without typing an area.
 - **Column vertical bars = bars × qty × HEIGHT** (`computeColumn`, 5 Oct
   2026): the lap onto the starters from below sits inside the height (those
   starters are counted on their source element) and the bars continuing up
