@@ -1802,7 +1802,8 @@ const DEFAULT_COVERS = {
         "Cantilevered Roof Slab":40,"Plant Deck":40,"Lift Overrun Slab":40,
         "Driveway":45,"Path":40,"Hardstand":45,"Ramp":40,"Basement Slab":40},
   column:40, wall:35, stairs:30, generic:40,
-  tankbox:{"Swimming Pool":40,"Water Tank":40,"Sump Pit":40,"Planter":30,"Lift Pit":40,"Box Gutter":40}
+  tankbox:{"Swimming Pool":40,"Water Tank":40,"Sump Pit":40,"Planter":30,"Lift Pit":40},
+  boxgutter:40
 };
 function defaultCoverFor(typeId){
   let def=LIB_INDEX[typeId];
@@ -1990,7 +1991,7 @@ const LIBRARY = [
    {id:"plantdeck", label:"Plant Deck / Plant Platform Slab", calc:"slab", slabCategory:"Plant Deck", suspended:true},
    {id:"liftoverrun", label:"Lift Overrun / Motor Room Slab", calc:"slab", slabCategory:"Lift Overrun Slab", suspended:true},
    {id:"roofbeam", label:"Roof Beam / Band Beam", calc:"beam", beamCategory:"Roof"},
-   {id:"boxgutter", label:"Box Gutter (concrete)", calc:"tankbox", kind:"Box Gutter"},
+   {id:"boxgutter", label:"Box Gutter (concrete)", calc:"boxgutter"},
    {id:"parapet", label:"Parapet / Upstand Wall", calc:"wall"},
    {id:"roofplinth", label:"Roof Plinth / Plant Kerb / Hob", calc:"kerb"},
  ]},
@@ -5931,6 +5932,104 @@ function computeKerb(inst,def){
   return {lines,warnings:[]};
 }
 
+/* ---- BOX GUTTER (cross section × length) ----
+ * Grady, 6 Oct 2026: "BOX gutter should be cross sectional. we determine
+ * everything as per the cross section and it multiplies by the length".
+ * Every quantity is a PER-METRE figure of the SECTION — concrete area, the
+ * formed faces, the membrane girth, the developed length of a transverse
+ * U-bar, the longitudinal bars in the section — times the run length (× the
+ * number of runs). `boxGutterGeom(d)` is the ONE reading of the section
+ * (compute, card hints, diagram). A box gutter is suspended at roof level:
+ * it never digs or blinds, and its soffit is formed unless it is cast
+ * integrally with the roof slab (the Formwork tab's checkbox).
+ */
+function boxGutterDefaults(){ return {
+  qty:1, length:15000, W:450, depth:300, baseT:150, wallTA:150, wallTB:"", wallHA:"", wallHB:"",
+  cover:PROJECT.cover, grade:PROJECT.grade,
+  soffitForm:true, outerFaces:"2", innerFaces:true, endWalls:2,
+  longDia:"N12", longQty:6, longLap:false,
+  transType:"bars", transDia:"N12", transSpacing:200, transDevLen:"", transLap:false, meshType:"SL72", meshLap:false,
+  membrane:true, waterstop:true, outlets:2, sumps:0, jointSpacing:6,
+};}
+/** The section, in metres: external width and height, concrete area per metre,
+ * formed faces per metre (soffit / outer / inner), the internal girth the
+ * membrane covers, and the developed length of a transverse U-bar (base plus
+ * both legs inside the cover, or the typed `transDevLen`). Wall B's thickness
+ * and either wall's height default to wall A and the internal depth. */
+function boxGutterGeom(d){
+  const blank=(v)=>v===""||v===undefined||v===null;
+  const N=Math.max(0,num(d.qty,1)), L=num(d.length)/1000, W=num(d.W)/1000, D=num(d.depth)/1000;
+  const bt=num(d.baseT)/1000, tA=num(d.wallTA)/1000, tB=blank(d.wallTB)? tA : num(d.wallTB)/1000;
+  const hA=blank(d.wallHA)? D : num(d.wallHA)/1000, hB=blank(d.wallHB)? D : num(d.wallHB)/1000;
+  const c=num(d.cover)/1000;
+  const extW=W+tA+tB, extH=bt+Math.max(hA,hB);
+  const secArea=extW*bt + tA*hA + tB*hB;
+  const outer=String(d.outerFaces===undefined?"2":d.outerFaces);
+  const outerPerM= outer==="2"? (bt+hA)+(bt+hB) : outer==="1"? bt+Math.max(hA,hB) : 0;
+  const innerPerM= d.innerFaces===false? 0 : hA+hB;
+  const soffitPerM= d.soffitForm===false? 0 : extW;
+  const girth=W+hA+hB;
+  const devAuto=Math.max(0,(extW-2*c)+(bt+hA-2*c)+(bt+hB-2*c));
+  const devLen=num(d.transDevLen)>0? num(d.transDevLen)/1000 : devAuto;
+  const endWallVol=Math.max(0,num(d.endWalls))*W*((hA+hB)/2)*tA;
+  return {N,L,W,D,bt,tA,tB,hA,hB,extW,extH,secArea,outer,outerPerM,innerPerM,soffitPerM,formPerM:outerPerM+innerPerM+soffitPerM,girth,devAuto,devLen,endWallVol};
+}
+function renderBoxGutter(inst){
+  let d=inst.data; const g=boxGutterGeom(d);
+  let geom=`<div class="grid cols4">${F("Quantity (no. of runs)",inpNum("qty",d.qty))}${LF("Run length each (mm)","length",d.length)}</div>
+  <div class="sechead">Cross section — every figure below is per metre of run</div>
+  <div class="grid cols4">${F("Internal width (mm)",inpNum("W",d.W))}${F("Internal depth (mm)",inpNum("depth",d.depth))}${F("Base thickness (mm)",inpNum("baseT",d.baseT))}${coverField(inst)}</div>
+  <div class="grid cols4">${F("Wall A thickness (mm)",inpNum("wallTA",d.wallTA))}${F("Wall B thickness (mm, blank = wall A)",inpNum("wallTB",d.wallTB))}${F("Wall A height above base (mm, blank = internal depth)",inpNum("wallHA",d.wallHA))}${F("Wall B height above base (mm, blank = internal depth)",inpNum("wallHB",d.wallHB))}</div>
+  <div class="grid cols3">${F("Closed ends / stop ends (no. per run)",inpNum("endWalls",d.endWalls))}${F("Outlets / overflows (no. per run)",inpNum("outlets",d.outlets))}${F("Sumps / rainheads (no. per run)",inpNum("sumps",d.sumps))}</div>
+  <p class="small">Section: external width ${fmt(g.extW*1000,0)} mm, external height ${fmt(g.extH*1000,0)} mm, concrete ${fmt(g.secArea,4)} m² per metre → ${fmt(g.secArea*g.L*g.N,3)} m³ over ${fmt(g.L*g.N,1)} m of run${num(d.endWalls)>0?` plus ${num(d.endWalls)} closed end(s) per run`:''}. A wall taller than the internal depth (an upstand against the parapet) is typed as its own height.</p>
+  <div class="tip"><span class="ico">🏗️</span><div>Measure the gutter off its SECTION detail: internal width and depth from the hydraulic design, base and wall thicknesses from the structural detail, cover from the exposure. Everything — concrete, formed faces, membrane, bars — is a per-metre figure of that section multiplied by the run length. A gutter in several runs is several of this element (or one with the lengths summed and the runs counted).</div></div>`;
+  const tt=d.transType||"bars";
+  let reo=`<div class="sechead">Longitudinal bars (in the section, run the length)</div><div class="grid cols4">${F("Bar size",barSizeSel("longDia",d.longDia))}${F("Bars in the section (no.)",inpNum("longQty",d.longQty))}${chk("longLap",d.longLap,"Include lap allowance (%)","longLap")}</div>
+  <div class="sechead">Transverse reinforcement (across the section, repeating along the run)</div>
+  <div class="grid cols4">${F("Type",selOpts("transType",tt,[["bars","U-bars / ties at a spacing"],["mesh","Mesh bent to the section"],["none","None"]],true))}
+  ${tt==="mesh"? F("Mesh type",selOpts("meshType",d.meshType||"SL72",Object.keys(MESHTYPES).map(m=>[m,m]))) : tt==="none"? "" : F("Bar size",barSizeSel("transDia",d.transDia))+F("Spacing along the run (mm)",inpNum("transSpacing",d.transSpacing))}
+  ${tt==="none"? "" : F(`Developed length per bar / mesh girth (mm, blank = ${fmt(g.devAuto*1000,0)} from the section inside the cover)`,inpNum("transDevLen",d.transDevLen))}
+  ${tt==="mesh"? chk("meshLap",d.meshLap,"Include mesh lap allowance (%)","meshLap") : tt==="none"? "" : chk("transLap",d.transLap,"Include lap allowance (%)","transLap")}</div>
+  <p class="small">U-bars: one per spacing along the run (run ÷ spacing + 1), each the developed length of the section — the base plus both legs inside the cover, or the length typed off the bar schedule. Mesh: the developed girth × the run, ordered as whole sheets. The longitudinal bars are counted in the section and run the full length.</p>`;
+  let form=`<div class="grid cols4">${chk("soffitForm",d.soffitForm!==false,"Soffit formwork (underside, external width)")}${F("Outer wall faces formed",selOpts("outerFaces",g.outer,[["2","Both outer faces"],["1","One outer face (the other cast against the parapet / wall)"],["0","None (cast against existing)"]]))}${chk("innerFaces",d.innerFaces!==false,"Inner faces of both walls")}</div>
+  <p class="small">Formed faces per metre of run: soffit ${fmt(g.soffitPerM,3)} + outer ${fmt(g.outerPerM,3)} + inner ${fmt(g.innerPerM,3)} = ${fmt(g.formPerM,3)} m²/m. Untick the soffit when the gutter is cast integrally with the roof slab, whose soffit formwork already covers it.</p>
+  <div class="sechead">Waterproofing &amp; joints</div>
+  <div class="grid cols4">${chk("membrane",d.membrane,"Waterproof membrane to the internal faces")}${chk("waterstop",d.waterstop,"Waterstop at both base/wall joints")}${F("Construction joint spacing (m, blank = none)",inpNum("jointSpacing",d.jointSpacing))}</div>
+  <p class="small">Membrane = internal girth (width + both wall heights) × run, with 10% laps. Waterstop = both base/wall joints × run.</p>`;
+  return {geom,conc:concSection(d,"<p class='small'>Concrete = section area × run length × runs, plus the closed ends</p>"),reo,form};
+}
+function computeBoxGutter(inst,def){
+  let d=inst.data, lines=[], warnings=[]; const g=boxGutterGeom(d);
+  if(!(g.L>0)||!(g.W>0)||!(g.D>0)) warnings.push({text:"Box gutter run length, internal width and internal depth are needed — nothing is priced until the section and the run are entered",section:"geom",level:"completeness"});
+  const run=g.N*g.L;
+  d._autoBlindArea=0;   // suspended at roof level — never blinds
+  const vol=run>0? g.secArea*run + g.N*g.endWallVol : 0;   // no run, nothing priced — the warning above says so
+  if(vol>0) lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:`Box gutter ${fmt(g.W*1000,0)}×${fmt(g.D*1000,0)} int., base ${fmt(g.bt*1000,0)}, walls ${fmt(g.tA*1000,0)}/${fmt(g.tB*1000,0)}`,qty:vol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(vol,concWastePct(d)),formula:`section ${fmt(g.secArea,4)}m² × ${fmt(run,2)}m${g.endWallVol>0?` + ${num(d.endWalls)} end wall(s) × ${g.N}`:''}`}));
+  const face=(mat,perM,spec)=>{ if(!(perM>0)||!(run>0)) return; const a=perM*run; lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:mat,spec,qty:a,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(a,PROJECT.formworkWaste),formula:`${fmt(perM,3)} m²/m × ${fmt(run,2)}m`})); };
+  face("Soffit formwork",g.soffitPerM,"Box gutter — underside, external width");
+  face("Wall formwork (outer faces)",g.outerPerM,`${g.outer} outer face(s), full external height`);
+  face("Wall formwork (inner faces)",g.innerPerM,"both inner faces above the base");
+  if(num(d.longQty)>0 && run>0){
+    const dia=barDiaOf(d.longDia), tot=num(d.longQty)*run, lap=d.longLap?PROJECT.lapPct:0;
+    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.longDia,spec:"Longitudinal bars (in the section, run the length)",qty:tot,unit:"m",waste:PROJECT.reoWaste,lap,finalQty:withWasteLap(tot,PROJECT.reoWaste,lap),formula:`${num(d.longQty)} bars × ${fmt(run,2)}m`,notes:`${fmt(tot*massPerM(dia),1)} kg`}));
+  }
+  const tt=d.transType||"bars";
+  if(tt==="bars" && run>0 && g.devLen>0){
+    const dia=barDiaOf(d.transDia), sp=Math.max(1,num(d.transSpacing,200)), count=g.N*(Math.floor(g.L*1000/sp)+1), tot=count*g.devLen, lap=d.transLap?PROJECT.lapPct:0;
+    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.transDia,spec:`Transverse U-bars @${sp}mm (developed ${fmt(g.devLen*1000,0)}mm)`,qty:tot,unit:"m",waste:PROJECT.reoWaste,lap,finalQty:withWasteLap(tot,PROJECT.reoWaste,lap),formula:`(${fmt(g.L*1000,0)}/${sp}+1)×${g.N} = ${count} bars × ${fmt(g.devLen,3)}m`,notes:`${count} bars, ${fmt(tot*massPerM(dia),1)} kg`}));
+  } else if(tt==="mesh" && run>0 && g.devLen>0){
+    const area=g.devLen*run, lap=d.meshLap?MESH_LAP_PCT:0, fq=withWasteLap(area,PROJECT.reoWaste,lap), sheets=Math.ceil(fq/14.4);
+    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.meshType||"SL72",spec:"Mesh bent to the section",qty:area,unit:"m²",waste:PROJECT.reoWaste,lap,finalQty:fq,formula:`girth ${fmt(g.devLen,3)}m × ${fmt(run,2)}m → ${sheets} sheets`,notes:`${sheets} sheets (6.0×2.4m nominal)`}));
+  }
+  if(d.membrane && run>0){ const a=g.girth*run; lines.push(baseLine(inst,def,{materialGroup:"Vapour Barrier",material:"Waterproof membrane",spec:"internal faces (base + both walls), incl. laps",qty:a,unit:"m²",waste:10,finalQty:withWaste(a,10),formula:`girth ${fmt(g.girth,3)}m × ${fmt(run,2)}m, 10% laps`})); }
+  if(d.waterstop && run>0){ const m=2*run; lines.push(baseLine(inst,def,{materialGroup:"Joints",material:"PVC waterstop",spec:"base/wall joints, both walls",qty:m,unit:"m",waste:5,finalQty:withWaste(m,5),formula:`2 × ${fmt(run,2)}m`})); }
+  if(num(d.jointSpacing)>0 && g.L>0){ const j=g.N*Math.floor(g.L/num(d.jointSpacing)); if(j>0) lines.push(baseLine(inst,def,{materialGroup:"Joints",material:"Construction joints",spec:`@${num(d.jointSpacing)}m across the gutter`,qty:j,unit:"no.",waste:0,finalQty:j,formula:"run ÷ spacing"})); }
+  const castIn=(f,mat,spec)=>{ const q=run>0? g.N*Math.max(0,num(d[f])) : 0; if(q>0) lines.push(baseLine(inst,def,{materialGroup:"Cast-ins",material:mat,spec,qty:q,unit:"no.",waste:0,finalQty:q,formula:`${num(d[f])} × ${g.N} run(s)`})); };
+  castIn("outlets","Outlet / overflow penetration","formed opening through the base or wall");
+  castIn("sumps","Sump / rainhead box","formed sump in the gutter base");
+  return {lines,warnings};
+}
+
 /* ---- SCREED (standalone floor screed on an existing slab) ----
  * A screed priced as its own element — the floor finish laid on a slab that
  * is already there (or priced on its own card). Grady, 2 Oct 2026: "i know
@@ -6180,13 +6279,7 @@ function computeGeneric(inst,def){
  * entered. 2 Oct 2026 — before this the lift pit took nothing off for
  * either unless the generic options were ticked AND an area was typed. */
 const TANKBOX_INGROUND = new Set(["Lift Pit","Sump Pit","Water Tank","Swimming Pool"]);
-/* A box gutter is the same trough — base slab + perimeter walls — but SUSPENDED
- * at roof level: no dig, no blinding, and its underside is formed (soffit
- * formwork over the external footprint) unless it is cast integrally with the
- * roof slab, which the card's own checkbox turns off. 6 Oct 2026. */
-const TANKBOX_SUSPENDED = new Set(["Box Gutter"]);
 const TANKBOX_PRESETS = {
-  "Box Gutter":{shape:"rect",L:15000,W:450,depth:300,baseThickness:150,wallThickness:150,waterstop:true,membrane:true,coping:false,lid:false,grate:false,pipePenetrations:2, soffitForm:true},
   "Swimming Pool":{shape:"rect",L:8000,W:4000,depth:1500,baseThickness:200,wallThickness:250,waterstop:true,membrane:true,coping:true,lid:false,grate:false,pipePenetrations:2, blinding:50,blindingMaterial:"concrete",excWorkingSpace:600,excExtraDepth:0},
   "Planter":{shape:"rect",L:2400,W:600,depth:450,baseThickness:150,wallThickness:150,waterstop:false,membrane:true,coping:false,lid:false,grate:false,pipePenetrations:1},
   "Water Tank":{shape:"circular",dia:3000,L:3000,W:3000,depth:2500,baseThickness:200,wallThickness:200,waterstop:true,membrane:true,coping:false,lid:true,grate:false,pipePenetrations:2, blinding:50,blindingMaterial:"concrete",excWorkingSpace:600,excExtraDepth:0},
@@ -6221,7 +6314,7 @@ function renderTankbox(inst){
   <div class="grid cols4">${chk("membrane",d.membrane,"Waterproof membrane")}${chk("waterstop",d.waterstop,"Waterstop at base/wall joint")}${chk("coping",d.coping,"Coping / capping beam","coping")}${chk("lid",d.lid,"Concrete lid slab","lid")}${chk("grate",d.grate,"Grate / access cover")}</div>
   <div class="subsec ${d.coping?'':'hidden'}" data-show-if="coping">${F("Coping width (mm)",inpNum("copingWidth",d.copingWidth))}</div>
   <div class="grid cols3">${F("Pipe / service penetrations (no.)",inpNum("pipePenetrations",d.pipePenetrations))}</div>
-  <div class="tip"><span class="ico">🏗️</span><div>${d.kind==="Swimming Pool"?"Pool shells are the classic case where waterstop and membrane are not optional extras — any construction joint below water level needs a waterstop, and the whole wetted envelope needs waterproofing, not just the base.":d.kind==="Water Tank"?"Water-retaining structures are designed to AS 3735 principles in practice: waterstops at every joint, and reinforcement detailed to keep crack widths tight enough to stay watertight.":d.kind==="Sump Pit"?"Keep the pit big enough for the pump/ballvalve plus maintenance access, and always allow for the inlet/outlet pipe penetrations as trimmed openings, not afterthoughts.":d.kind==="Box Gutter"?"A concrete box gutter is a water-retaining trough at roof level: the membrane and the base/wall waterstop are the waterproofing, the internal width and depth come off the hydraulic detail, and the outlets, overflows and sumps are the pipe penetrations. Enter the gutter's own run as the internal length — a gutter in several runs is several of this element, or one with the lengths summed.":"Planters usually skip waterstop but still want a membrane if garden bed drainage sits against a habitable space."}</div></div>`;
+  <div class="tip"><span class="ico">🏗️</span><div>${d.kind==="Swimming Pool"?"Pool shells are the classic case where waterstop and membrane are not optional extras — any construction joint below water level needs a waterstop, and the whole wetted envelope needs waterproofing, not just the base.":d.kind==="Water Tank"?"Water-retaining structures are designed to AS 3735 principles in practice: waterstops at every joint, and reinforcement detailed to keep crack widths tight enough to stay watertight.":d.kind==="Sump Pit"?"Keep the pit big enough for the pump/ballvalve plus maintenance access, and always allow for the inlet/outlet pipe penetrations as trimmed openings, not afterthoughts.":"Planters usually skip waterstop but still want a membrane if garden bed drainage sits against a habitable space."}</div></div>`;
   let reo=`<div class="sechead">Base Mat</div><div class="grid cols4">${F("Bottom X dia",barSizeSel("baseXDia",d.baseXDia))}${F("Spacing (mm)",inpNum("baseXSpacing",d.baseXSpacing))}${F("Bottom Y dia",barSizeSel("baseYDia",d.baseYDia))}${F("Spacing (mm)",inpNum("baseYSpacing",d.baseYSpacing))}</div>
   <div class="grid cols3">${chk("baseXLap",d.baseXLap,"Bottom X — include lap allowance (%)","baseXLap")}${chk("baseYLap",d.baseYLap,"Bottom Y — include lap allowance (%)","baseYLap")}</div>
   <div class="grid cols3">${chk("baseTop",d.baseTop,"Top mat — base reinforced top and bottom, both ways","baseTop")}</div>
@@ -6229,10 +6322,7 @@ function renderTankbox(inst){
   <div class="grid cols3">${chk("baseTopXLap",d.baseTopXLap,"Top X — include lap allowance (%)","baseTopXLap")}${chk("baseTopYLap",d.baseTopYLap,"Top Y — include lap allowance (%)","baseTopYLap")}</div></div>
   <div class="sechead">Wall Reinforcement (both faces)</div><div class="grid cols4">${F("Vertical dia",barSizeSel("wallVertDia",d.wallVertDia))}${F("Spacing (mm)",inpNum("wallVertSpacing",d.wallVertSpacing))}${F("Horizontal dia",barSizeSel("wallHorDia",d.wallHorDia))}${F("Spacing (mm)",inpNum("wallHorSpacing",d.wallHorSpacing))}</div>
   <div class="grid cols3">${chk("wallVertLap",d.wallVertLap,"Vertical — include lap allowance (%)","wallVertLap")}${chk("wallHorLap",d.wallHorLap,"Horizontal — include lap allowance (%)","wallHorLap")}</div>`;
-  let form=TANKBOX_SUSPENDED.has(d.kind)
-    ? `<div class="grid cols3">${chk("soffitForm",d.soffitForm!==false,"Soffit formwork under the gutter (formed separately from the roof slab)")}</div>
-  <p class="small">Formwork = inner + outer wall faces (perimeter × depth × 2) plus the soffit over the external footprint while the box is ticked. Untick it when the gutter is cast integrally with the roof slab, whose soffit formwork already covers it.</p>`
-    : `<p class="small">Formwork = inner + outer wall faces (perimeter × depth × 2). Base is typically cast against blinding/ground.</p>`;
+  let form=`<p class="small">Formwork = inner + outer wall faces (perimeter × depth × 2). Base is typically cast against blinding/ground.</p>`;
   let conns=`${chk("starters",d.starters,"Starter bars / dowels into adjoining slab or wall","starters")}
   <div class="subsec ${d.starters?'':'hidden'}" data-show-if="starters"><div class="grid cols4">
    ${F("Connects to",targetSelect("connTarget",d.connTarget,inst.id))}${F("Quantity",inpNum("connQty",d.connQty))}${F("Diameter",barSizeSel("connDia",d.connDia))}${F("Embedment (mm)",inpNum("connEmbed",d.connEmbed))}${F("Projection (mm)",inpNum("connProj",d.connProj))}${F("Hook",anchorSel("connHook",d.connHook))}
@@ -6274,9 +6364,6 @@ function computeTankbox(inst,def){
   lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:`${d.kind} — base+walls`,qty:totVol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(totVol,concWastePct(d)),formula:`${N}×(base area×${d.baseThickness} + perimeter×${d.wallThickness}×${d.depth})`}));
   let formArea=N*perim*depth*2;
   lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Wall formwork (inner+outer)",spec:"",qty:formArea,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(formArea,PROJECT.formworkWaste),formula:"perimeter × depth × 2 faces"}));
-  if(TANKBOX_SUSPENDED.has(d.kind) && d.soffitForm!==false){
-    lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Soffit formwork",spec:`${d.kind} — underside, external footprint`,qty:ext.area,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(ext.area,PROJECT.formworkWaste),formula:`${N}×external length×external width`}));
-  }
   if(d.membrane) lines.push(baseLine(inst,def,{materialGroup:"Vapour Barrier",material:"Waterproof membrane",spec:"base + walls, incl. laps",qty:N*(baseArea+perim*depth),unit:"m²",waste:10,finalQty:withWaste(N*(baseArea+perim*depth),10),formula:"(base area + wall area) incl. 10% laps"}));
   if(d.waterstop) lines.push(baseLine(inst,def,{materialGroup:"Joints",material:"PVC waterstop",spec:"base/wall construction joint",qty:N*perim,unit:"m",waste:5,finalQty:withWaste(N*perim,5),formula:"perimeter"}));
   if(d.coping){ let copeVol=N*perim*(num(d.copingWidth)/1000)*0.15; lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:"Coping / capping beam",spec:`${d.copingWidth}mm wide`,qty:copeVol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(copeVol,concWastePct(d)),formula:"perimeter × coping width × 150mm nominal"})); }
@@ -6853,6 +6940,35 @@ function diagKerb(inst){ let d=inst.data;
    ${nJ>0?dimH(ex,ex+ew*(JS/L),ey-4,`JT @${N_(d.jointSpacing,12)}m`):''}
    ${specLine(ex,ey+eh+26,`${nJ} JOINT${nJ===1?'':'S'}`)}`;
   return sheetFrame(inst, prof, [316,178], section+elev);
+}
+
+function diagBoxGutter(inst){ const d=inst.data, g=boxGutterGeom(d);
+  const W=Math.max(100,g.W*1000), bt=Math.max(30,g.bt*1000), tA=Math.max(30,g.tA*1000), tB=Math.max(30,g.tB*1000), hA=Math.max(50,g.hA*1000), hB=Math.max(50,g.hB*1000), cov=coverOf(d);
+  const extW=W+tA+tB, extH=bt+Math.max(hA,hB);
+  const sx=48, top=40, s=DG.fit(extW, extH, 150, 96), base=top+extH*s;
+  const x0=sx, xA=sx+tA*s, xB=sx+(tA+W)*s, x1=sx+extW*s, yBT=base-bt*s, yA=yBT-hA*s, yB=yBT-hB*s;
+  const shape=`M${x0} ${yA} H${xA} V${yBT} H${xB} V${yB} H${x1} V${base} H${x0} Z`;
+  const cv=Math.max(1.2,cov*s), nL=Math.max(1,Math.min(12,N_(d.longQty,6))), baseBars=Math.min(nL,Math.max(2,Math.ceil(nL/2))), legBars=nL-baseBars;
+  const tt=d.transType||"bars";
+  let section=`${DG.title(sx,top-18,"SECTION")}
+   <path d="${shape}" fill="rgba(232,163,61,0.10)" stroke="${DWG.ink}" stroke-width="1.6"/>
+   ${tt!=="none"? `<path d="M${x0+cv} ${yA+cv} V${base-cv} H${x1-cv} V${yB+cv}" fill="none" stroke="${DWG.bar}" stroke-width="1.1"/>`:''}
+   ${DG.bars(x0+cv+1,x1-cv-1,base-cv-1,baseBars)}
+   ${legBars>0? DG.barsV(x0+tA*s/2,yA+cv+2,yBT-cv,Math.ceil(legBars/2)) + (legBars>1? DG.barsV(x1-tB*s/2,yB+cv+2,yBT-cv,Math.floor(legBars/2)):'') : ''}
+   ${dimH(xA,xB,top-4,`${Math.round(W)}`)}
+   ${dimH(x0,x1,base+14,`${Math.round(extW)}`)}
+   ${dimV(yBT,base,x1+12,`${Math.round(bt)}`)}
+   ${dimV(yA,yBT,x0-12,`${Math.round(hA)}`)}
+   ${hB!==hA? dimV(yB,yBT,x1+28,`${Math.round(hB)}`):''}
+   ${specLine(sx,base+30,`${nL}${d.longDia||'N12'} LONG · ${tt==="mesh"?(d.meshType||'SL72')+' BENT TO SECTION':tt==="none"?'NO TRANSVERSE':`${d.transDia||'N12'} U-BARS @${N_(d.transSpacing,200)}`}`)}
+   ${specLine(sx,base+40,`WALLS ${Math.round(tA)}/${Math.round(tB)} · ${d.membrane?'MEMBRANE':'NO MEMBRANE'}${d.waterstop?' · WATERSTOP':''}`)}`;
+  const ex=236, ey=50, ew=100, eh=Math.max(10,Math.min(26,extH*s)), L=Math.max(500,N_(d.length,15000)), JS=Math.max(0,N_(d.jointSpacing,0))*1000, nJ=JS>0?Math.min(40,Math.floor(L/JS)):0;
+  let elev=`${DG.title(ex,ey-26,"ELEVATION")}
+   ${DG.rect(ex,ey,ew,eh)}
+   ${Array.from({length:nJ}).map((_,i)=>{const x=ex+ew*((i+1)*JS/L); return x<ex+ew?`<line x1="${x}" y1="${ey}" x2="${x}" y2="${ey+eh}" stroke="${DWG.gl}" stroke-width="1"/>`:'';}).join('')}
+   ${dimH(ex,ex+ew,ey+eh+12,`L ${L}`)}
+   ${specLine(ex,ey+eh+26,`${N_(d.qty,1)} RUN${N_(d.qty,1)===1?'':'S'} · ${nJ} JOINT${nJ===1?'':'S'}`)}`;
+  return sheetFrame(inst, "Box gutter", [350,196], section+elev);
 }
 
 function diagTankbox(inst){ let d=inst.data;
@@ -7695,6 +7811,7 @@ const CALC = {
   kerb:{defaults:kerbDefaults, render:renderKerb, compute:computeKerb, diagram:diagKerb},
   screed:{defaults:screedDefaults, render:renderScreed, compute:computeScreed, diagram:diagScreed},
   tankbox:{defaults:tankboxDefaults, render:renderTankbox, compute:computeTankbox, diagram:diagTankbox},
+  boxgutter:{defaults:boxGutterDefaults, render:renderBoxGutter, compute:computeBoxGutter, diagram:diagBoxGutter},
   generic:{defaults:genericDefaults, render:renderGeneric, compute:computeGeneric, diagram:diagGeneric},
   composite:{defaults:compositeDefaults, render:renderComposite, compute:computeComposite, diagram:diagComposite},
 };
@@ -9089,7 +9206,7 @@ function autoGeometry(inst){
   const def = LIB_INDEX[inst.typeKey] || {};
   const d = inst.data || {};
   // Run: strip footings and every beam type measure count × length.
-  const runM = (def.calc==="stripfooting" || def.calc==="beam")
+  const runM = (def.calc==="stripfooting" || def.calc==="beam" || def.calc==="boxgutter")
     ? (num(d.qty,1) * num(d.length)) / 1000
     : 0;
   // Area: the plan/footprint figure the compute already derives for the

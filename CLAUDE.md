@@ -386,13 +386,26 @@ on the `slab_suspended` crew sheet except the parapet (`wall`). Estimates: the
 `Roof` library group carries the same eight (`roofslab` keeps its id, its
 label is now "RC Roof Slab (propped)"; `roofslabcant`, `plantdeck`,
 `liftoverrun` are suspended `slab`s; `roofbeam` is a `beam` with
-`beamCategory: "Roof"`; `parapet` a `wall`; `roofplinth` a `kerb`; `boxgutter`
-a `tankbox` of kind "Box Gutter"). **A box gutter is a SUSPENDED trough**:
-`TANKBOX_SUSPENDED` kinds never dig or blind (the Roof group is not a ground
-group) and emit "Soffit formwork" over the external footprint while the
-card's `soffitForm` box is ticked (default) — untick it when the gutter is
-cast integrally with the roof slab. `DEFAULT_COVERS` carries the new slab
-categories, the Roof beam and the Box Gutter; the library's `EST_WASTE_TYPES`
+`beamCategory: "Roof"`; `parapet` a `wall`; `roofplinth` a `kerb`). **The box
+gutter is its own CROSS-SECTION calculator** (`boxgutter`: `boxGutterDefaults`
+/ `boxGutterGeom` / `renderBoxGutter` / `computeBoxGutter` / `diagBoxGutter` —
+Grady, 6 Oct 2026: "BOX gutter should be cross sectional. we determine
+everything as per the cross section and it multiplies by the length"): the
+section is typed once — internal width and depth, base thickness, wall A / B
+thicknesses, wall A / B heights (blank = the internal depth; a taller wall is
+the upstand against a parapet), cover — and EVERY quantity is a per-metre
+figure of that section × run length × runs: concrete area (plus typed closed
+ends), formed faces (soffit = external width, outer faces = full external
+height for 2 / 1 / 0 faces, inner faces = both wall heights), the membrane
+girth (width + both wall heights, 10% laps), waterstop on both base/wall
+joints, longitudinal bars counted in the section, and transverse U-bars at a
+spacing (run ÷ spacing + 1, each the developed length = base + both legs
+inside the cover, or a typed length) or a mesh bent to the section (girth ×
+run, whole sheets). `boxGutterGeom(d)` is the ONE reading. Suspended at roof
+level: never digs or blinds; a blank run prices NOTHING (completeness
+warning); `autoGeometry` publishes the run. `DEFAULT_COVERS.boxgutter` = 40.
+`DEFAULT_COVERS` also carries the new slab categories and the Roof beam; the
+library's `EST_WASTE_TYPES`
 mirror and `ESTIMATE_TYPE_MAP` (every roof label → its Quotes id) are
 verify-covered; the CSV importer's label rules match box gutter / parapet /
 plant deck / overrun / cantilever / roof beam before the generic slab and
