@@ -986,7 +986,25 @@ element families waits on the owner's approval of the pad footing.
   keep working. It REPLACES the calculator's Reinforcement lines and keeps
   Connections; the detailed fields hide under `data-show-if="reoMethod_detailed"`.
   `validateInstance` flags a rate with no concrete (completeness) and always
-  asks for the ratio to be confirmed (verify).
+  asks for the ratio to be confirmed (verify). **The rate can be typed per
+  m² instead** (6 Oct 2026, Grady: "the rate per square metre is not
+  displayed … i am talking about slabs"): `reoRateBasis` = `"m3"` (default,
+  every older takeoff) or `"m2"` (`reoRateKgM2`, blank = 10, × the plan area
+  from `reoRateArea(d)` = `_autoAreaM2 || _autoInsArea || _autoBlindArea`,
+  the same area Project Geometry publishes). `out.reoRate` carries
+  `{rate, basis, conc, area, kg, metres, dia, kgPerM3, kgPerM2}` and
+  `reoRateHintText` states the steel BOTH ways on the card (refreshed live by
+  `refreshCardResults`); the card head and the Results totals show the
+  element's steel rate in kg/m³ and, wherever a plan area exists, kg/m² —
+  whatever the method. A per-m² rate on an element with no plan area is a
+  completeness warning.
+- **Every calculator with a natural area publishes it** (`_autoAreaM2`,
+  deleted by `computeInstance` before each compute and read FIRST by
+  `autoGeometry`): a wall's face net of openings, a shotcrete face, a
+  retaining-wall stem face (the base footprint when only the base is priced),
+  a box gutter's plan footprint (external width × run), a composite's slab
+  parts. Before 6 Oct 2026 those elements reached Quotes with no m², so their
+  cards showed no $/m².
 
 ## Estimates standards profile, allowances and review gate (Phase 4)
 

@@ -5392,6 +5392,7 @@ function computeWall(inst,def){
   let hAvg = ev && Lm>0? ev.areaM2/Lm : Hm;
   let openArea=0; (d.openings||[]).forEach(o=>{ openArea+=(num(o.w)/1000)*(num(o.h)/1000)*num(o.qty,1); });
   let grossArea=(ev? ev.areaM2 : Lm*Hm)-openArea;
+  d._autoAreaM2 = N*grossArea;   // the wall's face — what a wall is measured in per m² (Project Geometry → Quotes $/m²)
   let vol=N*grossArea*Tm;
   lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:`${d.thickness}mm thick${ev?(ev.manual?` — entered face area ${fmt(ev.areaM2,2)} m²`:` — sketched face ${fmt(ev.areaM2,2)} m² (${ev.sides} sides)`):''}`,qty:vol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(vol,concWastePct(d)),formula:`${N}×(${fmt(Lm,1)}×${fmt(Hm,1)} − openings ${fmt(openArea,2)})×${fmt(Tm,2)}`}));
   let fArea=0;
@@ -5570,6 +5571,7 @@ function computeRetWall(inst,def){
   let warnings=[]; if(!incStem && d.incBase===false) warnings.push({text:"Retaining wall scope excludes both the stem and the base — nothing is priced", section:"geom", level:"completeness"});
   let footVol = baseOff? 0 : g.footArea*(num(d.footD)/1000);
   d._autoBlindArea = baseOff? 0 : g.footArea;   // the footing's footprint — the shared Blinding & Vapour Barrier tab blinds under it
+  d._autoAreaM2 = incStem? g.area : g.footArea;  // Project Geometry: the stem's face area (the base's footprint when only the base is priced)
   let stemVol = incStem? g.stemVol : 0;
   let keyVol = (!baseOff && d.key)? Lm*(num(d.keyD)/1000)*(num(d.keyW)/1000) : 0;
   let totVol=footVol+stemVol+keyVol;
@@ -5693,6 +5695,7 @@ function computeShotWall(inst,def){
   let d=inst.data, lines=[];
   let Lm=num(d.length)/1000, Hm=num(d.height)/1000, Tm=num(d.thickness)/1000;
   let area=Lm*Hm, vol=area*Tm;
+  d._autoAreaM2 = area;   // sprayed face — the m² a shotcrete wall is measured in
   let grade=(d.grade===undefined||d.grade==="")? PROJECT.grade : d.grade;
   // Rebound / overspray: the "Shotcrete / irregular surfaces" work-type class
   // (Rates Library, 15% seed; was a hard 20% before 2 Oct 2026), the project's
@@ -6003,6 +6006,7 @@ function computeBoxGutter(inst,def){
   if(!(g.L>0)||!(g.W>0)||!(g.D>0)) warnings.push({text:"Box gutter run length, internal width and internal depth are needed — nothing is priced until the section and the run are entered",section:"geom",level:"completeness"});
   const run=g.N*g.L;
   d._autoBlindArea=0;   // suspended at roof level — never blinds
+  d._autoAreaM2=g.extW*run;   // Project Geometry area = the gutter's plan footprint (external width × run); overtype on the Results tab if the job measures it otherwise
   const vol=run>0? g.secArea*run + g.N*g.endWallVol : 0;   // no run, nothing priced — the warning above says so
   if(vol>0) lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:`Box gutter ${fmt(g.W*1000,0)}×${fmt(g.D*1000,0)} int., base ${fmt(g.bt*1000,0)}, walls ${fmt(g.tA*1000,0)}/${fmt(g.tB*1000,0)}`,qty:vol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(vol,concWastePct(d)),formula:`section ${fmt(g.secArea,4)}m² × ${fmt(run,2)}m${g.endWallVol>0?` + ${num(d.endWalls)} end wall(s) × ${g.N}`:''}`}));
   const face=(mat,perM,spec)=>{ if(!(perM>0)||!(run>0)) return; const a=perM*run; lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:mat,spec,qty:a,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(a,PROJECT.formworkWaste),formula:`${fmt(perM,3)} m²/m × ${fmt(run,2)}m`})); };
@@ -6193,6 +6197,7 @@ function computeComposite(inst,def){
   (d.slabs||[]).forEach((sl,i)=>{
     const label=sl.label||`Slab ${i+1}`, A=compositeSlabArea(sl), t=num(sl.t)/1000, L=num(sl.L), W=num(sl.W);
     if(!(A>0) || !(t>0)){ warnings.push({text:`${label}: enter a length and width (or plan area) and a thickness`, section:"geom", level:"completeness"}); return; }
+    d._autoAreaM2=(d._autoAreaM2||0)+N*A;   // Project Geometry area = every slab part's plan area
     const vol=N*A*t, g=gradeOf(sl.grade);
     lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${g} concrete`,spec:`${label} — ${num(sl.t)}mm slab`,qty:vol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(vol,concWastePct(d)),formula:`${N}×${fmt(A,2)}m²×${num(sl.t)}mm`}));
     const reo=sl.reo||"mesh";
@@ -7991,10 +7996,11 @@ function validateInstance(inst, def, out){
   }
   // completeness: a rate with nothing to apply it to
   if(reoMethodOf(d)==="rate"){
-    const rr=out&&out.reoRate;
-    if(!rr || rr.conc<=0) push("Reinforcement is priced by rate but this element has no concrete volume to apply it to", "reo", "completeness");
-    else if(num(d.reoRateKgM3,100)<=0) push("Reinforcement rate is 0 kg/m³ — no steel is being counted", "reo", "completeness");
-    else push(`Reinforcement by rate (${fmt(rr.rate,0)} kg/m³ as ${rr.dia}) — confirm the ratio against the engineer's documents before pricing`, "reo", "verify");
+    const rr=out&&out.reoRate, perM2=reoRateBasisOf(d)==="m2";
+    if(perM2 && (!rr || rr.area<=0)) push("Reinforcement is priced per m² but this element has no plan area to apply it to — type the rate per m³, or enter the area on the Results tab", "reo", "completeness");
+    else if(!perM2 && (!rr || rr.conc<=0)) push("Reinforcement is priced by rate but this element has no concrete volume to apply it to", "reo", "completeness");
+    else if(perM2? num(d.reoRateKgM2,10)<=0 : num(d.reoRateKgM3,100)<=0) push(`Reinforcement rate is 0 ${perM2?"kg/m²":"kg/m³"} — no steel is being counted`, "reo", "completeness");
+    else push(`Reinforcement by rate (${fmt(rr.rate,perM2?1:0)} ${perM2?"kg/m²":"kg/m³"} as ${rr.dia}${rr.kgPerM2>0&&!perM2?` ≈ ${fmt(rr.kgPerM2,1)} kg/m²`:rr.kgPerM3>0&&perM2?` ≈ ${fmt(rr.kgPerM3,0)} kg/m³`:""}) — confirm the ratio against the engineer's documents before pricing`, "reo", "verify");
   }
   // sanity: ratios (configurable review prompts — never a design verdict)
   const conc=lines.filter(l=>l.materialGroup==="Concrete").reduce((s,l)=>s+(l.qty||0),0);
@@ -8282,6 +8288,13 @@ const CARD_TAB_MEMORY={};
  * they belong to the join, not the ratio. reoMethod is data, saved with the
  * takeoff; an element without it is "detailed" — exactly as before. */
 function reoMethodOf(d){ return (d && d.reoMethod)==="rate"? "rate" : "detailed"; }
+/* The basis a rate is typed in: kg per m³ of concrete (every element, the
+ * default) or kg per m² of plan area (slabs — the figure slab steel is
+ * quoted in; Grady, 6 Oct 2026: "the rate per square metre is not
+ * displayed … i am talking about slabs"). `reoRateArea(d)` is the ONE plan
+ * area a per-m² rate applies to — the same area Project Geometry publishes. */
+function reoRateBasisOf(d){ return (d && d.reoRateBasis)==="m2"? "m2" : "m3"; }
+function reoRateArea(d){ return num(d._autoAreaM2) || num(d._autoInsArea) || num(d._autoBlindArea) || 0; }
 /* ---- Irregular shape: concrete volume override (every element with a
  * Concrete tab). The geometry tabs describe regular solids; a curved,
  * splayed, sloping or cut-out element is measured off the drawing (or a 3D
@@ -8309,22 +8322,34 @@ function applyConcreteOverride(inst,def,out){
 function reoMethodSection(inst){
   let d=inst.data, rate=reoMethodOf(d)==="rate";
   return `<div class="sechead">Reinforcement method</div>
-  <div class="grid cols3">${F("Method",selOpts("reoMethod",rate?"rate":"detailed",[["detailed","Detailed — bars and mesh from the spacings below"],["rate","By rate — kg of steel per m³ of concrete, as bar metres"]]))}</div>
+  <div class="grid cols3">${F("Method",selOpts("reoMethod",rate?"rate":"detailed",[["detailed","Detailed — bars and mesh from the spacings below"],["rate","By rate — kg of steel per m³ of concrete or per m² of slab, as bar metres"]]))}</div>
   <div class="subsec ${rate?'':'hidden'}" data-show-if="reoMethod_rate"><div class="grid cols4">
-   ${F("Rate (kg of steel per m³ of concrete)",inpNum("reoRateKgM3",d.reoRateKgM3===undefined?100:d.reoRateKgM3))}
+   ${F("Rate basis",selOpts("reoRateBasis",reoRateBasisOf(d),[["m3","kg per m³ of concrete"],["m2","kg per m² of plan area (slabs)"]],true))}
+   ${reoRateBasisOf(d)==="m2"
+     ? F("Rate (kg of steel per m² of slab)",inpNum("reoRateKgM2",d.reoRateKgM2===undefined?10:d.reoRateKgM2))
+     : F("Rate (kg of steel per m³ of concrete)",inpNum("reoRateKgM3",d.reoRateKgM3===undefined?100:d.reoRateKgM3))}
    ${F("Equivalent bar size",barSizeSel("reoRateDia",d.reoRateDia||"N16"))}
    ${chk("reoRateLap",d.reoRateLap,"Include lap allowance (%)","reoRateLap")}
-  </div><p class="small">kg = rate × this element's concrete (blinding excluded); metres = kg ÷ the bar's kg/m (d²/162 — N16 is ${fmt(massPerM(16),3)} kg/m). One register line replaces every detailed reinforcement line of this element; starters, dowels and connections to other elements are kept. Typical ratios: footings 60–100, slabs on ground 40–80, suspended slabs 90–130, beams 120–200, columns and walls 120–250 kg/m³ — confirm against the engineer's documents.</p></div>`;
+  </div><p class="small reoRateHint">${reoRateHintText(inst.results&&inst.results.reoRate)}</p>
+  <p class="small">Per m³: kg = rate × this element's concrete (blinding excluded). Per m²: kg = rate × this element's plan area (the slab's net area, or the area Project Geometry carries). Metres = kg ÷ the bar's kg/m (d²/162 — N16 is ${fmt(massPerM(16),3)} kg/m). The line above always shows the same steel BOTH ways — kg/m³ and kg/m² — so a slab's rate per square metre is on its face whichever basis it was typed in. One register line replaces every detailed reinforcement line of this element; starters, dowels and connections to other elements are kept. Typical ratios: footings 60–100, slabs on ground 40–80, suspended slabs 90–130, beams 120–200, columns and walls 120–250 kg/m³ — confirm against the engineer's documents.</p></div>`;
+}
+/** The one-line reading of a rate result: the steel stated both per m³ and per m². */
+function reoRateHintText(rr){
+  if(!rr) return "";
+  const both=`${rr.kgPerM3>0?`${fmt(rr.kgPerM3,1)} kg/m³ of concrete`:"no concrete volume"} · ${rr.kgPerM2>0?`${fmt(rr.kgPerM2,1)} kg/m² of plan area`:"no plan area on this element"}`;
+  return `This element: ${fmt(rr.kg,1)} kg of steel = ${both} (${fmt(rr.conc,2)} m³, ${rr.area>0?fmt(rr.area,2)+" m²":"area —"}).`;
 }
 function applyReoRate(inst,def,out){
   let d=inst.data, lines=out.lines||[];
   let conc=lines.filter(l=>l.materialGroup==="Concrete" && !/blind|reference only/i.test(l.spec||"") && !/reference only/i.test(l.material||"")).reduce((s,l)=>s+(l.qty||0),0);
-  let rate=num(d.reoRateKgM3,100), dia=d.reoRateDia||"N16", kgm=massPerM(barDiaOf(dia));
-  let kg=rate*conc, metres=kgm>0? kg/kgm : 0, lapPct=d.reoRateLap?PROJECT.lapPct:0;
+  let basis=reoRateBasisOf(d), area=reoRateArea(d);
+  let rate=basis==="m2"? num(d.reoRateKgM2,10) : num(d.reoRateKgM3,100), dia=d.reoRateDia||"N16", kgm=massPerM(barDiaOf(dia));
+  let kg=basis==="m2"? rate*area : rate*conc, metres=kgm>0? kg/kgm : 0, lapPct=d.reoRateLap?PROJECT.lapPct:0;
+  let unitTxt=basis==="m2"?"kg/m²":"kg/m³", baseTxt=basis==="m2"?`${fmt(area,2)} m² plan area`:`${fmt(conc,3)} m³ concrete`;
   let removed=lines.filter(l=>l.materialGroup==="Reinforcement").length;
   out.lines=lines.filter(l=>l.materialGroup!=="Reinforcement");
-  out.lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:dia,spec:`Reinforcement by rate — ${fmt(rate,0)} kg/m³ as ${dia} equivalent`,qty:metres,unit:"m",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(metres,PROJECT.reoWaste,lapPct),formula:`${fmt(rate,0)} kg/m³ × ${fmt(conc,3)} m³ concrete = ${fmt(kg,1)} kg ÷ ${fmt(kgm,3)} kg/m (${dia})`,notes:`${fmt(kg,1)} kg — replaces ${removed} detailed line(s); connections kept`}));
-  out.reoRate={rate,conc,kg,metres,dia};
+  out.lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:dia,spec:`Reinforcement by rate — ${fmt(rate,basis==="m2"?1:0)} ${unitTxt} as ${dia} equivalent`,qty:metres,unit:"m",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(metres,PROJECT.reoWaste,lapPct),formula:`${fmt(rate,basis==="m2"?1:0)} ${unitTxt} × ${baseTxt} = ${fmt(kg,1)} kg ÷ ${fmt(kgm,3)} kg/m (${dia})`,notes:`${fmt(kg,1)} kg — replaces ${removed} detailed line(s); connections kept`}));
+  out.reoRate={rate,basis,conc,area,kg,metres,dia,kgPerM3:conc>0?kg/conc:0,kgPerM2:area>0?kg/area:0};
 }
 function buildCard(inst){
   let def=LIB_INDEX[inst.typeKey];
@@ -8889,6 +8914,7 @@ function updateDiagramPane(card,inst){
 function computeInstance(inst){
   let def=LIB_INDEX[inst.typeKey], calc=CALC[def.calc];
   inst.data._concWasteAuto=autoConcWasteClass(def);   // the waste class this calculator implies (derived; concWastePct reads it)
+  delete inst.data._autoAreaM2;                        // the area Project Geometry publishes — each calculator that has one sets it afresh
   let out=calc.compute(inst,def);
   applyConcreteOverride(inst,def,out);                               // an entered volume replaces the geometry's concrete first…
   if(reoMethodOf(inst.data)==="rate") applyReoRate(inst,def,out);   // …so a rate follows it; before connections are added, so they are never replaced
@@ -9121,7 +9147,9 @@ function refreshCardResults(card,inst){
   let totR=out.lines.filter(l=>l.materialGroup==="Reinforcement").reduce((s,l)=>s+(l.weightKg||0),0);
   let bv=blindingVapourTotals(out.lines);
   let headStats=card.querySelector('.headStats');
-  if(headStats) headStats.innerHTML = ` · ${fmt(totC,2)}m³ concrete${concreteGradeStr(out.lines)?` (${concreteGradeStr(out.lines)})`:''} · ${fmt(totR,1)}kg reo · ${formworkStr(ft)}${bv.blind?` · ${fmt(bv.blind,2)}m³ blinding/base`:''}${bv.vap?` · ${fmt(bv.vap,2)}m² vapour barrier`:''}`;
+  const planArea=reoRateArea(inst.data), reoRateStr=totR>0? ` (${totC>0?`${fmt(totR/totC,0)} kg/m³`:''}${totC>0&&planArea>0?' · ':''}${planArea>0?`${fmt(totR/planArea,1)} kg/m²`:''})` : '';
+  const hint=card.querySelector('.reoRateHint'); if(hint) hint.textContent=reoRateHintText(out.reoRate);
+  if(headStats) headStats.innerHTML = ` · ${fmt(totC,2)}m³ concrete${concreteGradeStr(out.lines)?` (${concreteGradeStr(out.lines)})`:''} · ${fmt(totR,1)}kg reo${reoRateStr} · ${formworkStr(ft)}${bv.blind?` · ${fmt(bv.blind,2)}m³ blinding/base`:''}${bv.vap?` · ${fmt(bv.vap,2)}m² vapour barrier`:''}`;
   refreshSectionRail(card,inst,out);
   if(SHELL_MODE==="blueprint" && hasAssembly(inst)){
     refresh3D(card,inst);
@@ -9152,6 +9180,8 @@ function refreshCardResults(card,inst){
      ${ft.lm?`<div class="stat"><div class="n">${fmt(ft.lm,2)}</div><div class="l">lm edge / reveal formwork</div></div>`:''}
      ${ft.no?`<div class="stat"><div class="n">${fmt(ft.no,0)}</div><div class="l">formed openings (no.)</div></div>`:''}
      <div class="stat"><div class="n">${fmt(totR,1)}</div><div class="l">kg reinforcement</div></div>
+     ${totR>0&&totC>0?`<div class="stat"><div class="n">${fmt(totR/totC,0)}</div><div class="l">kg/m³ steel rate</div></div>`:''}
+     ${totR>0&&planArea>0?`<div class="stat"><div class="n">${fmt(totR/planArea,1)}</div><div class="l">kg/m² steel rate (${fmt(planArea,1)} m² plan)</div></div>`:''}
      ${bv.blind?`<div class="stat"><div class="n">${fmt(bv.blind,2)}</div><div class="l">m³ blinding/base</div></div>`:''}
      ${bv.vap?`<div class="stat"><div class="n">${fmt(bv.vap,2)}</div><div class="l">m² vapour barrier</div></div>`:''}
    </div>
@@ -9209,9 +9239,13 @@ function autoGeometry(inst){
   const runM = (def.calc==="stripfooting" || def.calc==="beam" || def.calc==="boxgutter")
     ? (num(d.qty,1) * num(d.length)) / 1000
     : 0;
-  // Area: the plan/footprint figure the compute already derives for the
-  // insulation (slabs) and blinding (footings, beams) bolt-ons.
-  const areaM2 = num(d._autoInsArea) || num(d._autoBlindArea) || 0;
+  // Area: the calculator's own measure first (`_autoAreaM2` — a wall's face,
+  // a box gutter's plan footprint, a composite's slab areas; 6 Oct 2026,
+  // Grady: "the rate per square metre is not displayed"), else the
+  // plan/footprint figure the compute derives for the insulation (slabs)
+  // and blinding (footings, beams) bolt-ons. Without one of these the
+  // Quotes card can show no $/m².
+  const areaM2 = num(d._autoAreaM2) || num(d._autoInsArea) || num(d._autoBlindArea) || 0;
   // Count: every calculator's own Quantity — how many of the element there
   // are (12 piles, 4 pad footings) — so Quotes can show a cost per one.
   const countNo = Math.max(0, num(d.qty, 1));
