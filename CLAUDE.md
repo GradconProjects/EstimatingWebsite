@@ -892,6 +892,14 @@ element families waits on the owner's approval of the pad footing.
   `_autoInsArea` / `_autoInsPerim` so the shared insulation / acoustic-mat
   section and Project Geometry take the screed area; it is not a ground
   element (no excavation) and has no Concrete tab.
+- **Column vertical bars = bars × qty × HEIGHT** (`computeColumn`, 5 Oct
+  2026): the lap onto the starters from below sits inside the height (those
+  starters are counted on their source element) and the bars continuing up
+  are the column's own Connections line (embedment + projection, only with a
+  "continues to" target). Before this every vertical bar carried the 900 mm
+  `connProj` on top of H whether or not the column continued, and a
+  continuing column counted that projection twice. Existing takeoffs with
+  columns drop by bars × 0.9 m per column (review status flags it).
 - **Stairs** (`stairGeom(d)`, `STAIR_SHAPES`): straight, L (quarter-turn),
   U / dog-leg, multi-flight, winder, spiral (newel + outer radius, turn), curved
   (centreline radius, turn) and irregular (measured overrides; an old

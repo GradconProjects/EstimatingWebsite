@@ -5256,10 +5256,18 @@ function computeColumn(inst,def){
   lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:d.shape=="circular"?`⌀${d.dia}`:`${d.width}x${d.depth}`,qty:vol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(vol,concWastePct(d)),formula:d.shape=="circular"?`${N}×π/4×${d.dia}²×H`:`${N}×${d.width}×${d.depth}×H`}));
   if(formArea>0) lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Column formwork",spec:"Selected faces",qty:formArea,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(formArea,PROJECT.formworkWaste),formula:"selected faces × H"}));
   let vDia=barDiaOf(d.vDia);
-  let barLen=H+num(d.connProj)/1000; // include lap/dowel projection continuing up
+  // Vertical bars run the column HEIGHT: the lap onto the starters from the
+  // element below sits inside that height (the starters are counted on their
+  // source element), and the bars that continue UP into the next element are
+  // the Connections line below (embedment + projection, only when a
+  // "continues to" target is set). Until 5 Oct 2026 every bar carried the
+  // 900 mm dowel projection on top of H whether or not the column continued,
+  // and a continuing column counted that projection twice (Grady: "column
+  // vertical bars calculations is wrong").
+  let barLen=H;
   let totLen=num(d.vBars)*N*barLen; let wt=totLen*massPerM(vDia);
   let vLapPct=d.vLap?PROJECT.lapPct:0;
-  lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.vDia,spec:"Vertical bars",qty:totLen,unit:"m",waste:PROJECT.reoWaste,lap:vLapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,vLapPct),formula:`${d.vBars}×${N}×(H+lap/dowel proj)`,notes:`${fmt(wt,1)} kg`}));
+  lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.vDia,spec:"Vertical bars",qty:totLen,unit:"m",waste:PROJECT.reoWaste,lap:vLapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,vLapPct),formula:`${d.vBars}×${N}×H${vLapPct?` (+${vLapPct}% lap)`:''}`,notes:`${fmt(wt,1)} kg`}));
   let ligDia=barDiaOf(d.ligDia);
   let perim = d.shape=="circular"? Math.PI*(num(d.dia)-2*cover)/1000 : 2*((num(d.width)-2*cover)+(num(d.depth)-2*cover))/1000;
   let topCount=Math.floor(num(d.topZone)/num(d.topSpacing))+1, botCount=Math.floor(num(d.botZone)/num(d.botSpacing))+1;
