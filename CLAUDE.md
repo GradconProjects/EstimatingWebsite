@@ -1003,8 +1003,10 @@ element families waits on the owner's approval of the pad footing.
   `reoAreaM2` (blank = the element's own plan area from `reoRateArea(d)` =
   `_autoAreaM2 || _autoInsArea || _autoBlindArea`, the same area Project
   Geometry publishes), `reoAreaDia` (N12), `reoAreaSpacing` (200),
-  `reoAreaWays` ("each" = two directions, the default, or "one") and a lap
-  tick; `applyReoArea` emits ONE bar line = area ÷ spacing × directions,
+  `reoAreaWays` ("each" = two directions, the default, or "one"),
+  `reoAreaLayers` (whole number, blank = 1 — a top and bottom mat is 2;
+  Grady: "it only has one layer") and a lap tick; `applyReoArea` emits ONE
+  bar line = area ÷ spacing × directions × layers,
   replacing the detailed lines like the rate does. No area at all, or no
   spacing, is a completeness warning. `out.reoRate` carries `{basis: "m3" |
   "area", rate, conc, area, kg, metres, dia, spacing, ways, kgPerM3,

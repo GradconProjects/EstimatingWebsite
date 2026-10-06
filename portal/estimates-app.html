@@ -8005,7 +8005,7 @@ function validateInstance(inst, def, out){
     const rr=out&&out.reoRate;
     if(!rr || rr.area<=0) push("Reinforcement is taken by area but no area is typed and this element has no plan area of its own — enter the m²", "reo", "completeness");
     else if(!(rr.spacing>0)) push("Reinforcement by area needs a bar spacing — none is typed", "reo", "completeness");
-    else push(`Reinforcement by area (${rr.dia} @${fmt(rr.spacing,0)} ${rr.ways===1?"one way":"each way"} over ${fmt(rr.area,2)} m² = ${fmt(rr.kgPerM2,1)} kg/m²) — confirm against the engineer's documents before pricing`, "reo", "verify");
+    else push(`Reinforcement by area (${rr.dia} @${fmt(rr.spacing,0)} ${rr.ways===1?"one way":"each way"}${rr.layers>1?`, ${rr.layers} layers`:""} over ${fmt(rr.area,2)} m² = ${fmt(rr.kgPerM2,1)} kg/m²) — confirm against the engineer's documents before pricing`, "reo", "verify");
   }
   // sanity: ratios (configurable review prompts — never a design verdict)
   const conc=lines.filter(l=>l.materialGroup==="Concrete").reduce((s,l)=>s+(l.qty||0),0);
@@ -8334,9 +8334,9 @@ function reoMethodSection(inst){
    ${F("Bar type",barSizeSel("reoAreaDia",d.reoAreaDia||"N12"))}
    ${F("Spacing (mm)",inpNum("reoAreaSpacing",d.reoAreaSpacing===undefined?200:d.reoAreaSpacing))}
    ${F("Layout",selOpts("reoAreaWays",d.reoAreaWays||"each",[["each","Each way (two directions)"],["one","One way"]]))}
-  </div><div class="grid cols3">${chk("reoAreaLap",d.reoAreaLap,"Include lap allowance (%)","reoAreaLap")}</div>
+  </div><div class="grid cols3">${F("Layers (blank = 1)",inpNum("reoAreaLayers",d.reoAreaLayers))}${chk("reoAreaLap",d.reoAreaLap,"Include lap allowance (%)","reoAreaLap")}</div>
   <p class="small reoRateHint">${reoRateHintText(inst.results&&inst.results.reoRate)}</p>
-  <p class="small">Bar metres = area ÷ spacing per direction (× 2 each way). Leave the area blank to use the element's own plan area. One register line replaces every detailed reinforcement line of this element; starters, dowels and connections to other elements are kept.</p></div>
+  <p class="small">Bar metres = area ÷ spacing per direction (× 2 each way) × layers — a top and bottom mat is 2 layers. Leave the area blank to use the element's own plan area. One register line replaces every detailed reinforcement line of this element; starters, dowels and connections to other elements are kept.</p></div>
   <div class="subsec ${method==="rate"?'':'hidden'}" data-show-if="reoMethod_rate"><div class="grid cols4">
    ${F("Rate (kg of steel per m³ of concrete)",inpNum("reoRateKgM3",d.reoRateKgM3===undefined?100:d.reoRateKgM3))}
    ${F("Equivalent bar size",barSizeSel("reoRateDia",d.reoRateDia||"N16"))}
@@ -8348,7 +8348,7 @@ function reoMethodSection(inst){
 function reoRateHintText(rr){
   if(!rr) return "";
   const both=`${rr.kgPerM3>0?`${fmt(rr.kgPerM3,1)} kg/m³ of concrete`:"no concrete volume"} · ${rr.kgPerM2>0?`${fmt(rr.kgPerM2,1)} kg/m² of plan area`:"no plan area on this element"}`;
-  const lead=rr.basis==="area"? `${fmt(rr.metres,1)} m of ${rr.dia} (${rr.ways===1?"one way":"each way"} @${fmt(rr.spacing,0)} over ${fmt(rr.area,2)} m²) = ${fmt(rr.kg,1)} kg` : `${fmt(rr.kg,1)} kg of steel`;
+  const lead=rr.basis==="area"? `${fmt(rr.metres,1)} m of ${rr.dia} (${rr.ways===1?"one way":"each way"} @${fmt(rr.spacing,0)}${rr.layers>1?`, ${rr.layers} layers`:""} over ${fmt(rr.area,2)} m²) = ${fmt(rr.kg,1)} kg` : `${fmt(rr.kg,1)} kg of steel`;
   return `This element: ${lead} = ${both} (${fmt(rr.conc,2)} m³, ${rr.area>0?fmt(rr.area,2)+" m²":"area —"}).`;
 }
 /** Concrete this element pours, blinding and reference pointers excluded — what a kg/m³ rate applies to. */
@@ -8360,10 +8360,11 @@ function applyReoArea(inst,def,out){
   let conc=reoRateConcrete(lines);
   let area=num(d.reoAreaM2)>0? num(d.reoAreaM2) : reoRateArea(d);
   let dia=d.reoAreaDia||"N12", kgm=massPerM(barDiaOf(dia)), sp=num(d.reoAreaSpacing,200), ways=(d.reoAreaWays||"each")==="one"? 1 : 2;
-  let metres=(area>0 && sp>0)? area/(sp/1000)*ways : 0, kg=metres*kgm, lapPct=d.reoAreaLap?PROJECT.lapPct:0;
+  let layers=Math.max(1,Math.round(num(d.reoAreaLayers,1)));   // a top and bottom mat is 2 layers (Grady, 6 Oct 2026: "it only has one layer")
+  let metres=(area>0 && sp>0)? area/(sp/1000)*ways*layers : 0, kg=metres*kgm, lapPct=d.reoAreaLap?PROJECT.lapPct:0;
   out.lines=lines.filter(l=>l.materialGroup!=="Reinforcement");
-  if(metres>0) out.lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:dia,spec:`Reinforcement by area — ${dia} @${fmt(sp,0)} ${ways===1?"one way":"each way"} over ${fmt(area,2)} m²`,qty:metres,unit:"m",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(metres,PROJECT.reoWaste,lapPct),formula:`${fmt(area,2)} m² ÷ ${fmt(sp,0)}mm × ${ways} direction(s)`,notes:`${fmt(kg,1)} kg`}));
-  out.reoRate={basis:"area",rate:area>0?kg/area:0,conc,area,kg,metres,dia,spacing:sp,ways,kgPerM3:conc>0?kg/conc:0,kgPerM2:area>0?kg/area:0};
+  if(metres>0) out.lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:dia,spec:`Reinforcement by area — ${dia} @${fmt(sp,0)} ${ways===1?"one way":"each way"}${layers>1?`, ${layers} layers`:""} over ${fmt(area,2)} m²`,qty:metres,unit:"m",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(metres,PROJECT.reoWaste,lapPct),formula:`${fmt(area,2)} m² ÷ ${fmt(sp,0)}mm × ${ways} direction(s) × ${layers} layer(s)`,notes:`${fmt(kg,1)} kg`}));
+  out.reoRate={basis:"area",rate:area>0?kg/area:0,conc,area,kg,metres,dia,spacing:sp,ways,layers,kgPerM3:conc>0?kg/conc:0,kgPerM2:area>0?kg/area:0};
 }
 function applyReoRate(inst,def,out){
   let d=inst.data, lines=out.lines||[];
