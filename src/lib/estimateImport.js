@@ -16,6 +16,9 @@
 import { ELEMENT_TYPES, FULL_CATALOG } from "../data/catalog.js";
 import { newElementItem, rateKey } from "./costing.js";
 
+/** The SAW CUTS & DOWELS row an Estimates "Drill & epoxy" holes line lands on (exact catalog name; verify.mjs checks it exists). */
+export const CHEMSET_HOLE_PRODUCT = "ChemSet hole only — drill, clean & inject REO 502 for a bar priced elsewhere, up to N20 × 200 embed (allowance)";
+
 export const ESTIMATE_EXPORT_KEY = "gradcon-estimate-export";
 
 /**
@@ -442,6 +445,17 @@ export function buildImportFromEstimate(estimateExport) {
     // barrier" product — distinct from Insulation. ---
     group.filter((l) => (l.materialGroup === "Base/Blinding" || l.materialGroup === "Vapour Barrier") && /vapour|membrane/i.test(l.material || "") && (l.unit === "m²" || l.unit === "m2")).forEach((l) => {
       map(l, rateKey("OTHER ACCESSORIES", "Vapour barrier", "m2"), Number(l.finalQty) || 0);
+    });
+
+    // --- Drilled & epoxied starters: an Estimates starter run fixed "Drill &
+    // epoxy into existing" emits the bar metres (mapped with the bars above,
+    // to PROCESSED BAR) AND a "Drill & epoxy" Connections line counting the
+    // holes. The holes land on the SAW CUTS & DOWELS hole-only allowance —
+    // drill, clean, inject REO 502 — so the detail "N16 STARTER BARS @ 400
+    // CTS, COG 300, DRILL & RAMSET CHEMSET REO 502, 150 EMBEDMENT" prices
+    // bar + hole, never bar alone (6 Oct 2026). ---
+    group.filter((l) => l.materialGroup === "Connections" && /^drill & epoxy$/i.test(l.material || "") && l.unit === "no.").forEach((l) => {
+      map(l, rateKey("SAW CUTS & DOWELS", CHEMSET_HOLE_PRODUCT, "each"), Number(l.finalQty) || 0);
     });
 
     // --- Finishes (the standalone screed): every line named after a SCREEDS

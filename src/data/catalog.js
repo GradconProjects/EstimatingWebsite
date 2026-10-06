@@ -610,6 +610,33 @@ export const FULL_CATALOG = [
     ["Ramset ChemSet REO 502 XTREM, 600 ml cartridge", "each", null, 70.91],
     ["Dowel grease / debonding compound (allowance)", "each", null, 75],
     ["Drill bits, mixing nozzles, hole brushes, blow-out consumables (allowance)", "each", null, 225],
+    /* Cogged ChemSet STARTER bars (6 Oct 2026, Grady's typical detail: "N16
+     * STARTER BARS @ 400 MAX. CTS. ALL FACES. COG 300. DRILL & RAMSET CHEMSET
+     * REO 502, 150 EMBEDMENT INTO SLAB. TYP."): an L-shaped starter drilled
+     * and epoxied into an existing slab for the wall / column / upstand cast
+     * on it — INSTALLED allowances per bar (supply the bent bar, set out,
+     * drill, clean, inject REO 502, set; the cog adds ~$1–3 of bar over a
+     * straight dowel of the same size) and per lm PER FACE at the common
+     * centres — "all faces" of a wall is 2 × the lm. 200 embed rows carry the
+     * deeper hole. The hole-only row is the drill, clean and epoxy of a bar
+     * priced elsewhere — it is what the Estimates "Drill & epoxy" Connections
+     * line lands on through the bridge (the bar itself goes to PROCESSED BAR). */
+    ["N12 cogged ChemSet starter bar, 150 embed / 300 cog (REO 502) — supply, drill, epoxy & install (allowance)", "each", null, 25],
+    ["N16 cogged ChemSet starter bar, 150 embed / 300 cog (REO 502) — supply, drill, epoxy & install (allowance)", "each", null, 32],
+    ["N16 cogged ChemSet starter bar, 200 embed / 300 cog (REO 502) — supply, drill, epoxy & install (allowance)", "each", null, 34],
+    ["N20 cogged ChemSet starter bar, 150 embed / 300 cog (REO 502) — supply, drill, epoxy & install (allowance)", "each", null, 41],
+    ["N20 cogged ChemSet starter bar, 200 embed / 300 cog (REO 502) — supply, drill, epoxy & install (allowance)", "each", null, 44],
+    ["N24 cogged ChemSet starter bar, 200 embed / 300 cog (REO 502) — supply, drill, epoxy & install (allowance)", "each", null, 54],
+    ["N12 cogged ChemSet starters @400 c/c, 150 embed / 300 cog — installed per lm per face (2.5/lm)", "m", null, 62.5],
+    ["N12 cogged ChemSet starters @300 c/c, 150 embed / 300 cog — installed per lm per face (3.33/lm)", "m", null, 83.33],
+    ["N12 cogged ChemSet starters @200 c/c, 150 embed / 300 cog — installed per lm per face (5/lm)", "m", null, 125],
+    ["N16 cogged ChemSet starters @400 c/c, 150 embed / 300 cog — installed per lm per face (2.5/lm)", "m", null, 80],
+    ["N16 cogged ChemSet starters @300 c/c, 150 embed / 300 cog — installed per lm per face (3.33/lm)", "m", null, 106.67],
+    ["N16 cogged ChemSet starters @200 c/c, 150 embed / 300 cog — installed per lm per face (5/lm)", "m", null, 160],
+    ["N20 cogged ChemSet starters @400 c/c, 150 embed / 300 cog — installed per lm per face (2.5/lm)", "m", null, 102.5],
+    ["N20 cogged ChemSet starters @300 c/c, 150 embed / 300 cog — installed per lm per face (3.33/lm)", "m", null, 136.67],
+    ["N20 cogged ChemSet starters @200 c/c, 150 embed / 300 cog — installed per lm per face (5/lm)", "m", null, 205],
+    ["ChemSet hole only — drill, clean & inject REO 502 for a bar priced elsewhere, up to N20 × 200 embed (allowance)", "each", null, 12],
     /* Formed-joint dowels with sleeves — installed allowances per dowel
      * (midpoints: R16 $15–25, R20 $20–30, R24 $25–40, 16 sq $20–30, 20/25 sq
      * $30–50) and Danley published supply-only prices (incl GST ÷ 1.1). */

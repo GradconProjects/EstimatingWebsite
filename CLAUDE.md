@@ -894,7 +894,16 @@ element families waits on the owner's approval of the pad footing.
   `walls`; the group is a ground group (excavation option, footprint = the
   first slab). Starter runs everywhere gain `fix` = cast / epoxy: epoxy adds
   a "Drill & epoxy" Connections line in no. (one hole per bar,
-  `massPerUnit: 0`) beside the bar line. Quotes mirrors the group as the
+  `massPerUnit: 0`) beside the bar line. A run also carries `cog` (mm, blank =
+  straight) added to every bar's cut length, so the typical note "N16
+  STARTER BARS @ 400 MAX CTS, ALL FACES, COG 300, DRILL & RAMSET CHEMSET REO
+  502, 150 EMBEDMENT INTO SLAB" (Grady, 6 Oct 2026) is one run: N16, 400,
+  2 rows, embed 150, projection = the lap, cog 300, epoxy. The bridge lands
+  the holes line on the SAW CUTS & DOWELS "ChemSet hole only" allowance
+  (`CHEMSET_HOLE_PRODUCT` in `estimateImport.js`, verify-covered) beside the
+  bar metres on PROCESSED BAR; the band also carries cogged ChemSet starter
+  bars N12–N24 each (150 / 200 embed, 300 cog) and N12–N20 per lm PER FACE
+  @400 / @300 / @200 — "all faces" of a wall is 2 × the lm. Quotes mirrors the group as the
   `IRREGULAR CONCRETE CONSTRUCTIONS` category (hearth_fireplace_base,
   plinth_machine_base, irregular_concrete_assembly; `labour: "composite"`)
   and `ESTIMATE_TYPE_MAP` bridges the three Estimates labels onto them.

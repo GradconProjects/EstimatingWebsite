@@ -3801,7 +3801,7 @@ function stripFootingDefaults(){ return {
  * a per-run choice for a schedule that simply states a count. A takeoff
  * saved before this feature (a single count, or the interim connMode form)
  * migrates into one run with the same numbers the first time it renders. */
-function newStarterRun(){ return {target:"", mode:"spacing", dia:"N16", spacing:400, runM:"", startM:"", rows:1, qty:4, embed:500, proj:600}; }
+function newStarterRun(){ return {target:"", mode:"spacing", dia:"N16", spacing:400, runM:"", startM:"", rows:1, qty:4, embed:500, proj:600, cog:""}; }
 function starterRunsOf(d){
   if(!Array.isArray(d.starterRuns)){
     d.starterRuns = d.starters
@@ -3839,8 +3839,10 @@ function starterRunsUI(inst,d,elemLenM,noun){
       ${bySpacing?F("Starts at (m from one end)",`<input type="text" inputmode="decimal" data-num="1" data-field="${base}startM" value="${r.startM===undefined?'':r.startM}" placeholder="0">`):""}
       ${bySpacing?F("Rows across the section",selOpts(base+"rows",Math.max(1,Math.round(num(r.rows,1))),[[1,"1 row (centre)"],[2,"2 rows (one each face)"]],true)):""}
       ${F("Embedment (mm)",inpNum(base+"embed",r.embed===undefined?500:r.embed))}${F("Projection (mm)",inpNum(base+"proj",r.proj===undefined?600:r.proj))}
+      ${F("Cog / hook (mm, blank = straight)",inpNum(base+"cog",r.cog))}
       ${F("Fixing",selOpts(base+"fix",r.fix||"cast",[["cast","Cast in (wet set)"],["epoxy","Drill & epoxy into existing"]]))}
      </div>
+     <p class="small">A drawing note like "N16 starter bars @ 400 max cts, all faces, cog 300, drill & Ramset ChemSet REO 502, 150 embedment into slab" is: bar N16, spacing 400, 2 rows (one each face), embedment 150, projection = the lap into the wall, cog 300, fixing Drill & epoxy. Each bar is embedment + projection + cog; the epoxy fixing adds a "Drill & epoxy" holes line that Quotes prices on its ChemSet hole-only allowance beside the bar.</p>
      ${bySpacing?`<p class="small">→ <b>${n}</b> per ${noun}: ${fmt(starterRunM(r,elemLenM),2)} m ÷ ${num(r.spacing,400)} mm + 1 end bar${num(r.rows,1)>1?` × ${Math.round(num(r.rows,1))} rows`:""}${num(d.qty,1)>1?` · × ${num(d.qty,1)} = <b>${n*num(d.qty,1)}</b>`:""}. Leave the run blank for the whole ${noun}; give a shorter run (and where it starts) for a wall or column line on part of it.</p>`:""}
     </div>`;
   }).join("");
@@ -3852,12 +3854,12 @@ function starterRunLines(inst,def,d,N,elemLenM,label){
   let out=[];
   starterRunsOf(d).forEach((r,i)=>{
     let n=starterRunCount(r,elemLenM); if(!(n>0)) return;
-    let bd=barDiaOf(r.dia||"N16"); let len=(num(r.embed,500)+num(r.proj,600))/1000;
+    let bd=barDiaOf(r.dia||"N16"); let cog=Math.max(0,num(r.cog)); let len=(num(r.embed,500)+num(r.proj,600)+cog)/1000;   // a cogged (L) starter carries its cog in the cut length
     let totLen=n*N*len; let wt=totLen*massPerM(bd);
     let tgt=targetLabelOf(r.target);
     let bySpacing=(r.mode||"spacing")!=="count";
     if((r.fix||"cast")==="epoxy"){ const holes=n*N; out.push(baseLine(inst,def,{materialGroup:"Connections",material:"Drill & epoxy",spec:`${label}${starterRunsOf(d).length>1?` (run ${i+1})`:""}: ${holes} holes for ${r.dia||"N16"}, ${num(r.embed,500)}mm embedment → ${tgt||"(unlinked)"}`,qty:holes,unit:"no.",waste:0,finalQty:holes,massPerUnit:0,formula:"one hole per starter"})); }
-    out.push(baseLine(inst,def,{materialGroup:"Connections",material:r.dia||"N16",spec:`${label}${starterRunsOf(d).length>1?` (run ${i+1})`:""}: ${starterRunDesc(r,elemLenM)}${(r.fix||"cast")==="epoxy"?" (drill & epoxy)":""} → ${tgt||"(unlinked)"}`,qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:bySpacing?`(${fmt(starterRunM(r,elemLenM),2)}m/${num(r.spacing,400)}+1)${num(r.rows,1)>1?`×${Math.round(num(r.rows,1))}`:""}=${n} × ${N} × (embed+proj)/1000`:`${n}×${N}×(embed+proj)/1000`,linkedElement:tgt,notes:`${fmt(wt,1)} kg · ${n*N} bars`}));
+    out.push(baseLine(inst,def,{materialGroup:"Connections",material:r.dia||"N16",spec:`${label}${starterRunsOf(d).length>1?` (run ${i+1})`:""}: ${starterRunDesc(r,elemLenM)}${cog>0?`, ${fmt(cog,0)} cog`:""}${(r.fix||"cast")==="epoxy"?" (drill & epoxy)":""} → ${tgt||"(unlinked)"}`,qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:bySpacing?`(${fmt(starterRunM(r,elemLenM),2)}m/${num(r.spacing,400)}+1)${num(r.rows,1)>1?`×${Math.round(num(r.rows,1))}`:""}=${n} × ${N} × (embed+proj)/1000`:`${n}×${N}×(embed+proj)/1000`,linkedElement:tgt,notes:`${fmt(wt,1)} kg · ${n*N} bars`}));
   });
   return out;
 }
