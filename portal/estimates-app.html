@@ -4558,7 +4558,20 @@ function extraBeamGroupsSection(inst,d,arrName){
  * mesh split per distinct layer product, ligature ZONES (length 0 = the
  * remaining run) around the group's own cross-section with two 135°
  * fitment hooks, and an optional trench excavation + bulked spoil. */
+/* Every line a slab's beam group emits — edge beams, internal strips, extra
+ * groups: concrete, bars, ligatures, trench mesh, formwork, trench — is
+ * tagged `part: "beam"`. The slab's reinforcement-by-rate / by-area methods
+ * replace the slab MAT only and keep beam steel (6 Oct 2026, Grady: "these
+ * bars in beam ligatures dont add up to the overall reinforcement counts.
+ * code it in to count always" — a slab priced by area had its beam
+ * ligatures and bars silently dropped), and a rate applies to the slab's own
+ * concrete, never the beams'. */
 function raftBeamGroupLines(inst,def,lines,d,g){
+  const from=lines.length;
+  raftBeamGroupLinesInner(inst,def,lines,d,g);
+  for(let i=from;i<lines.length;i++) lines[i].part="beam";
+}
+function raftBeamGroupLinesInner(inst,def,lines,d,g){
   // per-group cover choice — blank falls back to the element's own cover
   let cvr = (g.coverMm!==undefined && g.coverMm!=="" && num(g.coverMm)>0)? num(g.coverMm) : num(d.cover,40);
   if(g.reoOn){
@@ -5038,7 +5051,7 @@ function computeSlab(inst,def){
     let secArea = sectionAreaM2(shape,d.edgeThickenWidth,d.edgeThickenExtraDepth,d.etBaseW,sketchArea);
     let shapeLabel = sectionLabel(shape,d.edgeThickenWidth,d.edgeThickenExtraDepth,d.etBaseW,sketchArea,d.etSides);
     let edgeVol=etRun*secArea;
-    if(edgeVol>0) lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${slabBeamGrade(d)} concrete`,spec:"Edge thickening (perimeter strip)",qty:edgeVol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(edgeVol,concWastePct(d)),formula:`${runSrc}(${fmt(etRun,1)}m)×${shapeLabel}`}));
+    if(edgeVol>0) lines.push(baseLine(inst,def,{materialGroup:"Concrete",part:"beam",material:`N${slabBeamGrade(d)} concrete`,spec:"Edge thickening (perimeter strip)",qty:edgeVol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(edgeVol,concWastePct(d)),formula:`${runSrc}(${fmt(etRun,1)}m)×${shapeLabel}`}));
   }
   // THICKENING UNDER LOAD-BEARING WALLS — a band of extra concrete where an
   // internal wall lands on the slab, on every slab type. Run is measured off
@@ -5049,7 +5062,7 @@ function computeSlab(inst,def){
     let wArea=sectionAreaM2(wShape,d.wallThickenWidth,d.wallThickenDepth,d.wallThickenBaseW,etSectionAreaM2(d));
     let wVol=wRun*wArea;
     if(wVol>0){
-      lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${slabBeamGrade(d)} concrete`,spec:"Thickening under load-bearing walls",qty:wVol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(wVol,concWastePct(d)),formula:`wall run(${fmt(wRun,1)}m)×${sectionLabel(wShape,d.wallThickenWidth,d.wallThickenDepth,d.wallThickenBaseW,etSectionAreaM2(d),d.wallThickenSides)}`}));
+      lines.push(baseLine(inst,def,{materialGroup:"Concrete",part:"beam",material:`N${slabBeamGrade(d)} concrete`,spec:"Thickening under load-bearing walls",qty:wVol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(wVol,concWastePct(d)),formula:`wall run(${fmt(wRun,1)}m)×${sectionLabel(wShape,d.wallThickenWidth,d.wallThickenDepth,d.wallThickenBaseW,etSectionAreaM2(d),d.wallThickenSides)}`}));
     }
     if(d.wallThickenReo && wRun>0){
       let n=num(d.wallThickenBars,2), dia=d.wallThickenDia||"N12";
@@ -5081,7 +5094,7 @@ function computeSlab(inst,def){
       let ebShape=d.edgeBeamShape||"rect";
       let ebArea=sectionAreaM2(ebShape,ebW,extraMm,d.edgeBeamBaseW,etSectionAreaM2(d));
       let vol=ebRun*ebArea;
-      if(vol>0 && !legacy) lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${slabBeamGrade(d)} concrete`,spec:"Edge beam",qty:vol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(vol,concWastePct(d)),formula:`run(${fmt(ebRun,1)}m)×${sectionLabel(ebShape,ebW,extraMm,d.edgeBeamBaseW,etSectionAreaM2(d),d.edgeBeamSides)}${mode==="overall"?` (overall ${entered}−slab ${num(d.thickness,150)})`:""}`}));
+      if(vol>0 && !legacy) lines.push(baseLine(inst,def,{materialGroup:"Concrete",part:"beam",material:`N${slabBeamGrade(d)} concrete`,spec:"Edge beam",qty:vol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(vol,concWastePct(d)),formula:`run(${fmt(ebRun,1)}m)×${sectionLabel(ebShape,ebW,extraMm,d.edgeBeamBaseW,etSectionAreaM2(d),d.edgeBeamSides)}${mode==="overall"?` (overall ${entered}−slab ${num(d.thickness,150)})`:""}`}));
       raftBeamGroupLines(inst,def,lines,d,{
         label:"Edge beam", runM:ebRun, widthMm:ebW, coverMm:d.edgeBeamCover, secDepthMm:secD,
         reoOn:d.edgeBeamReo, trench:d.edgeBeamTrenchMesh, trenchLap:d.edgeBeamLap,
@@ -5101,7 +5114,7 @@ function computeSlab(inst,def){
     let bsShape=d.beamStripsShape||"rect";
     let bsArea=sectionAreaM2(bsShape,d.beamStripsWidth,d.beamStripsExtraDepth,d.beamStripsBaseW,etSectionAreaM2(d));
     let beamVol=num(d.beamStripsLength)*bsArea;
-    lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${slabBeamGrade(d)} concrete`,spec:"Internal beam strips (raft ribs)",qty:beamVol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(beamVol,concWastePct(d)),formula:`run length(${fmt(num(d.beamStripsLength),1)}m)×${sectionLabel(bsShape,d.beamStripsWidth,d.beamStripsExtraDepth,d.beamStripsBaseW,etSectionAreaM2(d),d.beamStripsSides||"both")}`}));
+    lines.push(baseLine(inst,def,{materialGroup:"Concrete",part:"beam",material:`N${slabBeamGrade(d)} concrete`,spec:"Internal beam strips (raft ribs)",qty:beamVol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(beamVol,concWastePct(d)),formula:`run length(${fmt(num(d.beamStripsLength),1)}m)×${sectionLabel(bsShape,d.beamStripsWidth,d.beamStripsExtraDepth,d.beamStripsBaseW,etSectionAreaM2(d),d.beamStripsSides||"both")}`}));
     // Internal beams — the FULL standalone-Ground-Beam parameter set over
     // the combined run: per-row bar sets with anchorages, trench mesh with
     // per-layer products, ligature zones, optional trench excavation.
@@ -8359,13 +8372,13 @@ function reoMethodSection(inst){
     <button class="btn small" data-action="addRow" data-target="reoAreaRows">+ Add layer</button>`; })()}
   <div class="grid cols3">${chk("reoAreaLap",d.reoAreaLap,"Include lap allowance (%)","reoAreaLap")}</div>
   <p class="small reoRateHint">${reoRateHintText(inst.results&&inst.results.reoRate)}</p>
-  <p class="small">One row per layer, each with its own area, bar type, spacing and layout — a bottom mat of N12 @200 each way and a top mat of N16 @300 one way are two rows. Bar metres = area ÷ spacing per direction (× 2 each way). Leave an area blank to use the element's own plan area. One register line per layer replaces the detailed reinforcement lines of this element; starters, dowels and connections to other elements are kept.</p></div>
+  <p class="small">One row per layer, each with its own area, bar type, spacing and layout — a bottom mat of N12 @200 each way and a top mat of N16 @300 one way are two rows. Bar metres = area ÷ spacing per direction (× 2 each way). Leave an area blank to use the element's own plan area. One register line per layer replaces the slab's detailed mat lines; beam bars and ligatures (edge beams, internal strips, extra groups), starters, dowels and connections to other elements are always kept and counted.</p></div>
   <div class="subsec ${method==="rate"?'':'hidden'}" data-show-if="reoMethod_rate"><div class="grid cols4">
    ${F("Rate (kg of steel per m³ of concrete)",inpNum("reoRateKgM3",d.reoRateKgM3===undefined?100:d.reoRateKgM3))}
    ${F("Equivalent bar size",barSizeSel("reoRateDia",d.reoRateDia||"N16"))}
    ${chk("reoRateLap",d.reoRateLap,"Include lap allowance (%)","reoRateLap")}
   </div><p class="small reoRateHint">${reoRateHintText(inst.results&&inst.results.reoRate)}</p>
-  <p class="small">kg = rate × this element's concrete (blinding excluded); metres = kg ÷ the bar's kg/m (d²/162 — N16 is ${fmt(massPerM(16),3)} kg/m). One register line replaces every detailed reinforcement line of this element; starters, dowels and connections to other elements are kept. Typical ratios: footings 60–100, slabs on ground 40–80, suspended slabs 90–130, beams 120–200, columns and walls 120–250 kg/m³ — confirm against the engineer's documents.</p></div>`;
+  <p class="small">kg = rate × this element's own concrete (blinding and any beam groups excluded); metres = kg ÷ the bar's kg/m (d²/162 — N16 is ${fmt(massPerM(16),3)} kg/m). Beam bars and ligatures (edge beams, internal strips, extra groups) are always kept and counted beside the rate. One register line replaces every detailed reinforcement line of this element; starters, dowels and connections to other elements are kept. Typical ratios: footings 60–100, slabs on ground 40–80, suspended slabs 90–130, beams 120–200, columns and walls 120–250 kg/m³ — confirm against the engineer's documents.</p></div>`;
 }
 /** The one-line reading of a rate result: the steel stated both per m³ and per m². */
 function reoRateHintText(rr){
@@ -8375,7 +8388,7 @@ function reoRateHintText(rr){
   return `This element: ${lead} = ${both} (${fmt(rr.conc,2)} m³, ${rr.area>0?fmt(rr.area,2)+" m²":"area —"}).`;
 }
 /** Concrete this element pours, blinding and reference pointers excluded — what a kg/m³ rate applies to. */
-function reoRateConcrete(lines){ return lines.filter(l=>l.materialGroup==="Concrete" && !/blind|reference only/i.test(l.spec||"") && !/reference only/i.test(l.material||"")).reduce((s,l)=>s+(l.qty||0),0); }
+function reoRateConcrete(lines){ return lines.filter(l=>l.materialGroup==="Concrete" && l.part!=="beam" && !/blind|reference only/i.test(l.spec||"") && !/reference only/i.test(l.material||"")).reduce((s,l)=>s+(l.qty||0),0); }
 /* By AREA: one row per LAYER — its own area (blank = the element's plan
  * area), bar type, spacing and layout (each way doubles the metres), as bar
  * metres (Grady, 6 Oct 2026: "i want to be flexible with layers").
@@ -8396,7 +8409,7 @@ function applyReoArea(inst,def,out){
   let d=inst.data, lines=out.lines||[];
   let conc=reoRateConcrete(lines), planArea=reoRateArea(d), lapPct=d.reoAreaLap?PROJECT.lapPct:0;
   let rows=reoAreaLayerRows(d).map(r=>reoAreaRowMetres(r,planArea));
-  out.lines=lines.filter(l=>l.materialGroup!=="Reinforcement");
+  out.lines=lines.filter(l=>l.materialGroup!=="Reinforcement" || l.part==="beam");   // the mat goes; beam bars and ligatures always count
   rows.forEach((m,i)=>{ if(!(m.metres>0)) return;
     out.lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:m.dia,spec:`Reinforcement by area — layer ${i+1}: ${m.dia} @${fmt(m.sp,0)} ${m.ways===1?"one way":"each way"} over ${fmt(m.area,2)} m²`,qty:m.metres,unit:"m",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(m.metres,PROJECT.reoWaste,lapPct),formula:`${fmt(m.area,2)} m² ÷ ${fmt(m.sp,0)}mm × ${m.ways} direction(s)`,notes:`${fmt(m.kg,1)} kg`}));
   });
@@ -8410,7 +8423,7 @@ function applyReoRate(inst,def,out){
   let rate=num(d.reoRateKgM3,100), dia=d.reoRateDia||"N16", kgm=massPerM(barDiaOf(dia));
   let kg=rate*conc, metres=kgm>0? kg/kgm : 0, lapPct=d.reoRateLap?PROJECT.lapPct:0;
   let removed=lines.filter(l=>l.materialGroup==="Reinforcement").length;
-  out.lines=lines.filter(l=>l.materialGroup!=="Reinforcement");
+  out.lines=lines.filter(l=>l.materialGroup!=="Reinforcement" || l.part==="beam");   // the mat goes; beam bars and ligatures always count
   out.lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:dia,spec:`Reinforcement by rate — ${fmt(rate,0)} kg/m³ as ${dia} equivalent`,qty:metres,unit:"m",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(metres,PROJECT.reoWaste,lapPct),formula:`${fmt(rate,0)} kg/m³ × ${fmt(conc,3)} m³ concrete = ${fmt(kg,1)} kg ÷ ${fmt(kgm,3)} kg/m (${dia})`,notes:`${fmt(kg,1)} kg — replaces ${removed} detailed line(s); connections kept`}));
   out.reoRate={rate,basis:"m3",conc,area,kg,metres,dia,kgPerM3:conc>0?kg/conc:0,kgPerM2:area>0?kg/area:0};
 }

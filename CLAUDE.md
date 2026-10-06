@@ -1039,7 +1039,13 @@ element families waits on the owner's approval of the pad footing.
   into `reoAreaRows` the first time the table renders; `reoAreaRowMetres` is
   the ONE row arithmetic (area ÷ spacing × directions). `applyReoArea` emits
   ONE bar line PER LAYER, replacing the detailed lines like the rate does; the
-  table's metres cells refresh live. No layer, a layer with no area anywhere,
+  table's metres cells refresh live. **Beam steel always counts**: every line
+  a slab's beam group emits (`raftBeamGroupLines` wrapper tags `part:
+  "beam"`; the edge beam / internal strips / thickening concrete lines carry
+  the same tag) survives both methods — the mat is replaced, the beams' bars
+  and ligatures are kept — and `reoRateConcrete` applies a kg/m³ rate to the
+  slab's own concrete only (6 Oct 2026, Grady: "it still doesnt acknowledge
+  those reinforcements" — a by-area slab had dropped its beam ligatures). No layer, a layer with no area anywhere,
   or no spacing, is a completeness warning. `out.reoRate` carries `{basis:
   "m3" | "area", rate, conc, area, kg, metres, dia, layers, rows, kgPerM3,
   kgPerM2}` and `reoRateHintText` states the result both per m³ and per m²
