@@ -2193,11 +2193,8 @@ function ligDiagramFor(inst){
     return ligZoneSvgVertical(num(d.height),[{label:"Top zone",len:num(d.topZone),spacing:num(d.topSpacing)},{label:"Midspan zone",len:mid,spacing:num(d.ligSpacing)},{label:"Bottom zone",len:num(d.botZone),spacing:num(d.botSpacing)}]);
   }
   if(def.calc==="beam"){
-    let zones=(d.ligZones||[]).map(z=>({label:z.zone||"Zone",len:num(z.length),spacing:num(z.spacing||200)}));
-    let used=zones.reduce((s,z)=>s+(z.len>0?z.len:0),0);
-    let autoCount=zones.filter(z=>z.len<=0).length;
-    let remain=Math.max(0,num(d.length)-used);
-    zones.forEach(z=>{ if(z.len<=0) z.len = autoCount? remain/autoCount : 0; });
+    const sp=ligZoneSpans(d.ligZones,num(d.length));
+    let zones=(d.ligZones||[]).map((z,i)=>({label:z.zone||"Zone",len:sp[i].len,spacing:num(z.spacing||200)}));
     return ligZoneSvgHorizontal(num(d.length),zones);
   }
   return "";
@@ -3801,6 +3798,28 @@ function stripFootingDefaults(){ return {
  * a per-run choice for a schedule that simply states a count. A takeoff
  * saved before this feature (a single count, or the interim connMode form)
  * migrates into one run with the same numbers the first time it renders. */
+/* Ligature zones ALWAYS cover the whole run (6 Oct 2026, Grady: "these bars
+ * in beam ligatures dont add up to the overall reinforcement counts. code it
+ * in to count always"). `ligZoneSpans(zones, runMm)` is the ONE reading of a
+ * zone table, for every beam-type ligature compute and both diagrams: a
+ * typed length stands as typed; zones with no length (auto) share the rest
+ * of the run equally; and when every zone is typed but the lengths fall
+ * short of the run, the uncovered remainder is counted at the LAST zone's
+ * spacing (`extended` = how many mm were added) — before this a lone
+ * "General 10000" zone on a 60 m run counted ligatures over 10 m and the
+ * other 50 m had none. Returns [{len, extended}] in mm, one per zone. */
+function ligZoneSpans(zones, runMm){
+  const list=Array.isArray(zones)? zones : [];
+  const run=Math.max(0,num(runMm));
+  const typed=list.map(z=>Math.max(0,num(z.length)));
+  const used=typed.reduce((s,v)=>s+v,0);
+  const autos=typed.filter(v=>v<=0).length;
+  const remain=Math.max(0,run-used);
+  const spans=typed.map(v=>({len:v, extended:0}));
+  if(autos>0){ spans.forEach(sp=>{ if(sp.len<=0) sp.len=remain/autos; }); }
+  else if(spans.length && remain>0){ const last=spans[spans.length-1]; last.len+=remain; last.extended=remain; }
+  return spans;
+}
 function newStarterRun(){ return {target:"", mode:"spacing", dia:"N16", spacing:400, runM:"", startM:"", rows:1, qty:4, embed:500, proj:600, cog:""}; }
 function starterRunsOf(d){
   if(!Array.isArray(d.starterRuns)){
@@ -4570,12 +4589,9 @@ function raftBeamGroupLines(inst,def,lines,d,g){
   }
   if(g.ligsOn){
     let zones=g.ligZones||[];
-    zones.forEach(z=>{
-      let lenMm=num(z.length);
-      if(lenMm<=0){
-        let usedElsewhere=zones.reduce((s,zz)=>s+(zz.length>0?num(zz.length):0),0);
-        lenMm=Math.max(0,g.runM*1000-usedElsewhere);
-      }
+    const spans=ligZoneSpans(zones,g.runM*1000);
+    zones.forEach((z,zi)=>{
+      let lenMm=spans[zi].len, ext=spans[zi].extended;
       if(lenMm<=0) return;
       let bd=barDiaOf(z.dia);
       let count=Math.floor(lenMm/num(z.spacing||300))+1;
@@ -4583,7 +4599,7 @@ function raftBeamGroupLines(inst,def,lines,d,g){
       let ligPerim=(2*((g.widthMm-2*cvr)+(g.secDepthMm-2*cvr))/1000)+2*hookExt;
       let totLen=count*ligPerim; let wt=totLen*massPerM(bd);
       let lapPct=g.ligLap?PROJECT.lapPct:0;
-      lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:z.dia,spec:`${g.label} — ligatures (${z.zone})`,qty:totLen,unit:"m",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,lapPct),formula:`${count} ligs × (perim ${fmt(ligPerim-2*hookExt,2)}m + 2×135° hooks ${fmt(2*hookExt,2)}m)`,notes:`${count} no., ${fmt(wt,1)} kg`}));
+      lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:z.dia,spec:`${g.label} — ligatures (${z.zone})${ext>0?` incl. ${fmt(ext/1000,2)} m uncovered run`:""}`,qty:totLen,unit:"m",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,lapPct),formula:`${count} ligs${ext>0?` over ${fmt(lenMm/1000,2)} m (zone ${fmt(num(z.length)/1000,2)} m + ${fmt(ext/1000,2)} m rest of run)`:""} × (perim ${fmt(ligPerim-2*hookExt,2)}m + 2×135° hooks ${fmt(2*hookExt,2)}m)`,notes:`${count} no., ${fmt(wt,1)} kg`}));
     });
   }
   // A beam cast in a trench takes its shape from the earth and needs no side
@@ -4652,13 +4668,10 @@ function computeBeam(inst,def){
       lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:r.dia,spec:`${r.position}${layerNote}`,qty:totLen,unit:"m",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,lapPct),formula:`${r.qty}×${layers}L×${N}×(clear ${fmt(clearLen,2)}+${r.startA} ${fmt(startLen,2)}+${r.endA} ${fmt(endLen,2)})`,notes:`${fmt(wt,1)} kg`}));
     });
   }
-  let usedLen=0;
+  const ligSpans=ligZoneSpans(d.ligZones,num(d.length));
   d.ligZones.forEach((z,i)=>{
-    let len=num(z.length);
-    if(len<=0){
-      let usedElsewhere=d.ligZones.reduce((s,zz)=>s+(zz.length>0?num(zz.length):0),0);
-      len=Math.max(0,num(d.length)-usedElsewhere);
-    }
+    let len=ligSpans[i].len, ext=ligSpans[i].extended;
+    if(len<=0) return;
     let bd=barDiaOf(z.dia);
     let count=Math.floor(len/num(z.spacing||200))+1;
     // Ordering quantity is METRES, not pieces: count × (closed perimeter +
@@ -4668,7 +4681,7 @@ function computeBeam(inst,def){
     let ligPerimeter=(2*(Wm-2*cover)+2*(sideD-2*cover))+2*hookExt;
     let totLen=N*count*ligPerimeter; let wt=totLen*massPerM(bd);
     let zLapPct=d.ligZonesLap?PROJECT.lapPct:0;
-    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:z.dia,spec:`Ligatures — ${z.zone}`,qty:totLen,unit:"m",waste:PROJECT.reoWaste,lap:zLapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,zLapPct),formula:`${count}×${N} ligs × (perim ${fmt(ligPerimeter-2*hookExt,2)}m + 2×135° hooks ${fmt(2*hookExt,2)}m) (+${PROJECT.reoWaste}% waste${zLapPct?`, +${zLapPct}% lap`:''})`,notes:`${count*N} no., ${fmt(wt,1)} kg`}));
+    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:z.dia,spec:`Ligatures — ${z.zone}${ext>0?` incl. ${fmt(ext/1000,2)} m uncovered run`:""}`,qty:totLen,unit:"m",waste:PROJECT.reoWaste,lap:zLapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,zLapPct),formula:`${count}×${N} ligs${ext>0?` over ${fmt(len/1000,2)} m (zone ${fmt(num(z.length)/1000,2)} m + ${fmt(ext/1000,2)} m rest of run)`:""} × (perim ${fmt(ligPerimeter-2*hookExt,2)}m + 2×135° hooks ${fmt(2*hookExt,2)}m) (+${PROJECT.reoWaste}% waste${zLapPct?`, +${zLapPct}% lap`:''})`,notes:`${count*N} no., ${fmt(wt,1)} kg`}));
   });
   lines.push(...starterRunLines(inst,def,d,N,num(d.length)/1000,"Dowels / starters"));
   if(d.stepdown){
@@ -4829,7 +4842,7 @@ function renderSlab(inst,def){
   <div class="subsec ${d.beamStripsLigs?'':'hidden'}" data-show-if="beamStripsLigs">
   ${raftBeamLigTable(inst,d.beamStripsLigZones,"beamStripsLigZones")}
   <div class="grid cols3">${chk("beamStripsLigLap",d.beamStripsLigLap,"Include lap allowance (%)","beamStripsLigLap")}</div>
-  <p class="small">Ligature zones exactly as on a standalone Ground Beam — closed stirrups around each rib's cross-section (strip width × slab thickness + extra depth, less cover, plus two 135° fitment hooks). Zone length 0 spreads over the remaining run.</p></div>
+  <p class="small">Ligature zones exactly as on a standalone Ground Beam — closed stirrups around each rib's cross-section (strip width × slab thickness + extra depth, less cover, plus two 135° fitment hooks). Zone length 0 spreads over the remaining run; typed zones that fall short of the run are extended at the last zone's spacing, so the whole run always carries ligatures.</p></div>
   <div class="grid cols3">${chk("beamStripsExc",d.beamStripsExc,"Trench excavation for the internal beams (below prepared level)","beamStripsExc")}</div>
   <div class="subsec ${d.beamStripsExc?'':'hidden'}" data-show-if="beamStripsExc"><div class="grid cols3">${F("Trench width (mm)",inpNum("beamStripsTrenchWidth",d.beamStripsTrenchWidth===undefined?(num(d.beamStripsWidth,300)+50):d.beamStripsTrenchWidth))}${F("Excavation depth below prepared level (mm)",inpNum("beamStripsExcDepth",d.beamStripsExcDepth===undefined?num(d.beamStripsExtraDepth,150):d.beamStripsExcDepth))}</div>
   <p class="small">Same as a Ground Beam's trench: dug volume + a bulked spoil-disposal line, along the combined run. Off by default so existing takeoffs don't change.</p></div>
@@ -6594,9 +6607,8 @@ function diagBeam(inst){ let d=inst.data;
   const ex=24, ey=Math.max(150,sy+dd+46)+(withSlab?8:0), ew=268, eh=18, s2=ew/L;
   const zones=Array.isArray(d.ligZones)?d.ligZones:[];
   let zx=ex, zoneSvg="", zoneDims="";
-  const fixed=zones.filter(z=>!z.auto&&N_(z.length,0)>0), autoZ=zones.find(z=>z.auto);
-  const fixedLen=fixed.reduce((a,z)=>a+N_(z.length,0),0), midLen=Math.max(0,L-fixedLen);
-  let order=zones.map(z=>({...z, len: z.auto? midLen : N_(z.length,0)}));
+  const sp=ligZoneSpans(zones,L);
+  let order=zones.map((z,i)=>({...z, len: sp[i].len}));
   if(!order.length) order=[{zone:"General",len:L,spacing:200}];
   order.forEach((z,i)=>{ const zw=Math.max(0,z.len*s2); if(zw<=0) return; zoneSvg+=DG.ticksH(zx+1,zx+zw-1,ey+2,ey+eh-2,N_(z.spacing,200),s2,40); zoneDims+=dimH(zx,zx+zw,ey+eh+11,`${z.len}@${N_(z.spacing,200)}`,(z.zone||'').toUpperCase()); zx+=zw; });
   const runs=starterRunsOf(d).filter(r=>starterRunCount(r,L/1000)>0);

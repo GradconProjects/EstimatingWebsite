@@ -878,6 +878,17 @@ element families waits on the owner's approval of the pad footing.
   the same area) × `excAddDepth`, plus spoil at `excAddBulk` or the project
   bulking; a blank depth or unknown area is a completeness warning, never
   a silent zero.
+- **Ligature zones ALWAYS cover the whole run** (`ligZoneSpans(zones, runMm)`,
+  the ONE reading for the standalone beam, every slab beam group — edge
+  beams, internal strips, extra groups — and both beam diagrams; 6 Oct 2026,
+  Grady: "these bars in beam ligatures dont add up to the overall
+  reinforcement counts. code it in to count always"): a typed zone length
+  stands, zones with no length share the rest of the run equally, and when
+  every zone is typed but they fall short of the run the remainder is
+  counted at the LAST zone's spacing — the line's spec says "incl. N m
+  uncovered run" and the formula shows zone + rest. Before this a lone
+  "General 10000" zone on a 60 m run counted ligatures over 10 m and the
+  other 50 m had none. `test-lig-zones.mjs` proves it.
 - **Irregular Concrete Constructions** (library group; `composite`
   calculator — `compositeDefaults` / `renderComposite` / `computeComposite`
   / `diagComposite`; items hearth, plinth, compositeassembly): ONE element
