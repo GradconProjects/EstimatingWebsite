@@ -7996,11 +7996,16 @@ function validateInstance(inst, def, out){
   }
   // completeness: a rate with nothing to apply it to
   if(reoMethodOf(d)==="rate"){
-    const rr=out&&out.reoRate, perM2=reoRateBasisOf(d)==="m2";
-    if(perM2 && (!rr || rr.area<=0)) push("Reinforcement is priced per m² but this element has no plan area to apply it to — type the rate per m³, or enter the area on the Results tab", "reo", "completeness");
-    else if(!perM2 && (!rr || rr.conc<=0)) push("Reinforcement is priced by rate but this element has no concrete volume to apply it to", "reo", "completeness");
-    else if(perM2? num(d.reoRateKgM2,10)<=0 : num(d.reoRateKgM3,100)<=0) push(`Reinforcement rate is 0 ${perM2?"kg/m²":"kg/m³"} — no steel is being counted`, "reo", "completeness");
-    else push(`Reinforcement by rate (${fmt(rr.rate,perM2?1:0)} ${perM2?"kg/m²":"kg/m³"} as ${rr.dia}${rr.kgPerM2>0&&!perM2?` ≈ ${fmt(rr.kgPerM2,1)} kg/m²`:rr.kgPerM3>0&&perM2?` ≈ ${fmt(rr.kgPerM3,0)} kg/m³`:""}) — confirm the ratio against the engineer's documents before pricing`, "reo", "verify");
+    const rr=out&&out.reoRate;
+    if(!rr || rr.conc<=0) push("Reinforcement is priced by rate but this element has no concrete volume to apply it to", "reo", "completeness");
+    else if(num(d.reoRateKgM3,100)<=0) push("Reinforcement rate is 0 kg/m³ — no steel is being counted", "reo", "completeness");
+    else push(`Reinforcement by rate (${fmt(rr.rate,0)} kg/m³ as ${rr.dia}${rr.kgPerM2>0?` ≈ ${fmt(rr.kgPerM2,1)} kg/m²`:""}) — confirm the ratio against the engineer's documents before pricing`, "reo", "verify");
+  }
+  if(reoMethodOf(d)==="area"){
+    const rr=out&&out.reoRate;
+    if(!rr || rr.area<=0) push("Reinforcement is taken by area but no area is typed and this element has no plan area of its own — enter the m²", "reo", "completeness");
+    else if(!(rr.spacing>0)) push("Reinforcement by area needs a bar spacing — none is typed", "reo", "completeness");
+    else push(`Reinforcement by area (${rr.dia} @${fmt(rr.spacing,0)} ${rr.ways===1?"one way":"each way"} over ${fmt(rr.area,2)} m² = ${fmt(rr.kgPerM2,1)} kg/m²) — confirm against the engineer's documents before pricing`, "reo", "verify");
   }
   // sanity: ratios (configurable review prompts — never a design verdict)
   const conc=lines.filter(l=>l.materialGroup==="Concrete").reduce((s,l)=>s+(l.qty||0),0);
@@ -8287,13 +8292,14 @@ const CARD_TAB_MEMORY={};
  * dowels and every other connection to another element are kept, because
  * they belong to the join, not the ratio. reoMethod is data, saved with the
  * takeoff; an element without it is "detailed" — exactly as before. */
-function reoMethodOf(d){ return (d && d.reoMethod)==="rate"? "rate" : "detailed"; }
-/* The basis a rate is typed in: kg per m³ of concrete (every element, the
- * default) or kg per m² of plan area (slabs — the figure slab steel is
- * quoted in; Grady, 6 Oct 2026: "the rate per square metre is not
- * displayed … i am talking about slabs"). `reoRateArea(d)` is the ONE plan
- * area a per-m² rate applies to — the same area Project Geometry publishes. */
-function reoRateBasisOf(d){ return (d && d.reoRateBasis)==="m2"? "m2" : "m3"; }
+/* Three ways to reinforce an element: detailed (the calculator's own bars and
+ * mesh), by RATE (kg per m³ of concrete, as bar metres) or by AREA (Grady,
+ * 6 Oct 2026, for slabs with no proper bar design: "i want the square meter
+ * alone and the spacing and bar type only" — an area in m², a bar type and a
+ * spacing, each way or one way, as bar metres). `reoRateArea(d)` is the ONE
+ * plan area the area method falls back to when none is typed — the same
+ * area Project Geometry publishes. */
+function reoMethodOf(d){ const m=d && d.reoMethod; return m==="rate"? "rate" : m==="area"? "area" : "detailed"; }
 function reoRateArea(d){ return num(d._autoAreaM2) || num(d._autoInsArea) || num(d._autoBlindArea) || 0; }
 /* ---- Irregular shape: concrete volume override (every element with a
  * Concrete tab). The geometry tabs describe regular solids; a curved,
@@ -8320,36 +8326,54 @@ function applyConcreteOverride(inst,def,out){
   out.lines.unshift(baseLine(inst,def,{materialGroup:"Concrete",material,spec:`entered volume (irregular shape)${d.concVolReason?` — ${d.concVolReason}`:""}`,qty:v,unit:"m³",waste:concWastePct(d),finalQty:withWaste(v,concWastePct(d)),formula:`manual entry (replaces ${own.length} geometry line${own.length===1?"":"s"}: ${own.map(l=>fmt(l.qty,3)).join(" + ")||"0"} m³)`}));
 }
 function reoMethodSection(inst){
-  let d=inst.data, rate=reoMethodOf(d)==="rate";
+  let d=inst.data, method=reoMethodOf(d), planArea=reoRateArea(d);
   return `<div class="sechead">Reinforcement method</div>
-  <div class="grid cols3">${F("Method",selOpts("reoMethod",rate?"rate":"detailed",[["detailed","Detailed — bars and mesh from the spacings below"],["rate","By rate — kg of steel per m³ of concrete or per m² of slab, as bar metres"]]))}</div>
-  <div class="subsec ${rate?'':'hidden'}" data-show-if="reoMethod_rate"><div class="grid cols4">
-   ${F("Rate basis",selOpts("reoRateBasis",reoRateBasisOf(d),[["m3","kg per m³ of concrete"],["m2","kg per m² of plan area (slabs)"]],true))}
-   ${reoRateBasisOf(d)==="m2"
-     ? F("Rate (kg of steel per m² of slab)",inpNum("reoRateKgM2",d.reoRateKgM2===undefined?10:d.reoRateKgM2))
-     : F("Rate (kg of steel per m³ of concrete)",inpNum("reoRateKgM3",d.reoRateKgM3===undefined?100:d.reoRateKgM3))}
+  <div class="grid cols3">${F("Method",selOpts("reoMethod",method,[["detailed","Detailed — bars and mesh from the spacings below"],["rate","By rate — kg of steel per m³ of concrete, as bar metres"],["area","By area — bar type and spacing over an area (m²)"]]))}</div>
+  <div class="subsec ${method==="area"?'':'hidden'}" data-show-if="reoMethod_area"><div class="grid cols4">
+   ${F(`Area (m²${planArea>0?`, blank = this element's ${fmt(planArea,2)} m²`:""})`,`<input type="text" inputmode="decimal" data-num="1" data-field="reoAreaM2" value="${d.reoAreaM2===undefined?'':d.reoAreaM2}" placeholder="${planArea>0?fmt(planArea,2):''}">`)}
+   ${F("Bar type",barSizeSel("reoAreaDia",d.reoAreaDia||"N12"))}
+   ${F("Spacing (mm)",inpNum("reoAreaSpacing",d.reoAreaSpacing===undefined?200:d.reoAreaSpacing))}
+   ${F("Layout",selOpts("reoAreaWays",d.reoAreaWays||"each",[["each","Each way (two directions)"],["one","One way"]]))}
+  </div><div class="grid cols3">${chk("reoAreaLap",d.reoAreaLap,"Include lap allowance (%)","reoAreaLap")}</div>
+  <p class="small reoRateHint">${reoRateHintText(inst.results&&inst.results.reoRate)}</p>
+  <p class="small">Bar metres = area ÷ spacing per direction (× 2 each way). Leave the area blank to use the element's own plan area. One register line replaces every detailed reinforcement line of this element; starters, dowels and connections to other elements are kept.</p></div>
+  <div class="subsec ${method==="rate"?'':'hidden'}" data-show-if="reoMethod_rate"><div class="grid cols4">
+   ${F("Rate (kg of steel per m³ of concrete)",inpNum("reoRateKgM3",d.reoRateKgM3===undefined?100:d.reoRateKgM3))}
    ${F("Equivalent bar size",barSizeSel("reoRateDia",d.reoRateDia||"N16"))}
    ${chk("reoRateLap",d.reoRateLap,"Include lap allowance (%)","reoRateLap")}
   </div><p class="small reoRateHint">${reoRateHintText(inst.results&&inst.results.reoRate)}</p>
-  <p class="small">Per m³: kg = rate × this element's concrete (blinding excluded). Per m²: kg = rate × this element's plan area (the slab's net area, or the area Project Geometry carries). Metres = kg ÷ the bar's kg/m (d²/162 — N16 is ${fmt(massPerM(16),3)} kg/m). The line above always shows the same steel BOTH ways — kg/m³ and kg/m² — so a slab's rate per square metre is on its face whichever basis it was typed in. One register line replaces every detailed reinforcement line of this element; starters, dowels and connections to other elements are kept. Typical ratios: footings 60–100, slabs on ground 40–80, suspended slabs 90–130, beams 120–200, columns and walls 120–250 kg/m³ — confirm against the engineer's documents.</p></div>`;
+  <p class="small">kg = rate × this element's concrete (blinding excluded); metres = kg ÷ the bar's kg/m (d²/162 — N16 is ${fmt(massPerM(16),3)} kg/m). One register line replaces every detailed reinforcement line of this element; starters, dowels and connections to other elements are kept. Typical ratios: footings 60–100, slabs on ground 40–80, suspended slabs 90–130, beams 120–200, columns and walls 120–250 kg/m³ — confirm against the engineer's documents.</p></div>`;
 }
 /** The one-line reading of a rate result: the steel stated both per m³ and per m². */
 function reoRateHintText(rr){
   if(!rr) return "";
   const both=`${rr.kgPerM3>0?`${fmt(rr.kgPerM3,1)} kg/m³ of concrete`:"no concrete volume"} · ${rr.kgPerM2>0?`${fmt(rr.kgPerM2,1)} kg/m² of plan area`:"no plan area on this element"}`;
-  return `This element: ${fmt(rr.kg,1)} kg of steel = ${both} (${fmt(rr.conc,2)} m³, ${rr.area>0?fmt(rr.area,2)+" m²":"area —"}).`;
+  const lead=rr.basis==="area"? `${fmt(rr.metres,1)} m of ${rr.dia} (${rr.ways===1?"one way":"each way"} @${fmt(rr.spacing,0)} over ${fmt(rr.area,2)} m²) = ${fmt(rr.kg,1)} kg` : `${fmt(rr.kg,1)} kg of steel`;
+  return `This element: ${lead} = ${both} (${fmt(rr.conc,2)} m³, ${rr.area>0?fmt(rr.area,2)+" m²":"area —"}).`;
+}
+/** Concrete this element pours, blinding and reference pointers excluded — what a kg/m³ rate applies to. */
+function reoRateConcrete(lines){ return lines.filter(l=>l.materialGroup==="Concrete" && !/blind|reference only/i.test(l.spec||"") && !/reference only/i.test(l.material||"")).reduce((s,l)=>s+(l.qty||0),0); }
+/* By AREA: bar type + spacing over an area, as bar metres. The typed area
+ * wins; blank = the element's own plan area. Each way doubles the metres. */
+function applyReoArea(inst,def,out){
+  let d=inst.data, lines=out.lines||[];
+  let conc=reoRateConcrete(lines);
+  let area=num(d.reoAreaM2)>0? num(d.reoAreaM2) : reoRateArea(d);
+  let dia=d.reoAreaDia||"N12", kgm=massPerM(barDiaOf(dia)), sp=num(d.reoAreaSpacing,200), ways=(d.reoAreaWays||"each")==="one"? 1 : 2;
+  let metres=(area>0 && sp>0)? area/(sp/1000)*ways : 0, kg=metres*kgm, lapPct=d.reoAreaLap?PROJECT.lapPct:0;
+  out.lines=lines.filter(l=>l.materialGroup!=="Reinforcement");
+  if(metres>0) out.lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:dia,spec:`Reinforcement by area — ${dia} @${fmt(sp,0)} ${ways===1?"one way":"each way"} over ${fmt(area,2)} m²`,qty:metres,unit:"m",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(metres,PROJECT.reoWaste,lapPct),formula:`${fmt(area,2)} m² ÷ ${fmt(sp,0)}mm × ${ways} direction(s)`,notes:`${fmt(kg,1)} kg`}));
+  out.reoRate={basis:"area",rate:area>0?kg/area:0,conc,area,kg,metres,dia,spacing:sp,ways,kgPerM3:conc>0?kg/conc:0,kgPerM2:area>0?kg/area:0};
 }
 function applyReoRate(inst,def,out){
   let d=inst.data, lines=out.lines||[];
-  let conc=lines.filter(l=>l.materialGroup==="Concrete" && !/blind|reference only/i.test(l.spec||"") && !/reference only/i.test(l.material||"")).reduce((s,l)=>s+(l.qty||0),0);
-  let basis=reoRateBasisOf(d), area=reoRateArea(d);
-  let rate=basis==="m2"? num(d.reoRateKgM2,10) : num(d.reoRateKgM3,100), dia=d.reoRateDia||"N16", kgm=massPerM(barDiaOf(dia));
-  let kg=basis==="m2"? rate*area : rate*conc, metres=kgm>0? kg/kgm : 0, lapPct=d.reoRateLap?PROJECT.lapPct:0;
-  let unitTxt=basis==="m2"?"kg/m²":"kg/m³", baseTxt=basis==="m2"?`${fmt(area,2)} m² plan area`:`${fmt(conc,3)} m³ concrete`;
+  let conc=reoRateConcrete(lines), area=reoRateArea(d);
+  let rate=num(d.reoRateKgM3,100), dia=d.reoRateDia||"N16", kgm=massPerM(barDiaOf(dia));
+  let kg=rate*conc, metres=kgm>0? kg/kgm : 0, lapPct=d.reoRateLap?PROJECT.lapPct:0;
   let removed=lines.filter(l=>l.materialGroup==="Reinforcement").length;
   out.lines=lines.filter(l=>l.materialGroup!=="Reinforcement");
-  out.lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:dia,spec:`Reinforcement by rate — ${fmt(rate,basis==="m2"?1:0)} ${unitTxt} as ${dia} equivalent`,qty:metres,unit:"m",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(metres,PROJECT.reoWaste,lapPct),formula:`${fmt(rate,basis==="m2"?1:0)} ${unitTxt} × ${baseTxt} = ${fmt(kg,1)} kg ÷ ${fmt(kgm,3)} kg/m (${dia})`,notes:`${fmt(kg,1)} kg — replaces ${removed} detailed line(s); connections kept`}));
-  out.reoRate={rate,basis,conc,area,kg,metres,dia,kgPerM3:conc>0?kg/conc:0,kgPerM2:area>0?kg/area:0};
+  out.lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:dia,spec:`Reinforcement by rate — ${fmt(rate,0)} kg/m³ as ${dia} equivalent`,qty:metres,unit:"m",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(metres,PROJECT.reoWaste,lapPct),formula:`${fmt(rate,0)} kg/m³ × ${fmt(conc,3)} m³ concrete = ${fmt(kg,1)} kg ÷ ${fmt(kgm,3)} kg/m (${dia})`,notes:`${fmt(kg,1)} kg — replaces ${removed} detailed line(s); connections kept`}));
+  out.reoRate={rate,basis:"m3",conc,area,kg,metres,dia,kgPerM3:conc>0?kg/conc:0,kgPerM2:area>0?kg/area:0};
 }
 function buildCard(inst){
   let def=LIB_INDEX[inst.typeKey];
@@ -8358,7 +8382,7 @@ function buildCard(inst){
   let parts=calc.render(inst,def);
   // Reinforcement method heads every Reinforcement tab; the calculator's own
   // detailing sits under it and hides when the element is priced by rate.
-  if(parts.reo!==undefined) parts.reo = reoMethodSection(inst) + `<div class="subsec ${reoMethodOf(inst.data)==="rate"?'hidden':''}" data-show-if="reoMethod_detailed">${parts.reo}</div>`;
+  if(parts.reo!==undefined) parts.reo = reoMethodSection(inst) + `<div class="subsec ${reoMethodOf(inst.data)!=="detailed"?'hidden':''}" data-show-if="reoMethod_detailed">${parts.reo}</div>`;
   parts.conns = (parts.conns||"") + (usesSharedStarters(def)? startersSection(inst) : "") + renderExtraConnRows(inst);
   // Central additions available on EVERY element with the matching tab:
   // the formwork system/type choice heads every Formwork tab, and the
@@ -8933,6 +8957,7 @@ function computeInstance(inst){
   let out=calc.compute(inst,def);
   applyConcreteOverride(inst,def,out);                               // an entered volume replaces the geometry's concrete first…
   if(reoMethodOf(inst.data)==="rate") applyReoRate(inst,def,out);   // …so a rate follows it; before connections are added, so they are never replaced
+  else if(reoMethodOf(inst.data)==="area") applyReoArea(inst,def,out);
   computeExtraConnections(inst,def,out);
   let d=inst.data;
   // Starter / dowel bars for the calculators that don't detail their own (see
