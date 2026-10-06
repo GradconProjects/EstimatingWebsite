@@ -602,6 +602,17 @@ takeoff (`estimateStateSnapshot` is unchanged); a takeoff edited in one
 layout opens identically in the other. `refreshCardResults` is the one hook
 that refreshes the inspector and the navigator row after an edit — keep
 calling it rather than recomputing totals in the shell code.
+**`rerenderCardKeepTab` builds the replacement card OPEN** (6 Oct 2026,
+Grady: "slab reinforcement folds up and doesnt reveal options to enter until
+a refresh is done"): a card being typed into is open by definition, but a
+never-unfolded element stores `_collapsed: true`, so a rerendering control
+(a slab bar block's Method, the rate basis, "Enter as bar sections", any
+`data-rerender` select or box) rebuilt the card folded and its fields
+vanished. It now clears the fold for the build — classic keeps the card
+open (it is), blueprint restores the stored classic fold as
+`renderBlueprintWorkspace` does — tolerates a missing active tab button
+(falls back to `CARD_TAB_MEMORY`) and re-arms the blueprint sticky
+observer. `test-card-rerender-fold.mjs` proves both layouts.
 
 ## Estimates cloud sync (read before touching saveEstimateState, syncFromCloud or kvPush)
 

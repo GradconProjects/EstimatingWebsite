@@ -8894,10 +8894,25 @@ function attachCardEvents(card,inst){
   });
 }
 function rerenderCardKeepTab(card,inst){
-  let activeTab=card.querySelector('.card-tabs button.active').dataset.tab;
+  let activeBtn=card.querySelector('.card-tabs button.active');
+  let activeTab=activeBtn? activeBtn.dataset.tab : CARD_TAB_MEMORY[inst.id];
   dispose3D();
+  // The card being edited is OPEN by definition: in the blueprint layout the
+  // canvas card is never folded (renderBlueprintWorkspace builds it with the
+  // fold cleared and restores the classic layout's stored state afterwards),
+  // and in the classic layout a card whose fields are being typed into has
+  // its body showing. Build the replacement the same way — before 6 Oct 2026
+  // a rerendering select (a slab bar block's Method, the reinforcement rate
+  // basis, "Enter as bar sections"…) rebuilt the card from the STORED fold,
+  // which for a never-unfolded element is "collapsed", so the card folded
+  // shut mid-edit and its fields vanished until the workspace was redrawn
+  // (Grady: "slab reinforcement folds up and doesnt reveal options to enter
+  // until a refresh is done and sometimes it doesnt show up").
+  let wasCollapsed=inst._collapsed; inst._collapsed=false;
   let newCard=buildCard(inst);
+  inst._collapsed = SHELL_MODE==="blueprint"? wasCollapsed : false;   // classic: the card IS open now; blueprint: the stored fold is the classic layout's
   card.replaceWith(newCard);
+  if(SHELL_MODE==="blueprint" && typeof bpObserveSticky==="function") bpObserveSticky(newCard);
   let btn=newCard.querySelector(`.card-tabs button[data-tab="${activeTab}"]`);
   if(btn) btn.click();
 }
