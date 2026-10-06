@@ -910,6 +910,21 @@ element families waits on the owner's approval of the pad footing.
   `capBlindingGrade`, `slabBlindGrade`, composite parts' `blindGrade`) falls
   back to Project Setup's `PROJECT.blindingGrade` (`blindGradeDefault()`,
   20 when unset) rather than a fixed N20.
+- **Slab bars can be measured by AREA COVERED × LAYERS** (6 Oct 2026,
+  Grady: "some slabs dont have proper bars designed … lets use the area
+  covered and include also layer … i should be able to select more than a
+  layer"): each slab bar block (botX / botY / topX / topY) has a third
+  Method beside "By spacing" and "By bar count" — "By area covered ×
+  layers" (`<prefix>Method: "area"`, `<prefix>Area` m², `<prefix>Layers`
+  whole number, blank = 1, the block's own `<prefix>Spacing`). `barMode(d,
+  prefix)` is the ONE reading of the select (no value = spacing, so older
+  takeoffs are unchanged) and `areaBarGeom(d, prefix)` the ONE arithmetic:
+  total length = area ÷ (spacing ÷ 1000) × layers, ONE direction per block
+  (a mat each way uses the X and Y blocks), waste and lap as for every bar
+  line, the spec reads "(area covered, N layers)". A blank area in that
+  mode is a completeness warning and no line, never a silent zero
+  (`computeSlab` now returns its own `warnings`). The Method select
+  rerenders the card so only the chosen mode's fields show.
 - **Column vertical bars = bars × qty × HEIGHT** (`computeColumn`, 5 Oct
   2026): the lap onto the starters from below sits inside the height (those
   starters are counted on their source element) and the bars continuing up

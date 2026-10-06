@@ -4774,13 +4774,17 @@ function renderSlab(inst,def){
     // with its own bar type, spacing, the span the bars are spaced across,
     // and the bar cut length. Manual-area slabs always use the schedule.
     let useSched = manual || !!d[prefix+"Sched"];
+    let mode = barMode(d,prefix);
     let head = `<div class="sechead">${label}</div><div class="grid cols4">
      ${chk(prefix,d[prefix],label+" on",prefix)}
      ${manual? "" : chk(prefix+"Sched",d[prefix+"Sched"],"Enter as bar sections (multiple sets)",undefined,true)}
      ${useSched? "" : F("Dia",barSizeSel(prefix+"Dia",d[prefix+"Dia"]))}
-     ${useSched? "" : F("Method",selOpts(prefix+"Method",d[prefix+"Method"],[["spacing","By spacing"],["count","By bar count"]]))}
-     ${useSched? "" : (d[prefix+"Method"]=="spacing"? F("Spacing (mm)",inpNum(prefix+"Spacing",d[prefix+"Spacing"])) : F("Bar count",inpNum(prefix+"Qty",d[prefix+"Qty"])))}
+     ${useSched? "" : F("Method",selOpts(prefix+"Method",d[prefix+"Method"]||"spacing",[["spacing","By spacing (over the slab dimension)"],["count","By bar count"],["area","By area covered × layers"]],true))}
+     ${useSched? "" : (mode==="count"? F("Bar count",inpNum(prefix+"Qty",d[prefix+"Qty"])) : F("Spacing (mm)",inpNum(prefix+"Spacing",d[prefix+"Spacing"])))}
+     ${(useSched||mode!=="area")? "" : F("Area covered (m²)",inpNum(prefix+"Area",d[prefix+"Area"]))}
+     ${(useSched||mode!=="area")? "" : F("Layers",inpNum(prefix+"Layers",d[prefix+"Layers"]===undefined?1:d[prefix+"Layers"]))}
     </div>
+    ${(useSched||mode!=="area"||!d[prefix])? "" : `<p class="small">Where the slab has no proper bars designed: total bar length = area covered ÷ spacing × layers (one direction per block — use the X and Y blocks for a mat each way). More than one layer multiplies the length; waste and lap apply as usual.</p>`}
     <div class="subsec ${d[prefix]?'':'hidden'}" data-show-if="${prefix}"><div class="grid cols3">${chk(prefix+"Lap",d[prefix+"Lap"],"Include lap allowance (%)",prefix+"Lap")}</div></div>`;
     let sched = (useSched && d[prefix])? `<div class="subsec"><table class="rows"><thead><tr><th>Section mark</th><th>Bar type</th><th>Span covered (m)</th><th>Spacing (mm)</th><th>Bar length (m)</th><th>Bars (calc)</th><th></th></tr></thead>
     <tbody>${(d[prefix+"Bars"]||[]).map((r,i)=>barSchedRowHtml(prefix,i,r)).join('')}</tbody></table>
@@ -4941,8 +4945,20 @@ function slabBeamGrade(d,g){
   if(d.beamGrade!==undefined && d.beamGrade!=="" && d.beamGrade!==null) return d.beamGrade;
   return d.grade;
 }
+/* Slab bar blocks (botX / botY / topX / topY) are measured one of three
+ * ways: by spacing over the slab dimension (the default), by a typed bar
+ * count, or — where the drawing gives no proper bar design — by the AREA
+ * the bars cover at a spacing, times the number of layers. `barMode` is the
+ * ONE reading of the select (an older takeoff with no value = spacing) and
+ * `areaBarGeom` the ONE area-mode arithmetic (compute and card hint). */
+function barMode(d,prefix){ let m=d[prefix+"Method"]; return (m==="count"||m==="area")? m : "spacing"; }
+function areaBarGeom(d,prefix){
+  let area=num(d[prefix+"Area"]), spacing=Math.max(1,num(d[prefix+"Spacing"],200)), layers=Math.max(1,Math.round(num(d[prefix+"Layers"],1)));
+  let totLen = area>0? area/(spacing/1000)*layers : 0;
+  return {area, spacing, layers, totLen};
+}
 function computeSlab(inst,def){
-  let d=inst.data, lines=[];
+  let d=inst.data, lines=[], warnings=[];
   let outline = slabOutlinePts(d);
   let area = d.manualArea? num(d.areaOverride) : (outline? polyArea(outline) : num(d.length)*num(d.width));
   let openArea=0;
@@ -5121,11 +5137,22 @@ function computeSlab(inst,def){
       return;
     }
     let dia=barDiaOf(d[prefix+"Dia"]);
+    let lapPct=d[prefix+"Lap"]?PROJECT.lapPct:0;
+    if(barMode(d,prefix)==="area"){
+      // Area covered × layers (6 Oct 2026, Grady: "some slabs dont have proper
+      // bars designed … lets use the area covered and include also layer"):
+      // the bars in ONE direction over an area at a spacing run
+      // area ÷ spacing metres in total, and every extra layer repeats them.
+      let a=areaBarGeom(d,prefix);
+      if(!(a.area>0)){ warnings.push({text:`${label} are measured by area covered but no area is typed — nothing is taken off until it is`,section:"reo",level:"completeness"}); return; }
+      let wt=a.totLen*massPerM(dia);
+      lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d[prefix+"Dia"],spec:`${label} (area covered${a.layers>1?`, ${a.layers} layers`:""})`,qty:a.totLen,unit:"m",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(a.totLen,PROJECT.reoWaste,lapPct),formula:`area(${fmt(a.area,2)}m²)÷spacing(${a.spacing}mm)×layers(${a.layers})`,notes:`${fmt(wt,1)} kg`}));
+      return;
+    }
     let count = d[prefix+"Method"]=="count"? num(d[prefix+"Qty"]) : Math.floor(perpDim*1000/num(d[prefix+"Spacing"]))+1;
     let otherDim = (prefix.includes("X"))? num(d.width) : num(d.length);
     let barLen = otherDim;
     let totLen=count*barLen; let wt=totLen*massPerM(dia);
-    let lapPct=d[prefix+"Lap"]?PROJECT.lapPct:0;
     lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d[prefix+"Dia"],spec:label,qty:totLen,unit:"m",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,lapPct),formula:`count(${count})×len(${fmt(barLen,1)}m)`,notes:`${fmt(wt,1)} kg`}));
   }
   barCalc("botX","Bottom X bars",num(d.width)); barCalc("botY","Bottom Y bars",num(d.length));
@@ -5230,7 +5257,7 @@ function computeSlab(inst,def){
     lines.push(baseLine(inst,def,{materialGroup:"Connections",material:d.sdDia,spec:"Step-down connecting dowels",qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`count(${count})×(proj1+proj2)/1000`,notes:`${count} dowels, ${fmt(wt,1)} kg`}));
     sdExtraBarLines(inst,def,lines,d,sdRunM,1);
   }
-  return {lines,warnings:[]};
+  return {lines,warnings};
 }
 
 /* ---- COLUMN ---- */
