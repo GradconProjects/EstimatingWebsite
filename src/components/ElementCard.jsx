@@ -291,7 +291,7 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
       }`}
     >
       <div
-        className={`bg-blue-950 text-white px-4 py-2.5 flex flex-1 flex-wrap items-center gap-x-3 gap-y-1.5 ${dragOver ? "ring-2 ring-inset ring-orange-400" : ""}`}
+        className={`bg-blue-950 text-white px-4 py-2.5 flex flex-1 items-center gap-3 ${dragOver ? "ring-2 ring-inset ring-orange-400" : ""}`}
         draggable={!!onReorder}
         onDragStart={(e) => { if (!onReorder) return; e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", item.id); }}
         onDragOver={(e) => { if (onReorder) { e.preventDefault(); setDragOver(true); } }}
@@ -303,18 +303,39 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
         <button onClick={() => setCardOpen(!cardOpen)} className="text-blue-300 hover:text-white transition-colors flex-none">
           {cardOpen ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
         </button>
-        {/* The name block takes the whole band when the controls would
-            squeeze it (flex-wrap: the controls drop to a second row,
-            right-aligned); on a wide card they sit beside it as before. */}
-        <div className="flex-1 min-w-[14rem] basis-72">
-          <div className="text-[10px] uppercase tracking-widest text-blue-300 font-semibold flex items-center gap-1.5">
-            <span>{item.category} {item.category && item.section ? "›" : ""} {item.section}</span>
-            {markups.length > 0 && (
-              <span className="inline-flex items-center gap-0.5 text-orange-400 normal-case tracking-normal" title={`${markups.length} markup drawing(s) attached`}>
-                <Paperclip size={10} /> {markups.length}
-              </span>
-            )}
+        <div className="flex-1 min-w-0">
+          {/* Row 1: breadcrumb on the left, the element's scope tucked into
+              the band's top-right corner as a small muted control (Grady,
+              7 Oct 2026: "placed at the top right hand corner of each band
+              so it is not imposing"). The project's scope reads muted blue;
+              an element that differs from the project reads orange. */}
+          <div className="flex items-center gap-3">
+            <div className="flex-1 min-w-0 text-[10px] uppercase tracking-widest text-blue-300 font-semibold flex items-center gap-1.5">
+              <span className="truncate">{item.category} {item.category && item.section ? "›" : ""} {item.section}</span>
+              {markups.length > 0 && (
+                <span className="inline-flex items-center gap-0.5 text-orange-400 normal-case tracking-normal" title={`${markups.length} markup drawing(s) attached`}>
+                  <Paperclip size={10} /> {markups.length}
+                </span>
+              )}
+            </div>
+            <label className="flex-none flex items-center gap-1 text-[10px] uppercase tracking-widest text-blue-400" onClick={(e) => e.stopPropagation()} title={`Scope of this element: ${scopeLabel(cost.scope)}. "Project" follows the quote's own scope (${scopeLabel(elementScope({}, projectScope))}).`}>
+              <span>Scope</span>
+              <select
+                value={item.scope && item.scope !== "inherit" && SCOPE_KEYS.includes(item.scope) ? item.scope : "inherit"}
+                onChange={(e) => patch((it) => ({ ...it, scope: e.target.value === "inherit" ? undefined : e.target.value }))}
+                className={`bg-transparent border border-blue-800/70 hover:border-blue-600 rounded px-1 py-0 text-[10px] normal-case tracking-normal font-medium focus:outline-none focus:border-orange-400 ${item.scope && item.scope !== "inherit" ? "text-orange-300" : "text-blue-300"}`}
+                aria-label="Element scope"
+              >
+                <option value="inherit">Project ({scopeLabel(elementScope({}, projectScope))})</option>
+                {QUOTE_SCOPES.map((sc) => <option key={sc.key} value={sc.key}>{sc.short}</option>)}
+              </select>
+            </label>
           </div>
+          {/* Row 2: the name takes the whole width when the total and the
+              buttons would squeeze it (flex-wrap: they drop to a line below,
+              right-aligned); on a wide card they sit beside it. */}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+          <div className="flex-1 min-w-[14rem] basis-72">
           <textarea
             ref={labelRef}
             rows={1}
@@ -327,21 +348,6 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
           />
         </div>
         <div className="flex items-center gap-3 ml-auto flex-none">
-        {/* Element scope: the project's unless this card says otherwise —
-            a labour-only job can still SUPPLY one element, or price one
-            element supply-only. The select is the only control. */}
-        <label className="flex-none text-right" onClick={(e) => e.stopPropagation()} title={`Scope of this element: ${scopeLabel(cost.scope)}. "Project" follows the quote's own scope (${scopeLabel(elementScope({}, projectScope))}).`}>
-          <div className="text-[10px] uppercase tracking-widest text-blue-300">Scope</div>
-          <select
-            value={item.scope && item.scope !== "inherit" && SCOPE_KEYS.includes(item.scope) ? item.scope : "inherit"}
-            onChange={(e) => patch((it) => ({ ...it, scope: e.target.value === "inherit" ? undefined : e.target.value }))}
-            className={`bg-blue-900 border border-blue-800 rounded px-1.5 py-0.5 text-[11px] font-semibold ${item.scope && item.scope !== "inherit" ? "text-orange-300" : "text-blue-100"}`}
-            aria-label="Element scope"
-          >
-            <option value="inherit">Project ({scopeLabel(elementScope({}, projectScope))})</option>
-            {QUOTE_SCOPES.map((sc) => <option key={sc.key} value={sc.key}>{sc.short}</option>)}
-          </select>
-        </label>
         <div className="text-right flex-none">
           <div className="text-[10px] uppercase tracking-widest text-blue-300">Total{cost.scope !== "both" ? ` · ${scopeLabel(cost.scope)}` : ""}</div>
           <div className="font-mono tabular-nums text-lg font-bold text-orange-400">{money2(cost.total)}</div>
@@ -362,6 +368,8 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
         <button onClick={onRemove} title="Remove" className="text-blue-300 hover:text-red-400 transition-colors flex-none">
           <Trash2 size={16} />
         </button>
+        </div>
+        </div>
         </div>
       </div>
 

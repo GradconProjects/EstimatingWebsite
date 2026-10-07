@@ -1246,10 +1246,14 @@ if Estimates gains an element type Quotes already has a match for.
   it — never keep a second, display-only order anywhere.
 - **The element card's blue band wraps** (`ElementCard.jsx`, 7 Oct 2026,
   Grady: "i want the blue bands responsive so that i can easily see the
-  names of elements working on"): the header is `flex-wrap`; the name block
-  takes at least 14 rem and grows, and the scope select / total / arrows /
-  buttons travel as ONE right-aligned group that drops to a second row when
-  the band is too narrow for both. The name itself is a `<textarea rows=1>`
+  names of elements working on"): row 1 is the breadcrumb with the element
+  Scope select tucked small and muted into the band's TOP-RIGHT corner
+  (Grady, same day: "placed at the top right hand corner of each band so it
+  is not imposing" — muted blue when it follows the project, orange when the
+  element differs); row 2 is `flex-wrap`: the name block takes at least
+  14 rem and grows, and the total / arrows / buttons travel as ONE
+  right-aligned group that drops to a line below when the band is too
+  narrow for both. The name itself is a `<textarea rows=1>`
   sized to its content (`labelRef`, refit on every label change and by a
   ResizeObserver), so a long name wraps onto more lines instead of being
   clipped; Enter blurs and any line break typed or pasted becomes a space,
