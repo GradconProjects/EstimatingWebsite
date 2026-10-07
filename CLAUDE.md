@@ -1244,6 +1244,18 @@ if Estimates gains an element type Quotes already has a match for.
   same handler the Quote Summary rail's drag uses). The order is
   `quote.items` itself, so the rail, the print report and the export follow
   it — never keep a second, display-only order anywhere.
+- **The element card's blue band wraps** (`ElementCard.jsx`, 7 Oct 2026,
+  Grady: "i want the blue bands responsive so that i can easily see the
+  names of elements working on"): the header is `flex-wrap`; the name block
+  takes at least 14 rem and grows, and the scope select / total / arrows /
+  buttons travel as ONE right-aligned group that drops to a second row when
+  the band is too narrow for both. The name itself is a `<textarea rows=1>`
+  sized to its content (`labelRef`, refit on every label change and by a
+  ResizeObserver), so a long name wraps onto more lines instead of being
+  clipped; Enter blurs and any line break typed or pasted becomes a space,
+  so `item.label` stays one line for the rail, the report and the exports.
+  Before this the name was an `<input>` squeezed onto one row with every
+  control and read "Lower Ground Strip Foot…".
 - Category blocks and the whole element card are independently
   collapsible — this was a deliberate response to "the full catalog on
   every tab is a lot of rows"; don't remove the ability to collapse in

@@ -176,6 +176,21 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
   // else. Capped per file — the whole quote has to fit in one storage blob.
   const MAX_MARKUP_BYTES = 3 * 1024 * 1024;
   const fileInputRef = useRef(null);
+  // The element name wraps onto as many lines as it needs (a textarea sized
+  // to its content) so a long name is never clipped in the blue band —
+  // Grady, 7 Oct 2026: "i want the blue bands responsive so that i can
+  // easily see the names of elements working on". Names stay single
+  // paragraphs: Enter blurs instead of adding a line.
+  const labelRef = useRef(null);
+  useEffect(() => {
+    const el = labelRef.current; if (!el) return;
+    const fit = () => { el.style.height = "0px"; el.style.height = `${el.scrollHeight}px`; };
+    fit();
+    // The band's width moves with the window and the summary rail, so refit on resize too.
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(fit) : null;
+    if (ro) ro.observe(el);
+    return () => { if (ro) ro.disconnect(); };
+  }, [item.label]);
   const addMarkupFiles = (fileList) => {
     const files = Array.from(fileList || []);
     files.forEach((file) => {
@@ -276,7 +291,7 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
       }`}
     >
       <div
-        className={`bg-blue-950 text-white px-4 py-3 flex flex-1 items-center gap-3 ${dragOver ? "ring-2 ring-inset ring-orange-400" : ""}`}
+        className={`bg-blue-950 text-white px-4 py-2.5 flex flex-1 flex-wrap items-center gap-x-3 gap-y-1.5 ${dragOver ? "ring-2 ring-inset ring-orange-400" : ""}`}
         draggable={!!onReorder}
         onDragStart={(e) => { if (!onReorder) return; e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", item.id); }}
         onDragOver={(e) => { if (onReorder) { e.preventDefault(); setDragOver(true); } }}
@@ -288,7 +303,10 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
         <button onClick={() => setCardOpen(!cardOpen)} className="text-blue-300 hover:text-white transition-colors flex-none">
           {cardOpen ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
         </button>
-        <div className="flex-1 min-w-0">
+        {/* The name block takes the whole band when the controls would
+            squeeze it (flex-wrap: the controls drop to a second row,
+            right-aligned); on a wide card they sit beside it as before. */}
+        <div className="flex-1 min-w-[14rem] basis-72">
           <div className="text-[10px] uppercase tracking-widest text-blue-300 font-semibold flex items-center gap-1.5">
             <span>{item.category} {item.category && item.section ? "›" : ""} {item.section}</span>
             {markups.length > 0 && (
@@ -297,12 +315,18 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
               </span>
             )}
           </div>
-          <input
+          <textarea
+            ref={labelRef}
+            rows={1}
             value={item.label}
-            onChange={(e) => setLabel(e.target.value)}
-            className="w-full bg-transparent border-0 text-white font-semibold text-[15px] focus:outline-none focus:underline decoration-orange-400"
+            onChange={(e) => setLabel(e.target.value.replace(/[\r\n]+/g, " "))}
+            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); e.currentTarget.blur(); } }}
+            title={item.label}
+            aria-label="Element name"
+            className="block w-full resize-none overflow-hidden bg-transparent border-0 p-0 text-white font-semibold text-[15px] leading-snug focus:outline-none focus:underline decoration-orange-400"
           />
         </div>
+        <div className="flex items-center gap-3 ml-auto flex-none">
         {/* Element scope: the project's unless this card says otherwise —
             a labour-only job can still SUPPLY one element, or price one
             element supply-only. The select is the only control. */}
@@ -338,6 +362,7 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
         <button onClick={onRemove} title="Remove" className="text-blue-300 hover:text-red-400 transition-colors flex-none">
           <Trash2 size={16} />
         </button>
+        </div>
       </div>
 
       {cardOpen && (
