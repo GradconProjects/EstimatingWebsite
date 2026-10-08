@@ -1137,6 +1137,23 @@ check("Rates Library rules: its price flows into Quotes over ANY stored value, i
 });
 
 const { computeTenderProjectSum, parseTenderPrice, seedTenderItems } = await import("../src/lib/tenderQuoteDefaults.js");
+const { tenderNoteLines, assumptionLines, typedNoteLines } = await import("../src/lib/tenderNotes.js");
+
+check("Tender Notes = the project's Assumptions first (recorded order, blanks dropped), then the typed notes, bulleted once each", () => {
+  const quote = { assumptions: [{ id: "a", text: "Paving slab thickness 150mm and SL82 mesh" }, { id: "b", text: "   " }, { id: "c", text: "External and all staircases excluded" }] };
+  assert.deepEqual(assumptionLines(quote), ["Paving slab thickness 150mm and SL82 mesh", "External and all staircases excluded"]);
+  const n = tenderNoteLines(quote, "Rock excavation not allowed for\n\n- Site access from Beach Road only\n");
+  assert.deepEqual(n.assumptions, ["Paving slab thickness 150mm and SL82 mesh", "External and all staircases excluded"]);
+  assert.deepEqual(n.typed, ["Rock excavation not allowed for", "Site access from Beach Road only"], "typed notes follow, a leading bullet mark stripped (the report prints its own)");
+  assert.deepEqual(n.all, [...n.assumptions, ...n.typed]);
+  // a typed line that repeats an assumption (hand-pasted before this existed) or an earlier typed line prints once
+  const d = tenderNoteLines(quote, "• external and all staircases EXCLUDED\nRock excavation not allowed for\nRock excavation not allowed for");
+  assert.deepEqual(d.all, ["Paving slab thickness 150mm and SL82 mesh", "External and all staircases excluded", "Rock excavation not allowed for"]);
+  // legacy quotes (no assumptions) and blank reports
+  assert.deepEqual(tenderNoteLines({}, ""), { assumptions: [], typed: [], all: [] });
+  assert.deepEqual(tenderNoteLines(undefined, undefined).all, []);
+  assert.deepEqual(typedNoteLines("a\nb"), ["a", "b"]);
+});
 
 check("Tender quote prints the FLOOR AREA entered in the quote (measureM2), not the Square Mesh coverage", () => {
   const raft = newElementItem(ELEMENT_TYPES.find((t) => t.id === "raft_foundation"));

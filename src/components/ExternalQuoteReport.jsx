@@ -2,6 +2,8 @@ import { useRef } from "react";
 import { computeExternalScopeLines, money2, getDefaultMargin } from "../lib/costing.js";
 import { GRADCON_LOGO_FULL_DATA_URI } from "../lib/logo.js";
 import { newExternalQuote } from "../lib/externalQuoteDefaults.js";
+import { tenderNoteLines } from "../lib/tenderNotes.js";
+import TenderNotesCell from "./TenderNotesCell.jsx";
 
 /**
  * The client-facing quotation letter — deliberately separate from
@@ -92,8 +94,8 @@ export default function ExternalQuoteReport({ quote, items, rates, visible, onCl
               <Field label="Drawings — Structural">
                 <textarea value={eq.drawingsStructural} onChange={(e) => set("drawingsStructural", e.target.value)} rows={2} className={textareaCls} />
               </Field>
-              <Field label="Tender Notes (one per line)">
-                <textarea value={eq.tenderNotes} onChange={(e) => set("tenderNotes", e.target.value)} rows={3} className={textareaCls} />
+              <Field label="Tender Notes (the project's Assumptions, then one extra note per line)">
+                <TenderNotesCell quote={quote} value={eq.tenderNotes} onChange={(v) => set("tenderNotes", v)} rows={3} />
               </Field>
               <Field label="Inclusions (one per line)">
                 <textarea value={eq.inclusions} onChange={(e) => set("inclusions", e.target.value)} rows={5} className={textareaCls} />
@@ -212,10 +214,10 @@ function ReportContent({ quote, items, rates, eq }) {
         </div>
       )}
 
-      {eq.tenderNotes && (
-        <div className="mb-3 break-inside-avoid">
+      {tenderNoteLines(quote, eq.tenderNotes).all.length > 0 && (
+        <div className="mb-3 break-inside-avoid" data-testid="tender-notes-print">
           <div className="font-bold mb-1">Tender Notes: <span className="font-normal italic">(information missing from documentation, discrepancies, assumptions etc.)</span></div>
-          <Bullets text={eq.tenderNotes} />
+          <Bullets text={tenderNoteLines(quote, eq.tenderNotes).all.join("\n")} />
         </div>
       )}
 

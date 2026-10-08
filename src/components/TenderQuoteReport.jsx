@@ -2,6 +2,8 @@ import { useEffect } from "react";
 import { uid, getGstRate } from "../lib/costing.js";
 import { GRADCON_LOGO_FULL_DATA_URI } from "../lib/logo.js";
 import { newTenderQuote, seedTenderItems, computeTenderProjectSum } from "../lib/tenderQuoteDefaults.js";
+import { tenderNoteLines } from "../lib/tenderNotes.js";
+import TenderNotesCell from "./TenderNotesCell.jsx";
 
 const fmtMoney = (n) => `$${(n || 0).toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -171,8 +173,8 @@ export default function TenderQuoteReport({ quote, items, rates, visible, onClos
                 </Field>
               </div>
 
-              <Field label="Tender Notes (one per line — information missing from documentation, discrepancies, assumptions etc.)">
-                <textarea value={tq.tenderNotes} onChange={(e) => set("tenderNotes", e.target.value)} rows={4} className={textareaCls} />
+              <Field label="Tender Notes (the project's Assumptions, then one extra note per line — information missing from documentation, discrepancies etc.)">
+                <TenderNotesCell quote={quote} value={tq.tenderNotes} onChange={(v) => set("tenderNotes", v)} rows={4} />
               </Field>
               <Field label="Inclusions (one per line)">
                 <textarea value={tq.inclusions} onChange={(e) => set("inclusions", e.target.value)} rows={6} className={textareaCls} />
@@ -398,10 +400,10 @@ function ReportContent({ quote, tq }) {
         </div>
       )}
 
-      {tq.tenderNotes && (
-        <div className="mb-3 break-inside-avoid">
+      {tenderNoteLines(quote, tq.tenderNotes).all.length > 0 && (
+        <div className="mb-3 break-inside-avoid" data-testid="tender-notes-print">
           <div className="font-bold mb-1">Tender Notes: <span className="font-normal italic">(information missing from documentation, discrepancies, assumptions etc.)</span></div>
-          <Bullets text={tq.tenderNotes} />
+          <Bullets text={tenderNoteLines(quote, tq.tenderNotes).all.join("\n")} />
         </div>
       )}
 

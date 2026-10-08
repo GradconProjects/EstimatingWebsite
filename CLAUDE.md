@@ -373,6 +373,26 @@ tag on an excluded band (its would-be figure struck through), the labour
 matrix likewise under materials-only; the summary rail, print report and
 exports state the scope and the figures not charged. Verify-covered.
 
+## Tender Notes carry the project's Assumptions
+
+Grady, 8 Oct 2026: "entered assumptions should automatically be entered in
+the external tender quote under the relevant section inside the Tender
+Notes cell well bulleted and formatted accordingly". `lib/tenderNotes.js`
+(pure, verify-covered): `tenderNoteLines(quote, typedText)` is the ONE
+reading both the External Quote and the Tender Quote use, on screen and in
+print — the project's `quote.assumptions` texts first (recorded order, blanks
+dropped), then the report's own typed notes one per line with a leading
+bullet mark stripped, and a typed line that repeats an assumption or an
+earlier line printed once. `components/TenderNotesCell.jsx` is the shared
+cell: the assumptions sit at the top, bulleted and READ-ONLY (they are edited
+in one place — the Assumptions list under Project Geometry — and flow here
+live), the textarea below holds the report's extra notes. Nothing is ever
+copied into `externalQuote.tenderNotes` / `tenderQuote.tenderNotes`: they
+hold only what was typed on that report, so a later assumption still
+appears and a deleted one disappears. The printed "Tender Notes:" section
+(`data-testid="tender-notes-print"`) renders when either list has a line.
+`test-tender-notes.mjs` proves both reports.
+
 ## Roof is its own element category (both apps)
 
 Grady, 6 Oct 2026: "INCLUDE ROOF as an element category to include all roof
