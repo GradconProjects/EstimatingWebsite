@@ -1,7 +1,8 @@
 import { useEffect } from "react";
 import { uid, getGstRate } from "../lib/costing.js";
 import { GRADCON_LOGO_FULL_DATA_URI } from "../lib/logo.js";
-import { newTenderQuote, seedTenderItems, computeTenderProjectSum } from "../lib/tenderQuoteDefaults.js";
+import { newTenderQuote, seedTenderItems, computeTenderProjectSum, tenderPriceDrift, refreshTenderPrices, tenderPrefill } from "../lib/tenderQuoteDefaults.js";
+import { handoverIssues } from "../lib/handover.js";
 import { tenderNoteLines } from "../lib/tenderNotes.js";
 import TenderNotesCell from "./TenderNotesCell.jsx";
 
@@ -35,7 +36,7 @@ export default function TenderQuoteReport({ quote, items, rates, visible, onClos
   // First open: seed the line items from the quote + estimating quantities.
   useEffect(() => {
     if (visible && (!quote.tenderQuote || quote.tenderQuote.items == null)) {
-      onChange({ ...tq, items: seedTenderItems(quote, items, rates) });
+      onChange({ ...tenderPrefill(tq, quote), items: seedTenderItems(quote, items, rates), pricesAt: new Date().toISOString() });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
@@ -48,6 +49,11 @@ export default function TenderQuoteReport({ quote, items, rates, visible, onClos
 
   const opts = tq.additionalOptions || [];
   const setOpts = (next) => set("additionalOptions", next);
+  // What a tender must not go out with (lib/handover.js, lib/tenderQuoteDefaults.js):
+  // subcontract quote rows carrying a quantity but no amount (they price at
+  // $0), and category prices seeded earlier that no longer match the quote.
+  const unpriced = visible ? handoverIssues(items).unpricedQuoteRows : [];
+  const drift = visible && tq.items ? tenderPriceDrift({ ...quote, tenderQuote: tq }, items, rates) : { changed: [], missing: [] };
 
   return (
     <>
@@ -59,6 +65,24 @@ export default function TenderQuoteReport({ quote, items, rates, visible, onClos
       {visible && (
         <div className="print:hidden fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
           <div className="bg-white rounded-xl max-w-5xl w-full max-h-[92vh] flex flex-col shadow-2xl">
+            {(unpriced.length > 0 || drift.changed.length > 0 || drift.missing.length > 0) && (
+              <div className="px-5 py-2 border-b border-red-200 bg-red-50 text-[12px] text-red-900 space-y-1 rounded-t-xl" role="alert" data-testid="tender-checks">
+                {unpriced.length > 0 && (
+                  <div data-testid="tender-unpriced"><b>{unpriced.length} subcontract quote row{unpriced.length === 1 ? "" : "s"} price at $0</b> — a quantity but no amount: {unpriced.map((r) => `${r.label} — ${r.product} (${r.qty})`).join("; ")}. Type the received quote on the element before this goes out.</div>
+                )}
+                {(drift.changed.length > 0 || drift.missing.length > 0) && (
+                  <div className="flex items-start justify-between gap-3" data-testid="tender-drift">
+                    <div>
+                      <b>Prices seeded {tq.pricesAt ? new Date(tq.pricesAt).toLocaleDateString("en-AU", { day: "numeric", month: "short" }) : "earlier"} no longer match the quote:</b>{" "}
+                      {drift.changed.map((d) => `${d.title} ${d.stored} → ${d.fresh}`).join("; ")}{drift.missing.length ? `${drift.changed.length ? "; " : ""}not on the tender yet: ${drift.missing.map((m) => `${m.title} ${m.price}`).join(", ")}` : ""}.
+                    </div>
+                    <button type="button" onClick={() => onChange(refreshTenderPrices({ ...quote, tenderQuote: tq }, items, rates))} className="flex-none px-2.5 py-1 rounded-lg bg-red-700 hover:bg-red-800 text-white text-[11px] font-semibold" title="Move each line's price to today's figure; titles and dot points you edited are kept">
+                      Refresh prices
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
             <div className="flex items-center justify-between gap-4 px-5 py-3 border-b border-neutral-200 bg-amber-50 rounded-t-xl">
               <div className="text-[13px] text-neutral-800">
                 <b>Tender Quote — fully editable.</b> Line items are BUILDING LEVELS: elements grouped by the level

@@ -1138,6 +1138,79 @@ check("Rates Library rules: its price flows into Quotes over ANY stored value, i
 
 const { computeTenderProjectSum, parseTenderPrice, seedTenderItems } = await import("../src/lib/tenderQuoteDefaults.js");
 const { tenderNoteLines, assumptionLines, typedNoteLines } = await import("../src/lib/tenderNotes.js");
+const HO = await import("../src/lib/handover.js");
+const { tenderPriceDrift, refreshTenderPrices, tenderPrefill, newTenderQuote } = await import("../src/lib/tenderQuoteDefaults.js");
+
+check("Handover prefill: Grady's crew-sheet bands, blank cells only, recorded and undoable, steel mode by element", () => {
+  const rates = defaultRates();
+  const T = (id) => ELEMENT_TYPES.find((t) => t.id === id);
+  const bar = rateKey("PROCESSED BAR", "N12", "m");
+  const raft = newElementItem(T("raft_foundation")); raft.label = "Raft"; raft.qtys[rateKey("CONCRETE", "32 mpa", "m3")] = 38.87; raft.qtys[bar] = 3260;
+  const susp = newElementItem(T("suspended_slab")); susp.label = "Susp"; susp.qtys[rateKey("CONCRETE", "32 mpa", "m3")] = 50.77; susp.qtys[bar] = 7700;
+  const small = newElementItem(T("slab_on_ground")); small.label = "Infill"; small.qtys[rateKey("CONCRETE", "25 mpa", "m3")] = 17.42; small.qtys[bar] = 420;
+  const prelim = newElementItem(T("prelim_traffic_management")); prelim.label = "Traffic";
+  // a typed cell is never overwritten
+  const pour = raft.tasks.find((t) => /pour/i.test(t.name)); pour.qtys.concreter_day = 9;
+  const quote = { items: [raft, susp, small, prelim], status: "Completed Estimating", completedAt: "2026-10-09", overheadPct: 0.08, contingencyPct: 0.05 };
+  assert.ok(HO.shouldAutoHandover(quote), "first time at Completed Estimating, completed after the cut-over");
+  assert.ok(!HO.shouldAutoHandover({ ...quote, completedAt: "2026-09-24" }), "a project completed before the prefill existed is never touched on its own");
+  assert.ok(!HO.shouldAutoHandover({ ...quote, status: "Submitted" }), "only the Completed Estimating moment");
+  const q2 = HO.applyHandover(quote, rates, "2026-10-09T00:00:00Z");
+  const cell = (it, re, key) => (it.tasks.find((t) => re.test(t.name)) || { qtys: {} }).qtys[key];
+  const r = q2.items[0], s2 = q2.items[1], sm = q2.items[2], pr = q2.items[3];
+  assert.equal(cell(r, /site setup/i, "concreter_day"), 1);
+  assert.equal(cell(r, /excavate/i, "concreter_day"), 4); assert.equal(cell(r, /excavate/i, "excavator_day"), 1); assert.equal(cell(r, /excavate/i, "bobcat_day"), 1, "bobcat on a foundation");
+  assert.equal(cell(r, /tie/i, "steelfixer_day"), 8, "steel crew: 1 + 2.3 × 2.97 t");
+  assert.equal(cell(r, /pour/i, "concreter_day"), 9, "the typed pour figure is kept");
+  assert.equal(cell(r, /pour/i, "pump_hr"), 8, "pump booked from 25 m³");
+  assert.equal(cell(r, /finish/i, "concreter_day"), 0); assert.equal(cell(r, /washout/i, "labourer_day"), 0);
+  assert.deepEqual(r.tasks.filter((t) => /Material D\+C|Boxing and Rebates/.test(t.name)).map((t) => [t.name, t.qtys.concreter_day]), [["Material D+C", 2], ["Boxing and Rebates", 2]], "spare rows renamed the way he names them");
+  assert.equal(s2.steelMode, "subcontract"); assert.equal(cell(s2, /tie/i, "steelfixer_day"), 0); assert.equal(s2.qtys[HO.STEEL_FIX_KEY], 7.01, "suspended: tonnes on the Steel fix quote row");
+  assert.equal(cell(s2, /excavate/i, "concreter_day"), undefined, "a suspended slab is never dug"); assert.equal(cell(s2, /pour/i, "pump_hr"), 8);
+  assert.ok(s2.tasks.some((t) => t.name === "Tool D+C" && t.qtys.concreter_day === 1));
+  assert.equal(sm.steelMode, "concreters"); assert.equal(cell(sm, /tie/i, "concreter_day"), 3); assert.equal(cell(sm, /tie/i, "steelfixer_day"), 0);
+  assert.equal(cell(sm, /excavate/i, "bobcat_day"), undefined, "no bobcat on a substructure slab");
+  assert.deepEqual(pr.tasks.map((t) => t.qtys), prelim.tasks.map((t) => t.qtys), "a prelim with no concrete is left alone");
+  assert.match(HO.handoverSummary(q2.handover), /crew cells and 6 extra rows on 3 elements, steel fixing subcontracted on 1/);
+  // the tint follows the live value: a cell retyped is no longer "prefilled"
+  const tint = HO.prefilledCells(q2.handover, r); assert.ok(tint[r.tasks.find((t) => /excavate/i.test(t.name)).id].excavator_day);
+  const retyped = { ...r, tasks: r.tasks.map((t) => (/excavate/i.test(t.name) ? { ...t, qtys: { ...t.qtys, excavator_day: 2 } } : t)) };
+  assert.ok(!HO.prefilledCells(q2.handover, retyped)[r.tasks.find((t) => /excavate/i.test(t.name)).id].excavator_day);
+  // undo clears only untouched prefilled cells
+  const edited = { ...q2, items: q2.items.map((it, i) => (i === 0 ? retyped : it)) };
+  const u = HO.undoHandover(edited);
+  assert.equal(cell(u.items[0], /excavate/i, "excavator_day"), 2, "the changed cell stays"); assert.equal(cell(u.items[0], /excavate/i, "concreter_day"), undefined, "the untouched one is cleared");
+  assert.equal(cell(u.items[0], /pour/i, "concreter_day"), 9); assert.equal(u.items[1].qtys[HO.STEEL_FIX_KEY], undefined); assert.ok(u.handover.undoneAt);
+  assert.ok(!u.items[0].tasks.some((t) => t.name === "Material D+C"), "renamed spare rows go back to spare");
+  // the per-element steel switch overwrites the tie row deliberately, and back
+  const sub = HO.applySteelMode(r, rates, "subcontract"); assert.equal(cell(sub, /tie/i, "steelfixer_day"), 0); assert.equal(sub.qtys[HO.STEEL_FIX_KEY], 2.97);
+  const crew = HO.applySteelMode(sub, rates, "crew"); assert.equal(cell(crew, /tie/i, "steelfixer_day"), 8); assert.equal(crew.qtys[HO.STEEL_FIX_KEY], undefined, "an unpriced memo tonnage leaves with the mode");
+  // the bands are production rates, editable in the Rates Library
+  const tuned = { ...rates, [rateKey("PRODUCTION", "Handover: pour crew — base man-days", "days")]: { unitCost: 6 } };
+  assert.equal(HO.handoverRate(tuned, "ho_pour_base_days"), 6); assert.equal(HO.handoverRate(rates, "ho_pour_base_days"), 4);
+  assert.ok(PRODUCTION_RATES.filter((p) => p.key.startsWith("ho_")).length >= 20);
+  // issues the banner and both reports list
+  const issues = HO.handoverIssues([{ ...s2, additional: [{ id: "a", name: "Suspended beam rate", qty: 400 }] }, { ...r, label: "SCOPE REQUEST - Retaining Wall" }, { ...sm, label: "*** EXTERNAL QUOTE ITEMS ONLY ***", typeId: "screw_piles" }]);
+  assert.deepEqual(issues.unpricedQuoteRows.map((x) => [x.label, x.product, x.qty]), [["Susp", "Steel fix", 7.01]]);
+  assert.deepEqual(issues.halfEnteredAdditional.map((x) => x.missing), [["rate"]]);
+  assert.deepEqual(issues.labelSuggestions.map((x) => x.to), ["Provisional Sum - Retaining Wall", "Screw Piles"]);
+});
+
+check("Tender prices: drift against today's figures is reported and refreshed without losing edits; attention company prefills from the client", () => {
+  const rates = defaultRates();
+  const raft = newElementItem(ELEMENT_TYPES.find((t) => t.id === "raft_foundation")); raft.qtys[rateKey("CONCRETE", "32 mpa", "m3")] = 20;
+  const quote = { items: [raft], overheadPct: 0, contingencyPct: 0, clientName: "Belair Builders" };
+  const tq = { ...tenderPrefill(newTenderQuote(), quote), items: seedTenderItems(quote, quote.items, rates) };
+  assert.equal(tq.attentionCompany, "Belair Builders");
+  assert.deepEqual(tenderPriceDrift({ ...quote, tenderQuote: tq }, quote.items, rates), { changed: [], missing: [] }, "fresh seed = no drift");
+  tq.items[0].points[0] = "edited point";
+  raft.qtys[rateKey("CONCRETE", "32 mpa", "m3")] = 40;
+  const d = tenderPriceDrift({ ...quote, tenderQuote: tq }, quote.items, rates);
+  assert.equal(d.changed.length, 1); assert.notEqual(d.changed[0].stored, d.changed[0].fresh);
+  const fresh = refreshTenderPrices({ ...quote, tenderQuote: tq }, quote.items, rates, "2026-10-09T00:00:00Z");
+  assert.equal(fresh.items[0].price, d.changed[0].fresh); assert.equal(fresh.items[0].points[0], "edited point", "dot points survive a price refresh"); assert.equal(fresh.pricesAt, "2026-10-09T00:00:00Z");
+  assert.deepEqual(tenderPriceDrift({ ...quote, tenderQuote: fresh }, quote.items, rates).changed, []);
+});
 
 check("Tender Notes = the project's Assumptions first (recorded order, blanks dropped), then the typed notes, bulleted once each", () => {
   const quote = { assumptions: [{ id: "a", text: "Paving slab thickness 150mm and SL82 mesh" }, { id: "b", text: "   " }, { id: "c", text: "External and all staircases excluded" }] };

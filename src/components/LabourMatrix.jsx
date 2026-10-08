@@ -1,5 +1,6 @@
 import { ChevronDown, ChevronRight, Plus, Trash2 } from "lucide-react";
 import { RESOURCE_COLS } from "../data/catalog.js";
+import { STEEL_MODES } from "../lib/handover.js";
 import { money2, labourResourceRate, taskRowMeta, rateKey } from "../lib/costing.js";
 import { NumInput } from "./atoms.jsx";
 
@@ -19,7 +20,9 @@ export default function LabourMatrix({
   item, rates, onTaskQtyChange, onTaskMetaChange, onAddTask, onRemoveTask, onRenameTask,
   resourceTotals, resourceCosts, labourTotal, excludedLabour = 0, labourOpen, toggleLabour,
   labourAuto, autoQtys, onToggleAuto, onResetAuto, labourQtyCtx, onLabourRateChange,
+  prefilled, steelMode = "auto", steelModeResolved, onSteelMode,
 }) {
+  const modeLabel = (m) => (STEEL_MODES.find((x) => x[0] === m) || [m, m])[1];
   return (
     <div className="border border-amber-300 rounded-lg overflow-hidden bg-white">
       <button
@@ -45,6 +48,16 @@ export default function LabourMatrix({
             ? "Figures draw live from the entered quantities (every 10 m³ of concrete or 1 t of steel = one crew's day, pump 6 hrs + the m³ pumped) and keep their decimals. Every row starts PER PERSON — cells are man-days costed straight at the day rate — and stays that way until you switch it to per crew, where cells become crew-days costed days × that row's own men-per-crew (blank = 3, Steel Crew 5). Type over any cell to override; clear it to hand it back."
             : "Off — every cell is manual. Turn auto back on to draw Qty and crew days live from the entered quantities again (typed cells keep their values)."}
         </p>
+        {/* Steel fixing switch (lib/handover.js): who ties this element's steel.
+            Changing it rewrites the Tie row's crew cells and the "Steel fix"
+            quote tonnage for this element only — an explicit choice, so it does
+            overwrite those cells. */}
+        <label className="flex items-center gap-1 text-[11px] font-semibold text-amber-900 whitespace-nowrap" title={`Steel fixing on this element: ${modeLabel(steelMode === "auto" ? steelModeResolved || "crew" : steelMode)}${steelMode === "auto" ? " (handover rule)" : ""}. Subcontract puts the tonnage on the Steel fix quote row — type the received quote there.`}>
+          Steel fixing
+          <select value={steelMode} onChange={(e) => onSteelMode && onSteelMode(e.target.value)} aria-label="Steel fixing mode" className="border border-amber-400 rounded px-1 py-0.5 text-[11px] bg-white text-amber-950">
+            {STEEL_MODES.map(([k, l]) => <option key={k} value={k}>{k === "auto" && steelModeResolved ? `Auto → ${modeLabel(steelModeResolved).replace(/ —.*$/, "")}` : l}</option>)}
+          </select>
+        </label>
         <button
           onClick={onResetAuto}
           title="Clear every typed Qty and crew cell on this sheet and re-derive everything live from the entered quantities"
@@ -130,13 +143,16 @@ export default function LabourMatrix({
                   // day, not a rounded-up whole crew); plant days/hours are
                   // whole; pump m³ is a true measured volume.
                   const whole = !r.crew && r.key !== "pump_m3";
+                  const isPrefilled = !!(prefilled && prefilled[task.id] && prefilled[task.id][r.key]);
                   return (
                   <td key={r.key} className="px-2 py-1">
                     <NumInput
                       step={whole ? "1" : "0.5"}
                       value={task.qtys[r.key]}
                       placeholder={autoVal !== undefined ? String(autoVal) : "—"}
-                      className={autoVal !== undefined ? "placeholder:text-amber-800 placeholder:opacity-100 placeholder:font-semibold border-amber-400" : ""}
+                      title={isPrefilled ? "Prefilled at handover from the Rates Library's handover bands — edit freely" : undefined}
+                      data-prefilled={isPrefilled ? "1" : undefined}
+                      className={isPrefilled ? "bg-amber-100 border-amber-400 text-amber-950" : autoVal !== undefined ? "placeholder:text-amber-800 placeholder:opacity-100 placeholder:font-semibold border-amber-400" : ""}
                       onChange={(v) => {
                         const n = Number(v);
                         const clean = whole && v !== undefined && v !== "" && Number.isFinite(n) && !Number.isInteger(n) ? Math.ceil(n) : v;

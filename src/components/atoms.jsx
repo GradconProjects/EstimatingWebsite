@@ -20,9 +20,10 @@ export function SaveBadge({ status }) {
   );
 }
 
-export function NumInput({ value, onChange, placeholder = "—", className = "", step = "0.01" }) {
+export function NumInput({ value, onChange, placeholder = "—", className = "", step = "0.01", ...rest }) {
   return (
     <input
+      {...rest}
       type="number"
       step={step}
       value={value === undefined || value === null || value === "" ? "" : value}

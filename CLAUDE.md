@@ -373,6 +373,74 @@ tag on an excluded band (its would-be figure struck through), the labour
 matrix likewise under materials-only; the summary rail, print report and
 exports state the scope and the figures not charged. Verify-covered.
 
+## The handover pass (Completed Estimating → Grady)
+
+Grady, 8 Oct 2026: "model how grady assigns the works after i have marked
+the projects as completed … implement all these for the next projects that
+will be tagged completed estimating but still retain the freedom for Grady
+to be able to change all cell entries". Modelled on the 12 Submitted projects
+and 8 version histories (read-only, anon REST); `lib/handover.js` is pure
+and verify-covered. Rules:
+
+1. **It runs ONCE, in the editor, the first time a project stands at
+   `Completed Estimating`** (`shouldAutoHandover`: that status, no
+   `quote.handover` yet, `completedAt >= HANDOVER_SINCE` = 2026-10-08 so a
+   project Grady already worked through by hand is never touched on its
+   own). `ProjectEditor`'s settle effect applies it whether the status was
+   set in the editor or on the Dashboard; the Dashboard itself never writes
+   items (its copies are stripped of drawings). The banner's "Prefill crew
+   sheets now" runs it by hand on any locked project.
+2. **Blank cells only, every cell stays an ordinary typed cell.**
+   `handoverPlan` writes only where the crew cell is blank, renames only a
+   blank "Additional labour / plant" row, sets the Steel fix tonnage only
+   when that qty is blank. `quote.handover = {at, cells, rows, qtys, steel,
+   addedRows}` records exactly what was written; `prefilledCells` tints a
+   cell on the crew sheet (`data-prefilled`, amber) only while it still holds
+   the prefilled figure — retype it and the tint goes; `undoHandover` clears
+   only cells / rows / qtys that still hold the prefilled figure and marks
+   `handover.undoneAt`.
+3. **The bands are production rates** (`PRODUCTION_RATES` "Handover: …"
+   rows, keys `ho_*`, read through `handoverRate` → `lookupRate`), so Grady
+   tunes them in the Rates modal like any production rate. What they encode
+   (fitted to 25 elements; concreter cells are man-days, whole numbers):
+   site setup 1 man-day on elements over 20 m³ (2 from 100 m³; the largest
+   element always gets one); excavate & prepare base — ground elements only
+   (`NO_DIG` = vertical / suspended / roof / prelims / finishes) — concreters
+   3 + m³ ÷ 30, excavator 1 day to 45 m³, 2 to 150 m³, then m³ ÷ 75, bobcat
+   the same on FOUNDATIONS / RETENTION / EARTHWORKS; tie reinforcement by
+   `steelModeFor` — suspended → **subcontract** (tie row 0, tonnes on the
+   `Steel fix` quote row = `STEEL_FIX_KEY`, UNPRICED until the quote is
+   typed), ≤ 1 t → **concreters** tie (2 + 2.2 per t), else **steel crew**
+   1 + 2.3 per t (min 2); pour 4 + m³ ÷ 15 man-days, pump 8 hrs from 25 m³
+   or on suspended work; finish 0 and washout 0 typed (so the auto rule
+   stops adding its own days); the two spare rows become "Material D+C" 2
+   and "Boxing and Rebates" 2 (ground work) or "Tool D+C" 1.
+4. **Steel fixing is a per-element switch** on the crew sheet (`Steel
+   fixing` select, `item.steelMode`: auto / crew / concreters / subcontract;
+   `applySteelMode` DOES overwrite the Tie row's crew cells and the Steel
+   fix tonnage — that is the point of switching; an unpriced memo tonnage
+   leaves with the mode, a priced quote stays).
+5. **`HandoverBanner`** (every locked status, or whenever a prefill exists)
+   says what was filled, offers Undo (two clicks) / Prefill again, and lists
+   `handoverIssues`: subcontract quote rows with a qty and no amount (they
+   price at $0 — five submitted elements carried steel tonnage that way),
+   additional items typed halfway, estimator-note names with a one-click
+   rename ("SCOPE REQUEST - X" → "Provisional Sum - X", "*** EXTERNAL QUOTE
+   ITEMS ONLY ***" → the element type's name, "… - Receive Quote" stripped,
+   a trailing "?" dropped) and the on-cost presets Grady uses (0 / 0,
+   0 / 10, 8 / 5 — no rule was derivable, so they are one-click, never
+   automatic).
+6. **Tender Quote prices are a snapshot** (`seedTenderItems` on first open;
+   `pricesAt` stamped). `tenderPriceDrift` compares each stored line's price
+   with a fresh seed by title; the red check strip at the top of the Tender
+   Quote lists the drift and `refreshTenderPrices` moves ONLY the prices
+   (titles and dot points kept, new groups appended). Both the Tender and
+   External quotes show the $0 quote rows in the same strip. `tenderPrefill`
+   seeds the attention company from `quote.clientName`; the External Quote
+   does the same on its first open.
+`test-handover.mjs` proves the whole pass through the UI; `verify.mjs`
+covers the plan, undo, tint, steel switch, bands and the tender drift.
+
 ## Tender Notes carry the project's Assumptions
 
 Grady, 8 Oct 2026: "entered assumptions should automatically be entered in

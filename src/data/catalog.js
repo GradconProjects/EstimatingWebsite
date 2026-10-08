@@ -94,6 +94,32 @@ export const PRODUCTION_RATES = [
   // figure is both the divisor and the minimum. Edit it if a supplier works
   // to a different minimum load.
   { key: "min_cartage_m3", name: "Minimum cartage load size", unit: "m³/load", rate: 4 },
+  // ---- Handover prefill bands (lib/handover.js) ----
+  // What Grady enters on the crew sheet once estimating is marked complete,
+  // fitted to 25 submitted elements (8 Oct 2026). Every figure is a whole
+  // man-day the way he types them; each band is editable here like any
+  // production rate, and every prefilled cell stays an ordinary typed cell.
+  { key: "ho_setup_days", name: "Handover: site setup — man-days per element", unit: "days", rate: 1 },
+  { key: "ho_setup_big_m3", name: "Handover: site setup — 2 man-days from (m³ concrete)", unit: "m³", rate: 100 },
+  { key: "ho_setup_min_m3", name: "Handover: site setup — only on elements over (m³ concrete)", unit: "m³", rate: 20 },
+  { key: "ho_exc_base_days", name: "Handover: excavate & prepare — base man-days", unit: "days", rate: 3 },
+  { key: "ho_exc_m3_per_day", name: "Handover: excavate & prepare — m³ concrete per extra man-day", unit: "m³/day", rate: 30 },
+  { key: "ho_excavator_band1_m3", name: "Handover: excavator & bobcat — 1 day up to (m³ concrete)", unit: "m³", rate: 45 },
+  { key: "ho_excavator_band2_m3", name: "Handover: excavator & bobcat — 2 days up to (m³ concrete)", unit: "m³", rate: 150 },
+  { key: "ho_excavator_m3_per_day", name: "Handover: excavator & bobcat — m³ concrete per day beyond", unit: "m³/day", rate: 75 },
+  { key: "ho_steel_base_days", name: "Handover: steel crew — base man-days", unit: "days", rate: 1 },
+  { key: "ho_steel_days_per_t", name: "Handover: steel crew — man-days per tonne", unit: "days/t", rate: 2.3 },
+  { key: "ho_steel_min_days", name: "Handover: steel crew — minimum man-days", unit: "days", rate: 2 },
+  { key: "ho_concreters_tie_max_t", name: "Handover: concreters tie the steel up to (t)", unit: "t", rate: 1 },
+  { key: "ho_conc_tie_base_days", name: "Handover: concreters tie — base man-days", unit: "days", rate: 2 },
+  { key: "ho_conc_tie_days_per_t", name: "Handover: concreters tie — man-days per tonne", unit: "days/t", rate: 2.2 },
+  { key: "ho_pour_base_days", name: "Handover: pour crew — base man-days", unit: "days", rate: 4 },
+  { key: "ho_pour_m3_per_day", name: "Handover: pour crew — m³ per extra man-day", unit: "m³/day", rate: 15 },
+  { key: "ho_pump_hrs_pour", name: "Handover: pump — hours booked per pour", unit: "hrs", rate: 8 },
+  { key: "ho_pump_min_m3", name: "Handover: pump — booked on pours from (m³)", unit: "m³", rate: 25 },
+  { key: "ho_material_dc_days", name: "Handover: Material D+C — man-days", unit: "days", rate: 2 },
+  { key: "ho_tool_dc_days", name: "Handover: Tool D+C — man-days", unit: "days", rate: 1 },
+  { key: "ho_boxing_days", name: "Handover: Boxing and Rebates — man-days", unit: "days", rate: 2 },
   // The agitator size. Informational since minimum cartage moved to dividing
   // by the minimum itself — kept so no saved override is orphaned, and so a
   // job that wants to reason about truck counts still has the figure.

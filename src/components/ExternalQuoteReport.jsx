@@ -4,6 +4,7 @@ import { GRADCON_LOGO_FULL_DATA_URI } from "../lib/logo.js";
 import { newExternalQuote } from "../lib/externalQuoteDefaults.js";
 import { tenderNoteLines } from "../lib/tenderNotes.js";
 import TenderNotesCell from "./TenderNotesCell.jsx";
+import { handoverIssues } from "../lib/handover.js";
 
 /**
  * The client-facing quotation letter — deliberately separate from
@@ -32,8 +33,11 @@ import TenderNotesCell from "./TenderNotesCell.jsx";
  * that failure.
  */
 export default function ExternalQuoteReport({ quote, items, rates, visible, onClose, onChange, isPrintTarget }) {
-  const eq = quote.externalQuote || newExternalQuote();
+  // A letter never opened before starts with the project's client as the
+  // attention company (blank until then — the estimator can still change it).
+  const eq = quote.externalQuote || { ...newExternalQuote(), attentionCompany: String(quote.clientName || "").trim() };
   const set = (field, value) => onChange({ ...eq, [field]: value });
+  const unpriced = visible ? handoverIssues(items).unpricedQuoteRows : [];
 
   const fileInputRef = useRef(null);
   const onSignatureFile = (e) => {
@@ -54,6 +58,11 @@ export default function ExternalQuoteReport({ quote, items, rates, visible, onCl
       {visible && (
         <div className="print:hidden fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
           <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] flex flex-col shadow-2xl">
+            {unpriced.length > 0 && (
+              <div className="px-5 py-2 border-b border-red-200 bg-red-50 text-[12px] text-red-900 rounded-t-xl" role="alert" data-testid="external-unpriced">
+                <b>{unpriced.length} subcontract quote row{unpriced.length === 1 ? "" : "s"} price at $0</b> — a quantity but no amount: {unpriced.map((r) => `${r.label} — ${r.product} (${r.qty})`).join("; ")}. The scope amounts below leave that money out.
+              </div>
+            )}
             <div className="flex items-center justify-between gap-4 px-5 py-3 border-b border-neutral-200 bg-amber-50 rounded-t-xl">
               <div className="text-[13px] text-neutral-800">
                 <b>External Quote — editable client letter.</b> Everything below except the scope $ amounts and TOTAL

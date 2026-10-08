@@ -25,6 +25,8 @@ import ExternalQuoteReport from "./components/ExternalQuoteReport.jsx";
 import TenderQuoteReport from "./components/TenderQuoteReport.jsx";
 import ExportExcelModal from "./components/ExportExcelModal.jsx";
 import ImportFlagsBanner from "./components/ImportFlagsBanner.jsx";
+import HandoverBanner from "./components/HandoverBanner.jsx";
+import { applyHandover, undoHandover, shouldAutoHandover } from "./lib/handover.js";
 import ManageElementTypesModal from "./components/ManageElementTypesModal.jsx";
 import ProjectGeometryPanel from "./components/ProjectGeometryPanel.jsx";
 
@@ -532,6 +534,12 @@ function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, rate
   useEffect(() => {
     if (quoteStatus === "loading" || ratesStatus === "loading" || ratesStatus === "syncing") return;
     if (needsFreeze(quote)) setQuote((q) => (needsFreeze(q) ? { ...q, ratesFrozen: freezeRates(liveRates, q.status) } : q));
+    // The handover pass (lib/handover.js): the first time a project stands at
+    // Completed Estimating — set here or on the Dashboard — its crew sheets
+    // are prefilled the way Grady fills them, blank cells only, recorded in
+    // quote.handover so the banner can undo it. Runs once; the editor only,
+    // never from a Dashboard summary (those copies must not write items).
+    if (shouldAutoHandover(quote)) setQuote((q) => (shouldAutoHandover(q) ? applyHandover(q, effectiveRates(q, liveRates)) : q));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quoteStatus, ratesStatus, quote.status]);
   const frozenDrift = useMemo(() => (locked ? frozenRateDrift(quote, liveRates) : []), [locked, quote, liveRates]);
@@ -970,6 +978,15 @@ function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, rate
             flags={quote.importFlags}
             onDismiss={() => setQuote((q) => ({ ...q, importFlags: undefined }))}
           />
+          <HandoverBanner
+            quote={quote}
+            items={items}
+            elementTypes={elementTypes}
+            onPrefill={() => { setQuote((q) => applyHandover(q, effectiveRates(q, liveRates))); note("Crew sheets prefilled — blank cells only; every figure stays editable"); }}
+            onUndo={() => { setQuote((q) => undoHandover(q)); note("Handover prefill undone — cells you changed were kept"); }}
+            onRenameItem={(id, label) => setItems((its) => its.map((it) => (it.id === id ? { ...it, label } : it)))}
+            onSetOnCosts={(overheadPct, contingencyPct) => setQuote((q) => ({ ...q, overheadPct, contingencyPct }))}
+          />
           <AddElementBar onAdd={addElement} elementTypes={elementTypes} categoryOrder={categoryOrder} />
           <ProjectGeometryPanel
             items={items}
@@ -994,6 +1011,7 @@ function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, rate
               onLabourRateChange={setLabourRate}
               onMaterialRateChange={setMaterialRate}
               projectScope={quote.scope}
+              handover={quote.handover}
             />
           ))}
           {items.length === 0 && (

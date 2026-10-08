@@ -200,6 +200,50 @@ export function seedTenderItems(quote, items, rates) {
   });
 }
 
+/** The category prices a tender was seeded with against what the quote's
+ * elements compute today — the tender's prices are a SNAPSHOT taken when its
+ * items were seeded, so a subcontract quote typed afterwards or a changed
+ * quantity does not flow into them on its own (8 Oct 2026: four of twelve
+ * submitted tenders differed from a fresh computation). Returns one entry per
+ * stored item whose title matches a seeded group and whose price differs,
+ * plus the seeded groups the tender has no item for. */
+export function tenderPriceDrift(quote, items, rates) {
+  const tq = quote && quote.tenderQuote;
+  if (!tq || !Array.isArray(tq.items)) return { changed: [], missing: [] };
+  const fresh = seedTenderItems(quote, items, rates);
+  const key = (t) => String(t || "").trim().toLowerCase();
+  const changed = [];
+  tq.items.forEach((it) => {
+    const f = fresh.find((x) => key(x.title) === key(it.title));
+    if (f && String(f.price) !== String(it.price)) changed.push({ id: it.id, title: it.title, stored: it.price, fresh: f.price });
+  });
+  const missing = fresh.filter((f) => f.price && !tq.items.some((it) => key(it.title) === key(f.title))).map((f) => ({ title: f.title, price: f.price }));
+  return { changed, missing };
+}
+
+/** Bring the tender's prices up to today's figures WITHOUT losing the
+ * estimator's edits: each stored item keeps its title and dot points and only
+ * its price moves to the fresh figure for that group; seeded groups the
+ * tender lacks are appended. Stamps `pricesAt`. */
+export function refreshTenderPrices(quote, items, rates, at) {
+  const tq = quote.tenderQuote;
+  const fresh = seedTenderItems(quote, items, rates);
+  const key = (t) => String(t || "").trim().toLowerCase();
+  const kept = (tq.items || []).map((it) => { const f = fresh.find((x) => key(x.title) === key(it.title)); return f && f.price ? { ...it, price: f.price } : it; });
+  const added = fresh.filter((f) => f.price && !kept.some((it) => key(it.title) === key(f.title)));
+  return { ...tq, items: kept.concat(added), pricesAt: at || new Date().toISOString() };
+}
+
+/** What a tender is seeded with for THIS project beyond its line items: the
+ * attention company from the project's client (Grady fills it on 10 of 12
+ * tenders; the name is his to add). Blank fields only. */
+export function tenderPrefill(tq, quote) {
+  const next = { ...tq };
+  const client = String((quote && quote.clientName) || "").trim();
+  if (client && !String(next.attentionCompany || "").trim()) next.attentionCompany = client;
+  return next;
+}
+
 /** Pull the first number out of a tender price string like
  * "$46,050.47 + GST" or "46050.47". Anything without a digit is $0. */
 export const parseTenderPrice = (s) => {

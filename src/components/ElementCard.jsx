@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import { ChevronDown, ChevronRight, Copy, Trash2, Paperclip, X, RotateCw, ZoomIn, ZoomOut, Maximize2, ArrowUp, ArrowDown, GripVertical } from "lucide-react";
 import { FULL_CATALOG, LABOUR_TEMPLATES, QUOTE_SCOPES } from "../data/catalog.js";
 import { uid, money2, computeElementCost, computeElementUnitRates, autoLabourQtys, labourQuantities, categoryAppliesTo, elementScope, categoryChargedUnder, scopeLabel, SCOPE_KEYS } from "../lib/costing.js";
+import { prefilledCells, applySteelMode, steelModeFor } from "../lib/handover.js";
 import { pdfToJpegPages } from "../lib/pdfToImages.js";
 import CategoryBlock from "./CategoryBlock.jsx";
 import LabourMatrix from "./LabourMatrix.jsx";
@@ -14,7 +15,7 @@ import AdditionalItems from "./AdditionalItems.jsx";
  * the quote's item order (the summary rail, the print report and the
  * export all follow it), the same order QuoteSummary's own drag edits.
  */
-export default function ElementCard({ item, rates, onChange, onRemove, onDuplicate, onLabourRateChange, onMaterialRateChange, onMoveUp, onMoveDown, onReorder, projectScope }) {
+export default function ElementCard({ item, rates, onChange, onRemove, onDuplicate, onLabourRateChange, onMaterialRateChange, onMoveUp, onMoveDown, onReorder, projectScope , handover }) {
   const [dragOver, setDragOver] = useState(false);
   // Every material category starts collapsed — only Labour/Equipment starts
   // expanded (it's still collapsible too, just defaults open).
@@ -84,6 +85,12 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
   );
   // The quantities each crew-sheet row draws on, for the Qty column display.
   const labourQtyCtx = useMemo(() => labourQuantities(item, rates), [item, rates]);
+  // Handover prefill (lib/handover.js): the cells the pass filled that still
+  // hold its figure are tinted; the steel-fixing switch rewrites the Tie row.
+  const prefilled = useMemo(() => prefilledCells(handover, item), [handover, item]);
+  const steelMode = item.steelMode || "auto";
+  const steelModeResolved = useMemo(() => steelModeFor(item, rates, labourQtyCtx), [item, rates, labourQtyCtx]);
+  const setSteelMode = (mode) => patch((it) => applySteelMode(it, rates, mode));
   const toggleLabourAuto = () =>
     patch((it) => {
       if (it.labourAuto !== false) {
@@ -550,6 +557,10 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
             labourQtyCtx={labourQtyCtx}
             onTaskMetaChange={setTaskMeta}
             onLabourRateChange={onLabourRateChange}
+            prefilled={prefilled}
+            steelMode={steelMode}
+            steelModeResolved={steelModeResolved}
+            onSteelMode={setSteelMode}
             item={item}
             rates={rates}
             onTaskQtyChange={setTaskQty}
