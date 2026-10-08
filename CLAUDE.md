@@ -995,20 +995,20 @@ element families waits on the owner's approval of the pad footing.
   whole number, blank = 1, the block's own `<prefix>Spacing`). `barMode(d,
   prefix)` is the ONE reading of the select (no value = spacing, so older
   takeoffs are unchanged) and `areaBarGeom(d, prefix)` the ONE arithmetic:
-  the bars are COUNTED, never divided out (Grady, 8 Oct 2026: "include the
-  bar count +1 in the calculations rather than using l/spacing. it should
-  be l/spacing +1"): bars = floor(across ÷ spacing) + 1 (`areaBarCount`, the
-  same "+1" every spacing count in the file uses), each the other dimension
-  long, × layers, ONE direction per block (X bars run the length and are
-  spaced across the width; a mat each way uses the X and Y blocks).
-  `areaBarRun(area, dims, isPlan)` is the ONE reading of WHICH dimensions:
-  the slab's own L × W (`_autoPlanL` / `_autoPlanW`, published by
-  `computeSlab` for a plain rectangle and cleared by `computeInstance` before
-  every compute) when the area IS the slab's area (blank, or typed within 2%
-  of L × W), else a square of equal area (√A a side). Waste and lap as for
-  every bar line, the spec reads "(area covered, N layers)", the formula
-  shows the count. Before 8 Oct 2026 the total was area ÷ spacing (50 m² at
-  200 → 250 m; now 26 bars × 10 m = 260 m on a 10 × 5 slab). A blank area in that
+  the bars are taken per 1 m × 1 m BLOCK and multiplied by the entered area
+  (Grady, 8 Oct 2026: "i want the calculation in 1m blocks then multiplied
+  by the entered area. add the extra bar to one side only for instance
+  1/0.2 = 5+1 and for the other side, dont add the extra bar. sum them up
+  and multiply by the manually entered area"): `areaBarsPerM(spMm, extra)`
+  = 1000 ÷ spacing (+ 1 when `extra`), UNROUNDED (150 mm = 6.67 bars/m, a
+  rate not a count), each bar 1 m long, so metres per m² = bars per metre;
+  × area × layers. The END BAR IS COUNTED ON ONE SIDE ONLY: the X blocks
+  carry it (1 ÷ 0.2 = 5 + 1 = 6 m/m²), the Y blocks never do (5 m/m²), so
+  a mat on the X and Y blocks is 11 m/m². Waste and lap as for every bar
+  line, the spec reads "(area covered, N layers)", the formula shows the
+  per-m² figure. (For an hour on 8 Oct 2026 this counted floor(L ÷ s) + 1
+  bars over the slab's L × W; replaced by the 1 m block at Grady's
+  instruction.) A blank area in that
   mode is a completeness warning and no line, never a silent zero
   (`computeSlab` now returns its own `warnings`). The Method select
   rerenders the card so only the chosen mode's fields show.
@@ -1048,14 +1048,13 @@ element families waits on the owner's approval of the pad footing.
   field set a takeoff saved earlier on 6 Oct 2026 (`reoAreaM2`, `reoAreaDia`,
   `reoAreaSpacing`, `reoAreaWays`) repeated `reoAreaLayers` times, seeded
   into `reoAreaRows` the first time the table renders; `reoAreaRowMetres(r,
-  planArea, planDimsOf(d))` is the ONE row arithmetic — COUNTED bars through
-  `areaBarRun` / `areaBarCount` (same rule as the slab bar blocks above):
-  each way = (W ÷ spacing + 1 bars × L) + (L ÷ spacing + 1 bars × W), one
-  way = bars spanning the SHORT side (long ÷ spacing + 1 bars × short); a
-  blank area is the slab's own L × W, a typed one is the slab's L × W only
-  when it is the slab's area, else a √A square. The row carries `count`,
-  `bars` and the `formula` the register line prints; on a 10 × 5 slab N12
-  @200 each way is 515 m (was 500 m as area ÷ spacing × 2). `applyReoArea` emits
+  planArea)` is the ONE row arithmetic — the same 1 m block as the slab bar
+  blocks above (`areaBarsPerM`): each way = (1 m ÷ spacing + 1) + (1 m ÷
+  spacing) bars per m² (the end bar on the FIRST direction only — 6 + 5 =
+  11 m/m² at 200), one way = (1 m ÷ spacing + 1) alone (6 m/m² at 200), ×
+  the area (typed, or the element's plan area when blank). The row carries
+  `perM2` and the `formula` the register line prints; N12 @200 each way
+  over 50 m² is 550 m (until 8 Oct 2026 it was area ÷ spacing × 2 = 500 m). `applyReoArea` emits
   ONE bar line PER LAYER, replacing the detailed lines like the rate does; the
   table's metres cells refresh live. **Beam steel always counts**: every line
   a slab's beam group emits (`raftBeamGroupLines` wrapper tags `part:
