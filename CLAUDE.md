@@ -1012,6 +1012,28 @@ element families waits on the owner's approval of the pad footing.
   mode is a completeness warning and no line, never a silent zero
   (`computeSlab` now returns its own `warnings`). The Method select
   rerenders the card so only the chosen mode's fields show.
+- **A selected hook spans the section depth less the cover** (`hookLegOf` /
+  `hookLeg` / `sectionDepthMm` / `instCoverMm` beside `anchorLen`; 8 Oct
+  2026, Grady: "when a user selects hooks, hooks should span the depth of
+  the section minus the concrete cover"): every hook the estimator picks in
+  an `anchorSel` (90° / 135° / 180° on pad-footing, pile-cap, tankbox and
+  shared starters, the extra-connections table, a pier cage's top / bottom
+  anchorage, a beam's or slab beam group's main-bar start / end anchorage)
+  is priced as the element's section depth − its cover, never a
+  bar-diameter multiple. `sectionDepthMm(inst)` is the ONE reading of the
+  depth per calculator: pier = diameter, pile cap = D, strip / pad footing /
+  beam / generic = depth, slab = thickness, wall / shotcrete = thickness,
+  retaining wall = footing depth (else stem), column = depth (diameter when
+  round), box gutter = base thickness; a slab beam group passes its own
+  section (`g.secDepthMm`) and cover (`cvr`) to `hookLegOf` directly. The
+  cover is the element's typed cover, else `defaultCoverFor`. An element
+  with no section depth (stairs, kerb, tank, composite, screed) keeps the
+  12d / 10d / 8d development of `anchorLen`; couplers, cast-in starters,
+  chemical anchors and custom lengths are unchanged. Each connection line's
+  notes state "hook N mm = section D − cover c" (`hookNote`); the hook
+  options are labelled "(section depth − cover)". Ligature fitment hooks
+  (always 135°, 10d) and starter-run cogs (typed mm) are not selectable
+  hooks and are untouched. `test-hook-depth.mjs` proves it.
 - **Column vertical bars = bars × qty × HEIGHT** (`computeColumn`, 5 Oct
   2026): the lap onto the starters from below sits inside the height (those
   starters are counted on their source element) and the bars continuing up

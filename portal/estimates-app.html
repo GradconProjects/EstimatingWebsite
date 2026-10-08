@@ -1914,7 +1914,7 @@ function trenchReoMassPerM(type, widthMm){
   if(MESHTYPES[type]!==undefined) return MESHTYPES[type]*(num(widthMm,300)/1000);
   return 21.8/6;
 }
-const ANCHOR_OPTS = [["straight","Straight development"],["hook90","90° hook"],["hook135","135° hook"],["hook180","180° hook"],["coupler","Mechanical coupler"],["starter","Cast-in starter"],["chemical","Chemical anchor"],["custom","Custom length (mm)"]];
+const ANCHOR_OPTS = [["straight","Straight development"],["hook90","90° hook (section depth − cover)"],["hook135","135° hook (section depth − cover)"],["hook180","180° hook (section depth − cover)"],["coupler","Mechanical coupler"],["starter","Cast-in starter"],["chemical","Chemical anchor"],["custom","Custom length (mm)"]];
 function anchorLen(type,d,custom){
   d=d||12;
   switch(type){
@@ -1923,6 +1923,42 @@ function anchorLen(type,d,custom){
     case "custom": return Number(custom)||0; default: return 0;
   }
 }
+/* A HOOK the estimator selects on a starter / dowel / connection bar spans
+ * the element's SECTION DEPTH LESS THE COVER (Grady, 8 Oct 2026: "when a
+ * user selects hooks, hooks should span the depth of the section minus the
+ * concrete cover") — the leg turns through the section the bar is cast in
+ * and stops at the cover, not a bar-diameter multiple. `sectionDepthMm(inst)`
+ * is the ONE reading of that depth per calculator (a pile's diameter, a
+ * cap's / footing's / beam's depth, a slab's thickness, a wall's thickness,
+ * a retaining wall's footing depth, a column's depth or diameter, a box
+ * gutter's base); an element with no section depth (stairs, kerb, tank,
+ * composite, screed) keeps the 12d / 10d / 8d development of `anchorLen`.
+ * `hookLeg(inst, type, dia)` is the ONE hook length every user-selectable
+ * hook (`anchorSel`) prices through: `{mm, bySection, depth, cover}`;
+ * couplers, starters, chemical anchors and custom lengths are unchanged. */
+function sectionDepthMm(inst){
+  const d=inst.data, def=LIB_INDEX[inst.typeKey], calc=def? def.calc : "";
+  const pick=(...vals)=>{ for(const v of vals){ if(num(v)>0) return num(v); } return 0; };
+  switch(calc){
+    case "pier": return pick(d.dia);
+    case "pilecap": return pick(d.D);
+    case "stripfooting": case "padfooting": case "beam": case "generic": return pick(d.depth);
+    case "slab": return pick(d.thickness);
+    case "wall": case "shotwall": return pick(d.thickness);
+    case "retwall": return pick(d.footD, d.stemT);
+    case "column": return (d.shape==="circ"||d.shape==="round")? pick(d.dia, d.depth) : pick(d.depth, d.dia);
+    case "boxgutter": return pick(d.baseT);
+    default: return 0;
+  }
+}
+function hookLegOf(type,dia,depthMm,coverMm,custom){
+  const isHook = type==="hook90"||type==="hook135"||type==="hook180";
+  if(isHook && depthMm>0) return {mm:Math.max(0,depthMm-coverMm), bySection:true, depth:depthMm, cover:coverMm};
+  return {mm:anchorLen(type||"straight",dia,custom||0), bySection:false, depth:0, cover:0};
+}
+function instCoverMm(inst){ return num(inst.data.cover)>0? num(inst.data.cover) : defaultCoverFor(inst.typeKey); }
+function hookLeg(inst,type,dia,custom){ return hookLegOf(type,dia,sectionDepthMm(inst),instCoverMm(inst),custom); }
+function hookNote(h){ return h.bySection? ` · hook ${fmt(h.mm,0)}mm = section ${fmt(h.depth,0)} − cover ${fmt(h.cover,0)}` : ""; }
 function uid(prefix){ return prefix + String(ID_COUNTER++).padStart(2,"0"); }
 function fmt(n,dp){ if(n===undefined||n===null||isNaN(n)) return "0"; dp=(dp===undefined?2:dp); return Number(n).toLocaleString(undefined,{maximumFractionDigits:dp,minimumFractionDigits:0}); }
 function mm3_to_m3(v){ return v/1e9; }
@@ -3220,8 +3256,9 @@ function computePier(inst,def){
   if(d.cage){
     let cageLen = d.cageLenAuto? (H-2*cover) : num(d.cageLen);
     let dia=barDiaOf(d.vDia);
-    let botLen = anchorLen(d.botAnchor,dia,d.botCustom);
-    let topLen = anchorLen(d.topAnchor,dia,d.topCustom) + num(d.topProj);
+    let hkB=hookLeg(inst,d.botAnchor,dia,d.botCustom), hkT=hookLeg(inst,d.topAnchor,dia,d.topCustom);
+    let botLen = hkB.mm;
+    let topLen = hkT.mm + num(d.topProj);
     let lapLen = d.lap ? (num(d.lapLen)||40*dia) : 0;
     let barLen = (cageLen+botLen+topLen+lapLen)/1000;
     let vBars=num(d.vBars);
@@ -3575,10 +3612,11 @@ function capStarterLines(inst,def){
     if(!on) return;
     let qty=num(d[qtyK]); if(!(qty>0)) return;
     let diaName=d[diaK]||dDia, dia=barDiaOf(diaName);
-    let len=(num(d[embK])+num(d[projK])+anchorLen(d[hookK]||"straight",dia,0)+num(d[lapK]))/1000;
+    let hk=hookLeg(inst,d[hookK]||"straight",dia);
+    let len=(num(d[embK])+num(d[projK])+hk.mm+num(d[lapK]))/1000;
     if(!(len>0)) return;
     let totLen=qty*len, wt=totLen*massPerM(dia), tgt=targetLabelOf(d[tgtK]);
-    out.push(baseLine(inst,def,{materialGroup:"Connections",material:diaName,spec:`${label} → ${tgt||"(unlinked)"}`,qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`${qty}×(embed+proj+hook+lap)/1000`,linkedElement:tgt,notes:`${fmt(wt,1)} kg`}));
+    out.push(baseLine(inst,def,{materialGroup:"Connections",material:diaName,spec:`${label} → ${tgt||"(unlinked)"}`,qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`${qty}×(embed+proj+hook+lap)/1000`,linkedElement:tgt,notes:`${fmt(wt,1)} kg${hookNote(hk)}`}));
   };
   bars(d.capColStarters,"capColQty","capColDia","capColEmbed","capColProj","capColHook","capColLap","capColTarget","N24","Pile cap — column starter bars");
   bars(d.capDowels,"capDowelQty","capDowelDia","capDowelEmbed","capDowelProj","capDowelHook","capDowelLap","capDowelTarget","N16","Pile cap — dowels");
@@ -3752,10 +3790,11 @@ function computePileCap(inst,def){
   if(fArea>0) lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Side formwork",spec:`${fFaces.length} of 4 faces (${fFaces.join(',')})`,qty:fArea,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(fArea,PROJECT.formworkWaste),formula:`${N}×selected faces×D`}));
   if(d.colStarters){
     let dia=barDiaOf(d.colDia);
-    let len=(num(d.colEmbed)+num(d.colProj)+anchorLen(d.colHook,dia,0)+num(d.colLap))/1000;
+    let hk=hookLeg(inst,d.colHook,dia);
+    let len=(num(d.colEmbed)+num(d.colProj)+hk.mm+num(d.colLap))/1000;
     let totLen=num(d.colQty)*N*len; let wt=totLen*massPerM(dia);
     let tgt=targetLabelOf(d.colTarget);
-    lines.push(baseLine(inst,def,{materialGroup:"Connections",material:d.colDia,spec:"Column starter bars → "+(tgt||"(unlinked)"),qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`${d.colQty}×${N}×(embed+proj+hook+lap)/1000`,linkedElement:tgt,notes:`${fmt(wt,1)} kg`}));
+    lines.push(baseLine(inst,def,{materialGroup:"Connections",material:d.colDia,spec:"Column starter bars → "+(tgt||"(unlinked)"),qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`${d.colQty}×${N}×(embed+proj+hook+lap)/1000`,linkedElement:tgt,notes:`${fmt(wt,1)} kg${hookNote(hk)}`}));
   }
   return {lines,warnings:[]};
 }
@@ -4251,10 +4290,11 @@ function computePadFooting(inst,def){
   });
   if(d.starters){
     let bd=barDiaOf(d.connDia);
-    let len=(num(d.connEmbed)+num(d.connProj)+anchorLen(d.connHook,bd,0))/1000;
+    let hk=hookLeg(inst,d.connHook,bd);
+    let len=(num(d.connEmbed)+num(d.connProj)+hk.mm)/1000;
     let totLen=num(d.connQty)*N*len; let wt=totLen*massPerM(bd);
     let tgt=targetLabelOf(d.connTarget);
-    lines.push(baseLine(inst,def,{materialGroup:"Connections",material:d.connDia,spec:"Column starters → "+(tgt||"(unlinked)"),qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`${d.connQty}×${N}×len/1000`,linkedElement:tgt,notes:`${fmt(wt,1)} kg`}));
+    lines.push(baseLine(inst,def,{materialGroup:"Connections",material:d.connDia,spec:"Column starters → "+(tgt||"(unlinked)"),qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`${d.connQty}×${N}×len/1000`,linkedElement:tgt,notes:`${fmt(wt,1)} kg${hookNote(hk)}`}));
   }
   return {lines,warnings};
 }
@@ -4590,7 +4630,8 @@ function raftBeamGroupLinesInner(inst,def,lines,d,g){
       (g.rows||[]).forEach(r=>{
         if(!(num(r.qty)>0)) return;
         let bd=barDiaOf(r.dia);
-        let startLen=anchorLen(r.startA,bd,0)/1000, endLen=anchorLen(r.endA,bd,0)/1000;
+        let hkS=hookLegOf(r.startA,bd,g.secDepthMm,cvr), hkE=hookLegOf(r.endA,bd,g.secDepthMm,cvr);
+        let startLen=hkS.mm/1000, endLen=hkE.mm/1000;
         let barLen=g.runM+startLen+endLen;
         let layers=Math.max(1,Math.round(num(r.layers,1)));
         let totLen=num(r.qty)*layers*barLen; let wt=totLen*massPerM(bd);
@@ -4672,7 +4713,8 @@ function computeBeam(inst,def){
     d.reoRows.forEach(r=>{
       let bd=barDiaOf(r.dia);
       let clearLen=Lm-2*(cover);
-      let startLen=anchorLen(r.startA,bd,0)/1000, endLen=anchorLen(r.endA,bd,0)/1000;
+      let hkS=hookLeg(inst,r.startA,bd), hkE=hookLeg(inst,r.endA,bd);
+      let startLen=hkS.mm/1000, endLen=hkE.mm/1000;
       let barLen=clearLen+startLen+endLen;
       let layers=Math.max(1,Math.round(num(r.layers,1)));
       let totLen=num(r.qty)*layers*N*barLen; let wt=totLen*massPerM(bd);
@@ -6451,11 +6493,12 @@ function computeTankbox(inst,def){
   if(d.grate) lines.push(baseLine(inst,def,{materialGroup:"Cast-ins",material:"Grate / access cover frame",spec:"",qty:N,unit:"no.",waste:0,finalQty:N,formula:"per pit"}));
   if(d.starters){
     let dia=barDiaOf(d.connDia);
-    let len=(num(d.connEmbed)+num(d.connProj)+anchorLen(d.connHook,dia,0))/1000;
+    let hk=hookLeg(inst,d.connHook,dia);
+    let len=(num(d.connEmbed)+num(d.connProj)+hk.mm)/1000;
     let totLen=num(d.connQty)*N*len;
     let wt=totLen*massPerM(dia);
     let targetLabel=targetLabelOf(d.connTarget);
-    lines.push(baseLine(inst,def,{materialGroup:"Connections",material:d.connDia,spec:"Starter bars / dowels → "+(targetLabel||"(unlinked)"),qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`${d.connQty}×${N}×(embed ${d.connEmbed}+proj ${d.connProj})/1000`,linkedElement:targetLabel,notes:`${fmt(wt,1)} kg`}));
+    lines.push(baseLine(inst,def,{materialGroup:"Connections",material:d.connDia,spec:"Starter bars / dowels → "+(targetLabel||"(unlinked)"),qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`${d.connQty}×${N}×(embed ${d.connEmbed}+proj ${d.connProj})/1000`,linkedElement:targetLabel,notes:`${fmt(wt,1)} kg${hookNote(hk)}`}));
   }
   return {lines,warnings:[]};
 }
@@ -8714,10 +8757,11 @@ function computeExtraConnections(inst,def,out){
   (inst.data.extraConn||[]).forEach(r=>{
     if(!r.target || !num(r.qty)) return;
     let dia=barDiaOf(r.dia||"N16");
-    let len=(num(r.embed)+num(r.proj)+anchorLen(r.hook,dia,0))/1000;
+    let hk=hookLeg(inst,r.hook,dia);
+    let len=(num(r.embed)+num(r.proj)+hk.mm)/1000;
     let totLen=num(r.qty)*len; let wt=totLen*massPerM(dia);
     let tgt=targetLabelOf(r.target);
-    out.lines.push(baseLine(inst,def,{materialGroup:"Connections",material:r.dia||"N16",spec:(r.role||"Connection")+" → "+(tgt||"(unlinked)"),qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`${r.qty}×(embed ${r.embed||0}+proj ${r.proj||0}+hook)/1000`,linkedElement:tgt,notes:`${fmt(wt,1)} kg`}));
+    out.lines.push(baseLine(inst,def,{materialGroup:"Connections",material:r.dia||"N16",spec:(r.role||"Connection")+" → "+(tgt||"(unlinked)"),qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`${r.qty}×(embed ${r.embed||0}+proj ${r.proj||0}+hook)/1000`,linkedElement:tgt,notes:`${fmt(wt,1)} kg${hookNote(hk)}`}));
   });
   return out;
 }
@@ -9044,13 +9088,14 @@ function computeInstance(inst){
   if(d.starters && usesSharedStarters(def)){
     let N=num(d.qty,1);
     let dia=barDiaOf(d.connDia||"N16");
-    let len=(num(d.connEmbed)+num(d.connProj)+anchorLen(d.connHook||"straight",dia,0)+num(d.connLap))/1000;
+    let hk=hookLeg(inst,d.connHook||"straight",dia);
+    let len=(num(d.connEmbed)+num(d.connProj)+hk.mm+num(d.connLap))/1000;
     let totLen=num(d.connQty)*N*len;
     if(totLen>0){
       let wt=totLen*massPerM(dia);
       let targetLabel=targetLabelOf(d.connTarget);
       out.lines=out.lines||[];
-      out.lines.push(baseLine(inst,def,{materialGroup:"Connections",material:d.connDia||"N16",spec:"Starter bars → "+(targetLabel||"(unlinked)"),qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`${num(d.connQty)}×${N}×(embed ${num(d.connEmbed)}+proj ${num(d.connProj)}+lap ${num(d.connLap)})/1000`,linkedElement:targetLabel,notes:`${fmt(wt,1)} kg — counted once at source`}));
+      out.lines.push(baseLine(inst,def,{materialGroup:"Connections",material:d.connDia||"N16",spec:"Starter bars → "+(targetLabel||"(unlinked)"),qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`${num(d.connQty)}×${N}×(embed ${num(d.connEmbed)}+proj ${num(d.connProj)}+lap ${num(d.connLap)})/1000`,linkedElement:targetLabel,notes:`${fmt(wt,1)} kg${hookNote(hk)} — counted once at source`}));
     }
   }
   // Generic formwork include/exclude: unticking "Include formwork" strips
