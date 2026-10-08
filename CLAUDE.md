@@ -1036,8 +1036,15 @@ element families waits on the owner's approval of the pad footing.
   `reoAreaLayerRows(d)` is the ONE reading: the stored rows, else the single
   field set a takeoff saved earlier on 6 Oct 2026 (`reoAreaM2`, `reoAreaDia`,
   `reoAreaSpacing`, `reoAreaWays`) repeated `reoAreaLayers` times, seeded
-  into `reoAreaRows` the first time the table renders; `reoAreaRowMetres` is
-  the ONE row arithmetic (area ÷ spacing × directions). `applyReoArea` emits
+  into `reoAreaRows` the first time the table renders; `reoAreaRowMetres(r,
+  planArea, planDimsOf(d))` is the ONE row arithmetic — COUNTED bars through
+  `areaBarRun` / `areaBarCount` (same rule as the slab bar blocks above):
+  each way = (W ÷ spacing + 1 bars × L) + (L ÷ spacing + 1 bars × W), one
+  way = bars spanning the SHORT side (long ÷ spacing + 1 bars × short); a
+  blank area is the slab's own L × W, a typed one is the slab's L × W only
+  when it is the slab's area, else a √A square. The row carries `count`,
+  `bars` and the `formula` the register line prints; on a 10 × 5 slab N12
+  @200 each way is 515 m (was 500 m as area ÷ spacing × 2). `applyReoArea` emits
   ONE bar line PER LAYER, replacing the detailed lines like the rate does; the
   table's metres cells refresh live. **Beam steel always counts**: every line
   a slab's beam group emits (`raftBeamGroupLines` wrapper tags `part:

@@ -4824,7 +4824,7 @@ function renderSlab(inst,def){
      ${(useSched||mode!=="area")? "" : F("Area covered (m²)",inpNum(prefix+"Area",d[prefix+"Area"]))}
      ${(useSched||mode!=="area")? "" : F("Layers",inpNum(prefix+"Layers",d[prefix+"Layers"]===undefined?1:d[prefix+"Layers"]))}
     </div>
-    ${(useSched||mode!=="area"||!d[prefix])? "" : `<p class="small">Where the slab has no proper bars designed: total bar length = area covered ÷ spacing × layers (one direction per block — use the X and Y blocks for a mat each way). More than one layer multiplies the length; waste and lap apply as usual.</p>`}
+    ${(useSched||mode!=="area"||!d[prefix])? "" : `<p class="small">Where the slab has no proper bars designed: the bars are COUNTED — (dimension spaced across ÷ spacing) + 1 bars, each the other dimension long, × layers (one direction per block — use the X and Y blocks for a mat each way). The area covered is laid over the slab's own L × W when it is the slab's area, else over a square of equal area. Waste and lap apply as usual.</p>`}
     <div class="subsec ${d[prefix]?'':'hidden'}" data-show-if="${prefix}"><div class="grid cols3">${chk(prefix+"Lap",d[prefix+"Lap"],"Include lap allowance (%)",prefix+"Lap")}</div></div>`;
     let sched = (useSched && d[prefix])? `<div class="subsec"><table class="rows"><thead><tr><th>Section mark</th><th>Bar type</th><th>Span covered (m)</th><th>Spacing (mm)</th><th>Bar length (m)</th><th>Bars (calc)</th><th></th></tr></thead>
     <tbody>${(d[prefix+"Bars"]||[]).map((r,i)=>barSchedRowHtml(prefix,i,r)).join('')}</tbody></table>
@@ -4992,10 +4992,31 @@ function slabBeamGrade(d,g){
  * ONE reading of the select (an older takeoff with no value = spacing) and
  * `areaBarGeom` the ONE area-mode arithmetic (compute and card hint). */
 function barMode(d,prefix){ let m=d[prefix+"Method"]; return (m==="count"||m==="area")? m : "spacing"; }
+/* Bars measured over an AREA are COUNTED, never divided out: bars = floor(the
+ * dimension they are spaced across ÷ spacing) + 1 — the same "+1" every
+ * spacing-based count in this file uses — each the length of the other
+ * dimension (Grady, 8 Oct 2026: "include the bar count +1 in the
+ * calculations rather than using l/spacing. it should be l/spacing +1").
+ * `areaBarRun(area, dims, isPlan)` is the ONE reading of WHICH dimensions:
+ * the element's own L × W (`dims`, published by the slab calculator as
+ * `_autoPlanL` / `_autoPlanW`) when the area IS the element's plan area —
+ * blank in the by-area table, or typed within 2% of L × W — else a square of
+ * equal area (√A each side, the only honest reading of a bare m² figure).
+ * `areaBarCount(acrossM, spMm)` is the ONE count. */
+function areaBarCount(acrossM, spMm){ return acrossM>0 && spMm>0? Math.floor(acrossM*1000/spMm+1e-9)+1 : 0; }
+function areaBarRun(area, dims, isPlan){
+  if(dims && dims.L>0 && dims.W>0 && (isPlan || (dims.area>0 && Math.abs(area-dims.area)<=0.02*dims.area))) return {L:dims.L, W:dims.W, square:false};
+  const side=Math.sqrt(Math.max(0,area)); return {L:side, W:side, square:true};
+}
+function planDimsOf(d){ const L=num(d._autoPlanL), W=num(d._autoPlanW); return (L>0 && W>0)? {L, W, area:L*W} : null; }
 function areaBarGeom(d,prefix){
   let area=num(d[prefix+"Area"]), spacing=Math.max(1,num(d[prefix+"Spacing"],200)), layers=Math.max(1,Math.round(num(d[prefix+"Layers"],1)));
-  let totLen = area>0? area/(spacing/1000)*layers : 0;
-  return {area, spacing, layers, totLen};
+  // X bars run along the length and are spaced across the width; Y bars the reverse.
+  let run=areaBarRun(area, planDimsOf(d), false), isX=/X$/.test(prefix);
+  let across=isX? run.W : run.L, along=isX? run.L : run.W;
+  let count=area>0? areaBarCount(across,spacing) : 0;
+  let totLen = count*along*layers;
+  return {area, spacing, layers, totLen, count, across, along, square:run.square};
 }
 function computeSlab(inst,def){
   let d=inst.data, lines=[], warnings=[];
@@ -5005,6 +5026,7 @@ function computeSlab(inst,def){
   (d.openings||[]).forEach(o=>{ openArea += (num(o.w)/1000)*(num(o.h)/1000)*num(o.qty,1); });
   let netArea=Math.max(0,area-openArea);
   d._autoInsArea = netArea; // insulation line (computeInstance) defaults to the slab's own plan area
+  if(!outline && !d.manualArea && num(d.length)>0 && num(d.width)>0){ d._autoPlanL=num(d.length); d._autoPlanW=num(d.width); }   // the L × W bars measured by area are laid over (areaBarRun)
   let t=num(d.thickness)/1000;
   let vol=netArea*t;
   lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:`${d.category} ${d.thickness}mm`,qty:vol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(vol,concWastePct(d)),formula:`(${d.manualArea?'manual area':'L×W'} ${fmt(area,1)} − openings ${fmt(openArea,1)})×${fmt(t,3)}`}));
@@ -5181,12 +5203,12 @@ function computeSlab(inst,def){
     if(barMode(d,prefix)==="area"){
       // Area covered × layers (6 Oct 2026, Grady: "some slabs dont have proper
       // bars designed … lets use the area covered and include also layer"):
-      // the bars in ONE direction over an area at a spacing run
-      // area ÷ spacing metres in total, and every extra layer repeats them.
+      // the bars in ONE direction over an area at a spacing are COUNTED
+      // (across ÷ spacing + 1, areaBarGeom), and every extra layer repeats them.
       let a=areaBarGeom(d,prefix);
       if(!(a.area>0)){ warnings.push({text:`${label} are measured by area covered but no area is typed — nothing is taken off until it is`,section:"reo",level:"completeness"}); return; }
       let wt=a.totLen*massPerM(dia);
-      lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d[prefix+"Dia"],spec:`${label} (area covered${a.layers>1?`, ${a.layers} layers`:""})`,qty:a.totLen,unit:"m",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(a.totLen,PROJECT.reoWaste,lapPct),formula:`area(${fmt(a.area,2)}m²)÷spacing(${a.spacing}mm)×layers(${a.layers})`,notes:`${fmt(wt,1)} kg`}));
+      lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d[prefix+"Dia"],spec:`${label} (area covered${a.layers>1?`, ${a.layers} layers`:""})`,qty:a.totLen,unit:"m",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(a.totLen,PROJECT.reoWaste,lapPct),formula:`${a.square?`√area(${fmt(a.area,2)}m²)=${fmt(a.along,2)}m square: `:`area(${fmt(a.area,2)}m²)=slab ${fmt(a.along,2)}×${fmt(a.across,2)}m: `}bars(${fmt(a.across,2)}m÷${a.spacing}mm+1=${a.count})×len(${fmt(a.along,2)}m)×layers(${a.layers})`,notes:`${fmt(wt,1)} kg · ${a.count*a.layers} bars`}));
       return;
     }
     let count = d[prefix+"Method"]=="count"? num(d[prefix+"Qty"]) : Math.floor(perpDim*1000/num(d[prefix+"Spacing"]))+1;
@@ -8362,7 +8384,7 @@ function reoMethodSection(inst){
   ${(()=>{ if(method==="area" && !Array.isArray(d.reoAreaRows)) d.reoAreaRows=reoAreaLayerRows(d);   // the first open of the table keeps whatever the single fields held
     const rows=reoAreaLayerRows(d);
     return `<table class="rows"><thead><tr><th>Layer</th><th>Area (m²${planArea>0?`, blank = ${fmt(planArea,2)}`:""})</th><th>Bar type</th><th>Spacing (mm)</th><th>Layout</th><th>Bar metres</th><th></th></tr></thead>
-    <tbody>${rows.map((r,i)=>{ const m=reoAreaRowMetres(r,planArea); return `<tr data-row="reoAreaRows.${i}"><td class="small">${i+1}</td>
+    <tbody>${rows.map((r,i)=>{ const m=reoAreaRowMetres(r,planArea,planDimsOf(d)); return `<tr data-row="reoAreaRows.${i}"><td class="small">${i+1}</td>
      <td style="width:120px"><input type="text" inputmode="decimal" data-num="1" data-field="reoAreaRows.${i}.area" value="${r.area===undefined||r.area===null?'':r.area}" placeholder="${planArea>0?fmt(planArea,2):''}"></td>
      <td style="width:110px">${barSizeSel(`reoAreaRows.${i}.dia`,r.dia||"N12")}</td>
      <td style="width:100px">${inpNum(`reoAreaRows.${i}.spacing`,r.spacing===undefined?200:r.spacing)}</td>
@@ -8372,7 +8394,7 @@ function reoMethodSection(inst){
     <button class="btn small" data-action="addRow" data-target="reoAreaRows">+ Add layer</button>`; })()}
   <div class="grid cols3">${chk("reoAreaLap",d.reoAreaLap,"Include lap allowance (%)","reoAreaLap")}</div>
   <p class="small reoRateHint">${reoRateHintText(inst.results&&inst.results.reoRate)}</p>
-  <p class="small">One row per layer, each with its own area, bar type, spacing and layout — a bottom mat of N12 @200 each way and a top mat of N16 @300 one way are two rows. Bar metres = area ÷ spacing per direction (× 2 each way). Leave an area blank to use the element's own plan area. One register line per layer replaces the slab's detailed mat lines; beam bars and ligatures (edge beams, internal strips, extra groups), starters, dowels and connections to other elements are always kept and counted.</p></div>
+  <p class="small">One row per layer, each with its own area, bar type, spacing and layout — a bottom mat of N12 @200 each way and a top mat of N16 @300 one way are two rows. The bars are COUNTED: (dimension spaced across ÷ spacing) + 1 bars, each the other dimension long — each way counts both directions, one way spans the short side. Leave an area blank to use the element's own plan area (the bars are laid over the slab's L × W); a typed area is laid over the slab's L × W when it is the slab's area, else over a square of equal area. One register line per layer replaces the slab's detailed mat lines; beam bars and ligatures (edge beams, internal strips, extra groups), starters, dowels and connections to other elements are always kept and counted.</p></div>
   <div class="subsec ${method==="rate"?'':'hidden'}" data-show-if="reoMethod_rate"><div class="grid cols4">
    ${F("Rate (kg of steel per m³ of concrete)",inpNum("reoRateKgM3",d.reoRateKgM3===undefined?100:d.reoRateKgM3))}
    ${F("Equivalent bar size",barSizeSel("reoRateDia",d.reoRateDia||"N16"))}
@@ -8400,18 +8422,28 @@ function reoAreaLayerRows(d){
   const n=Math.max(1,Math.round(num(d.reoAreaLayers,1)));
   return Array.from({length:n},()=>({area:(d.reoAreaM2===undefined||d.reoAreaM2===null)?"":d.reoAreaM2, dia:d.reoAreaDia||"N12", spacing:d.reoAreaSpacing===undefined?200:d.reoAreaSpacing, ways:d.reoAreaWays||"each"}));
 }
-function reoAreaRowMetres(r,planArea){
-  const area=num(r.area)>0? num(r.area) : planArea, sp=num(r.spacing,200), ways=(r.ways||"each")==="one"? 1 : 2, dia=r.dia||"N12", kgm=massPerM(barDiaOf(dia));
-  const metres=(area>0 && sp>0)? area/(sp/1000)*ways : 0;
-  return {area, sp, ways, dia, metres, kg:metres*kgm};
+function reoAreaRowMetres(r,planArea,dims){
+  const isPlan=!(num(r.area)>0), area=isPlan? planArea : num(r.area), sp=num(r.spacing,200), ways=(r.ways||"each")==="one"? 1 : 2, dia=r.dia||"N12", kgm=massPerM(barDiaOf(dia));
+  // Counted bars (areaBarCount): each way = bars across the width running the
+  // length + bars across the length running the width; one way = bars
+  // spanning the SHORT side, spaced along the long side.
+  const run=areaBarRun(area,dims,isPlan), long=Math.max(run.L,run.W), short=Math.min(run.L,run.W);
+  let bars=[];
+  if(area>0 && sp>0){
+    if(ways===2) bars=[{across:run.W, along:run.L, count:areaBarCount(run.W,sp)},{across:run.L, along:run.W, count:areaBarCount(run.L,sp)}];
+    else bars=[{across:long, along:short, count:areaBarCount(long,sp)}];
+  }
+  const metres=bars.reduce((s,b)=>s+b.count*b.along,0), count=bars.reduce((s,b)=>s+b.count,0);
+  const formula=bars.length? `${run.square?`√${fmt(area,2)} m² = ${fmt(run.L,2)} m square: `:`${fmt(area,2)} m² = ${fmt(run.L,2)} × ${fmt(run.W,2)} m: `}${bars.map(b=>`(${fmt(b.across,2)} m ÷ ${fmt(sp,0)} + 1 = ${b.count} bars × ${fmt(b.along,2)} m)`).join(" + ")}` : "";
+  return {area, sp, ways, dia, metres, kg:metres*kgm, count, bars, square:run.square, formula};
 }
 function applyReoArea(inst,def,out){
   let d=inst.data, lines=out.lines||[];
   let conc=reoRateConcrete(lines), planArea=reoRateArea(d), lapPct=d.reoAreaLap?PROJECT.lapPct:0;
-  let rows=reoAreaLayerRows(d).map(r=>reoAreaRowMetres(r,planArea));
+  let rows=reoAreaLayerRows(d).map(r=>reoAreaRowMetres(r,planArea,planDimsOf(d)));
   out.lines=lines.filter(l=>l.materialGroup!=="Reinforcement" || l.part==="beam");   // the mat goes; beam bars and ligatures always count
   rows.forEach((m,i)=>{ if(!(m.metres>0)) return;
-    out.lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:m.dia,spec:`Reinforcement by area — layer ${i+1}: ${m.dia} @${fmt(m.sp,0)} ${m.ways===1?"one way":"each way"} over ${fmt(m.area,2)} m²`,qty:m.metres,unit:"m",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(m.metres,PROJECT.reoWaste,lapPct),formula:`${fmt(m.area,2)} m² ÷ ${fmt(m.sp,0)}mm × ${m.ways} direction(s)`,notes:`${fmt(m.kg,1)} kg`}));
+    out.lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:m.dia,spec:`Reinforcement by area — layer ${i+1}: ${m.dia} @${fmt(m.sp,0)} ${m.ways===1?"one way":"each way"} over ${fmt(m.area,2)} m²`,qty:m.metres,unit:"m",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(m.metres,PROJECT.reoWaste,lapPct),formula:m.formula,notes:`${fmt(m.kg,1)} kg · ${m.count} bars`}));
   });
   const metres=rows.reduce((s,m)=>s+m.metres,0), kg=rows.reduce((s,m)=>s+m.kg,0);
   const area=planArea>0? planArea : Math.max(0,...rows.map(m=>m.area||0));
@@ -9007,6 +9039,7 @@ function computeInstance(inst){
   let def=LIB_INDEX[inst.typeKey], calc=CALC[def.calc];
   inst.data._concWasteAuto=autoConcWasteClass(def);   // the waste class this calculator implies (derived; concWastePct reads it)
   delete inst.data._autoAreaM2;                        // the area Project Geometry publishes — each calculator that has one sets it afresh
+  delete inst.data._autoPlanL; delete inst.data._autoPlanW;   // the plan L × W area-measured bars are laid over — the slab calculator sets them afresh
   let out=calc.compute(inst,def);
   applyConcreteOverride(inst,def,out);                               // an entered volume replaces the geometry's concrete first…
   if(reoMethodOf(inst.data)==="rate") applyReoRate(inst,def,out);   // …so a rate follows it; before connections are added, so they are never replaced
