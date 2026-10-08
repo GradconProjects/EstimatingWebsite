@@ -4958,8 +4958,15 @@ function renderSlab(inst,def){
   <div class="subsec ${d.edgeBeamExc?'':'hidden'}" data-show-if="edgeBeamExc"><div class="grid cols3">${F("Trench width (mm)",inpNum("edgeBeamTrenchWidth",d.edgeBeamTrenchWidth===undefined?(num(d.edgeBeamWidth,300)+50):d.edgeBeamTrenchWidth))}${F("Excavation depth below prepared level (mm)",inpNum("edgeBeamExcDepth",d.edgeBeamExcDepth===undefined?num(d.edgeBeamExtraDepth,300):d.edgeBeamExcDepth))}</div>
   <p class="small">Same as a Ground Beam's trench: dug volume + a bulked spoil-disposal line, along the perimeter. Off by default so existing takeoffs don't change.</p></div>
   </div>`;
-  let reo = meshBlock + barBlock("botX","Bottom X bars")+barBlock("botY","Bottom Y bars")+barBlock("topX","Top X bars")+barBlock("topY","Top Y bars")
-   + `<div class="subsec"><div class="sechead">Edge Return / Turn-down Bars</div>
+  // The MAT (mesh + the four bar blocks) is what "By rate" / "By area"
+  // replaces and hides; every other slab reinforcement option — edge return
+  // / turn-down bars, re-entrant corner bars, joints & dowels, step-downs —
+  // stays on the tab and in the takeoff under every method (Grady, 8 Oct
+  // 2026: "i want the re entrant bar option available too whether slab is
+  // calculated by stock, volume or area. all other options available to
+  // slabs should be available too").
+  let reoMat = meshBlock + barBlock("botX","Bottom X bars")+barBlock("botY","Bottom Y bars")+barBlock("topX","Top X bars")+barBlock("topY","Top Y bars");
+  let reoExtras = `<div class="subsec"><div class="sechead">Edge Return / Turn-down Bars</div>
    ${chk("returnBars",d.returnBars,"Return bars at slab edges (U-bar turn-down)","returnBars")}
    <div class="subsec ${d.returnBars?'':'hidden'}" data-show-if="returnBars"><div class="grid cols4">
     ${F("Material",selOpts("retMode",d.retMode||"bars",[["bars","Individual U-bars"],["strip","Trench mesh / mesh strip (bent)"]],true))}
@@ -4999,7 +5006,7 @@ function renderSlab(inst,def){
    ${F("Total step-down length (m)",inpNum("sdLength",d.sdLength))}${F("Step depth (mm)",inpNum("sdDepth",d.sdDepth))}${F("Dowel size",barSizeSel("sdDia",d.sdDia))}${F("Spacing (mm)",inpNum("sdSpacing",d.sdSpacing))}
   </div>${sdBarShapeUI(d,num(d.sdProj1)+num(d.sdProj2))}${sdSetupFields(d)}<div class="tip"><span class="ico">🏗️</span><div>Split-level slabs (a sunken wet area, a stepped car park deck) need dowels across the step or the two pours act independently under load. Size and space dowels the same way you'd detail a construction joint — this is the item estimators most often forget because it's buried in a section detail, not called up on the reinforcement schedule.</div></div></div>`;
   let concExtras = `<div class="subsec"><div class="sechead">Pour Details</div><div class="grid cols4">${chk("drops",d.drops,"Drops")}${chk("setdowns",d.setdowns,"Setdowns / recesses")}${chk("upstands",d.upstands,"Upstands")}</div></div>`;
-  return {geom: geom + edgeThickenGeom + wallThickenGeom, conc:concSection(d,"<p class='small'>Concrete = area × thickness (area = L×W unless manually entered)</p>")+`<div class="grid cols3">${F("Beam / thickening concrete grade (N/MPa, blank = slab grade)",inpNum("beamGrade",d.beamGrade))}</div><p class="small">Edge beams, internal beams / raft ribs, edge and wall thickenings are often poured at a different grade to the slab — enter it here and every beam line carries it as its own concrete product (each beam group can also set its own grade on its tab). Blank keeps the slab grade.</p>`+concExtras,reo:reo+steps,
+  return {geom: geom + edgeThickenGeom + wallThickenGeom, reoAlways:reoExtras+steps, conc:concSection(d,"<p class='small'>Concrete = area × thickness (area = L×W unless manually entered)</p>")+`<div class="grid cols3">${F("Beam / thickening concrete grade (N/MPa, blank = slab grade)",inpNum("beamGrade",d.beamGrade))}</div><p class="small">Edge beams, internal beams / raft ribs, edge and wall thickenings are often poured at a different grade to the slab — enter it here and every beam line carries it as its own concrete product (each beam group can also set its own grade on its tab). Blank keeps the slab grade.</p>`+concExtras,reo:reoMat,
    edgebeams: edgeBeamGeom + edgeBeamReoBlock + extraBeamGroupsSection(inst,d,"edgeBeamGroups"),
    intbeams: stripGeom + stripReoBlock + extraBeamGroupsSection(inst,d,"intBeamGroups"),
    form,
@@ -5128,7 +5135,7 @@ function computeSlab(inst,def){
       if(n>0){
         let lapPct=d.wallThickenLap?PROJECT.lapPct:0;
         let totLen=n*wRun, wt=totLen*massPerM(barDiaOf(dia));
-        lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:dia,spec:"Trimmer bars — thickening under load-bearing walls",qty:totLen,unit:"m",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,lapPct),formula:`${n} bars×${fmt(wRun,1)}m`,notes:`${fmt(wt,1)} kg`}));
+        lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",part:"beam",material:dia,spec:"Trimmer bars — thickening under load-bearing walls",qty:totLen,unit:"m",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,lapPct),formula:`${n} bars×${fmt(wRun,1)}m`,notes:`${fmt(wt,1)} kg`}));
       }
     }
   }
@@ -5284,14 +5291,14 @@ function computeSlab(inst,def){
       let type=d.retStripType||"4 Bar-L12TM";
       let mpm=trenchReoMassPerM(type,girthMm);
       let totLen=perim; let wt=totLen*mpm;
-      lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:type,spec:`Edge return / turn-down strip (bent, girth ${girthMm}mm)`,qty:totLen,unit:"lm",waste:PROJECT.reoWaste,lap:retLapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,retLapPct),massPerUnit:mpm,formula:`perimeter run ${fmt(perim,1)}m`,notes:`${fmt(wt,1)} kg`}));
+      lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",part:"extra",material:type,spec:`Edge return / turn-down strip (bent, girth ${girthMm}mm)`,qty:totLen,unit:"lm",waste:PROJECT.reoWaste,lap:retLapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,retLapPct),massPerUnit:mpm,formula:`perimeter run ${fmt(perim,1)}m`,notes:`${fmt(wt,1)} kg`}));
     } else {
       let retLapPct=d.retLap?PROJECT.lapPct:0; // bar laps at 8%
       let dia=barDiaOf(d.retDia);
       let count=Math.floor(perim*1000/num(d.retSpacing))+1;
       let barLen=girthMm/1000;
       let totLen=count*barLen; let wt=totLen*massPerM(dia);
-      lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.retDia,spec:"Edge return / turn-down bars",qty:totLen,unit:"m",waste:PROJECT.reoWaste,lap:retLapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,retLapPct),formula:`count(${count})×(2×turndown ${d.retTurndown}+leg ${d.retLeg})/1000`,notes:`${count} bars, ${fmt(wt,1)} kg`}));
+      lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",part:"extra",material:d.retDia,spec:"Edge return / turn-down bars",qty:totLen,unit:"m",waste:PROJECT.reoWaste,lap:retLapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,retLapPct),formula:`count(${count})×(2×turndown ${d.retTurndown}+leg ${d.retLeg})/1000`,notes:`${count} bars, ${fmt(wt,1)} kg`}));
     }
   }
   if(d.reentrantOn){
@@ -5310,19 +5317,19 @@ function computeSlab(inst,def){
         let reLap=d.reentrantLap?MESH_LAP_PCT:0;
         let wastedArea=withWasteLap(area,PROJECT.reoWaste,reLap);
         let sheets=Math.ceil(withWasteLap(corners,PROJECT.reoWaste,reLap)/perSheet-1e-9);
-        lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:type,spec:`Re-entrant corner mesh pieces (${num(d.reentrantLen,1200)}×${num(d.reentrantSheetW,600)} mm, ${corners} corner(s))`,qty:area,unit:"m²",waste:PROJECT.reoWaste,lap:reLap,finalQty:wastedArea,sheets,formula:`${corners} corners × ${fmt(lenM,2)}×${fmt(wM,2)}m (+${PROJECT.reoWaste}% waste${reLap?`, +${reLap}% lap`:''}) → ${perSheet} piece(s) per 6.0×2.4m sheet = ${sheets} sheet(s)`,notes:`${sheets} sheet(s), ≈${fmt(wastedArea*MESHTYPES[type],1)} kg`}));
+        lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",part:"extra",material:type,spec:`Re-entrant corner mesh pieces (${num(d.reentrantLen,1200)}×${num(d.reentrantSheetW,600)} mm, ${corners} corner(s))`,qty:area,unit:"m²",waste:PROJECT.reoWaste,lap:reLap,finalQty:wastedArea,sheets,formula:`${corners} corners × ${fmt(lenM,2)}×${fmt(wM,2)}m (+${PROJECT.reoWaste}% waste${reLap?`, +${reLap}% lap`:''}) → ${perSheet} piece(s) per 6.0×2.4m sheet = ${sheets} sheet(s)`,notes:`${sheets} sheet(s), ≈${fmt(wastedArea*MESHTYPES[type],1)} kg`}));
       } else if((d.reentrantMode||"bars")==="strip"){
         let type=d.reentrantStripType||"4 Bar-L12TM";
         let mpm=trenchReoMassPerM(type,num(d.reentrantStripW,300));
         let totLen=corners*lenM; let wt=totLen*mpm;
         let reLap=d.reentrantLap?MESH_LAP_PCT:0;
-        lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:type,spec:`Re-entrant corner strips (diagonal, ${corners} corner(s))`,qty:totLen,unit:"lm",waste:PROJECT.reoWaste,lap:reLap,finalQty:withWasteLap(totLen,PROJECT.reoWaste,reLap),massPerUnit:mpm,formula:`${corners} corners × ${fmt(lenM,2)}m strip (+${PROJECT.reoWaste}% waste${reLap?`, +${reLap}% lap`:''})`,notes:`${fmt(wt,1)} kg`}));
+        lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",part:"extra",material:type,spec:`Re-entrant corner strips (diagonal, ${corners} corner(s))`,qty:totLen,unit:"lm",waste:PROJECT.reoWaste,lap:reLap,finalQty:withWasteLap(totLen,PROJECT.reoWaste,reLap),massPerUnit:mpm,formula:`${corners} corners × ${fmt(lenM,2)}m strip (+${PROJECT.reoWaste}% waste${reLap?`, +${reLap}% lap`:''})`,notes:`${fmt(wt,1)} kg`}));
       } else {
         let dia=barDiaOf(d.reentrantDia);
         let per=Math.max(1,Math.round(num(d.reentrantPer,2)));
         let totLen=corners*per*lenM; let wt=totLen*massPerM(dia);
         let reLap=d.reentrantLap?PROJECT.lapPct:0;
-        lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.reentrantDia,spec:`Re-entrant corner bars (diagonal, ${corners} corner(s))`,qty:totLen,unit:"m",waste:PROJECT.reoWaste,lap:reLap,finalQty:withWasteLap(totLen,PROJECT.reoWaste,reLap),formula:`${corners} corners × ${per} bars × ${fmt(lenM,2)}m (+${PROJECT.reoWaste}% waste${reLap?`, +${reLap}% lap`:''})`,notes:`${corners*per} bars, ${fmt(wt,1)} kg`}));
+        lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",part:"extra",material:d.reentrantDia,spec:`Re-entrant corner bars (diagonal, ${corners} corner(s))`,qty:totLen,unit:"m",waste:PROJECT.reoWaste,lap:reLap,finalQty:withWasteLap(totLen,PROJECT.reoWaste,reLap),formula:`${corners} corners × ${per} bars × ${fmt(lenM,2)}m (+${PROJECT.reoWaste}% waste${reLap?`, +${reLap}% lap`:''})`,notes:`${corners*per} bars, ${fmt(wt,1)} kg`}));
       }
     }
   }
@@ -8432,7 +8439,7 @@ function reoMethodSection(inst){
     <button class="btn small" data-action="addRow" data-target="reoAreaRows">+ Add layer</button>`; })()}
   <div class="grid cols3">${chk("reoAreaLap",d.reoAreaLap,"Include lap allowance (%)","reoAreaLap")}</div>
   <p class="small reoRateHint">${reoRateHintText(inst.results&&inst.results.reoRate)}</p>
-  <p class="small">One row per layer, each with its own area, bar type, spacing and layout — a bottom mat of N12 @200 each way and a top mat of N16 @300 one way are two rows. Bar metres are taken per 1 m block and multiplied by the area: one direction 1 m ÷ spacing + 1 bars, the other 1 m ÷ spacing (the end bar is counted on one side only — 1 ÷ 0.2 = 5 + 1 and 5, 11 m per m² each way; one way takes the 5 + 1 alone). Leave an area blank to use the element's own plan area. One register line per layer replaces the slab's detailed mat lines; beam bars and ligatures (edge beams, internal strips, extra groups), starters, dowels and connections to other elements are always kept and counted.</p></div>
+  <p class="small">One row per layer, each with its own area, bar type, spacing and layout — a bottom mat of N12 @200 each way and a top mat of N16 @300 one way are two rows. Bar metres are taken per 1 m block and multiplied by the area: one direction 1 m ÷ spacing + 1 bars, the other 1 m ÷ spacing (the end bar is counted on one side only — 1 ÷ 0.2 = 5 + 1 and 5, 11 m per m² each way; one way takes the 5 + 1 alone). Leave an area blank to use the element's own plan area. One register line per layer replaces the slab's detailed mat lines (mesh and the four bar blocks) only; beam bars and ligatures (edge beams, internal strips, extra groups), edge return / turn-down bars, re-entrant corner bars, joints &amp; dowels, step-downs, starters and connections to other elements stay available below and are always counted.</p></div>
   <div class="subsec ${method==="rate"?'':'hidden'}" data-show-if="reoMethod_rate"><div class="grid cols4">
    ${F("Rate (kg of steel per m³ of concrete)",inpNum("reoRateKgM3",d.reoRateKgM3===undefined?100:d.reoRateKgM3))}
    ${F("Equivalent bar size",barSizeSel("reoRateDia",d.reoRateDia||"N16"))}
@@ -8447,6 +8454,8 @@ function reoRateHintText(rr){
   const lead=rr.basis==="area"? `${rr.layers} layer${rr.layers===1?"":"s"} — ${fmt(rr.metres,1)} m (${(rr.rows||[]).map((m,i)=>`${m.dia} ${fmt(m.metres,1)} m`).join(" · ")}) = ${fmt(rr.kg,1)} kg` : `${fmt(rr.kg,1)} kg of steel`;
   return `This element: ${lead} = ${both} (${fmt(rr.conc,2)} m³, ${rr.area>0?fmt(rr.area,2)+" m²":"area —"}).`;
 }
+/** The MAT a rate / area method replaces: a Reinforcement line that is neither beam steel (`part:"beam"`) nor a slab extra (`part:"extra"` — edge return, re-entrant corner bars). */
+function isMatLine(l){ return l.materialGroup==="Reinforcement" && l.part!=="beam" && l.part!=="extra"; }
 /** Concrete this element pours, blinding and reference pointers excluded — what a kg/m³ rate applies to. */
 function reoRateConcrete(lines){ return lines.filter(l=>l.materialGroup==="Concrete" && l.part!=="beam" && !/blind|reference only/i.test(l.spec||"") && !/reference only/i.test(l.material||"")).reduce((s,l)=>s+(l.qty||0),0); }
 /* By AREA: one row per LAYER — its own area (blank = the element's plan
@@ -8473,7 +8482,7 @@ function applyReoArea(inst,def,out){
   let d=inst.data, lines=out.lines||[];
   let conc=reoRateConcrete(lines), planArea=reoRateArea(d), lapPct=d.reoAreaLap?PROJECT.lapPct:0;
   let rows=reoAreaLayerRows(d).map(r=>reoAreaRowMetres(r,planArea));
-  out.lines=lines.filter(l=>l.materialGroup!=="Reinforcement" || l.part==="beam");   // the mat goes; beam bars and ligatures always count
+  out.lines=lines.filter(l=>!isMatLine(l));   // the mat goes; beam bars, ligatures and the slab's extras always count
   rows.forEach((m,i)=>{ if(!(m.metres>0)) return;
     out.lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:m.dia,spec:`Reinforcement by area — layer ${i+1}: ${m.dia} @${fmt(m.sp,0)} ${m.ways===1?"one way":"each way"} over ${fmt(m.area,2)} m²`,qty:m.metres,unit:"m",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(m.metres,PROJECT.reoWaste,lapPct),formula:m.formula,notes:`${fmt(m.kg,1)} kg · ${fmt(m.perM2,2)} m per m²`}));
   });
@@ -8486,8 +8495,8 @@ function applyReoRate(inst,def,out){
   let conc=reoRateConcrete(lines), area=reoRateArea(d);
   let rate=num(d.reoRateKgM3,100), dia=d.reoRateDia||"N16", kgm=massPerM(barDiaOf(dia));
   let kg=rate*conc, metres=kgm>0? kg/kgm : 0, lapPct=d.reoRateLap?PROJECT.lapPct:0;
-  let removed=lines.filter(l=>l.materialGroup==="Reinforcement").length;
-  out.lines=lines.filter(l=>l.materialGroup!=="Reinforcement" || l.part==="beam");   // the mat goes; beam bars and ligatures always count
+  let removed=lines.filter(isMatLine).length;
+  out.lines=lines.filter(l=>!isMatLine(l));   // the mat goes; beam bars, ligatures and the slab's extras always count
   out.lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:dia,spec:`Reinforcement by rate — ${fmt(rate,0)} kg/m³ as ${dia} equivalent`,qty:metres,unit:"m",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(metres,PROJECT.reoWaste,lapPct),formula:`${fmt(rate,0)} kg/m³ × ${fmt(conc,3)} m³ concrete = ${fmt(kg,1)} kg ÷ ${fmt(kgm,3)} kg/m (${dia})`,notes:`${fmt(kg,1)} kg — replaces ${removed} detailed line(s); connections kept`}));
   out.reoRate={rate,basis:"m3",conc,area,kg,metres,dia,kgPerM3:conc>0?kg/conc:0,kgPerM2:area>0?kg/area:0};
 }
@@ -8498,7 +8507,10 @@ function buildCard(inst){
   let parts=calc.render(inst,def);
   // Reinforcement method heads every Reinforcement tab; the calculator's own
   // detailing sits under it and hides when the element is priced by rate.
-  if(parts.reo!==undefined) parts.reo = reoMethodSection(inst) + `<div class="subsec ${reoMethodOf(inst.data)!=="detailed"?'hidden':''}" data-show-if="reoMethod_detailed">${parts.reo}</div>`;
+  // `parts.reoAlways` (the slab's edge return, re-entrant corner bars, joints
+  // & dowels, step-downs) sits OUTSIDE the method-gated block, so it shows
+  // and prices under every reinforcement method.
+  if(parts.reo!==undefined) parts.reo = reoMethodSection(inst) + `<div class="subsec ${reoMethodOf(inst.data)!=="detailed"?'hidden':''}" data-show-if="reoMethod_detailed">${parts.reo}</div>` + (parts.reoAlways||"");
   parts.conns = (parts.conns||"") + (usesSharedStarters(def)? startersSection(inst) : "") + renderExtraConnRows(inst);
   // Central additions available on EVERY element with the matching tab:
   // the formwork system/type choice heads every Formwork tab, and the

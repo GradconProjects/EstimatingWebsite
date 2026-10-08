@@ -1092,7 +1092,19 @@ element families waits on the owner's approval of the pad footing.
   head and the Results totals show the element's steel rate in kg/m³ and,
   wherever a plan area exists, kg/m² — whatever the method. (A kg-per-m²
   RATE basis existed for an hour on 6 Oct 2026 and was replaced by this at
-  Grady's "nope".)
+  Grady's "nope".) **Only the MAT is replaced** (8 Oct 2026, Grady: "i want
+  the re entrant bar option available too whether slab is calculated by
+  stock, volume or area. all other options available to slabs should be
+  available too"): `isMatLine(l)` is the ONE test of what a rate / area
+  method removes — a Reinforcement line that is neither `part:"beam"` nor
+  `part:"extra"`. `computeSlab` tags its edge return / turn-down bars or
+  strip and its re-entrant corner bars / strips / mesh pieces `part:"extra"`
+  (and the wall-thickening trimmers `part:"beam"`), so they price under
+  every method; `renderSlab` returns the mat (mesh + the four bar blocks) as
+  `parts.reo` and everything else on the tab (edge return, re-entrant,
+  joints & dowels, step-downs) as `parts.reoAlways`, which `buildCard`
+  appends AFTER the method-gated block so it is visible and editable under
+  "By rate" and "By area" too. `test-reo-extras-kept.mjs` proves it.
 - **Every calculator with a natural area publishes it** (`_autoAreaM2`,
   deleted by `computeInstance` before each compute and read FIRST by
   `autoGeometry`): a wall's face net of openings, a shotcrete face, a
