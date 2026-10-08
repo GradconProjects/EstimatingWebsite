@@ -995,9 +995,20 @@ element families waits on the owner's approval of the pad footing.
   whole number, blank = 1, the block's own `<prefix>Spacing`). `barMode(d,
   prefix)` is the ONE reading of the select (no value = spacing, so older
   takeoffs are unchanged) and `areaBarGeom(d, prefix)` the ONE arithmetic:
-  total length = area ÷ (spacing ÷ 1000) × layers, ONE direction per block
-  (a mat each way uses the X and Y blocks), waste and lap as for every bar
-  line, the spec reads "(area covered, N layers)". A blank area in that
+  the bars are COUNTED, never divided out (Grady, 8 Oct 2026: "include the
+  bar count +1 in the calculations rather than using l/spacing. it should
+  be l/spacing +1"): bars = floor(across ÷ spacing) + 1 (`areaBarCount`, the
+  same "+1" every spacing count in the file uses), each the other dimension
+  long, × layers, ONE direction per block (X bars run the length and are
+  spaced across the width; a mat each way uses the X and Y blocks).
+  `areaBarRun(area, dims, isPlan)` is the ONE reading of WHICH dimensions:
+  the slab's own L × W (`_autoPlanL` / `_autoPlanW`, published by
+  `computeSlab` for a plain rectangle and cleared by `computeInstance` before
+  every compute) when the area IS the slab's area (blank, or typed within 2%
+  of L × W), else a square of equal area (√A a side). Waste and lap as for
+  every bar line, the spec reads "(area covered, N layers)", the formula
+  shows the count. Before 8 Oct 2026 the total was area ÷ spacing (50 m² at
+  200 → 250 m; now 26 bars × 10 m = 260 m on a 10 × 5 slab). A blank area in that
   mode is a completeness warning and no line, never a silent zero
   (`computeSlab` now returns its own `warnings`). The Method select
   rerenders the card so only the chosen mode's fields show.
