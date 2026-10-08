@@ -1193,6 +1193,30 @@ element families waits on the owner's approval of the pad footing.
   joints & dowels, step-downs) as `parts.reoAlways`, which `buildCard`
   appends AFTER the method-gated block so it is visible and editable under
   "By rate" and "By area" too. `test-reo-extras-kept.mjs` proves it.
+- **A bar size's total counts its steel from EVERY group** (8 Oct 2026, Grady:
+  filtering N12 "the total should total the reinforcement, connections, etc"):
+  `isBarSteelLine(l)` in `estimates-app.html` is the ONE test — every
+  Reinforcement line, plus a Connections / Joints line that carries WEIGHT
+  (starter bars, column starters, step and joint dowels are N12 / N16 bought
+  from the same stock as the mat; a weightless line — "Drill & epoxy" holes,
+  PVC waterstop, counted joints, chairs — is never steel) — and `steelKg(lines)`
+  the ONE kg total built on it: the element head, group heads, the register
+  totals tile, `bpTotalsOf` and the PDF all read it, so "kg reo" is one number
+  everywhere. `summarizeReinforcement` folds those lines into `bars[size]`
+  with a per-group split (`by`, printed by `barSplitStr` in an "Of which"
+  column of both Reinforcement Summary tables only when a size came from more
+  than one group) and counts steel entered by weight (an Additional "50 kg of
+  N20" row) as kg with no metres. `estimates-orders.js` carries its own copy
+  of the test (exported `isBarSteelLine`): `reinforcementByProduct` and
+  `totalsOf` count the same lines and `procurementRuleFor` buys joint dowels
+  in whole bar stock lengths. `lineWeightKg` now weighs the `Joints` group
+  too (before this, joint dowels weighed 0 kg in every total while their
+  notes said otherwise). The kg/m³ sanity check and the kg/m³ · kg/m² rate
+  hint stay on the mat (design ratios, not an order). The Quotes bridge
+  already priced Reinforcement + Connections + Joints bars together on
+  PROCESSED BAR, so Estimates now agrees with what Quotes charges.
+  `test-steel-across-groups.mjs` proves it; `verify-estimates.mjs` covers the
+  module.
 - **Every calculator with a natural area publishes it** (`_autoAreaM2`,
   deleted by `computeInstance` before each compute and read FIRST by
   `autoGeometry`): a wall's face net of openings, a shotcrete face, a

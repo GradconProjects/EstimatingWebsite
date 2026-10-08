@@ -81,7 +81,7 @@
       return { id: "concrete", text: `Ordered in ${step} m³ steps, rounded up`, orderUnit: "m³",
         apply: (q) => ({ order: roundUpTo(q, step) }) };
     }
-    if (g === "Reinforcement" || g === "Connections") {
+    if (g === "Reinforcement" || g === "Connections" || (g === "Joints" && isBarSteelLine(line))) {
       if (c.isTrenchMesh(mat) && (unit === "lm" || unit === "m")) {
         const L = c.trenchStockM;
         return { id: "trench", text: `Whole ${L} m trench-mesh lengths, rounded up`, orderUnit: "lengths",
@@ -177,14 +177,25 @@
    *   mesh:[{product, m2, sheets, sheetAreaM2}],
    *   totals:{kg, tonnes, stockLengths, trenchLengths, sheets} }
    */
+  /* ONE test of bar steel, the app's `isBarSteelLine` mirrored: every Reinforcement line,
+   * plus a Connections / Joints line that carries weight (starters, dowels — bought from
+   * the same stock as the mat). Weightless lines (drill holes, waterstop) are never steel. */
+  const BAR_STEEL_GROUPS = ["Reinforcement", "Connections", "Joints"];
+  function isBarSteelLine(l) { return !!l && (l.materialGroup === "Reinforcement" || (BAR_STEEL_GROUPS.includes(l.materialGroup) && num(l.weightKg) > 0)); }
   function reinforcementByProduct(lines, ctx) {
     const c = defaultCtx(ctx);
     const bars = new Map(), trench = new Map(), strips = new Map(), mesh = new Map();
     const get = (m, k, init) => { let e = m.get(k); if (!e) { e = init(); m.set(k, e); } return e; };
     (lines || []).forEach((l) => {
-      if (!l || l.materialGroup !== "Reinforcement") return;
+      if (!isBarSteelLine(l)) return;
       const mat = String(l.material || "");
       const unit = l.unit || "";
+      if (l.materialGroup !== "Reinforcement") {
+        // a starter / dowel line: plain bar by the metre (or counted with its metres)
+        const e = get(bars, mat, () => ({ product: mat, lm: 0, kg: 0 }));
+        e.lm += unit === "no." ? num(l.lengthM) : unit === "kg" ? 0 : num(l.finalQty); e.kg += num(l.weightKg);
+        return;
+      }
       if (c.isTrenchMesh(mat) && (unit === "lm" || unit === "m")) {
         const e = get(trench, mat, () => ({ product: mat, lm: 0, kg: 0 }));
         e.lm += num(l.finalQty); e.kg += num(l.weightKg);
@@ -270,6 +281,7 @@
       switch (l.materialGroup) {
         case "Concrete": t.concreteM3 += q; break;
         case "Reinforcement": t.reoKg += num(l.weightKg); break;
+        case "Connections": case "Joints": if (isBarSteelLine(l)) t.reoKg += num(l.weightKg); break;
         case "Formwork": t.formworkM2 += q; break;
         case "Base/Blinding": t.blindM3 += q; break;
         case "Vapour Barrier": t.vapM2 += q; break;
@@ -326,6 +338,7 @@
     orderKeyOf,
     orderScheduleFrom,
     reinforcementByProduct,
+    isBarSteelLine,
     pourSchedule,
     totalsOf,
     linesFingerprint,

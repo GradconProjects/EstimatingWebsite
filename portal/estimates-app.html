@@ -2261,7 +2261,9 @@ function overrideKeyFor(materialGroup,material,spec){
 // as `unit`. Sheets/count lines (unit "sheets"/"no.") carry no weight of
 // their own — the weight is already counted on that line's paired area line.
 function lineWeightKg(materialGroup,material,unit,finalQty){
-  if(materialGroup!=="Reinforcement" && materialGroup!=="Connections") return 0;
+  // Joints carry the joint dowels (N-bar from the same stock as every Connections dowel);
+  // "PVC waterstop" and the counted joints have no bar size and fall to 0 below.
+  if(materialGroup!=="Reinforcement" && materialGroup!=="Connections" && materialGroup!=="Joints") return 0;
   if(unit==="m" || unit==="lm"){
     // Trench mesh is named by type ("6 Bar-L12TM"), not a plain bar diameter — check that
     // first, since the generic \d+ match below would otherwise grab the leading bar-count
@@ -8261,7 +8263,7 @@ function bpTotalsOf(inst){
   let sum = (grp, fld) => lines.filter(l=>l.materialGroup===grp).reduce((s,l)=>s+(fld==="kg"? (l.weightKg||0) : (l.finalQty||0)),0);
   let bv = blindingVapourTotals(lines);
   const allW=(out.warnings||[]);
-  return { conc:sum("Concrete"), reoKg:sum("Reinforcement","kg"), form:sum("Formwork"), exc:sum("Excavation"), blind:bv.blind||0, vap:bv.vap||0, lines:lines.length, warnings:allW.filter(w=>w.level!=="verify"), verify:allW.filter(w=>w.level==="verify") };
+  return { conc:sum("Concrete"), reoKg:steelKg(lines), form:sum("Formwork"), exc:sum("Excavation"), blind:bv.blind||0, vap:bv.vap||0, lines:lines.length, warnings:allW.filter(w=>w.level!=="verify"), verify:allW.filter(w=>w.level==="verify") };
 }
 function bpEsc(s){ return String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
 function renderBlueprintWorkspace(){
@@ -9207,13 +9209,33 @@ function computeInstance(inst){
   out.warnings = normaliseWarnings(out.warnings).concat(validateInstance(inst, def, out));
   return out;
 }
+/* ONE test of "this line is bar steel" wherever a bar size is totalled (8 Oct 2026,
+ * Grady: filtering N12 "the total should total the reinforcement, connections, etc"):
+ * every Reinforcement line, plus a Connections / Joints line that carries WEIGHT —
+ * starter bars, column starters, step and joint dowels are N12 / N16 bought from the
+ * same stock as the mat. A weightless line ("Drill & epoxy" holes, PVC waterstop,
+ * counted joints, chairs) is never steel. `steelKg` is the ONE kg total built on it:
+ * the element head, group heads, the register totals, the blueprint totals, the PDF
+ * and (its own copy) the orders module all read it, so "kg reo" is one number. */
+const BAR_STEEL_GROUPS=["Reinforcement","Connections","Joints"];
+function isBarSteelLine(l){ return !!l && (l.materialGroup==="Reinforcement" || (BAR_STEEL_GROUPS.includes(l.materialGroup) && num(l.weightKg)>0)); }
+function steelKg(lines){ return (lines||[]).reduce((s,l)=>s+(isBarSteelLine(l)? num(l.weightKg):0),0); }
 function summarizeReinforcement(lines){
   let bars={}, mesh={}, strips={};
+  // bars[size] = {lm, kg, by:{<material group>:{lm,kg}}} — the split shows where the
+  // metres came from (mat vs starters / dowels) without ever being a second total.
+  const bar=(l,lm)=>{ let e=bars[l.material]||(bars[l.material]={lm:0,kg:0,by:{}}); const kg=num(l.weightKg); e.lm+=lm; e.kg+=kg; const g=l.materialGroup||"(none)"; const b=e.by[g]||(e.by[g]={lm:0,kg:0}); b.lm+=lm; b.kg+=kg; };
   lines.forEach(l=>{
-    if(l.materialGroup!=="Reinforcement") return;
+    if(!l) return;
+    if(l.materialGroup!=="Reinforcement"){
+      if(isBarSteelLine(l)) bar(l, l.unit==="no."? num(l.lengthM) : l.unit==="kg"? 0 : num(l.finalQty));
+      return;
+    }
     if(l.unit==="m"){
-      let e=bars[l.material]||(bars[l.material]={lm:0,kg:0});
-      e.lm+=l.finalQty; e.kg+=(l.weightKg||0);
+      bar(l, num(l.finalQty));
+    } else if(l.unit==="kg" && num(l.weightKg)>0){
+      // steel entered by weight (an Additional "50 kg of N20" row) — kg only, no metres
+      bar(l, 0);
     } else if(l.unit==="m²"){
       let e=mesh[l.material]||(mesh[l.material]={area:0,sheets:0});
       e.area+=l.finalQty; e.sheets+=(l.sheets!==undefined? l.sheets : Math.ceil(l.finalQty/MESH_SHEET_AREA_M2));
@@ -9224,12 +9246,14 @@ function summarizeReinforcement(lines){
     } else if(l.unit==="no." && (l.weightKg||l.lengthM)){
       // ligatures/stirrups/ties — counted in no., but they're cut from the
       // same bar stock, so their metres and kg join that bar size's totals
-      let e=bars[l.material]||(bars[l.material]={lm:0,kg:0});
-      e.lm+=(l.lengthM||0); e.kg+=(l.weightKg||0);
+      bar(l, num(l.lengthM));
     }
   });
   return {bars,mesh,strips};
 }
+/* "Reinforcement 660.67 lm · Connections 79.54 lm" — only when a bar size came from
+   more than one group; one group = nothing to split. */
+function barSplitStr(e){ const ks=Object.keys(e.by||{}); if(ks.length<2) return ""; const gi=(g)=>{ const i=BAR_STEEL_GROUPS.indexOf(g); return i<0? BAR_STEEL_GROUPS.length : i; }; return ks.sort((a,b)=>gi(a)-gi(b)||a.localeCompare(b)).map(g=>`${g} ${fmt(e.by[g].lm,2)} lm / ${fmt(e.by[g].kg,1)} kg`).join(' · '); }
 // Per-type decomposition of a set of lines' reinforcement, with the ordering
 // quantity ALONGSIDE the kg: bars and trench strips in lm, sheet mesh in m²
 // (+ sheet count). Bar/strip kg still sums exactly to the lump register kg
@@ -9331,7 +9355,7 @@ function refreshCardResults(card,inst){
   let host=card.querySelector('.resultsHost');
   let totC=out.lines.filter(l=>l.materialGroup==="Concrete").reduce((s,l)=>s+l.finalQty,0);
   let ft=formworkTotals(out.lines), totF=ft.m2;
-  let totR=out.lines.filter(l=>l.materialGroup==="Reinforcement").reduce((s,l)=>s+(l.weightKg||0),0);
+  let totR=steelKg(out.lines);
   let bv=blindingVapourTotals(out.lines);
   let headStats=card.querySelector('.headStats');
   const planArea=reoRateArea(inst.data), reoRateStr=totR>0? ` (${totC>0?`${fmt(totR/totC,0)} kg/m³`:''}${totC>0&&planArea>0?' · ':''}${planArea>0?`${fmt(totR/planArea,1)} kg/m²`:''})` : '';
@@ -9352,10 +9376,10 @@ function refreshCardResults(card,inst){
   let summaryHtml = (barKeys.length||meshKeys.length)? `
    <div class="subsec"><div class="sechead">Reinforcement Summary — by bar size / mesh type (one line per size, not repeated per use)</div>
    <div style="display:flex;gap:16px;flex-wrap:wrap;">
-   ${barKeys.length? `<table class="results" style="width:auto;min-width:260px;"><thead><tr><th>Bar</th><th>Total (lm)</th><th>Total (kg)</th></tr></thead>
-     <tbody>${barKeys.map(m=>`<tr><td>${m}</td><td style="text-align:right;">${fmt(bars[m].lm,2)}</td><td style="text-align:right;">${fmt(bars[m].kg,1)}</td></tr>`).join('')}
-     <tr style="font-weight:700;"><td>Total</td><td style="text-align:right;">${fmt(barKeys.reduce((s,m)=>s+bars[m].lm,0),2)}</td><td style="text-align:right;">${fmt(barKeys.reduce((s,m)=>s+bars[m].kg,0),1)}</td></tr>
-   </tbody></table>` : ''}
+   ${barKeys.length? (()=>{ const split=barKeys.some(m=>barSplitStr(bars[m])); return `<table class="results" style="width:auto;min-width:260px;"><thead><tr><th>Bar</th><th>Total (lm)</th><th>Total (kg)</th>${split?'<th>Of which</th>':''}</tr></thead>
+     <tbody>${barKeys.map(m=>`<tr><td>${m}</td><td style="text-align:right;">${fmt(bars[m].lm,2)}</td><td style="text-align:right;">${fmt(bars[m].kg,1)}</td>${split?`<td class="small" style="opacity:.8;">${bpEsc(barSplitStr(bars[m]))}</td>`:''}</tr>`).join('')}
+     <tr style="font-weight:700;"><td>Total</td><td style="text-align:right;">${fmt(barKeys.reduce((s,m)=>s+bars[m].lm,0),2)}</td><td style="text-align:right;">${fmt(barKeys.reduce((s,m)=>s+bars[m].kg,0),1)}</td>${split?'<td></td>':''}</tr>
+   </tbody></table>`; })() : ''}
    ${meshKeys.length? `<table class="results" style="width:auto;min-width:260px;"><thead><tr><th>Mesh</th><th>Area (m²)</th><th>Sheets</th></tr></thead>
      <tbody>${meshKeys.map(m=>`<tr><td>${m}</td><td style="text-align:right;">${fmt(mesh[m].area,2)}</td><td style="text-align:right;">${mesh[m].sheets}</td></tr>`).join('')}
      <tr style="font-weight:700;"><td>Total</td><td style="text-align:right;">${fmt(meshKeys.reduce((s,m)=>s+mesh[m].area,0),2)}</td><td style="text-align:right;">${meshKeys.reduce((s,m)=>s+mesh[m].sheets,0)}</td></tr>
@@ -9619,7 +9643,7 @@ function renderRegisterTable(){
     const inst=mode==="element"? INSTANCES.find(i=>i.id===key) : null;
     let collapsed=REG_GROUP_COLLAPSED[mode+":"+key]===true;
     let totC=glines.filter(l=>l.materialGroup==="Concrete").reduce((s,l)=>s+l.finalQty,0);
-    let totR=glines.filter(l=>l.materialGroup==="Reinforcement").reduce((s,l)=>s+(l.weightKg||0),0);
+    let totR=steelKg(glines);
     let gft=formworkTotals(glines), totF=gft.m2;
     let gbv=blindingVapourTotals(glines);
     let typeStr=reoTypeBreakdownStr(glines);
@@ -9676,12 +9700,12 @@ function renderRegisterTable(){
     let {bars,mesh,strips}=summarizeReinforcement(filtered);
     let barKeys=Object.keys(bars).sort(), meshKeys=Object.keys(mesh).sort(), stripKeys=Object.keys(strips).sort();
     reoSummaryHost.innerHTML = (barKeys.length||meshKeys.length||stripKeys.length)? `
-     <div class="sechead">Reinforcement Summary — ${filtered.length===lines.length?'project-wide':'filtered rows'}, by bar size / mesh type (one line per size, not repeated per element)</div>
+     <div class="sechead">Reinforcement Summary — ${filtered.length===lines.length?'project-wide':'filtered rows'}, by bar size / mesh type (one line per size, not repeated per element — the mat, starters, dowels and ligatures of a size all count)</div>
      <div style="display:flex;gap:16px;flex-wrap:wrap;">
-     ${barKeys.length? `<table class="results" style="width:auto;min-width:260px;"><thead><tr><th>Bar</th><th>Total (lm)</th><th>Total (kg)</th></tr></thead>
-       <tbody>${barKeys.map(m=>`<tr><td>${m}</td><td style="text-align:right;">${fmt(bars[m].lm,2)}</td><td style="text-align:right;">${fmt(bars[m].kg,1)}</td></tr>`).join('')}
-       <tr style="font-weight:700;"><td>Total</td><td style="text-align:right;">${fmt(barKeys.reduce((s,m)=>s+bars[m].lm,0),2)}</td><td style="text-align:right;">${fmt(barKeys.reduce((s,m)=>s+bars[m].kg,0),1)}</td></tr>
-     </tbody></table>` : ''}
+     ${barKeys.length? (()=>{ const split=barKeys.some(m=>barSplitStr(bars[m])); return `<table class="results" style="width:auto;min-width:260px;" data-testid="reg-reo-bars"><thead><tr><th>Bar</th><th>Total (lm)</th><th>Total (kg)</th>${split?'<th>Of which (reinforcement · connections · joints)</th>':''}</tr></thead>
+       <tbody>${barKeys.map(m=>`<tr data-bar="${bpEsc(m)}"><td>${m}</td><td style="text-align:right;">${fmt(bars[m].lm,2)}</td><td style="text-align:right;">${fmt(bars[m].kg,1)}</td>${split?`<td class="small" style="opacity:.8;">${bpEsc(barSplitStr(bars[m]))}</td>`:''}</tr>`).join('')}
+       <tr style="font-weight:700;"><td>Total</td><td style="text-align:right;">${fmt(barKeys.reduce((s,m)=>s+bars[m].lm,0),2)}</td><td style="text-align:right;">${fmt(barKeys.reduce((s,m)=>s+bars[m].kg,0),1)}</td>${split?'<td></td>':''}</tr>
+     </tbody></table>`; })() : ''}
      ${stripKeys.length? `<table class="results" style="width:auto;min-width:260px;"><thead><tr><th>Trench mesh / strips</th><th>Total (lm)</th><th>Total (kg)</th></tr></thead>
        <tbody>${stripKeys.map(m=>`<tr><td>${m}</td><td style="text-align:right;">${fmt(strips[m].lm,2)}</td><td style="text-align:right;">${fmt(strips[m].kg,1)}</td></tr>`).join('')}
        <tr style="font-weight:700;"><td>Total</td><td style="text-align:right;">${fmt(stripKeys.reduce((s,m)=>s+strips[m].lm,0),2)}</td><td style="text-align:right;">${fmt(stripKeys.reduce((s,m)=>s+strips[m].kg,0),1)}</td></tr>
@@ -9693,7 +9717,7 @@ function renderRegisterTable(){
      </div>` : '';
   }
   let totals=document.getElementById("registerTotals");
-  const statsOf=(set)=>{ const concrete=set.filter(l=>l.materialGroup==="Concrete").reduce((s,l)=>s+l.finalQty,0), reoKg=set.filter(l=>l.materialGroup==="Reinforcement").reduce((s,l)=>s+(l.weightKg||0),0), ft=formworkTotals(set), es=excavationSpoilTotals(set), bv=blindingVapourTotals(set); return {concrete,reoKg,form:ft.m2,ft,es,bv,n:set.length}; };
+  const statsOf=(set)=>{ const concrete=set.filter(l=>l.materialGroup==="Concrete").reduce((s,l)=>s+l.finalQty,0), reoKg=steelKg(set), ft=formworkTotals(set), es=excavationSpoilTotals(set), bv=blindingVapourTotals(set); return {concrete,reoKg,form:ft.m2,ft,es,bv,n:set.length}; };
   const block=(st,label)=>`${label?`<div class="reg-totals-label">${label}</div>`:''}<div class="stat"><div class="n">${fmt(st.concrete,2)}</div><div class="l">m³ concrete</div></div>
    <div class="stat"><div class="n">${fmt(st.reoKg,1)}</div><div class="l">kg reinforcement</div></div>
    <div class="stat"><div class="n">${fmt(st.reoKg/1000,2)}</div><div class="l">tonnes reinforcement</div></div>
@@ -10099,7 +10123,7 @@ function exportPDF(){
   orientStyle.textContent = "@media print{@page{size:A4 "+orient+";}}";
   let lines=allLines();
   let concrete=lines.filter(l=>l.materialGroup==="Concrete").reduce((s,l)=>s+l.finalQty,0);
-  let reoKg=lines.filter(l=>l.materialGroup==="Reinforcement").reduce((s,l)=>s+(l.weightKg||0),0);
+  let reoKg=steelKg(lines);
   let pdfFt=formworkTotals(lines), form=pdfFt.m2;
   let pdfEs=excavationSpoilTotals(lines);
   let pdfBv=blindingVapourTotals(lines);

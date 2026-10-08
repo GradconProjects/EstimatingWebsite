@@ -163,6 +163,10 @@ console.log("\nOrders, pour schedule and reconciliation (portal/estimates-orders
     L({ materialGroup: "Reinforcement", material: "N16", unit: "m", qty: 100, finalQty: 110, weightKg: 110 * 256 / 162 }),
     L({ materialGroup: "Reinforcement", material: "N16", unit: "no.", qty: 40, finalQty: 42, lengthM: 30, weightKg: 30 * 256 / 162, spec: "Ligatures" }),
     L({ materialGroup: "Reinforcement", material: "N12", unit: "m", qty: 23.5, finalQty: 24.5, weightKg: 24.5 * 144 / 162 }),
+    L({ materialGroup: "Connections", material: "N12", unit: "m", qty: 10, finalQty: 10.5, weightKg: 10.5 * 144 / 162, spec: "Starters" }),
+    L({ materialGroup: "Joints", material: "N12", unit: "m", qty: 2, finalQty: 2.1, weightKg: 2.1 * 144 / 162, spec: "Joint dowels" }),
+    L({ materialGroup: "Connections", material: "Drill & epoxy", unit: "no.", qty: 20, finalQty: 20, weightKg: 0 }),
+    L({ materialGroup: "Joints", material: "PVC waterstop", unit: "m", qty: 30, finalQty: 31.5, weightKg: 0 }),
     L({ materialGroup: "Reinforcement", material: "SL82", unit: "m²", qty: 100, finalQty: 115, sheets: 8 }),
     L({ materialGroup: "Reinforcement", material: "SL82", unit: "m²", qty: 20, finalQty: 23, sheets: 2, elementId: "E2" }),
     L({ materialGroup: "Reinforcement", material: "6 Bar-L12TM", unit: "lm", qty: 50, finalQty: 55, weightKg: 55 * 32.8 / 6 }),
@@ -178,7 +182,7 @@ console.log("\nOrders, pour schedule and reconciliation (portal/estimates-orders
   const row = (mat, unit) => rows.find((r) => r.material === mat && (!unit || r.unit === unit));
   check("order schedule key keeps the group::material::unit format the saved ticks use", rows.every((r) => r.key === r.group + "::" + r.material + "::" + r.unit));
   check("a zero line is skipped", !rows.some((r) => r.elements.includes("E9")));
-  check("group order: excavation first, concrete before reinforcement before formwork", rows.map((r) => r.group).join(",").replace(/(\w[\w\/ ]*)(,\1)+/g, "$1") === "Excavation,Base/Blinding,Vapour Barrier,Concrete,Reinforcement,Formwork");
+  check("group order: excavation first, concrete before reinforcement before formwork", rows.map((r) => r.group).join(",").replace(/(\w[\w\/ ]*)(,\1)+/g, "$1") === "Excavation,Base/Blinding,Vapour Barrier,Concrete,Reinforcement,Connections,Formwork,Joints");
   const n32 = row("N32 concrete");
   check("concrete: net 11.5, adjusted 13.65, order 13.8 (0.2 m³ steps) with the rule text", n32 && Math.abs(n32.net - 11.5) < 1e-9 && Math.abs(n32.adjusted - 13.65) < 1e-9 && n32.order === 13.8 && /0\.2 m³ steps/.test(n32.rule), n32 && JSON.stringify([n32.net, n32.adjusted, n32.order]));
   check("concrete row lists both elements", n32 && n32.elements.join() === "E1,E2");
@@ -196,7 +200,10 @@ console.log("\nOrders, pour schedule and reconciliation (portal/estimates-orders
   check("net never equals adjusted where waste applies, and order ≥ adjusted on every row", rows.every((r) => (r.ruleId === "bar" || r.ruleId === "trench" || r.ruleId === "strip" || r.ruleId === "mesh") ? true : r.order + 1e-9 >= r.adjusted) && n32.net < n32.adjusted);
 
   const rp = O.reinforcementByProduct(lines, ctx);
-  check("reinforcement by product: N16 joins bars + ligature metres (140 m → 12 lengths), N12 24.5 m → 3", rp.bars.find((b) => b.product === "N16").stockLengths === 12 && rp.bars.find((b) => b.product === "N12").stockLengths === 3);
+  check("reinforcement by product: N16 joins bars + ligature metres (140 m → 12 lengths), N12 mat + starters + joint dowels 37.1 m → 4", rp.bars.find((b) => b.product === "N16").stockLengths === 12 && rp.bars.find((b) => b.product === "N12").stockLengths === 4 && Math.abs(rp.bars.find((b) => b.product === "N12").lm - 37.1) < 1e-9);
+  check("bar steel is ONE test: Reinforcement always; Connections / Joints only with weight (holes and waterstop never)", lines.filter(O.isBarSteelLine).length === 9 && !O.isBarSteelLine(lines.find((l) => l.material === "Drill & epoxy")) && !O.isBarSteelLine(lines.find((l) => l.material === "PVC waterstop")));
+  check("register kg total counts the starters and joint dowels (N12 37.1 m) and nothing weightless", Math.abs(O.totalsOf(lines).reoKg - (140 * 256 / 162 + 37.1 * 144 / 162 + 55 * 32.8 / 6 + 4)) < 1e-6);
+  check("order schedule: joint dowels buy whole bar stock lengths like every other N12", row("N12", "m") && /stock lengths/.test(row("N12", "m").rule) && rows.find((r) => r.group === "Joints" && r.material === "N12") && /stock lengths/.test(rows.find((r) => r.group === "Joints" && r.material === "N12").rule));
   check("bars sorted numerically by diameter", rp.bars.map((b) => b.product).join() === "N12,N16");
   check("trench, strips and sheet mesh grouped separately", rp.trench.length === 1 && rp.trench[0].lengths === 10 && rp.strips.length === 1 && rp.mesh.length === 1 && rp.mesh[0].sheets === 10);
   check("kg total equals the register's reinforcement kg (sheet mesh weightless)", Math.abs(rp.totals.kg - O.totalsOf(lines).reoKg) < 1e-9);
