@@ -31,6 +31,7 @@ const TABLE = "estimator_kv";
 export function useStoredState(key, initial, { cacheFirst = false } = {}) {
   const [value, setValue] = useState(initial);
   const [status, setStatus] = useState("loading");
+  const [loaded, setLoaded] = useState(false);
   const loadedRef = useRef(false);
   const saveTimer = useRef(null);
   // True from the moment a debounced save's timer fires until its upsert
@@ -102,10 +103,20 @@ export function useStoredState(key, initial, { cacheFirst = false } = {}) {
   // key has already been switched to.
   useEffect(() => {
     let cancelled = false;
+    let loadRetry = null;
+    let loadAttempt = 0;
     loadedRef.current = false;
+    setLoaded(false);
     setStatus("loading");
 
-    (async () => {
+    const load = async () => {
+      // True when the row could not be read AND no last-known copy stands in
+      // for it. The hook then stays NOT loaded — an edit made now would be
+      // saved as the whole value (the blank default plus the edit) over the
+      // real row — and the read is retried with the save back-off. 9 Oct 2026:
+      // the Estimates app lost an 18-element takeoff to exactly this shape of
+      // failure (a timed-out fetch read as "nothing there").
+      let loadFailed = false;
       if (supabaseEnabled) {
         // Cache-first: show the last-known copy straight away. From here on
         // the hook is "loaded" — an edit made while the real row is still in
@@ -132,7 +143,7 @@ export function useStoredState(key, initial, { cacheFirst = false } = {}) {
         try {
           const { data, error } = await supabase.from(TABLE).select("value, updated_at").eq("key", key).maybeSingle();
           if (cancelled) return;
-          if (error) setStatus("error");
+          if (error) { setStatus("error"); loadFailed = !fromMirror; }
           else if (fromMirror && localEditPending()) {
             // A local edit is sitting in the debounce window — it is about to
             // be saved on top of whatever is remote, so applying the fetched
@@ -153,7 +164,7 @@ export function useStoredState(key, initial, { cacheFirst = false } = {}) {
             }
           }
         } catch {
-          if (!cancelled) setStatus("error");
+          if (!cancelled) { setStatus("error"); loadFailed = !fromMirror; }
         }
       } else if (typeof window === "undefined" || !window.localStorage) {
         setStatus("unavailable");
@@ -166,11 +177,21 @@ export function useStoredState(key, initial, { cacheFirst = false } = {}) {
           setStatus("error");
         }
       }
-      if (!cancelled) loadedRef.current = true;
-    })();
+      if (cancelled) return;
+      if (loadFailed) {
+        const delay = RETRY_DELAYS_MS[Math.min(loadAttempt, RETRY_DELAYS_MS.length - 1)];
+        loadAttempt += 1;
+        loadRetry = setTimeout(load, delay);
+        return;                       // not loaded: no save can run, the editor stays gated
+      }
+      loadedRef.current = true;
+      setLoaded(true);
+    };
+    load();
 
     return () => {
       cancelled = true;
+      if (loadRetry) clearTimeout(loadRetry);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
@@ -391,5 +412,8 @@ export function useStoredState(key, initial, { cacheFirst = false } = {}) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
 
-  return [value, setValue, status, saveNow];
+  // `loaded` is false until the stored row (or a last-known copy) has been
+  // read; a caller showing an editable view must gate on it, not on status
+  // alone — status "error" also covers a failed SAVE of a loaded value.
+  return [value, setValue, status, saveNow, loaded];
 }

@@ -1239,17 +1239,27 @@ function saveProjectsIndex(idx){
  * four apps, so a workspace saved on one computer shows up on another automatically. */
 const SUPABASE_URL = "https://xbmyhvrcuyapoarmchpv.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_Kr4dTFXhZsifAA28HmMAVQ_EDSR2DL0";
+/* kvFetch answers one of THREE things, and every caller must keep them apart:
+ *   a row            — the cloud copy;
+ *   null             — the cloud answered and there is NO row under that key;
+ *   KV_FETCH_FAILED  — the cloud could not be asked (timeout, offline, a
+ *                      saturated uplink, a 5xx). Nothing is known.
+ * 9 Oct 2026, 145 Harrisons Road: the Quotes tab was uploading a 7.5 MB row,
+ * this fetch timed out, syncFromCloud read the null as "nothing in the cloud"
+ * and pushed the blank placeholder over an 18-element takeoff. */
+const KV_FETCH_FAILED = Object.freeze({ failed: true });
 async function kvFetch(key){
   try{
     const res = await fetch(`${SUPABASE_URL}/rest/v1/estimator_kv?key=eq.${encodeURIComponent(key)}&select=value,updated_at`, {
       headers:{ apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` },
       signal: AbortSignal.timeout(8000), // fail fast on a dead/slow connection rather than hang
     });
-    if(!res.ok) return null;
+    if(!res.ok) return KV_FETCH_FAILED;
     const rows = await res.json();
     return rows[0] || null;
-  }catch(e){ return null; }
+  }catch(e){ return KV_FETCH_FAILED; }
 }
+function kvFetchFailed(row){ return row === KV_FETCH_FAILED; }
 async function kvPush(key, value){
   try{
     const res = await fetch(`${SUPABASE_URL}/rest/v1/estimator_kv`, {
@@ -1348,9 +1358,23 @@ async function pushTakeoffOnce(key, snapshot){
   const h = snapshotHash(snapshot);
   if(LAST_CLOUD_HASH[key] === h) return null;   // identical to the cloud copy already: no echo write, no cross-tab ping-pong
   let since = null; try{ since = localStorage.getItem(key+"__syncedAt"); }catch(e){}
+  if(!since){
+    // This tab has never synced this key, so the write below would be an
+    // unconditional upsert. Look first: a blank workspace must never replace
+    // a takeoff this tab has not seen, and nothing is written while the
+    // cloud cannot be asked at all.
+    const existing = await kvFetch(key);
+    if(kvFetchFailed(existing)) return null;
+    if(existing && existing.value && (existing.value.instances||[]).length && !(snapshot.instances||[]).length){
+      await keepEstimateVersion(key, existing.value, "cloud-kept");
+      try{ console.warn("Estimates: not writing an empty takeoff over the cloud copy of", key, "— kept it as a version"); }catch(e){}
+      return null;
+    }
+  }
   let row = since ? await kvPatchIfUnchanged(key, snapshot, since) : await kvPush(key, snapshot);
   if(row === PUSH_CONFLICT){
     const theirs = await kvFetch(key);
+    if(kvFetchFailed(theirs)) return null;   // cannot see what is there: never write blind; the next save tries again
     if(theirs && theirs.value && !sameTakeoff(theirs.value, snapshot)){
       await keepEstimateVersion(key, theirs.value, "other-device");
       notifySyncConflict(theirs.updated_at);
@@ -1545,8 +1569,15 @@ function saveEstimateState(skipHistory){
   // "my save has no elements" bug.)
   const keyAtSave = CURRENT_PROJECT_KEY;
   if(inRecovery(keyAtSave)){ showSaveStatus("err"); return; }   // read-only: never write over what we could not read
+  // A fresh browser's workspace is a PLACEHOLDER until the cloud copy has
+  // been checked (awaitingCloudLoad). The auto path (computeAllAndRefresh
+  // fires this on boot and on every edit) must not commit an empty one: it
+  // would write a blank blob locally, lift the hold, and queue a push of
+  // nothing. A deliberate 💾 Save, or real content, still commits.
+  const placeholder = awaitingCloudLoad && INSTANCES.length===0 && !(PROJECT.name||"").trim();
+  if(placeholder && skipHistory) return;
   const snapshot = estimateStateSnapshot();
-  awaitingCloudLoad = false; // an explicit save commits the in-memory state
+  awaitingCloudLoad = false; // an explicit save (or real content) commits the in-memory state
   registerDraftIfNeeded();   // a draft with content earns its saved-list entry now
   try{
     localStorage.setItem(keyAtSave, JSON.stringify({ ...snapshot, savedAt: new Date().toISOString() }));
@@ -1648,6 +1679,12 @@ function loadEstimateState(){
 // load, on regaining focus, and on a slow poll. Never overwrites a local edit that's
 // newer than the cloud copy; seeds the cloud from local state if nothing's there yet.
 let syncingFromCloud = false;
+let cloudRetryTimer = null;
+function scheduleCloudRetry(){
+  if(cloudRetryTimer) return;
+  cloudRetryTimer = setTimeout(()=>{ cloudRetryTimer = null; syncFromCloud(); }, 15000);
+  try{ console.warn("Estimates: cloud copy of", CURRENT_PROJECT_KEY, "could not be fetched — nothing is pushed until it has been; retrying in 15 s"); }catch(e){}
+}
 async function syncFromCloud(){
   if(syncingFromCloud) return;
   syncingFromCloud = true;
@@ -1656,8 +1693,15 @@ async function syncFromCloud(){
     await syncProjectsIndexFromCloud();
     const row = await kvFetch(keyAtStart);
     if(CURRENT_PROJECT_KEY !== keyAtStart) return;
+    if(kvFetchFailed(row)){
+      // The cloud could not be asked. That is NOT "nothing there": this tab
+      // stays unreconciled (no push can leave it), a placeholder stays held
+      // from autosave, and the question is asked again shortly.
+      scheduleCloudRetry();
+      return;
+    }
     if(!row){
-      // Nothing in the cloud either — the fresh state IS this takeoff's state.
+      // The cloud answered: no row under this key — the fresh state IS this takeoff's state.
       if(CURRENT_PROJECT_KEY === keyAtStart) awaitingCloudLoad = false;
       try{ localStorage.removeItem(keyAtStart+"__syncedAt"); }catch(e){}
       CLOUD_RECONCILED_KEY = keyAtStart; delete PENDING_CLOUD_PUSH[keyAtStart];

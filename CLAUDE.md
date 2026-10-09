@@ -756,6 +756,34 @@ and the first tab pulled it back within six seconds):
    and on every conflict. `📁 Projects ▾` lists them with restore. Nothing
    deletes a version. `scratchpad`'s `test-sync-safety.mjs` proves all three
    with two browsers on a mock cloud; keep it passing.
+4. **A cloud fetch that FAILS is never "nothing in the cloud"** (9 Oct 2026,
+   145 Harrisons Road: the Quotes tab was uploading a 7.5 MB row, the
+   Estimates fetch of the open takeoff timed out at 8 s, `syncFromCloud` read
+   the `null` as "no row" and pushed the blank placeholder over an
+   18-element takeoff — restored from its 06:58 autosave version). `kvFetch`
+   answers one of THREE things: a row, `null` (the cloud answered: no row),
+   or `KV_FETCH_FAILED` (`kvFetchFailed(row)`: timeout, offline, 5xx — nothing
+   is known). On failure `syncFromCloud` leaves the tab unreconciled (so no
+   push can leave it), keeps a placeholder held from autosave, and
+   `scheduleCloudRetry` asks again in 15 s; only a positive "no row" seeds the
+   cloud from local state. `pushTakeoffOnce` with no `__syncedAt` stamp (this
+   tab never synced the key) looks first and never writes blind: a failed
+   look is no write, and a blank snapshot never replaces a cloud copy that
+   has elements (kept as a `cloud-kept` version instead). Every other
+   `kvFetch` caller treats the sentinel as "no row" harmlessly (it has no
+   `.value`). A fresh browser's workspace is a PLACEHOLDER until that first
+   answer (`awaitingCloudLoad`): `saveEstimateState` through the auto path
+   (`computeAllAndRefresh` fires it on boot and on every edit) never commits
+   an empty, unnamed placeholder — before this the boot recompute wrote a
+   blank blob locally and lifted the hold before the cloud was even asked.
+   `test-cloud-fetch-fail.mjs` proves all of it with a mock cloud whose fetch
+   fails first and succeeds later. **The Quotes hook has the same rule**
+   (`useStoredState`, 5th return `loaded`): a row that cannot be read, with
+   no last-known copy standing in, leaves the hook NOT loaded — no save can
+   run, the read retries on the save back-off — and `ProjectEditor` shows
+   "could not be loaded … writes nothing until it has loaded" instead of an
+   editable blank quote that the next keystroke would save as the whole
+   project. `test-quote-load-fail.mjs` proves it.
 
 ## Estimates provenance and status (Phase 2)
 

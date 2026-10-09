@@ -510,7 +510,7 @@ export default function App() {
 }
 
 function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, ratesStatus, saveProjectsNow, onBack, isDraft, onPromote, elementTypes, categoryOrder, sectionOrder, customTypes, setCustomTypes }) {
-  const [quote, setQuote, quoteStatus, saveQuoteNow] = useStoredState(project.storageKey, blankQuote());
+  const [quote, setQuote, quoteStatus, saveQuoteNow, quoteLoaded] = useStoredState(project.storageKey, blankQuote());
 
   /* ---- Pinned rates on a finished project (see lib/rateFreeze.js) ----
    * A project in a locked status costs off ITS OWN copy of the rates, taken
@@ -794,8 +794,19 @@ function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, rate
   // screen showed a blank quote for that moment, and an edit made against
   // it would have been saved as the whole quote. A brief blank (same as the
   // dashboard's own gate) is the only safe state to show.
-  if (quoteStatus === "loading") {
-    return <div className="min-h-screen bg-neutral-100" />;
+  if (quoteStatus === "loading" || (quoteStatus === "error" && !quoteLoaded)) {
+    // Not loaded yet, or the row could not be read: never show an editable
+    // blank quote — an edit to it would be saved as the whole project.
+    return (
+      <div className="min-h-screen bg-neutral-100">
+        {quoteStatus === "error" && (
+          <div className="max-w-xl mx-auto mt-16 rounded-lg border border-red-300 bg-red-50 text-red-800 text-sm px-4 py-3" data-testid="quote-load-failed">
+            <b>This project could not be loaded from the cloud.</b> The app keeps retrying on its own and writes nothing until it has loaded, so the saved copy is untouched. Check the connection, or go back to the dashboard and open it again.
+            <div className="mt-2"><button onClick={onBack} className="text-xs font-semibold px-3 py-1.5 rounded bg-white border border-red-300 hover:bg-red-100">Back to dashboard</button></div>
+          </div>
+        )}
+      </div>
+    );
   }
 
   return (
