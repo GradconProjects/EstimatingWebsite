@@ -11,8 +11,11 @@
  */
 import { createClient } from "@supabase/supabase-js";
 
-const url = import.meta.env.VITE_SUPABASE_URL;
-const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
+// `import.meta.env` exists only under Vite; plain Node (scripts/verify.mjs
+// importing lib/markupStore.js) sees undefined and must read as "not set".
+const env = (typeof import.meta !== "undefined" && import.meta.env) || {};
+const url = env.VITE_SUPABASE_URL;
+const key = env.VITE_SUPABASE_ANON_KEY;
 
 export const supabaseEnabled = Boolean(url && key);
 

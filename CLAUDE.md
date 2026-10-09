@@ -646,6 +646,25 @@ Three layers, each with a rule that was learned the hard way:
   to computer" downloads and "Open .json" reads; filenames must stay ASCII
   (Chromium drops a download name containing an em dash or curly quote).
 
+- **Markup drawings live in the `gradcon-files` bucket, never in the row**
+  (`lib/markupStore.js`, 9 Oct 2026: a nine-element project carried 17
+  drawings inline — 7.46 MB of a 7.48 MB row — and every keystroke
+  re-uploaded the lot, so saves queued, timed out and the editor said "not
+  reaching the cloud" for minutes). A markup is `{id, name, type, rotation,
+  path}` with `path` = `quote-markups/<projectId>/<markupId>.<png|jpg|pdf>`
+  (public URL, like the Vault's files); `dataURL` is only the in-flight form
+  — just dropped onto a card, or an install with no Supabase, which keeps it
+  inline as before. `ProjectEditor` runs `offloadMarkups` (the ONE uploader)
+  as soon as the row has settled and whenever an inline markup appears, then
+  `applyOffload` drops the data URL only where the bytes still match what
+  went up (a markup that failed waits a minute before the next try).
+  `markupSrc(m)` is the ONE reading for every `<img>`/`<embed>` (card,
+  lightbox, print report); `markupDataURL(m)` fetches the bytes back for the
+  PDF converter. Nothing deletes a bucket object — versions, "Save to
+  computer" files and duplicated elements all point at the same path. The
+  summaries function's `dataURL` strip stays (harmless on a path).
+  Verify-covered with a mock storage client.
+
 A new project is a **draft** held only in `App` state until it has a name
 or an element (`onPromote`); leaving it unpromoted discards it, so an
 "Untitled project" never persists. The dashboard prunes index entries whose

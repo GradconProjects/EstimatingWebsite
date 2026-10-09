@@ -27,6 +27,7 @@ import ExportExcelModal from "./components/ExportExcelModal.jsx";
 import ImportFlagsBanner from "./components/ImportFlagsBanner.jsx";
 import HandoverBanner from "./components/HandoverBanner.jsx";
 import { applyHandover, undoHandover, shouldAutoHandover } from "./lib/handover.js";
+import { needsOffload, offloadMarkups, applyOffload, markupStoreEnabled } from "./lib/markupStore.js";
 import ManageElementTypesModal from "./components/ManageElementTypesModal.jsx";
 import ProjectGeometryPanel from "./components/ProjectGeometryPanel.jsx";
 
@@ -542,6 +543,33 @@ function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, rate
     if (shouldAutoHandover(quote)) setQuote((q) => (shouldAutoHandover(q) ? applyHandover(q, effectiveRates(q, liveRates)) : q));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quoteStatus, ratesStatus, quote.status]);
+  // Markup drawings go to the bucket, never into the row (lib/markupStore.js):
+  // the moment the row has settled — and again whenever a drawing with its
+  // bytes inline appears (just dropped onto a card) — every such markup is
+  // uploaded and the item patched to carry only its path. Until the upload
+  // lands the data URL stays, so nothing is lost if it fails; a markup that
+  // failed waits a minute before the next try instead of hammering the bucket.
+  const offloadingRef = useRef(false);
+  const offloadFailedRef = useRef(new Map());   // markup id → time of the last failure
+  useEffect(() => {
+    if (!markupStoreEnabled || quoteStatus === "loading" || offloadingRef.current || !needsOffload(quote)) return;
+    const now = Date.now();
+    const skip = new Set([...offloadFailedRef.current.entries()].filter(([, t]) => now - t < 60000).map(([id]) => id));
+    offloadingRef.current = true;
+    (async () => {
+      try {
+        const { uploaded, failed } = await offloadMarkups(quote, project.id, undefined, { skip });
+        failed.forEach((f) => offloadFailedRef.current.set(f.markupId, Date.now()));
+        uploaded.forEach((u) => offloadFailedRef.current.delete(u.markupId));
+        if (uploaded.length) setQuote((q) => applyOffload(q, uploaded));
+      } catch {
+        // the next quote change tries again
+      } finally {
+        offloadingRef.current = false;
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quote, quoteStatus]);
   const frozenDrift = useMemo(() => (locked ? frozenRateDrift(quote, liveRates) : []), [locked, quote, liveRates]);
   const [repriceArmed, setRepriceArmed] = useState(false);
 

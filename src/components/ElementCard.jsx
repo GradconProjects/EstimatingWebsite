@@ -4,6 +4,7 @@ import { FULL_CATALOG, LABOUR_TEMPLATES, QUOTE_SCOPES } from "../data/catalog.js
 import { uid, money2, computeElementCost, computeElementUnitRates, autoLabourQtys, labourQuantities, categoryAppliesTo, elementScope, categoryChargedUnder, scopeLabel, SCOPE_KEYS } from "../lib/costing.js";
 import { prefilledCells, applySteelMode, steelModeFor } from "../lib/handover.js";
 import { pdfToJpegPages } from "../lib/pdfToImages.js";
+import { markupSrc, markupDataURL } from "../lib/markupStore.js";
 import CategoryBlock from "./CategoryBlock.jsx";
 import LabourMatrix from "./LabourMatrix.jsx";
 import AdditionalItems from "./AdditionalItems.jsx";
@@ -257,7 +258,7 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
     if (!m || m.type !== "pdf") return;
     setConvertingPdf(true);
     try {
-      const { pages } = await pdfToJpegPages(m.dataURL);
+      const { pages } = await pdfToJpegPages(await markupDataURL(m));
       const imgs = pages.map((p, i) => ({
         id: uid(),
         name: pages.length > 1 ? `${m.name} — page ${i + 1}` : m.name,
@@ -498,7 +499,7 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
                         </div>
                         {/* the drawing itself, full size in the card — click it for the zoom viewer */}
                         {m.type === "pdf" ? (
-                          <embed src={m.dataURL} type="application/pdf" className="w-full h-[32rem] bg-neutral-100" />
+                          <embed src={markupSrc(m)} type="application/pdf" className="w-full h-[32rem] bg-neutral-100" />
                         ) : (
                           <div
                             onClick={() => setViewerId(m.id)}
@@ -506,7 +507,7 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
                             className="w-full flex items-center justify-center overflow-hidden cursor-zoom-in bg-white"
                           >
                             <img
-                              src={m.dataURL}
+                              src={markupSrc(m)}
                               alt={m.name}
                               className="max-w-full object-contain"
                               style={{
@@ -671,7 +672,7 @@ function MarkupLightbox({ markup, onClose, onRotate }) {
         </div>
       </div>
       {markup.type === "pdf" ? (
-        <embed src={markup.dataURL} type="application/pdf" className="flex-1 w-full bg-neutral-800" />
+        <embed src={markupSrc(markup)} type="application/pdf" className="flex-1 w-full bg-neutral-800" />
       ) : (
         <div
           className="flex-1 overflow-hidden flex items-center justify-center cursor-grab active:cursor-grabbing select-none"
@@ -683,7 +684,7 @@ function MarkupLightbox({ markup, onClose, onRotate }) {
           onDoubleClick={reset}
         >
           <img
-            src={markup.dataURL}
+            src={markupSrc(markup)}
             alt={markup.name}
             draggable={false}
             className="max-w-[90%] max-h-[85vh] object-contain"

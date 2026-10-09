@@ -1,6 +1,7 @@
 import {
   CATEGORY_ORDER, SECTION_ORDER, FULL_CATALOG, RESOURCE_COLS,
 } from "../data/catalog.js";
+import { markupSrc } from "../lib/markupStore.js";
 import {
   computeElementCost, computeGrandTotal, computeMarginLadder, rateKey, rowRate, computeRowTotal, rowContext, money, money2, getDefaultMargin, getMarginSteps, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, additionalRowsFor, additionalRowTotal, autoSpecialistFees, categoryAppliesTo, computeExcludedTotals, categoryChargedUnder, scopeLabel } from "../lib/costing.js";
 import { GRADCON_LOGO_DATA_URI } from "../lib/logo.js";
@@ -277,7 +278,7 @@ function ElementReportBlock({ item, rates, projectScope }) {
             {/* saved rotation applies here too; a 90°/270° image is bounded on
                 both axes so the rotated result can't spill over the page */}
             <img
-              src={m.dataURL}
+              src={markupSrc(m)}
               alt={m.name}
               className={`object-contain border border-neutral-300 ${((m.rotation || 0) % 180 !== 0) ? "max-h-56 max-w-56" : "max-h-64 max-w-full"}`}
               style={{ transform: `rotate(${m.rotation || 0}deg)` }}

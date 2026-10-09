@@ -24,6 +24,7 @@ import * as costingAll from "../src/lib/costing.js";
 import { PROJECT_SORTS, sortProjects, sortValue, defaultSortDir, preferredSortKey, isProjectSortKey } from "../src/lib/projectSort.js";
 
 let passed = 0;
+const assertTrue = (c, m) => { if (!c) throw new Error(m || "assertion failed"); };
 const check = (name, fn) => {
   try {
     fn();
@@ -2257,6 +2258,43 @@ check("Project Geometry carries a COUNT: $/no. leads the benchmark rates, sums a
   const g = geometryForLabel("Screw Piles", geo);
   assert.equal(g.countNo, 12); assert.deepEqual(g.matched, ["Screw Piles 1", "Screw Piles 2"]);
 });
+
+// ---------------------------------------------------------------------------
+// Markup drawings live in the bucket, not the quote row (lib/markupStore.js)
+// ---------------------------------------------------------------------------
+{
+  const MS = await import("../src/lib/markupStore.js");
+  const uploads = [];
+  const mock = (failId) => ({ storage: { from: (bucket) => ({
+    upload: async (path, blob, opts) => { if (failId && path.includes(failId)) return { error: new Error("boom") }; uploads.push({ bucket, path, size: blob.size, type: blob.type, opts }); return { error: null }; },
+    getPublicUrl: (path) => ({ data: { publicUrl: `https://x.supabase.co/storage/v1/object/public/${bucket}/${path}` } }),
+  }) } });
+  const png = "data:image/png;base64," + Buffer.from("PNGBYTES").toString("base64");
+  const pdf = "data:application/pdf;base64," + Buffer.from("%PDF-1.4 x").toString("base64");
+  const quote = { items: [
+    { id: "E1", markups: [{ id: "m1", name: "a.png", type: "image", rotation: 90, dataURL: png }, { id: "m2", name: "old.png", type: "image", path: "quote-markups/P1/m2.png" }] },
+    { id: "E2", markups: [{ id: "m3", name: "b.pdf", type: "pdf", dataURL: pdf }] },
+    { id: "E3" },
+  ] };
+  check("Markups: needsOffload sees the inline data URLs and nothing once they are paths", () => assertTrue(MS.needsOffload(quote) && !MS.needsOffload({ items: [quote.items[0] && { ...quote.items[0], markups: [quote.items[0].markups[1]] }] })));
+  const client = mock();
+  const { uploaded, failed } = await MS.offloadMarkups(quote, "P1", client);
+  check("Markups: every inline markup is uploaded once, by id, with the right extension and content type (m2 already in the bucket is left alone)", () => assertTrue(uploaded.length === 2 && failed.length === 0 && uploads.map((u) => u.path).join() === "quote-markups/P1/m1.png,quote-markups/P1/m3.pdf"
+    && uploads[0].size === 8 && uploads[0].type === "image/png" && uploads[0].opts.upsert === true && uploads[0].opts.contentType === "image/png" && uploads[1].opts.contentType === "application/pdf" && uploads.every((u) => u.bucket === "gradcon-files")));
+  const after = MS.applyOffload(quote, uploaded);
+  const m1 = after.items[0].markups[0], m3 = after.items[1].markups[0];
+  check("Markups: applyOffload drops the data URL and keeps id, name, type and rotation beside the path", () => assertTrue(!("dataURL" in m1) && m1.path === "quote-markups/P1/m1.png" && m1.rotation === 90 && m1.name === "a.png" && !("dataURL" in m3) && m3.path === "quote-markups/P1/m3.pdf" && !MS.needsOffload(after)));
+  check("Markups: a drawing replaced while its predecessor was uploading keeps its new bytes (data URL no longer matches → untouched)", () => assertTrue((() => { const q2 = { items: [{ id: "E1", markups: [{ id: "m1", dataURL: "data:image/png;base64,QUJD" }] }] }; const r = MS.applyOffload(q2, uploaded); return r === q2 && r.items[0].markups[0].dataURL === "data:image/png;base64,QUJD"; })()));
+  check("Markups: applyOffload returns the same object when nothing changed; untouched items keep their identity", () => assertTrue(MS.applyOffload(quote, []) === quote && after.items[2] === quote.items[2]));
+  check("Markups: markupSrc is the data URL while inline, the bucket's public URL once offloaded, '' with neither", () => assertTrue(MS.markupSrc(quote.items[0].markups[0], client) === png && MS.markupSrc(m1, client) === "https://x.supabase.co/storage/v1/object/public/gradcon-files/quote-markups/P1/m1.png" && MS.markupSrc({ id: "x" }, client) === "" && MS.markupSrc(m1, null) === ""));
+  const r2 = await MS.offloadMarkups(quote, "P1", mock("m3"));
+  check("Markups: one failed upload is reported, the others still go up, and the failed markup keeps its data URL", () => assertTrue(r2.uploaded.length === 1 && r2.failed.length === 1 && r2.failed[0].markupId === "m3" && MS.applyOffload(quote, r2.uploaded).items[1].markups[0].dataURL === pdf));
+  const r3 = await MS.offloadMarkups(quote, "P1", mock(), { skip: new Set(["m1"]) });
+  check("Markups: a skipped id (retry back-off) is not uploaded", () => assertTrue(r3.uploaded.length === 1 && r3.uploaded[0].markupId === "m3"));
+  let threw = false; try { MS.dataUrlToBlob("https://not-a-data-url"); } catch { threw = true; }
+  const r4 = await MS.offloadMarkups({ items: [{ id: "E", markups: [{ id: "q", dataURL: "data:text/plain,hello" }] }] }, "P1", mock());
+  check("Markups: a non-data URL never uploads (dataUrlToBlob throws, offload reports it as failed)", () => assertTrue(threw && r4.failed.length === 1 && r4.uploaded.length === 0));
+}
 
 console.log(`\n${passed} check(s) passed.`);
 if (process.exitCode) {
