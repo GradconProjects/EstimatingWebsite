@@ -905,7 +905,7 @@ export const SECTION_ORDER = [...new Set(ELEMENT_TYPES.map((t) => t.section))];
  * quote that predates this field (see Dashboard.jsx) — never rendered as
  * blank/unknown.
  */
-export const QUOTE_STATUSES = ["Queued", "Estimating", "Completed Estimating", "Quoting", "Submitted", "Tendered", "Successful", "Unsuccessful", "On Hold"];
+export const QUOTE_STATUSES = ["Queued", "Estimating", "Completed Estimating", "Quoting", "Submitted", "Tendered", "Successful", "Unsuccessful", "Deadline Missed", "On Hold"];
 export const QUOTE_STATUS_STYLES = {
   Queued: { bar: "bg-violet-400", dot: "bg-violet-400", text: "text-violet-600", bg: "bg-violet-50" },
   Estimating: { bar: "bg-red-500", dot: "bg-red-500", text: "text-red-600", bg: "bg-red-50" },
@@ -918,6 +918,10 @@ export const QUOTE_STATUS_STYLES = {
   Successful: { bar: "bg-emerald-500", dot: "bg-emerald-500", text: "text-emerald-700", bg: "bg-emerald-50" },
   // Distinct from Estimating's red (now that it's taken) rather than a near-duplicate shade.
   Unsuccessful: { bar: "bg-stone-500", dot: "bg-stone-500", text: "text-stone-600", bg: "bg-stone-100" },
+  // The tender date passed with nothing submitted (Grady, 9 Oct 2026). A closed
+  // outcome like Unsuccessful — rates pinned, deadline clock stopped — in a
+  // deep rose so it reads as a miss at a glance, apart from Estimating's red.
+  "Deadline Missed": { bar: "bg-rose-700", dot: "bg-rose-700", text: "text-rose-800", bg: "bg-rose-50" },
   "On Hold": { bar: "bg-neutral-300", dot: "bg-neutral-300", text: "text-neutral-500", bg: "bg-neutral-100" },
 };
 

@@ -524,7 +524,16 @@ plain "Submitted" when no day was recorded — never a date or count
 invented from today);
 `isUrgent(planner, status)` and the Planner's "Projects overdue" tile
 (`isOverdue`) ignore submitted quotes. Grady, 1 Oct 2026: "when a quote is
-submitted, the days overdue should cease counting".
+submitted, the days overdue should cease counting". **"Deadline Missed"**
+(Grady, 9 Oct 2026: "in statuses, add deadline missed") is the closed
+outcome for a tender date that passed with nothing submitted: it sits after
+Unsuccessful in `QUOTE_STATUSES` (deep rose), is in `RATES_LOCKED_STATUSES`
+(the figures stand as they were the day it was closed; `completedAt` is that
+day) but NOT in `SUBMITTED_STATUSES` (no `submittedAt` is ever written);
+`isDeadlineMissedStatus` / `missedLabel` in `planner.js` freeze its label to
+"Deadline missed <deadline day>" (never "N d overdue") in both the Planner
+and the Dashboard, and `isOverdue` / `isUrgent` treat it as finished work.
+Reopening it (any open status) drops the pin like every other closed status.
 
 ## Project lists sort by ONE rule
 

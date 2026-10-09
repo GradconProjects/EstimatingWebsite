@@ -19,6 +19,18 @@ export const SUBMITTED_STATUSES = ["Submitted", "Tendered", "Successful", "Unsuc
 export const OPEN_STATUSES = ["Queued", "Estimating"];
 export const isSubmittedStatus = (status) => SUBMITTED_STATUSES.includes(status);
 
+/** The tender date passed and nothing went out (Grady, 9 Oct 2026). Its
+ * deadline clock stops too — the miss is recorded as a status, not counted
+ * up as "N d overdue" forever — and it is neither urgent nor overdue work. */
+export const DEADLINE_MISSED_STATUS = "Deadline Missed";
+export const isDeadlineMissedStatus = (status) => status === DEADLINE_MISSED_STATUS;
+/** The frozen label for a missed deadline: the deadline day it was missed against. */
+export function missedLabel(deadline) {
+  return deadline
+    ? { text: `Deadline missed ${formatDay(deadline)}`, note: `the ${formatDay(deadline)} deadline passed with nothing submitted`, cls: "text-rose-700" }
+    : { text: "Deadline missed", note: "no deadline was recorded", cls: "text-rose-700" };
+}
+
 const dayDiff = (a, b) => Math.ceil((new Date(a) - new Date(b)) / 86400000);
 
 /** "1 Oct 2026" for a stored "YYYY-MM-DD" (parsed as a LOCAL day). */
@@ -46,7 +58,7 @@ export function submittedLabel(deadline, submittedAt) {
 /** Overdue = past its deadline AND not yet submitted. */
 export function isOverdue(quote, today = new Date().toISOString().slice(0, 10)) {
   if (!quote || !quote.planner || !quote.planner.deadline) return false;
-  if (isSubmittedStatus(quote.status)) return false;
+  if (isSubmittedStatus(quote.status) || isDeadlineMissedStatus(quote.status)) return false;   // a recorded miss is not work still to do
   return quote.planner.deadline < today;
 }
 
@@ -56,7 +68,7 @@ export function isOverdue(quote, today = new Date().toISOString().slice(0, 10)) 
  * to defer" grouping the Planner exists for. */
 export function isUrgent(planner, status) {
   if (!planner) return false;
-  if (isSubmittedStatus(status)) return false;   // the quote has gone out — nothing left to attend to by its deadline
+  if (isSubmittedStatus(status) || isDeadlineMissedStatus(status)) return false;   // the quote has gone out, or the date was missed — nothing left to attend to by its deadline
   if (planner.priority === "Urgent" || planner.priority === "High") return true;
   if (planner.deadline) {
     const days = (new Date(planner.deadline) - new Date()) / 86400000;
@@ -66,6 +78,7 @@ export function isUrgent(planner, status) {
 }
 
 export function daysLabel(deadline, status, submittedAt) {
+  if (isDeadlineMissedStatus(status)) { const f = missedLabel(deadline); return { text: f.text, title: f.note, cls: `${f.cls} font-medium` }; }
   if (isSubmittedStatus(status)) { const f = submittedLabel(deadline, submittedAt); return { text: f.text, title: f.note, cls: `${f.cls} font-medium` }; }
   if (!deadline) return null;
   const days = Math.ceil((new Date(deadline) - new Date()) / 86400000);
@@ -81,6 +94,7 @@ export function daysLabel(deadline, status, submittedAt) {
  * urgency read): the Dashboard row is a narrower "at a glance" column,
  * not the Planner's full urgency triage. */
 export function dashboardDueLabel(deadline, status, submittedAt) {
+  if (isDeadlineMissedStatus(status)) { const f = missedLabel(deadline); return { text: f.text, title: f.note, cls: `italic ${f.cls}` }; }
   if (isSubmittedStatus(status)) { const f = submittedLabel(deadline, submittedAt); return { text: f.text, title: f.note, cls: `italic ${f.cls}` }; }
   if (!deadline) return null;
   const days = Math.ceil((new Date(deadline) - new Date()) / 86400000);

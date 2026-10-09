@@ -25,8 +25,10 @@ import { isSubmittedStatus } from "./planner.js";
 const localDay = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
 /** Statuses whose projects keep their own copy of the rates. "On Hold" is
- * not finished — a project on hold follows the live rates like an open one. */
-export const RATES_LOCKED_STATUSES = ["Completed Estimating", "Quoting", "Submitted", "Tendered", "Successful", "Unsuccessful"];
+ * not finished — a project on hold follows the live rates like an open one.
+ * "Deadline Missed" is a closed outcome like Unsuccessful: the figures stand
+ * as they were the day it was closed. */
+export const RATES_LOCKED_STATUSES = ["Completed Estimating", "Quoting", "Submitted", "Tendered", "Successful", "Unsuccessful", "Deadline Missed"];
 
 export const isRatesLocked = (status) => RATES_LOCKED_STATUSES.includes(status);
 

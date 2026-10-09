@@ -2008,7 +2008,7 @@ check("A subcontract 'quote' amount belongs to the ELEMENT (item.rateOverrides),
 });
 
 check("Finished statuses pin the rates: Completed Estimating onwards, never On Hold / Queued / Estimating", () => {
-  assert.deepEqual(RATES_LOCKED_STATUSES, ["Completed Estimating", "Quoting", "Submitted", "Tendered", "Successful", "Unsuccessful"]);
+  assert.deepEqual(RATES_LOCKED_STATUSES, ["Completed Estimating", "Quoting", "Submitted", "Tendered", "Successful", "Unsuccessful", "Deadline Missed"]);
   RATES_LOCKED_STATUSES.forEach((st) => assert.ok(catalogAll.QUOTE_STATUSES.includes(st), `${st} is a real status`));
   ["Queued", "Estimating", "On Hold"].forEach((st) => assert.equal(isRatesLocked(st), false, st));
   assert.equal(isRatesLocked(undefined), false);
@@ -2127,12 +2127,37 @@ check("The Rates Library's validity rows name real Quotes catalog products (the 
 });
 
 
-const { SUBMITTED_STATUSES, isSubmittedStatus, submittedLabel, daysLabel, dashboardDueLabel, isUrgent, isOverdue, OPEN_STATUSES } = await import("../src/lib/planner.js");
+const planner = await import("../src/lib/planner.js");
+const { SUBMITTED_STATUSES, isSubmittedStatus, submittedLabel, daysLabel, dashboardDueLabel, isUrgent, isOverdue, OPEN_STATUSES } = planner;
 
 check("Dashboard opens on Queued + Estimating only; submitted work lives under its tile / All projects", () => {
   assert.deepEqual(OPEN_STATUSES, ["Queued", "Estimating"]);
   OPEN_STATUSES.forEach((st) => assert.ok(catalogAll.QUOTE_STATUSES.includes(st), st));
   SUBMITTED_STATUSES.forEach((st) => assert.ok(!OPEN_STATUSES.includes(st), `${st} is never on the opening screen`));
+});
+
+check("Deadline Missed (9 Oct 2026): a closed status after Unsuccessful — rates pinned, deadline clock stopped at the miss, never overdue or urgent, never 'submitted'", () => {
+  const { DEADLINE_MISSED_STATUS, isDeadlineMissedStatus, missedLabel } = planner;
+  const S = catalogAll.QUOTE_STATUSES;
+  assert.equal(DEADLINE_MISSED_STATUS, "Deadline Missed");
+  assert.ok(S.indexOf("Deadline Missed") === S.indexOf("Unsuccessful") + 1 && S.indexOf("On Hold") === S.indexOf("Deadline Missed") + 1, "sits between Unsuccessful and On Hold");
+  assert.ok(catalogAll.QUOTE_STATUS_STYLES["Deadline Missed"] && /rose/.test(catalogAll.QUOTE_STATUS_STYLES["Deadline Missed"].bar), "its own rose style");
+  assert.ok(RATES_LOCKED_STATUSES.includes("Deadline Missed") && !SUBMITTED_STATUSES.includes("Deadline Missed") && !OPEN_STATUSES.includes("Deadline Missed"));
+  assert.ok(isDeadlineMissedStatus("Deadline Missed") && !isDeadlineMissedStatus("Unsuccessful"));
+  const past = "2020-01-10";
+  assert.equal(daysLabel(past, "Deadline Missed", null).text, "Deadline missed 10 Jan 2020", "frozen label, never 'N d overdue'");
+  assert.equal(dashboardDueLabel(past, "Deadline Missed", null).text, "Deadline missed 10 Jan 2020");
+  assert.equal(missedLabel(null).text, "Deadline missed", "no deadline recorded → no date invented");
+  assert.equal(isOverdue({ status: "Deadline Missed", planner: { deadline: past } }, "2026-10-09"), false, "a recorded miss is not overdue work");
+  assert.equal(isUrgent({ deadline: past, priority: "Urgent" }, "Deadline Missed"), false, "nor urgent");
+  assert.equal(isOverdue({ status: "Estimating", planner: { deadline: past } }, "2026-10-09"), true, "an open project past its date still is");
+  const live = { "k": { unitCost: 1 } };
+  const patch = statusChangePatch({ status: "Estimating", items: [] }, "Deadline Missed", live, "2026-10-09T01:00:00.000Z");
+  assert.ok(patch.ratesFrozen && patch.ratesFrozen.rates.k.unitCost === 1, "pins the live rates like every closed status");
+  assert.equal(patch.submittedAt, undefined, "nothing went out — no submission day");
+  assert.equal(patch.completedAt, "2026-10-09", "the day it was closed is the day the Date-completed sort uses");
+  const back = statusChangePatch({ status: "Deadline Missed", ratesFrozen: patch.ratesFrozen, completedAt: "2026-10-09" }, "Estimating", live);
+  assert.equal(back.ratesFrozen, null); assert.equal(back.completedAt, null, "reopening it follows the live rates again");
 });
 
 check("Deadline clock stops at submission: Submitted and later statuses count to the submission day, never to today (1 Oct 2026)", () => {
