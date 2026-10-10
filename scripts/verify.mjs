@@ -2285,6 +2285,21 @@ check("Project Geometry carries a COUNT: $/no. leads the benchmark rates, sums a
 });
 
 // ---------------------------------------------------------------------------
+// AI provider keys: server-side only, reported without key material (api/_providers.js)
+// ---------------------------------------------------------------------------
+{
+  const P = await import("../api/_providers.js");
+  const none = P.providerStatus({});
+  check("AI providers: with no keys nothing is configured and there is no default", () => assertTrue(none.length === 3 && none.every((p) => !p.configured && !p.isDefault) && P.defaultProviderId({}) === null));
+  const env = { OPENAI_API_KEY: "sk-secret-1", DEEPSEEK_API_KEY: "ds-secret-2", OPENAI_MODEL: "gpt-x" };
+  const st = P.providerStatus(env);
+  check("AI providers: the first configured provider is the default unless AI_PROVIDER names another", () => assertTrue(st.find((p) => p.id === "openai").isDefault && !st.find((p) => p.id === "deepseek").isDefault && P.defaultProviderId({ ...env, AI_PROVIDER: "deepseek" }) === "deepseek" && P.defaultProviderId({ ...env, AI_PROVIDER: "anthropic" }) === "openai"));
+  check("AI providers: the model env var overrides the default and the status never carries key material", () => assertTrue(st.find((p) => p.id === "openai").model === "gpt-x" && st.find((p) => p.id === "anthropic").model === "claude-opus-5-5" && !JSON.stringify(st).includes("secret")));
+  let threw = null; try { await P.callText("openai", { prompt: "x", env: {} }); } catch (e) { threw = e; }
+  check("AI providers: a call on an unconfigured provider fails with 503 and names the variable to set", () => assertTrue(threw && threw.status === 503 && /OPENAI_API_KEY/.test(threw.message)));
+}
+
+// ---------------------------------------------------------------------------
 // Markup drawings live in the bucket, not the quote row (lib/markupStore.js)
 // ---------------------------------------------------------------------------
 {

@@ -13,6 +13,7 @@
     "verify:estimates": "node scripts/verify-estimates.mjs"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.133.0",
     "@supabase/supabase-js": "^2.45.4",
     "lucide-react": "^0.383.0",
     "pdfjs-dist": "^4.10.38",

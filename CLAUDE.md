@@ -499,6 +499,58 @@ verify-covered; the CSV importer's label rules match box gutter / parapet /
 plant deck / overrun / cantilever / roof beam before the generic slab and
 wall rules.
 
+## Welcome panel (portal sign-in)
+
+Grady, 10 Oct 2026: "when Grady logs in, it welcomes him and gives random
+excited messages about his work for that day and displays links to projects
+he left off and when he left it off." `portal-shell.html` → `renderWelcome()`
+(run on sign-in, on a restored session that lands on the dashboard, and on
+Back to portal): the hero's eyebrow becomes today's date, the heading
+"Good morning, Grady." (`firstName` from the email; `projects@` is "team"),
+and the paragraph one of `EXCITED` — lines built from REAL facts
+(`welcomeFacts`: quotes due today / within 7 days among the open statuses in
+`OPEN_WORK`, counts in Estimating and Queued, the most recently saved item
+and when) plus a few generic ones, picked at random and never the same as
+the previous sign-in (`sessionStorage` `gradcon-welcome-last`). The "Pick up
+where you left off" cards are the six most recently saved Quotes projects
+and Estimates takeoffs with `whenLabel` ("30 min ago", "today at 4:12 pm",
+"yesterday at …", "Mon 9 Oct at …"); a quote card writes
+`gradcon-active-project` and opens Quotes with a forced reload (the same
+handoff the Planner tile uses), a takeoff card writes
+`gradcon-estimate-active` and opens Estimates. Facts come first from what the
+browser holds (`gradcon-cache:gradcon-projects`, the `gradcon-cache:summary:`
+mirrors, `gradcon-estimate-projects-index`, else the bare localStorage-mode
+keys), then the cloud stamps refine the "when" and the summaries function
+names up to three projects this browser never opened. The shell carries its
+own copy of the Supabase URL and anon key (`CLOUD`) for those two reads —
+the same public key the Estimates app ships. Offline, the local paint
+stands. `test-welcome.mjs` proves it.
+
+## AI provider keys live on the server (api/)
+
+Grady, 10 Oct 2026: "code in the environment variables so i can add the api
+keys." `api/_providers.js` is the ONE place a provider key is read — a Vercel
+function module (the underscore keeps it from being an endpoint), never
+imported by `src/` or `portal/`. Variables, set in the Vercel project under
+Settings → Environment Variables and NEVER prefixed `VITE_` (that prefix
+bundles a value into the public browser code): `ANTHROPIC_API_KEY` /
+`ANTHROPIC_MODEL` (default `claude-opus-5-5`), `OPENAI_API_KEY` /
+`OPENAI_MODEL` (default `gpt-5`), `DEEPSEEK_API_KEY` / `DEEPSEEK_MODEL`
+(default `deepseek-chat`), `AI_PROVIDER` (the default provider; else the
+first with a key). `providerStatus(env)` reports what is set without key
+material, `defaultProviderId`, `callText(id, {system, prompt, maxTokens})`
+runs one prompt on one provider (Anthropic through `@anthropic-ai/sdk` with
+the server-side refusal fallback; OpenAI and DeepSeek through their shared
+chat-completions shape), `pingProvider` is the one-word test. Every future
+job that reads a drawing or a tender document goes through `callText`, so the
+provider is a config choice. `api/ai-providers.js` (GET status, POST
+`{provider, action:"test"}`) backs Settings → "AI providers" in the shell
+(`loadAiProviders`); it checks the call comes from the portal's own origin,
+which deters a drive-by page but is not a security boundary.
+`api/parse-assist.js` now calls the adapter on the default provider.
+`.env.example` documents the variables; `verify.mjs` covers the status,
+default and the 503 on an unconfigured provider.
+
 ## Dashboard opens on the open work only
 
 `OPEN_STATUSES` (`lib/planner.js`, used by `Dashboard.jsx`) = Queued, Estimating: the status filter

@@ -288,6 +288,32 @@
   .app-menu button.active{ background:var(--accent); color:#fff; }
   .app-frame-wrap{ flex:1; min-height:0; }
   .app-frame{ width:100%; height:100%; border:0; display:block; background:#f5f5f5; }
+  /* Welcome panel: "pick up where you left off" cards under the greeting. */
+  .welcome-recent{ margin:0 0 36px; }
+  .welcome-recent .eyebrow{ display:inline-flex; align-items:center; gap:7px; font-size:11.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--text); margin-bottom:12px; }
+  .welcome-recent .eyebrow::before{ content:""; width:7px; height:7px; border-radius:2px; background:var(--accent); }
+  .recent-grid{ display:grid; grid-template-columns:repeat(auto-fill, minmax(230px, 1fr)); gap:12px; }
+  .recent-card{ text-align:left; border:1px solid var(--line); border-radius:var(--radius); background:#fff; padding:14px 16px 13px; cursor:pointer; font:inherit; color:var(--text); display:flex; flex-direction:column; gap:4px; transition:border-color .15s, box-shadow .15s, transform .15s; }
+  .recent-card:hover{ border-color:var(--accent); box-shadow:0 14px 30px -18px rgba(35,31,32,.45); transform:translateY(-1px); }
+  .recent-card .kind{ font-size:10.5px; letter-spacing:.09em; text-transform:uppercase; color:var(--muted-2); display:flex; justify-content:space-between; gap:8px; }
+  .recent-card .kind b{ font-weight:600; color:var(--muted); letter-spacing:0; text-transform:none; }
+  .recent-card h3{ font-size:15px; line-height:1.3; margin:2px 0 2px; }
+  .recent-card .when{ font-size:12px; color:var(--muted); }
+  .recent-card .open{ margin-top:6px; font-size:12px; font-weight:600; color:var(--accent-ink); background:var(--accent); border-radius:8px; padding:5px 10px; align-self:flex-start; }
+  .welcome-empty{ font-size:13px; color:var(--muted); border:1px dashed var(--line); border-radius:var(--radius); padding:14px 16px; }
+  /* Settings → AI providers rows */
+  .ai-row{ display:flex; align-items:center; gap:10px; padding:9px 0; border-bottom:1px solid var(--line-soft); font-size:13px; }
+  .ai-row:last-child{ border-bottom:0; }
+  .ai-row .name{ flex:1; min-width:0; }
+  .ai-row .name small{ display:block; color:var(--muted); font-size:11.5px; }
+  .ai-chip{ font-size:11px; font-weight:600; border-radius:999px; padding:2px 9px; white-space:nowrap; }
+  .ai-chip.on{ background:#e6f6ec; color:#1e6b3a; }
+  .ai-chip.off{ background:#f1f1f1; color:#777; }
+  .ai-chip.def{ background:#fff5d6; color:#7a5a00; }
+  .ai-test{ font:inherit; font-size:12px; font-weight:600; border:1px solid var(--line); background:#fff; border-radius:8px; padding:5px 10px; cursor:pointer; }
+  .ai-test:disabled{ opacity:.5; cursor:default; }
+  .ai-result{ font-size:12px; color:var(--muted); min-width:0; }
+  .ai-result.ok{ color:#1e6b3a; } .ai-result.err{ color:#b42318; }
 
 </style>
 
@@ -341,9 +367,14 @@
   </div>
 
   <div class="dash-hero">
-    <div class="eyebrow">Dashboard</div>
-    <h1>What are you working on?</h1>
-    <p>Four tools, one portal — keep every rate current in one place, plan and control job costs, price a job with the full material and labour catalog, or build a fresh takeoff straight from element geometry.</p>
+    <div class="eyebrow" id="welcome-eyebrow">Dashboard</div>
+    <h1 id="welcome-greeting">What are you working on?</h1>
+    <p id="welcome-line">Four tools, one portal — keep every rate current in one place, plan and control job costs, price a job with the full material and labour catalog, or build a fresh takeoff straight from element geometry.</p>
+  </div>
+
+  <div class="welcome-recent" id="welcome-recent" hidden>
+    <div class="eyebrow">Pick up where you left off</div>
+    <div class="recent-grid" id="welcome-recent-grid"></div>
   </div>
 
   <div class="dash-hero-art" aria-hidden="true">
@@ -552,6 +583,10 @@
         <option value="folder">Gradcon Vault</option>
       </select>
     </div>
+
+    <div class="settings-section">AI providers (keys live on the server)</div>
+    <p class="sub" style="margin-top:-4px;">Keys are set in the Vercel project under Settings → Environment Variables (ANTHROPIC_API_KEY, OPENAI_API_KEY, DEEPSEEK_API_KEY, plus AI_PROVIDER for the default) and never leave the server. This panel only shows what is set and lets you test each one.</p>
+    <div id="settings-ai" class="field"><span class="ai-result">Checking…</span></div>
 
     <div class="settings-section">Quotes — pricing</div>
     <div class="settings-grid">
@@ -862,6 +897,7 @@
     document.getElementById('dash-user').innerHTML = 'Signed in as <b>' + email + '</b>';
     saveSession({ currentUser: email, activeApp: null });
     show('screen-dashboard');
+    renderWelcome();
     maybeAutoOpenApp();
   });
 
@@ -1098,6 +1134,7 @@
 
   document.getElementById('settings-btn').addEventListener('click', function(){
     populateSettingsForm();
+    loadAiProviders();
     settingsBackdrop.hidden = false;
   });
   document.getElementById('settings-cancel').addEventListener('click', function(){
@@ -1154,6 +1191,7 @@
     document.getElementById('app-frame').src = 'about:blank';
     saveSession({ activeApp: null });
     show('screen-dashboard');
+    renderWelcome();
   });
 
   // Remounts the currently-open app fresh — its own init sequence (loadState()/
@@ -1280,6 +1318,195 @@
   // Restore whoever was signed in, and whichever app they had open, so a plain
   // browser refresh (or the tab being reclaimed/reopened) lands back where the
   // estimator actually was instead of bouncing to the login screen every time.
+  // ===================== WELCOME PANEL =====================
+  // Grady, 10 Oct 2026: "when Grady logs in, it welcomes him and gives random
+  // excited messages about his work for that day and displays links to
+  // projects he left off and when he left it off." The greeting and the line
+  // are built from REAL facts (what is due, what is in estimating, what was
+  // touched last) and a pool of upbeat phrasings picked at random; the cards
+  // are the most recently edited Quotes projects and Estimates takeoffs with
+  // the moment they were last saved. Facts come from what this browser already
+  // holds (the Quotes summary mirrors and the Estimates index), then the cloud
+  // stamps refine the "when" and fill names for projects this browser has not
+  // opened. A card opens the app straight on that project.
+  var CLOUD = { url: 'https://xbmyhvrcuyapoarmchpv.supabase.co', key: 'sb_publishable_Kr4dTFXhZsifAA28HmMAVQ_EDSR2DL0' }; // the anon key the Estimates app already ships
+  var OPEN_WORK = { 'Queued':1, 'Estimating':1, 'Completed Estimating':1, 'Quoting':1 };
+  function readJSON(key){ try{ var r = localStorage.getItem(key); return r ? JSON.parse(r) : null; }catch(e){ return null; } }
+  function firstName(email){
+    var local = String(email||'').split('@')[0].toLowerCase();
+    if(local === 'projects') return 'team';
+    return local ? local.charAt(0).toUpperCase() + local.slice(1) : 'there';
+  }
+  function timeOfDay(d){ var h = d.getHours(); return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'; }
+  function localDay(d){ return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); }
+  function whenLabel(iso, now){
+    if(!iso) return 'saved earlier';
+    var t = new Date(iso); if(isNaN(t)) return 'saved earlier';
+    var diffMin = Math.round((now - t) / 60000);
+    var clock = t.toLocaleTimeString('en-AU', { hour:'numeric', minute:'2-digit' });
+    if(diffMin < 1) return 'just now';
+    if(diffMin < 60) return diffMin + ' min ago';
+    if(localDay(t) === localDay(now)) return 'today at ' + clock;
+    var y = new Date(now); y.setDate(y.getDate()-1);
+    if(localDay(t) === localDay(y)) return 'yesterday at ' + clock;
+    var days = Math.round((now - t) / 86400000);
+    var dayStr = t.toLocaleDateString('en-AU', { weekday:'short', day:'numeric', month:'short' });
+    return (days < 7 ? dayStr : t.toLocaleDateString('en-AU', { day:'numeric', month:'short', year:'numeric' })) + ' at ' + clock;
+  }
+  function localQuotes(){
+    var mirror = readJSON('gradcon-cache:gradcon-projects');
+    var idx = mirror && Array.isArray(mirror.value) ? mirror.value : readJSON('gradcon-projects');
+    if(!Array.isArray(idx)) return [];
+    return idx.filter(function(p){ return p && p.storageKey; }).map(function(p){
+      var hit = readJSON('gradcon-cache:summary:' + p.storageKey);
+      var q = hit && hit.value ? hit.value : readJSON(p.storageKey);
+      return { kind:'quote', id:p.id, key:p.storageKey, name:(q && q.projectName) || '', status:(q && q.status) || '', deadline:(q && q.planner && q.planner.deadline) || null,
+               elements:(q && Array.isArray(q.items)) ? q.items.length : null, updatedAt:(hit && hit.updatedAt) || null, named: !!(q && q.projectName) };
+    });
+  }
+  function localTakeoffs(){
+    var idx = readJSON('gradcon-estimate-projects-index');
+    if(!Array.isArray(idx)) return [];
+    return idx.filter(function(p){ return p && p.key && !p.deleted; }).map(function(p){
+      var blob = readJSON(p.key);
+      return { kind:'takeoff', id:p.id, key:p.key, name:p.name || '', status:'', deadline:null, elements:(blob && Array.isArray(blob.instances)) ? blob.instances.length : null, updatedAt:p.savedAt || null, named: !!p.name };
+    });
+  }
+  function cloudGet(path){
+    return fetch(CLOUD.url + path, { headers:{ apikey: CLOUD.key, Authorization: 'Bearer ' + CLOUD.key }, signal: AbortSignal.timeout(6000) })
+      .then(function(r){ return r.ok ? r.json() : null; }).catch(function(){ return null; });
+  }
+  function cloudPost(path, body){
+    return fetch(CLOUD.url + path, { method:'POST', headers:{ apikey: CLOUD.key, Authorization: 'Bearer ' + CLOUD.key, 'Content-Type':'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(8000) })
+      .then(function(r){ return r.ok ? r.json() : null; }).catch(function(){ return null; });
+  }
+  var EXCITED = [
+    function(f){ return f.dueToday.length ? f.dueToday[0] + ' is due today — the pressure is on, and that is when you do your best work.' : null; },
+    function(f){ return f.dueToday.length > 1 ? f.dueToday.length + ' quotes due today. Big day — let\'s land every one of them.' : null; },
+    function(f){ return f.dueWeek.length ? f.dueWeek.length + ' due this week: ' + f.dueWeek.slice(0,3).join(', ') + '. Let\'s get them out the door.' : null; },
+    function(f){ return f.nEstimating ? f.nEstimating + ' quote' + (f.nEstimating===1?'':'s') + ' in estimating and the catalog is warmed up. Pick one and make it sing.' : null; },
+    function(f){ return f.nQueued ? f.nQueued + ' job' + (f.nQueued===1?'':'s') + ' queued and waiting for your eye. First measure wins.' : null; },
+    function(f){ return f.recent ? 'You left ' + f.recent.name + ' ' + f.recent.when + '. It is right where you left it — jump back in.' : null; },
+    function(f){ return f.recent && f.recent.elements ? f.recent.name + ' is ' + f.recent.elements + ' element' + (f.recent.elements===1?'':'s') + ' strong. Keep building.' : null; },
+    function(f){ return f.day + '. Clear run, no deadlines today — a good day to measure something properly.'; },
+    function(f){ return 'Concrete does not price itself. Lucky it has you.'; },
+    function(f){ return 'Every tender starts with a takeoff. Let\'s build a good one today.'; },
+    function(f){ return 'Rates are current, drawings are in the Vault, coffee is optional.'; },
+    function(f){ return 'Fresh ' + f.day + ', fresh numbers. Let\'s go.'; }
+  ];
+  function excitedLine(f){
+    var lines = EXCITED.map(function(fn){ try{ return fn(f); }catch(e){ return null; } }).filter(Boolean);
+    // No deadline-free line while something is actually due
+    if(f.dueToday.length || f.dueWeek.length) lines = lines.filter(function(l){ return !/no deadlines today/.test(l); });
+    var last = null; try{ last = sessionStorage.getItem('gradcon-welcome-last'); }catch(e){}
+    var pool = lines.length > 1 ? lines.filter(function(l){ return l !== last; }) : lines;
+    var pick = pool[Math.floor(Math.random() * pool.length)];
+    try{ sessionStorage.setItem('gradcon-welcome-last', pick); }catch(e){}
+    return pick;
+  }
+  function welcomeFacts(items, now){
+    var today = localDay(now); var week = new Date(now); week.setDate(week.getDate()+7); var weekEnd = localDay(week);
+    var quotes = items.filter(function(i){ return i.kind === 'quote'; });
+    var open = quotes.filter(function(q){ return OPEN_WORK[q.status]; });
+    var dueToday = open.filter(function(q){ return q.deadline === today; }).map(function(q){ return q.name || 'a quote'; });
+    var dueWeek = open.filter(function(q){ return q.deadline && q.deadline > today && q.deadline <= weekEnd; }).map(function(q){ return q.name || 'a quote'; });
+    var recent = items.filter(function(i){ return i.updatedAt && i.name; }).sort(function(a,b){ return a.updatedAt < b.updatedAt ? 1 : -1; })[0] || null;
+    return {
+      day: now.toLocaleDateString('en-AU', { weekday:'long' }),
+      dueToday: dueToday, dueWeek: dueWeek,
+      nEstimating: quotes.filter(function(q){ return q.status === 'Estimating'; }).length,
+      nQueued: quotes.filter(function(q){ return q.status === 'Queued'; }).length,
+      recent: recent ? { name: recent.name, when: whenLabel(recent.updatedAt, now), elements: recent.elements } : null
+    };
+  }
+  function escapeHtml(s){ return String(s==null?'':s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+  function paintWelcome(items, now){
+    var facts = welcomeFacts(items, now);
+    document.getElementById('welcome-eyebrow').textContent = now.toLocaleDateString('en-AU', { weekday:'long', day:'numeric', month:'long' });
+    document.getElementById('welcome-greeting').textContent = timeOfDay(now) + ', ' + firstName(currentUser) + '.';
+    document.getElementById('welcome-line').textContent = excitedLine(facts);
+    var recent = items.filter(function(i){ return i.name && i.updatedAt; }).sort(function(a,b){ return a.updatedAt < b.updatedAt ? 1 : -1; }).slice(0, 6);
+    var host = document.getElementById('welcome-recent'); var grid = document.getElementById('welcome-recent-grid');
+    host.hidden = recent.length === 0;
+    grid.innerHTML = recent.map(function(r){
+      var kind = r.kind === 'quote' ? 'Quote' : 'Takeoff';
+      var meta = r.kind === 'quote' ? (r.status || '') : (r.elements != null ? r.elements + ' element' + (r.elements===1?'':'s') : 'Estimates');
+      return '<button type="button" class="recent-card" data-kind="' + r.kind + '" data-id="' + escapeHtml(r.id) + '" title="Open ' + escapeHtml(r.name) + '">' +
+        '<span class="kind">' + kind + '<b>' + escapeHtml(meta) + '</b></span>' +
+        '<h3>' + escapeHtml(r.name) + '</h3>' +
+        '<span class="when">Last saved ' + escapeHtml(whenLabel(r.updatedAt, now)) + '</span>' +
+        '<span class="open">Open ' + (r.kind === 'quote' ? 'quote' : 'takeoff') + ' →</span></button>';
+    }).join('');
+  }
+  document.getElementById('welcome-recent-grid').addEventListener('click', function(e){
+    var card = e.target.closest('.recent-card'); if(!card) return;
+    var id = card.getAttribute('data-id'), kind = card.getAttribute('data-kind');
+    if(kind === 'quote'){
+      try{ localStorage.setItem('gradcon-active-project', id); localStorage.removeItem('gradcon-quotes-initial-view'); }catch(err){}
+      openApp('quotes', true); setActiveMenu('quotes');
+    } else {
+      try{ localStorage.setItem('gradcon-estimate-active', id); }catch(err){}
+      openApp('estimates', true); setActiveMenu('estimates');
+    }
+  });
+  var welcomeRun = 0;
+  function renderWelcome(){
+    var run = ++welcomeRun; var now = new Date();
+    var items = localQuotes().concat(localTakeoffs());
+    paintWelcome(items, now);
+    // Then the cloud: exact "when" for every row, and names for projects this
+    // browser has never opened (at most three, through the summaries function
+    // that drops the drawings before the row leaves the database).
+    var stamps = cloudGet('/rest/v1/estimator_kv?select=key,updated_at&or=(key.like.gradcon-quote-*,key.like.gradcon-estimate-state*)&order=updated_at.desc&limit=200');
+    var eidx = cloudGet('/rest/v1/estimator_kv?select=value&key=eq.gradcon-estimate-projects-index');
+    Promise.all([stamps, eidx]).then(function(res){
+      if(run !== welcomeRun) return;
+      var rows = Array.isArray(res[0]) ? res[0] : []; var byKey = {}; rows.forEach(function(r){ byKey[r.key] = r.updated_at; });
+      var cloudIdx = res[1] && res[1][0] && Array.isArray(res[1][0].value) ? res[1][0].value : null;
+      if(cloudIdx){ // takeoffs this browser has not seen
+        var have = {}; items.forEach(function(i){ if(i.kind==='takeoff') have[i.id] = true; });
+        cloudIdx.forEach(function(p){ if(p && p.key && !p.deleted && !have[p.id]) items.push({ kind:'takeoff', id:p.id, key:p.key, name:p.name||'', status:'', deadline:null, elements:null, updatedAt:p.savedAt||null, named:!!p.name }); });
+      }
+      items.forEach(function(i){ if(byKey[i.key]) i.updatedAt = byKey[i.key]; });
+      var unnamed = items.filter(function(i){ return i.kind==='quote' && !i.named && i.updatedAt; }).sort(function(a,b){ return a.updatedAt < b.updatedAt ? 1 : -1; }).slice(0,3);
+      var fill = unnamed.length ? cloudPost('/rest/v1/rpc/estimator_kv_quote_summaries', { p_keys: unnamed.map(function(i){ return i.key; }) }) : Promise.resolve(null);
+      return fill.then(function(sum){
+        if(run !== welcomeRun) return;
+        if(Array.isArray(sum)) sum.forEach(function(row){ var it = items.find(function(i){ return i.key === row.key; }); var q = row.value || {}; if(it){ it.name = q.projectName || it.name; it.status = q.status || it.status; it.deadline = (q.planner && q.planner.deadline) || it.deadline; it.elements = Array.isArray(q.items) ? q.items.length : it.elements; it.named = !!it.name; } });
+        paintWelcome(items, now);
+      });
+    }).catch(function(){ /* offline: the local paint stands */ });
+  }
+
+  // ===================== SETTINGS → AI PROVIDERS =====================
+  // The keys live on the server (api/_providers.js); this only asks the
+  // function what is configured and runs a one-word test on request.
+  function loadAiProviders(){
+    var host = document.getElementById('settings-ai');
+    host.innerHTML = '<span class="ai-result">Checking…</span>';
+    fetch('/api/ai-providers', { headers:{ accept:'application/json' } }).then(function(r){ return r.ok ? r.json() : Promise.reject(new Error(String(r.status))); }).then(function(d){
+      var list = (d && d.providers) || [];
+      host.innerHTML = list.map(function(p){
+        return '<div class="ai-row" data-provider="' + p.id + '"><div class="name">' + escapeHtml(p.label) + '<small>' + escapeHtml(p.keyVar) + (p.configured ? ' · model ' + escapeHtml(p.model) : ' not set') + '</small></div>' +
+          (p.isDefault ? '<span class="ai-chip def">default</span>' : '') +
+          '<span class="ai-chip ' + (p.configured ? 'on' : 'off') + '">' + (p.configured ? 'Key set' : 'No key') + '</span>' +
+          '<button type="button" class="ai-test" ' + (p.configured ? '' : 'disabled') + '>Test</button><span class="ai-result"></span></div>';
+      }).join('') || '<span class="ai-result">No providers known to this build.</span>';
+    }).catch(function(){
+      host.innerHTML = '<span class="ai-result">Not available in this build — the provider keys and their test live on the Vercel deployment (api/ai-providers).</span>';
+    });
+  }
+  document.getElementById('settings-ai').addEventListener('click', function(e){
+    var btn = e.target.closest('.ai-test'); if(!btn) return;
+    var row = btn.closest('.ai-row'); var out = row.querySelector('.ai-result'); var id = row.getAttribute('data-provider');
+    btn.disabled = true; out.className = 'ai-result'; out.textContent = 'Testing…';
+    fetch('/api/ai-providers', { method:'POST', headers:{ 'content-type':'application/json' }, body: JSON.stringify({ provider:id, action:'test' }) })
+      .then(function(r){ return r.json().then(function(d){ return { status:r.status, d:d }; }); })
+      .then(function(x){ var d = x.d || {}; if(d.ok){ out.className = 'ai-result ok'; out.textContent = 'OK · ' + (d.model||'') + ' · ' + (d.latencyMs||0) + ' ms'; } else { out.className = 'ai-result err'; out.textContent = (d.error || ('Failed (' + x.status + ')')) + (d.detail ? ' — ' + d.detail : ''); } })
+      .catch(function(){ out.className = 'ai-result err'; out.textContent = 'Could not reach the test endpoint.'; })
+      .then(function(){ btn.disabled = false; });
+  });
+
   (function restoreSession(){
     var session = loadSession();
     if(!session || !session.currentUser || ALLOWED_EMAILS.indexOf(session.currentUser) === -1) return;
@@ -1295,6 +1522,7 @@
       setActiveMenu(route && route.target === session.activeApp ? remembered : session.activeApp);
     } else {
       show('screen-dashboard');
+      renderWelcome();
       maybeAutoOpenApp();
     }
   })();

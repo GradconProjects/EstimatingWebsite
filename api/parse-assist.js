@@ -26,14 +26,6 @@ export default async function handler(req, res) {
     return;
   }
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    res.status(503).json({
-      error: "AI-assisted matching isn't configured yet — set ANTHROPIC_API_KEY in this Vercel project's Environment Variables (server-side only, no VITE_ prefix).",
-    });
-    return;
-  }
-
   const { line, candidates } = req.body || {};
   if (!line || !Array.isArray(candidates) || candidates.length === 0) {
     res.status(400).json({ error: "Request body must be { line: {...}, candidates: [{...}, ...] }" });
@@ -56,28 +48,12 @@ Reply with ONLY a JSON object and nothing else — no markdown fences, no extra 
 {"index": <candidate number, or -1 if none genuinely fit>, "confidence": "high" | "medium" | "low", "reason": "<one short sentence>"}`;
 
   try {
-    const upstream = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 300,
-        messages: [{ role: "user", content: prompt }],
-      }),
-    });
-
-    if (!upstream.ok) {
-      const detail = await upstream.text();
-      res.status(502).json({ error: "Anthropic API request failed", detail: detail.slice(0, 500) });
-      return;
-    }
-
-    const data = await upstream.json();
-    const text = data?.content?.[0]?.text || "";
+    // One adapter for every provider key (api/_providers.js): the default
+    // provider is AI_PROVIDER, else the first with a key configured.
+    const { callText, defaultProviderId } = await import("./_providers.js");
+    const provider = defaultProviderId();
+    if (!provider) { res.status(503).json({ error: "No AI provider is configured — set ANTHROPIC_API_KEY, OPENAI_API_KEY or DEEPSEEK_API_KEY in the Vercel project's Environment Variables." }); return; }
+    const { text } = await callText(provider, { prompt, maxTokens: 300 });
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     let suggestion;
     try {
