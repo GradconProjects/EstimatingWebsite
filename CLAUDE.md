@@ -529,7 +529,9 @@ stands. **Grady's account sees Quotes only** (`QUOTES_ONLY_USERS` /
 estimates. he only works on quotes"): no takeoff cards, no takeoff facts, no
 cloud read of the Estimates index; `projects@` sees both. **Both accounts get
 the "Coming up" strip** (`#welcome-upcoming`, painted by `paintWelcome`):
-every open quote (`OPEN_WORK`) whose deadline is overdue, today or within 7
+every open quote (`OPEN_WORK` = Queued, Estimating, Quoting — Grady, 10 Oct
+2026: "completed and deadline missed should not be here"; the cards obey the
+same set, takeoffs are not filtered) whose deadline is overdue, today or within 7
 days, soonest first, with a red chip for overdue / today, amber up to 3 days
 out (`dueLabel(deadline, now)` → `{text, cls, n}` off `dayDiff`, local
 days), each row opening the quote; "No quote deadlines in the next 7 days"
@@ -616,12 +618,18 @@ login and on the main dashboard". Rules:
    `OPENAI_KEY` are accepted spellings of `OPENAI_API_KEY`.
 4. **The provider is a Settings choice** (`aiProvider` in `gradcon-preferences`,
    per browser): Settings → AI providers shows "Use" per configured provider
-   and "in use" on the one that applies; `resolveProviderId(requested, env)`
+   and "in use" on the one that applies, and the AI Engine header carries the
+   same switch as pills (`#providerToggle`, `setPortalPref`); `resolveProviderId(requested, env)`
    honours it only when that provider has a key, else the server default.
    Every AI request from the browser passes `provider`.
 5. **Gradcon AI chat** (`#ai-chat-fab` / `#ai-chat` in the shell; `show()` shows
-   the button on every screen but login, for every account): `assistantContext()`
-   gathers what the browser holds of EVERY section — quotes summaries (name,
+   the button on every screen but login, for every account; no provider name
+   in its header and no footer line, by request): `assistantContext()` (async)
+   gathers EVERY section — what the browser holds first, then the cloud for
+   what it never opened (`chatCloudData`, kept 5 min: the quotes index, the
+   stamps, the summaries function for every project without a local copy, the
+   takeoff index, the rates, the AI jobs — 10 Oct 2026, projects@'s browser had
+   never opened Quotes and the chat saw no projects) — quotes summaries (name,
    client, status, deadline and days to it, elements, scope, pinned rates),
    takeoffs (elements, review status, AI drafts), rates validity, the Rates
    Library global block, Cost Planner projects, AI jobs — capped at ~60 kB and
@@ -630,7 +638,14 @@ login and on the main dashboard". Rules:
    most three buttons (open an app / a project / a takeoff —
    `runChatAction`, never a write). **Nothing runs until the person clicks.**
    History is per tab (`sessionStorage` `gradcon-ai-chat`, 30 turns).
-6. The "Quality checks" tab describes the next build (deterministic checks
+6. **The AI Engine mirrors the rest of the system** (`loadMirror` /
+   `renderMirror`, Home → "What the system holds"): the Quotes projects
+   (local mirrors, then the cloud index + stamps + the summaries function for
+   the rest) and the Estimates takeoffs (local + cloud index), read-only,
+   refreshed on demand and kept 5 min; a takeoff job's "Quotes project" select
+   (`job.projectId` / `projectName`) names the job after the project and rides
+   on the hand-off into `PROJECT.aiImport`.
+7. The "Quality checks" tab describes the next build (deterministic checks
    first, then AI explanations); it is not live yet.
 `test-ai-engine.mjs` proves the tile, both job kinds with a mocked server,
 the review edits, the export into AI drafts with the field mapping and the

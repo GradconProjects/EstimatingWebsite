@@ -209,10 +209,11 @@
   .dash-hero-art{ margin:0 0 40px; border-radius:var(--radius); overflow:hidden; box-shadow:0 30px 60px -30px rgba(35,31,32,.4); border:1px solid var(--line-soft); }
   .dash-hero-art img{ display:block; width:100%; height:clamp(160px,26vw,300px); object-fit:cover; }
 
-  /* Tool tiles by device: wide desktop 6 across; laptop / tablet landscape 3; tablet portrait and
-     large phones 2; phones 1 (2 Oct 2026). minmax(0,1fr) stops a long word widening a column. */
-  .panel-grid{ display:grid; grid-template-columns:repeat(6, minmax(0,1fr)); gap:14px; max-width:1760px; }
-  @media (max-width:1279px){ .panel-grid{ grid-template-columns:repeat(3, minmax(0,1fr)); gap:16px; } }
+  /* Tool tiles by device: wide desktop all 7 on one row; laptop / tablet landscape 4 (then 3);
+     tablet portrait and large phones 2; phones 1 (2 Oct 2026; 7 across since the AI Engine tile,
+     10 Oct 2026). minmax(0,1fr) stops a long word widening a column. */
+  .panel-grid{ display:grid; grid-template-columns:repeat(7, minmax(0,1fr)); gap:12px; max-width:1760px; }
+  @media (max-width:1279px){ .panel-grid{ grid-template-columns:repeat(4, minmax(0,1fr)); gap:16px; } }
   @media (max-width:899px){ .panel-grid{ grid-template-columns:repeat(2, minmax(0,1fr)); } }
   @media (max-width:559px){ .panel-grid{ grid-template-columns:minmax(0,1fr); } }
 
@@ -883,10 +884,9 @@
      is a button the person clicks. -->
 <button type="button" id="ai-chat-fab" class="ai-fab" hidden title="Ask Gradcon AI about your projects, deadlines, rates and takeoffs">🤖 Ask Gradcon AI</button>
 <div id="ai-chat" class="ai-chat" hidden>
-  <div class="ai-chat-head"><b>Gradcon AI</b><span class="ai-chat-prov" id="ai-chat-provider"></span><button type="button" id="ai-chat-clear" title="Start a new conversation">Clear</button><button type="button" id="ai-chat-close" title="Close">✕</button></div>
+  <div class="ai-chat-head"><b>Gradcon AI</b><span class="ai-chat-prov"></span><button type="button" id="ai-chat-clear" title="Start a new conversation">Clear</button><button type="button" id="ai-chat-close" title="Close">✕</button></div>
   <div class="ai-chat-log" id="ai-chat-log"></div>
   <form id="ai-chat-form" autocomplete="off"><input type="text" id="ai-chat-input" placeholder="Ask about projects, deadlines, rates, takeoffs…" maxlength="2000"><button type="submit" id="ai-chat-send">Send</button></form>
-  <div class="ai-chat-foot">Sees every section (read-only). It only acts when you click one of its buttons — nothing changes on its own.</div>
 </div>
 
 <script id="quotes-app-b64" type="text/plain">__QUOTES_B64__</script>
@@ -1412,7 +1412,10 @@
   // stamps refine the "when" and fill names for projects this browser has not
   // opened. A card opens the app straight on that project.
   var CLOUD = { url: 'https://xbmyhvrcuyapoarmchpv.supabase.co', key: 'sb_publishable_Kr4dTFXhZsifAA28HmMAVQ_EDSR2DL0' }; // the anon key the Estimates app already ships
-  var OPEN_WORK = { 'Queued':1, 'Estimating':1, 'Completed Estimating':1, 'Quoting':1 };
+  // Open work only (Grady, 10 Oct 2026: "completed and deadline missed should
+  // not be here"): Completed Estimating, Deadline Missed and every other closed
+  // status leave the welcome panel — Coming up, the cards and the facts alike.
+  var OPEN_WORK = { 'Queued':1, 'Estimating':1, 'Quoting':1 };
   // Grady works on Quotes only (10 Oct 2026): his welcome never lists Estimates
   // takeoffs; the projects@ account sees both.
   var QUOTES_ONLY_USERS = { 'grady@gradcon.com.au': 1 };
@@ -1524,7 +1527,7 @@
     document.getElementById('welcome-eyebrow').textContent = now.toLocaleDateString('en-AU', { weekday:'long', day:'numeric', month:'long' });
     document.getElementById('welcome-greeting').textContent = timeOfDay(now) + ', ' + firstName(currentUser) + '.';
     document.getElementById('welcome-line').textContent = excitedLine(facts);
-    var recent = items.filter(function(i){ return i.name && i.updatedAt; }).sort(function(a,b){ return a.updatedAt < b.updatedAt ? 1 : -1; }).slice(0, 6);
+    var recent = items.filter(function(i){ return i.name && i.updatedAt && (i.kind !== 'quote' || OPEN_WORK[i.status]); }).sort(function(a,b){ return a.updatedAt < b.updatedAt ? 1 : -1; }).slice(0, 6);
     // Coming up: every open quote that is overdue, due today or due within 7 days, soonest first
     var upcoming = items.filter(function(i){ return i.kind === 'quote' && OPEN_WORK[i.status] && i.deadline; })
       .map(function(i){ return { item:i, due: dueLabel(i.deadline, now) }; })
@@ -1654,30 +1657,80 @@
   var CHAT_KEY = 'gradcon-ai-chat';
   function chatHistory(){ try{ return JSON.parse(sessionStorage.getItem(CHAT_KEY)) || []; }catch(e){ return []; } }
   function saveChat(h){ try{ sessionStorage.setItem(CHAT_KEY, JSON.stringify(h.slice(-30))); }catch(e){} }
+  // Cloud copies for the chat: the browser the person is on may never have
+  // opened Quotes (its mirrors are empty — 10 Oct 2026, projects@ asked "what
+  // project is approaching deadline" and the chat saw nothing), so the quotes
+  // index, the summaries of every project not held locally (through the
+  // summaries function that drops the drawings), the takeoff index, the rates
+  // and the AI jobs are read from the cloud and kept for five minutes.
+  var CHAT_CLOUD = { at: 0, data: null, pending: null };
+  function chatCloudData(){
+    if(CHAT_CLOUD.data && Date.now() - CHAT_CLOUD.at < 5 * 60000) return Promise.resolve(CHAT_CLOUD.data);
+    if(CHAT_CLOUD.pending) return CHAT_CLOUD.pending;
+    var localKeys = {}; localQuotes().forEach(function(q){ localKeys[q.key] = true; });
+    var p = Promise.all([
+      cloudGet('/rest/v1/estimator_kv?select=value&key=eq.gradcon-projects'),
+      cloudGet('/rest/v1/estimator_kv?select=key,updated_at&key=like.gradcon-quote-*&order=updated_at.desc&limit=200'),
+      cloudGet('/rest/v1/estimator_kv?select=value&key=eq.gradcon-estimate-projects-index'),
+      cloudGet('/rest/v1/estimator_kv?select=value&key=eq.gradcon-rates'),
+      cloudGet('/rest/v1/estimator_kv?select=value&key=eq.gradcon-ai-jobs')
+    ]).then(function(res){
+      var idx = res[0] && res[0][0] && Array.isArray(res[0][0].value) ? res[0][0].value : [];
+      var stamps = {}; (Array.isArray(res[1]) ? res[1] : []).forEach(function(r){ stamps[r.key] = r.updated_at; });
+      var missing = idx.filter(function(e){ return e && e.storageKey && !localKeys[e.storageKey]; }).map(function(e){ return e.storageKey; }).slice(0, 60);
+      var fill = missing.length ? cloudPost('/rest/v1/rpc/estimator_kv_quote_summaries', { p_keys: missing }) : Promise.resolve([]);
+      return fill.then(function(sum){
+        var summaries = {}; (Array.isArray(sum) ? sum : []).forEach(function(row){ summaries[row.key] = row.value || {}; });
+        return { index: idx, stamps: stamps, summaries: summaries,
+                 takeoffs: res[2] && res[2][0] && Array.isArray(res[2][0].value) ? res[2][0].value : null,
+                 rates: res[3] && res[3][0] && res[3][0].value && typeof res[3][0].value === 'object' ? res[3][0].value : null,
+                 aiJobs: res[4] && res[4][0] && Array.isArray(res[4][0].value) ? res[4][0].value : null };
+      });
+    }).catch(function(){ return null; }).then(function(d){ CHAT_CLOUD.pending = null; if(d){ CHAT_CLOUD.data = d; CHAT_CLOUD.at = Date.now(); } return d; });
+    CHAT_CLOUD.pending = p; return p;
+  }
+  function quoteRow(id, key, v, updatedAt, now){
+    var items = Array.isArray(v.items) ? v.items.slice(0, 40).map(function(it){ return { label: it.label, type: it.typeId, scope: it.scope || null }; }) : [];
+    var deadline = (v.planner && v.planner.deadline) || null;
+    return { id: id, name: v.projectName || '', client: v.clientName || null, status: v.status || '', deadline: deadline, daysToDeadline: dayDiff(deadline, now), submittedAt: v.submittedAt || null, completedAt: v.completedAt || null,
+             gfaM2: v.gfa || null, scope: v.scope || 'both', priority: v.planner && v.planner.priority || null, ratesPinnedAt: v.ratesFrozen && v.ratesFrozen.at || null, elements: Array.isArray(v.items) ? v.items.length : items.length, elementList: items, lastSaved: updatedAt || null };
+  }
   function assistantContext(){
-    var now = new Date(); var today = localDay(now);
+    return chatCloudData().then(function(cloud){ return assistantContextWith(cloud); });
+  }
+  function assistantContextWith(cloud){
+    var now = new Date(); var today = localDay(now); cloud = cloud || {};
+    var seen = {};
     var quotes = localQuotes().map(function(q){
+      seen[q.key] = true;
       var hit = readJSON('gradcon-cache:summary:' + q.key); var v = (hit && hit.value) || readJSON(q.key) || {};
-      var items = Array.isArray(v.items) ? v.items.slice(0, 40).map(function(it){ return { label: it.label, type: it.typeId, scope: it.scope || null }; }) : [];
-      return { id: q.id, name: q.name, client: v.clientName || null, status: q.status, deadline: q.deadline, daysToDeadline: dayDiff(q.deadline, now), submittedAt: v.submittedAt || null, completedAt: v.completedAt || null,
-               gfaM2: v.gfa || null, scope: v.scope || 'both', priority: v.planner && v.planner.priority || null, ratesPinnedAt: v.ratesFrozen && v.ratesFrozen.at || null, elements: items.length, elementList: items, lastSaved: q.updatedAt };
+      return quoteRow(q.id, q.key, v, (cloud.stamps && cloud.stamps[q.key]) || q.updatedAt, now);
     });
-    var takeoffs = localTakeoffs().map(function(t){
+    (cloud.index || []).forEach(function(e){
+      if(!e || !e.storageKey || seen[e.storageKey]) return; seen[e.storageKey] = true;
+      var v = (cloud.summaries && cloud.summaries[e.storageKey]) || null; if(!v) return;
+      quotes.push(quoteRow(e.id, e.storageKey, v, cloud.stamps && cloud.stamps[e.storageKey], now));
+    });
+    quotes = quotes.filter(function(q){ return q.name || q.elements; });
+    var localTk = localTakeoffs(); var tkSeen = {};
+    var takeoffs = localTk.map(function(t){
+      tkSeen[t.id] = true;
       var blob = readJSON(t.key) || {}; var inst = Array.isArray(blob.instances) ? blob.instances : [];
       return { id: t.id, name: t.name, lastSaved: t.updatedAt, elements: inst.length, elementList: inst.slice(0, 40).map(function(i){ return { label: i.label, type: i.typeKey, status: i.data && i.data.__aiImport ? 'AI draft' : (i.review ? 'reviewed' : 'draft') }; }), aiDraft: !!(blob.project && blob.project.aiImport) };
     });
-    var ratesMirror = readJSON('gradcon-cache:gradcon-rates'); var rates = (ratesMirror && ratesMirror.value) || readJSON('gradcon-rates') || {};
+    (cloud.takeoffs || []).forEach(function(p){ if(p && p.key && !p.deleted && !tkSeen[p.id]) takeoffs.push({ id: p.id, name: p.name || '', lastSaved: p.savedAt || null, elements: null, aiDraft: p.group === 'ai' }); });
+    var ratesMirror = readJSON('gradcon-cache:gradcon-rates'); var rates = (ratesMirror && ratesMirror.value) || readJSON('gradcon-rates') || cloud.rates || {};
     var validity = []; Object.keys(rates).forEach(function(k){ var r = rates[k]; if(r && r.validUntil) validity.push({ key: k, validUntil: r.validUntil, daysLeft: dayDiff(r.validUntil, now), unitCost: r.unitCost }); });
     var lib = readJSON('gradcon-rates-library') || {}; var global = lib.global || {};
-    var aiJobs = (readJSON('gradcon-ai-jobs') || []).filter(function(j){ return !j.deleted; }).map(function(j){ return { id: j.id, name: j.name, kind: j.kind, status: j.status, files: j.files, exported: j.exported, updatedAt: j.updatedAt }; });
+    var aiJobs = (readJSON('gradcon-ai-jobs') || cloud.aiJobs || []).filter(function(j){ return j && !j.deleted; }).map(function(j){ return { id: j.id, name: j.name, kind: j.kind, status: j.status, files: j.files, exported: j.exported, updatedAt: j.updatedAt }; });
     var planner = readJSON('gradcon-costplanner-state'); var plannerProjects = planner && Array.isArray(planner.projects) ? planner.projects.slice(0, 30).map(function(p){ return { name: p.name || p.title || null, status: p.status || null }; }) : null;
-    var ctx = { today: today, user: currentUser, userFirstName: firstName(currentUser), openApp: (loadSession() || {}).activeApp || 'dashboard', quotes: quotes, takeoffs: takeoffs, ratesCount: Object.keys(rates).length, rateValidity: validity, ratesLibraryGlobal: global, aiJobs: aiJobs, costPlannerProjects: plannerProjects };
+    var ctx = { today: today, user: currentUser, userFirstName: firstName(currentUser), openApp: (loadSession() || {}).activeApp || 'dashboard', quotes: quotes, takeoffs: takeoffs, ratesCount: Object.keys(rates).length, rateValidity: validity, ratesLibraryGlobal: global, aiJobs: aiJobs, costPlannerProjects: plannerProjects, cloudRead: !!(cloud && cloud.index) };
     var json = JSON.stringify(ctx);
     if(json.length > 60000){ ctx.quotes.forEach(function(q){ delete q.elementList; }); ctx.takeoffs.forEach(function(t){ delete t.elementList; }); json = JSON.stringify(ctx); }
     if(json.length > 60000){ ctx.quotes = ctx.quotes.slice(0, 40); ctx.takeoffs = ctx.takeoffs.slice(0, 20); ctx.truncated = true; }
     return ctx;
   }
-  function paintChatProvider(){ var p = providerInUse(); var el = document.getElementById('ai-chat-provider'); if(el) el.textContent = p ? p.label : ''; }
+  function paintChatProvider(){ /* the chat header shows no provider (Grady, 10 Oct 2026); Settings → AI providers says which is in use */ }
   function chatBubble(role, text, cls){
     var log = document.getElementById('ai-chat-log'); var div = document.createElement('div'); div.className = 'ai-msg ' + role + (cls ? ' ' + cls : ''); div.textContent = text; log.appendChild(div); log.scrollTop = log.scrollHeight; return div;
   }
@@ -1717,8 +1770,9 @@
     chatBubble('user', text.trim());
     var thinking = chatBubble('bot', 'Thinking…', 'thinking');
     chatBusy = true; document.getElementById('ai-chat-send').disabled = true;
-    var body = { provider: loadPrefs().aiProvider || undefined, messages: h.slice(-12).map(function(m){ return { role: m.role, content: m.content }; }), context: assistantContext() };
-    fetch('/api/ai-chat', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(90000) })
+    assistantContext().then(function(context){
+    var body = { provider: loadPrefs().aiProvider || undefined, messages: h.slice(-12).map(function(m){ return { role: m.role, content: m.content }; }), context: context };
+    return fetch('/api/ai-chat', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(90000) }); })
       .then(function(r){ return r.json().then(function(d){ return { ok: r.ok, status: r.status, d: d }; }); })
       .then(function(x){
         thinking.remove();
@@ -1731,7 +1785,7 @@
   }
   document.getElementById('ai-chat-fab').addEventListener('click', function(){
     var panel = document.getElementById('ai-chat'); panel.hidden = false; document.getElementById('ai-chat-fab').hidden = true;
-    renderChatLog(); paintChatProvider(); if(!AI_PROVIDERS) loadAiProviders(); document.getElementById('ai-chat-input').focus();
+    renderChatLog(); paintChatProvider(); if(!AI_PROVIDERS) loadAiProviders(); chatCloudData(); document.getElementById('ai-chat-input').focus();
   });
   document.getElementById('ai-chat-close').addEventListener('click', function(){ document.getElementById('ai-chat').hidden = true; document.getElementById('ai-chat-fab').hidden = false; });
   document.getElementById('ai-chat-clear').addEventListener('click', function(){ saveChat([]); renderChatLog(); });

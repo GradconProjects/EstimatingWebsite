@@ -10376,7 +10376,7 @@ function applyAiHandoff(){
   if(h.source){ const sp=(h.source.sheets||[]).map(s=>s.ref+(s.revision?" "+s.revision:"")).filter(Boolean); if(sp.length) st.drawingRev = sp.join(", ").slice(0,120); }
   const made=[], skipped=[];
   h.elements.forEach(el=>{ const inst = aiProposalToInstance(el, prof); if(inst){ inst._collapsed=true; INSTANCES.push(inst); SELECTED_TYPES[inst.typeKey]=true; made.push(inst); } else skipped.push(el.label||el.type||"?"); });
-  PROJECT.aiImport = { jobId:h.jobId||null, at:h.at||new Date().toISOString(), provider:(h.source&&h.source.provider)||null, model:(h.source&&h.source.model)||null, files:(h.source&&h.source.files)||[], elements:made.length, skipped };
+  PROJECT.aiImport = { jobId:h.jobId||null, projectId:h.projectId||null, projectName:h.projectName||null, at:h.at||new Date().toISOString(), provider:(h.source&&h.source.provider)||null, model:(h.source&&h.source.model)||null, files:(h.source&&h.source.files)||[], elements:made.length, skipped };
   saveEstimateState();
   tagTakeoffGroup(CURRENT_PROJECT_KEY, "ai");
   try{ localStorage.setItem(AI_HANDOFF_RESULT_KEY, JSON.stringify({ jobId:h.jobId||null, takeoffId:activeTakeoffId(), name:PROJECT.name, elements:made.length, at:new Date().toISOString() })); }catch(e){}

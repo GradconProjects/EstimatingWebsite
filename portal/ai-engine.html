@@ -12,6 +12,10 @@ header{background:linear-gradient(135deg,var(--navy) 0%,var(--navy2) 100%);color
 header h1{margin:0;font-size:17px;letter-spacing:.02em;font-weight:600;color:#dcebf6;}
 header .subtitle{font-size:11.5px;opacity:.85;max-width:620px;}
 header .cloud{font-size:11px;opacity:.8;white-space:nowrap;}
+.prov-btn{background:#16233f;border:1px solid #2b3f66;color:#cdd8ee;border-radius:999px;padding:5px 12px;font:inherit;font-size:12px;font-weight:700;cursor:pointer;}
+.prov-btn.on{background:var(--ai);border-color:var(--ai);color:#fff;} .prov-btn:disabled{opacity:.45;cursor:default;}
+.prov-lbl{font-size:11px;opacity:.8;}
+.mirror table td{font-size:12.5px;} .mirror .due.hot{color:var(--bad);font-weight:700;} .mirror .due.warm{color:var(--warn);font-weight:700;}
 #tabnav{display:flex;gap:2px;background:#0c2438;padding:0 18px;overflow-x:auto;}
 .tab-btn{background:transparent;border:none;color:#a9c6de;padding:11px 15px;cursor:pointer;font-size:12.5px;font-weight:600;border-bottom:3px solid transparent;white-space:nowrap;}
 .tab-btn:hover{color:#fff;} .tab-btn.active{color:#fff;border-bottom-color:var(--accent);background:var(--navy2);}
@@ -55,7 +59,10 @@ tr.excluded td{opacity:.45;} td input[type=text],td input[type=number],td select
 <body>
 <header>
   <div><h1>Gradcon AI Engine</h1><div class="subtitle">AI takeoff from drawings, specification &amp; compliance reader, quality checks. Everything here is a DRAFT for review — nothing changes a quote or a takeoff until you export it.</div></div>
-  <div class="cloud" id="cloudStatus">…</div>
+  <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;">
+    <div class="row" id="providerToggle" title="Which AI provider every job and the chat run on (also in portal Settings → AI providers)"></div>
+    <div class="cloud" id="cloudStatus">…</div>
+  </div>
 </header>
 <nav id="tabnav">
   <button class="tab-btn active" data-page="home">Home</button>
@@ -76,6 +83,14 @@ tr.excluded td{opacity:.45;} td input[type=text],td input[type=number],td select
         <button class="btn ai" id="newTakeoff">+ New AI takeoff</button>
         <button class="btn primary" id="newSpec">+ New specification reader job</button>
         <span class="small">PDF files only for now. Files go to the Gradcon cloud bucket so the model can read them; nothing is sent anywhere else.</span>
+      </div>
+    </div>
+    <div class="card mirror">
+      <div class="row" style="justify-content:space-between;"><h3 style="margin:0;">What the system holds</h3><div class="row"><span class="small" id="mirrorStatus">loading…</span><button class="btn small" id="mirrorRefresh">Refresh</button></div></div>
+      <p class="small" style="margin:6px 0 8px;">The same Quotes projects and Estimates takeoffs the rest of the portal shows, read-only. A takeoff job can be linked to a project; the quality checks (next build) run on the projects at Completed Estimating.</p>
+      <div class="grid2">
+        <div><h3 style="margin-top:0;">Quotes projects</h3><table><thead><tr><th>Project</th><th>Client</th><th>Status</th><th>Deadline</th><th>Elements</th><th>Saved</th></tr></thead><tbody id="mirrorQuotes"></tbody></table></div>
+        <div><h3 style="margin-top:0;">Estimates takeoffs</h3><table><thead><tr><th>Takeoff</th><th>Elements</th><th>Saved</th><th></th></tr></thead><tbody id="mirrorTakeoffs"></tbody></table></div>
       </div>
     </div>
     <div class="card jobs">
@@ -183,6 +198,7 @@ const esc = (s) => String(s==null?"":s).replace(/[&<>"]/g, c=>({"&":"&amp;","<":
 const readJSON = (k) => { try{ const r=localStorage.getItem(k); return r? JSON.parse(r) : null; }catch(e){ return null; } };
 const writeJSON = (k,v) => { try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} };
 function portalPref(key){ try{ var p = JSON.parse(localStorage.getItem("gradcon-preferences")) || {}; return p[key]; }catch(e){ return undefined; } }
+function setPortalPref(key, value){ try{ var p = JSON.parse(localStorage.getItem("gradcon-preferences")) || {}; p[key] = value; localStorage.setItem("gradcon-preferences", JSON.stringify(p)); }catch(e){} }
 const nowIso = () => new Date().toISOString();
 function whenLabel(iso){ if(!iso) return "—"; const t=new Date(iso); if(isNaN(t)) return "—"; return t.toLocaleString("en-AU",{day:"numeric",month:"short",hour:"numeric",minute:"2-digit"}); }
 function numOrNull(v){ if(v===""||v==null) return null; const n=Number(v); return isNaN(n)? null : n; }
@@ -291,7 +307,63 @@ function providerInUse(){
 function loadProviders(){
   fetch(API_BASE + "/api/ai-providers", { headers:{ accept:"application/json" } }).then(r=> r.ok ? r.json() : null).then(d=>{ PROVIDERS = d && d.providers || null; paintProvider(); }).catch(()=>{ PROVIDERS=null; paintProvider(); });
 }
-function paintProvider(){ const p = providerInUse(); const k=document.getElementById("kpiProvider"); if(k) k.textContent = p.label; const r=document.getElementById("runProvider"); if(r) r.textContent = p.label; }
+function paintProvider(){
+  const p = providerInUse(); const k=document.getElementById("kpiProvider"); if(k) k.textContent = p.label; const r=document.getElementById("runProvider"); if(r) r.textContent = p.label;
+  // The toggle: one pill per provider the server knows; a pill without a key cannot be chosen.
+  const t=document.getElementById("providerToggle"); if(!t) return;
+  t.innerHTML = PROVIDERS ? `<span class="prov-lbl">AI provider</span>` + PROVIDERS.map(x=>`<button type="button" class="prov-btn${p.id===x.id?" on":""}" data-prov="${x.id}" ${x.configured?"":"disabled"} title="${x.configured? (x.label+" · "+x.model) : (x.label+" — no key set in Vercel")}">${esc(x.label.replace(/ \(.*\)$/,""))}</button>`).join("") : `<span class="prov-lbl">AI provider: ${esc(p.label)}</span>`;
+}
+document.getElementById("providerToggle").addEventListener("click", e=>{ const b=e.target.closest("[data-prov]"); if(!b || b.disabled) return; setPortalPref("aiProvider", b.dataset.prov); paintProvider(); });
+
+/* ---------- what the rest of the system holds (read-only mirror) ---------- */
+const MIRROR = { at:0, quotes:[], takeoffs:[], pending:null };
+function readLocalJSON(k){ return readJSON(k); }
+async function kvPost(path, body){
+  if(!SUPABASE_URL) return null;
+  try{ const res = await fetch(`${SUPABASE_URL}${path}`, { method:"POST", headers:{ apikey:SUPABASE_ANON_KEY, Authorization:`Bearer ${SUPABASE_ANON_KEY}`, "Content-Type":"application/json" }, body:JSON.stringify(body), signal:AbortSignal.timeout(10000) }); return res.ok ? await res.json() : null; }catch(e){ return null; }
+}
+async function kvGetRows(query){
+  if(!SUPABASE_URL) return null;
+  try{ const res = await fetch(`${SUPABASE_URL}/rest/v1/estimator_kv?${query}`, { headers:{ apikey:SUPABASE_ANON_KEY, Authorization:`Bearer ${SUPABASE_ANON_KEY}` }, signal:AbortSignal.timeout(8000) }); return res.ok ? await res.json() : null; }catch(e){ return null; }
+}
+function dayDiff(deadline){ const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(String(deadline||"")); if(!m) return null; const d=new Date(+m[1],+m[2]-1,+m[3]), n=new Date(); return Math.round((d-new Date(n.getFullYear(),n.getMonth(),n.getDate()))/86400000); }
+async function loadMirror(force){
+  if(!force && MIRROR.at && Date.now()-MIRROR.at < 5*60000) return MIRROR;
+  if(MIRROR.pending) return MIRROR.pending;
+  MIRROR.pending = (async()=>{
+    // Local first (the mirrors Quotes keeps), then the cloud for everything this browser never opened
+    const localIdx = (()=>{ const m=readLocalJSON("gradcon-cache:gradcon-projects"); const i = m && Array.isArray(m.value)? m.value : readLocalJSON("gradcon-projects"); return Array.isArray(i)? i : []; })();
+    const byKey = {};
+    localIdx.forEach(p=>{ if(!p||!p.storageKey) return; const hit=readLocalJSON("gradcon-cache:summary:"+p.storageKey); const v=(hit&&hit.value)||readLocalJSON(p.storageKey); if(v) byKey[p.storageKey]={ id:p.id, key:p.storageKey, v, updatedAt:hit&&hit.updatedAt||null }; });
+    const idxRows = await kvGetRows("select=value&key=eq.gradcon-projects");
+    const cloudIdx = idxRows && idxRows[0] && Array.isArray(idxRows[0].value) ? idxRows[0].value : [];
+    const stampsRows = await kvGetRows("select=key,updated_at&key=like.gradcon-quote-*&order=updated_at.desc&limit=200");
+    const stamps = {}; (stampsRows||[]).forEach(r=>{ stamps[r.key]=r.updated_at; });
+    const missing = cloudIdx.filter(p=>p&&p.storageKey&&!byKey[p.storageKey]).map(p=>p.storageKey).slice(0,60);
+    const sums = missing.length ? await kvPost("/rest/v1/rpc/estimator_kv_quote_summaries", { p_keys: missing }) : [];
+    (Array.isArray(sums)?sums:[]).forEach(row=>{ const p=cloudIdx.find(x=>x.storageKey===row.key); if(p && row.value) byKey[row.key]={ id:p.id, key:row.key, v:row.value, updatedAt:stamps[row.key]||null }; });
+    Object.keys(byKey).forEach(k=>{ if(stamps[k]) byKey[k].updatedAt = stamps[k]; });
+    const quotes = Object.values(byKey).map(q=>({ id:q.id, key:q.key, name:q.v.projectName||"", client:q.v.clientName||"", status:q.v.status||"", deadline:(q.v.planner&&q.v.planner.deadline)||null, elements:Array.isArray(q.v.items)?q.v.items.length:null, updatedAt:q.updatedAt }))
+      .filter(q=>q.name||q.elements).sort((a,b)=> (a.updatedAt||"")<(b.updatedAt||"")?1:-1);
+    const localTk = readLocalJSON("gradcon-estimate-projects-index"); const tkRows = await kvGetRows("select=value&key=eq.gradcon-estimate-projects-index");
+    const tkIdx = (Array.isArray(localTk)? localTk : []).concat(tkRows && tkRows[0] && Array.isArray(tkRows[0].value) ? tkRows[0].value : []);
+    const tkById = {}; tkIdx.forEach(p=>{ if(!p||!p.key||p.deleted) return; const cur=tkById[p.id]; if(!cur || (p.savedAt||"")>(cur.savedAt||"")) tkById[p.id]=p; });
+    const takeoffs = Object.values(tkById).map(p=>{ const blob=readLocalJSON(p.key); return { id:p.id, name:p.name||"", savedAt:p.savedAt||null, elements: blob&&Array.isArray(blob.instances)? blob.instances.length : null, ai:p.group==="ai" }; }).sort((a,b)=>(a.savedAt||"")<(b.savedAt||"")?1:-1);
+    MIRROR.quotes = quotes; MIRROR.takeoffs = takeoffs; MIRROR.at = Date.now(); MIRROR.cloud = !!idxRows; MIRROR.pending = null;
+    return MIRROR;
+  })();
+  return MIRROR.pending;
+}
+function dueCell(deadline){ const n=dayDiff(deadline); if(n==null) return "—"; const cls = n<=0 ? "hot" : n<=3 ? "warm" : ""; const txt = n<0 ? `${-n} d overdue` : n===0 ? "due today" : `in ${n} d`; return `<span class="due ${cls}">${esc(deadline)} · ${txt}</span>`; }
+async function renderMirror(force){
+  const st=document.getElementById("mirrorStatus"); if(st) st.textContent="loading…";
+  const m = await loadMirror(force);
+  const qb=document.getElementById("mirrorQuotes"), tb=document.getElementById("mirrorTakeoffs"); if(!qb||!tb) return;
+  qb.innerHTML = m.quotes.map(q=>`<tr><td><b>${esc(q.name||"Untitled")}</b></td><td>${esc(q.client)}</td><td>${esc(q.status)}</td><td>${dueCell(q.deadline)}</td><td>${q.elements==null?"—":q.elements}</td><td class="small">${whenLabel(q.updatedAt)}</td></tr>`).join("") || `<tr><td colspan="6" class="small">No Quotes projects found${m.cloud?"":" — cloud not reachable; only this browser's copies are shown"}.</td></tr>`;
+  tb.innerHTML = m.takeoffs.map(t=>`<tr><td><b>${t.ai?"🤖 ":""}${esc(t.name||"Untitled takeoff")}</b></td><td>${t.elements==null?"—":t.elements}</td><td class="small">${whenLabel(t.savedAt)}</td><td>${t.ai?'<span class="chip ai">AI draft</span>':""}</td></tr>`).join("") || `<tr><td colspan="4" class="small">No takeoffs found.</td></tr>`;
+  if(st) st.textContent = `${m.quotes.length} projects · ${m.takeoffs.length} takeoffs · ${m.cloud? "from the cloud" : "this browser only"} · ${whenLabel(new Date(m.at).toISOString())}`;
+}
+document.getElementById("mirrorRefresh").addEventListener("click", ()=>renderMirror(true));
 
 /* ---------- running a job ---------- */
 async function runJob(job){
@@ -478,7 +550,8 @@ function renderJob(job){
         <span class="chip ${job.status}">${esc(job.status)}</span></div>
       <div class="row"><button class="btn small" id="backHome">← All jobs</button><button class="btn small danger" id="delJob">Delete job</button></div>
     </div>
-    ${job.kind==="takeoff"?`<div class="row" style="margin-top:8px;">Specification profile for this takeoff: <select id="specJobSel"><option value="">— none —</option>${specJobs.map(s=>`<option value="${s.id}" ${s.id===job.specJobId?'selected':''}>${esc(s.name||"Untitled spec")}</option>`).join("")}</select><span class="small">grades and covers from the ticked specification go to the model and into the exported takeoff's Project Setup</span></div>`:""}
+    ${job.kind==="takeoff"?`<div class="row" style="margin-top:8px;">Quotes project this takeoff is for: <select id="projectSel"><option value="">— none / new —</option>${MIRROR.quotes.map(q=>`<option value="${esc(q.id)}" ${q.id===job.projectId?'selected':''}>${esc(q.name||"Untitled")}${q.client?" — "+esc(q.client):""} (${esc(q.status)})</option>`).join("")}</select><span class="small">names the job and the exported takeoff after the project; nothing in the project changes</span></div>
+    <div class="row" style="margin-top:8px;">Specification profile for this takeoff: <select id="specJobSel"><option value="">— none —</option>${specJobs.map(s=>`<option value="${s.id}" ${s.id===job.specJobId?'selected':''}>${esc(s.name||"Untitled spec")}</option>`).join("")}</select><span class="small">grades and covers from the ticked specification go to the model and into the exported takeoff's Project Setup</span></div>`:""}
    </div>
    <div class="card">
     <h3 style="margin-top:0;">${job.kind==="takeoff"?"Drawings":"Documents"} (PDF)</h3>
@@ -504,6 +577,7 @@ function wireJob(job){
   host.querySelector("#backHome").addEventListener("click", ()=>{ renderHome(); showPage("home"); });
   host.querySelector("#delJob").addEventListener("click", ()=>deleteJob(job.id));
   const ss = host.querySelector("#specJobSel"); if(ss) ss.addEventListener("change", e=>{ job.specJobId = e.target.value; saveJob(job); });
+  const ps = host.querySelector("#projectSel"); if(ps) ps.addEventListener("change", e=>{ job.projectId = e.target.value || ""; const q = MIRROR.quotes.find(x=>x.id===job.projectId); job.projectName = q ? q.name : ""; if(q && !(job.name||"").trim()){ job.name = q.name; host.querySelector("#jobName").value = q.name; } saveJob(job); });
   const drop = host.querySelector("#drop"), fi = host.querySelector("#fileInput");
   drop.addEventListener("click", ()=>fi.click());
   fi.addEventListener("change", ()=>addFiles(job, fi.files));
@@ -538,7 +612,7 @@ function exportToEstimates(job){
   const elements = rv.elements.filter(e=>e.include && e.type).map(e=>Object.assign({}, e, { jobId: job.id }));
   if(!elements.length) return;
   const name = (job.name || (job.result && job.result.project && job.result.project.name) || "AI takeoff").trim();
-  const handoff = { v:1, jobId: job.id, name, at: nowIso(), elements, profile: specProfileFor(job), source: { files: job.files.map(f=>f.name), provider: job.ran && job.ran.provider, model: job.ran && job.ran.model, sheets: (job.result && job.result.sheets) || [], readAt: job.ran && job.ran.at } };
+  const handoff = { v:1, jobId: job.id, name, at: nowIso(), elements, profile: specProfileFor(job), projectId: job.projectId || null, projectName: job.projectName || null, source: { files: job.files.map(f=>f.name), provider: job.ran && job.ran.provider, model: job.ran && job.ran.model, sheets: (job.result && job.result.sheets) || [], readAt: job.ran && job.ran.at } };
   writeJSON(HANDOFF_KEY, handoff);
   job.exports = job.exports || []; job.exports.push({ at: handoff.at, count: elements.length, takeoffName: name });
   saveJob(job);
@@ -574,14 +648,14 @@ async function openJob(id){
 }
 function showPage(id){ document.querySelectorAll(".page").forEach(p=>p.classList.toggle("active", p.id==="page-"+id)); document.querySelectorAll(".tab-btn").forEach(b=>b.classList.toggle("active", b.dataset.page===id)); }
 document.querySelectorAll(".tab-btn").forEach(b=>b.addEventListener("click", ()=>{ if(b.dataset.page==="home") renderHome(); showPage(b.dataset.page); }));
-window.addEventListener("storage", e=>{ if(e.key==="gradcon-preferences") paintProvider(); });
-
 /* ---------- boot ---------- */
 absorbHandoffResult();
 renderHome();
 paintCloud(SUPABASE_URL ? "Cloud: checking…" : "Local only");
 loadProviders();
 syncIndexFromCloud();
+renderMirror(false);
+window.addEventListener("storage", e=>{ if(e.key==="gradcon-preferences") paintProvider(); });
 </script>
 </body>
 </html>
