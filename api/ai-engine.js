@@ -6,6 +6,9 @@
  *                     gradcon-files bucket, public URLs) and proposes the
  *                     concrete elements as Estimates element types with their
  *                     geometry, bars, sheet reference and a confidence.
+ *   action "qa"       explains the deterministic quality-check findings of a
+ *                     Quotes project (src/lib/qualityChecks.js) in plain words:
+ *                     what to look at first and why — text, never a new finding.
  *   action "spec"     reads a specification / tender document and lists the
  *                     applicable standards, the requirements that change how
  *                     an element is measured or priced (grade, cover, exposure,
@@ -19,7 +22,7 @@
  * (Vercel Environment Variables); the provider is the one chosen in Settings
  * when it is configured, else the default. Same-origin check as ai-providers.
  */
-import { callDocuments, resolveProviderId, parseJsonLoose, providerStatus } from "./_providers.js";
+import { callDocuments, callText, resolveProviderId, parseJsonLoose, salvageArrays, providerStatus } from "./_providers.js";
 
 export const config = { maxDuration: 300 };
 
@@ -61,6 +64,7 @@ Return this JSON shape:
  ],
  "unreadable": [string], "assumptions": [string]
 }
+Output rules: write the JSON compactly — no indentation, no line breaks inside it, and OMIT every key whose value would be null. Keep "evidence" under 80 characters and "notes" under 80 characters. One entry per schedule mark with its qty, never one entry per instance. If the set holds more than 120 elements, list the largest and most repeated first.
 Rules: dimensions in millimetres (area in m²); for a slab give length_mm × width_mm of its plan extent or area_m2 when the plan is irregular, and depth_mm = thickness; for a pier give diameter_mm and length_mm = depth; for a wall give length_mm, height_mm, depth_mm = thickness; grade as the number (32 for N32); bar sizes as "N12" / "N16"; mesh as "SL82" / "SL72". qty is how many of that element (count the marks on the plan). confidence is "high" when the schedule and plan agree, "medium" when one is read off a plan dimension, "low" when inferred. evidence quotes the schedule row or note (short). notes says what the estimator must check. Keep labels short ("PF1 pad footing 1200×1200×600"). List everything you can read; do not stop early.`;
 }
 
@@ -81,6 +85,7 @@ Return this JSON shape:
  "unusual": [{"text": string, "page": number, "quote": string}],
  "unreadable": [string]
 }
+Output rules: write the JSON compactly — no indentation, and omit keys whose value would be null; keep every "quote" under 160 characters.
 Rules: "code" is the matching family of the standard's designation (AS 3600 → "as3600", NCC → "ncc", anything else → "other") and "designation" is the exact text on the page including year and amendment where printed. Grades as "N32" / "S40"; covers in mm. A requirement that applies to every element is element "all". "unusual" is anything a concrete subcontractor would not expect and must price (special finishes, waterproofing admixtures, hold points, out-of-hours work, crane limits, staged pours). Do not list standards or clauses that are not on the pages. List everything relevant; do not stop early.`;
 }
 
@@ -100,9 +105,30 @@ function validFiles(files) {
  * The job itself, separated from the HTTP handler so verify.mjs can exercise
  * validation and the no-provider path without a network.
  */
+export function qaPrompt({ project, findings }) {
+  return `Quality checks ran on the Gradcon estimating project "${(project && project.name) || "project"}" (status ${(project && project.status) || "?"}). Project summary: ${JSON.stringify((project && project.summary) || {})}.
+
+The deterministic checks found these items (each is a verified fact from the costing library; do not add, remove or re-rate any):
+${JSON.stringify(findings, null, 1).slice(0, 14000)}
+
+Write the review note an experienced concrete estimator would hand Grady before this quote goes out: (1) the three things to look at first and why, in order of money at risk; (2) one line per remaining finding grouping the similar ones; (3) what is probably fine and can be acknowledged. Plain English, Australian terms, no headings longer than a few words, no markdown tables, under 350 words. Never invent a figure that is not in the findings.`;
+}
+
 export async function runAiJob(body, env = process.env) {
   const { action, provider, files, types, projectName, profile } = body || {};
-  if (action !== "takeoff" && action !== "spec") return { status: 400, body: { error: 'Body must carry action "takeoff" or "spec"' } };
+  if (action === "qa") {
+    const findings = Array.isArray(body.findings) ? body.findings : null;
+    if (!findings) return { status: 400, body: { error: "qa needs findings: [...]" } };
+    const id = resolveProviderId(provider, env);
+    if (!id) return { status: 503, body: { error: "No AI provider is configured — set ANTHROPIC_API_KEY or OPENAI_API_KEY in the Vercel project's Environment Variables." } };
+    try {
+      const r = await callText(id, { system: SYSTEM.replace("Reply with ONE JSON object and nothing else — no markdown fences, no prose before or after.", "Reply in plain prose."), prompt: qaPrompt({ project: body.project, findings: findings.slice(0, 60) }), maxTokens: 1500, timeoutMs: 110000, env });
+      return { status: 200, body: { text: r.text, provider: r.provider, model: r.model, latencyMs: r.latencyMs } };
+    } catch (e) {
+      return { status: e.status && e.status >= 400 && e.status < 600 ? e.status : 502, body: { error: e.message, detail: e.detail || null, provider: id } };
+    }
+  }
+  if (action !== "takeoff" && action !== "spec") return { status: 400, body: { error: 'Body must carry action "takeoff", "spec" or "qa"' } };
   const bad = validFiles(files);
   if (bad) return { status: 400, body: { error: bad } };
   if (action === "takeoff" && (!Array.isArray(types) || types.length === 0 || types.length > MAX_TYPES)) return { status: 400, body: { error: "takeoff needs the element type list (types: [{id, label, group}])" } };
@@ -116,9 +142,20 @@ export async function runAiJob(body, env = process.env) {
     const st = providerStatus(env).find((p) => p.id === id);
     return { status: e.status && e.status >= 400 && e.status < 600 ? e.status : 502, body: { error: e.message, detail: e.detail || null, provider: id, model: st ? st.model : null } };
   }
-  const result = parseJsonLoose(r.text);
+  let result = parseJsonLoose(r.text);
+  let partial = null;
+  if (!result) {
+    // A cut-off reply: keep every element / standard / requirement that was written in full.
+    const keys = action === "takeoff" ? ["elements", "sheets", "unreadable", "assumptions"] : ["standards", "requirements", "unusual", "unreadable"];
+    const got = salvageArrays(r.text, keys);
+    const n = got ? ((got.elements || got.standards || []).length) : 0;
+    if (got && n > 0) {
+      result = got;
+      partial = { reason: r.truncated ? "The reply was cut off at the model's output limit" : "The reply was not a complete JSON object", kept: n, advice: "What was read is shown. Run again with fewer sheets, or split the set into two jobs and merge the exports in Estimates." };
+    }
+  }
   if (!result) return { status: 502, body: { error: `${id} replied without a readable JSON result${r.truncated ? " (the reply was cut off — fewer sheets per job)" : ""}`, provider: r.provider, model: r.model, raw: String(r.text || "").slice(0, 2000) } };
-  return { status: 200, body: { result, provider: r.provider, model: r.model, latencyMs: r.latencyMs, usage: r.usage || null, truncated: !!r.truncated } };
+  return { status: 200, body: { result, provider: r.provider, model: r.model, latencyMs: r.latencyMs, usage: r.usage || null, truncated: !!r.truncated, partial } };
 }
 
 export default async function handler(req, res) {

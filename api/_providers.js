@@ -255,6 +255,50 @@ export function parseJsonLoose(text) {
   try { return JSON.parse(t.slice(a, b + 1)); } catch { return null; }
 }
 
+/**
+ * A reply cut off at max_tokens still holds every complete object the model
+ * wrote: salvageArrays(text, ["elements","standards",…]) walks each named
+ * array and returns the objects that closed properly (strings and nesting
+ * respected), plus any complete top-level object such as "project". Null
+ * when nothing usable is there. (10 Oct 2026: a 6.7 MB preliminary set hit
+ * the output limit and the whole run was lost.)
+ */
+export function salvageArrays(text, arrayKeys = []) {
+  const t = String(text || "");
+  const out = {}; let any = false;
+  const readValue = (from) => { // returns [value, endIndex] for a balanced object/array starting at from, or null if cut off
+    let depth = 0, inStr = false, esc = false;
+    for (let i = from; i < t.length; i++) {
+      const ch = t[i];
+      if (inStr) { if (esc) esc = false; else if (ch === "\\") esc = true; else if (ch === '"') inStr = false; continue; }
+      if (ch === '"') inStr = true;
+      else if (ch === "{" || ch === "[") depth++;
+      else if (ch === "}" || ch === "]") { depth--; if (depth === 0) { try { return [JSON.parse(t.slice(from, i + 1)), i + 1]; } catch { return null; } } }
+    }
+    return null;
+  };
+  for (const key of arrayKeys) {
+    const m = new RegExp(`"${key}"\\s*:\\s*\\[`).exec(t); if (!m) continue;
+    let i = m.index + m[0].length; const items = [];
+    for (;;) {
+      while (i < t.length && /[\s,]/.test(t[i])) i++;
+      if (i >= t.length || t[i] === "]") break;
+      if (t[i] !== "{" && t[i] !== "[" && t[i] !== '"') break;
+      let got = null;
+      if (t[i] === '"') { const end = t.indexOf('"', i + 1); if (end < 0) break; got = [t.slice(i + 1, end), end + 1]; }
+      else got = readValue(i);
+      if (!got) break;
+      items.push(got[0]); i = got[1];
+    }
+    if (items.length) { out[key] = items; any = true; }
+  }
+  for (const key of ["project", "document", "defaults"]) {
+    const m = new RegExp(`"${key}"\\s*:\\s*\\{`).exec(t); if (!m) continue;
+    const got = readValue(m.index + m[0].length - 1); if (got) out[key] = got[0];
+  }
+  return any ? out : null;
+}
+
 /** The Settings panel's "Test": a one-word round trip that proves the key, the model name and the network. */
 export async function pingProvider(id, env = process.env) {
   const r = await callText(id, { prompt: "Reply with exactly the word OK and nothing else.", maxTokens: 16, timeoutMs: 30000, env });

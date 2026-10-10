@@ -78,7 +78,14 @@ const threeBundlePath = path.join(assetsDir, THREE_BUNDLE);
 if (!fs.existsSync(threeBundlePath)) throw new Error(`dist/assets/${THREE_BUNDLE} is missing — run "vite build --config vite.3d.config.js" after the main build`);
 const threeBundleSrc = fs.readFileSync(threeBundlePath, "utf8");
 if (!/GradconThree/.test(threeBundleSrc)) throw new Error(`dist/assets/${THREE_BUNDLE} does not define GradconThree`);
-const chunkFiles = fs.readdirSync(assetsDir).filter((f) => f.endsWith(".js") && f !== jsFile && f !== THREE_BUNDLE);
+// The quality-check bundle (vite.qa.config.js) for the AI Engine: fetched on
+// demand from /assets like the 3D viewer; asserted so a build cannot ship an
+// AI Engine whose Quality checks tab has nothing to run.
+const QA_BUNDLE = "gradcon-qa.js";
+const qaBundlePath = path.join(assetsDir, QA_BUNDLE);
+if (!fs.existsSync(qaBundlePath)) throw new Error(`dist/assets/${QA_BUNDLE} is missing — run "vite build --config vite.qa.config.js" after the main build`);
+if (!/GradconQA/.test(fs.readFileSync(qaBundlePath, "utf8"))) throw new Error(`dist/assets/${QA_BUNDLE} does not define GradconQA`);
+const chunkFiles = fs.readdirSync(assetsDir).filter((f) => f.endsWith(".js") && f !== jsFile && f !== THREE_BUNDLE && f !== QA_BUNDLE);
 const embeddedChunks = [];
 for (const chunk of chunkFiles) {
   const chunkSrc = fs.readFileSync(path.join(assetsDir, chunk), "utf8");

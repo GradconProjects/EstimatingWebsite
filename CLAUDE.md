@@ -645,8 +645,56 @@ login and on the main dashboard". Rules:
    refreshed on demand and kept 5 min; a takeoff job's "Quotes project" select
    (`job.projectId` / `projectName`) names the job after the project and rides
    on the hand-off into `PROJECT.aiImport`.
-7. The "Quality checks" tab describes the next build (deterministic checks
-   first, then AI explanations); it is not live yet.
+7. **Quality checks** (`src/lib/qualityChecks.js`, pure, verify-covered;
+   shipped to the browser as `dist/assets/gradcon-qa.js` = `window.GradconQA`
+   by `vite.qa.config.js`, asserted by the assembler, fetched on demand like
+   the 3D bundle): `runQualityChecks(quote, liveRates, {today, benchmarks})`
+   is the DETERMINISTIC layer — unpriced subcontract quote rows (high), steel
+   kg/m³ and formwork m²/m³ outside their bands, concrete against the recorded
+   measures, duplicated / empty elements, crew days against the handover
+   bands, rates past validity (read off the LIVE rates — a pinned copy never
+   gains a date), pinned-rate drift with its $ impact, $/m² against the
+   median of the submitted projects (`benchmarksFrom`), project fields,
+   excluded scope money, the handover's own issues — every finding `{id,
+   check, severity, itemId, element, message, evidence, fix}`. The AI Engine's
+   Quality checks tab picks any project (Completed Estimating & quoting
+   first), reads its row and the live rates from the cloud, benchmarks against
+   the mirror's other summaries, stores the run as a `kind: "qa"` job with
+   `acks` (ticked = reviewed, with when) and asks `api/ai-engine.js` action
+   `qa` (`qaPrompt` → `callText`, plain prose) to explain the OPEN findings.
+   Nothing on the project is written. The automatic run on Completed
+   Estimating is still to come.
+8. **A cut-off reply is salvaged** (`salvageArrays` in `_providers.js`): every
+   element / standard / requirement that closed before the output limit is
+   kept and returned with `partial: {reason, kept, advice}`, which the job page
+   shows as a banner; the prompts ask for compact JSON (no null keys, short
+   evidence) so a full set fits (10 Oct 2026: a 6.7 MB preliminary set lost the
+   whole run).
+9. **Google mail** (`api/_google.js` — the ONE place Google credentials are
+   handled; `api/google-auth.js` for status / start / callback / disconnect;
+   `api/gmail.js` for list / read / attachment): Grady, 10 Oct 2026,
+   "projects@gradcon.com.au and i want it read everything". OAuth client in
+   `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` (redirect URI
+   `https://<host>/api/google-auth`, consent screen Internal to the Workspace,
+   scope `gmail.readonly` only); only `allowedMailbox` (default
+   projects@gradcon.com.au) may connect — any other account is revoked and
+   refused. The refresh token lives in estimator_kv row `gradcon-google-mail`
+   encrypted AES-256-GCM under `GOOGLE_TOKEN_SECRET` (default: the client
+   secret), so the public anon key cannot use it; the OAuth state is an HMAC
+   of the time, valid 10 minutes. `parseMessage` is the ONE reading of a Gmail
+   message. Settings → Google mail connects / disconnects; the AI Engine's
+   Mail tab searches and reads the mailbox and turns a PDF attachment into a
+   takeoff or specification job (`api/gmail.js` copies it into the bucket
+   under `ai-engine/mail/<messageId>/`); the chat's context gains `mail` (the
+   newest 25 of 14 days, headers and snippets) through `mailForContext`, and a
+   `mail` action opens that message in the Mail tab
+   (`gradcon-ai-open-mail`). Read-only everywhere: nothing is sent, replied
+   to or deleted.
+10. **Roadmap tab** (`ROADMAP` in `ai-engine.html`): Grady's 10 Oct 2026
+   specification as capability-group tabs, each item Live (with a link to
+   where it runs) / Partial / Planned — the ONE place the plan is stated in
+   the product; update an item's status in that array when it ships, never
+   claim more.
 `test-ai-engine.mjs` proves the tile, both job kinds with a mocked server,
 the review edits, the export into AI drafts with the field mapping and the
 profile, the chat on both accounts and the provider switch.

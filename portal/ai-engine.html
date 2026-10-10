@@ -15,7 +15,15 @@ header .cloud{font-size:11px;opacity:.8;white-space:nowrap;}
 .prov-btn{background:#16233f;border:1px solid #2b3f66;color:#cdd8ee;border-radius:999px;padding:5px 12px;font:inherit;font-size:12px;font-weight:700;cursor:pointer;}
 .prov-btn.on{background:var(--ai);border-color:var(--ai);color:#fff;} .prov-btn:disabled{opacity:.45;cursor:default;}
 .prov-lbl{font-size:11px;opacity:.8;}
-.mirror table td{font-size:12.5px;} .mirror .due.hot{color:var(--bad);font-weight:700;} .mirror .due.warm{color:var(--warn);font-weight:700;}
+.rm-tab{background:#fff;border:1px solid var(--border);border-radius:999px;padding:6px 12px;font:inherit;font-size:12px;font-weight:700;cursor:pointer;color:var(--navy2);}
+.rm-tab.on{background:var(--navy2);border-color:var(--navy2);color:#fff;}
+.rm-item{display:grid;grid-template-columns:72px 1fr;gap:10px;padding:8px 0;border-bottom:1px solid #eef2f6;align-items:start;}
+.rm-item .t{font-weight:700;} .rm-item .d{font-size:12.5px;color:#44515c;margin-top:2px;} .rm-item .w{font-size:12px;color:var(--muted);margin-top:2px;}
+.rm-item a{color:var(--accent);font-weight:700;text-decoration:none;cursor:pointer;}
+.mirror table td{font-size:12.5px;}
+#mailList tr{cursor:pointer;} #mailList tr.unread td{font-weight:700;} #mailList tr.sel td{background:#eef5fd;}
+.mail-body{white-space:pre-wrap;font-size:12.5px;line-height:1.5;max-height:460px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:10px;background:#fafcfe;margin-top:8px;}
+.mail-att{display:flex;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid #eef2f6;font-size:12.5px;flex-wrap:wrap;} .mirror .due.hot{color:var(--bad);font-weight:700;} .mirror .due.warm{color:var(--warn);font-weight:700;}
 #tabnav{display:flex;gap:2px;background:#0c2438;padding:0 18px;overflow-x:auto;}
 .tab-btn{background:transparent;border:none;color:#a9c6de;padding:11px 15px;cursor:pointer;font-size:12.5px;font-weight:600;border-bottom:3px solid transparent;white-space:nowrap;}
 .tab-btn:hover{color:#fff;} .tab-btn.active{color:#fff;border-bottom-color:var(--accent);background:var(--navy2);}
@@ -67,7 +75,9 @@ tr.excluded td{opacity:.45;} td input[type=text],td input[type=number],td select
 <nav id="tabnav">
   <button class="tab-btn active" data-page="home">Home</button>
   <button class="tab-btn" data-page="job">Current job</button>
+  <button class="tab-btn" data-page="mail">Mail</button>
   <button class="tab-btn" data-page="qa">Quality checks</button>
+  <button class="tab-btn" data-page="roadmap">Roadmap</button>
 </nav>
 <div id="main">
   <div class="page active" id="page-home">
@@ -89,7 +99,7 @@ tr.excluded td{opacity:.45;} td input[type=text],td input[type=number],td select
       <div class="row" style="justify-content:space-between;"><h3 style="margin:0;">What the system holds</h3><div class="row"><span class="small" id="mirrorStatus">loading…</span><button class="btn small" id="mirrorRefresh">Refresh</button></div></div>
       <p class="small" style="margin:6px 0 8px;">The same Quotes projects and Estimates takeoffs the rest of the portal shows, read-only. A takeoff job can be linked to a project; the quality checks (next build) run on the projects at Completed Estimating.</p>
       <div class="grid2">
-        <div><h3 style="margin-top:0;">Quotes projects</h3><table><thead><tr><th>Project</th><th>Client</th><th>Status</th><th>Deadline</th><th>Elements</th><th>Saved</th></tr></thead><tbody id="mirrorQuotes"></tbody></table></div>
+        <div><h3 style="margin-top:0;">Quotes projects</h3><table><thead><tr><th>Project</th><th>Client</th><th>Status</th><th>Deadline</th><th>Elements</th><th>Saved</th><th></th></tr></thead><tbody id="mirrorQuotes"></tbody></table></div>
         <div><h3 style="margin-top:0;">Estimates takeoffs</h3><table><thead><tr><th>Takeoff</th><th>Elements</th><th>Saved</th><th></th></tr></thead><tbody id="mirrorTakeoffs"></tbody></table></div>
       </div>
     </div>
@@ -100,9 +110,34 @@ tr.excluded td{opacity:.45;} td input[type=text],td input[type=number],td select
     </div>
   </div>
   <div class="page" id="page-job"><div id="jobHost"><div class="hint">Open a job from Home, or start a new one.</div></div></div>
+  <div class="page" id="page-mail">
+    <h2>Mail — projects@gradcon.com.au</h2>
+    <p class="hint">The connected Google mailbox, read-only. Open a message to read it; a PDF attachment becomes an AI takeoff or a specification job in one click. Connect or disconnect the mailbox under the portal's Settings → Google mail.</p>
+    <div class="card">
+      <div class="row"><input type="text" class="wide" id="mailQ" placeholder="Search like Gmail: tender, from:holcim, has:attachment, newer_than:7d…"><button class="btn primary" id="mailSearch">Search</button><button class="btn" id="mailNewest">Newest</button><span class="small" id="mailStatus"></span></div>
+    </div>
+    <div class="grid2" style="grid-template-columns:minmax(300px,2fr) minmax(320px,3fr);">
+      <div class="card"><table><thead><tr><th>From</th><th>Subject</th><th>Date</th><th></th></tr></thead><tbody id="mailList"></tbody></table><div class="row" style="margin-top:8px;"><button class="btn small" id="mailMore" hidden>More</button></div></div>
+      <div class="card" id="mailView"><span class="small">Pick a message.</span></div>
+    </div>
+  </div>
+  <div class="page" id="page-roadmap">
+    <h2>Roadmap — what the AI Engine is becoming</h2>
+    <p class="hint">Grady's specification (10 Oct 2026) arranged by capability group. <span class="chip done">Live</span> runs today (the link opens it), <span class="chip running">Partial</span> exists in part, <span class="chip">Planned</span> is not built yet — nothing here claims a result it cannot produce. BIM is parked by decision. Each group becomes a working tab as it ships, in the order the groups are listed.</p>
+    <div class="row" id="roadmapTabs" style="margin-bottom:10px;"></div>
+    <div id="roadmapHost"></div>
+  </div>
   <div class="page" id="page-qa">
     <h2>Quality checks</h2>
-    <p class="hint">When a Quotes project reaches Completed Estimating the checks run on it: subcontract quote rows with no figure, rates past their validity, rate drift since the project was pinned, kg/m³ of steel and m²/m³ of formwork outside the usual bands, concrete against the measures, crew days against the handover bands, duplicated elements, and $/m² against Gradcon's own submitted projects — then the AI explains what looks wrong and asks for a manual review. This panel arrives in the next build; the takeoff and specification readers above are live now.</p>
+    <p class="hint">Pick a Quotes project and run the checks: subcontract quote rows with no figure, rates past their validity, rate drift since the project was pinned (with its cost), kg/m³ of steel and m²/m³ of formwork outside the usual bands, concrete against the recorded measures, crew days against the handover bands, duplicated or empty elements, part-entered rows, and $/m² against Gradcon's own submitted projects. Every finding is a fact from the costing library; the AI then explains what looks wrong and what to look at. Nothing on the project is changed — tick a finding to record that it was reviewed.</p>
+    <div class="card">
+      <div class="row">
+        <select id="qaProject"><option value="">— pick a project —</option></select>
+        <button class="btn ai" id="qaRun" disabled>Run quality checks</button>
+        <span class="small" id="qaStatus"></span>
+      </div>
+    </div>
+    <div id="qaHost"></div>
   </div>
 </div>
 <script>
@@ -350,6 +385,8 @@ async function loadMirror(force){
     const tkById = {}; tkIdx.forEach(p=>{ if(!p||!p.key||p.deleted) return; const cur=tkById[p.id]; if(!cur || (p.savedAt||"")>(cur.savedAt||"")) tkById[p.id]=p; });
     const takeoffs = Object.values(tkById).map(p=>{ const blob=readLocalJSON(p.key); return { id:p.id, name:p.name||"", savedAt:p.savedAt||null, elements: blob&&Array.isArray(blob.instances)? blob.instances.length : null, ai:p.group==="ai" }; }).sort((a,b)=>(a.savedAt||"")<(b.savedAt||"")?1:-1);
     MIRROR.quotes = quotes; MIRROR.takeoffs = takeoffs; MIRROR.at = Date.now(); MIRROR.cloud = !!idxRows; MIRROR.pending = null;
+    MIRROR.raw = {}; Object.values(byKey).forEach(q=>{ MIRROR.raw[q.key] = q.v; });
+    renderQaProjects();
     return MIRROR;
   })();
   return MIRROR.pending;
@@ -359,11 +396,266 @@ async function renderMirror(force){
   const st=document.getElementById("mirrorStatus"); if(st) st.textContent="loading…";
   const m = await loadMirror(force);
   const qb=document.getElementById("mirrorQuotes"), tb=document.getElementById("mirrorTakeoffs"); if(!qb||!tb) return;
-  qb.innerHTML = m.quotes.map(q=>`<tr><td><b>${esc(q.name||"Untitled")}</b></td><td>${esc(q.client)}</td><td>${esc(q.status)}</td><td>${dueCell(q.deadline)}</td><td>${q.elements==null?"—":q.elements}</td><td class="small">${whenLabel(q.updatedAt)}</td></tr>`).join("") || `<tr><td colspan="6" class="small">No Quotes projects found${m.cloud?"":" — cloud not reachable; only this browser's copies are shown"}.</td></tr>`;
-  tb.innerHTML = m.takeoffs.map(t=>`<tr><td><b>${t.ai?"🤖 ":""}${esc(t.name||"Untitled takeoff")}</b></td><td>${t.elements==null?"—":t.elements}</td><td class="small">${whenLabel(t.savedAt)}</td><td>${t.ai?'<span class="chip ai">AI draft</span>':""}</td></tr>`).join("") || `<tr><td colspan="4" class="small">No takeoffs found.</td></tr>`;
+  qb.innerHTML = m.quotes.map(q=>`<tr><td><b>${esc(q.name||"Untitled")}</b></td><td>${esc(q.client)}</td><td>${esc(q.status)}</td><td>${dueCell(q.deadline)}</td><td>${q.elements==null?"—":q.elements}</td><td class="small">${whenLabel(q.updatedAt)}</td><td><button class="btn small" data-open-quote="${esc(q.id)}" title="Open this project in Quotes">Open →</button></td></tr>`).join("") || `<tr><td colspan="7" class="small">No Quotes projects found${m.cloud?"":" — cloud not reachable; only this browser's copies are shown"}.</td></tr>`;
+  tb.innerHTML = m.takeoffs.map(t=>`<tr><td><b>${t.ai?"🤖 ":""}${esc(t.name||"Untitled takeoff")}</b></td><td>${t.elements==null?"—":t.elements}</td><td class="small">${whenLabel(t.savedAt)}</td><td>${t.ai?'<span class="chip ai">AI draft</span> ':""}<button class="btn small" data-open-takeoff="${esc(t.id)}" title="Open this takeoff in Estimates">Open →</button></td></tr>`).join("") || `<tr><td colspan="4" class="small">No takeoffs found.</td></tr>`;
   if(st) st.textContent = `${m.quotes.length} projects · ${m.takeoffs.length} takeoffs · ${m.cloud? "from the cloud" : "this browser only"} · ${whenLabel(new Date(m.at).toISOString())}`;
 }
 document.getElementById("mirrorRefresh").addEventListener("click", ()=>renderMirror(true));
+// A row opens its project in Quotes or its takeoff in Estimates (the same hand-off the portal's welcome cards use).
+function openInPortal(target, extra){
+  try{ Object.keys(extra||{}).forEach(k=>{ if(extra[k]===null) localStorage.removeItem(k); else localStorage.setItem(k, extra[k]); }); }catch(e){}
+  if(window.parent && window.parent !== window) window.parent.postMessage({ type:"gradcon:open-app", target }, "*"); else alert("Open the portal to switch apps.");
+}
+document.querySelector(".mirror").addEventListener("click", e=>{
+  const q=e.target.closest("[data-open-quote]"); if(q){ openInPortal("quotes", { "gradcon-active-project": q.dataset.openQuote, "gradcon-quotes-initial-view": null }); return; }
+  const t=e.target.closest("[data-open-takeoff]"); if(t){ openInPortal("estimates", { "gradcon-estimate-active": t.dataset.openTakeoff }); }
+});
+
+/* ---------- Roadmap: the specification as tabs, with honest status ---------- */
+const ROADMAP = [
+  { id:"documents", label:"Drawings & documents", intro:"Reading what the tender package says — the base every other group builds on.", items:[
+    ["live","Drawing interpretation (AI takeoff)","Reads plans, sections and schedules into proposed elements with sheet, confidence and quoted evidence.","job:takeoff"],
+    ["live","Specification & compliance reader","Standards by designation, requirements, member minimums, grade and cover defaults, unusual items — each with page and quote.","job:spec"],
+    ["live","Mailbox intake","Tender invitations and supplier notices read from projects@gradcon.com.au; PDF attachments become jobs.","page:mail"],
+    ["partial","Document completeness","The takeoff lists sheets it could not read; a checklist of required documents against the package is planned."],
+    ["planned","Drawing coordinate AI","Match common gridlines across sheets."],
+    ["planned","Building level AI","Identify RLs, FFLs, SSLs and storey elevations."],
+    ["planned","Detail matching AI","Match plan callouts to the sections that detail them."],
+    ["planned","Drawing scale AI","Verify the scale against dimension strings."],
+    ["planned","Ground condition AI","Extract geotechnical constraints and missing information from the geotech report."],
+    ["planned","Contract scope AI","Extract responsibility matrices and obligations from the contract."],
+    ["planned","Tender qualification AI","Identify commercial qualifications and exclusions."],
+  ]},
+  { id:"structure", label:"Structural object model", intro:"One persistent register of elements with geometry, source, revision and status — the digital quantity engine.", items:[
+    ["partial","Element identity","Every AI-drafted element carries its job, sheet, mark, confidence and evidence into Estimates; a persistent ID across revisions is planned."],
+    ["partial","Element object with its calculation","Estimates already holds each element's fields, formula, warnings, provenance and review hash; source drawing and revision per element are planned."],
+    ["planned","Structural drawing reconstruction","Connect plans, sections, elevations, details and schedules into one model per level."],
+    ["planned","Spatial reconciliation","Detect duplicated or physically overlapping elements."],
+    ["planned","Geometry completion","Suggest missing geometry, never treating an inferred shape as verified."],
+    ["planned","Slab thickness analysis","Thickness variations, recesses and steps."],
+    ["planned","Penetration analysis","Openings and deductions, classified."],
+    ["planned","Visual takeoff overlay","Measured geometry drawn on the sheet, selectable and correctable (the Bluebeam-class piece)."],
+  ]},
+  { id:"reo", label:"Reinforcement & formwork", intro:"Steel and formwork from the same geometry as the concrete, under verified detailing rules.", items:[
+    ["partial","Reinforcement notation AI","The takeoff reads N-bars, mesh, spacing and layers off schedules; Estimates prices them with laps, hooks and waste."],
+    ["partial","Bar schedules and theoretical mass","Estimates' orders module groups bars by size, buys stock lengths and reports tonnes."],
+    ["partial","Formwork classification","Estimates separates m² faces, lm edges and counted trimmers; soffit / vertical / inclined classes are planned."],
+    ["partial","Concrete grade allocation","The specification reader seeds grades and covers per element family."],
+    ["planned","Lap and anchorage AI","Apply authorised detailing rules per project."],
+    ["planned","Bar bending AI","Theoretical cutting and bending schedules."],
+    ["planned","Temporary works & buildability","Formwork cycles, propping, access, placement, staging, cranage — preliminaries kept apart from engineered designs."],
+  ]},
+  { id:"scope", label:"Scope boundary", intro:"What Gradcon is pricing, decided at setup and applied everywhere; excluded work stays visible.", items:[
+    ["partial","Scope per project and element","Quotes already prices labour-only / materials-only per project and element and states the money left out."],
+    ["planned","Scope boundary manager","Contractual treatment per element family (columns, PT slabs, hobs, box gutters, starters, excavation, propping…) chosen at setup."],
+    ["planned","Exclusion register","Excluded elements kept on a separate register, never deleted, printed with the tender."],
+    ["planned","Scope change intelligence","Variation work told apart from original scope."],
+    ["planned","Configurable measurement rules","Opening deductions, perimeter formwork, no double counting between beams and slabs — tied to the contract's measurement basis."],
+  ]},
+  { id:"quality", label:"Quality & audit", intro:"Independent checks over the whole project, every finding traceable with a lifecycle.", items:[
+    ["live","Quality checks","Unpriced quote rows, steel and formwork bands, concrete vs measures, crew bands, duplicates, rate validity and drift, $/m² vs submitted projects — then the AI explains.","page:qa"],
+    ["partial","Estimate benchmarking","$/m² against Gradcon's own submitted projects; elemental rates by element type are planned."],
+    ["partial","Finding lifecycle","Reviewed / open today; assigned reviewer and corrected / accepted / closed are planned."],
+    ["planned","Complete tender audit","One job: classify every file, build the element register, compare with the takeoff, list missing / duplicated / uncertain items, check every priced line against its takeoff, draft RFIs."],
+    ["planned","Final audit AI","Unresolved risks before submission."],
+    ["planned","Validation benchmarks","A library of real drawing sets with verified takeoffs; measured recall, precision and error by element type — reported, never invented."],
+  ]},
+  { id:"revisions", label:"Revisions & variations", intro:"Revised drawings compared, quantified and costed, both versions kept.", items:[
+    ["partial","Versions kept","Every quote and takeoff keeps immutable versions; what is missing is the diff."],
+    ["planned","Revision comparison","Added, removed and changed elements between two sets, with the cost impact."],
+    ["planned","Drawing-driven variation claims","Traceable quantity and cost comparisons for contractual review."],
+    ["planned","Specification revision diff","Requirement changes between specification revisions."],
+  ]},
+  { id:"method", label:"Methodology & programme", intro:"Sequences, resources, durations and the preliminaries they drive.", items:[
+    ["partial","Labour productivity","Handover bands fitted to 25 submitted elements drive crew days; historical ranges by element are planned."],
+    ["planned","Pour planning","Pour sequences and quantities."],
+    ["planned","Pumping analysis","Likely pumping needs from access and pour size."],
+    ["planned","Plant selection","Equipment from access and methodology."],
+    ["planned","Site logistics AI","Access, delivery and laydown constraints."],
+    ["planned","Programme estimating","Durations from resource build-ups, connected to preliminaries."],
+    ["planned","Alternative methodologies","Options with separate assumptions and cost effects, never presented as approved or safe."],
+  ]},
+  { id:"commercial", label:"Tender & commercial", intro:"From validated quantities to a defensible tender.", items:[
+    ["partial","Rate validity and drift","Supplier validity dates alarm the dashboard; pinned-rate drift is costed in Quality checks."],
+    ["planned","Supplier comparison","Normalise quotations and identify exclusions."],
+    ["planned","Pricing escalation","Dated escalation scenarios."],
+    ["planned","Location adjustment","Melbourne metropolitan vs regional rates."],
+    ["planned","Risk allowance AI","Quantified allowances for review."],
+    ["planned","Waste estimation","Item-specific waste and yield factors (Estimates has concrete waste by work type today)."],
+    ["planned","RFI generation","RFIs drafted from unresolved estimating questions."],
+    ["planned","Tender competitiveness","Internal price scenarios and margin trade-offs."],
+    ["planned","Cashflow modelling","Payment and expenditure profiles."],
+    ["planned","Procurement planning","Order dates and long-lead items from approved quantities."],
+    ["planned","Bill of quantities and tender summaries","BOQ, clarifications, inclusions and exclusions, risk register, management summary."],
+  ]},
+  { id:"learning", label:"Learning from projects", intro:"Approved rates and rules change only with approval; everything else learns.", items:[
+    ["planned","Actual-cost learning","Reconcile tender estimates against verified actual costs, purchase orders and variations."],
+    ["planned","Portfolio-wide risk analysis","Common omissions and pricing risks across projects."],
+    ["planned","Usage and cost ledger","AI processing cost tracked per project."],
+    ["planned","Monte Carlo estimation","Uncertainty across quantities, productivity and costs from documented ranges."],
+  ]},
+  { id:"later", label:"Later & parked", intro:"Worth doing after the core works; BIM is parked by decision.", items:[
+    ["planned","BIM and 2D cross-validation (parked)","IFC 4.3 import, objects mapped to priced items, model vs drawings vs estimate."],
+    ["planned","Voice-controlled estimating","Measure, locate, filter by voice, subject to confirmation."],
+    ["planned","Natural-language formulas","An estimator's instruction turned into a validated reusable measurement formula."],
+    ["planned","Tender opportunity screening","Bid / no-bid criteria from incoming tender documents."],
+    ["planned","Subcontractor tender portal","Trade packages out, quotes back, compared against the estimate."],
+    ["planned","Site verification and progress","Photos and field measurements against estimated and contracted quantities."],
+    ["planned","Multi-country estimating","Measurement conventions, codes, currencies and tax outside Australia."],
+  ]},
+];
+let RM_TAB = ROADMAP[0].id;
+function renderRoadmap(){
+  const tabs=document.getElementById("roadmapTabs"), host=document.getElementById("roadmapHost"); if(!tabs||!host) return;
+  tabs.innerHTML = ROADMAP.map(g=>{ const live=g.items.filter(i=>i[0]==="live").length, part=g.items.filter(i=>i[0]==="partial").length; return `<button type="button" class="rm-tab${g.id===RM_TAB?" on":""}" data-rm="${g.id}">${esc(g.label)} <span style="opacity:.7;font-weight:500;">${live+part}/${g.items.length}</span></button>`; }).join("");
+  const g = ROADMAP.find(x=>x.id===RM_TAB);
+  const chip = (st)=> st==="live" ? '<span class="chip done">Live</span>' : st==="partial" ? '<span class="chip running">Partial</span>' : '<span class="chip">Planned</span>';
+  host.innerHTML = `<div class="card"><p class="hint" style="margin:0 0 6px;">${esc(g.intro)}</p>${g.items.map(([st,title,desc,link])=>`<div class="rm-item"><div>${chip(st)}</div><div><div class="t">${esc(title)}${link?` <a data-rmlink="${esc(link)}">open →</a>`:""}</div><div class="d">${esc(desc)}</div></div></div>`).join("")}</div>`;
+}
+document.getElementById("roadmapTabs").addEventListener("click", e=>{ const b=e.target.closest("[data-rm]"); if(!b) return; RM_TAB=b.dataset.rm; renderRoadmap(); });
+document.getElementById("roadmapHost").addEventListener("click", e=>{ const a=e.target.closest("[data-rmlink]"); if(!a) return; const [kind,arg]=a.dataset.rmlink.split(":"); if(kind==="page"){ if(arg==="mail") showMail(); if(arg==="qa") loadMirror(false).then(renderQaProjects); showPage(arg); } else if(kind==="job") createJob(arg); });
+
+/* ---------- Quality checks (deterministic first, then the AI explains) ---------- */
+const QA = { lib:null, current:null };
+const QA_FIRST = ["Completed Estimating","Quoting","Submitted","Tendered"];
+function renderQaProjects(){
+  const sel=document.getElementById("qaProject"); if(!sel) return;
+  const cur = sel.value;
+  const groups = [["Completed Estimating & quoting", q=>QA_FIRST.includes(q.status)], ["Open work", q=>["Queued","Estimating"].includes(q.status)], ["Closed", q=>!QA_FIRST.includes(q.status) && !["Queued","Estimating"].includes(q.status)]];
+  sel.innerHTML = `<option value="">— pick a project —</option>` + groups.map(([label, test])=>{ const rows = MIRROR.quotes.filter(test); return rows.length? `<optgroup label="${esc(label)}">${rows.map(q=>`<option value="${esc(q.key)}" ${q.key===cur?'selected':''}>${esc(q.name||"Untitled")}${q.client?" — "+esc(q.client):""} (${esc(q.status)})</option>`).join("")}</optgroup>` : ""; }).join("");
+  document.getElementById("qaRun").disabled = !sel.value;
+}
+function loadQaLib(){
+  if(QA.lib) return Promise.resolve(QA.lib);
+  if(window.GradconQA){ QA.lib = window.GradconQA; return Promise.resolve(QA.lib); }
+  return new Promise((resolve, reject)=>{ const sc=document.createElement("script"); sc.src = API_BASE + "/assets/gradcon-qa.js"; sc.onload=()=>{ QA.lib = window.GradconQA; QA.lib ? resolve(QA.lib) : reject(new Error("the quality-check library did not load")); }; sc.onerror=()=>reject(new Error("the quality-check library (/assets/gradcon-qa.js) could not be fetched")); document.head.appendChild(sc); });
+}
+async function fetchQuoteRow(key){
+  const rows = await kvGetRows(`select=value,updated_at&key=eq.${encodeURIComponent(key)}`);
+  if(rows && rows[0] && rows[0].value) return rows[0].value;
+  const local = readLocalJSON(key); if(local) return local;
+  throw new Error("the project could not be read from the cloud");
+}
+function qaJobFor(key){ return liveIndex().map(e=>loadJob(e.id)).find(j=>j && j.kind==="qa" && j.projectKey===key) || null; }
+async function runQa(){
+  const sel=document.getElementById("qaProject"); const key=sel.value; if(!key) return;
+  const st=document.getElementById("qaStatus"); const btn=document.getElementById("qaRun"); btn.disabled=true; st.textContent="loading the project…";
+  try{
+    const lib = await loadQaLib();
+    const quote = await fetchQuoteRow(key);
+    const ratesRows = await kvGetRows("select=value&key=eq.gradcon-rates");
+    const liveRates = (ratesRows && ratesRows[0] && ratesRows[0].value) || readLocalJSON("gradcon-rates") || {};
+    await loadMirror(false);
+    const others = Object.keys(MIRROR.raw||{}).filter(k=>k!==key).map(k=>MIRROR.raw[k]);
+    const benchmarks = lib.benchmarksFrom(others, liveRates);
+    st.textContent = "running the checks…";
+    const result = lib.runQualityChecks(quote, liveRates, { benchmarks });
+    const meta = MIRROR.quotes.find(q=>q.key===key) || {};
+    let job = qaJobFor(key);
+    if(!job){ job = { id:newId(), kind:"qa", name:(quote.projectName||meta.name||"Project")+" — quality checks", createdAt:nowIso(), updatedAt:nowIso(), status:"done", files:[], result:null, review:null, exports:[], ran:null, lastError:null, projectKey:key, projectId:meta.id||null, projectName:quote.projectName||meta.name||"", acks:{}, explanation:null }; }
+    job.result = result; job.status = "done"; job.ran = { at: nowIso() }; job.projectStatus = quote.status||meta.status||""; job.explanation = null;
+    Object.keys(job.acks||{}).forEach(id=>{ if(!result.findings.some(f=>f.id===id)) delete job.acks[id]; }); // acknowledgements survive only while the finding still stands
+    saveJob(job); QA.current = job;
+    st.textContent = `${result.findings.length} finding${result.findings.length===1?"":"s"} · ${whenLabel(result.ranAt)}`;
+    renderQa(job);
+  }catch(e){ st.textContent = e.message; }
+  btn.disabled = false;
+}
+function renderQa(job){
+  const host=document.getElementById("qaHost"); const r=job.result; if(!r){ host.innerHTML=""; return; }
+  const money=(v)=>"$"+Math.round(Number(v)||0).toLocaleString("en-AU");
+  const sev=(s)=>({high:"low",medium:"medium",low:"high"})[s]; // reuse the confidence chip colours: high severity = red
+  const open = r.findings.filter(f=>!job.acks[f.id]);
+  host.innerHTML = `
+   <div class="card">
+    <div class="row" style="justify-content:space-between;">
+      <div><b>${esc(job.projectName)}</b> <span class="chip">${esc(job.projectStatus)}</span><div class="small">Direct cost ${money(r.summary.total)}${r.summary.perM2!=null?` · ${money(r.summary.perM2)}/m² over ${r.summary.gfa} m²`:""} · ${r.summary.elements} elements · ${Math.round(r.summary.concreteM3)} m³ concrete · ${(r.summary.steelT||0).toFixed(2)} t steel${r.summary.pinned?` · rates pinned ${whenLabel(r.summary.pinned)}`:""}${r.summary.benchmarkMedianPerM2?` · benchmark median ${money(r.summary.benchmarkMedianPerM2)}/m² over ${r.summary.benchmarks} submitted`:" · no submitted project with a GFA to benchmark against"}</div></div>
+      <div class="row"><span class="chip low">${r.counts.high} high</span><span class="chip medium">${r.counts.medium} medium</span><span class="chip high">${r.counts.low} low</span><button class="btn ai" id="qaExplain" ${r.findings.length?"":"disabled"}>${job.explanation?"Explain again":"Explain with AI"}</button></div>
+    </div>
+    ${job.explanation?`<div class="banner" style="margin-top:10px;white-space:pre-wrap;"><b>AI review</b> <span class="small">(${esc(job.explanation.provider||"")} · ${esc(job.explanation.model||"")} · ${whenLabel(job.explanation.at)})</span>\n${esc(job.explanation.text)}</div>`:""}
+    <div id="qaExplainStatus" class="small"></div>
+   </div>
+   <div class="card">
+    <h3 style="margin-top:0;">Findings — ${open.length} open, ${r.findings.length-open.length} reviewed</h3>
+    ${r.findings.length? `<table><thead><tr><th>Reviewed</th><th>Severity</th><th>Check</th><th>Element</th><th>Finding</th><th>Evidence</th><th>What to do</th></tr></thead><tbody>
+    ${r.findings.map(f=>`<tr class="${job.acks[f.id]?'excluded':''}"><td><input type="checkbox" data-ack="${esc(f.id)}" ${job.acks[f.id]?"checked":""} title="Mark as reviewed (recorded with who and when)"></td><td><span class="chip ${sev(f.severity)}">${f.severity}</span></td><td class="small">${esc(f.check)}</td><td>${esc(f.element||"— project —")}</td><td>${esc(f.message)}</td><td class="small">${esc(f.evidence)}</td><td class="small">${esc(f.fix)}</td></tr>`).join("")}
+    </tbody></table>` : '<div class="banner ok">Nothing found — every check passed.</div>'}
+   </div>`;
+  host.querySelector("#qaExplain") && host.querySelector("#qaExplain").addEventListener("click", ()=>explainQa(job));
+  host.addEventListener("change", e=>{ const cb=e.target.closest("[data-ack]"); if(!cb) return; if(cb.checked) job.acks[cb.dataset.ack] = { at:nowIso() }; else delete job.acks[cb.dataset.ack]; cb.closest("tr").classList.toggle("excluded", cb.checked); saveJob(job); host.querySelector("h3").textContent = `Findings — ${job.result.findings.filter(f=>!job.acks[f.id]).length} open, ${Object.keys(job.acks).length} reviewed`; });
+}
+async function explainQa(job){
+  const st=document.getElementById("qaExplainStatus"); st.textContent = `Asking ${providerInUse().label}…`;
+  try{
+    const res = await fetch(API_BASE + "/api/ai-engine", { method:"POST", headers:{ "content-type":"application/json" }, body: JSON.stringify({ action:"qa", provider: portalPref("aiProvider") || undefined, project:{ name:job.projectName, status:job.projectStatus, summary:job.result.summary }, findings: job.result.findings.filter(f=>!job.acks[f.id]).slice(0,60) }), signal: AbortSignal.timeout(120000) });
+    const data = await res.json().catch(()=>({ error:`Bad reply (${res.status})` }));
+    if(!res.ok || !data.text) throw new Error(data.error || `Failed (${res.status})`);
+    job.explanation = { text:data.text, provider:data.provider, model:data.model, at:nowIso() }; saveJob(job); renderQa(job);
+  }catch(e){ st.textContent = e.message; }
+}
+document.getElementById("qaProject").addEventListener("change", e=>{ document.getElementById("qaRun").disabled = !e.target.value; const job = e.target.value && qaJobFor(e.target.value); QA.current = job||null; if(job){ renderQa(job); document.getElementById("qaStatus").textContent = `last run ${whenLabel(job.ran&&job.ran.at)}`; } else { document.getElementById("qaHost").innerHTML=""; document.getElementById("qaStatus").textContent=""; } });
+document.getElementById("qaRun").addEventListener("click", runQa);
+
+/* ---------- Mail (the connected Google mailbox, read-only) ---------- */
+const MAIL = { list:[], next:null, q:"", current:null, status:null };
+async function gmailCall(body){
+  const res = await fetch(API_BASE + "/api/gmail", { method:"POST", headers:{ "content-type":"application/json" }, body:JSON.stringify(body), signal:AbortSignal.timeout(60000) });
+  const data = await res.json().catch(()=>({ error:`Bad reply (${res.status})` }));
+  if(!res.ok) throw new Error(data.error || `Failed (${res.status})`);
+  return data;
+}
+async function mailSearch(q, more){
+  const st=document.getElementById("mailStatus"); st.textContent="loading…";
+  try{
+    const r = await gmailCall({ action:"list", q, max:25, pageToken: more ? MAIL.next : "" });
+    MAIL.list = more ? MAIL.list.concat(r.messages) : r.messages; MAIL.next = r.nextPageToken; MAIL.q = q;
+    st.textContent = `${MAIL.list.length} of about ${r.resultSizeEstimate} · ${r.mailbox}`;
+  }catch(e){ st.textContent = e.message; if(!more) MAIL.list=[]; MAIL.next=null; }
+  renderMailList();
+}
+function renderMailList(){
+  const tb=document.getElementById("mailList");
+  tb.innerHTML = MAIL.list.map(m=>`<tr class="${m.unread?"unread":""}${MAIL.current&&MAIL.current.id===m.id?" sel":""}" data-mail="${esc(m.id)}"><td>${esc((m.from||"").replace(/<.*>/,"").trim())}</td><td>${esc(m.subject||"(no subject)")}${m.hasAttachments?" 📎":""}</td><td class="small nowrap">${whenLabel(m.date)}</td><td class="small">${m.attachments.filter(a=>a.isPdf).length? m.attachments.filter(a=>a.isPdf).length+" PDF":""}</td></tr>`).join("") || `<tr><td colspan="4" class="small">Nothing here.</td></tr>`;
+  document.getElementById("mailMore").hidden = !MAIL.next;
+}
+async function openMail(id){
+  const host=document.getElementById("mailView"); host.innerHTML='<span class="small">loading…</span>';
+  try{
+    const r = await gmailCall({ action:"read", id }); const m = r.message; MAIL.current = m; renderMailList();
+    const pdfs = m.attachments.filter(a=>a.isPdf);
+    host.innerHTML = `<div><b>${esc(m.subject||"(no subject)")}</b></div><div class="small">From ${esc(m.from)} · to ${esc(m.to)}${m.cc?" · cc "+esc(m.cc):""} · ${whenLabel(m.date)}</div>
+      ${m.attachments.length? `<div style="margin-top:8px;"><b class="small">Attachments</b>${m.attachments.map(a=>`<div class="mail-att"><span>📎 ${esc(a.filename)} <span class="small">${fmtSize(a.size||0)}</span></span>${a.isPdf?"":'<span class="small">(not a PDF — not readable by the AI yet)</span>'}</div>`).join("")}</div>`:""}
+      ${pdfs.length? `<div class="row" style="margin-top:8px;"><button class="btn ai" data-mailjob="takeoff">Start AI takeoff from ${pdfs.length} PDF${pdfs.length===1?"":"s"}</button><button class="btn primary" data-mailjob="spec">Start specification job</button><span class="small" id="mailJobStatus"></span></div>`:""}
+      <div class="mail-body">${esc(m.body||"(no text)")}</div>`;
+  }catch(e){ host.innerHTML = `<div class="banner err">${esc(e.message)}</div>`; }
+}
+async function jobFromMail(kind){
+  const m = MAIL.current; if(!m) return;
+  const st=document.getElementById("mailJobStatus"); const pdfs = m.attachments.filter(a=>a.isPdf);
+  const job = { id:newId(), kind, name:(m.subject||"Mail attachments").slice(0,120), createdAt:nowIso(), updatedAt:nowIso(), status:"new", files:[], result:null, review:null, exports:[], ran:null, lastError:null, specJobId:"", fromMail:{ id:m.id, from:m.from, subject:m.subject, date:m.date } };
+  const errors=[];
+  for(const a of pdfs){
+    if(st) st.textContent = `Copying ${a.filename}…`;
+    try{ const r = await gmailCall({ action:"attachment", id:m.id, attachmentId:a.attachmentId, filename:a.filename, jobId:job.id }); job.files.push(r.file); }catch(e){ errors.push(`${a.filename}: ${e.message}`); }
+  }
+  if(!job.files.length){ if(st) st.textContent = errors.join(" · ") || "No PDF could be copied."; return; }
+  job.status = "uploaded"; saveJob(job); openJob(job.id);
+  if(errors.length) setTimeout(()=>{ const f=document.getElementById("fileStatus"); if(f){ f.textContent = errors.join(" · "); f.className="status err"; } }, 300);
+}
+document.getElementById("mailSearch").addEventListener("click", ()=>mailSearch(document.getElementById("mailQ").value.trim(), false));
+document.getElementById("mailQ").addEventListener("keydown", e=>{ if(e.key==="Enter") mailSearch(e.target.value.trim(), false); });
+document.getElementById("mailNewest").addEventListener("click", ()=>{ document.getElementById("mailQ").value=""; mailSearch("", false); });
+document.getElementById("mailMore").addEventListener("click", ()=>mailSearch(MAIL.q, true));
+document.getElementById("mailList").addEventListener("click", e=>{ const tr=e.target.closest("[data-mail]"); if(tr) openMail(tr.dataset.mail); });
+document.getElementById("mailView").addEventListener("click", e=>{ const b=e.target.closest("[data-mailjob]"); if(b) jobFromMail(b.dataset.mailjob); });
+let MAIL_LOADED=false;
+function showMail(){ if(!MAIL_LOADED){ MAIL_LOADED=true; mailSearch("", false); } }
+/** The chat's "open this email" button lands here: the portal wrote the message id before opening this app. */
+function absorbMailOpen(){
+  let id=null; try{ id = localStorage.getItem("gradcon-ai-open-mail"); if(id) localStorage.removeItem("gradcon-ai-open-mail"); }catch(e){}
+  if(!id) return false;
+  showPage("mail"); showMail(); openMail(id); return true;
+}
 
 /* ---------- running a job ---------- */
 async function runJob(job){
@@ -382,7 +674,7 @@ async function runJob(job){
     job.status = "failed"; job.lastError = (data && data.error) || `Failed (${res.status})`; if(data && data.detail) job.lastError += " — " + data.detail;
     saveJob(job); renderJob(job); return;
   }
-  job.result = data.result; job.ran = { at: nowIso(), provider:data.provider, model:data.model, latencyMs:data.latencyMs, usage:data.usage, truncated:!!data.truncated };
+  job.result = data.result; job.ran = { at: nowIso(), provider:data.provider, model:data.model, latencyMs:data.latencyMs, usage:data.usage, truncated:!!data.truncated, partial:data.partial||null };
   job.review = job.kind==="takeoff" ? takeoffReviewFrom(data.result) : specReviewFrom(data.result);
   job.status = "done"; saveJob(job); renderJob(job);
 }
@@ -427,7 +719,8 @@ function renderTakeoffResult(job){
    <div class="card">
     <div class="row" style="justify-content:space-between;">
       <div><b>${esc(proj.name||job.name||"Project")}</b> ${proj.engineer?`· <span class="small">engineer ${esc(proj.engineer)}</span>`:""} ${proj.drawingRevision?`· <span class="small">${esc(proj.drawingRevision)}</span>`:""}
-        <div class="small">Read ${whenLabel(job.ran&&job.ran.at)} on ${esc(job.ran&&job.ran.provider)} · ${esc(job.ran&&job.ran.model)} · ${Math.round(((job.ran&&job.ran.latencyMs)||0)/1000)} s${job.ran&&job.ran.usage?` · ${job.ran.usage.input||0} in / ${job.ran.usage.output||0} out tokens`:""}${job.ran&&job.ran.truncated?' · <b style="color:var(--bad)">reply was cut off — run again with fewer sheets</b>':""}</div>
+        <div class="small">Read ${whenLabel(job.ran&&job.ran.at)} on ${esc(job.ran&&job.ran.provider)} · ${esc(job.ran&&job.ran.model)} · ${Math.round(((job.ran&&job.ran.latencyMs)||0)/1000)} s${job.ran&&job.ran.usage?` · ${job.ran.usage.input||0} in / ${job.ran.usage.output||0} out tokens`:""}</div>
+        ${job.ran&&job.ran.partial?`<div class="banner" style="margin-top:6px;"><b>Partial result.</b> ${esc(job.ran.partial.reason)} — ${job.ran.partial.kept} element${job.ran.partial.kept===1?"":"s"} kept. ${esc(job.ran.partial.advice)}</div>`:(job.ran&&job.ran.truncated?'<div class="banner" style="margin-top:6px;"><b>The reply was cut off</b> — run again with fewer sheets.</div>':"")}
         <div class="small">${(proj.concreteGrades||[]).length?`Grades on the drawings: ${esc((proj.concreteGrades||[]).join(", "))} · `:""}${proj.reoGrade?`reo ${esc(proj.reoGrade)} · `:""}${proj.coverNotes?esc(proj.coverNotes):""}</div>
         <div class="small">Sheets: ${sheets.length? sheets.map(s=>`<span class="chip">${esc(s.ref)}${s.revision?" "+esc(s.revision):""}</span>`).join(" ") : "—"}</div>
       </div>
@@ -502,7 +795,8 @@ function renderSpecResult(job){
   return `
    <div class="card">
     <b>${esc(doc.title||job.name||"Specification")}</b> ${doc.revision?`· ${esc(doc.revision)}`:""} ${doc.date?`· ${esc(doc.date)}`:""} ${doc.author?`· ${esc(doc.author)}`:""}
-    <div class="small">Read ${whenLabel(job.ran&&job.ran.at)} on ${esc(job.ran&&job.ran.provider)} · ${esc(job.ran&&job.ran.model)} · ${Math.round(((job.ran&&job.ran.latencyMs)||0)/1000)} s${job.ran&&job.ran.truncated?' · <b style="color:var(--bad)">reply was cut off</b>':""} · ${nApply} items ticked as applicable</div>
+    <div class="small">Read ${whenLabel(job.ran&&job.ran.at)} on ${esc(job.ran&&job.ran.provider)} · ${esc(job.ran&&job.ran.model)} · ${Math.round(((job.ran&&job.ran.latencyMs)||0)/1000)} s · ${nApply} items ticked as applicable</div>
+    ${job.ran&&job.ran.partial?`<div class="banner" style="margin-top:6px;"><b>Partial result.</b> ${esc(job.ran.partial.reason)} — ${job.ran.partial.kept} items kept. ${esc(job.ran.partial.advice)}</div>`:""}
     <div class="small">Tick what applies to this job. The ticked items become the job profile: a takeoff job that picks this specification sends the grades and covers to the model and carries the standards into the new takeoff's Project Setup. Standards are recorded by designation only — nothing here reproduces standards text.</div>
    </div>
    <div class="card"><h3 style="margin-top:0;">Applicable standards and codes</h3>
@@ -550,6 +844,7 @@ function renderJob(job){
         <span class="chip ${job.status}">${esc(job.status)}</span></div>
       <div class="row"><button class="btn small" id="backHome">← All jobs</button><button class="btn small danger" id="delJob">Delete job</button></div>
     </div>
+    ${job.fromMail?`<div class="small" style="margin-top:6px;">From mail: <b>${esc(job.fromMail.subject||"")}</b> — ${esc(job.fromMail.from||"")} · ${whenLabel(job.fromMail.date)}</div>`:""}
     ${job.kind==="takeoff"?`<div class="row" style="margin-top:8px;">Quotes project this takeoff is for: <select id="projectSel"><option value="">— none / new —</option>${MIRROR.quotes.map(q=>`<option value="${esc(q.id)}" ${q.id===job.projectId?'selected':''}>${esc(q.name||"Untitled")}${q.client?" — "+esc(q.client):""} (${esc(q.status)})</option>`).join("")}</select><span class="small">names the job and the exported takeoff after the project; nothing in the project changes</span></div>
     <div class="row" style="margin-top:8px;">Specification profile for this takeoff: <select id="specJobSel"><option value="">— none —</option>${specJobs.map(s=>`<option value="${s.id}" ${s.id===job.specJobId?'selected':''}>${esc(s.name||"Untitled spec")}</option>`).join("")}</select><span class="small">grades and covers from the ticked specification go to the model and into the exported takeoff's Project Setup</span></div>`:""}
    </div>
@@ -633,21 +928,22 @@ function renderHome(){
   document.getElementById("kpiSpec").textContent = idx.filter(e=>e.kind==="spec").length;
   document.getElementById("kpiExported").textContent = idx.reduce((n,e)=>n+(e.exported||0),0);
   const body = document.getElementById("jobsBody");
-  body.innerHTML = idx.map(e=>`<tr><td><span class="name" data-open="${e.id}">${esc(e.name||"Untitled")}</span></td><td>${e.kind==="takeoff"?"AI takeoff":"Specification"}</td><td>${e.files||0}</td><td><span class="chip ${esc(e.status)}">${esc(e.status)}</span></td><td class="small">${resultSummary(e)}</td><td>${e.exported? e.exported+"×" : "—"}</td><td class="small">${whenLabel(e.updatedAt)}</td><td><button class="btn small" data-open="${e.id}">Open</button> <button class="btn small danger" data-del="${e.id}">✕</button></td></tr>`).join("");
+  body.innerHTML = idx.map(e=>`<tr><td><span class="name" data-open="${e.id}">${esc(e.name||"Untitled")}</span></td><td>${e.kind==="takeoff"?"AI takeoff":e.kind==="qa"?"Quality checks":"Specification"}</td><td>${e.files||0}</td><td><span class="chip ${esc(e.status)}">${esc(e.status)}</span></td><td class="small">${resultSummary(e)}</td><td>${e.exported? e.exported+"×" : "—"}</td><td class="small">${whenLabel(e.updatedAt)}</td><td><button class="btn small" data-open="${e.id}">Open</button> <button class="btn small danger" data-del="${e.id}">✕</button></td></tr>`).join("");
   document.getElementById("jobsEmpty").style.display = idx.length ? "none" : "";
 }
-function resultSummary(e){ const j = loadJob(e.id); if(!j || !j.review) return "—"; if(j.kind==="takeoff") return `${j.review.elements.length} elements proposed`; return `${j.review.standards.length} standards · ${j.review.requirements.length} requirements`; }
+function resultSummary(e){ const j = loadJob(e.id); if(!j) return "—"; if(j.kind==="qa") return j.result? `${j.result.findings.length} findings · ${Object.keys(j.acks||{}).length} reviewed` : "—"; if(!j.review) return "—"; if(j.kind==="takeoff") return `${j.review.elements.length} elements proposed`; return `${j.review.standards.length} standards · ${j.review.requirements.length} requirements`; }
 document.getElementById("jobsBody").addEventListener("click", e=>{ const o=e.target.closest("[data-open]"); if(o){ openJob(o.dataset.open); return; } const d=e.target.closest("[data-del]"); if(d) deleteJob(d.dataset.del); });
 document.getElementById("newTakeoff").addEventListener("click", ()=>createJob("takeoff"));
 document.getElementById("newSpec").addEventListener("click", ()=>createJob("spec"));
 async function openJob(id){
   let job = loadJob(id);
+  if(job && job.kind==="qa"){ showPage("qa"); await loadMirror(false); renderQaProjects(); const sel=document.getElementById("qaProject"); sel.value = job.projectKey; sel.dispatchEvent(new Event("change")); return; }
   if(job){ renderJob(job); }
   const fresh = await refreshJobFromCloud(id);
   if(fresh && CURRENT===id) renderJob(fresh); else if(!job && !fresh) alert("That job could not be loaded.");
 }
 function showPage(id){ document.querySelectorAll(".page").forEach(p=>p.classList.toggle("active", p.id==="page-"+id)); document.querySelectorAll(".tab-btn").forEach(b=>b.classList.toggle("active", b.dataset.page===id)); }
-document.querySelectorAll(".tab-btn").forEach(b=>b.addEventListener("click", ()=>{ if(b.dataset.page==="home") renderHome(); showPage(b.dataset.page); }));
+document.querySelectorAll(".tab-btn").forEach(b=>b.addEventListener("click", ()=>{ if(b.dataset.page==="home") renderHome(); if(b.dataset.page==="mail") showMail(); if(b.dataset.page==="qa"){ loadMirror(false).then(renderQaProjects); } if(b.dataset.page==="roadmap") renderRoadmap(); showPage(b.dataset.page); }));
 /* ---------- boot ---------- */
 absorbHandoffResult();
 renderHome();
@@ -655,6 +951,7 @@ paintCloud(SUPABASE_URL ? "Cloud: checking…" : "Local only");
 loadProviders();
 syncIndexFromCloud();
 renderMirror(false);
+absorbMailOpen();
 window.addEventListener("storage", e=>{ if(e.key==="gradcon-preferences") paintProvider(); });
 </script>
 </body>

@@ -661,6 +661,10 @@
     <p class="sub" style="margin-top:-4px;">Pick which provider the AI Engine and the chat use with <b>Use</b> (remembered in this browser). Keys are set in the Vercel project under Settings → Environment Variables (ANTHROPIC_API_KEY, OPENAI_API_KEY or OPEN_AI_KEY, DEEPSEEK_API_KEY, plus AI_PROVIDER for the default) and never leave the server. This panel only shows what is set and lets you test each one.</p>
     <div id="settings-ai" class="field"><span class="ai-result">Checking…</span></div>
 
+    <div class="settings-section">Google mail (projects@gradcon.com.au)</div>
+    <p class="sub" style="margin-top:-4px;">Connect the Workspace mailbox so the AI Engine's Mail tab and the chat can read it (read-only — nothing is ever sent, replied to or deleted). The sign-in happens on Google's own page; the token is kept on the server. Setup lives in the Vercel project: GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.</p>
+    <div id="settings-google" class="field"><span class="ai-result">Checking…</span></div>
+
     <div class="settings-section">Quotes — pricing</div>
     <div class="settings-grid">
       <div class="field">
@@ -1223,6 +1227,7 @@
   }
 
   document.getElementById('settings-btn').addEventListener('click', function(){
+    loadGoogleMail();
     populateSettingsForm();
     loadAiProviders();
     settingsBackdrop.hidden = false;
@@ -1632,6 +1637,35 @@
       host.innerHTML = '<span class="ai-result">Not available in this build — the provider keys and their test live on the Vercel deployment (api/ai-providers).</span>';
     });
   }
+  // ===================== SETTINGS → GOOGLE MAIL =====================
+  function loadGoogleMail(){
+    var host = document.getElementById('settings-google');
+    host.innerHTML = '<span class="ai-result">Checking…</span>';
+    fetch('/api/google-auth?action=status', { headers:{ accept:'application/json' } }).then(function(r){ return r.ok ? r.json() : Promise.reject(new Error(String(r.status))); }).then(function(d){
+      if(!d.configured){ host.innerHTML = '<div class="ai-row"><div class="name">Not configured<small>Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in the Vercel project, then redeploy. The OAuth client\'s redirect URI is ' + escapeHtml(location.origin) + '/api/google-auth.</small></div><span class="ai-chip off">No client</span></div>'; return; }
+      if(d.connected){ host.innerHTML = '<div class="ai-row"><div class="name">' + escapeHtml(d.email || d.mailbox) + '<small>connected ' + escapeHtml(d.connectedAt ? whenLabel(d.connectedAt, new Date()) : '') + ' · read-only</small></div><span class="ai-chip on">Connected</span><button type="button" class="ai-test" id="google-disconnect">Disconnect</button><span class="ai-result"></span></div>'; }
+      else { host.innerHTML = '<div class="ai-row"><div class="name">' + escapeHtml(d.mailbox) + '<small>not connected — sign in as this mailbox on Google\'s page; any other account is refused</small></div><span class="ai-chip off">Not connected</span><button type="button" class="ai-use" id="google-connect">Connect</button></div>'; }
+    }).catch(function(){ host.innerHTML = '<span class="ai-result">Not available in this build — the Google connection lives on the Vercel deployment (api/google-auth).</span>'; });
+  }
+  document.getElementById('settings-google').addEventListener('click', function(e){
+    if(e.target.closest('#google-connect')){ window.location.href = '/api/google-auth?action=start'; return; }
+    var d = e.target.closest('#google-disconnect'); if(!d) return;
+    if(!confirm('Disconnect the mailbox? The AI Engine Mail tab and the chat stop reading it until it is connected again.')) return;
+    d.disabled = true;
+    fetch('/api/google-auth', { method:'POST', headers:{ 'content-type':'application/json' }, body: JSON.stringify({ action:'disconnect' }) }).then(function(){ loadGoogleMail(); }).catch(function(){ d.disabled = false; });
+  });
+  // Back from Google's consent page: say how it went, then clean the address bar.
+  (function googleReturn(){
+    var m = /[?&]google=([^&]+)/.exec(location.search); if(!m) return;
+    var v = decodeURIComponent(m[1]);
+    try{ history.replaceState(null, '', location.pathname); }catch(err){}
+    var note = document.createElement('div'); note.className = 'ai-result'; note.style.cssText = 'position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:70;background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 16px;box-shadow:0 14px 30px -14px rgba(35,31,32,.5);font-size:13px;';
+    if(v === 'connected'){ note.textContent = 'Google mail connected — the AI Engine Mail tab and the chat can now read projects@gradcon.com.au.'; note.style.borderColor = '#9ad1aa'; }
+    else if(/^error:wrong-account:/.test(v)){ note.textContent = 'That Google account (' + v.replace(/^error:wrong-account:/, '') + ') is not the mailbox allowed to connect. Sign in as projects@gradcon.com.au.'; note.style.borderColor = '#e39a9a'; }
+    else { note.textContent = 'Google mail was not connected: ' + v.replace(/^error:/, '') + '.'; note.style.borderColor = '#e39a9a'; }
+    document.body.appendChild(note); setTimeout(function(){ note.remove(); }, 12000);
+  })();
+
   // Which provider every AI job and the chat run on: the one chosen here
   // (portal preference aiProvider) when its key is set, else the server's default.
   var AI_PROVIDERS = null;
@@ -1677,7 +1711,10 @@
   function chatCloudData(){
     if(CHAT_CLOUD.data && Date.now() - CHAT_CLOUD.at < 5 * 60000) return Promise.resolve(CHAT_CLOUD.data);
     if(CHAT_CLOUD.pending) return CHAT_CLOUD.pending;
-    var localKeys = {}; localQuotes().forEach(function(q){ localKeys[q.key] = true; });
+    // "held locally" means a SUMMARY is here (mirror or bare row), not just an index entry —
+    // a browser that opened Quotes once has the index and no summaries, and those projects
+    // must still come from the cloud (10 Oct 2026: the chat saw 23 index entries and no project).
+    var localKeys = {}; localQuotes().forEach(function(q){ if(readJSON('gradcon-cache:summary:' + q.key) || readJSON(q.key)) localKeys[q.key] = true; });
     var p = Promise.all([
       cloudGet('/rest/v1/estimator_kv?select=value&key=eq.gradcon-projects'),
       cloudGet('/rest/v1/estimator_kv?select=key,updated_at&key=like.gradcon-quote-*&order=updated_at.desc&limit=200'),
@@ -1711,10 +1748,12 @@
   function assistantContextWith(cloud){
     var now = new Date(); var today = localDay(now); cloud = cloud || {};
     var seen = {};
-    var quotes = localQuotes().map(function(q){
+    var quotes = [];
+    localQuotes().forEach(function(q){
+      var hit = readJSON('gradcon-cache:summary:' + q.key); var v = (hit && hit.value) || readJSON(q.key);
+      if(!v) return; // no summary here: the cloud fills it below
       seen[q.key] = true;
-      var hit = readJSON('gradcon-cache:summary:' + q.key); var v = (hit && hit.value) || readJSON(q.key) || {};
-      return quoteRow(q.id, q.key, v, (cloud.stamps && cloud.stamps[q.key]) || q.updatedAt, now);
+      quotes.push(quoteRow(q.id, q.key, v, (cloud.stamps && cloud.stamps[q.key]) || q.updatedAt, now));
     });
     (cloud.index || []).forEach(function(e){
       if(!e || !e.storageKey || seen[e.storageKey]) return; seen[e.storageKey] = true;
@@ -1765,6 +1804,9 @@
     } else if(app === 'estimates'){
       if(a.id){ try{ localStorage.setItem('gradcon-estimate-active', String(a.id)); }catch(err){} }
       openApp('estimates', true); setActiveMenu('estimates');
+    } else if(app === 'mail'){
+      if(a.id){ try{ localStorage.setItem('gradcon-ai-open-mail', String(a.id)); }catch(err){} }
+      openApp('aiengine', true); setActiveMenu('aiengine');
     } else if(APP_LABELS[app]){ openApp(app, true); setActiveMenu(app); }
   }
   function renderChatLog(){

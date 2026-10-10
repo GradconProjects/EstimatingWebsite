@@ -35,6 +35,16 @@ const check = (name, fn) => {
     process.exitCode = 1;
   }
 };
+const checkAsync = async (name, fn) => {
+  try {
+    await fn();
+    passed++;
+    console.log(`  ok  ${name}`);
+  } catch (e) {
+    console.error(`FAIL  ${name}\n      ${e.message}`);
+    process.exitCode = 1;
+  }
+};
 
 console.log("Gradcon Estimator — costing engine checks\n");
 
@@ -2311,6 +2321,10 @@ check("Project Geometry carries a COUNT: $/no. leads the benchmark rates, sums a
   let t501 = null; try { await P.callDocuments("deepseek", { prompt: "x", documents: [{ url: "https://x/a.pdf" }], env: { DEEPSEEK_API_KEY: "k" } }); } catch (e) { t501 = e; }
   check("AI Engine: a PDF job on DeepSeek fails with 501 and says to switch provider (it cannot read documents)", () => assertTrue(t501 && t501.status === 501 && /switch/i.test(t501.message)));
   check("AI Engine: parseJsonLoose reads a fenced or prefixed JSON object and returns null for none", () => assertTrue(P.parseJsonLoose("Here:\n```json\n{\"a\":[1,2]}\n```")?.a?.length === 2 && P.parseJsonLoose("no json") === null));
+  const cut = '{"project":{"name":"X"},"sheets":[{"ref":"S-01"}],"elements":[{"type":"padfooting","label":"PF1 \\"big\\"","qty":4,"bars":{"main":{"dia":"N16"}}},{"type":"column","label":"C1","qty":6},{"type":"wall","label":"W1 [cut';
+  const sal = P.salvageArrays(cut, ["elements", "sheets", "unreadable"]);
+  check("AI Engine: a reply cut off mid-element keeps every element that closed (quotes and nesting respected), the sheets and the project; nothing usable → null", () => assertTrue(sal.elements.length === 2 && sal.elements[0].label === 'PF1 "big"' && sal.elements[0].bars.main.dia === "N16" && sal.sheets.length === 1 && sal.project.name === "X" && P.salvageArrays("no json", ["elements"]) === null));
+  check("AI Engine: the takeoff prompt asks for compact JSON without null keys and short evidence (a 6.7 MB set overran the output limit on 10 Oct 2026)", () => assertTrue(/OMIT every key whose value would be null/.test(E.takeoffPrompt({ types: [], projectName: "P" })) && /under 80 characters/.test(E.takeoffPrompt({ types: [] }))));
   const bad = await E.runAiJob({ action: "nope" }, {});
   const noFiles = await E.runAiJob({ action: "takeoff", files: [], types: [{ id: "x" }] }, {});
   const notPdf = await E.runAiJob({ action: "spec", files: [{ url: "https://x/a.docx", name: "a" }] }, { ANTHROPIC_API_KEY: "k" });
@@ -2342,6 +2356,85 @@ check("Project Geometry carries a COUNT: $/no. leads the benchmark rates, sums a
   check("AI chat: no messages → 400, no provider → 503, oversized context → 413, none of them calling a model", () => assertTrue(c400.status === 400 && c503.status === 503 && c413.status === 413));
   let cthrew = null; try { await P.callChat("openai", { messages: [{ role: "assistant", content: "x" }], env: { OPENAI_API_KEY: "k" } }); } catch (e) { cthrew = e; }
   check("AI chat: a conversation that does not end with the user is refused (400) before any request", () => assertTrue(cthrew && cthrew.status === 400));
+}
+
+// ---------------------------------------------------------------------------
+// Quality checks (src/lib/qualityChecks.js), the qa explain action, Google mail (api/_google.js, api/gmail.js), mail in the chat
+// ---------------------------------------------------------------------------
+{
+  const Q = await import("../src/lib/qualityChecks.js");
+  const E = await import("../api/ai-engine.js");
+  const G = await import("../api/_google.js");
+  const GM = await import("../api/gmail.js");
+  const C = await import("../api/ai-chat.js");
+  const rates = defaultRates();
+  const strip = ELEMENT_TYPES.find((t) => t.id === "strip_footings");
+  const concCat = FULL_CATALOG.find((c) => c.key === "CONCRETE"); const concP = concCat.products.find((p) => p.unit === "m3");
+  const subCat = FULL_CATALOG.find((c) => /SUB CONTRACTORS/.test(c.key)); const subQ = subCat.products.find((p) => p.unit === "quote");
+  const barCat = FULL_CATALOG.find((c) => c.key === "PROCESSED BAR"); const bar = barCat.products[0];
+  const mk = (label, qtys, extra) => { const it = newElementItem(strip); it.label = label; Object.assign(it.qtys, qtys); return Object.assign(it, extra || {}); };
+  const concKey = rateKey("CONCRETE", concP.name, concP.unit), subKey = rateKey(subCat.key, subQ.name, subQ.unit), barKey = rateKey("PROCESSED BAR", bar.name, bar.unit);
+  const okItem = mk("Strip OK", { [concKey]: 12, [barKey]: 60 }, { measureLm: 40 }); // 60 m of bar ≈ 1.2 t? depends on unitWeight; the band check uses the real tonnes
+  const unpriced = mk("Piling", { [subKey]: 1 });
+  const bare = mk("Bare slab", { [concKey]: 10 });
+  const dup = mk("Bare slab", { [concKey]: 10 });
+  const empty = mk("Nothing here", {});
+  const thin = mk("Thin", { [concKey]: 1 }, { measureM2: 100 });
+  const quote = { projectName: "QA probe", clientName: "", gfa: 200, scope: "both", status: "Completed Estimating", items: [okItem, unpriced, bare, dup, empty, thin], planner: {} };
+  const r = Q.runQualityChecks(quote, rates, { today: "2026-10-10", benchmarks: [{ name: "A", perM2: 900 }, { name: "B", perM2: 1100 }, { name: "C", perM2: 1000 }] });
+  const checks = (name) => r.findings.filter((f) => f.check === name);
+  check("Quality: a subcontract quote row with a quantity and no amount is a HIGH finding naming the element", () => assertTrue(checks("unpriced-quote").length === 1 && checks("unpriced-quote")[0].severity === "high" && checks("unpriced-quote")[0].element === "Piling"));
+  check("Quality: concrete with no reinforcement is flagged (medium), once per such element", () => assertTrue(checks("no-steel").length === 2 && checks("no-steel").every((f) => f.severity === "medium") && checks("no-steel").some((f) => f.element === "Bare slab")));
+  check("Quality: an identical second element is a duplicate finding on the SECOND one only", () => assertTrue(checks("duplicate-element").length === 1 && checks("duplicate-element")[0].itemId === dup.id && /Same type and name/.test(checks("duplicate-element")[0].message)));
+  check("Quality: an element with no quantities and no cost is a low 'empty' finding", () => assertTrue(checks("empty-element").length === 1 && checks("empty-element")[0].element === "Nothing here"));
+  check("Quality: concrete over the recorded area outside the thickness band is flagged with the implied mm", () => assertTrue(checks("concrete-vs-measure").some((f) => f.element === "Thin" && /10 mm thick/.test(f.message))));
+  check("Quality: no client and no deadline are low project-field findings; $/m² far off the submitted median is a benchmark finding with the median", () => assertTrue(checks("project-fields").length === 2 && checks("sqm-benchmark").length === 1 && /median of \$1,000\/m²/.test(checks("sqm-benchmark")[0].message)));
+  check("Quality: findings sort high → medium → low and the counts agree; the summary carries total, $/m², elements and the median", () => { const sev = r.findings.map((f) => f.severity); const order = { high: 0, medium: 1, low: 2 }; assertTrue(sev.every((x, i) => i === 0 || order[sev[i - 1]] <= order[x]) && r.counts.high + r.counts.medium + r.counts.low === r.findings.length && r.summary.elements === 6 && r.summary.benchmarkMedianPerM2 === 1000 && r.summary.perM2 > 0); });
+  // rates: expired, pinned drift with the cost
+  const exp = JSON.parse(JSON.stringify(rates)); const levyKey = Object.keys(exp).find((k) => /environment levy/i.test(k)); exp[levyKey].validUntil = "2026-10-01";
+  const pinned = { ...quote, items: [okItem], ratesFrozen: { at: "2026-10-01T00:00:00Z", status: "Completed Estimating", rates: JSON.parse(JSON.stringify(rates)) } };
+  const live = JSON.parse(JSON.stringify(exp)); live[concKey].unitCost = Number(rates[concKey].unitCost) + 50;
+  const r2 = Q.runQualityChecks(pinned, live, { today: "2026-10-10" });
+  check("Quality: a rate past its validity is reported (low when the project does not use it) and a pinned rate that moved shows the $ impact at the project's quantities", () => assertTrue(r2.findings.some((f) => f.check === "rate-expired") && r2.findings.some((f) => f.check === "rate-drift" && /\+\$600/.test(f.message))));
+  check("Quality: benchmarksFrom costs only submitted projects with a GFA and items, as $/m²", () => { const b = Q.benchmarksFrom([{ status: "Submitted", gfa: 100, items: [okItem] }, { status: "Estimating", gfa: 100, items: [okItem] }, { status: "Successful", gfa: 0, items: [okItem] }], rates); assertTrue(b.length === 1 && b[0].perM2 > 0 && Q.median([3, 1, 2]) === 2 && Q.median([]) === null); });
+  await checkAsync("Quality: the AI explain action needs findings (400) and a provider (503); the prompt forbids inventing figures", async () => assertTrue((await E.runAiJob({ action: "qa" }, {})).status === 400 && (await E.runAiJob({ action: "qa", findings: [] }, {})).status === 503 && /Never invent a figure/.test(E.qaPrompt({ project: { name: "P" }, findings: [] }))));
+  // Google mail
+  const genv = { GOOGLE_CLIENT_ID: "cid", GOOGLE_CLIENT_SECRET: "csec" };
+  check("Google: the refresh token round-trips through AES-GCM under the client secret and a tampered blob is refused", () => { const enc = G.encryptText("1//refresh", genv); let bad = false; try { G.decryptText(enc.slice(0, -2) + "zz", genv); } catch { bad = true; } assertTrue(G.decryptText(enc, genv) === "1//refresh" && /^v1\./.test(enc) && !enc.includes("refresh") && bad); });
+  check("Google: the OAuth state is signed and expires after ten minutes; the consent URL asks for gmail.readonly offline with the mailbox as login hint", () => { const st = G.signState(genv, 1000); const u = G.consentUrl("https://h/api/google-auth", genv, 1000); assertTrue(G.verifyState(st, genv, 5000) && !G.verifyState(st, genv, 1000 + 11 * 60000) && !G.verifyState("a.b", genv) && /gmail\.readonly/.test(u) && /access_type=offline/.test(u) && /login_hint=projects%40gradcon\.com\.au/.test(u) && /prompt=consent/.test(u)); });
+  check("Google: connectionStatus never carries a token; the allowed mailbox defaults to projects@gradcon.com.au", () => { const st = G.connectionStatus({ email: "projects@gradcon.com.au", refresh: "v1.x.y.z", connectedAt: "2026-10-10" }, genv); assertTrue(st.connected && st.email === "projects@gradcon.com.au" && !JSON.stringify(st).includes("v1.x") && G.allowedMailbox({}) === "projects@gradcon.com.au" && G.allowedMailbox({ GOOGLE_ALLOWED_MAILBOX: "Grady@Gradcon.com.au" }) === "grady@gradcon.com.au"); });
+  const gmsg = { id: "m1", threadId: "t1", internalDate: "1760000000000", snippet: "Tender invitation", labelIds: ["UNREAD"], payload: { headers: [{ name: "From", value: "Bob <bob@x.com>" }, { name: "Subject", value: "Tender — 12 Beach Rd" }], parts: [{ mimeType: "text/html", body: { data: Buffer.from("<p>Hello <b>Grady</b></p><style>x{}</style>").toString("base64url") } }, { mimeType: "application/pdf", filename: "S-01.pdf", body: { attachmentId: "a1", size: 10 } }, { mimeType: "application/vnd.ms-excel", filename: "boq.xlsx", body: { attachmentId: "a2", size: 5 } }] } };
+  const pm = G.parseMessage(gmsg);
+  check("Google: parseMessage reads headers, the HTML body as text, unread, and the attachments with a PDF flag", () => assertTrue(pm.from === "Bob <bob@x.com>" && pm.subject === "Tender — 12 Beach Rd" && pm.body === "Hello Grady" && pm.unread && pm.attachments.length === 2 && pm.attachments[0].isPdf && !pm.attachments[1].isPdf && pm.hasAttachments && /^2025-10-09/.test(pm.date)));
+  await checkAsync("Gmail function: unconfigured → 503; configured with no stored connection → 409 asking to connect; never a network call to Google", async () => { const fetchNone = async () => ({ ok: true, json: async () => [] }); assertTrue((await GM.runGmail({ action: "list" }, {}, fetchNone)).status === 503 && (await GM.runGmail({ action: "list" }, genv, fetchNone)).status === 409); });
+  await checkAsync("Gmail function: with a connection, list/read/attachment go through Gmail and an attachment lands in the bucket as a public PDF URL", async () => {
+    const stored = { email: "projects@gradcon.com.au", refresh: G.encryptText("1//r", genv) };
+    const calls = [];
+    const fetchMock = async (url, init) => { calls.push(String(url)); const u = String(url);
+      if (/estimator_kv\?key=eq\./.test(u)) return { ok: true, json: async () => [{ value: stored }] };
+      if (/oauth2\.googleapis\.com\/token/.test(u)) return { ok: true, json: async () => ({ access_token: "at", expires_in: 3600 }) };
+      if (/\/messages\?/.test(u)) return { ok: true, json: async () => ({ messages: [{ id: "m1" }], resultSizeEstimate: 1 }) };
+      if (/\/messages\/m1\/attachments\/a1/.test(u)) return { ok: true, json: async () => ({ data: Buffer.from("%PDF-1.4 x").toString("base64url") }) };
+      if (/\/messages\/m1/.test(u)) return { ok: true, json: async () => gmsg };
+      if (/storage\/v1\/object\//.test(u)) return { ok: true, json: async () => ({}) };
+      return { ok: false, status: 404, json: async () => ({}) }; };
+    G.resetTokenCache();
+    const l = await GM.runGmail({ action: "list", q: "tender" }, genv, fetchMock);
+    const rd = await GM.runGmail({ action: "read", id: "m1" }, genv, fetchMock);
+    const at = await GM.runGmail({ action: "attachment", id: "m1", attachmentId: "a1", filename: "S-01.pdf" }, genv, fetchMock);
+    const notPdf = await GM.runGmail({ action: "attachment", id: "m1", attachmentId: "a2", filename: "boq.xlsx" }, genv, fetchMock);
+    G.resetTokenCache();
+    assertTrue(l.status === 200 && l.body.messages.length === 1 && l.body.messages[0].subject === "Tender — 12 Beach Rd" && !("body" in l.body.messages[0]) && calls.some((c) => /q=tender/.test(c))
+      && rd.status === 200 && rd.body.message.body === "Hello Grady"
+      && at.status === 200 && /ai-engine\/mail\/m1\/S-01\.pdf$/.test(at.body.file.url) && at.body.file.size === 10 && calls.some((c) => /storage\/v1\/object\/gradcon-files\/ai-engine\/mail\/m1\/S-01\.pdf/.test(c))
+      && notPdf.status === 400 && calls.filter((c) => /oauth2\.googleapis\.com\/token/.test(c)).length === 1);
+  });
+  await checkAsync("AI chat: recent mail joins the context when Google is configured, a mail failure never fails the chat, and no Google means no mail key", async () => {
+    const got = await C.mailForContext(genv, { mail: async () => ({ mailbox: "projects@gradcon.com.au", messages: [{ subject: "Tender" }] }) });
+    const failed = await C.mailForContext(genv, { mail: async () => { throw new Error("offline"); } });
+    assertTrue(got.messages[0].subject === "Tender" && failed.error === "offline" && (await C.mailForContext({})) === null && /under "mail"/.test(C.chatSystem({})));
+  });
+  check("Portal: the AI Engine page carries the Mail tab, the Quality checks picker and the system mirror's Open links; the shell carries Settings → Google mail", () => { const ai = fs.readFileSync(new URL("../portal/ai-engine.html", import.meta.url), "utf8"); const sh = fs.readFileSync(new URL("../portal/portal-shell.html", import.meta.url), "utf8"); assertTrue(/id="page-mail"/.test(ai) && /id="qaProject"/.test(ai) && /gradcon-qa\.js/.test(ai) && /data-open-quote=/.test(ai) && /data-open-takeoff=/.test(ai) && /id="settings-google"/.test(sh) && /google-auth\?action=start/.test(sh)); });
 }
 
 // ---------------------------------------------------------------------------

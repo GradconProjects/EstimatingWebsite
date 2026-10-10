@@ -12,6 +12,7 @@
  * autonomous except asked by me". Nothing here writes anywhere.
  */
 import { callChat, resolveProviderId, providerStatus } from "./_providers.js";
+import * as Gm from "./_google.js";
 
 export const config = { maxDuration: 60 };
 
@@ -28,13 +29,13 @@ export function chatSystem(context) {
   const ctx = JSON.stringify(context || {});
   return `You are Gradcon AI, the assistant inside Gradcon Concrete Constructions' estimating portal (Melbourne, Australia). The person is an estimator or Grady, the owner. Today is ${(context && context.today) || "unknown"}.
 
-You can SEE the portal's data below (read-only): every Quotes project (name, client, status, deadline, days to deadline, elements, scope, whether its rates are pinned), every Estimates takeoff (elements, review status, AI drafts), the live rates' validity dates, the Rates Library's global figures, Cost Planner projects and AI Engine jobs. Answer from it precisely — name the project, the date, the count. Status meanings: Queued/Estimating are open work; Completed Estimating/Quoting are finished pricing; Submitted/Tendered went out; Successful/Unsuccessful/Deadline Missed are closed; On Hold is paused. A negative daysToDeadline is overdue. rateValidity.daysLeft under 14 means a supplier notice is due.
+You can SEE the portal's data below (read-only): every Quotes project (name, client, status, deadline, days to deadline, elements, scope, whether its rates are pinned), every Estimates takeoff (elements, review status, AI drafts), the live rates' validity dates, the Rates Library's global figures, Cost Planner projects, AI Engine jobs and — when a Google mailbox is connected — the newest emails of the last two weeks under "mail" (sender, subject, date, snippet, attachment names; the full text is read in the AI Engine's Mail tab). Answer from it precisely — name the project, the date, the count. Status meanings: Queued/Estimating are open work; Completed Estimating/Quoting are finished pricing; Submitted/Tendered went out; Successful/Unsuccessful/Deadline Missed are closed; On Hold is paused. A negative daysToDeadline is overdue. rateValidity.daysLeft under 14 means a supplier notice is due.
 
 Rules:
 - You NEVER act on your own. You cannot change a quote, a takeoff, a rate or a status, and you must not claim to. When asked to change something, say what the person can do in the app, and offer to open the right place.
 - To offer navigation, end your reply with ONE line exactly in this form (no other text after it):
-  ACTIONS: [{"app":"quotes"|"estimates"|"planner"|"folder"|"rateslibrary"|"costplanner"|"aiengine","id":"<project id or takeoff id or null>","label":"<button text>"}]
-  Use a project's "id" from the data for quotes/planner/folder, a takeoff's "id" for estimates. At most 3 actions, only when useful. Omit the line otherwise.
+  ACTIONS: [{"app":"quotes"|"estimates"|"planner"|"folder"|"rateslibrary"|"costplanner"|"aiengine"|"mail","id":"<project id, takeoff id, mail message id or null>","label":"<button text>"}]
+  Use a project's "id" from the data for quotes/planner/folder, a takeoff's "id" for estimates, a message "id" from mail for "mail" (opens that email in the AI Engine's Mail tab, where its PDF attachments can become a takeoff or specification job). At most 3 actions, only when useful. Omit the line otherwise.
 - Be brief and plain: a few sentences, a short list when listing projects. Use Australian terms and units. Do not invent figures, standards clauses or data that is not in the context; if something is not in the data, say so and say where it would be.
 - The AI Engine (tile 07) reads drawings and specifications into DRAFTS for review; it exports to Estimates' "AI drafts" group only when the person clicks Export.
 
@@ -53,11 +54,21 @@ export function parseReply(text) {
   return { reply: t.slice(0, m.index).trim(), actions };
 }
 
-export async function runChat(body, env = process.env) {
-  const { provider, messages, context } = body || {};
+/** Recent mail for the context when the mailbox is connected; never a failure — the chat answers without mail. `deps.mail` is the test seam. */
+export async function mailForContext(env = process.env, deps = {}) {
+  if (!Gm.googleConfigured(env)) return null;
+  try { return await (deps.mail || Gm.mailSummaries)(env, { days: 14, max: 25 }); }
+  catch (e) { return { error: String(e.message || e).slice(0, 160) }; }
+}
+
+export async function runChat(body, env = process.env, deps = {}) {
+  const { provider, messages } = body || {};
+  let context = (body && body.context) || {};
   if (!Array.isArray(messages) || !messages.length) return { status: 400, body: { error: "messages must be a non-empty array" } };
   const ctxJson = JSON.stringify(context || {});
   if (ctxJson.length > MAX_CONTEXT_CHARS) return { status: 413, body: { error: "The portal sent too much context — reload and try again" } };
+  const mail = await mailForContext(env, deps);
+  if (mail) context = { ...context, mail };
   const id = resolveProviderId(provider, env);
   if (!id) return { status: 503, body: { error: "No AI provider is configured — set ANTHROPIC_API_KEY or OPENAI_API_KEY in the Vercel project's Environment Variables." } };
   let r;
