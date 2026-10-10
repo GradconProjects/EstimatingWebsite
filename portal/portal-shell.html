@@ -299,6 +299,22 @@
   .recent-card .kind b{ font-weight:600; color:var(--muted); letter-spacing:0; text-transform:none; }
   .recent-card h3{ font-size:15px; line-height:1.3; margin:2px 0 2px; }
   .recent-card .when{ font-size:12px; color:var(--muted); }
+  /* "Coming up": the open quotes whose deadline is today, overdue or within 7 days, and the last project worked on. */
+  .welcome-upcoming{ margin:0 0 32px; }
+  .welcome-upcoming .eyebrow{ display:inline-flex; align-items:center; gap:7px; font-size:11.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--text); margin-bottom:10px; }
+  .welcome-upcoming .eyebrow::before{ content:""; width:7px; height:7px; border-radius:2px; background:var(--accent); }
+  .upcoming-list{ display:flex; flex-direction:column; gap:6px; max-width:720px; }
+  .upcoming-row{ display:flex; align-items:center; gap:12px; text-align:left; border:1px solid var(--line); border-radius:10px; background:#fff; padding:9px 14px; cursor:pointer; font:inherit; color:var(--text); transition:border-color .15s; }
+  .upcoming-row:hover{ border-color:var(--accent); }
+  .upcoming-row .name{ font-weight:700; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .upcoming-row .status{ font-size:11.5px; color:var(--muted); white-space:nowrap; }
+  .upcoming-row .due{ font-size:12px; font-weight:700; white-space:nowrap; padding:3px 9px; border-radius:999px; background:#eef1f6; color:var(--muted); }
+  .upcoming-row .due.hot{ background:#fde8e8; color:#9b1c1c; }
+  .upcoming-row .due.warm{ background:#fff3d6; color:#8a5a00; }
+  .upcoming-empty{ font-size:13px; color:var(--muted); }
+  .upcoming-last{ margin-top:10px; font-size:13px; color:var(--muted); }
+  .upcoming-last b{ color:var(--text); font-weight:700; }
+  .upcoming-last button{ background:none; border:0; padding:0; font:inherit; font-weight:700; color:var(--accent-ink); cursor:pointer; text-decoration:underline; }
   .recent-card .open{ margin-top:6px; font-size:12px; font-weight:600; color:var(--accent-ink); background:var(--accent); border-radius:8px; padding:5px 10px; align-self:flex-start; }
   .welcome-empty{ font-size:13px; color:var(--muted); border:1px dashed var(--line); border-radius:var(--radius); padding:14px 16px; }
   /* Settings → AI providers rows */
@@ -370,6 +386,12 @@
     <div class="eyebrow" id="welcome-eyebrow">Dashboard</div>
     <h1 id="welcome-greeting">What are you working on?</h1>
     <p id="welcome-line">Four tools, one portal — keep every rate current in one place, plan and control job costs, price a job with the full material and labour catalog, or build a fresh takeoff straight from element geometry.</p>
+  </div>
+
+  <div class="welcome-upcoming" id="welcome-upcoming" hidden>
+    <div class="eyebrow">Coming up</div>
+    <div class="upcoming-list" id="welcome-upcoming-list"></div>
+    <div class="upcoming-last" id="welcome-last"></div>
   </div>
 
   <div class="welcome-recent" id="welcome-recent" hidden>
@@ -1331,6 +1353,23 @@
   // opened. A card opens the app straight on that project.
   var CLOUD = { url: 'https://xbmyhvrcuyapoarmchpv.supabase.co', key: 'sb_publishable_Kr4dTFXhZsifAA28HmMAVQ_EDSR2DL0' }; // the anon key the Estimates app already ships
   var OPEN_WORK = { 'Queued':1, 'Estimating':1, 'Completed Estimating':1, 'Quoting':1 };
+  // Grady works on Quotes only (10 Oct 2026): his welcome never lists Estimates
+  // takeoffs; the projects@ account sees both.
+  var QUOTES_ONLY_USERS = { 'grady@gradcon.com.au': 1 };
+  function seesTakeoffs(email){ return !QUOTES_ONLY_USERS[String(email||'').toLowerCase()]; }
+  function dayDiff(deadline, now){
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(deadline||'')); if(!m) return null;
+    var d = new Date(+m[1], +m[2]-1, +m[3]); var t = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    return Math.round((d - t) / 86400000);
+  }
+  function dueLabel(deadline, now){
+    var n = dayDiff(deadline, now); if(n == null) return null;
+    var day = new Date(now.getFullYear(), now.getMonth(), now.getDate() + n).toLocaleDateString('en-AU', { weekday:'short', day:'numeric', month:'short' });
+    if(n < 0) return { text: (-n) + ' day' + (n === -1 ? '' : 's') + ' overdue · ' + day, cls:'hot', n:n };
+    if(n === 0) return { text:'Due today', cls:'hot', n:n };
+    if(n === 1) return { text:'Due tomorrow · ' + day, cls:'warm', n:n };
+    return { text:'Due in ' + n + ' days · ' + day, cls: n <= 3 ? 'warm' : '', n:n };
+  }
   function readJSON(key){ try{ var r = localStorage.getItem(key); return r ? JSON.parse(r) : null; }catch(e){ return null; } }
   function firstName(email){
     var local = String(email||'').split('@')[0].toLowerCase();
@@ -1426,6 +1465,22 @@
     document.getElementById('welcome-greeting').textContent = timeOfDay(now) + ', ' + firstName(currentUser) + '.';
     document.getElementById('welcome-line').textContent = excitedLine(facts);
     var recent = items.filter(function(i){ return i.name && i.updatedAt; }).sort(function(a,b){ return a.updatedAt < b.updatedAt ? 1 : -1; }).slice(0, 6);
+    // Coming up: every open quote that is overdue, due today or due within 7 days, soonest first
+    var upcoming = items.filter(function(i){ return i.kind === 'quote' && OPEN_WORK[i.status] && i.deadline; })
+      .map(function(i){ return { item:i, due: dueLabel(i.deadline, now) }; })
+      .filter(function(u){ return u.due && u.due.n <= 7; })
+      .sort(function(a,b){ return a.due.n - b.due.n; });
+    var up = document.getElementById('welcome-upcoming'); up.hidden = false;
+    document.getElementById('welcome-upcoming-list').innerHTML = upcoming.length ? upcoming.map(function(u){
+      return '<button type="button" class="upcoming-row" data-kind="quote" data-id="' + escapeHtml(u.item.id) + '" title="Open ' + escapeHtml(u.item.name || 'quote') + '">' +
+        '<span class="name">' + escapeHtml(u.item.name || 'Untitled quote') + '</span>' +
+        '<span class="status">' + escapeHtml(u.item.status) + '</span>' +
+        '<span class="due ' + u.due.cls + '">' + escapeHtml(u.due.text) + '</span></button>';
+    }).join('') : '<div class="upcoming-empty">No quote deadlines in the next 7 days.</div>';
+    var last = recent[0];
+    document.getElementById('welcome-last').innerHTML = last
+      ? 'Last worked on: <button type="button" data-kind="' + last.kind + '" data-id="' + escapeHtml(last.id) + '">' + escapeHtml(last.name) + '</button> <b>' + escapeHtml(whenLabel(last.updatedAt, now)) + '</b>' + (last.kind === 'takeoff' ? ' (Estimates takeoff)' : '')
+      : 'Nothing worked on yet in this browser.';
     var host = document.getElementById('welcome-recent'); var grid = document.getElementById('welcome-recent-grid');
     host.hidden = recent.length === 0;
     grid.innerHTML = recent.map(function(r){
@@ -1438,8 +1493,8 @@
         '<span class="open">Open ' + (r.kind === 'quote' ? 'quote' : 'takeoff') + ' →</span></button>';
     }).join('');
   }
-  document.getElementById('welcome-recent-grid').addEventListener('click', function(e){
-    var card = e.target.closest('.recent-card'); if(!card) return;
+  function openFromWelcome(e){
+    var card = e.target.closest('[data-kind][data-id]'); if(!card) return;
     var id = card.getAttribute('data-id'), kind = card.getAttribute('data-kind');
     if(kind === 'quote'){
       try{ localStorage.setItem('gradcon-active-project', id); localStorage.removeItem('gradcon-quotes-initial-view'); }catch(err){}
@@ -1448,22 +1503,25 @@
       try{ localStorage.setItem('gradcon-estimate-active', id); }catch(err){}
       openApp('estimates', true); setActiveMenu('estimates');
     }
-  });
+  }
+  document.getElementById('welcome-recent-grid').addEventListener('click', openFromWelcome);
+  document.getElementById('welcome-upcoming').addEventListener('click', openFromWelcome);
   var welcomeRun = 0;
   function renderWelcome(){
     var run = ++welcomeRun; var now = new Date();
-    var items = localQuotes().concat(localTakeoffs());
+    var takeoffs = seesTakeoffs(currentUser);
+    var items = takeoffs ? localQuotes().concat(localTakeoffs()) : localQuotes();
     paintWelcome(items, now);
     // Then the cloud: exact "when" for every row, and names for projects this
     // browser has never opened (at most three, through the summaries function
     // that drops the drawings before the row leaves the database).
     var stamps = cloudGet('/rest/v1/estimator_kv?select=key,updated_at&or=(key.like.gradcon-quote-*,key.like.gradcon-estimate-state*)&order=updated_at.desc&limit=200');
-    var eidx = cloudGet('/rest/v1/estimator_kv?select=value&key=eq.gradcon-estimate-projects-index');
+    var eidx = takeoffs ? cloudGet('/rest/v1/estimator_kv?select=value&key=eq.gradcon-estimate-projects-index') : Promise.resolve(null);
     Promise.all([stamps, eidx]).then(function(res){
       if(run !== welcomeRun) return;
       var rows = Array.isArray(res[0]) ? res[0] : []; var byKey = {}; rows.forEach(function(r){ byKey[r.key] = r.updated_at; });
       var cloudIdx = res[1] && res[1][0] && Array.isArray(res[1][0].value) ? res[1][0].value : null;
-      if(cloudIdx){ // takeoffs this browser has not seen
+      if(cloudIdx && takeoffs){ // takeoffs this browser has not seen
         var have = {}; items.forEach(function(i){ if(i.kind==='takeoff') have[i.id] = true; });
         cloudIdx.forEach(function(p){ if(p && p.key && !p.deleted && !have[p.id]) items.push({ kind:'takeoff', id:p.id, key:p.key, name:p.name||'', status:'', deadline:null, elements:null, updatedAt:p.savedAt||null, named:!!p.name }); });
       }

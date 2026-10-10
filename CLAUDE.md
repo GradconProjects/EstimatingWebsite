@@ -524,7 +524,19 @@ keys), then the cloud stamps refine the "when" and the summaries function
 names up to three projects this browser never opened. The shell carries its
 own copy of the Supabase URL and anon key (`CLOUD`) for those two reads —
 the same public key the Estimates app ships. Offline, the local paint
-stands. `test-welcome.mjs` proves it.
+stands. **Grady's account sees Quotes only** (`QUOTES_ONLY_USERS` /
+`seesTakeoffs(email)`, 10 Oct 2026: "grady's account doesnt have to display
+estimates. he only works on quotes"): no takeoff cards, no takeoff facts, no
+cloud read of the Estimates index; `projects@` sees both. **Both accounts get
+the "Coming up" strip** (`#welcome-upcoming`, painted by `paintWelcome`):
+every open quote (`OPEN_WORK`) whose deadline is overdue, today or within 7
+days, soonest first, with a red chip for overdue / today, amber up to 3 days
+out (`dueLabel(deadline, now)` → `{text, cls, n}` off `dayDiff`, local
+days), each row opening the quote; "No quote deadlines in the next 7 days"
+otherwise; then "Last worked on: <name> <when>" — the most recently saved
+item (a takeoff only for an account that sees them). `openFromWelcome` is
+the ONE click handler for cards, rows and that link (`data-kind` +
+`data-id`). `test-welcome.mjs` proves both accounts.
 
 ## AI provider keys live on the server (api/)
 
