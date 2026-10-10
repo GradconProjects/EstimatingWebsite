@@ -1,0 +1,6 @@
+{
+  "functions": {
+    "api/ai-engine.js": { "maxDuration": 300 },
+    "api/ai-chat.js": { "maxDuration": 60 }
+  }
+}

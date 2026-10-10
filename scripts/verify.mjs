@@ -2300,6 +2300,51 @@ check("Project Geometry carries a COUNT: $/no. leads the benchmark rates, sums a
 }
 
 // ---------------------------------------------------------------------------
+// AI Engine: provider switch, document reading, the job function, the chat (api/ai-engine.js, api/ai-chat.js)
+// ---------------------------------------------------------------------------
+{
+  const P = await import("../api/_providers.js");
+  const E = await import("../api/ai-engine.js");
+  const C = await import("../api/ai-chat.js");
+  check("AI providers: OPEN_AI_KEY is accepted as the OpenAI key (the spelling set on 10 Oct 2026)", () => assertTrue(P.providerStatus({ OPEN_AI_KEY: "k" }).find((p) => p.id === "openai").configured && P.defaultProviderId({ OPEN_AI_KEY: "k" }) === "openai"));
+  check("AI providers: resolveProviderId honours the browser's choice only when that provider has a key, else the default", () => assertTrue(P.resolveProviderId("openai", { OPEN_AI_KEY: "a", ANTHROPIC_API_KEY: "b" }) === "openai" && P.resolveProviderId("deepseek", { ANTHROPIC_API_KEY: "b" }) === "anthropic" && P.resolveProviderId(undefined, {}) === null));
+  let t501 = null; try { await P.callDocuments("deepseek", { prompt: "x", documents: [{ url: "https://x/a.pdf" }], env: { DEEPSEEK_API_KEY: "k" } }); } catch (e) { t501 = e; }
+  check("AI Engine: a PDF job on DeepSeek fails with 501 and says to switch provider (it cannot read documents)", () => assertTrue(t501 && t501.status === 501 && /switch/i.test(t501.message)));
+  check("AI Engine: parseJsonLoose reads a fenced or prefixed JSON object and returns null for none", () => assertTrue(P.parseJsonLoose("Here:\n```json\n{\"a\":[1,2]}\n```")?.a?.length === 2 && P.parseJsonLoose("no json") === null));
+  const bad = await E.runAiJob({ action: "nope" }, {});
+  const noFiles = await E.runAiJob({ action: "takeoff", files: [], types: [{ id: "x" }] }, {});
+  const notPdf = await E.runAiJob({ action: "spec", files: [{ url: "https://x/a.docx", name: "a" }] }, { ANTHROPIC_API_KEY: "k" });
+  const noTypes = await E.runAiJob({ action: "takeoff", files: [{ url: "https://x/a.pdf", name: "a" }] }, { ANTHROPIC_API_KEY: "k" });
+  const noProv = await E.runAiJob({ action: "spec", files: [{ url: "https://x/a.pdf", name: "a" }] }, {});
+  const ds = await E.runAiJob({ action: "spec", provider: "deepseek", files: [{ url: "https://x/a.pdf", name: "a" }] }, { DEEPSEEK_API_KEY: "k" });
+  check("AI Engine: the job function rejects a bad action, no files, a non-PDF, a takeoff without the type list (400) and no provider (503) without calling any model", () => assertTrue(bad.status === 400 && noFiles.status === 400 && notPdf.status === 400 && /PDF/.test(notPdf.body.error) && noTypes.status === 400 && noProv.status === 503));
+  check("AI Engine: a document job routed to DeepSeek answers 501 with the provider named", () => assertTrue(ds.status === 501 && ds.body.provider === "deepseek"));
+  const tp = E.takeoffPrompt({ types: [{ id: "padfooting", label: "Pad Footing", group: "Foundations" }], projectName: "P", profile: { defaults: { coverByElement: { all: 50 } } } });
+  check("AI Engine: the takeoff prompt carries the element type ids, the JSON shape and the spec profile, and asks for evidence and confidence", () => assertTrue(/padfooting — Pad Footing/.test(tp) && /"confidence": "high"\|"medium"\|"low"/.test(tp) && /coverByElement/.test(tp) && /evidence/.test(tp)));
+  check("AI Engine: the spec prompt asks for page and quote on every item and forbids invented standards", () => assertTrue(/"page": number, "quote": string/.test(E.specPrompt({})) && /Do not list standards or clauses that are not on the pages/.test(E.specPrompt({}))));
+  // The AI Engine page's AI_TYPES mirror must list exactly the Estimates LIBRARY ids
+  const est = fs.readFileSync(new URL("../portal/estimates-app.html", import.meta.url), "utf8");
+  const libBlock = est.slice(est.indexOf("const LIBRARY = ["), est.indexOf("];", est.indexOf("const LIBRARY = [")));
+  const libIds = [...libBlock.matchAll(/\{id:"([a-z0-9]+)", label:"([^"]+)", calc:"([a-z]+)"/g)].map((m) => m[1]);
+  const ai = fs.readFileSync(new URL("../portal/ai-engine.html", import.meta.url), "utf8");
+  const aiBlock = ai.slice(ai.indexOf("const AI_TYPES = ["), ai.indexOf("];", ai.indexOf("const AI_TYPES = [")));
+  const aiIds = [...aiBlock.matchAll(/\{id:"([a-z0-9]+)", label:"([^"]+)", calc:"([a-z]+)"/g)].map((m) => m[1]);
+  check("AI Engine: AI_TYPES in ai-engine.html mirrors every Estimates LIBRARY id (same ids, same order)", () => assertTrue(libIds.length > 40 && JSON.stringify(libIds) === JSON.stringify(aiIds), `library ${libIds.length} vs mirror ${aiIds.length}: ${libIds.filter((i) => !aiIds.includes(i)).concat(aiIds.filter((i) => !libIds.includes(i))).join(",")}`));
+  check("AI Engine: Estimates maps the hand-off (applyAiHandoff → aiProposalToInstance) and tags the takeoff into the AI drafts group", () => assertTrue(/function applyAiHandoff\(/.test(est) && /function aiProposalToInstance\(/.test(est) && /tagTakeoffGroup\(CURRENT_PROJECT_KEY, "ai"\)/.test(est) && /AI draft — verify/.test(est)));
+  check("AI Engine: the portal shell carries the tile, the menu entry, the payload slot and the chat panel", () => { const sh = fs.readFileSync(new URL("../portal/portal-shell.html", import.meta.url), "utf8"); assertTrue(/data-target="aiengine"/.test(sh) && /data-menu="aiengine"/.test(sh) && /__AIENGINE_B64__/.test(sh) && /id="ai-chat-fab"/.test(sh) && /function assistantContext\(/.test(sh)); });
+  // Chat
+  const pr = C.parseReply("Two due.\nACTIONS: [{\"app\":\"quotes\",\"id\":\"p1\",\"label\":\"Open it\"},{\"app\":\"estimates\",\"id\":null,\"label\":\"Estimates\"},{\"app\":\"x\"},{\"app\":\"y\"}]");
+  check("AI chat: parseReply strips the ACTIONS line into at most three typed buttons and leaves the prose", () => assertTrue(pr.reply === "Two due." && pr.actions.length === 3 && pr.actions[0].app === "quotes" && pr.actions[0].id === "p1" && pr.actions[1].id === null));
+  check("AI chat: a reply without an ACTIONS line has no actions and the text is untouched", () => assertTrue(C.parseReply("Just text.\nMore.").reply === "Just text.\nMore." && C.parseReply("x").actions.length === 0));
+  const sys = C.chatSystem({ today: "2026-10-10", quotes: [{ id: "p1", name: "Spindrift" }] });
+  check("AI chat: the system prompt embeds the portal data, forbids acting alone and defines the ACTIONS line", () => assertTrue(/Spindrift/.test(sys) && /NEVER act on your own/.test(sys) && /ACTIONS: \[/.test(sys)));
+  const c400 = await C.runChat({ messages: [] }, {}); const c503 = await C.runChat({ messages: [{ role: "user", content: "hi" }] }, {}); const c413 = await C.runChat({ messages: [{ role: "user", content: "hi" }], context: { big: "x".repeat(100000) } }, { ANTHROPIC_API_KEY: "k" });
+  check("AI chat: no messages → 400, no provider → 503, oversized context → 413, none of them calling a model", () => assertTrue(c400.status === 400 && c503.status === 503 && c413.status === 413));
+  let cthrew = null; try { await P.callChat("openai", { messages: [{ role: "assistant", content: "x" }], env: { OPENAI_API_KEY: "k" } }); } catch (e) { cthrew = e; }
+  check("AI chat: a conversation that does not end with the user is refused (400) before any request", () => assertTrue(cthrew && cthrew.status === 400));
+}
+
+// ---------------------------------------------------------------------------
 // Markup drawings live in the bucket, not the quote row (lib/markupStore.js)
 // ---------------------------------------------------------------------------
 {

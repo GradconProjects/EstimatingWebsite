@@ -317,6 +317,29 @@
   .upcoming-last button{ background:none; border:0; padding:0; font:inherit; font-weight:700; color:var(--accent-ink); cursor:pointer; text-decoration:underline; }
   .recent-card .open{ margin-top:6px; font-size:12px; font-weight:600; color:var(--accent-ink); background:var(--accent); border-radius:8px; padding:5px 10px; align-self:flex-start; }
   .welcome-empty{ font-size:13px; color:var(--muted); border:1px dashed var(--line); border-radius:var(--radius); padding:14px 16px; }
+  /* Gradcon AI chat: a floating button after sign-in, a panel over whatever is open */
+  .ai-fab{ position:fixed; right:18px; bottom:18px; z-index:60; border:0; border-radius:999px; padding:11px 16px; background:#6b3fd6; color:#fff; font:inherit; font-weight:700; font-size:13px; cursor:pointer; box-shadow:0 14px 30px -14px rgba(35,31,32,.6); }
+  .ai-fab:hover{ background:#5a32b8; }
+  .ai-fab[hidden], .ai-chat[hidden]{ display:none !important; }
+  .ai-chat{ position:fixed; right:18px; bottom:18px; z-index:61; width:min(420px, calc(100vw - 36px)); height:min(620px, calc(100vh - 36px)); background:#fff; border:1px solid var(--line); border-radius:14px; box-shadow:0 24px 60px -24px rgba(35,31,32,.6); display:flex; flex-direction:column; overflow:hidden; font-size:13.5px; }
+  .ai-chat-head{ display:flex; align-items:center; gap:8px; padding:10px 12px; background:#1b1334; color:#fff; }
+  .ai-chat-head b{ font-size:14px; } .ai-chat-prov{ flex:1; font-size:11px; opacity:.75; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .ai-chat-head button{ background:#352a5a; border:0; color:#fff; border-radius:7px; padding:4px 9px; font:inherit; font-size:12px; cursor:pointer; }
+  .ai-chat-log{ flex:1; overflow:auto; padding:12px; display:flex; flex-direction:column; gap:10px; background:#f7f6fb; }
+  .ai-msg{ max-width:92%; padding:8px 11px; border-radius:12px; line-height:1.45; white-space:pre-wrap; word-break:break-word; }
+  .ai-msg.user{ align-self:flex-end; background:#6b3fd6; color:#fff; border-bottom-right-radius:3px; }
+  .ai-msg.bot{ align-self:flex-start; background:#fff; border:1px solid var(--line); border-bottom-left-radius:3px; }
+  .ai-msg.bot.err{ border-color:#e39a9a; background:#fde8e8; } .ai-msg.bot.thinking{ color:var(--muted); font-style:italic; }
+  .ai-actions{ display:flex; gap:6px; flex-wrap:wrap; margin-top:6px; }
+  .ai-actions button{ border:1px solid #6b3fd6; color:#6b3fd6; background:#fff; border-radius:8px; padding:4px 9px; font:inherit; font-size:12px; font-weight:700; cursor:pointer; }
+  .ai-actions button:hover{ background:#f1ecfb; }
+  #ai-chat-form{ display:flex; gap:6px; padding:10px; border-top:1px solid var(--line); background:#fff; }
+  #ai-chat-form input{ flex:1; border:1px solid var(--line); border-radius:9px; padding:8px 10px; font:inherit; }
+  #ai-chat-form button{ border:0; border-radius:9px; padding:8px 14px; background:#6b3fd6; color:#fff; font:inherit; font-weight:700; cursor:pointer; }
+  #ai-chat-form button:disabled{ opacity:.5; cursor:default; }
+  .ai-chat-foot{ font-size:10.5px; color:var(--muted); padding:0 12px 9px; background:#fff; }
+  .ai-use{ background:#6b3fd6; border:0; color:#fff; border-radius:7px; padding:5px 10px; font:inherit; font-size:12px; font-weight:700; cursor:pointer; }
+  .ai-use:disabled{ background:#d8d2ea; cursor:default; }
   /* Settings → AI providers rows */
   .ai-row{ display:flex; align-items:center; gap:10px; padding:9px 0; border-bottom:1px solid var(--line-soft); font-size:13px; }
   .ai-row:last-child{ border-bottom:0; }
@@ -532,6 +555,23 @@
       <p>Documents and communications — one folder per project, plus a shared Office folder for company-wide files. Lives inside Quotes.</p>
       <span class="cta">Open Gradcon Vault <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
     </button>
+
+    <button class="panel-btn" data-target="aiengine">
+      <span class="tag">07</span>
+      <span class="glyph" style="background:#f1ecfb;">
+        <svg viewBox="0 0 48 48" aria-hidden="true">
+          <rect x="6" y="8" width="28" height="30" rx="3" fill="#fff" stroke="#d5dbdb" stroke-width="1.4"/>
+          <path d="M11 15h18M11 20h18M11 25h12" stroke="#aab7c4" stroke-width="2" stroke-linecap="round"/>
+          <path d="M11 31h7v4h-7zM20 31h9v4h-9z" fill="#dcd3f3"/>
+          <circle cx="36" cy="30" r="9" fill="#6b3fd6"/>
+          <path d="M31.5 30.5l3 3 6-7" stroke="#fff" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M36 15.5l1.6 3.4 3.6.5-2.6 2.5.6 3.6-3.2-1.7-3.2 1.7.6-3.6-2.6-2.5 3.6-.5z" fill="#f1c40f"/>
+        </svg>
+      </span>
+      <h2>AI Engine</h2>
+      <p>AI takeoff from drawing sets, specification &amp; compliance reader, quality checks — every result a draft for review, exported to Estimates only when you say so.</p>
+      <span class="cta">Open AI Engine <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
+    </button>
   </div>
 
   <div class="dash-foot">gradcon // internal — review build</div>
@@ -607,7 +647,7 @@
     </div>
 
     <div class="settings-section">AI providers (keys live on the server)</div>
-    <p class="sub" style="margin-top:-4px;">Keys are set in the Vercel project under Settings → Environment Variables (ANTHROPIC_API_KEY, OPENAI_API_KEY, DEEPSEEK_API_KEY, plus AI_PROVIDER for the default) and never leave the server. This panel only shows what is set and lets you test each one.</p>
+    <p class="sub" style="margin-top:-4px;">Pick which provider the AI Engine and the chat use with <b>Use</b> (remembered in this browser). Keys are set in the Vercel project under Settings → Environment Variables (ANTHROPIC_API_KEY, OPENAI_API_KEY or OPEN_AI_KEY, DEEPSEEK_API_KEY, plus AI_PROVIDER for the default) and never leave the server. This panel only shows what is set and lets you test each one.</p>
     <div id="settings-ai" class="field"><span class="ai-result">Checking…</span></div>
 
     <div class="settings-section">Quotes — pricing</div>
@@ -824,6 +864,7 @@
       <button data-menu="costplanner">Cost Planner</button>
       <button data-menu="planner">Project Mgmt</button>
       <button data-menu="folder">Vault</button>
+      <button data-menu="aiengine">AI Engine</button>
     </nav>
     <button class="back-btn" id="refresh-btn" style="margin-left:auto;" title="Pull the latest saved work from any other device/user right now">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M3 12a9 9 0 1 1 2.6 6.4M3 12V6m0 6h6"/></svg>
@@ -835,10 +876,24 @@
   </div>
 </div>
 
+<!-- ===================== GRADCON AI CHAT =====================
+     Visible on every account the moment it signs in, on the dashboard and
+     inside every app. Reads every section's data (quotes, takeoffs, rates,
+     AI jobs) and answers; it never acts on its own — an action it proposes
+     is a button the person clicks. -->
+<button type="button" id="ai-chat-fab" class="ai-fab" hidden title="Ask Gradcon AI about your projects, deadlines, rates and takeoffs">🤖 Ask Gradcon AI</button>
+<div id="ai-chat" class="ai-chat" hidden>
+  <div class="ai-chat-head"><b>Gradcon AI</b><span class="ai-chat-prov" id="ai-chat-provider"></span><button type="button" id="ai-chat-clear" title="Start a new conversation">Clear</button><button type="button" id="ai-chat-close" title="Close">✕</button></div>
+  <div class="ai-chat-log" id="ai-chat-log"></div>
+  <form id="ai-chat-form" autocomplete="off"><input type="text" id="ai-chat-input" placeholder="Ask about projects, deadlines, rates, takeoffs…" maxlength="2000"><button type="submit" id="ai-chat-send">Send</button></form>
+  <div class="ai-chat-foot">Sees every section (read-only). It only acts when you click one of its buttons — nothing changes on its own.</div>
+</div>
+
 <script id="quotes-app-b64" type="text/plain">__QUOTES_B64__</script>
 <script id="estimates-app-b64" type="text/plain">__ESTIMATES_B64__</script>
 <script id="costplanner-app-b64" type="text/plain">__COSTPLANNER_B64__</script>
 <script id="rateslibrary-app-b64" type="text/plain">__RATESLIBRARY_B64__</script>
+<script id="aiengine-app-b64" type="text/plain">__AIENGINE_B64__</script>
 
 <script>
 (function(){
@@ -846,6 +901,9 @@
     document.querySelectorAll('.screen').forEach(function(s){ s.classList.remove('active','fade-in'); });
     var el = document.getElementById(id);
     el.classList.add('active','fade-in');
+    // The AI chat is there for every signed-in account, on the dashboard and inside every app
+    var fab = document.getElementById('ai-chat-fab'); if(fab) fab.hidden = (id === 'screen-login');
+    if(id === 'screen-login'){ var panel = document.getElementById('ai-chat'); if(panel) panel.hidden = true; }
   }
 
   // ---------------- hardcoded sign-in ----------------
@@ -1262,6 +1320,7 @@
     estimates: '<b>Estimates</b> — element takeoff engine',
     costplanner: '<b>GRADCON Cost Planner</b> — cost planning dashboard',
     rateslibrary: '<b>Rates Library</b> — established rates, one source of truth',
+    aiengine: '<b>AI Engine</b> — AI takeoff, specification reader, quality checks (drafts for review)',
   };
   function openApp(target, forceReload){
     var frame = document.getElementById('app-frame');
@@ -1284,6 +1343,7 @@
     estimates:    { target:'estimates',    view:null },
     rateslibrary: { target:'rateslibrary', view:null },
     costplanner:  { target:'costplanner',  view:null },
+    aiengine:     { target:'aiengine',     view:null },
     planner:      { target:'quotes',       view:'planner' },
     folder:       { target:'quotes',       view:'folder' }
   };
@@ -1544,17 +1604,34 @@
     host.innerHTML = '<span class="ai-result">Checking…</span>';
     fetch('/api/ai-providers', { headers:{ accept:'application/json' } }).then(function(r){ return r.ok ? r.json() : Promise.reject(new Error(String(r.status))); }).then(function(d){
       var list = (d && d.providers) || [];
+      AI_PROVIDERS = list;
+      var inUse = providerInUse();
       host.innerHTML = list.map(function(p){
+        var using = inUse && inUse.id === p.id;
         return '<div class="ai-row" data-provider="' + p.id + '"><div class="name">' + escapeHtml(p.label) + '<small>' + escapeHtml(p.keyVar) + (p.configured ? ' · model ' + escapeHtml(p.model) : ' not set') + '</small></div>' +
-          (p.isDefault ? '<span class="ai-chip def">default</span>' : '') +
+          (using ? '<span class="ai-chip def">in use</span>' : (p.isDefault ? '<span class="ai-chip">server default</span>' : '')) +
           '<span class="ai-chip ' + (p.configured ? 'on' : 'off') + '">' + (p.configured ? 'Key set' : 'No key') + '</span>' +
+          '<button type="button" class="ai-use" ' + (p.configured && !using ? '' : 'disabled') + '>' + (using ? 'Using' : 'Use') + '</button>' +
           '<button type="button" class="ai-test" ' + (p.configured ? '' : 'disabled') + '>Test</button><span class="ai-result"></span></div>';
       }).join('') || '<span class="ai-result">No providers known to this build.</span>';
+      paintChatProvider();
     }).catch(function(){
       host.innerHTML = '<span class="ai-result">Not available in this build — the provider keys and their test live on the Vercel deployment (api/ai-providers).</span>';
     });
   }
+  // Which provider every AI job and the chat run on: the one chosen here
+  // (portal preference aiProvider) when its key is set, else the server's default.
+  var AI_PROVIDERS = null;
+  function providerInUse(){
+    var want = loadPrefs().aiProvider;
+    if(!AI_PROVIDERS) return want ? { id: want, label: want } : null;
+    var chosen = want && AI_PROVIDERS.find(function(p){ return p.id === want && p.configured; });
+    var p = chosen || AI_PROVIDERS.find(function(p){ return p.isDefault; }) || AI_PROVIDERS.find(function(p){ return p.configured; }) || null;
+    return p ? { id: p.id, label: p.label + ' · ' + p.model } : null;
+  }
   document.getElementById('settings-ai').addEventListener('click', function(e){
+    var use = e.target.closest('.ai-use');
+    if(use){ var id = use.closest('.ai-row').getAttribute('data-provider'); var prefs = loadPrefs(); prefs.aiProvider = id; savePrefs(prefs); loadAiProviders(); return; }
     var btn = e.target.closest('.ai-test'); if(!btn) return;
     var row = btn.closest('.ai-row'); var out = row.querySelector('.ai-result'); var id = row.getAttribute('data-provider');
     btn.disabled = true; out.className = 'ai-result'; out.textContent = 'Testing…';
@@ -1564,6 +1641,101 @@
       .catch(function(){ out.className = 'ai-result err'; out.textContent = 'Could not reach the test endpoint.'; })
       .then(function(){ btn.disabled = false; });
   });
+
+  // ===================== GRADCON AI CHAT =====================
+  // Grady, 10 Oct 2026: "let the api have access to all sections but must
+  // not be autonomous except asked by me … more like a chat bot and it
+  // should be visible on all user accounts upon login and on the main
+  // dashboard". assistantContext() gathers what this browser holds of every
+  // section (quotes summaries, takeoffs, rates and their validity, the
+  // library's global figures, AI jobs) — read-only, capped — and sends it
+  // with the conversation to api/ai-chat.js. The reply may end with an
+  // ACTIONS line; each becomes a button, and nothing runs until it is clicked.
+  var CHAT_KEY = 'gradcon-ai-chat';
+  function chatHistory(){ try{ return JSON.parse(sessionStorage.getItem(CHAT_KEY)) || []; }catch(e){ return []; } }
+  function saveChat(h){ try{ sessionStorage.setItem(CHAT_KEY, JSON.stringify(h.slice(-30))); }catch(e){} }
+  function assistantContext(){
+    var now = new Date(); var today = localDay(now);
+    var quotes = localQuotes().map(function(q){
+      var hit = readJSON('gradcon-cache:summary:' + q.key); var v = (hit && hit.value) || readJSON(q.key) || {};
+      var items = Array.isArray(v.items) ? v.items.slice(0, 40).map(function(it){ return { label: it.label, type: it.typeId, scope: it.scope || null }; }) : [];
+      return { id: q.id, name: q.name, client: v.clientName || null, status: q.status, deadline: q.deadline, daysToDeadline: dayDiff(q.deadline, now), submittedAt: v.submittedAt || null, completedAt: v.completedAt || null,
+               gfaM2: v.gfa || null, scope: v.scope || 'both', priority: v.planner && v.planner.priority || null, ratesPinnedAt: v.ratesFrozen && v.ratesFrozen.at || null, elements: items.length, elementList: items, lastSaved: q.updatedAt };
+    });
+    var takeoffs = localTakeoffs().map(function(t){
+      var blob = readJSON(t.key) || {}; var inst = Array.isArray(blob.instances) ? blob.instances : [];
+      return { id: t.id, name: t.name, lastSaved: t.updatedAt, elements: inst.length, elementList: inst.slice(0, 40).map(function(i){ return { label: i.label, type: i.typeKey, status: i.data && i.data.__aiImport ? 'AI draft' : (i.review ? 'reviewed' : 'draft') }; }), aiDraft: !!(blob.project && blob.project.aiImport) };
+    });
+    var ratesMirror = readJSON('gradcon-cache:gradcon-rates'); var rates = (ratesMirror && ratesMirror.value) || readJSON('gradcon-rates') || {};
+    var validity = []; Object.keys(rates).forEach(function(k){ var r = rates[k]; if(r && r.validUntil) validity.push({ key: k, validUntil: r.validUntil, daysLeft: dayDiff(r.validUntil, now), unitCost: r.unitCost }); });
+    var lib = readJSON('gradcon-rates-library') || {}; var global = lib.global || {};
+    var aiJobs = (readJSON('gradcon-ai-jobs') || []).filter(function(j){ return !j.deleted; }).map(function(j){ return { id: j.id, name: j.name, kind: j.kind, status: j.status, files: j.files, exported: j.exported, updatedAt: j.updatedAt }; });
+    var planner = readJSON('gradcon-costplanner-state'); var plannerProjects = planner && Array.isArray(planner.projects) ? planner.projects.slice(0, 30).map(function(p){ return { name: p.name || p.title || null, status: p.status || null }; }) : null;
+    var ctx = { today: today, user: currentUser, userFirstName: firstName(currentUser), openApp: (loadSession() || {}).activeApp || 'dashboard', quotes: quotes, takeoffs: takeoffs, ratesCount: Object.keys(rates).length, rateValidity: validity, ratesLibraryGlobal: global, aiJobs: aiJobs, costPlannerProjects: plannerProjects };
+    var json = JSON.stringify(ctx);
+    if(json.length > 60000){ ctx.quotes.forEach(function(q){ delete q.elementList; }); ctx.takeoffs.forEach(function(t){ delete t.elementList; }); json = JSON.stringify(ctx); }
+    if(json.length > 60000){ ctx.quotes = ctx.quotes.slice(0, 40); ctx.takeoffs = ctx.takeoffs.slice(0, 20); ctx.truncated = true; }
+    return ctx;
+  }
+  function paintChatProvider(){ var p = providerInUse(); var el = document.getElementById('ai-chat-provider'); if(el) el.textContent = p ? p.label : ''; }
+  function chatBubble(role, text, cls){
+    var log = document.getElementById('ai-chat-log'); var div = document.createElement('div'); div.className = 'ai-msg ' + role + (cls ? ' ' + cls : ''); div.textContent = text; log.appendChild(div); log.scrollTop = log.scrollHeight; return div;
+  }
+  function chatActions(div, actions){
+    if(!Array.isArray(actions) || !actions.length) return;
+    var row = document.createElement('div'); row.className = 'ai-actions';
+    actions.slice(0, 4).forEach(function(a){
+      if(!a || typeof a !== 'object') return;
+      var b = document.createElement('button'); b.type = 'button'; b.textContent = a.label || ('Open ' + (a.app || ''));
+      b.addEventListener('click', function(){ runChatAction(a); });
+      row.appendChild(b);
+    });
+    if(row.children.length) div.appendChild(row);
+  }
+  // The only things a chat action can do: open an app, or open a project / takeoff in it. Never a write.
+  function runChatAction(a){
+    var app = String(a.app || '').toLowerCase();
+    if(app === 'quotes' || app === 'planner' || app === 'folder'){
+      if(a.id){ try{ localStorage.setItem('gradcon-active-project', String(a.id)); localStorage.removeItem('gradcon-quotes-initial-view'); }catch(err){} }
+      else if(app !== 'quotes'){ try{ localStorage.setItem('gradcon-quotes-initial-view', app); }catch(err){} }
+      openApp('quotes', true); setActiveMenu(app === 'quotes' ? 'quotes' : app);
+    } else if(app === 'estimates'){
+      if(a.id){ try{ localStorage.setItem('gradcon-estimate-active', String(a.id)); }catch(err){} }
+      openApp('estimates', true); setActiveMenu('estimates');
+    } else if(APP_LABELS[app]){ openApp(app, true); setActiveMenu(app); }
+  }
+  function renderChatLog(){
+    var log = document.getElementById('ai-chat-log'); log.innerHTML = '';
+    var h = chatHistory();
+    if(!h.length) chatBubble('bot', 'Hi ' + firstName(currentUser) + ' — ask me about any project, deadline, rate, takeoff or AI job. I can see every section but I only act when you click one of my buttons.');
+    h.forEach(function(m){ var d = chatBubble(m.role === 'user' ? 'user' : 'bot', m.content); if(m.actions) chatActions(d, m.actions); });
+  }
+  var chatBusy = false;
+  function sendChat(text){
+    if(chatBusy || !text.trim()) return;
+    var h = chatHistory(); h.push({ role: 'user', content: text.trim() }); saveChat(h);
+    chatBubble('user', text.trim());
+    var thinking = chatBubble('bot', 'Thinking…', 'thinking');
+    chatBusy = true; document.getElementById('ai-chat-send').disabled = true;
+    var body = { provider: loadPrefs().aiProvider || undefined, messages: h.slice(-12).map(function(m){ return { role: m.role, content: m.content }; }), context: assistantContext() };
+    fetch('/api/ai-chat', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(90000) })
+      .then(function(r){ return r.json().then(function(d){ return { ok: r.ok, status: r.status, d: d }; }); })
+      .then(function(x){
+        thinking.remove();
+        if(!x.ok || !x.d || typeof x.d.reply !== 'string'){ chatBubble('bot', (x.d && x.d.error) || ('The assistant did not answer (' + x.status + ').'), 'err'); return; }
+        var d = chatBubble('bot', x.d.reply); chatActions(d, x.d.actions);
+        var h2 = chatHistory(); h2.push({ role: 'assistant', content: x.d.reply, actions: x.d.actions || null }); saveChat(h2);
+      })
+      .catch(function(){ thinking.remove(); chatBubble('bot', 'Could not reach the assistant — this build may not be the Vercel deployment, or the network is down.', 'err'); })
+      .then(function(){ chatBusy = false; document.getElementById('ai-chat-send').disabled = false; document.getElementById('ai-chat-input').focus(); });
+  }
+  document.getElementById('ai-chat-fab').addEventListener('click', function(){
+    var panel = document.getElementById('ai-chat'); panel.hidden = false; document.getElementById('ai-chat-fab').hidden = true;
+    renderChatLog(); paintChatProvider(); if(!AI_PROVIDERS) loadAiProviders(); document.getElementById('ai-chat-input').focus();
+  });
+  document.getElementById('ai-chat-close').addEventListener('click', function(){ document.getElementById('ai-chat').hidden = true; document.getElementById('ai-chat-fab').hidden = false; });
+  document.getElementById('ai-chat-clear').addEventListener('click', function(){ saveChat([]); renderChatLog(); });
+  document.getElementById('ai-chat-form').addEventListener('submit', function(e){ e.preventDefault(); var inp = document.getElementById('ai-chat-input'); var t = inp.value; inp.value = ''; sendChat(t); });
 
   (function restoreSession(){
     var session = loadSession();

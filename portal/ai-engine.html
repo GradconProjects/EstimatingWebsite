@@ -1,0 +1,587 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Gradcon AI Engine</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root{ --navy:#0f2e4c; --navy2:#1F4E78; --bg:#eef2f6; --border:#c9d6e0; --accent:#2f7fd6; --ok:#1a7a3c; --warn:#b26a00; --bad:#b42318; --muted:#5a7186; --ai:#6b3fd6; --ai-bg:#f1ecfb; }
+*{box-sizing:border-box;}
+body{margin:0;font-family:'Segoe UI',Calibri,Arial,sans-serif;background:var(--bg);color:#1c2b36;font-size:13px;}
+header{background:linear-gradient(135deg,var(--navy) 0%,var(--navy2) 100%);color:#fff;padding:14px 22px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;}
+header h1{margin:0;font-size:17px;letter-spacing:.02em;font-weight:600;color:#dcebf6;}
+header .subtitle{font-size:11.5px;opacity:.85;max-width:620px;}
+header .cloud{font-size:11px;opacity:.8;white-space:nowrap;}
+#tabnav{display:flex;gap:2px;background:#0c2438;padding:0 18px;overflow-x:auto;}
+.tab-btn{background:transparent;border:none;color:#a9c6de;padding:11px 15px;cursor:pointer;font-size:12.5px;font-weight:600;border-bottom:3px solid transparent;white-space:nowrap;}
+.tab-btn:hover{color:#fff;} .tab-btn.active{color:#fff;border-bottom-color:var(--accent);background:var(--navy2);}
+#main{padding:18px;max-width:1700px;margin:0 auto;}
+.page{display:none;} .page.active{display:block;}
+h2{color:var(--navy2);margin:0 0 6px 0;font-size:18px;} h3{color:var(--navy2);margin:14px 0 6px;font-size:14px;}
+.hint{color:var(--muted);font-style:italic;margin:0 0 12px 0;font-size:12px;max-width:1100px;}
+.hero{background:linear-gradient(135deg,var(--navy) 0%,var(--navy2) 100%);color:#fff;padding:20px 24px;border-radius:10px;margin-bottom:16px;}
+.hero h1{margin:0 0 6px 0;font-size:21px;} .hero p{margin:0;color:#cfe0ee;max-width:900px;}
+.kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:16px;}
+.kpi{background:#fff;border:1px solid var(--border);border-left:4px solid var(--accent);border-radius:8px;padding:12px 14px;}
+.kpi .l{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px;} .kpi .v{font-size:20px;font-weight:700;color:var(--navy);}
+.card{background:#fff;border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:14px;}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+.btn{background:#fff;border:1px solid var(--border);border-radius:7px;padding:7px 12px;font:inherit;font-weight:600;cursor:pointer;color:var(--navy2);}
+.btn:hover{border-color:var(--accent);} .btn:disabled{opacity:.5;cursor:default;}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;} .btn.ai{background:var(--ai);border-color:var(--ai);color:#fff;}
+.btn.danger{color:var(--bad);} .btn.small{padding:4px 8px;font-size:12px;}
+input[type=text],input[type=number],select,textarea{font:inherit;border:1px solid var(--border);border-radius:6px;padding:6px 8px;background:#fff;color:inherit;}
+input.wide{min-width:320px;} textarea{width:100%;min-height:60px;}
+table{border-collapse:collapse;width:100%;} th,td{border-bottom:1px solid #e3eaf0;padding:6px 7px;text-align:left;vertical-align:top;} th{background:#f4f7fa;font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;}
+tr.excluded td{opacity:.45;} td input[type=text],td input[type=number],td select{width:100%;min-width:52px;padding:4px 6px;font-size:12px;} td input.num{width:70px;} td input.short{width:62px;}
+.chip{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700;background:#eef1f6;color:var(--muted);}
+.chip.high{background:#e3f6e9;color:var(--ok);} .chip.medium{background:#fff3d6;color:var(--warn);} .chip.low{background:#fde8e8;color:var(--bad);}
+.chip.ai{background:var(--ai-bg);color:var(--ai);} .chip.done{background:#e3f6e9;color:var(--ok);} .chip.failed{background:#fde8e8;color:var(--bad);} .chip.running{background:#e4efff;color:var(--accent);}
+.drop{border:2px dashed var(--border);border-radius:10px;padding:18px;text-align:center;color:var(--muted);cursor:pointer;background:#fafcfe;}
+.drop.over{border-color:var(--accent);background:#eef5fd;}
+.files{list-style:none;margin:8px 0 0;padding:0;} .files li{display:flex;gap:10px;align-items:center;padding:6px 0;border-bottom:1px solid #eef2f6;font-size:12.5px;}
+.files li .n{flex:1;} .files li .s{color:var(--muted);}
+.status{font-size:12.5px;margin-top:8px;} .status.err{color:var(--bad);} .status.ok{color:var(--ok);}
+.jobs td .name{font-weight:700;cursor:pointer;color:var(--navy2);} .jobs td .name:hover{text-decoration:underline;}
+.quote{font-size:12px;color:#44515c;border-left:3px solid #d9e1e8;padding:2px 8px;margin:2px 0;white-space:pre-wrap;}
+.page-ref{font-size:11px;color:var(--muted);white-space:nowrap;}
+.sec{margin-top:14px;} .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px;}
+.small{font-size:11.5px;color:var(--muted);} details summary{cursor:pointer;color:var(--navy2);font-weight:600;}
+.banner{background:#fff3d6;border:1px solid #e8c06a;border-radius:8px;padding:8px 12px;margin-bottom:10px;}
+.banner.ok{background:#e3f6e9;border-color:#9ad1aa;} .banner.err{background:#fde8e8;border-color:#e39a9a;}
+.ev{font-size:11.5px;color:#44515c;} .nowrap{white-space:nowrap;}
+</style>
+</head>
+<body>
+<header>
+  <div><h1>Gradcon AI Engine</h1><div class="subtitle">AI takeoff from drawings, specification &amp; compliance reader, quality checks. Everything here is a DRAFT for review — nothing changes a quote or a takeoff until you export it.</div></div>
+  <div class="cloud" id="cloudStatus">…</div>
+</header>
+<nav id="tabnav">
+  <button class="tab-btn active" data-page="home">Home</button>
+  <button class="tab-btn" data-page="job">Current job</button>
+  <button class="tab-btn" data-page="qa">Quality checks</button>
+</nav>
+<div id="main">
+  <div class="page active" id="page-home">
+    <div class="hero"><h1>AI Engine</h1><p>Drop a drawing set and get the concrete elements proposed as Estimates element types with their geometry and bars, each with the sheet it was read from and a confidence. Drop a specification and get the applicable standards, grades, covers, minimum member sizes and anything unusual, each with its page and the sentence it came from. Review, tick what applies, then export a new takeoff into the Estimates "AI drafts" group for manual review.</p></div>
+    <div class="kpi-row">
+      <div class="kpi"><div class="l">Takeoff jobs</div><div class="v" id="kpiTakeoff">0</div></div>
+      <div class="kpi"><div class="l">Specification jobs</div><div class="v" id="kpiSpec">0</div></div>
+      <div class="kpi"><div class="l">Exported to Estimates</div><div class="v" id="kpiExported">0</div></div>
+      <div class="kpi"><div class="l">AI provider in use</div><div class="v small" id="kpiProvider" style="font-size:13px;">…</div></div>
+    </div>
+    <div class="card">
+      <div class="row">
+        <button class="btn ai" id="newTakeoff">+ New AI takeoff</button>
+        <button class="btn primary" id="newSpec">+ New specification reader job</button>
+        <span class="small">PDF files only for now. Files go to the Gradcon cloud bucket so the model can read them; nothing is sent anywhere else.</span>
+      </div>
+    </div>
+    <div class="card jobs">
+      <h3 style="margin-top:0;">Jobs</h3>
+      <table><thead><tr><th>Name</th><th>Kind</th><th>Files</th><th>Status</th><th>Result</th><th>Exported</th><th>Updated</th><th></th></tr></thead><tbody id="jobsBody"></tbody></table>
+      <div class="small" id="jobsEmpty" style="margin-top:8px;">No jobs yet — start one above.</div>
+    </div>
+  </div>
+  <div class="page" id="page-job"><div id="jobHost"><div class="hint">Open a job from Home, or start a new one.</div></div></div>
+  <div class="page" id="page-qa">
+    <h2>Quality checks</h2>
+    <p class="hint">When a Quotes project reaches Completed Estimating the checks run on it: subcontract quote rows with no figure, rates past their validity, rate drift since the project was pinned, kg/m³ of steel and m²/m³ of formwork outside the usual bands, concrete against the measures, crew days against the handover bands, duplicated elements, and $/m² against Gradcon's own submitted projects — then the AI explains what looks wrong and asks for a manual review. This panel arrives in the next build; the takeoff and specification readers above are live now.</p>
+  </div>
+</div>
+<script>
+/* ============================= AI ENGINE =============================
+ * A separate portal app (10 Oct 2026, Grady: "dont touch the existing app.
+ * rather create another category called AI takeoff on the dashboard").
+ * Storage of its own: the job index under gradcon-ai-jobs and one row per job
+ * under gradcon-ai-job::<id> (estimator_kv like every other app, with a
+ * localStorage mirror), PDFs in the gradcon-files bucket under ai-engine/.
+ * It never reads a quote or a takeoff to write it: the ONLY way anything
+ * leaves this app is "Export to Estimates", which writes a hand-off blob
+ * (gradcon-ai-handoff) that Estimates turns into a NEW takeoff in its
+ * "AI drafts" group, every element marked "AI draft — verify".
+ * The model runs on the server (api/ai-engine.js) on the provider chosen in
+ * Settings → AI providers (portal preference aiProvider), else the default. */
+const SUPABASE_URL = "https://xbmyhvrcuyapoarmchpv.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_Kr4dTFXhZsifAA28HmMAVQ_EDSR2DL0";
+const BUCKET = "gradcon-files", FILE_PREFIX = "ai-engine/";
+const INDEX_KEY = "gradcon-ai-jobs";
+const JOB_KEY = (id) => "gradcon-ai-job::" + id;
+const HANDOFF_KEY = "gradcon-ai-handoff", HANDOFF_RESULT_KEY = "gradcon-ai-handoff-result";
+const MAX_FILE_MB = 30;
+// This app runs from a blob: URL inside the portal, where a relative "/api/…"
+// cannot resolve; location.origin is the real site origin (a blob: URL
+// inherits its creator's), exactly as the Estimates 3D bundle is fetched.
+const API_BASE = /^https?:/.test(location.origin) ? location.origin : "";
+/* MIRROR of the Estimates LIBRARY (id, label, calc, group) — the element types
+ * the model may propose. verify.mjs fails if this drifts from estimates-app.html. */
+const AI_TYPES = [
+  {id:"bulkexc", label:"Bulk Excavation", calc:"generic", group:"Earthworks"},
+  {id:"footingexc", label:"Footing Excavation (standalone)", calc:"generic", group:"Earthworks"},
+  {id:"slabtrim", label:"Slab Trim / Cut-to-fall", calc:"generic", group:"Earthworks"},
+  {id:"backfill", label:"Backfill", calc:"generic", group:"Earthworks"},
+  {id:"stripfooting", label:"Strip Footing", calc:"stripfooting", group:"Foundations"},
+  {id:"padfooting", label:"Pad Footing", calc:"padfooting", group:"Foundations"},
+  {id:"stumpfooting", label:"Stump Footing Pad", calc:"padfooting", group:"Foundations"},
+  {id:"boredpier", label:"Bored Pier", calc:"pier", group:"Foundations"},
+  {id:"piles", label:"Piles", calc:"pier", group:"Foundations"},
+  {id:"pilecap", label:"Pile Cap", calc:"pilecap", group:"Foundations"},
+  {id:"groundbeam", label:"Ground Beam", calc:"beam", group:"Foundations"},
+  {id:"cappingbeam", label:"Capping Beam", calc:"beam", group:"Foundations"},
+  {id:"anchorblock", label:"Anchor Block", calc:"padfooting", group:"Foundations"},
+  {id:"columnbaseplate", label:"Column Base Plate / Grout Pad", calc:"padfooting", group:"Foundations"},
+  {id:"retainingwall", label:"Retaining Wall", calc:"retwall", group:"Retention Walls"},
+  {id:"shotcretewall", label:"Shotcrete Wall", calc:"shotwall", group:"Retention Walls"},
+  {id:"raftslab", label:"Raft Slab", calc:"slab", group:"Ground Structure"},
+  {id:"waffleslab", label:"Waffle Slab", calc:"slab", group:"Ground Structure"},
+  {id:"industrialslab", label:"Industrial Slab", calc:"slab", group:"Ground Structure"},
+  {id:"slabonground", label:"Slab on Ground", calc:"slab", group:"Ground Structure"},
+  {id:"basementslab", label:"Basement Slab", calc:"slab", group:"Ground Structure"},
+  {id:"liftpit", label:"Lift Pit / Shaft", calc:"tankbox", group:"Ground Structure"},
+  {id:"stairs", label:"Concrete Stair", calc:"stairs", group:"Ground Structure"},
+  {id:"tempshoring", label:"Temporary Shoring", calc:"generic", group:"Ground Structure"},
+  {id:"tempprop", label:"Temporary Propping", calc:"generic", group:"Ground Structure"},
+  {id:"suspslab", label:"Suspended Slab", calc:"slab", group:"Suspended Structure"},
+  {id:"suspbeam", label:"Suspended Beam", calc:"beam", group:"Suspended Structure"},
+  {id:"column", label:"Column", calc:"column", group:"Vertical Structure"},
+  {id:"concretewall", label:"Concrete Wall / Core", calc:"wall", group:"Vertical Structure"},
+  {id:"ramp", label:"Ramp / External Sloped Slab", calc:"slab", group:"Ramps"},
+  {id:"basementramp", label:"Basement Ramp", calc:"slab", group:"Ramps"},
+  {id:"roofslab", label:"RC Roof Slab (propped)", calc:"slab", group:"Roof"},
+  {id:"roofslabcant", label:"Cantilevered Roof Slab / Canopy", calc:"slab", group:"Roof"},
+  {id:"plantdeck", label:"Plant Deck / Plant Platform Slab", calc:"slab", group:"Roof"},
+  {id:"liftoverrun", label:"Lift Overrun / Motor Room Slab", calc:"slab", group:"Roof"},
+  {id:"roofbeam", label:"Roof Beam / Band Beam", calc:"beam", group:"Roof"},
+  {id:"boxgutter", label:"Box Gutter (concrete)", calc:"boxgutter", group:"Roof"},
+  {id:"parapet", label:"Parapet / Upstand Wall", calc:"wall", group:"Roof"},
+  {id:"roofplinth", label:"Roof Plinth / Plant Kerb / Hob", calc:"kerb", group:"Roof"},
+  {id:"screed", label:"Screed (standalone)", calc:"screed", group:"Floor Finishes"},
+  {id:"driveway", label:"Driveway", calc:"slab", group:"External Works"},
+  {id:"path", label:"Path", calc:"slab", group:"External Works"},
+  {id:"hardstand", label:"Hardstand", calc:"slab", group:"External Works"},
+  {id:"equippad", label:"Equipment Pad", calc:"padfooting", group:"External Works"},
+  {id:"kerb", label:"Kerb / Channel / Spoon Drain", calc:"kerb", group:"External Works"},
+  {id:"drilldowel", label:"Drill & Dowel", calc:"generic", group:"Alterations"},
+  {id:"concreterepair", label:"Concrete Repair", calc:"generic", group:"Alterations"},
+  {id:"crackrepair", label:"Crack Repair / Sealing", calc:"generic", group:"Alterations"},
+  {id:"hearth", label:"Hearth / Fireplace Base (slabs + walls + starters)", calc:"composite", group:"Irregular Concrete Constructions"},
+  {id:"plinth", label:"Plinth / Machine Base (composite)", calc:"composite", group:"Irregular Concrete Constructions"},
+  {id:"compositeassembly", label:"Irregular Concrete Assembly (any mix of slabs, walls, starters)", calc:"composite", group:"Irregular Concrete Constructions"},
+  {id:"turntableslab", label:"Turntable Slab (vehicle turntable)", calc:"slab", group:"Special Items"},
+  {id:"pool", label:"Swimming Pool (concrete shell)", calc:"tankbox", group:"Special Items"},
+  {id:"planter", label:"Concrete Planter / Garden Bed", calc:"tankbox", group:"Special Items"},
+  {id:"watertank", label:"Water Tank (in-ground)", calc:"tankbox", group:"Special Items"},
+  {id:"sumppit", label:"Sump Pit (drainage)", calc:"tankbox", group:"Special Items"}
+];
+const TYPE_BY_ID = {}; AI_TYPES.forEach(t=>{ TYPE_BY_ID[t.id]=t; });
+const SPEC_CATEGORIES = ["concrete","cover","exposure","reinforcement","laps","formwork","tolerances","testing","curing","minimums","excavation","other"];
+const SPEC_ELEMENTS = ["all","footings","piers","slabs","beams","columns","walls","stairs","kerbs","other"];
+const STD_CODES = [["ncc","NCC"],["as3600","AS 3600"],["as2870","AS 2870"],["as4671","AS/NZS 4671"],["as1379","AS 1379"],["as3610","AS 3610"],["as2159","AS 2159"],["as1170","AS/NZS 1170"],["as3735","AS 3735"],["as5100","AS 5100"],["other","Other"]];
+
+const esc = (s) => String(s==null?"":s).replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const readJSON = (k) => { try{ const r=localStorage.getItem(k); return r? JSON.parse(r) : null; }catch(e){ return null; } };
+const writeJSON = (k,v) => { try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} };
+function portalPref(key){ try{ var p = JSON.parse(localStorage.getItem("gradcon-preferences")) || {}; return p[key]; }catch(e){ return undefined; } }
+const nowIso = () => new Date().toISOString();
+function whenLabel(iso){ if(!iso) return "—"; const t=new Date(iso); if(isNaN(t)) return "—"; return t.toLocaleString("en-AU",{day:"numeric",month:"short",hour:"numeric",minute:"2-digit"}); }
+function numOrNull(v){ if(v===""||v==null) return null; const n=Number(v); return isNaN(n)? null : n; }
+
+/* ---------- cloud (estimator_kv) ---------- */
+async function kvFetch(key){
+  if(!SUPABASE_URL) return null;
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/estimator_kv?key=eq.${encodeURIComponent(key)}&select=value,updated_at`, { headers:{ apikey:SUPABASE_ANON_KEY, Authorization:`Bearer ${SUPABASE_ANON_KEY}` }, signal:AbortSignal.timeout(8000) });
+    if(!res.ok) return null; const rows = await res.json(); return rows[0] || null;
+  }catch(e){ return null; }
+}
+async function kvPush(key, value){
+  if(!SUPABASE_URL) return null;
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/estimator_kv`, { method:"POST", headers:{ apikey:SUPABASE_ANON_KEY, Authorization:`Bearer ${SUPABASE_ANON_KEY}`, "Content-Type":"application/json", Prefer:"resolution=merge-duplicates,return=representation" }, body:JSON.stringify({ key, value, updated_at: nowIso() }), signal:AbortSignal.timeout(10000) });
+    if(!res.ok) return null; const rows = await res.json(); return rows[0] || null;
+  }catch(e){ return null; }
+}
+let cloudState = SUPABASE_URL ? "checking" : "local";
+function paintCloud(text, cls){ const el=document.getElementById("cloudStatus"); el.textContent = text; el.style.color = cls==="err" ? "#ffb3b3" : ""; }
+
+/* ---------- jobs ---------- */
+let INDEX = readJSON(INDEX_KEY) || [];
+const JOBS = {};
+let CURRENT = null;
+function liveIndex(){ return INDEX.filter(j=>!j.deleted).sort((a,b)=> (a.updatedAt||"") < (b.updatedAt||"") ? 1 : -1); }
+function newId(){ return "ai_" + Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
+function indexEntryOf(job){ return { id:job.id, kind:job.kind, name:job.name||"", status:job.status||"new", createdAt:job.createdAt, updatedAt:job.updatedAt, files:(job.files||[]).length, exported:(job.exports||[]).length, deleted:!!job.deleted }; }
+function saveJob(job, opts){
+  job.updatedAt = nowIso();
+  JOBS[job.id] = job;
+  writeJSON(JOB_KEY(job.id), job);
+  const i = INDEX.findIndex(e=>e.id===job.id); const entry = indexEntryOf(job);
+  if(i>=0) INDEX[i] = entry; else INDEX.push(entry);
+  writeJSON(INDEX_KEY, INDEX);
+  if(!(opts && opts.localOnly)){ kvPush(JOB_KEY(job.id), job).then(r=>{ if(r) paintCloud("Cloud: saved " + whenLabel(r.updated_at)); else if(SUPABASE_URL) paintCloud("Cloud: last save did not land — kept in this browser", "err"); }); kvPush(INDEX_KEY, INDEX); }
+  renderHome();
+}
+function loadJob(id){ if(JOBS[id]) return JOBS[id]; const j = readJSON(JOB_KEY(id)); if(j) JOBS[id]=j; return j; }
+async function syncIndexFromCloud(){
+  const row = await kvFetch(INDEX_KEY);
+  if(!row){ if(SUPABASE_URL) paintCloud(cloudState==="checking" ? "Cloud: not reachable — working from this browser" : "Cloud: offline", "err"); cloudState="offline"; return; }
+  cloudState = "online"; paintCloud("Cloud: connected");
+  if(Array.isArray(row.value)){
+    const byId = {}; INDEX.forEach(e=>{ byId[e.id]=e; }); let changed=false;
+    row.value.forEach(r=>{ const mine=byId[r.id]; if(!mine){ INDEX.push(r); byId[r.id]=r; changed=true; } else if((r.updatedAt||"") > (mine.updatedAt||"")){ Object.assign(mine, r); changed=true; } });
+    if(changed){ writeJSON(INDEX_KEY, INDEX); renderHome(); }
+  }
+}
+async function refreshJobFromCloud(id){
+  const row = await kvFetch(JOB_KEY(id)); if(!row || !row.value || !row.value.id) return null;
+  const local = loadJob(id);
+  if(!local || (row.value.updatedAt||"") > (local.updatedAt||"")){ JOBS[id] = row.value; writeJSON(JOB_KEY(id), row.value); return row.value; }
+  return null;
+}
+function createJob(kind){
+  const job = { id:newId(), kind, name:"", createdAt:nowIso(), updatedAt:nowIso(), status:"new", files:[], result:null, review:null, exports:[], ran:null, lastError:null, specJobId:"" };
+  saveJob(job, {localOnly:true});
+  openJob(job.id);
+}
+function deleteJob(id){
+  const job = loadJob(id); if(!job) return;
+  if(!confirm(`Delete AI job "${job.name||"Untitled"}"? Its files stay in the bucket; nothing exported to Estimates is touched.`)) return;
+  job.deleted = true; saveJob(job);
+  if(CURRENT===id){ CURRENT=null; document.getElementById("jobHost").innerHTML = '<div class="hint">Job deleted.</div>'; }
+  showPage("home");
+}
+
+/* ---------- files ---------- */
+function safeName(name){ return String(name||"file.pdf").replace(/[^A-Za-z0-9._-]+/g,"_").slice(0,80); }
+async function uploadFile(job, file){
+  if(!/\.pdf$/i.test(file.name) && file.type!=="application/pdf") return { error:`${file.name}: PDF files only for now` };
+  if(file.size > MAX_FILE_MB*1024*1024) return { error:`${file.name}: over ${MAX_FILE_MB} MB — split the set` };
+  if(!SUPABASE_URL) return { error:"Files need the cloud bucket — this copy runs offline" };
+  const n = (job.files||[]).length + 1;
+  const path = `${FILE_PREFIX}${job.id}/${String(n).padStart(2,"0")}-${safeName(file.name)}`;
+  try{
+    const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${BUCKET}/${path}`, { method:"POST", headers:{ apikey:SUPABASE_ANON_KEY, Authorization:`Bearer ${SUPABASE_ANON_KEY}`, "Content-Type":"application/pdf", "x-upsert":"true" }, body:file, signal:AbortSignal.timeout(120000) });
+    if(!res.ok) return { error:`${file.name}: upload failed (${res.status})` };
+  }catch(e){ return { error:`${file.name}: upload failed — ${e.message}` }; }
+  return { file:{ name:file.name, size:file.size, path, url:`${SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${path}`, uploadedAt:nowIso() } };
+}
+async function addFiles(job, list){
+  const status = document.getElementById("fileStatus"); const errors=[];
+  for(const f of Array.from(list||[])){
+    if(status) status.textContent = `Uploading ${f.name}…`;
+    const r = await uploadFile(job, f);
+    if(r.error) errors.push(r.error); else { job.files.push(r.file); job.status = job.status==="new" ? "uploaded" : job.status; saveJob(job); }
+  }
+  renderJob(job);
+  const st = document.getElementById("fileStatus");
+  if(st){ st.textContent = errors.length ? errors.join(" · ") : (job.files.length ? `${job.files.length} file${job.files.length===1?"":"s"} ready` : ""); st.className = "status " + (errors.length ? "err" : "ok"); }
+}
+function fmtSize(b){ return b>1024*1024 ? (b/1024/1024).toFixed(1)+" MB" : b>1024 ? (b/1024).toFixed(0)+" KB" : b+" B"; }
+
+/* ---------- provider in use ---------- */
+let PROVIDERS = null;
+function providerInUse(){
+  const want = portalPref("aiProvider");
+  if(!PROVIDERS) return { id: want || null, label: want ? want + " (chosen in Settings)" : "server default" };
+  const chosen = want && PROVIDERS.find(p=>p.id===want && p.configured);
+  const p = chosen || PROVIDERS.find(p=>p.isDefault) || PROVIDERS.find(p=>p.configured) || null;
+  return p ? { id:p.id, label:`${p.label} · ${p.model}${chosen?"":" (default)"}` } : { id:null, label:"no provider configured — add a key in Vercel" };
+}
+function loadProviders(){
+  fetch(API_BASE + "/api/ai-providers", { headers:{ accept:"application/json" } }).then(r=> r.ok ? r.json() : null).then(d=>{ PROVIDERS = d && d.providers || null; paintProvider(); }).catch(()=>{ PROVIDERS=null; paintProvider(); });
+}
+function paintProvider(){ const p = providerInUse(); const k=document.getElementById("kpiProvider"); if(k) k.textContent = p.label; const r=document.getElementById("runProvider"); if(r) r.textContent = p.label; }
+
+/* ---------- running a job ---------- */
+async function runJob(job){
+  if(!job.files.length){ alert("Add at least one PDF first."); return; }
+  const btn = document.getElementById("runBtn"); const st = document.getElementById("runStatus");
+  if(btn) btn.disabled = true; job.status="running"; job.lastError=null; saveJob(job);
+  if(st){ st.className="status"; st.textContent = `Reading ${job.files.length} file${job.files.length===1?"":"s"} on ${providerInUse().label}… this can take a few minutes for a full drawing set.`; }
+  const body = { action: job.kind, provider: portalPref("aiProvider") || undefined, files: job.files.map(f=>({url:f.url, name:f.name})), projectName: job.name };
+  if(job.kind==="takeoff"){ body.types = AI_TYPES.map(t=>({id:t.id, label:t.label, group:t.group})); const prof = specProfileFor(job); if(prof) body.profile = prof; }
+  let res, data;
+  try{
+    res = await fetch(API_BASE + "/api/ai-engine", { method:"POST", headers:{ "content-type":"application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(320000) });
+    data = await res.json().catch(()=>({ error:`Bad reply (${res.status})` }));
+  }catch(e){ data = { error: /abort|timeout/i.test(String(e)) ? "Timed out waiting for the model (over 5 minutes) — try fewer sheets per job." : "Could not reach the AI Engine function — this build may not be the Vercel deployment." }; res = { ok:false, status:0 }; }
+  if(!res.ok || !data || !data.result){
+    job.status = "failed"; job.lastError = (data && data.error) || `Failed (${res.status})`; if(data && data.detail) job.lastError += " — " + data.detail;
+    saveJob(job); renderJob(job); return;
+  }
+  job.result = data.result; job.ran = { at: nowIso(), provider:data.provider, model:data.model, latencyMs:data.latencyMs, usage:data.usage, truncated:!!data.truncated };
+  job.review = job.kind==="takeoff" ? takeoffReviewFrom(data.result) : specReviewFrom(data.result);
+  job.status = "done"; saveJob(job); renderJob(job);
+}
+
+/* ---------- takeoff review ---------- */
+function takeoffReviewFrom(result){
+  const els = Array.isArray(result.elements) ? result.elements : [];
+  return { elements: els.map((e,i)=>{
+    const b = e.bars || {};
+    return { i, include: !!TYPE_BY_ID[e.type], type: TYPE_BY_ID[e.type] ? e.type : "", label:e.label||"", mark:e.mark||"", sheet:e.sheet||"", qty:numOrNull(e.qty),
+      length_mm:numOrNull(e.length_mm), width_mm:numOrNull(e.width_mm), depth_mm:numOrNull(e.depth_mm), height_mm:numOrNull(e.height_mm), diameter_mm:numOrNull(e.diameter_mm), area_m2:numOrNull(e.area_m2),
+      grade:numOrNull(e.grade), cover_mm:numOrNull(e.cover_mm),
+      mainDia:(b.main&&b.main.dia)||"", mainQty:numOrNull(b.main&&b.main.qty), mainSpacing:numOrNull(b.main&&b.main.spacing_mm),
+      crossDia:(b.cross&&b.cross.dia)||"", crossSpacing:numOrNull(b.cross&&b.cross.spacing_mm),
+      topDia:(b.top&&b.top.dia)||"", topQty:numOrNull(b.top&&b.top.qty), topSpacing:numOrNull(b.top&&b.top.spacing_mm),
+      ligDia:(b.ligatures&&b.ligatures.dia)||"", ligSpacing:numOrNull(b.ligatures&&b.ligatures.spacing_mm),
+      mesh:b.mesh||"", topMesh:b.top_mesh||"",
+      confidence:/^(high|medium|low)$/.test(e.confidence)? e.confidence : "low", evidence:e.evidence||"", notes:e.notes||"", unknownType: TYPE_BY_ID[e.type] ? "" : (e.type||"?") };
+  }) };
+}
+const TK_COLS = [["qty","Qty","num"],["length_mm","L mm","num"],["width_mm","W mm","num"],["depth_mm","D/T mm","num"],["height_mm","H mm","num"],["diameter_mm","Ø mm","num"],["area_m2","Area m²","num"],["grade","Grade","short"],["cover_mm","Cover","short"]];
+function typeSelect(cur, i){
+  let groups = {}; AI_TYPES.forEach(t=>{ (groups[t.group]=groups[t.group]||[]).push(t); });
+  return `<select data-k="type" data-i="${i}"><option value="">— pick a type —</option>${Object.keys(groups).map(g=>`<optgroup label="${esc(g)}">${groups[g].map(t=>`<option value="${t.id}" ${t.id===cur?'selected':''}>${esc(t.label)}</option>`).join("")}</optgroup>`).join("")}</select>`;
+}
+function barsSummary(e){
+  const parts=[];
+  if(e.mainDia) parts.push(`main ${e.mainDia}${e.mainQty?" ×"+e.mainQty:""}${e.mainSpacing?" @"+e.mainSpacing:""}`);
+  if(e.crossDia) parts.push(`cross ${e.crossDia}${e.crossSpacing?" @"+e.crossSpacing:""}`);
+  if(e.topDia) parts.push(`top ${e.topDia}${e.topQty?" ×"+e.topQty:""}${e.topSpacing?" @"+e.topSpacing:""}`);
+  if(e.ligDia) parts.push(`ligs ${e.ligDia}${e.ligSpacing?" @"+e.ligSpacing:""}`);
+  if(e.mesh) parts.push(`mesh ${e.mesh}`); if(e.topMesh) parts.push(`top mesh ${e.topMesh}`);
+  return parts.join(" · ") || "—";
+}
+function renderTakeoffResult(job){
+  const r = job.result || {}, rv = job.review || {elements:[]};
+  const proj = r.project || {};
+  const sheets = Array.isArray(r.sheets) ? r.sheets : [];
+  const inc = rv.elements.filter(e=>e.include && e.type).length;
+  const byConf = {high:0,medium:0,low:0}; rv.elements.forEach(e=>{ byConf[e.confidence]=(byConf[e.confidence]||0)+1; });
+  return `
+   <div class="card">
+    <div class="row" style="justify-content:space-between;">
+      <div><b>${esc(proj.name||job.name||"Project")}</b> ${proj.engineer?`· <span class="small">engineer ${esc(proj.engineer)}</span>`:""} ${proj.drawingRevision?`· <span class="small">${esc(proj.drawingRevision)}</span>`:""}
+        <div class="small">Read ${whenLabel(job.ran&&job.ran.at)} on ${esc(job.ran&&job.ran.provider)} · ${esc(job.ran&&job.ran.model)} · ${Math.round(((job.ran&&job.ran.latencyMs)||0)/1000)} s${job.ran&&job.ran.usage?` · ${job.ran.usage.input||0} in / ${job.ran.usage.output||0} out tokens`:""}${job.ran&&job.ran.truncated?' · <b style="color:var(--bad)">reply was cut off — run again with fewer sheets</b>':""}</div>
+        <div class="small">${(proj.concreteGrades||[]).length?`Grades on the drawings: ${esc((proj.concreteGrades||[]).join(", "))} · `:""}${proj.reoGrade?`reo ${esc(proj.reoGrade)} · `:""}${proj.coverNotes?esc(proj.coverNotes):""}</div>
+        <div class="small">Sheets: ${sheets.length? sheets.map(s=>`<span class="chip">${esc(s.ref)}${s.revision?" "+esc(s.revision):""}</span>`).join(" ") : "—"}</div>
+      </div>
+      <div class="row">
+        <span class="chip high">${byConf.high} high</span><span class="chip medium">${byConf.medium} medium</span><span class="chip low">${byConf.low} low</span>
+        <button class="btn primary" id="exportBtn" ${inc?"":"disabled"} title="Creates a NEW takeoff in Estimates under AI drafts; nothing existing is changed">Export ${inc} element${inc===1?"":"s"} to Estimates →</button>
+      </div>
+    </div>
+    ${(job.exports||[]).length?`<div class="banner ok" style="margin-top:10px;">Exported ${job.exports.map(x=>`${whenLabel(x.at)} (${x.count} elements${x.takeoffName?` → "${esc(x.takeoffName)}"`:""}${x.takeoffId?", takeoff "+esc(x.takeoffId):""})`).join(" · ")}. Each export is a new takeoff in Estimates' AI drafts group.</div>`:""}
+   </div>
+   <div class="card">
+    <div class="row" style="justify-content:space-between;"><h3 style="margin:0;">Proposed elements — tick what to export, fix what the model misread</h3><span class="small">Values are editable here; the export marks every element "AI draft — verify" in Estimates.</span></div>
+    <div style="overflow:auto;margin-top:8px;">
+    <table id="tkTable"><thead><tr><th></th><th>Type</th><th>Label</th><th>Mark / sheet</th>${TK_COLS.map(c=>`<th>${c[1]}</th>`).join("")}<th>Bars</th><th>Confidence</th><th>Evidence / notes</th></tr></thead>
+    <tbody>${rv.elements.map((e,i)=>`<tr class="${e.include?'':'excluded'}" data-row="${i}">
+      <td><input type="checkbox" data-k="include" data-i="${i}" ${e.include?"checked":""} ${e.type?"":"disabled"} title="${e.type?"Export this element":"Pick a type first"}"></td>
+      <td style="min-width:190px;">${typeSelect(e.type,i)}${e.unknownType?`<div class="small" style="color:var(--bad)">model said "${esc(e.unknownType)}"</div>`:""}</td>
+      <td style="min-width:180px;"><input type="text" data-k="label" data-i="${i}" value="${esc(e.label)}"></td>
+      <td class="nowrap"><input type="text" class="short" data-k="mark" data-i="${i}" value="${esc(e.mark)}" placeholder="mark"> <input type="text" class="short" data-k="sheet" data-i="${i}" value="${esc(e.sheet)}" placeholder="sheet"></td>
+      ${TK_COLS.map(c=>`<td><input type="number" class="${c[2]}" step="any" data-k="${c[0]}" data-i="${i}" value="${e[c[0]]==null?"":e[c[0]]}"></td>`).join("")}
+      <td style="min-width:230px;"><details><summary class="ev">${esc(barsSummary(e))}</summary>
+        <div class="row" style="margin-top:4px;">main <input type="text" class="short" data-k="mainDia" data-i="${i}" value="${esc(e.mainDia)}" placeholder="N16"> ×<input type="number" class="short" data-k="mainQty" data-i="${i}" value="${e.mainQty==null?"":e.mainQty}"> @<input type="number" class="short" data-k="mainSpacing" data-i="${i}" value="${e.mainSpacing==null?"":e.mainSpacing}"></div>
+        <div class="row">cross <input type="text" class="short" data-k="crossDia" data-i="${i}" value="${esc(e.crossDia)}"> @<input type="number" class="short" data-k="crossSpacing" data-i="${i}" value="${e.crossSpacing==null?"":e.crossSpacing}"></div>
+        <div class="row">top <input type="text" class="short" data-k="topDia" data-i="${i}" value="${esc(e.topDia)}"> ×<input type="number" class="short" data-k="topQty" data-i="${i}" value="${e.topQty==null?"":e.topQty}"> @<input type="number" class="short" data-k="topSpacing" data-i="${i}" value="${e.topSpacing==null?"":e.topSpacing}"></div>
+        <div class="row">ligs <input type="text" class="short" data-k="ligDia" data-i="${i}" value="${esc(e.ligDia)}"> @<input type="number" class="short" data-k="ligSpacing" data-i="${i}" value="${e.ligSpacing==null?"":e.ligSpacing}"></div>
+        <div class="row">mesh <input type="text" class="short" data-k="mesh" data-i="${i}" value="${esc(e.mesh)}" placeholder="SL82"> top <input type="text" class="short" data-k="topMesh" data-i="${i}" value="${esc(e.topMesh)}"></div></details></td>
+      <td><span class="chip ${e.confidence}">${e.confidence}</span></td>
+      <td style="min-width:220px;"><div class="ev">${esc(e.evidence)}</div><div class="small">${esc(e.notes)}</div></td>
+     </tr>`).join("")}</tbody></table>
+    </div>
+    ${rv.elements.length? "" : '<div class="small">The model proposed no elements.</div>'}
+   </div>
+   ${(r.unreadable||[]).length||(r.assumptions||[]).length?`<div class="card grid2">
+     <div><h3 style="margin-top:0;">Could not read</h3>${(r.unreadable||[]).map(u=>`<div class="quote">${esc(u)}</div>`).join("")||'<span class="small">nothing reported</span>'}</div>
+     <div><h3 style="margin-top:0;">Assumptions the model made</h3>${(r.assumptions||[]).map(u=>`<div class="quote">${esc(u)}</div>`).join("")||'<span class="small">none reported</span>'}</div>
+   </div>`:""}`;
+}
+
+/* ---------- spec review ---------- */
+function specReviewFrom(result){
+  const stds = Array.isArray(result.standards) ? result.standards : [];
+  const reqs = Array.isArray(result.requirements) ? result.requirements : [];
+  const d = result.defaults || {};
+  const grade = Object.assign({}, d.concreteGradeByElement || {}), cover = Object.assign({}, d.coverByElement || {});
+  return {
+    standards: stds.map(s=>({ designation:s.designation||"", code:STD_CODES.some(c=>c[0]===s.code)? s.code : "other", title:s.title||"", page:s.page||null, quote:s.quote||"", applies:true })),
+    requirements: reqs.map(r=>({ category:SPEC_CATEGORIES.includes(r.category)? r.category : "other", element:SPEC_ELEMENTS.includes(r.element)? r.element : "other", text:r.text||"", value:r.value||"", page:r.page||null, quote:r.quote||"", applies:true })),
+    defaults: { grade, cover, exposureClass:d.exposureClass||"", reoGrade:d.reoGrade||"", lapRule:d.lapRule||"", slump:d.slump||"", aggregate:d.aggregate||"",
+                minMemberSizes:(Array.isArray(d.minMemberSizes)? d.minMemberSizes : []).map(m=>({ element:m.element||"", minimum:m.minimum||"", page:m.page||null, quote:m.quote||"", applies:true })) },
+    unusual: (Array.isArray(result.unusual)? result.unusual : []).map(u=>({ text:u.text||"", page:u.page||null, quote:u.quote||"", applies:true })),
+  };
+}
+/** What a takeoff export carries from the chosen spec job: only the ticked items. */
+function profileFromSpecJob(job){
+  if(!job || !job.review) return null;
+  const rv = job.review;
+  return {
+    specJobId: job.id, specName: job.name, document: (job.result && job.result.document) || null,
+    standards: rv.standards.filter(s=>s.applies && s.code!=="other").map(s=>s.code),
+    otherStandards: rv.standards.filter(s=>s.applies).map(s=>s.designation).filter(Boolean),
+    requirements: rv.requirements.filter(r=>r.applies).map(r=>({ category:r.category, element:r.element, text:r.text, value:r.value, page:r.page })),
+    defaults: { concreteGradeByElement: rv.defaults.grade, coverByElement: rv.defaults.cover, exposureClass: rv.defaults.exposureClass, reoGrade: rv.defaults.reoGrade, lapRule: rv.defaults.lapRule,
+                minMemberSizes: rv.defaults.minMemberSizes.filter(m=>m.applies).map(m=>({ element:m.element, minimum:m.minimum, page:m.page })) },
+    unusual: rv.unusual.filter(u=>u.applies).map(u=>({ text:u.text, page:u.page })),
+  };
+}
+function specProfileFor(takeoffJob){ const sj = takeoffJob.specJobId && loadJob(takeoffJob.specJobId); return sj ? profileFromSpecJob(sj) : null; }
+function renderSpecResult(job){
+  const rv = job.review, doc = (job.result && job.result.document) || {};
+  const groups = {}; rv.requirements.forEach((r,i)=>{ (groups[r.category]=groups[r.category]||[]).push([r,i]); });
+  const nApply = rv.standards.filter(s=>s.applies).length + rv.requirements.filter(r=>r.applies).length;
+  return `
+   <div class="card">
+    <b>${esc(doc.title||job.name||"Specification")}</b> ${doc.revision?`· ${esc(doc.revision)}`:""} ${doc.date?`· ${esc(doc.date)}`:""} ${doc.author?`· ${esc(doc.author)}`:""}
+    <div class="small">Read ${whenLabel(job.ran&&job.ran.at)} on ${esc(job.ran&&job.ran.provider)} · ${esc(job.ran&&job.ran.model)} · ${Math.round(((job.ran&&job.ran.latencyMs)||0)/1000)} s${job.ran&&job.ran.truncated?' · <b style="color:var(--bad)">reply was cut off</b>':""} · ${nApply} items ticked as applicable</div>
+    <div class="small">Tick what applies to this job. The ticked items become the job profile: a takeoff job that picks this specification sends the grades and covers to the model and carries the standards into the new takeoff's Project Setup. Standards are recorded by designation only — nothing here reproduces standards text.</div>
+   </div>
+   <div class="card"><h3 style="margin-top:0;">Applicable standards and codes</h3>
+    <table><thead><tr><th></th><th>Designation (as printed)</th><th>Family</th><th>Title</th><th>Page</th><th>Where it says so</th></tr></thead><tbody>
+    ${rv.standards.map((s,i)=>`<tr class="${s.applies?'':'excluded'}"><td><input type="checkbox" data-sk="applies" data-si="${i}" ${s.applies?"checked":""}></td><td><input type="text" data-sk="designation" data-si="${i}" value="${esc(s.designation)}"></td><td><select data-sk="code" data-si="${i}">${STD_CODES.map(c=>`<option value="${c[0]}" ${c[0]===s.code?'selected':''}>${c[1]}</option>`).join("")}</select></td><td>${esc(s.title)}</td><td class="page-ref">p. ${s.page||"?"}</td><td><div class="quote">${esc(s.quote)}</div></td></tr>`).join("") || '<tr><td colspan="6" class="small">None found.</td></tr>'}
+    </tbody></table>
+    <div class="row" style="margin-top:8px;"><button class="btn small" id="addStd">+ Add a standard by hand</button></div>
+   </div>
+   <div class="card"><h3 style="margin-top:0;">Member minimums and default properties</h3>
+    <div class="grid2">
+     <div><table><thead><tr><th>Element</th><th>Concrete grade</th><th>Cover (mm)</th></tr></thead><tbody>
+      ${SPEC_ELEMENTS.filter(e=>e!=="other").map(e=>`<tr><td>${e}</td><td><input type="text" class="short" data-dk="grade" data-de="${e}" value="${esc(rv.defaults.grade[e]||"")}" placeholder="N32"></td><td><input type="number" class="short" data-dk="cover" data-de="${e}" value="${rv.defaults.cover[e]==null?"":rv.defaults.cover[e]}"></td></tr>`).join("")}
+     </tbody></table></div>
+     <div>
+      <div class="row">Exposure class <input type="text" class="short" data-df="exposureClass" value="${esc(rv.defaults.exposureClass)}"> Reo grade <input type="text" class="short" data-df="reoGrade" value="${esc(rv.defaults.reoGrade)}"></div>
+      <div class="row" style="margin-top:6px;">Lap rule <input type="text" class="wide" data-df="lapRule" value="${esc(rv.defaults.lapRule)}"></div>
+      <div class="row" style="margin-top:6px;">Slump <input type="text" class="short" data-df="slump" value="${esc(rv.defaults.slump)}"> Aggregate <input type="text" class="short" data-df="aggregate" value="${esc(rv.defaults.aggregate)}"></div>
+      <h3>Minimum member sizes</h3>
+      <table><thead><tr><th></th><th>Element</th><th>Minimum</th><th>Page</th><th>Quote</th></tr></thead><tbody>
+      ${rv.defaults.minMemberSizes.map((m,i)=>`<tr class="${m.applies?'':'excluded'}"><td><input type="checkbox" data-mk="applies" data-mi="${i}" ${m.applies?"checked":""}></td><td><input type="text" data-mk="element" data-mi="${i}" value="${esc(m.element)}"></td><td><input type="text" data-mk="minimum" data-mi="${i}" value="${esc(m.minimum)}"></td><td class="page-ref">p. ${m.page||"?"}</td><td><div class="quote">${esc(m.quote)}</div></td></tr>`).join("") || '<tr><td colspan="5" class="small">None found.</td></tr>'}
+      </tbody></table>
+     </div>
+    </div>
+   </div>
+   <div class="card"><h3 style="margin-top:0;">Specification requirements that change the price</h3>
+    ${Object.keys(groups).length ? Object.keys(groups).map(cat=>`<h3>${esc(cat)}</h3><table><thead><tr><th></th><th>Element</th><th>Requirement</th><th>Value</th><th>Page</th><th>Where it says so</th></tr></thead><tbody>
+      ${groups[cat].map(([r,i])=>`<tr class="${r.applies?'':'excluded'}"><td><input type="checkbox" data-rk="applies" data-ri="${i}" ${r.applies?"checked":""}></td><td><select data-rk="element" data-ri="${i}">${SPEC_ELEMENTS.map(e=>`<option ${e===r.element?'selected':''}>${e}</option>`).join("")}</select></td><td><input type="text" data-rk="text" data-ri="${i}" value="${esc(r.text)}"></td><td><input type="text" class="short" data-rk="value" data-ri="${i}" value="${esc(r.value)}"></td><td class="page-ref">p. ${r.page||"?"}</td><td><div class="quote">${esc(r.quote)}</div></td></tr>`).join("")}
+      </tbody></table>`).join("") : '<div class="small">None found.</div>'}
+   </div>
+   <div class="card"><h3 style="margin-top:0;">Unusual items a concrete subcontractor must price</h3>
+    ${rv.unusual.map((u,i)=>`<div class="row ${u.applies?'':'excluded'}"><input type="checkbox" data-uk="applies" data-ui="${i}" ${u.applies?"checked":""}> <span style="flex:1">${esc(u.text)}</span><span class="page-ref">p. ${u.page||"?"}</span></div><div class="quote">${esc(u.quote)}</div>`).join("") || '<div class="small">None reported.</div>'}
+   </div>`;
+}
+
+/* ---------- job page ---------- */
+function renderJob(job){
+  CURRENT = job.id;
+  const host = document.getElementById("jobHost");
+  const specJobs = liveIndex().filter(e=>e.kind==="spec" && e.status==="done");
+  host.innerHTML = `
+   <div class="card">
+    <div class="row" style="justify-content:space-between;">
+      <div class="row"><span class="chip ai">${job.kind==="takeoff"?"AI takeoff":"Specification reader"}</span>
+        <input type="text" class="wide" id="jobName" value="${esc(job.name)}" placeholder="${job.kind==="takeoff"?"Project / drawing set name":"Specification name"}">
+        <span class="chip ${job.status}">${esc(job.status)}</span></div>
+      <div class="row"><button class="btn small" id="backHome">← All jobs</button><button class="btn small danger" id="delJob">Delete job</button></div>
+    </div>
+    ${job.kind==="takeoff"?`<div class="row" style="margin-top:8px;">Specification profile for this takeoff: <select id="specJobSel"><option value="">— none —</option>${specJobs.map(s=>`<option value="${s.id}" ${s.id===job.specJobId?'selected':''}>${esc(s.name||"Untitled spec")}</option>`).join("")}</select><span class="small">grades and covers from the ticked specification go to the model and into the exported takeoff's Project Setup</span></div>`:""}
+   </div>
+   <div class="card">
+    <h3 style="margin-top:0;">${job.kind==="takeoff"?"Drawings":"Documents"} (PDF)</h3>
+    <div class="drop" id="drop">Drop PDF files here, or click to choose. ${job.kind==="takeoff"?"Structural drawings: plans, sections, footing / beam / column schedules.":"The specification, the tender conditions, geotechnical notes."}<input type="file" id="fileInput" accept="application/pdf,.pdf" multiple hidden></div>
+    <ul class="files">${job.files.map((f,i)=>`<li><span class="n">📄 ${esc(f.name)}</span><span class="s">${fmtSize(f.size)}</span><a class="small" href="${esc(f.url)}" target="_blank" rel="noopener">open</a><button class="btn small" data-rmfile="${i}" title="Remove from this job (the copy in the bucket stays)">✕</button></li>`).join("")}</ul>
+    <div class="status" id="fileStatus"></div>
+    <div class="row" style="margin-top:10px;">
+      <button class="btn ai" id="runBtn" ${job.files.length?"":"disabled"}>${job.result?"Read again":"Read "+(job.kind==="takeoff"?"drawings":"specification")} with AI</button>
+      <span class="small">on <span id="runProvider">${esc(providerInUse().label)}</span> — change it in Settings → AI providers</span>
+    </div>
+    <div class="status" id="runStatus"></div>
+    ${job.lastError?`<div class="banner err" style="margin-top:8px;">Last run failed: ${esc(job.lastError)}</div>`:""}
+   </div>
+   ${job.result ? (job.kind==="takeoff" ? renderTakeoffResult(job) : renderSpecResult(job)) : ""}`;
+  wireJob(job);
+  showPage("job");
+}
+let saveTimer = null;
+function saveSoon(job){ clearTimeout(saveTimer); saveTimer = setTimeout(()=>saveJob(job), 600); }
+function wireJob(job){
+  const host = document.getElementById("jobHost");
+  host.querySelector("#jobName").addEventListener("input", e=>{ job.name = e.target.value; saveSoon(job); });
+  host.querySelector("#backHome").addEventListener("click", ()=>{ renderHome(); showPage("home"); });
+  host.querySelector("#delJob").addEventListener("click", ()=>deleteJob(job.id));
+  const ss = host.querySelector("#specJobSel"); if(ss) ss.addEventListener("change", e=>{ job.specJobId = e.target.value; saveJob(job); });
+  const drop = host.querySelector("#drop"), fi = host.querySelector("#fileInput");
+  drop.addEventListener("click", ()=>fi.click());
+  fi.addEventListener("change", ()=>addFiles(job, fi.files));
+  drop.addEventListener("dragover", e=>{ e.preventDefault(); drop.classList.add("over"); });
+  drop.addEventListener("dragleave", ()=>drop.classList.remove("over"));
+  drop.addEventListener("drop", e=>{ e.preventDefault(); drop.classList.remove("over"); addFiles(job, e.dataTransfer.files); });
+  host.querySelectorAll("[data-rmfile]").forEach(b=>b.addEventListener("click", ()=>{ job.files.splice(+b.dataset.rmfile,1); saveJob(job); renderJob(job); }));
+  host.querySelector("#runBtn").addEventListener("click", ()=>runJob(job));
+  const ex = host.querySelector("#exportBtn"); if(ex) ex.addEventListener("click", ()=>exportToEstimates(job));
+  const addStd = host.querySelector("#addStd"); if(addStd) addStd.addEventListener("click", ()=>{ job.review.standards.push({designation:"",code:"other",title:"",page:null,quote:"(added by hand)",applies:true}); saveJob(job); renderJob(job); });
+  // Review edits: every input writes straight onto the review copy (never the
+  // model's result, which is kept as read). ONE handler on the host — assigned,
+  // not added — so a re-render never leaves an older job's handler attached.
+  host.oninput = (e)=>{
+    const t = e.target, rv = job.review; if(!rv) return;
+    const val = t.type==="checkbox" ? t.checked : t.type==="number" ? numOrNull(t.value) : t.value;
+    if(t.dataset.k!==undefined){ const el = rv.elements[+t.dataset.i]; el[t.dataset.k] = val; if(t.dataset.k==="type"){ el.include = !!val; el.unknownType = ""; } t.closest("tr").classList.toggle("excluded", !el.include); if(t.dataset.k==="type"||t.dataset.k==="include"){ const inc = rv.elements.filter(x=>x.include&&x.type).length; const b=host.querySelector("#exportBtn"); if(b){ b.disabled=!inc; b.textContent=`Export ${inc} element${inc===1?"":"s"} to Estimates →`; } const cb=t.closest("tr").querySelector('[data-k="include"]'); if(cb){ cb.disabled=!el.type; cb.checked=el.include; } } }
+    else if(t.dataset.sk){ rv.standards[+t.dataset.si][t.dataset.sk] = val; if(t.dataset.sk==="applies") t.closest("tr").classList.toggle("excluded", !val); }
+    else if(t.dataset.rk){ rv.requirements[+t.dataset.ri][t.dataset.rk] = val; if(t.dataset.rk==="applies") t.closest("tr").classList.toggle("excluded", !val); }
+    else if(t.dataset.mk){ rv.defaults.minMemberSizes[+t.dataset.mi][t.dataset.mk] = val; if(t.dataset.mk==="applies") t.closest("tr").classList.toggle("excluded", !val); }
+    else if(t.dataset.uk){ rv.unusual[+t.dataset.ui][t.dataset.uk] = val; t.closest(".row").classList.toggle("excluded", !val); }
+    else if(t.dataset.dk){ rv.defaults[t.dataset.dk][t.dataset.de] = val; }
+    else if(t.dataset.df){ rv.defaults[t.dataset.df] = val; }
+    else return;
+    saveSoon(job);
+  };
+}
+
+/* ---------- export to Estimates ---------- */
+function exportToEstimates(job){
+  const rv = job.review; if(!rv) return;
+  const elements = rv.elements.filter(e=>e.include && e.type).map(e=>Object.assign({}, e, { jobId: job.id }));
+  if(!elements.length) return;
+  const name = (job.name || (job.result && job.result.project && job.result.project.name) || "AI takeoff").trim();
+  const handoff = { v:1, jobId: job.id, name, at: nowIso(), elements, profile: specProfileFor(job), source: { files: job.files.map(f=>f.name), provider: job.ran && job.ran.provider, model: job.ran && job.ran.model, sheets: (job.result && job.result.sheets) || [], readAt: job.ran && job.ran.at } };
+  writeJSON(HANDOFF_KEY, handoff);
+  job.exports = job.exports || []; job.exports.push({ at: handoff.at, count: elements.length, takeoffName: name });
+  saveJob(job);
+  if(window.parent && window.parent !== window) window.parent.postMessage({ type:"gradcon:open-app", target:"estimates" }, "*");
+  else alert("Export written — open Estimates in the portal to find it under AI drafts.");
+}
+/** Estimates writes back which takeoff it created; attach it to the job on the next open of this app. */
+function absorbHandoffResult(){
+  const r = readJSON(HANDOFF_RESULT_KEY); if(!r || !r.jobId) return;
+  const job = loadJob(r.jobId); if(job && job.exports && job.exports.length){ const x = job.exports[job.exports.length-1]; x.takeoffId = r.takeoffId; x.takeoffName = r.name || x.takeoffName; x.elements = r.elements; saveJob(job); }
+  try{ localStorage.removeItem(HANDOFF_RESULT_KEY); }catch(e){}
+}
+
+/* ---------- home ---------- */
+function renderHome(){
+  const idx = liveIndex();
+  document.getElementById("kpiTakeoff").textContent = idx.filter(e=>e.kind==="takeoff").length;
+  document.getElementById("kpiSpec").textContent = idx.filter(e=>e.kind==="spec").length;
+  document.getElementById("kpiExported").textContent = idx.reduce((n,e)=>n+(e.exported||0),0);
+  const body = document.getElementById("jobsBody");
+  body.innerHTML = idx.map(e=>`<tr><td><span class="name" data-open="${e.id}">${esc(e.name||"Untitled")}</span></td><td>${e.kind==="takeoff"?"AI takeoff":"Specification"}</td><td>${e.files||0}</td><td><span class="chip ${esc(e.status)}">${esc(e.status)}</span></td><td class="small">${resultSummary(e)}</td><td>${e.exported? e.exported+"×" : "—"}</td><td class="small">${whenLabel(e.updatedAt)}</td><td><button class="btn small" data-open="${e.id}">Open</button> <button class="btn small danger" data-del="${e.id}">✕</button></td></tr>`).join("");
+  document.getElementById("jobsEmpty").style.display = idx.length ? "none" : "";
+}
+function resultSummary(e){ const j = loadJob(e.id); if(!j || !j.review) return "—"; if(j.kind==="takeoff") return `${j.review.elements.length} elements proposed`; return `${j.review.standards.length} standards · ${j.review.requirements.length} requirements`; }
+document.getElementById("jobsBody").addEventListener("click", e=>{ const o=e.target.closest("[data-open]"); if(o){ openJob(o.dataset.open); return; } const d=e.target.closest("[data-del]"); if(d) deleteJob(d.dataset.del); });
+document.getElementById("newTakeoff").addEventListener("click", ()=>createJob("takeoff"));
+document.getElementById("newSpec").addEventListener("click", ()=>createJob("spec"));
+async function openJob(id){
+  let job = loadJob(id);
+  if(job){ renderJob(job); }
+  const fresh = await refreshJobFromCloud(id);
+  if(fresh && CURRENT===id) renderJob(fresh); else if(!job && !fresh) alert("That job could not be loaded.");
+}
+function showPage(id){ document.querySelectorAll(".page").forEach(p=>p.classList.toggle("active", p.id==="page-"+id)); document.querySelectorAll(".tab-btn").forEach(b=>b.classList.toggle("active", b.dataset.page===id)); }
+document.querySelectorAll(".tab-btn").forEach(b=>b.addEventListener("click", ()=>{ if(b.dataset.page==="home") renderHome(); showPage(b.dataset.page); }));
+window.addEventListener("storage", e=>{ if(e.key==="gradcon-preferences") paintProvider(); });
+
+/* ---------- boot ---------- */
+absorbHandoffResult();
+renderHome();
+paintCloud(SUPABASE_URL ? "Cloud: checking…" : "Local only");
+loadProviders();
+syncIndexFromCloud();
+</script>
+</body>
+</html>

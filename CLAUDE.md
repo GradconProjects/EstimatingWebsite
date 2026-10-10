@@ -563,6 +563,79 @@ which deters a drive-by page but is not a security boundary.
 `.env.example` documents the variables; `verify.mjs` covers the status,
 default and the 503 on an unconfigured provider.
 
+## AI Engine (tile 07) and the Gradcon AI chat
+
+Grady, 10 Oct 2026: "dont touch the existing app. rather create another
+category called AI takeoff on the dashboard … compliance and specification
+reader … let the api have access to all sections but must not be autonomous
+except asked by me … more like a chat bot … visible on all user accounts upon
+login and on the main dashboard". Rules:
+
+1. **`portal/ai-engine.html` is its own app** (payload `__AIENGINE_B64__`,
+   menu key `aiengine`), with its own storage — job index `gradcon-ai-jobs`,
+   one row per job `gradcon-ai-job::<id>` (estimator_kv + a localStorage
+   mirror, union-merged by `updatedAt`), PDFs in the `gradcon-files` bucket
+   under `ai-engine/<jobId>/` (public URLs the model reads). It never reads a
+   quote or a takeoff to write it. API calls go to `location.origin + "/api/…"`
+   (`API_BASE`): the app runs from a blob: URL where a relative path fails.
+   `AI_TYPES` MIRRORS the Estimates `LIBRARY` ids (`verify.mjs` fails on
+   drift) — the model may only propose those types. Two job kinds: **takeoff**
+   (drawings → `result.elements` in a generic shape: type, label, mark, sheet,
+   qty, length/width/depth/height/diameter mm, area m², grade, cover, bars
+   main/cross/top/ligatures/mesh, confidence, evidence, notes) and **spec**
+   (standards by designation + family code, requirements by category and
+   element, defaults — grade and cover per element bucket, exposure, reo
+   grade, laps, minimum member sizes — and unusual items, every one with its
+   page and quoted sentence). The model's `result` is kept as read; every edit
+   and tick lands on `job.review` (`takeoffReviewFrom` / `specReviewFrom`), and
+   `profileFromSpecJob` is the ONE reading of a ticked specification.
+2. **The ONLY way anything leaves the AI Engine is Export** (`exportToEstimates`):
+   a hand-off blob in `localStorage["gradcon-ai-handoff"]` + `gradcon:open-app
+   estimates`. Estimates' `applyAiHandoff()` (end of boot, before
+   `syncFromCloud`) makes a NEW takeoff through `newTakeoff()` — the open one is
+   saved and untouched — maps each element with **`aiProposalToInstance`, the
+   ONE mapping** onto the calculator's own fields (pier, pilecap, strip and pad
+   footing, beam, slab, column, wall, retwall, stairs, kerb, generic; anything
+   else keeps its defaults), seeds `PROJECT.standards` / grade / cover / spec
+   and drawing revisions from the ticked profile, stamps `PROJECT.aiImport`
+   and writes `gradcon-ai-handoff-result` back for the job. The index entry
+   carries **`group: "ai"`**: `renderTakeoffsBar` and `renderProjectMenu` list
+   those apart under "AI drafts — review before use", the cloud index merge
+   keeps the group. Every element carries `data.__aiImport = {jobId, sheet,
+   mark, confidence, evidence, notes}` and reads **"AI draft — verify"**
+   (`elementStatus`; `fieldProvenance` treats it like `__csvImport`;
+   `templateDataFrom` strips it).
+3. **Server functions** (`api/ai-engine.js`, `vercel.json` maxDuration 300):
+   POST `{action: "takeoff"|"spec", provider?, files:[{url,name}], types,
+   projectName, profile}` → `runAiJob` validates (PDF https URLs only, ≤ 12
+   files, the type list for a takeoff), resolves the provider, runs
+   `callDocuments` (Claude: document URL blocks; OpenAI: Responses API
+   `input_file`; DeepSeek: 501 "switch provider") with `takeoffPrompt` /
+   `specPrompt`, reads the reply with `parseJsonLoose`. Same-origin check as
+   `ai-providers`. Keys stay in `api/_providers.js`; `OPEN_AI_KEY` /
+   `OPENAI_KEY` are accepted spellings of `OPENAI_API_KEY`.
+4. **The provider is a Settings choice** (`aiProvider` in `gradcon-preferences`,
+   per browser): Settings → AI providers shows "Use" per configured provider
+   and "in use" on the one that applies; `resolveProviderId(requested, env)`
+   honours it only when that provider has a key, else the server default.
+   Every AI request from the browser passes `provider`.
+5. **Gradcon AI chat** (`#ai-chat-fab` / `#ai-chat` in the shell; `show()` shows
+   the button on every screen but login, for every account): `assistantContext()`
+   gathers what the browser holds of EVERY section — quotes summaries (name,
+   client, status, deadline and days to it, elements, scope, pinned rates),
+   takeoffs (elements, review status, AI drafts), rates validity, the Rates
+   Library global block, Cost Planner projects, AI jobs — capped at ~60 kB and
+   READ-ONLY; `api/ai-chat.js` (`runChat`, `chatSystem`, `callChat`) answers
+   from it and may end with an `ACTIONS:` line that `parseReply` turns into at
+   most three buttons (open an app / a project / a takeoff —
+   `runChatAction`, never a write). **Nothing runs until the person clicks.**
+   History is per tab (`sessionStorage` `gradcon-ai-chat`, 30 turns).
+6. The "Quality checks" tab describes the next build (deterministic checks
+   first, then AI explanations); it is not live yet.
+`test-ai-engine.mjs` proves the tile, both job kinds with a mocked server,
+the review edits, the export into AI drafts with the field mapping and the
+profile, the chat on both accounts and the provider switch.
+
 ## Dashboard opens on the open work only
 
 `OPEN_STATUSES` (`lib/planner.js`, used by `Dashboard.jsx`) = Queued, Estimating: the status filter

@@ -20,6 +20,7 @@ const shellPath = path.join(root, "portal", "portal-shell.html");
 const estimatesPath = path.join(root, "portal", "estimates-app.html");
 const costPlannerPath = path.join(root, "portal", "cost-planner.html");
 const ratesLibraryPath = path.join(root, "portal", "rates-library.html");
+const aiEnginePath = path.join(root, "portal", "ai-engine.html");
 const outPath = path.join(distDir, "index.html");
 
 // --- Inline the built React app (Quotes) into one self-contained document ---
@@ -181,6 +182,8 @@ let estimatesHtml = fs.readFileSync(estimatesPath, "utf8");
 }
 let costPlannerHtml = fs.readFileSync(costPlannerPath, "utf8");
 let ratesLibraryHtml = fs.readFileSync(ratesLibraryPath, "utf8");
+let aiEngineHtml = fs.readFileSync(aiEnginePath, "utf8").replaceAll("__BUILD_STAMP__", buildStamp() + (process.env.PORTAL_STAMP_SUFFIX || ""));
+if (!/const AI_TYPES = \[/.test(aiEngineHtml)) throw new Error("ai-engine.html has no AI_TYPES mirror — the AI Engine cannot propose element types");
 if (OFFLINE) {
   // The vanilla apps carry their cloud constants inline. Blank them so the
   // offline copy never reaches out; each app already treats a failed fetch
@@ -197,7 +200,8 @@ if (OFFLINE) {
   estimatesHtml = blank(estimatesHtml, "estimates-app.html");
   costPlannerHtml = blank(costPlannerHtml, "cost-planner.html");
   ratesLibraryHtml = blank(ratesLibraryHtml, "rates-library.html");
-  for (const [name, html] of [["estimates", estimatesHtml], ["cost-planner", costPlannerHtml], ["rates-library", ratesLibraryHtml]]) {
+  aiEngineHtml = blank(aiEngineHtml, "ai-engine.html");
+  for (const [name, html] of [["estimates", estimatesHtml], ["cost-planner", costPlannerHtml], ["rates-library", ratesLibraryHtml], ["ai-engine", aiEngineHtml]]) {
     if (PROJECT_URL && html.includes(PROJECT_URL)) throw new Error(`offline copy: ${name} still references the project's Supabase URL`);
   }
 }
@@ -206,6 +210,7 @@ const quotesB64 = Buffer.from(quotesHtml, "utf8").toString("base64");
 const estimatesB64 = Buffer.from(estimatesHtml, "utf8").toString("base64");
 const costPlannerB64 = Buffer.from(costPlannerHtml, "utf8").toString("base64");
 const ratesLibraryB64 = Buffer.from(ratesLibraryHtml, "utf8").toString("base64");
+const aiEngineB64 = Buffer.from(aiEngineHtml, "utf8").toString("base64");
 
 /* A visible build stamp. Without one, "am I on the latest version?" is
  * unanswerable from the browser — the portal is one 5 MB HTML file whose apps
@@ -225,6 +230,7 @@ shell = shell
   .replace("__ESTIMATES_B64__", estimatesB64)
   .replace("__COSTPLANNER_B64__", costPlannerB64)
   .replace("__RATESLIBRARY_B64__", ratesLibraryB64)
+  .replace("__AIENGINE_B64__", aiEngineB64)
   .replaceAll("__BUILD_STAMP__", stamp);
 
 fs.mkdirSync(path.dirname(outPathFinal), { recursive: true });

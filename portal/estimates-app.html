@@ -11,6 +11,7 @@
      boots instantly on the Georgia/Segoe fallbacks. -->
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Karla:wght@400;500;600;700;800&family=Caveat:wght@600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
 <style>
+.takeoff-chip.ai-draft{ outline:2px dashed #6b3fd6; outline-offset:-2px; }
 /* ============ Gradcon Estimates — "craft studio" theme ============
    Warm linen/paper ground, deep pine ink, thread-red accents, ochre
    highlights; Fraunces display headings over Karla body text; dashed
@@ -980,33 +981,39 @@ function deleteTakeoff(id){
 function renderTakeoffsBar(){
   let host = document.getElementById("takeoffsBar");
   if(!host) return;
-  let idx = liveProjects();
+  let all = liveProjects();
+  let idx = all.filter(p=>p.group!=="ai"), aiIdx = all.filter(p=>p.group==="ai");
   let activeKey = CURRENT_PROJECT_KEY;
-  host.innerHTML = `<div class="sechead">Saved Takeoffs</div>
-   <div class="tip"><span class="ico">💾</span><div>Each takeoff saves independently — 💾 Save writes only the one that's open. Start another with <b>+ New takeoff</b> and resume any saved one from this list at any time; nothing here touches the others.</div></div>
-   <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
-   ${idx.length===0? `<span class="small">No saved takeoffs — this blank workspace will appear here automatically as soon as you name it, add an element, or hit 💾 Save.</span>`:""}
-   ${idx.map(p=>{
+  // One chip per saved takeoff: full save date AND time, plus what the saved
+  // file holds — so the list reads like a proper file browser: which job,
+  // saved when, how big. AI drafts (index group "ai") get their own strip.
+  const chip = (p)=>{
      let active = p.key===activeKey;
      let label = (p.name||"Untitled takeoff");
-     // Full save date AND time, plus what the saved file holds — so the list
-     // reads like a proper file browser: which job, saved when, how big.
      let when = p.savedAt? new Date(p.savedAt).toLocaleString([], {day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"}) : "never saved";
      let count = "";
      try{
        let blob = JSON.parse(localStorage.getItem(p.key)||"null");
        if(blob && Array.isArray(blob.instances)) count = blob.instances.length+" element"+(blob.instances.length===1?"":"s");
      }catch(e){}
-     return `<span class="takeoff-chip${active?' active':''}" data-takeoff="${p.id}">
-       <button class="takeoff-open" data-action="openTakeoff" data-id="${p.id}" ${active?'disabled':''} title="${active?'Currently open — everything autosaves':'Resume this takeoff — your current work is saved automatically first, nothing is lost'}">
+     return `<span class="takeoff-chip${active?' active':''}${p.group==="ai"?' ai-draft':''}" data-takeoff="${p.id}">
+       <button class="takeoff-open" data-action="openTakeoff" data-id="${p.id}" ${active?'disabled':''} title="${active?'Currently open — everything autosaves':'Resume this takeoff — your current work is saved automatically first'}">
          <span style="display:block;text-align:left;">${active?'▶ ':''}${label}</span>
          <span class="small" style="display:block;text-align:left;opacity:.7;">💾 ${when}${count?` · ${count}`:''}</span>
        </button>
        <button class="takeoff-del" data-action="deleteTakeoff" data-id="${p.id}" title="Delete this saved takeoff">✕</button>
       </span>`;
-   }).join('')}
+  };
+  host.innerHTML = `<div class="sechead">Saved Takeoffs</div>
+   <div class="tip"><span class="ico">💾</span><div>Each takeoff saves independently — 💾 Save writes only the one that's open. Start another with <b>+ New takeoff</b> and resume any saved one from this list at any time; nothing here touches the others.</div></div>
+   <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+   ${idx.length===0? `<span class="small">No saved takeoffs — this blank workspace will appear here automatically as soon as you name it, add an element, or hit 💾 Save.</span>`:""}
+   ${idx.map(chip).join('')}
    <button class="btn small primary" data-action="newTakeoff">+ New takeoff</button>
-   </div>`;
+   </div>
+   ${aiIdx.length? `<div class="sechead" style="margin-top:12px;">AI drafts — proposed by the AI Engine, review before use</div>
+   <div class="tip"><span class="ico">🤖</span><div>Each of these takeoffs was exported from an AI Engine job. Every element is marked <b>AI draft — verify</b> until you check it against the drawings and mark it reviewed; nothing here was typed by a person.</div></div>
+   <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;" id="aiDraftsBar">${aiIdx.map(chip).join('')}</div>` : ""}`;
   host.onclick = (e)=>{
     let btn = e.target.closest('button[data-action]'); if(!btn) return;
     if(btn.dataset.action==="newTakeoff") newTakeoff();
@@ -1026,8 +1033,8 @@ function updateProjHeaderBtn(){
 }
 function renderProjectMenu(){
   let menu=document.getElementById("projMenu"); if(!menu) return;
-  let idx=liveProjects();
-  menu.innerHTML = idx.map(p=>{
+  let all=liveProjects(), idx=all.filter(p=>p.group!=="ai"), aiIdx=all.filter(p=>p.group==="ai");
+  const item=(p)=>{
     let active=p.key===CURRENT_PROJECT_KEY;
     let when=p.savedAt? new Date(p.savedAt).toLocaleString([], {day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"}) : "never saved";
     let count="";
@@ -1036,10 +1043,12 @@ function renderProjectMenu(){
       if(blob && Array.isArray(blob.instances)) count=` · ${blob.instances.length} element${blob.instances.length===1?"":"s"}`;
     }catch(e){}
     return `<button class="proj-item${active?' active':''}" data-proj-open="${p.id}" ${active?'disabled':''}>
-      <span><b>${active?'▶ ':''}${p.name||"Untitled takeoff"}</b><span class="proj-meta">💾 ${when}${count}</span></span>
+      <span><b>${active?'▶ ':''}${p.group==="ai"?'🤖 ':''}${p.name||"Untitled takeoff"}</b><span class="proj-meta">💾 ${when}${count}</span></span>
       ${active?'<span class="small">open</span>':''}
     </button>`;
-  }).join('');
+  };
+  menu.innerHTML = idx.map(item).join('');
+  if(aiIdx.length) menu.innerHTML += `<div class="proj-meta" style="padding:8px 10px 2px;border-top:1px solid var(--line);margin-top:6px;"><b>AI drafts</b> — proposed by the AI Engine, review before use</div>` + aiIdx.map(item).join('');
   // Save history for the OPEN project: up to the last 10 deliberate saves,
   // each restorable — the state being left is pushed into history first, so
   // stepping back to an earlier session never loses the current one.
@@ -1758,6 +1767,7 @@ async function syncProjectsIndexFromCloud(){
         // Deletions travel as tombstones — a newer remote entry carries the
         // authoritative deleted state, in both directions.
         if(remote.deleted) mine.deleted = true; else delete mine.deleted;
+        if(remote.group) mine.group = remote.group;
         changed = true;
       }
     });
@@ -7511,7 +7521,7 @@ function updateUndoButtons(){ const u=document.getElementById("undoBtn"), r=docu
 const TEMPLATES_KEY="gradcon-estimate-templates";
 let TEMPLATES=[]; try{ TEMPLATES=JSON.parse(localStorage.getItem(TEMPLATES_KEY))||[]; }catch(e){ TEMPLATES=[]; }
 const DIM_FIELDS=new Set(["qty","length","width","depth","height","dia","diameter","thickness","areaOverride","manualArea","outlinePts","outlineOn","outlineDirs","outlineSideLens","elevOn","elevDirs","elevLens","elevAreaM2","perimeterOverride","L","W","D","stemH","footL","risers","excDepth","pedW","pedD","pedH"]);
-function templateDataFrom(inst){ const d=JSON.parse(JSON.stringify(inst.data||{})); delete d.manualOverrides; delete d.__csvImport; delete d.__csvMeasurement; Object.keys(d).forEach(k=>{ if(/^_/.test(k)) delete d[k]; }); return d; }
+function templateDataFrom(inst){ const d=JSON.parse(JSON.stringify(inst.data||{})); delete d.manualOverrides; delete d.__csvImport; delete d.__aiImport; delete d.__csvMeasurement; Object.keys(d).forEach(k=>{ if(/^_/.test(k)) delete d[k]; }); return d; }
 function saveTemplates(){ try{ localStorage.setItem(TEMPLATES_KEY, JSON.stringify(TEMPLATES)); }catch(e){} if(SUPABASE_URL) kvPush(TEMPLATES_KEY, TEMPLATES); }
 async function syncTemplatesFromCloud(){ if(!SUPABASE_URL) return; const row=await kvFetch(TEMPLATES_KEY); if(row && Array.isArray(row.value)){ const byId={}; TEMPLATES.forEach(t=>byId[t.id]=t); row.value.forEach(t=>{ if(!byId[t.id] || (t.updatedAt||"")>(byId[t.id].updatedAt||"")) byId[t.id]=t; }); TEMPLATES=Object.values(byId).sort((a,b)=>(a.name||"").localeCompare(b.name||"")); try{ localStorage.setItem(TEMPLATES_KEY, JSON.stringify(TEMPLATES)); }catch(e){} renderAddToolbar(); } }
 function saveAsTemplate(inst, name){
@@ -8051,7 +8061,7 @@ function fieldProvenance(inst, field, defaults){
   if(inst.entered && inst.entered[field]) return "entered";
   let top=field.split('.')[0];
   if(defaults && Object.prototype.hasOwnProperty.call(defaults, field)){
-    return sameVal(v, defaults[field]) ? "default" : (inst.data.__csvImport && !isReviewed(inst) ? "imported" : "entered");
+    return sameVal(v, defaults[field]) ? "default" : ((inst.data.__csvImport || inst.data.__aiImport) && !isReviewed(inst) ? "imported" : "entered");
   }
   if(field.indexOf('.')>0) return (v===""||v===undefined||v===null) ? "none" : "entered"; // table rows have no per-field default
   return (v===""||v===undefined||v===null) ? "none" : "entered";
@@ -8082,6 +8092,7 @@ function elementStatus(inst){
   if(inst.review && inst.review.hash){
     return isReviewed(inst) ? {state:"reviewed", label:"Reviewed", title:"Reviewed "+(inst.review.at||"")+" — every value unchanged since"} : {state:"stale", label:"Changed since review", title:"Edited after it was marked reviewed — review again"};
   }
+  if(inst.data && inst.data.__aiImport) return {state:"imported", label:"AI draft — verify", title:"Proposed by the AI Engine from "+(inst.data.__aiImport.sheet? "sheet "+inst.data.__aiImport.sheet : "the drawings")+" ("+(inst.data.__aiImport.confidence||"?")+" confidence); check every value against the drawings, then mark reviewed"};
   if(inst.data && inst.data.__csvImport) return {state:"imported", label:"Imported — verify", title:"Drafted from a CSV import; check the geometry, then mark reviewed"};
   return {state:"draft", label:"Draft", title:"Not yet marked reviewed"};
 }
@@ -10280,6 +10291,100 @@ document.getElementById("loadFile").addEventListener("change",e=>{
   reader.readAsText(file);
 });
 
+/* ============================= AI ENGINE HAND-OFF =============================
+ * The AI Engine app (portal/ai-engine.html) proposes elements from a drawing
+ * set; "Export to Estimates" writes them to localStorage["gradcon-ai-handoff"]
+ * and the portal reopens this app. Here the blob becomes a NEW takeoff in the
+ * "AI drafts" group of the saved list (index entry group:"ai"), every element
+ * carrying data.__aiImport = {jobId, sheet, mark, confidence, evidence, notes}
+ * so its status reads "AI draft — verify" until it is marked reviewed. The
+ * takeoff that was open is saved and left untouched (newTakeoff). The model's
+ * generic fields are mapped onto each calculator's own fields by
+ * aiProposalToInstance — the ONE mapping — and anything it cannot place stays
+ * at the calculator default, which the provenance chips show as such.
+ * (Grady, 10 Oct 2026: "when takeoff is completed, it should be ready to export
+ * to the estimates section for manual review"; "seperate ai drafts group".) */
+const AI_HANDOFF_KEY = "gradcon-ai-handoff", AI_HANDOFF_RESULT_KEY = "gradcon-ai-handoff-result";
+const AI_ELEMENT_BUCKET = { stripfooting:"footings", padfooting:"footings", pilecap:"footings", pier:"piers", slab:"slabs", beam:"beams", column:"columns", wall:"walls", retwall:"walls", shotwall:"walls", stairs:"stairs", kerb:"kerbs" };
+function aiGradeNumber(g){ if(g==null||g==="") return null; const m=String(g).match(/(\d{2,3})/); return m? +m[1] : null; }
+function aiProfileDefault(profile, which, calc){
+  if(!profile || !profile.defaults) return null;
+  const map = which==="grade" ? profile.defaults.concreteGradeByElement : profile.defaults.coverByElement; if(!map) return null;
+  const bucket = AI_ELEMENT_BUCKET[calc]; const v = (bucket && map[bucket]!=null && map[bucket]!=="") ? map[bucket] : map.all;
+  return which==="grade" ? aiGradeNumber(v) : (v==null||v===""||isNaN(+v)? null : +v);
+}
+function aiProposalToInstance(el, profile){
+  const def = LIB_INDEX[el.type]; if(!def) return null;
+  const calc = CALC[def.calc]; if(!calc) return null;
+  const inst = { id:uid("EL"), typeKey:def.id, label:(el.label||def.label)+(el.mark && !(el.label||"").includes(el.mark)? " "+el.mark : ""), data:calc.defaults(def.slabCategory||def.beamCategory||def.kind, def.suspended) };
+  const d = inst.data;
+  const n = (v)=> (v==null||v===""||isNaN(+v)) ? null : +v;
+  const has = (k)=> Object.prototype.hasOwnProperty.call(d,k);
+  const set = (k,v)=>{ if(v!=null && v!=="" && has(k)) d[k]=v; };
+  const dia = (v)=> v && /^[NRL]\d{2}$/i.test(String(v).trim()) ? String(v).trim().toUpperCase() : null;
+  const mesh = (v)=> v && MESHTYPES[String(v).trim().toUpperCase()] ? String(v).trim().toUpperCase() : null;
+  if(has("cover")) d.cover = n(el.cover_mm) || aiProfileDefault(profile,"cover",def.calc) || defaultCoverFor(def.id);
+  if(has("grade")){ const g = aiGradeNumber(el.grade) || aiProfileDefault(profile,"grade",def.calc); if(g) d.grade = g; }
+  const L=n(el.length_mm), W=n(el.width_mm), D=n(el.depth_mm), H=n(el.height_mm), DIA=n(el.diameter_mm), A=n(el.area_m2), Q=n(el.qty);
+  switch(def.calc){
+    case "pier": set("qty",Q); set("dia",DIA); set("depth", L||H||D); set("vBars",n(el.mainQty)); set("vDia",dia(el.mainDia)); if(dia(el.ligDia)){ set("ligDia",dia(el.ligDia)); set("genSpacing",n(el.ligSpacing)); } break;
+    case "pilecap": set("qty",Q); set("L",L); set("W",W); set("D",D); if(dia(el.mainDia)){ set("botXDia",dia(el.mainDia)); set("botYDia",dia(el.mainDia)); set("botXSpacing",n(el.mainSpacing)); set("botYSpacing",n(el.mainSpacing)); } if(dia(el.topDia)){ set("topXDia",dia(el.topDia)); set("topYDia",dia(el.topDia)); set("topXSpacing",n(el.topSpacing)); set("topYSpacing",n(el.topSpacing)); } break;
+    case "stripfooting": set("qty",Q); set("length",L); set("width",W); set("depth",D); if(d.trenchWidth!==undefined && W) d.trenchWidth = W+50; if(d.excDepth!==undefined && D) d.excDepth = D+50;
+      if(dia(el.mainDia)){ set("botLongDia",dia(el.mainDia)); set("botLongQty",n(el.mainQty)); } if(dia(el.topDia)){ d.topLong=true; set("topLongDia",dia(el.topDia)); set("topLongQty",n(el.topQty)); }
+      if(dia(el.crossDia)){ set("crossDia",dia(el.crossDia)); set("crossSpacing",n(el.crossSpacing)); } if(dia(el.ligDia)){ d.ligs=true; set("ligDia",dia(el.ligDia)); set("ligSpacing",n(el.ligSpacing)); } break;
+    case "padfooting": set("qty",Q); set("length",L); set("width",W); set("depth",D); if(DIA && has("shape")){ d.shape="round"; set("diameter",DIA); }
+      if(mesh(el.mesh)){ d.botReoType="mesh"; set("botMeshType",mesh(el.mesh)); } else if(dia(el.mainDia)){ set("botXDia",dia(el.mainDia)); set("botYDia",dia(el.mainDia)); set("botXSpacing",n(el.mainSpacing)); set("botYSpacing",n(el.mainSpacing)); }
+      if(dia(el.topDia)){ d.topMatOn=true; set("topXDia",dia(el.topDia)); set("topYDia",dia(el.topDia)); set("topXSpacing",n(el.topSpacing)); set("topYSpacing",n(el.topSpacing)); } if(dia(el.ligDia)){ d.ligs=true; set("ligDia",dia(el.ligDia)); set("ligSpacing",n(el.ligSpacing)); } break;
+    case "beam": set("qty",Q); set("length",L); set("width",W); set("depth",D);
+      if(Array.isArray(d.reoRows)){ if(dia(el.mainDia)){ const r=d.reoRows.find(x=>/bottom/i.test(x.position)); if(r){ r.dia=dia(el.mainDia); if(n(el.mainQty)) r.qty=n(el.mainQty); } } if(dia(el.topDia)){ const r=d.reoRows.find(x=>/top/i.test(x.position)); if(r){ r.dia=dia(el.topDia); if(n(el.topQty)) r.qty=n(el.topQty); } } }
+      if(Array.isArray(d.ligZones) && dia(el.ligDia)){ d.ligZones.forEach(z=>{ z.dia=dia(el.ligDia); if(n(el.ligSpacing) && /mid/i.test(z.zone)) z.spacing=n(el.ligSpacing); }); if(n(el.ligSpacing) && !d.ligZones.some(z=>/mid/i.test(z.zone))) d.ligZones.forEach(z=>{ z.spacing=n(el.ligSpacing); }); } break;
+    case "slab": if(A){ d.manualArea=true; d.areaOverride=A; } if(L) d.length=L/1000; if(W) d.width=W/1000; set("thickness",D);
+      if(mesh(el.mesh)){ d.meshOn=true; d.meshType=mesh(el.mesh); } else if(dia(el.mainDia)){ d.meshOn=false; d.botX=true; d.botY=true; d.botXDia=dia(el.mainDia); d.botYDia=dia(el.mainDia); if(n(el.mainSpacing)){ d.botXSpacing=n(el.mainSpacing); d.botYSpacing=n(el.mainSpacing); } }
+      if(dia(el.topDia)){ d.topX=true; d.topY=true; d.topXDia=dia(el.topDia); d.topYDia=dia(el.topDia); if(n(el.topSpacing)){ d.topXSpacing=n(el.topSpacing); d.topYSpacing=n(el.topSpacing); } } break;
+    case "column": set("qty",Q); if(DIA){ d.shape="circular"; set("dia",DIA); } else { set("width",W); set("depth",D); } set("height",H||L); set("vBars",n(el.mainQty)); set("vDia",dia(el.mainDia)); if(dia(el.ligDia)){ set("ligDia",dia(el.ligDia)); set("ligSpacing",n(el.ligSpacing)); } break;
+    case "wall": set("qty",Q); set("length",L); set("thickness",D); set("height",H);
+      if(dia(el.mainDia)){ ["vertADia","vertBDia"].forEach(k=>set(k,dia(el.mainDia))); if(n(el.mainSpacing)) ["vertASpacing","vertBSpacing"].forEach(k=>set(k,n(el.mainSpacing))); }
+      if(dia(el.crossDia)){ ["horADia","horBDia"].forEach(k=>set(k,dia(el.crossDia))); if(n(el.crossSpacing)) ["horASpacing","horBSpacing"].forEach(k=>set(k,n(el.crossSpacing))); } break;
+    case "retwall": set("length",L); set("stemH",H); set("stemT",D); set("footL",W); break;
+    case "stairs": set("width",W); set("waistT",D); break;
+    case "kerb": set("length",L); break;
+    case "generic": set("qty",Q); set("length",L); set("width",W); set("depth",D); break;
+    default: break; // tankbox, boxgutter, composite, screed, shotwall: defaults stand, the chips say so
+  }
+  d.__aiImport = { jobId:el.jobId||null, sheet:el.sheet||"", mark:el.mark||"", confidence:el.confidence||"", evidence:el.evidence||"", notes:el.notes||"" };
+  return inst;
+}
+function tagTakeoffGroup(key, group){
+  let idx = loadProjectsIndex(); let e = idx.find(p=>p.key===key); if(!e) return;
+  e.group = group; saveProjectsIndex(idx);
+}
+function applyAiHandoff(){
+  let h=null; try{ h = JSON.parse(localStorage.getItem(AI_HANDOFF_KEY)||"null"); }catch(e){ h=null; }
+  if(!h || !Array.isArray(h.elements)) return false;
+  try{ localStorage.removeItem(AI_HANDOFF_KEY); }catch(e){}
+  newTakeoff();
+  PROJECT.name = h.name || "AI takeoff";
+  const st = standardsOf(); const prof = h.profile || null;
+  if(prof){
+    if(Array.isArray(prof.standards) && prof.standards.length) st.standards = STANDARD_OPTIONS.map(o=>o[1]).filter(c=>prof.standards.includes(c));
+    if(Array.isArray(prof.otherStandards) && prof.otherStandards.length) st.otherStandards = prof.otherStandards.join("; ");
+    if(prof.document && prof.document.revision) st.specRev = prof.document.revision;
+    const g = aiGradeNumber(prof.defaults && prof.defaults.concreteGradeByElement && prof.defaults.concreteGradeByElement.all); if(g) PROJECT.grade = g;
+    const c = prof.defaults && prof.defaults.coverByElement && prof.defaults.coverByElement.all; if(c!=null && c!=="" && !isNaN(+c)) PROJECT.cover = +c;
+    if(prof.defaults && prof.defaults.reoGrade && /500/.test(prof.defaults.reoGrade)) PROJECT.reoStandard = "Australian D500N";
+  }
+  if(h.source){ const sp=(h.source.sheets||[]).map(s=>s.ref+(s.revision?" "+s.revision:"")).filter(Boolean); if(sp.length) st.drawingRev = sp.join(", ").slice(0,120); }
+  const made=[], skipped=[];
+  h.elements.forEach(el=>{ const inst = aiProposalToInstance(el, prof); if(inst){ inst._collapsed=true; INSTANCES.push(inst); SELECTED_TYPES[inst.typeKey]=true; made.push(inst); } else skipped.push(el.label||el.type||"?"); });
+  PROJECT.aiImport = { jobId:h.jobId||null, at:h.at||new Date().toISOString(), provider:(h.source&&h.source.provider)||null, model:(h.source&&h.source.model)||null, files:(h.source&&h.source.files)||[], elements:made.length, skipped };
+  saveEstimateState();
+  tagTakeoffGroup(CURRENT_PROJECT_KEY, "ai");
+  try{ localStorage.setItem(AI_HANDOFF_RESULT_KEY, JSON.stringify({ jobId:h.jobId||null, takeoffId:activeTakeoffId(), name:PROJECT.name, elements:made.length, at:new Date().toISOString() })); }catch(e){}
+  rerenderAllPages();
+  try{ document.querySelector('.tabs button[data-page="workspace"]').click(); }catch(e){}
+  return true;
+}
+
 /* ============================= PUBLISH TO QUOTE =============================
  * Hands this project's live Quantity Register to the Quotes app, hosted in
  * the same portal. Both apps share this browser's localStorage when hosted
@@ -10882,6 +10987,7 @@ if(!restoredFromSave){
     if(b) b.click();
   }
 })();
+applyAiHandoff(); // an AI Engine export waiting in localStorage becomes a NEW takeoff under AI drafts (never touches the one that was open)
 syncFromCloud().then(prefetchTakeoffBlobs).then(syncTemplatesFromCloud); // pull the open takeoff first, then warm every other saved session so the whole list is ready to resume
 window.addEventListener("focus", syncFromCloud);
 document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) syncFromCloud(); });
