@@ -2593,6 +2593,15 @@ console.log(`\n${passed} check(s) passed.`);
     const r = await C.runChat({ provider: "openai", messages: [{ role: "user", content: "what changed on 145?" }], context: {} }, { OPENAI_API_KEY: "k" }, { fetchImpl, cloud });
     assertTrue(r.status === 200 && /Versions: 2/.test(r.body.reply) && r.body.trace.some((t) => t.name === "list_versions" && /2 versions/.test(t.summary)), JSON.stringify(r.body));
   });
+  await checkAsync("chat: a model that ends its tool round with no prose is asked once more (tools withheld) for the written answer; stopReason reports both stops", async () => {
+    let n = 0; const bodies = [];
+    const fetchImpl = async (url, opts) => { n++; const body = JSON.parse(opts.body); bodies.push(body); const last = body.messages[body.messages.length - 1];
+      if (n === 1) return { ok: true, json: async () => ({ model: "gpt-5", choices: [{ finish_reason: "tool_calls", message: { content: null, tool_calls: [{ id: "c1", type: "function", function: { name: "list_versions", arguments: JSON.stringify({ projectId: pid }) } }] } }] }) };
+      if (n === 2) return { ok: true, json: async () => ({ model: "gpt-5", choices: [{ finish_reason: "stop", message: { content: "" } }] }) };
+      return { ok: true, json: async () => ({ model: "gpt-5", choices: [{ finish_reason: "stop", message: { content: `Answer: ${/Write your answer now/.test(last.content) && !body.tools ? "written" : "wrong"}` } }] }) }; };
+    const r = await C.runChat({ provider: "openai", messages: [{ role: "user", content: "history?" }], context: {} }, { OPENAI_API_KEY: "k" }, { fetchImpl, cloud });
+    assertTrue(n === 3 && r.body.reply === "Answer: written" && r.body.stopReason === "stop→stop" && r.body.trace.length === 1, JSON.stringify(r.body));
+  });
   check("versions: buildQuoteFile stamps savedBy from the portal session (null outside the portal), parseQuoteFile returns it; Estimates stamps the same on keepEstimateVersion's document", () => {
     const fake = { getItem: (k) => (k === "gradcon-portal-session" ? JSON.stringify({ currentUser: "grady@gradcon.com.au" }) : null) };
     const doc = QV.buildQuoteFile("p1", { items: [] }, "manual", QV.signedInUser(fake));

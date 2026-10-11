@@ -22,7 +22,7 @@ import { callChat, callChatWithTools, resolveProviderId, providerStatus } from "
 import * as Gm from "./_google.js";
 import { historyTools, runHistoryTool, HISTORY_TOOL_NAMES } from "./_versions.js";
 
-export const config = { maxDuration: 60 };
+export const config = { maxDuration: 120 };
 
 const MAX_CONTEXT_CHARS = 90000;
 
@@ -116,7 +116,7 @@ export async function runChat(body, env = process.env, deps = {}) {
     return { status: e.status && e.status >= 400 && e.status < 600 ? e.status : 502, body: { error: e.message, detail: e.detail || null, provider: id, model: st ? st.model : null } };
   }
   const parsed = parseReply(r.text);
-  return { status: 200, body: { reply: parsed.reply, actions: parsed.actions, provider: r.provider, model: r.model, latencyMs: r.latencyMs, trace: r.trace || [] } };
+  return { status: 200, body: { reply: parsed.reply, actions: parsed.actions, provider: r.provider, model: r.model, latencyMs: r.latencyMs, trace: r.trace || [], stopReason: r.stopReason || null } };
 }
 
 export default async function handler(req, res) {

@@ -130,7 +130,7 @@ export function historyTools() {
   return [
     { name: "list_versions", description: "List the saved versions of a project (every Save, autosave, restore and handover kept a full immutable copy): when each was saved, how (manual / autosave / before-restore / save / before-sync / other-device), by whom (savedBy, recorded from 11 Oct 2026), and when the live row was last written. Call this first to see the timeline.", parameters: { type: "object", properties: { projectId: pid, kind }, required: ["projectId"] } },
     { name: "compare_versions", description: "What changed between two copies of a project: project fields (status, client, scope, on-costs), elements added / removed, and for each changed element every quantity, subcontract quote amount, crew-sheet cell, additional row and label that moved — with the element's direct cost before and after and the $ each band moved. `from` / `to` are \"live\" (the current row), \"latest\", \"oldest\", an index from list_versions (1 = newest), a date-time (newest version at or before it) or a version path. Defaults: from = the version before `to`, to = live.", parameters: { type: "object", properties: { projectId: pid, kind, from: { type: "string" }, to: { type: "string" } }, required: ["projectId"] } },
-    { name: "project_history", description: "Walk the whole history: consecutive diffs between every kept version (oldest → newest, then the live row), each with who saved it, when and what moved. Use it for \"what did Grady change on X\" or \"how did the price move\". Steps with no change are counted, not listed.", parameters: { type: "object", properties: { projectId: pid, kind, limit: { type: "integer", description: "how many of the newest versions to walk (default 12, max 30)" } }, required: ["projectId"] } },
+    { name: "project_history", description: "Walk the whole history: consecutive diffs between every kept version (oldest → newest, then the live row), each with who saved it, when and what moved. Use it for \"what did Grady change on X\" or \"how did the price move\". Steps with no change are counted, not listed.", parameters: { type: "object", properties: { projectId: pid, kind, limit: { type: "integer", description: "how many of the newest versions to walk (default 12, max 20)" } }, required: ["projectId"] } },
     { name: "handover_changes", description: "For a Quotes project the handover pass prefilled (crew sheets on Completed Estimating): every prefilled crew cell, renamed row and steel tonnage against what the sheet holds NOW — kept, changed (to what) or cleared. Every \"changed\" row is Grady correcting the band: the data future projects are tuned from.", parameters: { type: "object", properties: { projectId: pid }, required: ["projectId"] } },
   ];
 }
@@ -168,10 +168,10 @@ export async function runHistoryTool(name, args, deps = {}) {
     return { summary: `${A.source} ${A.savedAt || ""} → ${B.source} ${B.savedAt || ""}: ${diff.counts.changed} changed, ${diff.counts.added} added, ${diff.counts.removed} removed`, result: { projectId, kind, from: stamp(A), to: stamp(B), diff: compactDiff(diff) } };
   }
   if (name === "project_history") {
-    const limit = Math.min(30, Math.max(2, Number(args.limit) || 12));
+    const limit = Math.min(20, Math.max(2, Number(args.limit) || 12));
     const list = (await listVersions(projectId, kind, cloud)).slice(0, limit);
     const [docs, live, rates] = await Promise.all([
-      mapLimit(list, 4, (v) => loadVersion(v.path, kind, cloud).catch(() => null)),
+      mapLimit(list, 6, (v) => loadVersion(v.path, kind, cloud).catch(() => null)),
       loadLive(projectId, kind, cloud).catch(() => null),
       kind === "quote" ? liveRates(cloud) : null,
     ]);

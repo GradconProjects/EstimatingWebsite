@@ -766,7 +766,7 @@ was missing was a reader. Rules:
    cannot see earlier values or who changed what. The anon key reads the
    bucket as any browser does; nothing is written. Older versions carry
    inline drawings (7 MB each on 145 Harrisons Rd), so a history walk is
-   bounded (default 12, max 30, four fetches in flight).
+   bounded (default 12, max 20, six fetches in flight; `api/ai-chat.js` runs up to 120 s). A model that ends a tool round with no prose is asked once more, tools withheld, for the written answer (`callChatWithTools`, `stopReason` in the reply).
 3. **Every new version is stamped `savedBy`** — `signedInUser()` in
    `quoteVersions.js` and `portalSignedInUser()` in Estimates read the
    portal session (`gradcon-portal-session.currentUser`, shared localStorage

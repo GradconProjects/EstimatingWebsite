@@ -290,8 +290,20 @@ export async function callChatWithTools(id, { system, messages = [], tools = [],
       for (const u of uses) results.push({ type: "tool_result", tool_use_id: u.id, content: await exec(u.name, u.input) });
       convo.push({ role: "user", content: results });
     }
-    const text = (r.content || []).filter((b) => b.type === "text").map((b) => b.text).join("");
-    return { text, model: r.model || model, latencyMs: Date.now() - started, provider: p.id, trace };
+    let text = (r.content || []).filter((b) => b.type === "text").map((b) => b.text).join("");
+    let stopReason = r.stop_reason;
+    // The model gathered its tool results and then produced no prose (seen
+    // 11 Oct 2026 after three history tools): ask once more, tools withheld,
+    // for the written answer — never return an empty reply after real work.
+    if (!text.trim() && trace.length) {
+      const asked = convo.concat((r.content || []).length && r.stop_reason !== "max_tokens" ? [{ role: "assistant", content: r.content }, { role: "user", content: "Write your answer now from the tool results above, in the required format. Do not call any tool." }] : [{ role: "user", content: "Write your answer now from the tool results above, in the required format. Do not call any tool." }]);
+      try {
+        const r2 = await client.beta.messages.create({ model, max_tokens: maxTokens, ...(system ? { system } : {}), messages: asked, betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" });
+        text = (r2.content || []).filter((b) => b.type === "text").map((b) => b.text).join("");
+        stopReason = `${r.stop_reason}→${r2.stop_reason}`;
+      } catch (e) { stopReason = `${r.stop_reason}→retry failed: ${String(e && e.message).slice(0, 80)}`; }
+    }
+    return { text, model: r.model || model, latencyMs: Date.now() - started, provider: p.id, trace, stopReason };
   }
 
   // OpenAI / DeepSeek: chat-completions function calling
@@ -314,8 +326,16 @@ export async function callChatWithTools(id, { system, messages = [], tools = [],
       convo.push({ role: "tool", tool_call_id: c.id, content: await exec(c.function && c.function.name, args) });
     }
   }
-  const text = ((((data || {}).choices || [])[0] || {}).message || {}).content || "";
-  return { text: String(text), model: (data && data.model) || model, latencyMs: Date.now() - started, provider: p.id, trace };
+  let text = ((((data || {}).choices || [])[0] || {}).message || {}).content || "";
+  let stopReason = ((((data || {}).choices || [])[0] || {}).finish_reason) || null;
+  if (!String(text).trim() && trace.length) {
+    // same safety net as above: the written answer, tools withheld
+    try {
+      const res2 = await fetchImpl(`${p.base}/chat/completions`, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` }, body: JSON.stringify({ model, ...tokenLimit(p, maxTokens), messages: convo.concat([{ role: "user", content: "Write your answer now from the tool results above, in the required format. Do not call any tool." }]) }), signal: AbortSignal.timeout(timeoutMs) });
+      if (res2.ok) { const d2 = await res2.json(); text = ((((d2 || {}).choices || [])[0] || {}).message || {}).content || ""; stopReason = `${stopReason}→${((((d2 || {}).choices || [])[0] || {}).finish_reason) || null}`; }
+    } catch { /* the empty reply stands; the trace says what ran */ }
+  }
+  return { text: String(text), model: (data && data.model) || model, latencyMs: Date.now() - started, provider: p.id, trace, stopReason };
 }
 
 /**
