@@ -1264,6 +1264,23 @@ element families waits on the owner's approval of the pad footing.
   into adjoining bored piers — filtered to `pier`, piers = typed or the
   linked pier element's qty via `shotPierCount`), each emitting one
   Connections line counted on the wall only.
+- **A raft's extra edge / internal beam can start as a COPY of a beam
+  already worked on** (11 Oct 2026, Grady: "RAFT edge or internal beam should
+  have option to duplicate the beam already worked on rather than starting
+  with a new beam"): the Edge Beams and Internal Beams tabs carry "⧉ Duplicate
+  edge beam 1 (above)" beside "+ Add another" (only while that primary beam is
+  switched on — `primaryBeamOn`) and every extra group's header carries
+  "⧉ Duplicate this beam". `extraBeamGroupFromPrimary(d, arrName)` maps the
+  primary beam's flat fields onto a group with the same mapping `computeSlab`
+  prices it by; `duplicateExtraBeamGroup(g, idx, arr)` deep-copies a group.
+  Both carry EVERYTHING — section, depth mode, cover, grade, bar sets, trench
+  mesh layers, ligature zones, formwork, trench — except the run length,
+  which is blanked: the runs ADD, so a copy that kept its run would buy the
+  beam twice the moment it was added (a blank run prices nothing). Names go
+  "<name> (copy)", "(copy 2)" … through `copyName`, never "(copy) (copy)".
+  The `dupBeam` click action is next to `addRow` / `delRow`.
+  `test-beam-dup.mjs` proves both tabs, the pricing once a run is typed and
+  the independence of the copied bar sets.
 - **Slab beam grades** (`slabBeamGrade(d, g)`): edge beams, internal beams
   / raft ribs, edge and wall thickenings take `beamGrade` (Concrete tab,
   blank = slab `grade`) and each extra beam group can carry its own `grade`;

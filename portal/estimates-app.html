@@ -4485,6 +4485,59 @@ function newExtraBeamGroup(d,arrName,idx){
     exc:false, trenchWidth:"", excDepth:"",
   };
 }
+/* DUPLICATE a beam already worked on instead of starting from the kind's
+ * defaults (Grady, 11 Oct 2026: "RAFT edge or internal beam should have
+ * option to duplicate the beam already worked on rather than starting with a
+ * new beam"). The copy carries everything — section, depth mode, cover,
+ * grade, bar sets, trench mesh layers, ligature zones, formwork and trench —
+ * EXCEPT the run length, which is blanked: the runs ADD, so a copy that kept
+ * the run would buy the same beam twice the moment it was added. A blank run
+ * prices nothing until its own length is typed off the drawing. */
+function cloneBeamData(v){ return JSON.parse(JSON.stringify(v===undefined?null:v)); }
+function duplicateExtraBeamGroup(g,idx,arr){
+  let c=cloneBeamData(g)||{};
+  c.name=copyName((g.name||"").trim()||`Beam ${idx+2}`, arr);
+  c.len="";
+  return c;
+}
+/* "<name> (copy)", then "(copy 2)", "(copy 3)" … — never "(copy) (copy)". */
+function copyName(name, arr){
+  let base=String(name).replace(/\s*\(copy(?: \d+)?\)$/i,"").trim()||"Beam";
+  let taken=new Set((arr||[]).map(x=>String((x&&x.name)||"").trim()));
+  let n=1, cand=`${base} (copy)`;
+  while(taken.has(cand)){ n++; cand=`${base} (copy ${n})`; }
+  return cand;
+}
+/* The slab's PRIMARY beam of that kind (the Edge beam / Internal beam strips
+ * block at the top of the tab, whose fields hang off the slab's own data) as
+ * an extra group — the same mapping computeSlab uses to price it. */
+function extraBeamGroupFromPrimary(d,arrName){
+  let k=extraBeamKind(arrName);
+  let isEdge = arrName==="edgeBeamGroups";
+  let p = isEdge? "edgeBeam" : "beamStrips";
+  let g=newExtraBeamGroup(d,arrName,(d[arrName]||[]).length);
+  g.name=copyName(`${isEdge? "Edge beam" : "Internal beam"} 1`, d[arrName]);
+  g.len="";
+  g.width=d[p+"Width"]===undefined||d[p+"Width"]===""? k.dfltWidth : d[p+"Width"];
+  g.depthMode=isEdge? (d.edgeBeamDepthMode||"extra") : "extra";
+  g.extraDepth=d[p+"ExtraDepth"]===undefined||d[p+"ExtraDepth"]===""? k.dfltDepth : d[p+"ExtraDepth"];
+  g.cover=d[p+"Cover"]===undefined? "" : d[p+"Cover"];
+  g.secShape=d[p+"Shape"]||k.dfltShape; g.secSides=d[p+"Sides"]||k.dfltSides; g.secBaseW=d[p+"BaseW"]===undefined? 0 : d[p+"BaseW"];
+  g.reo=!!d[p+"Reo"]; g.trenchMesh=!!d[p+"TrenchMesh"]; g.trenchType=d[p+"TrenchType"]||g.trenchType;
+  g.layers=d[p+"Layers"]===undefined||d[p+"Layers"]===""? 1 : d[p+"Layers"]; g.lap=!!d[p+"Lap"]; g.layerTypes=cloneBeamData(d[p+"LayerTypes"])||{};
+  g.edgeBeamRows=cloneBeamData(d[p+"Rows"])||[{position:"Bottom continuous",qty:num(d[p+"Bars"],4),dia:d[p+"Dia"]||"N16",layers:Math.max(1,Math.round(num(d[p+"Layers"],1))),startA:"straight",endA:"straight",lap:!!d[p+"Lap"]}];
+  g.ligs=!!d[p+"Ligs"]; g.ligLap=!!d[p+"LigLap"];
+  g.edgeBeamLigZones=cloneBeamData(d[p+"LigZones"])||[{zone:"General",length:0,dia:d[p+"LigDia"]||"N10",spacing:num(d[p+"LigSpacing"],300)}];
+  g.beamOutOfGround=!!d[p+"OutOfGround"]; g.beamFormDepth=d[p+"FormDepth"]===undefined? "" : d[p+"FormDepth"]; g.beamFormSides=d[p+"FormSides"]===undefined? 2 : d[p+"FormSides"];
+  g.exc=!!d[p+"Exc"]; g.trenchWidth=d[p+"TrenchWidth"]===undefined? "" : d[p+"TrenchWidth"]; g.excDepth=d[p+"ExcDepth"]===undefined? "" : d[p+"ExcDepth"];
+  return g;
+}
+/* Is the primary beam of that kind switched on (so there is something to copy)? */
+function primaryBeamOn(d,arrName){
+  if(arrName==="intBeamGroups") return !!d.beamStrips;
+  let legacy = d.edgeBeamOn===undefined && !!(d.edgeThicken && (d.edgeBeamReo||d.edgeBeamLigs||d.edgeBeamExc));
+  return d.edgeBeamOn!==undefined? !!d.edgeBeamOn : legacy;
+}
 /* The extra beam's cross-section as the compute side needs it: the concrete
  * area counts only the depth BELOW the slab (the slab's own thickness is
  * already in the flat slab volume), while ligatures wrap the FULL section. */
@@ -4513,7 +4566,10 @@ function extraBeamGroupBlock(inst,d,arrName,g,i){
   return `<div class="subsec" style="border-left:3px solid var(--accent,#b45309);padding-left:10px;">
    <div class="sechead" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
     <span>${title}</span>
-    <button class="btn small danger" data-action="delRow" data-target="${arrName}" data-idx="${i}" type="button">✕ Remove this beam</button>
+    <span style="display:flex;gap:6px;">
+     <button class="btn small" data-action="dupBeam" data-target="${arrName}" data-idx="${i}" type="button" title="Add another ${k.noun.toLowerCase()} starting as a copy of this one — section, cage, ligatures, formwork and trench carried over; type its own run length">⧉ Duplicate this beam</button>
+     <button class="btn small danger" data-action="delRow" data-target="${arrName}" data-idx="${i}" type="button">✕ Remove this beam</button>
+    </span>
    </div>
    <div class="grid cols4">
     ${F("Name (shown on every register line)",inpText(base+"name",g.name))}
@@ -4644,7 +4700,11 @@ function extraBeamGroupsSection(inst,d,arrName){
   let groups=d[arrName]||[];
   return `<div class="subsec"><div class="sechead">Additional ${k.noun}s — different cross sections on the same slab</div>
   ${groups.length? groups.map((g,i)=>extraBeamGroupBlock(inst,d,arrName,g,i)).join('') : `<p class="small">None yet. The beam above is this slab's ${k.noun.toLowerCase()} 1 — add another whenever the drawing shows a second ${k.noun.toLowerCase()} with a DIFFERENT section, and take each one off over its own run.</p>`}
-  <div style="margin-top:8px;"><button class="btn small primary" data-action="addRow" data-target="${arrName}" type="button">+ Add another ${k.noun.toLowerCase()}</button></div>
+  <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+   <button class="btn small primary" data-action="addRow" data-target="${arrName}" type="button">+ Add another ${k.noun.toLowerCase()}</button>
+   ${primaryBeamOn(d,arrName)? `<button class="btn small" data-action="dupBeam" data-target="${arrName}" data-src="primary" type="button" title="Add another ${k.noun.toLowerCase()} starting as a copy of ${k.noun.toLowerCase()} 1 above — section, cage, ligatures, formwork and trench carried over; type its own run length">⧉ Duplicate ${k.noun.toLowerCase()} 1 (above)</button>` : ""}
+   <span class="small">A duplicate keeps everything but the run length — enter the new beam's own run off the drawing.</span>
+  </div>
   <div class="tip"><span class="ico">🏗️</span><div>${k.ribs
     ? `A raft rarely has one rib section throughout — the ribs under a party wall or a point load are deeper than the general grid. Take the general ribs off above as the combined run, then add a beam here for each rib section that differs, with its own run length, section and cage. Each is priced exactly like the primary rib: concrete over the drop below the slab, bar sets with anchorages, ligature zones around its own section, optional trench.`
     : `Edge beams change section around a building — deeper on the exposed side, wider where a column lands. Take the dominant edge beam off above, then add one here for each edge that differs, with its own run length, section and cage. Each is a complete beam: concrete, bar sets with anchorages, ligature zones around its own section, optional trench and spoil.`} Don't re-enter the same run twice — the runs ADD, so a length counted above and again here buys the concrete twice.</div></div>
@@ -9052,6 +9112,16 @@ function attachCardEvents(card,inst){
        : {zone:"Zone",length:1000,dia:"N10",spacing:200};
       arr.push(template);
       rerenderCardKeepTab(card,inst);
+    } else if(act==="dupBeam"){
+      // a raft's extra edge / internal beam added as a COPY of a beam already
+      // worked on (the primary one above, or an extra group) — run length blank
+      let target=e.target.dataset.target;
+      let arr=getPath(inst.data,target);
+      if(!Array.isArray(arr)){ arr=[]; setPath(inst.data,target,arr); }
+      let g = e.target.dataset.src==="primary"? extraBeamGroupFromPrimary(inst.data,target) : duplicateExtraBeamGroup(arr[parseInt(e.target.dataset.idx,10)]||{},parseInt(e.target.dataset.idx,10),arr);
+      arr.push(g);
+      markEntered(inst,target);
+      computeAllAndRefresh(); rerenderCardKeepTab(card,inst);
     } else if(act==="delRow"){
       let target=e.target.dataset.target, idx=parseInt(e.target.dataset.idx);
       let arr=getPath(inst.data,target);
