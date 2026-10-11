@@ -303,6 +303,7 @@ export function salvageArrays(text, arrayKeys = []) {
 
 /** The Settings panel's "Test": a one-word round trip that proves the key, the model name and the network. */
 export async function pingProvider(id, env = process.env) {
-  const r = await callText(id, { prompt: "Reply with exactly the word OK and nothing else.", maxTokens: 16, timeoutMs: 30000, env });
+  // A reasoning model (gpt-5) spends its first tokens thinking, so a 16-token allowance returned nothing (11 Oct 2026): give the one word room.
+  const r = await callText(id, { prompt: "Reply with exactly the word OK and nothing else.", maxTokens: 400, timeoutMs: 45000, env });
   return { ...r, ok: /\bOK\b/i.test(r.text) };
 }
