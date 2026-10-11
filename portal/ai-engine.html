@@ -21,6 +21,7 @@ header .cloud{font-size:11px;opacity:.8;white-space:nowrap;}
 .rm-item .t{font-weight:700;} .rm-item .d{font-size:12.5px;color:#44515c;margin-top:2px;} .rm-item .w{font-size:12px;color:var(--muted);margin-top:2px;}
 .rm-item a{color:var(--accent);font-weight:700;text-decoration:none;cursor:pointer;}
 .mirror table td{font-size:12.5px;}
+td.qtyc{font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap;color:var(--navy2);font-weight:700;}
 #mailList tr{cursor:pointer;} #mailList tr.unread td{font-weight:700;} #mailList tr.sel td{background:#eef5fd;}
 .mail-body{white-space:pre-wrap;font-size:12.5px;line-height:1.5;max-height:460px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:10px;background:#fafcfe;margin-top:8px;}
 .mail-att{display:flex;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid #eef2f6;font-size:12.5px;flex-wrap:wrap;} .mirror .due.hot{color:var(--bad);font-weight:700;} .mirror .due.warm{color:var(--warn);font-weight:700;}
@@ -92,6 +93,8 @@ tr.excluded td{opacity:.45;} td input[type=text],td input[type=number],td select
       <div class="row">
         <button class="btn ai" id="newTakeoff">+ New AI takeoff</button>
         <button class="btn primary" id="newSpec">+ New specification reader job</button>
+        <button class="btn" id="newGeotech">+ Geotech report reader</button>
+        <button class="btn" id="newContract">+ Contract scope reader</button>
         <span class="small">PDF files only for now. Files go to the Gradcon cloud bucket so the model can read them; nothing is sent anywhere else.</span>
       </div>
     </div>
@@ -431,15 +434,16 @@ const ROADMAP = [
     ["partial","Document completeness","The takeoff lists sheets it could not read; a checklist of required documents against the package is planned."],
     ["planned","Drawing coordinate AI","Match common gridlines across sheets."],
     ["planned","Building level AI","Identify RLs, FFLs, SSLs and storey elevations."],
-    ["planned","Detail matching AI","Match plan callouts to the sections that detail them."],
-    ["planned","Drawing scale AI","Verify the scale against dimension strings."],
-    ["planned","Ground condition AI","Extract geotechnical constraints and missing information from the geotech report."],
-    ["planned","Contract scope AI","Extract responsibility matrices and obligations from the contract."],
-    ["planned","Tender qualification AI","Identify commercial qualifications and exclusions."],
+    ["partial","Detail matching AI","The drawing reading lists every plan callout with the sheet that draws it and flags the ones missing from the set (model-read, not geometric)."],
+    ["partial","Drawing scale AI","Each sheet's stated scale is checked by the model against a dimension string it measured; a disagreement is flagged on the job."],
+    ["live","Ground condition AI","The geotech report reader: site class, bearing, founding depth, water, rock, constraints, the allowances they imply and what the report leaves out — ticked items inform the takeoff.","job:geotech"],
+    ["live","Contract scope AI","The contract reader: the responsibility matrix, obligations with money or risk, exclusions, suggested qualifications and risks, each with page and quote.","job:contract"],
+    ["partial","Tender qualification AI","The contract reader suggests qualifications and lists exclusions; carrying them onto the tender document is planned."],
   ]},
   { id:"structure", label:"Structural object model", intro:"One persistent register of elements with geometry, source, revision and status — the digital quantity engine.", items:[
     ["partial","Element identity","Every AI-drafted element carries its job, sheet, mark, confidence and evidence into Estimates; a persistent ID across revisions is planned."],
     ["partial","Element object with its calculation","Estimates already holds each element's fields, formula, warnings, provenance and review hash; source drawing and revision per element are planned."],
+    ["live","Automatic quantities","Every element the drawings reader proposes shows indicative m³, kg and m² from its geometry at once; Estimates computes the exact figures on export and writes them back onto the job.","job:takeoff"],
     ["planned","Structural drawing reconstruction","Connect plans, sections, elevations, details and schedules into one model per level."],
     ["planned","Spatial reconciliation","Detect duplicated or physically overlapping elements."],
     ["planned","Geometry completion","Suggest missing geometry, never treating an inferred shape as verified."],
@@ -765,7 +769,7 @@ async function runJob(job){
     saveJob(job); renderJob(job); return;
   }
   job.result = data.result; job.ran = { at: nowIso(), provider:data.provider, model:data.model, latencyMs:data.latencyMs, usage:data.usage, truncated:!!data.truncated, partial:data.partial||null };
-  job.review = job.kind==="takeoff" ? takeoffReviewFrom(data.result) : specReviewFrom(data.result);
+  job.review = job.kind==="takeoff" ? takeoffReviewFrom(data.result) : job.kind==="geotech" ? geotechReviewFrom(data.result) : job.kind==="contract" ? contractReviewFrom(data.result) : specReviewFrom(data.result);
   job.status = "done"; saveJob(job); renderJob(job);
 }
 
@@ -784,6 +788,16 @@ function takeoffReviewFrom(result){
       mesh:b.mesh||"", topMesh:b.top_mesh||"",
       confidence:/^(high|medium|low)$/.test(e.confidence)? e.confidence : "low", evidence:e.evidence||"", notes:e.notes||"", unknownType: TYPE_BY_ID[e.type] ? "" : (e.type||"?") };
   }) };
+}
+const QTY_LIB = { lib:null };
+function qtyLib(){ if(QTY_LIB.lib) return QTY_LIB.lib; if(window.GradconQA){ QTY_LIB.lib = window.GradconQA; return QTY_LIB.lib; } loadQaLib().then(l=>{ QTY_LIB.lib=l; const j=CURRENT && loadJob(CURRENT); if(j && j.kind==="takeoff" && j.result && document.getElementById("tkTable")) refreshQtyCells(j); }).catch(()=>{}); return null; }
+const calcOf = (t)=> (TYPE_BY_ID[t]||{}).calc || null;
+function elQty(e){ const lib=qtyLib(); return lib ? lib.elementQuantities(e, calcOf(e.type)) : null; }
+function qtyCells(e){ const q=elQty(e); if(!q) return `<td class="small" colspan="3">…</td>`; const t=(q.notes||[]).join("; ")||q.basis||""; return `<td class="qtyc" title="${esc(t)}">${q.concreteM3||"—"}</td><td class="qtyc" title="${esc(t)}">${q.steelKg||"—"}</td><td class="qtyc" title="${esc(t)}">${q.formworkM2||"—"}</td>`; }
+function refreshQtyCells(job){
+  const rv=job.review; const lib=qtyLib(); if(!lib) return;
+  document.querySelectorAll("#tkTable tbody tr[data-row]").forEach(tr=>{ const e=rv.elements[+tr.dataset.row]; const cells=tr.querySelectorAll(".qtyc"); const q=lib.elementQuantities(e, calcOf(e.type)); if(cells.length===3){ cells[0].textContent=q.concreteM3||"—"; cells[1].textContent=q.steelKg||"—"; cells[2].textContent=q.formworkM2||"—"; cells.forEach(c=>c.title=(q.notes||[]).join("; ")||q.basis||""); } else { const anchor=tr.querySelector("td[colspan='3']"); if(anchor){ anchor.outerHTML = qtyCells(e); } } });
+  const tot=document.getElementById("tkTotals"); if(tot){ const t=lib.proposalTotals(rv.elements.filter(e=>e.include&&e.type), calcOf); tot.innerHTML = `Indicative totals of the ticked elements: <b>${t.concreteM3} m³</b> concrete · <b>${t.steelKg} kg</b> steel · <b>${t.formworkM2} m²</b> formwork${t.excavationM3?` · ${t.excavationM3} m³ excavation`:""}${t.uncounted?` · ${t.uncounted} element${t.uncounted===1?"":"s"} with no formula here`:""}. Geometry only — Estimates adds laps, waste, hooks, blinding and joints on export.`; }
 }
 const TK_COLS = [["qty","Qty","num"],["length_mm","L mm","num"],["width_mm","W mm","num"],["depth_mm","D/T mm","num"],["height_mm","H mm","num"],["diameter_mm","Ø mm","num"],["area_m2","Area m²","num"],["grade","Grade","short"],["cover_mm","Cover","short"]];
 function typeSelect(cur, i){
@@ -819,12 +833,12 @@ function renderTakeoffResult(job){
         <button class="btn primary" id="exportBtn" ${inc?"":"disabled"} title="Creates a NEW takeoff in Estimates under AI drafts; nothing existing is changed">Export ${inc} element${inc===1?"":"s"} to Estimates →</button>
       </div>
     </div>
-    ${(job.exports||[]).length?`<div class="banner ok" style="margin-top:10px;">Exported ${job.exports.map(x=>`${whenLabel(x.at)} (${x.count} elements${x.takeoffName?` → "${esc(x.takeoffName)}"`:""}${x.takeoffId?", takeoff "+esc(x.takeoffId):""})`).join(" · ")}. Each export is a new takeoff in Estimates' AI drafts group.</div>`:""}
+    ${(job.exports||[]).length?`<div class="banner ok" style="margin-top:10px;">Exported ${job.exports.map(x=>`${whenLabel(x.at)} (${x.count} elements${x.takeoffName?` → "${esc(x.takeoffName)}"`:""}${x.takeoffId?", takeoff "+esc(x.takeoffId):""})`).join(" · ")}. Each export is a new takeoff in Estimates' AI drafts group.${(()=>{ const q=job.exports[job.exports.length-1].quantities; return q && q.totals ? `<br><b>Estimates computed:</b> ${q.totals.concreteM3} m³ concrete · ${q.totals.steelKg} kg steel · ${q.totals.formworkM2} m² formwork (exact, with laps, waste and allowances)${Array.isArray(q.perElement)&&q.perElement.length?` — ${q.perElement.map(p=>`${esc(p.label)}: ${p.concreteM3} m³ / ${p.steelKg} kg / ${p.formworkM2} m²`).join("; ")}`:""}` : ""; })()}</div>`:""}
    </div>
    <div class="card">
     <div class="row" style="justify-content:space-between;"><h3 style="margin:0;">Proposed elements — tick what to export, fix what the model misread</h3><span class="small">Values are editable here; the export marks every element "AI draft — verify" in Estimates.</span></div>
     <div style="overflow:auto;margin-top:8px;">
-    <table id="tkTable"><thead><tr><th></th><th>Type</th><th>Label</th><th>Mark / sheet</th>${TK_COLS.map(c=>`<th>${c[1]}</th>`).join("")}<th>Bars</th><th>Confidence</th><th>Evidence / notes</th></tr></thead>
+    <table id="tkTable"><thead><tr><th></th><th>Type</th><th>Label</th><th>Mark / sheet</th>${TK_COLS.map(c=>`<th>${c[1]}</th>`).join("")}<th>Bars</th><th title="Indicative, from the geometry read">Conc m³</th><th title="Indicative, from the bars read">Steel kg</th><th title="Indicative formed faces">Form m²</th><th>Confidence</th><th>Evidence / notes</th></tr></thead>
     <tbody>${rv.elements.map((e,i)=>`<tr class="${e.include?'':'excluded'}" data-row="${i}">
       <td><input type="checkbox" data-k="include" data-i="${i}" ${e.include?"checked":""} ${e.type?"":"disabled"} title="${e.type?"Export this element":"Pick a type first"}"></td>
       <td style="min-width:190px;">${typeSelect(e.type,i)}${e.unknownType?`<div class="small" style="color:var(--bad)">model said "${esc(e.unknownType)}"</div>`:""}</td>
@@ -837,12 +851,17 @@ function renderTakeoffResult(job){
         <div class="row">top <input type="text" class="short" data-k="topDia" data-i="${i}" value="${esc(e.topDia)}"> ×<input type="number" class="short" data-k="topQty" data-i="${i}" value="${e.topQty==null?"":e.topQty}"> @<input type="number" class="short" data-k="topSpacing" data-i="${i}" value="${e.topSpacing==null?"":e.topSpacing}"></div>
         <div class="row">ligs <input type="text" class="short" data-k="ligDia" data-i="${i}" value="${esc(e.ligDia)}"> @<input type="number" class="short" data-k="ligSpacing" data-i="${i}" value="${e.ligSpacing==null?"":e.ligSpacing}"></div>
         <div class="row">mesh <input type="text" class="short" data-k="mesh" data-i="${i}" value="${esc(e.mesh)}" placeholder="SL82"> top <input type="text" class="short" data-k="topMesh" data-i="${i}" value="${esc(e.topMesh)}"></div></details></td>
+      ${qtyCells(e)}
       <td><span class="chip ${e.confidence}">${e.confidence}</span></td>
       <td style="min-width:220px;"><div class="ev">${esc(e.evidence)}</div><div class="small">${esc(e.notes)}</div></td>
      </tr>`).join("")}</tbody></table>
     </div>
-    ${rv.elements.length? "" : '<div class="small">The model proposed no elements.</div>'}
+    ${rv.elements.length? `<div class="small" id="tkTotals" style="margin-top:8px;">…</div>` : '<div class="small">The model proposed no elements.</div>'}
    </div>
+   ${(r.details||[]).length||(r.scales||[]).length?`<div class="card grid2">
+     <div><h3 style="margin-top:0;">Detail callouts matched to their sections</h3><table><thead><tr><th>Callout</th><th>On sheet</th><th>Drawn on</th><th>Found</th><th>Note</th></tr></thead><tbody>${(r.details||[]).map(d=>`<tr><td><b>${esc(d.callout)}</b></td><td>${esc(d.onSheet)}</td><td>${esc(d.detailSheet||"—")}</td><td>${d.found?'<span class="chip high">yes</span>':'<span class="chip low">missing</span>'}</td><td class="small">${esc(d.note||"")}</td></tr>`).join("")||'<tr><td colspan="5" class="small">none read</td></tr>'}</tbody></table></div>
+     <div><h3 style="margin-top:0;">Scale checks</h3><table><thead><tr><th>Sheet</th><th>Stated</th><th>Checked against</th><th>Consistent</th><th>Note</th></tr></thead><tbody>${(r.scales||[]).map(d=>`<tr><td><b>${esc(d.sheet)}</b></td><td>${esc(d.stated)}</td><td class="small">${esc(d.check||"")}</td><td>${d.consistent?'<span class="chip high">yes</span>':'<span class="chip low">no</span>'}</td><td class="small">${esc(d.note||"")}</td></tr>`).join("")||'<tr><td colspan="5" class="small">none read</td></tr>'}</tbody></table></div>
+   </div>`:""}
    ${(r.unreadable||[]).length||(r.assumptions||[]).length?`<div class="card grid2">
      <div><h3 style="margin-top:0;">Could not read</h3>${(r.unreadable||[]).map(u=>`<div class="quote">${esc(u)}</div>`).join("")||'<span class="small">nothing reported</span>'}</div>
      <div><h3 style="margin-top:0;">Assumptions the model made</h3>${(r.assumptions||[]).map(u=>`<div class="quote">${esc(u)}</div>`).join("")||'<span class="small">none reported</span>'}</div>
@@ -877,7 +896,69 @@ function profileFromSpecJob(job){
     unusual: rv.unusual.filter(u=>u.applies).map(u=>({ text:u.text, page:u.page })),
   };
 }
-function specProfileFor(takeoffJob){ const sj = takeoffJob.specJobId && loadJob(takeoffJob.specJobId); return sj ? profileFromSpecJob(sj) : null; }
+function specProfileFor(takeoffJob){
+  const sj = takeoffJob.specJobId && loadJob(takeoffJob.specJobId); const gj = takeoffJob.geoJobId && loadJob(takeoffJob.geoJobId);
+  const prof = sj ? profileFromSpecJob(sj) : null; const site = gj && gj.review ? siteProfileFrom(gj) : null;
+  if(!prof && !site) return null;
+  return Object.assign(prof || {}, site ? { site } : {});
+}
+/* ---------- geotech review ---------- */
+function geotechReviewFrom(result){
+  const r = result || {};
+  return { site: Object.assign({}, r.site || {}),
+    constraints: (Array.isArray(r.constraints)? r.constraints : []).map(c=>({ category:c.category||"other", text:c.text||"", value:c.value||"", page:c.page||null, quote:c.quote||"", applies:true })),
+    allowances: (Array.isArray(r.allowances)? r.allowances : []).map(a=>({ item:a.item||"", why:a.why||"", page:a.page||null, quote:a.quote||"", applies:true })),
+    missing: (Array.isArray(r.missing)? r.missing : []).map(m=>String(m)) };
+}
+function siteProfileFrom(job){ const rv=job.review; return { geotechJobId: job.id, geotechName: job.name, site: rv.site, constraints: rv.constraints.filter(c=>c.applies).map(c=>({ category:c.category, text:c.text, value:c.value, page:c.page })), allowances: rv.allowances.filter(a=>a.applies).map(a=>({ item:a.item, why:a.why, page:a.page })), missing: rv.missing }; }
+function renderGeotechResult(job){
+  const rv=job.review, doc=(job.result&&job.result.document)||{}; const site=rv.site||{};
+  const siteRows=[["Site class",site.siteClass],["Soil profile",site.soilProfile],["Allowable bearing (kPa)",site.bearingPressureKPa],["Founding depth (mm)",site.foundingDepthMm],["Water table (mm)",site.waterTableDepthMm],["Rock",site.rock],["Reactivity",site.reactivity],["Fill",site.fill],["Aggressivity",site.aggressivity]];
+  return `
+   <div class="card"><b>${esc(doc.title||job.name||"Geotechnical report")}</b> ${doc.revision?`· ${esc(doc.revision)}`:""} ${doc.date?`· ${esc(doc.date)}`:""} ${doc.author?`· ${esc(doc.author)}`:""}
+    <div class="small">Read ${whenLabel(job.ran&&job.ran.at)} on ${esc(job.ran&&job.ran.provider)} · ${esc(job.ran&&job.ran.model)}</div>
+    ${job.ran&&job.ran.partial?`<div class="banner" style="margin-top:6px;"><b>Partial result.</b> ${esc(job.ran.partial.reason)} — ${job.ran.partial.kept} items kept.</div>`:""}
+    <div class="small">Tick what applies. A takeoff job that picks this report sends the ticked site conditions and allowances to the model and they ride into the exported takeoff's notes.</div></div>
+   <div class="card grid2">
+    <div><h3 style="margin-top:0;">Site conditions</h3><table><tbody>${siteRows.map(([k,v])=>`<tr><td>${k}</td><td><b>${esc(v==null||v===""?"—":v)}</b></td></tr>`).join("")}</tbody></table></div>
+    <div><h3 style="margin-top:0;">Still missing from the report</h3>${rv.missing.map(m=>`<div class="quote">${esc(m)}</div>`).join("")||'<span class="small">nothing listed</span>'}</div>
+   </div>
+   <div class="card"><h3 style="margin-top:0;">Constraints that change the ground work</h3><table><thead><tr><th></th><th>Category</th><th>Constraint</th><th>Value</th><th>Page</th><th>Where it says so</th></tr></thead><tbody>
+    ${rv.constraints.map((c,i)=>`<tr class="${c.applies?'':'excluded'}"><td><input type="checkbox" data-gk="applies" data-gi="${i}" ${c.applies?"checked":""}></td><td>${esc(c.category)}</td><td><input type="text" data-gk="text" data-gi="${i}" value="${esc(c.text)}"></td><td><input type="text" class="short" data-gk="value" data-gi="${i}" value="${esc(c.value)}"></td><td class="page-ref">p. ${c.page||"?"}</td><td><div class="quote">${esc(c.quote)}</div></td></tr>`).join("")||'<tr><td colspan="6" class="small">None found.</td></tr>'}
+   </tbody></table></div>
+   <div class="card"><h3 style="margin-top:0;">Pricing allowances the report implies</h3><table><thead><tr><th></th><th>Allowance</th><th>Why</th><th>Page</th><th>Where it says so</th></tr></thead><tbody>
+    ${rv.allowances.map((a,i)=>`<tr class="${a.applies?'':'excluded'}"><td><input type="checkbox" data-ak="applies" data-ai="${i}" ${a.applies?"checked":""}></td><td><input type="text" data-ak="item" data-ai="${i}" value="${esc(a.item)}"></td><td><input type="text" data-ak="why" data-ai="${i}" value="${esc(a.why)}"></td><td class="page-ref">p. ${a.page||"?"}</td><td><div class="quote">${esc(a.quote)}</div></td></tr>`).join("")||'<tr><td colspan="5" class="small">None found.</td></tr>'}
+   </tbody></table></div>`;
+}
+/* ---------- contract review ---------- */
+function contractReviewFrom(result){
+  const r = result || {};
+  return { scope: (Array.isArray(r.scope)? r.scope : []).map(x=>({ item:x.item||"", responsibility:["subcontractor","builder","other","unclear"].includes(x.responsibility)? x.responsibility : "unclear", page:x.page||null, quote:x.quote||"", applies:true })),
+    obligations: (Array.isArray(r.obligations)? r.obligations : []).map(o=>({ category:o.category||"other", text:o.text||"", value:o.value||"", page:o.page||null, quote:o.quote||"", applies:true })),
+    exclusions: (Array.isArray(r.exclusions)? r.exclusions : []).map(x=>({ text:x.text||"", page:x.page||null, quote:x.quote||"", applies:true })),
+    qualifications: (Array.isArray(r.qualifications)? r.qualifications : []).map(q=>({ text:q.text||"", why:q.why||"", applies:true })),
+    risks: (Array.isArray(r.risks)? r.risks : []).map(x=>({ text:x.text||"", severity:["high","medium","low"].includes(x.severity)? x.severity : "medium", page:x.page||null, quote:x.quote||"", applies:true })) };
+}
+function renderContractResult(job){
+  const rv=job.review, doc=(job.result&&job.result.document)||{};
+  const sev=(s)=>({high:"low",medium:"medium",low:"high"})[s];
+  return `
+   <div class="card"><b>${esc(doc.title||job.name||"Contract")}</b> ${doc.form?`· ${esc(doc.form)}`:""} ${doc.principal?`· ${esc(doc.principal)}`:""} ${doc.revision?`· ${esc(doc.revision)}`:""} ${doc.date?`· ${esc(doc.date)}`:""}
+    <div class="small">Read ${whenLabel(job.ran&&job.ran.at)} on ${esc(job.ran&&job.ran.provider)} · ${esc(job.ran&&job.ran.model)}</div>
+    ${job.ran&&job.ran.partial?`<div class="banner" style="margin-top:6px;"><b>Partial result.</b> ${esc(job.ran.partial.reason)} — ${job.ran.partial.kept} items kept.</div>`:""}
+    <div class="small">The responsibility matrix, the obligations that carry money or risk, the exclusions and the qualifications a tender should state. Tick what applies; nothing here is legal advice — a contract that needs interpretation goes to the person who signs it.</div></div>
+   <div class="card"><h3 style="margin-top:0;">Scope — who does what</h3><table><thead><tr><th></th><th>Item</th><th>Responsibility</th><th>Page</th><th>Where it says so</th></tr></thead><tbody>
+    ${rv.scope.map((x,i)=>`<tr class="${x.applies?'':'excluded'}"><td><input type="checkbox" data-ck="applies" data-ci="${i}" ${x.applies?"checked":""}></td><td><input type="text" data-ck="item" data-ci="${i}" value="${esc(x.item)}"></td><td><select data-ck="responsibility" data-ci="${i}">${["subcontractor","builder","other","unclear"].map(o=>`<option ${o===x.responsibility?'selected':''}>${o}</option>`).join("")}</select></td><td class="page-ref">p. ${x.page||"?"}</td><td><div class="quote">${esc(x.quote)}</div></td></tr>`).join("")||'<tr><td colspan="5" class="small">None found.</td></tr>'}
+   </tbody></table></div>
+   <div class="card"><h3 style="margin-top:0;">Obligations that carry money or risk</h3><table><thead><tr><th></th><th>Category</th><th>Obligation</th><th>Value</th><th>Page</th><th>Where it says so</th></tr></thead><tbody>
+    ${rv.obligations.map((o,i)=>`<tr class="${o.applies?'':'excluded'}"><td><input type="checkbox" data-ok="applies" data-oi="${i}" ${o.applies?"checked":""}></td><td>${esc(o.category)}</td><td><input type="text" data-ok="text" data-oi="${i}" value="${esc(o.text)}"></td><td><input type="text" class="short" data-ok="value" data-oi="${i}" value="${esc(o.value)}"></td><td class="page-ref">p. ${o.page||"?"}</td><td><div class="quote">${esc(o.quote)}</div></td></tr>`).join("")||'<tr><td colspan="6" class="small">None found.</td></tr>'}
+   </tbody></table></div>
+   <div class="card grid2">
+    <div><h3 style="margin-top:0;">Exclusions in the document</h3>${rv.exclusions.map((x,i)=>`<div class="row ${x.applies?'':'excluded'}"><input type="checkbox" data-xk="applies" data-xi="${i}" ${x.applies?"checked":""}> <span style="flex:1">${esc(x.text)}</span><span class="page-ref">p. ${x.page||"?"}</span></div><div class="quote">${esc(x.quote)}</div>`).join("")||'<span class="small">None found.</span>'}</div>
+    <div><h3 style="margin-top:0;">Qualifications to write into the tender</h3>${rv.qualifications.map((q,i)=>`<div class="row ${q.applies?'':'excluded'}"><input type="checkbox" data-qk="applies" data-qi="${i}" ${q.applies?"checked":""}> <span style="flex:1"><b>${esc(q.text)}</b> <span class="small">${esc(q.why)}</span></span></div>`).join("")||'<span class="small">None suggested.</span>'}</div>
+   </div>
+   <div class="card"><h3 style="margin-top:0;">Risks</h3>${rv.risks.map((x,i)=>`<div class="row ${x.applies?'':'excluded'}"><input type="checkbox" data-rsk="applies" data-rsi="${i}" ${x.applies?"checked":""}> <span class="chip ${sev(x.severity)}">${x.severity}</span><span style="flex:1">${esc(x.text)}</span><span class="page-ref">p. ${x.page||"?"}</span></div><div class="quote">${esc(x.quote)}</div>`).join("")||'<span class="small">None found.</span>'}</div>`;
+}
 function renderSpecResult(job){
   const rv = job.review, doc = (job.result && job.result.document) || {};
   const groups = {}; rv.requirements.forEach((r,i)=>{ (groups[r.category]=groups[r.category]||[]).push([r,i]); });
@@ -929,28 +1010,29 @@ function renderJob(job){
   host.innerHTML = `
    <div class="card">
     <div class="row" style="justify-content:space-between;">
-      <div class="row"><span class="chip ai">${job.kind==="takeoff"?"AI takeoff":"Specification reader"}</span>
-        <input type="text" class="wide" id="jobName" value="${esc(job.name)}" placeholder="${job.kind==="takeoff"?"Project / drawing set name":"Specification name"}">
+      <div class="row"><span class="chip ai">${({takeoff:"AI takeoff",spec:"Specification reader",geotech:"Geotech report reader",contract:"Contract scope reader"})[job.kind]||job.kind}</span>
+        <input type="text" class="wide" id="jobName" value="${esc(job.name)}" placeholder="${({takeoff:"Project / drawing set name",spec:"Specification name",geotech:"Geotech report name",contract:"Contract / tender conditions name"})[job.kind]||"Job name"}">
         <span class="chip ${job.status}">${esc(job.status)}</span></div>
       <div class="row"><button class="btn small" id="backHome">← All jobs</button><button class="btn small danger" id="delJob">Delete job</button></div>
     </div>
     ${job.fromMail?`<div class="small" style="margin-top:6px;">From mail: <b>${esc(job.fromMail.subject||"")}</b> — ${esc(job.fromMail.from||"")} · ${whenLabel(job.fromMail.date)}</div>`:""}
     ${job.kind==="takeoff"?`<div class="row" style="margin-top:8px;">Quotes project this takeoff is for: <select id="projectSel"><option value="">— none / new —</option>${MIRROR.quotes.map(q=>`<option value="${esc(q.id)}" ${q.id===job.projectId?'selected':''}>${esc(q.name||"Untitled")}${q.client?" — "+esc(q.client):""} (${esc(q.status)})</option>`).join("")}</select><span class="small">names the job and the exported takeoff after the project; nothing in the project changes</span></div>
-    <div class="row" style="margin-top:8px;">Specification profile for this takeoff: <select id="specJobSel"><option value="">— none —</option>${specJobs.map(s=>`<option value="${s.id}" ${s.id===job.specJobId?'selected':''}>${esc(s.name||"Untitled spec")}</option>`).join("")}</select><span class="small">grades and covers from the ticked specification go to the model and into the exported takeoff's Project Setup</span></div>`:""}
+    <div class="row" style="margin-top:8px;">Specification profile for this takeoff: <select id="specJobSel"><option value="">— none —</option>${specJobs.map(s=>`<option value="${s.id}" ${s.id===job.specJobId?'selected':''}>${esc(s.name||"Untitled spec")}</option>`).join("")}</select><span class="small">grades and covers from the ticked specification go to the model and into the exported takeoff's Project Setup</span></div>
+    <div class="row" style="margin-top:8px;">Geotech profile for this takeoff: <select id="geoJobSel"><option value="">— none —</option>${liveIndex().filter(e=>e.kind==="geotech" && e.status==="done").map(s=>`<option value="${s.id}" ${s.id===job.geoJobId?'selected':''}>${esc(s.name||"Untitled geotech")}</option>`).join("")}</select><span class="small">founding depth, water and rock from the ticked report inform the depths the model cannot read</span></div>`:""}
    </div>
    <div class="card">
     <h3 style="margin-top:0;">${job.kind==="takeoff"?"Drawings":"Documents"} (PDF)</h3>
-    <div class="drop" id="drop">Drop PDF files here, or click to choose. ${job.kind==="takeoff"?"Structural drawings: plans, sections, footing / beam / column schedules.":"The specification, the tender conditions, geotechnical notes."}<input type="file" id="fileInput" accept="application/pdf,.pdf" multiple hidden></div>
+    <div class="drop" id="drop">Drop PDF files here, or click to choose. ${({takeoff:"Structural drawings: plans, sections, footing / beam / column schedules.",spec:"The specification and its schedules.",geotech:"The geotechnical investigation report, borehole logs, site classification.",contract:"The contract, tender conditions, scope of works, responsibility matrix."})[job.kind]||""}<input type="file" id="fileInput" accept="application/pdf,.pdf" multiple hidden></div>
     <ul class="files">${job.files.map((f,i)=>`<li><span class="n">📄 ${esc(f.name)}</span><span class="s">${fmtSize(f.size)}</span><a class="small" href="${esc(f.url)}" target="_blank" rel="noopener">open</a><button class="btn small" data-rmfile="${i}" title="Remove from this job (the copy in the bucket stays)">✕</button></li>`).join("")}</ul>
     <div class="status" id="fileStatus"></div>
     <div class="row" style="margin-top:10px;">
-      <button class="btn ai" id="runBtn" ${job.files.length?"":"disabled"}>${job.result?"Read again":"Read "+(job.kind==="takeoff"?"drawings":"specification")} with AI</button>
+      <button class="btn ai" id="runBtn" ${job.files.length?"":"disabled"}>${job.result?"Read again":"Read "+({takeoff:"drawings",spec:"specification",geotech:"geotech report",contract:"contract"})[job.kind]} with AI</button>
       <span class="small">on <span id="runProvider">${esc(providerInUse().label)}</span> — change it in Settings → AI providers</span>
     </div>
     <div class="status" id="runStatus"></div>
     ${job.lastError?`<div class="banner err" style="margin-top:8px;">Last run failed: ${esc(job.lastError)}</div>`:""}
    </div>
-   ${job.result ? (job.kind==="takeoff" ? renderTakeoffResult(job) : renderSpecResult(job)) : ""}`;
+   ${job.result ? (job.kind==="takeoff" ? renderTakeoffResult(job) : job.kind==="geotech" ? renderGeotechResult(job) : job.kind==="contract" ? renderContractResult(job) : renderSpecResult(job)) : ""}`;
   wireJob(job);
   showPage("job");
 }
@@ -962,6 +1044,7 @@ function wireJob(job){
   host.querySelector("#backHome").addEventListener("click", ()=>{ renderHome(); showPage("home"); });
   host.querySelector("#delJob").addEventListener("click", ()=>deleteJob(job.id));
   const ss = host.querySelector("#specJobSel"); if(ss) ss.addEventListener("change", e=>{ job.specJobId = e.target.value; saveJob(job); });
+  const gs = host.querySelector("#geoJobSel"); if(gs) gs.addEventListener("change", e=>{ job.geoJobId = e.target.value; saveJob(job); });
   const ps = host.querySelector("#projectSel"); if(ps) ps.addEventListener("change", e=>{ job.projectId = e.target.value || ""; const q = MIRROR.quotes.find(x=>x.id===job.projectId); job.projectName = q ? q.name : ""; if(q && !(job.name||"").trim()){ job.name = q.name; host.querySelector("#jobName").value = q.name; } saveJob(job); });
   const drop = host.querySelector("#drop"), fi = host.querySelector("#fileInput");
   drop.addEventListener("click", ()=>fi.click());
@@ -972,6 +1055,7 @@ function wireJob(job){
   host.querySelectorAll("[data-rmfile]").forEach(b=>b.addEventListener("click", ()=>{ job.files.splice(+b.dataset.rmfile,1); saveJob(job); renderJob(job); }));
   host.querySelector("#runBtn").addEventListener("click", ()=>runJob(job));
   const ex = host.querySelector("#exportBtn"); if(ex) ex.addEventListener("click", ()=>exportToEstimates(job));
+  if(job.kind==="takeoff" && job.result){ refreshQtyCells(job); }
   const addStd = host.querySelector("#addStd"); if(addStd) addStd.addEventListener("click", ()=>{ job.review.standards.push({designation:"",code:"other",title:"",page:null,quote:"(added by hand)",applies:true}); saveJob(job); renderJob(job); });
   // Review edits: every input writes straight onto the review copy (never the
   // model's result, which is kept as read). ONE handler on the host — assigned,
@@ -979,13 +1063,20 @@ function wireJob(job){
   host.oninput = (e)=>{
     const t = e.target, rv = job.review; if(!rv) return;
     const val = t.type==="checkbox" ? t.checked : t.type==="number" ? numOrNull(t.value) : t.value;
-    if(t.dataset.k!==undefined){ const el = rv.elements[+t.dataset.i]; el[t.dataset.k] = val; if(t.dataset.k==="type"){ el.include = !!val; el.unknownType = ""; } t.closest("tr").classList.toggle("excluded", !el.include); if(t.dataset.k==="type"||t.dataset.k==="include"){ const inc = rv.elements.filter(x=>x.include&&x.type).length; const b=host.querySelector("#exportBtn"); if(b){ b.disabled=!inc; b.textContent=`Export ${inc} element${inc===1?"":"s"} to Estimates →`; } const cb=t.closest("tr").querySelector('[data-k="include"]'); if(cb){ cb.disabled=!el.type; cb.checked=el.include; } } }
+    if(t.dataset.k!==undefined){ const el = rv.elements[+t.dataset.i]; el[t.dataset.k] = val; if(t.dataset.k==="type"){ el.include = !!val; el.unknownType = ""; } t.closest("tr").classList.toggle("excluded", !el.include); if(t.dataset.k!=="label"&&t.dataset.k!=="mark"&&t.dataset.k!=="sheet") refreshQtyCells(job); if(t.dataset.k==="type"||t.dataset.k==="include"){ const inc = rv.elements.filter(x=>x.include&&x.type).length; const b=host.querySelector("#exportBtn"); if(b){ b.disabled=!inc; b.textContent=`Export ${inc} element${inc===1?"":"s"} to Estimates →`; } const cb=t.closest("tr").querySelector('[data-k="include"]'); if(cb){ cb.disabled=!el.type; cb.checked=el.include; } } }
     else if(t.dataset.sk){ rv.standards[+t.dataset.si][t.dataset.sk] = val; if(t.dataset.sk==="applies") t.closest("tr").classList.toggle("excluded", !val); }
     else if(t.dataset.rk){ rv.requirements[+t.dataset.ri][t.dataset.rk] = val; if(t.dataset.rk==="applies") t.closest("tr").classList.toggle("excluded", !val); }
     else if(t.dataset.mk){ rv.defaults.minMemberSizes[+t.dataset.mi][t.dataset.mk] = val; if(t.dataset.mk==="applies") t.closest("tr").classList.toggle("excluded", !val); }
     else if(t.dataset.uk){ rv.unusual[+t.dataset.ui][t.dataset.uk] = val; t.closest(".row").classList.toggle("excluded", !val); }
     else if(t.dataset.dk){ rv.defaults[t.dataset.dk][t.dataset.de] = val; }
     else if(t.dataset.df){ rv.defaults[t.dataset.df] = val; }
+    else if(t.dataset.gk){ rv.constraints[+t.dataset.gi][t.dataset.gk] = val; if(t.dataset.gk==="applies") t.closest("tr").classList.toggle("excluded", !val); }
+    else if(t.dataset.ak){ rv.allowances[+t.dataset.ai][t.dataset.ak] = val; if(t.dataset.ak==="applies") t.closest("tr").classList.toggle("excluded", !val); }
+    else if(t.dataset.ck){ rv.scope[+t.dataset.ci][t.dataset.ck] = val; if(t.dataset.ck==="applies") t.closest("tr").classList.toggle("excluded", !val); }
+    else if(t.dataset.ok){ rv.obligations[+t.dataset.oi][t.dataset.ok] = val; if(t.dataset.ok==="applies") t.closest("tr").classList.toggle("excluded", !val); }
+    else if(t.dataset.xk){ rv.exclusions[+t.dataset.xi][t.dataset.xk] = val; t.closest(".row").classList.toggle("excluded", !val); }
+    else if(t.dataset.qk){ rv.qualifications[+t.dataset.qi][t.dataset.qk] = val; t.closest(".row").classList.toggle("excluded", !val); }
+    else if(t.dataset.rsk){ rv.risks[+t.dataset.rsi][t.dataset.rsk] = val; t.closest(".row").classList.toggle("excluded", !val); }
     else return;
     saveSoon(job);
   };
@@ -1007,7 +1098,7 @@ function exportToEstimates(job){
 /** Estimates writes back which takeoff it created; attach it to the job on the next open of this app. */
 function absorbHandoffResult(){
   const r = readJSON(HANDOFF_RESULT_KEY); if(!r || !r.jobId) return;
-  const job = loadJob(r.jobId); if(job && job.exports && job.exports.length){ const x = job.exports[job.exports.length-1]; x.takeoffId = r.takeoffId; x.takeoffName = r.name || x.takeoffName; x.elements = r.elements; saveJob(job); }
+  const job = loadJob(r.jobId); if(job && job.exports && job.exports.length){ const x = job.exports[job.exports.length-1]; x.takeoffId = r.takeoffId; x.takeoffName = r.name || x.takeoffName; x.elements = r.elements; if(r.quantities) x.quantities = r.quantities; saveJob(job); }
   try{ localStorage.removeItem(HANDOFF_RESULT_KEY); }catch(e){}
 }
 
@@ -1018,13 +1109,15 @@ function renderHome(){
   document.getElementById("kpiSpec").textContent = idx.filter(e=>e.kind==="spec").length;
   document.getElementById("kpiExported").textContent = idx.reduce((n,e)=>n+(e.exported||0),0);
   const body = document.getElementById("jobsBody");
-  body.innerHTML = idx.map(e=>`<tr><td><span class="name" data-open="${e.id}">${esc(e.name||"Untitled")}</span></td><td>${e.kind==="takeoff"?"AI takeoff":e.kind==="qa"?"Quality checks":"Specification"}</td><td>${e.files||0}</td><td><span class="chip ${esc(e.status)}">${esc(e.status)}</span></td><td class="small">${resultSummary(e)}</td><td>${e.exported? e.exported+"×" : "—"}</td><td class="small">${whenLabel(e.updatedAt)}</td><td><button class="btn small" data-open="${e.id}">Open</button> <button class="btn small danger" data-del="${e.id}">✕</button></td></tr>`).join("");
+  body.innerHTML = idx.map(e=>`<tr><td><span class="name" data-open="${e.id}">${esc(e.name||"Untitled")}</span></td><td>${({takeoff:"AI takeoff",qa:"Quality checks",spec:"Specification",geotech:"Geotech report",contract:"Contract scope"})[e.kind]||e.kind}</td><td>${e.files||0}</td><td><span class="chip ${esc(e.status)}">${esc(e.status)}</span></td><td class="small">${resultSummary(e)}</td><td>${e.exported? e.exported+"×" : "—"}</td><td class="small">${whenLabel(e.updatedAt)}</td><td><button class="btn small" data-open="${e.id}">Open</button> <button class="btn small danger" data-del="${e.id}">✕</button></td></tr>`).join("");
   document.getElementById("jobsEmpty").style.display = idx.length ? "none" : "";
 }
-function resultSummary(e){ const j = loadJob(e.id); if(!j) return "—"; if(j.kind==="qa") return j.result? `${j.result.findings.length} findings · ${Object.keys(j.acks||{}).length} reviewed` : "—"; if(!j.review) return "—"; if(j.kind==="takeoff") return `${j.review.elements.length} elements proposed`; return `${j.review.standards.length} standards · ${j.review.requirements.length} requirements`; }
+function resultSummary(e){ const j = loadJob(e.id); if(!j) return "—"; if(j.kind==="qa") return j.result? `${j.result.findings.length} findings · ${Object.keys(j.acks||{}).length} reviewed` : "—"; if(!j.review) return "—"; if(j.kind==="takeoff") return `${j.review.elements.length} elements proposed`; if(j.kind==="geotech") return `${j.review.constraints.length} constraints · ${j.review.allowances.length} allowances`; if(j.kind==="contract") return `${j.review.scope.length} scope items · ${j.review.obligations.length} obligations · ${j.review.risks.length} risks`; return `${j.review.standards.length} standards · ${j.review.requirements.length} requirements`; }
 document.getElementById("jobsBody").addEventListener("click", e=>{ const o=e.target.closest("[data-open]"); if(o){ openJob(o.dataset.open); return; } const d=e.target.closest("[data-del]"); if(d) deleteJob(d.dataset.del); });
 document.getElementById("newTakeoff").addEventListener("click", ()=>createJob("takeoff"));
 document.getElementById("newSpec").addEventListener("click", ()=>createJob("spec"));
+document.getElementById("newGeotech").addEventListener("click", ()=>createJob("geotech"));
+document.getElementById("newContract").addEventListener("click", ()=>createJob("contract"));
 async function openJob(id){
   let job = loadJob(id);
   if(job && job.kind==="qa"){ showPage("qa"); await loadMirror(false); renderQaProjects(); if(job.subject==="takeoff"){ const m=document.getElementById("qaMode"); m.value="takeoff"; m.dispatchEvent(new Event("change")); const sel=document.getElementById("qaTakeoff"); sel.value=job.takeoffId; sel.dispatchEvent(new Event("change")); } else { const sel=document.getElementById("qaProject"); sel.value = job.projectKey; sel.dispatchEvent(new Event("change")); } return; }

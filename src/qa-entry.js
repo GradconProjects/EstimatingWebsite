@@ -4,3 +4,4 @@ export { computeGrandTotal, computeElementCost } from "./lib/costing.js";
 export { effectiveRates } from "./lib/rateFreeze.js";
 export { ELEMENT_TYPES, FULL_CATALOG, RESOURCE_COLS } from "./data/catalog.js";
 export { rateKey, defaultRates } from "./lib/costing.js";
+export { elementQuantities, proposalTotals, barKgPerM, MESH_KG_M2 } from "./lib/aiQuantities.js";

@@ -10379,8 +10379,12 @@ function applyAiHandoff(){
   PROJECT.aiImport = { jobId:h.jobId||null, projectId:h.projectId||null, projectName:h.projectName||null, at:h.at||new Date().toISOString(), provider:(h.source&&h.source.provider)||null, model:(h.source&&h.source.model)||null, files:(h.source&&h.source.files)||[], elements:made.length, skipped };
   saveEstimateState();
   tagTakeoffGroup(CURRENT_PROJECT_KEY, "ai");
-  try{ localStorage.setItem(AI_HANDOFF_RESULT_KEY, JSON.stringify({ jobId:h.jobId||null, takeoffId:activeTakeoffId(), name:PROJECT.name, elements:made.length, at:new Date().toISOString() })); }catch(e){}
-  rerenderAllPages();
+  rerenderAllPages(); // computes every element's lines
+  // The exact figures the calculators produced, back to the AI Engine job (its review table only had indicative geometry)
+  const qOf = (lines)=>({ concreteM3: +(lines.filter(l=>l.materialGroup==="Concrete" && /m³/.test(l.unit||"")).reduce((s,l)=>s+num(l.finalQty),0)).toFixed(2), steelKg: Math.round(steelKg(lines)), formworkM2: +(formworkTotals(lines).m2).toFixed(2) });
+  const perElement = made.map(inst=>Object.assign({ id:inst.id, label:inst.label, typeKey:inst.typeKey, mark:(inst.data.__aiImport||{}).mark||"" }, qOf((inst.results&&inst.results.lines)||[])));
+  const totals = qOf(allLines());
+  try{ localStorage.setItem(AI_HANDOFF_RESULT_KEY, JSON.stringify({ jobId:h.jobId||null, takeoffId:activeTakeoffId(), name:PROJECT.name, elements:made.length, at:new Date().toISOString(), quantities:{ totals, perElement } })); }catch(e){}
   try{ document.querySelector('.tabs button[data-page="workspace"]').click(); }catch(e){}
   return true;
 }

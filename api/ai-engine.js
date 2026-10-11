@@ -45,7 +45,7 @@ You read structural drawings and specifications for a concrete subcontractor's t
 
 export function takeoffPrompt({ types, projectName, profile }) {
   const typeList = (types || []).map((t) => `${t.id} — ${t.label} (${t.group})`).join("\n");
-  const prof = profile ? `\nA specification profile was read earlier for this project; use it for grades and covers where the drawings are silent:\n${JSON.stringify(profile).slice(0, 4000)}\n` : "";
+  const prof = profile ? `\nA specification / site profile was read earlier for this project; use it for grades and covers where the drawings are silent, and let its site conditions (founding depth, water, rock) inform depths you cannot read:\n${JSON.stringify(profile).slice(0, 5000)}\n` : "";
   return `Read every sheet of the attached structural drawings for "${projectName || "this project"}" and list EVERY concrete element a concrete subcontractor would price: footings, piers/piles, pile caps, ground beams, slabs (on ground, suspended, raft, waffle), beams, columns, walls, retaining walls, stairs, kerbs, pits, tanks, plinths, roof elements, external works. Use the footing / beam / column / slab schedules and the plans together: one entry per schedule mark (e.g. PF1, SF2, B3) with the number of that mark counted on the plans, or one entry per distinct slab / wall.
 ${prof}
 Element types available (use the id exactly; pick the closest; "compositeassembly" for an irregular assembly):
@@ -66,10 +66,44 @@ Return this JSON shape:
             "mesh": string|null, "top_mesh": string|null},
    "confidence": "high"|"medium"|"low", "evidence": string, "notes": string}
  ],
+ "details": [{"callout": string, "onSheet": string, "detailSheet": string|null, "found": boolean, "note": string}],
+ "scales": [{"sheet": string, "stated": string, "check": string, "consistent": boolean, "note": string}],
  "unreadable": [string], "assumptions": [string]
 }
+"details" = every plan callout / section mark you can read (e.g. "2/S-04", "A-A") matched to the sheet that draws it (found false when the referenced detail is not in the set); "scales" = each sheet's stated scale checked against one dimension string you measured on it (say which), consistent false when they disagree; keep both lists short and factual.
 Output rules: write the JSON compactly — no indentation, no line breaks inside it, and OMIT every key whose value would be null. Keep "evidence" under 80 characters and "notes" under 80 characters. One entry per schedule mark with its qty, never one entry per instance. If the set holds more than 120 elements, list the largest and most repeated first.
 Rules: dimensions in millimetres (area in m²); for a slab give length_mm × width_mm of its plan extent or area_m2 when the plan is irregular, and depth_mm = thickness; for a pier give diameter_mm and length_mm = depth; for a wall give length_mm, height_mm, depth_mm = thickness; grade as the number (32 for N32); bar sizes as "N12" / "N16"; mesh as "SL82" / "SL72". qty is how many of that element (count the marks on the plan). confidence is "high" when the schedule and plan agree, "medium" when one is read off a plan dimension, "low" when inferred. evidence quotes the schedule row or note (short). notes says what the estimator must check. Keep labels short ("PF1 pad footing 1200×1200×600"). List everything you can read; do not stop early.`;
+}
+
+export function geotechPrompt({ projectName }) {
+  return `Read the attached geotechnical report(s) for "${projectName || "this project"}" as a concrete subcontractor pricing footings, piers, slabs and excavation. Extract everything that changes how the ground work is priced, with the page and the sentence it came from.
+
+Return this JSON shape (compact, omit null keys, quotes under 160 characters):
+{
+ "document": {"title": string|null, "revision": string|null, "date": string|null, "author": string|null},
+ "site": {"siteClass": string|null, "soilProfile": string|null, "bearingPressureKPa": number|null, "foundingDepthMm": number|null, "waterTableDepthMm": number|null, "rock": string|null, "reactivity": string|null, "fill": string|null, "aggressivity": string|null},
+ "constraints": [{"category": "founding"|"excavation"|"groundwater"|"rock"|"fill"|"shoring"|"aggressive"|"access"|"other", "text": string, "value": string|null, "page": number, "quote": string}],
+ "allowances": [{"item": string, "why": string, "page": number, "quote": string}],
+ "missing": [string],
+ "unreadable": [string]
+}
+"allowances" are the pricing items the report implies (rock breaking, dewatering, battering or shoring, over-excavation and replacement, sulphate-resisting cement, pier casing, inspections / hold points); "missing" is what an estimator still needs and the report does not give. Do not invent values; list only what is on the pages.`;
+}
+
+export function contractPrompt({ projectName }) {
+  return `Read the attached contract / tender conditions for "${projectName || "this project"}" as a concrete subcontractor. Extract the scope and the obligations that change the price or the risk, each with its page and the sentence it came from.
+
+Return this JSON shape (compact, omit null keys, quotes under 160 characters):
+{
+ "document": {"title": string|null, "revision": string|null, "date": string|null, "principal": string|null, "form": string|null},
+ "scope": [{"item": string, "responsibility": "subcontractor"|"builder"|"other"|"unclear", "page": number, "quote": string}],
+ "obligations": [{"category": "programme"|"payment"|"retention"|"liquidated-damages"|"insurance"|"variations"|"defects"|"site"|"quality"|"safety"|"hours"|"other", "text": string, "value": string|null, "page": number, "quote": string}],
+ "exclusions": [{"text": string, "page": number, "quote": string}],
+ "qualifications": [{"text": string, "why": string}],
+ "risks": [{"text": string, "severity": "high"|"medium"|"low", "page": number, "quote": string}],
+ "unreadable": [string]
+}
+"scope" is the responsibility matrix for concrete, reinforcement, formwork, excavation, pumping, testing, cleaning and the like; "qualifications" are the commercial qualifications a subcontractor would write into the tender from what the document says (one line each, with why). Do not invent clauses; list only what is on the pages.`;
 }
 
 export function specPrompt({ projectName }) {
@@ -155,13 +189,14 @@ export async function runAiJob(body, env = process.env) {
       return { status: e.status && e.status >= 400 && e.status < 600 ? e.status : 502, body: { error: e.message, detail: e.detail || null, provider: id } };
     }
   }
-  if (action !== "takeoff" && action !== "spec") return { status: 400, body: { error: 'Body must carry action "takeoff", "spec", "qa" or "benchmarks"' } };
+  const DOC_ACTIONS = { takeoff: null, spec: specPrompt, geotech: geotechPrompt, contract: contractPrompt };
+  if (!(action in DOC_ACTIONS)) return { status: 400, body: { error: 'Body must carry action "takeoff", "spec", "geotech", "contract", "qa" or "benchmarks"' } };
   const bad = validFiles(files);
   if (bad) return { status: 400, body: { error: bad } };
   if (action === "takeoff" && (!Array.isArray(types) || types.length === 0 || types.length > MAX_TYPES)) return { status: 400, body: { error: "takeoff needs the element type list (types: [{id, label, group}])" } };
   const id = resolveProviderId(provider, env);
   if (!id) return { status: 503, body: { error: "No AI provider is configured — set ANTHROPIC_API_KEY or OPENAI_API_KEY in the Vercel project's Environment Variables." } };
-  const prompt = action === "takeoff" ? takeoffPrompt({ types, projectName, profile }) : specPrompt({ projectName });
+  const prompt = action === "takeoff" ? takeoffPrompt({ types, projectName, profile }) : DOC_ACTIONS[action]({ projectName });
   let r;
   try {
     r = await callDocuments(id, { system: SYSTEM, prompt, documents: files.map((f) => ({ url: f.url, name: f.name })), maxTokens: action === "takeoff" ? 16000 : 12000, env });
@@ -173,9 +208,9 @@ export async function runAiJob(body, env = process.env) {
   let partial = null;
   if (!result) {
     // A cut-off reply: keep every element / standard / requirement that was written in full.
-    const keys = action === "takeoff" ? ["elements", "sheets", "unreadable", "assumptions"] : ["standards", "requirements", "unusual", "unreadable"];
+    const keys = action === "takeoff" ? ["elements", "sheets", "details", "scales", "unreadable", "assumptions"] : action === "geotech" ? ["constraints", "allowances", "missing", "unreadable"] : action === "contract" ? ["scope", "obligations", "exclusions", "qualifications", "risks", "unreadable"] : ["standards", "requirements", "unusual", "unreadable"];
     const got = salvageArrays(r.text, keys);
-    const n = got ? ((got.elements || got.standards || []).length) : 0;
+    const n = got ? ((got.elements || got.standards || got.constraints || got.scope || []).length) : 0;
     if (got && n > 0) {
       result = got;
       partial = { reason: r.truncated ? "The reply was cut off at the model's output limit" : "The reply was not a complete JSON object", kept: n, advice: "What was read is shown. Run again with fewer sheets, or split the set into two jobs and merge the exports in Estimates." };

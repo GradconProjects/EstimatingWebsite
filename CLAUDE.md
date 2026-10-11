@@ -690,7 +690,32 @@ login and on the main dashboard". Rules:
    `mail` action opens that message in the Mail tab
    (`gradcon-ai-open-mail`). Read-only everywhere: nothing is sent, replied
    to or deleted.
-10. **Roadmap tab** (`ROADMAP` in `ai-engine.html`): Grady's 10 Oct 2026
+10. **Automatic quantities** (`src/lib/aiQuantities.js`, pure, in the
+   `gradcon-qa.js` bundle; Grady, 11 Oct 2026: "can we not have an estimator
+   that can actually give the quantities automatically?"):
+   `elementQuantities(el, calc)` turns a reviewed drawing element's geometry
+   and bars into indicative concrete m³, steel kg (d²/162, `MESH_KG_M2`),
+   formed m² and excavation m³ per calculator family — DETERMINISTIC, never
+   a figure the model wrote; an element with no formula gives zeros and a
+   note. The review table shows the three figures per row (`qtyCells` /
+   `refreshQtyCells`, live on every edit) and `proposalTotals` under it,
+   labelled geometry only. On export Estimates computes the exact lines and
+   writes `quantities: {totals, perElement}` (concrete m³ of its Concrete
+   lines, `steelKg`, `formworkTotals().m2`) into `gradcon-ai-handoff-result`,
+   which the job's export banner shows as "Estimates computed".
+11. **Geotech and contract readers** (job kinds `geotech` and `contract`,
+   `geotechPrompt` / `contractPrompt` in `api/ai-engine.js`, `geotechReviewFrom`
+   / `contractReviewFrom` and their renderers in the page): the geotech
+   report's site conditions, constraints, implied allowances and missing
+   items; the contract's responsibility matrix, obligations with money or
+   risk, exclusions, suggested qualifications and risks — every item with
+   page and quote, ticked for review. A takeoff job may pick a geotech job
+   (`geoJobId`); `specProfileFor` folds its ticked items in as `profile.site`
+   for the drawing reading. The drawing reading also returns `details`
+   (plan callouts matched to the sheet that draws them, missing ones flagged)
+   and `scales` (each sheet's stated scale against a measured dimension
+   string), both model-read and shown under the elements.
+12. **Roadmap tab** (`ROADMAP` in `ai-engine.html`): Grady's 10 Oct 2026
    specification as capability-group tabs, each item Live (with a link to
    where it runs) / Partial / Planned — the ONE place the plan is stated in
    the product; update an item's status in that array when it ships, never
