@@ -249,6 +249,75 @@ export async function callChat(id, { system, messages = [], maxTokens = 1200, ti
   return { text: String(text), model: data.model || model, latencyMs: Date.now() - started, provider: p.id };
 }
 
+/**
+ * A conversation with READ-ONLY tools: the model may call `tools` (each
+ * {name, description, parameters (JSON schema)}) through `runTool(name,
+ * args)` for up to `maxRounds` rounds, then answers. Anthropic through the
+ * SDK's tool_use blocks; OpenAI / DeepSeek through chat-completions function
+ * calling (`fetchImpl` is the test seam). Returns {text, model, provider,
+ * latencyMs, trace:[{name, args, summary}]}.
+ */
+export async function callChatWithTools(id, { system, messages = [], tools = [], runTool, maxRounds = 4, maxTokens = 1500, timeoutMs = 80000, env = process.env, fetchImpl = fetch } = {}) {
+  if (!tools.length || typeof runTool !== "function") return callChat(id, { system, messages, maxTokens, timeoutMs, env });
+  const p = spec(id);
+  if (!p) throw fail(`Unknown provider "${id}"`, 400);
+  const apiKey = keyFor(p, env);
+  if (!apiKey) throw fail(`${p.label} is not configured — set ${p.keyVar} in the Vercel project's Environment Variables (server-side, no VITE_ prefix).`, 503);
+  const model = modelFor(p, env);
+  const started = Date.now();
+  const turns = messages.filter((m) => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string" && m.content.trim()).map((m) => ({ role: m.role, content: m.content.slice(0, 8000) }));
+  if (!turns.length || turns[turns.length - 1].role !== "user") throw fail("The conversation must end with a user message", 400);
+  const trace = [];
+  const exec = async (name, args) => {
+    try { const r = await runTool(name, args || {}); trace.push({ name, args: args || {}, summary: r && r.summary ? r.summary : "" }); return JSON.stringify(r && r.result !== undefined ? r.result : r).slice(0, 30000); }
+    catch (e) { trace.push({ name, args: args || {}, summary: "failed: " + String(e.message || e).slice(0, 120) }); return JSON.stringify({ error: String(e.message || e).slice(0, 300) }); }
+  };
+
+  if (p.id === "anthropic") {
+    const client = new Anthropic({ apiKey, timeout: timeoutMs, maxRetries: 1 });
+    const convo = turns.map((t) => ({ role: t.role, content: t.content }));
+    const aTools = tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.parameters || { type: "object", properties: {} } }));
+    let r;
+    for (let round = 0; round <= maxRounds; round++) {
+      try {
+        r = await client.beta.messages.create({ model, max_tokens: maxTokens, ...(system ? { system } : {}), messages: convo, tools: aTools, betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" });
+      } catch (e) { throw fail(`${p.label} request failed`, (e && e.status) || 502, e && e.message); }
+      if (r.stop_reason === "refusal") throw fail(`${p.label} declined the request`, 422, r.stop_details && r.stop_details.explanation);
+      const uses = (r.content || []).filter((b) => b.type === "tool_use");
+      if (r.stop_reason !== "tool_use" || !uses.length || round === maxRounds) break;
+      convo.push({ role: "assistant", content: r.content });
+      const results = [];
+      for (const u of uses) results.push({ type: "tool_result", tool_use_id: u.id, content: await exec(u.name, u.input) });
+      convo.push({ role: "user", content: results });
+    }
+    const text = (r.content || []).filter((b) => b.type === "text").map((b) => b.text).join("");
+    return { text, model: r.model || model, latencyMs: Date.now() - started, provider: p.id, trace };
+  }
+
+  // OpenAI / DeepSeek: chat-completions function calling
+  const convo = [...(system ? [{ role: "system", content: system }] : []), ...turns];
+  const oTools = tools.map((t) => ({ type: "function", function: { name: t.name, description: t.description, parameters: t.parameters || { type: "object", properties: {} } } }));
+  let data;
+  for (let round = 0; round <= maxRounds; round++) {
+    let res;
+    try {
+      res = await fetchImpl(`${p.base}/chat/completions`, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` }, body: JSON.stringify({ model, ...tokenLimit(p, maxTokens), messages: convo, tools: oTools }), signal: AbortSignal.timeout(timeoutMs) });
+    } catch (e) { throw fail(`${p.label} could not be reached`, 502, e && e.message); }
+    if (!res.ok) throw fail(`${p.label} request failed (${res.status})`, res.status, await res.text().catch(() => ""));
+    data = await res.json();
+    const choice = (data.choices || [])[0] || {}; const msg = choice.message || {};
+    const calls = Array.isArray(msg.tool_calls) ? msg.tool_calls : [];
+    if (!calls.length || round === maxRounds) break;
+    convo.push({ role: "assistant", content: msg.content || null, tool_calls: calls });
+    for (const c of calls) {
+      let args = {}; try { args = JSON.parse(c.function && c.function.arguments || "{}"); } catch { args = {}; }
+      convo.push({ role: "tool", tool_call_id: c.id, content: await exec(c.function && c.function.name, args) });
+    }
+  }
+  const text = ((((data || {}).choices || [])[0] || {}).message || {}).content || "";
+  return { text: String(text), model: (data && data.model) || model, latencyMs: Date.now() - started, provider: p.id, trace };
+}
+
 /** The ONE loose JSON reader for model replies: strips code fences and takes the outermost {...}. Returns null when nothing parses. */
 export function parseJsonLoose(text) {
   const t = String(text || "").replace(/^\s*```(?:json)?/i, "").replace(/```\s*$/, "");

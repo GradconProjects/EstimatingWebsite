@@ -2436,6 +2436,16 @@ check("Project Geometry carries a COUNT: $/no. leads the benchmark rates, sums a
     const failed = await C.mailForContext(genv, { mail: async () => { throw new Error("offline"); } });
     assertTrue(got.messages[0].subject === "Tender" && failed.error === "offline" && (await C.mailForContext({})) === null && /under "mail"/.test(C.chatSystem({})));
   });
+  await checkAsync("AI chat: with the mailbox connected the model gets search_mail / read_mail tools and the loop runs them (OpenAI function-calling shape, mocked), returning the trace of what was searched", async () => {
+    let n = 0;
+    const fetchImpl = async (url, init) => { n++; const body = JSON.parse(init.body); if (n === 1) { assertTrue(Array.isArray(body.tools) && body.tools.some((t) => t.function.name === "search_mail")); return { ok: true, json: async () => ({ model: "gpt-5", choices: [{ message: { content: null, tool_calls: [{ id: "c1", type: "function", function: { name: "search_mail", arguments: JSON.stringify({ q: "from:holcim newer_than:90d" }) } }] } }] }) }; } const toolMsg = body.messages.find((m) => m.role === "tool"); return { ok: true, json: async () => ({ model: "gpt-5", choices: [{ message: { content: "Found **1**: " + JSON.parse(toolMsg.content).messages[0].subject } }] }) }; };
+    const deps = { mail: async () => ({ mailbox: "projects@gradcon.com.au", messages: [] }), search: async (q) => ({ messages: [{ id: "m9", from: "Holcim", subject: "Surcharge notice 1 Aug", date: "2026-08-01", snippet: "x", attachments: [] }], resultSizeEstimate: 1 }), fetchImpl };
+    const r = await C.runChat({ provider: "openai", messages: [{ role: "user", content: "any holcim surcharge in the last 3 months?" }], context: {} }, { OPENAI_API_KEY: "k", GOOGLE_CLIENT_ID: "a", GOOGLE_CLIENT_SECRET: "b" }, deps);
+    assertTrue(r.status === 200 && /Surcharge notice 1 Aug/.test(r.body.reply) && r.body.trace.length === 1 && r.body.trace[0].name === "search_mail" && r.body.trace[0].args.q === "from:holcim newer_than:90d" && n === 2);
+    const noMail = await C.runChat({ provider: "openai", messages: [{ role: "user", content: "hi" }], context: {} }, { OPENAI_API_KEY: "k" }, { fetchImpl: async () => ({ ok: true, json: async () => ({ model: "gpt-5", choices: [{ message: { content: "Hello" } }] }) }) });
+    assertTrue(noMail.status === 200 && noMail.body.trace.length === 0);
+    assertTrue(/search_mail/.test(C.chatSystem({})) && /Never say you cannot look back/.test(C.chatSystem({})) && /### Heading/.test(C.chatSystem({})));
+  });
   check("Portal: the AI Engine page carries the Mail tab, the Quality checks picker and the system mirror's Open links; the shell carries Settings → Google mail", () => { const ai = fs.readFileSync(new URL("../portal/ai-engine.html", import.meta.url), "utf8"); const sh = fs.readFileSync(new URL("../portal/portal-shell.html", import.meta.url), "utf8"); assertTrue(/id="page-mail"/.test(ai) && /id="qaProject"/.test(ai) && /gradcon-qa\.js/.test(ai) && /data-open-quote=/.test(ai) && /data-open-takeoff=/.test(ai) && /id="settings-google"/.test(sh) && /google-auth\?action=start/.test(sh)); });
 }
 

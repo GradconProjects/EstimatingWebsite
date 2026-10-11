@@ -341,7 +341,17 @@
   .ai-msg.user{ align-self:flex-end; background:#6b3fd6; color:#fff; border-bottom-right-radius:3px; }
   .ai-msg.bot{ align-self:flex-start; background:#fff; border:1px solid var(--line); border-bottom-left-radius:3px; }
   .ai-msg.bot.err{ border-color:#e39a9a; background:#fde8e8; } .ai-msg.bot.thinking{ color:var(--muted); font-style:italic; }
+  /* Rich bot replies: headings, bullets, numbered steps, bold facts, separated sections (Grady, 11 Oct 2026: "make it rich and well formatted and easy to read and separate the different items") */
+  .ai-msg.bot.rich{ white-space:normal; padding:10px 13px; }
+  .ai-msg.bot.rich p{ margin:0 0 8px; } .ai-msg.bot.rich p:last-child{ margin-bottom:0; }
+  .ai-msg.bot.rich .ai-h{ font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:#6b3fd6; font-weight:800; margin:10px 0 4px; padding-top:8px; border-top:1px solid #ece7f7; }
+  .ai-msg.bot.rich .ai-h:first-child{ margin-top:0; padding-top:0; border-top:0; }
+  .ai-msg.bot.rich ul, .ai-msg.bot.rich ol{ margin:0 0 8px; padding-left:18px; } .ai-msg.bot.rich li{ margin:3px 0; }
+  .ai-msg.bot.rich li::marker{ color:#6b3fd6; }
+  .ai-msg.bot.rich b{ color:#1b1334; } .ai-msg.bot.rich code{ background:#f1ecfb; border-radius:4px; padding:0 4px; font-size:12px; }
+  .ai-msg.bot.rich .ai-lead{ font-weight:700; font-size:14px; margin-bottom:8px; }
   .ai-actions{ display:flex; gap:6px; flex-wrap:wrap; margin-top:6px; }
+  .ai-trace{ margin-top:8px; padding-top:6px; border-top:1px dashed #e6e1f2; font-size:11px; color:var(--muted); }
   .ai-actions button{ border:1px solid #6b3fd6; color:#6b3fd6; background:#fff; border-radius:8px; padding:4px 9px; font:inherit; font-size:12px; font-weight:700; cursor:pointer; }
   .ai-actions button:hover{ background:#f1ecfb; }
   #ai-chat-form{ display:flex; gap:6px; padding:10px; border-top:1px solid var(--line); background:#fff; }
@@ -1780,8 +1790,37 @@
     return ctx;
   }
   function paintChatProvider(){ /* the chat header shows no provider (Grady, 10 Oct 2026); Settings → AI providers says which is in use */ }
+  // The ONE reader of a bot reply's light markdown: escape first, then bold,
+  // inline code, "### " / "## " headings, "- " bullets, "1. " steps and
+  // paragraphs. Nothing else is interpreted, so a reply can never inject HTML.
+  function renderChatMarkdown(text){
+    var esc = escapeHtml(String(text || ''));
+    var inline = function(s){ return s.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/`([^`]+)`/g, '<code>$1</code>'); };
+    var lines = esc.split(/\r?\n/), out = [], list = null, para = [], first = true;
+    var flushPara = function(){ if(para.length){ var t = inline(para.join(' ')); out.push(first ? '<p class="ai-lead">' + t + '</p>' : '<p>' + t + '</p>'); first = false; para = []; } };
+    var closeList = function(){ if(list){ out.push(list === 'ul' ? '</ul>' : '</ol>'); list = null; } };
+    lines.forEach(function(raw){
+      var line = raw.replace(/\s+$/, '');
+      var h = /^#{1,4}\s+(.*)$/.exec(line), b = /^\s*[-*•]\s+(.*)$/.exec(line), n = /^\s*\d+[.)]\s+(.*)$/.exec(line);
+      if(!line.trim()){ flushPara(); closeList(); return; }
+      if(h){ flushPara(); closeList(); out.push('<div class="ai-h">' + inline(h[1]) + '</div>'); first = false; return; }
+      if(b || n){ flushPara(); var want = b ? 'ul' : 'ol'; if(list && list !== want) closeList(); if(!list){ out.push(want === 'ul' ? '<ul>' : '<ol>'); list = want; } out.push('<li>' + inline((b || n)[1]) + '</li>'); first = false; return; }
+      closeList(); para.push(line.trim());
+    });
+    flushPara(); closeList();
+    return out.join('');
+  }
   function chatBubble(role, text, cls){
-    var log = document.getElementById('ai-chat-log'); var div = document.createElement('div'); div.className = 'ai-msg ' + role + (cls ? ' ' + cls : ''); div.textContent = text; log.appendChild(div); log.scrollTop = log.scrollHeight; return div;
+    var log = document.getElementById('ai-chat-log'); var div = document.createElement('div'); div.className = 'ai-msg ' + role + (cls ? ' ' + cls : '');
+    if(role === 'bot' && !cls){ div.classList.add('rich'); div.innerHTML = renderChatMarkdown(text); } else { div.textContent = text; }
+    log.appendChild(div); log.scrollTop = log.scrollHeight; return div;
+  }
+  // What the assistant looked up to answer (mail searches and reads), under the bubble.
+  function chatTrace(div, trace){
+    if(!Array.isArray(trace) || !trace.length) return;
+    var row = document.createElement('div'); row.className = 'ai-trace';
+    row.textContent = trace.map(function(t){ return (t.name === 'search_mail' ? 'Searched mail: ' + (t.args && t.args.q || '') + (t.summary ? ' (' + t.summary.replace(/ for ".*$/, '') + ')' : '') : t.name === 'read_mail' ? 'Read: ' + (t.summary || '').replace(/^read /, '') : t.name); }).join(' · ');
+    div.appendChild(row);
   }
   function chatActions(div, actions){
     if(!Array.isArray(actions) || !actions.length) return;
@@ -1829,7 +1868,7 @@
       .then(function(x){
         thinking.remove();
         if(!x.ok || !x.d || typeof x.d.reply !== 'string'){ chatBubble('bot', (x.d && x.d.error) || ('The assistant did not answer (' + x.status + ').'), 'err'); return; }
-        var d = chatBubble('bot', x.d.reply); chatActions(d, x.d.actions);
+        var d = chatBubble('bot', x.d.reply); chatTrace(d, x.d.trace); chatActions(d, x.d.actions);
         var h2 = chatHistory(); h2.push({ role: 'assistant', content: x.d.reply, actions: x.d.actions || null }); saveChat(h2);
       })
       .catch(function(){ thinking.remove(); chatBubble('bot', 'Could not reach the assistant — this build may not be the Vercel deployment, or the network is down.', 'err'); })
