@@ -724,6 +724,59 @@ login and on the main dashboard". Rules:
 the review edits, the export into AI drafts with the field mapping and the
 profile, the chat on both accounts and the provider switch.
 
+## Version history for the chat (what changed, who changed it)
+
+Grady, 11 Oct 2026: "I want this chat to not have this limitation … i want to
+monitor what Grady will input so we can collect data for future projects.
+check for 145 Harrisons road and see changes". The copies already existed —
+every Save, autosave and restore keeps a full immutable version
+(`quote-versions/<projectId>/` from `lib/quoteVersions.js`,
+`estimate-versions/<takeoffId>/` from Estimates' `keepEstimateVersion`) — what
+was missing was a reader. Rules:
+
+1. **`src/lib/quoteDiff.js` is the ONE diff** (pure, verify-covered):
+   `diffQuotes(before, after, liveRates)` → project fields (status, client,
+   scope, on-costs, planner, assumptions, rates pin, handover, the two report
+   blobs as "edited"), elements added / removed / changed — on a changed
+   element every `qtys` key, `rateOverrides` amount, crew cell (by task and
+   resource NAME, keyed by `key`), additional row, label / scope / steel mode
+   and the drawing count — with the element's direct cost before and after
+   (`computeElementCost`, priced through `effectiveRates(after, liveRates)`
+   so a pinned project reads off its pin) and the $ each band moved. An
+   element added ABOVE the others is not "every other element moved": order
+   is compared among the elements both copies hold. `handoverDrift(quote)`
+   lays the handover's prefilled cells / rows / tonnages against what the
+   sheet holds now — kept, changed (to what) or cleared — the record future
+   bands are tuned from. `diffTakeoffs` does the same per instance for
+   Estimates (`data` fields, label, type, review stamp, tags; `_`-flags and
+   `results` ignored). `historyFromVersions(docs, kind, liveRates)` walks
+   consecutive copies oldest → newest, counting unchanged steps;
+   `describeDiff` renders the one-liners the chat is given.
+2. **`api/_versions.js` are the chat's history tools** (read-only;
+   `deps.cloud` = `{list, getJson, kvGet}` is the test seam): `list_versions`
+   (both apps' file-name schemes through `parseVersionName`, `savedBy` read
+   from the newest documents, the live row's `updated_at`), `compare_versions`
+   (`from` / `to` = "live", "latest", "oldest", an index with 1 = newest, a
+   date-time prefix, a path; defaults = the newest version → live; the quote
+   diff is priced on the live `gradcon-rates` row), `project_history` (the
+   newest N versions then the live row, with who saved each) and
+   `handover_changes` (the drift off the live row). `api/ai-chat.js` offers
+   them on EVERY call beside the mail tools (`HISTORY_TOOL_NAMES` routes the
+   call) and `chatSystem` tells the model to CALL them rather than say it
+   cannot see earlier values or who changed what. The anon key reads the
+   bucket as any browser does; nothing is written. Older versions carry
+   inline drawings (7 MB each on 145 Harrisons Rd), so a history walk is
+   bounded (default 12, max 30, four fetches in flight).
+3. **Every new version is stamped `savedBy`** — `signedInUser()` in
+   `quoteVersions.js` and `portalSignedInUser()` in Estimates read the
+   portal session (`gradcon-portal-session.currentUser`, shared localStorage
+   under the blob: iframe) and `buildQuoteFile` / `keepEstimateVersion` write
+   it (`null` outside the portal). Versions saved before 11 Oct 2026 carry
+   none — the chat says "not recorded", never invents a person.
+`test-saved-by.mjs` proves both apps stamp the account; `verify.mjs` covers
+the diff, the drift, the takeoff diff, the history, every tool on a mock
+cloud and the tool loop through `runChat`.
+
 ## Dashboard opens on the open work only
 
 `OPEN_STATUSES` (`lib/planner.js`, used by `Dashboard.jsx`) = Queued, Estimating: the status filter

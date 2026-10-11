@@ -1404,6 +1404,8 @@ function notifySyncConflict(when){
 }
 /* ---- Cloud versions (unlimited, immutable) ---- */
 const VERSION_BUCKET = "gradcon-files", VERSION_PREFIX = "estimate-versions/";
+// The portal account signed in (its session is in the shared localStorage), stamped on every version as savedBy — 11 Oct 2026. Never throws.
+function portalSignedInUser(){ try{ const s=JSON.parse(localStorage.getItem("gradcon-portal-session")||"null"); return s && typeof s.currentUser==="string" && s.currentUser ? s.currentUser : null; }catch(e){ return null; } }
 let LAST_VERSION_HASH = null;
 function snapshotHash(snap){
   let str=contentString(snap); let h=0x811c9dc5;
@@ -1417,7 +1419,7 @@ async function keepEstimateVersion(key, snapshot, source){
   const pid = projectIdForKey(key); if(!pid) return null;
   if(source==="before-sync"){ const now=Date.now(); if(LAST_BEFORE_SYNC_AT[key] && now-LAST_BEFORE_SYNC_AT[key] < 60000) return null; LAST_BEFORE_SYNC_AT[key]=now; }
   if(!(Array.isArray(snapshot.instances) && snapshot.instances.length) && !((snapshot.project||{}).name||"").trim()) return null; // an empty draft is not worth a version
-  const doc = { format:"gradcon-estimate-version", formatVersion:1, schemaVersion:ESTIMATE_SCHEMA_VERSION, source, savedAt:new Date().toISOString(), projectId:pid, build:ESTIMATES_BUILD, name:(snapshot.project||{}).name||"", elementCount:(snapshot.instances||[]).length, snapshot };
+  const doc = { format:"gradcon-estimate-version", formatVersion:1, schemaVersion:ESTIMATE_SCHEMA_VERSION, source, savedAt:new Date().toISOString(), savedBy:portalSignedInUser(), projectId:pid, build:ESTIMATES_BUILD, name:(snapshot.project||{}).name||"", elementCount:(snapshot.instances||[]).length, snapshot };
   const path = VERSION_PREFIX + pid + "/" + doc.savedAt.replace(/[:.]/g,"-") + "-" + source + ".json";
   try{
     const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${VERSION_BUCKET}/${path}`, {

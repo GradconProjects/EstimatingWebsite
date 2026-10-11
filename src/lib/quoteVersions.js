@@ -28,8 +28,21 @@ export const FILE_FORMAT_VERSION = 1;
 
 export const versionFolder = (projectId) => `quote-versions/${projectId}`;
 
+/** The account signed in to the portal (its session lives in localStorage,
+ * shared with this blob: iframe), or null outside the portal. Stamped on every
+ * version as `savedBy` so the history says WHO saved each copy — Grady,
+ * 11 Oct 2026: "i want to monitor what Grady will input". Never an error. */
+export function signedInUser(storage) {
+  try {
+    const st = storage || (typeof localStorage !== "undefined" ? localStorage : null);
+    const raw = st && st.getItem("gradcon-portal-session");
+    const s = raw ? JSON.parse(raw) : null;
+    return s && typeof s.currentUser === "string" && s.currentUser ? s.currentUser : null;
+  } catch { return null; }
+}
+
 /** The portable document: what a version file and a downloaded file contain. */
-export function buildQuoteFile(projectId, quote, source = "manual") {
+export function buildQuoteFile(projectId, quote, source = "manual", savedBy = signedInUser()) {
   return {
     format: FILE_FORMAT,
     formatVersion: FILE_FORMAT_VERSION,
@@ -37,6 +50,7 @@ export function buildQuoteFile(projectId, quote, source = "manual") {
     projectId,
     source,
     savedAt: new Date().toISOString(),
+    savedBy: savedBy || null,
     quote,
   };
 }
@@ -54,7 +68,7 @@ export function parseQuoteFile(input) {
     throw new Error("That isn't a Gradcon Quotes file (expected one saved by \"Save to computer\" or a version download).");
   }
   if (!Array.isArray(doc.quote.items)) throw new Error("That quote file has no element list — it may be corrupt.");
-  return { projectId: doc.projectId || null, quote: doc.quote, savedAt: doc.savedAt || null, source: doc.source || null };
+  return { projectId: doc.projectId || null, quote: doc.quote, savedAt: doc.savedAt || null, source: doc.source || null, savedBy: doc.savedBy || null };
 }
 
 const pad = (n) => String(n).padStart(2, "0");

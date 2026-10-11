@@ -10,9 +10,17 @@
  * (open an app, open a project or takeoff); it never performs one. Grady,
  * 10 Oct 2026: "let the api have access to all sections but must not be
  * autonomous except asked by me". Nothing here writes anywhere.
+ *
+ * Tools (read-only, run inside the provider's tool loop): the mail tools
+ * while the mailbox is connected (search_mail / read_mail) and, always, the
+ * history tools of api/_versions.js (list_versions / compare_versions /
+ * project_history / handover_changes) over the immutable versions every
+ * save keeps — Grady, 11 Oct 2026: "i want to monitor what Grady will input
+ * so we can collect data for future projects".
  */
 import { callChat, callChatWithTools, resolveProviderId, providerStatus } from "./_providers.js";
 import * as Gm from "./_google.js";
+import { historyTools, runHistoryTool, HISTORY_TOOL_NAMES } from "./_versions.js";
 
 export const config = { maxDuration: 60 };
 
@@ -33,6 +41,7 @@ You can SEE the portal's data below (read-only): every Quotes project (name, cli
 
 Rules:
 - MAIL TOOLS: when the mailbox is connected you have two read-only tools — search_mail (the WHOLE mailbox, any date, Gmail query syntax: from:, to:, subject:, has:attachment, after:YYYY/MM/DD, before:, newer_than:90d, older_than:1y, OR, quotes) and read_mail (one message's full text and attachments). The "mail" block in the data is only the newest two weeks: for anything older, from a named sender, about a topic, or needing the body of an email, CALL search_mail (several queries if the first finds nothing — e.g. from:holcim, then "holcim", then subject terms) and read_mail where the text matters. Never say you cannot look back; search. Report what you searched when nothing is found.
+- HISTORY TOOLS (always available): every Save, autosave and restore of a Quotes project or an Estimates takeoff kept a full immutable copy, and you have four read-only tools over them — list_versions (the timeline: when, how, by whom), compare_versions (every quantity, crew cell, quote amount, label, status and on-cost that moved between two copies or a copy and the live row, with the $ before and after), project_history (the whole run of changes, oldest to newest, with who saved each), handover_changes (what the handover prefilled against what Grady typed over it). Use the project's "id" from the data (kind "takeoff" for a takeoff id). When asked what changed, who changed it, what a figure was before, how a price moved or what Grady entered, CALL these tools — never say you cannot see earlier values or who changed what. "savedBy" names the signed-in account (recorded from 11 Oct 2026; older copies carry none — say "not recorded" then, not "unknown person"). Report the dates in local Melbourne terms and the figures exactly as the tool returns them.
 - You NEVER act on your own. You cannot change a quote, a takeoff, a rate or a status, and you must not claim to. When asked to change something, say what the person can do in the app, and offer to open the right place.
 - To offer navigation, end your reply with ONE line exactly in this form (no other text after it):
   ACTIONS: [{"app":"quotes"|"estimates"|"planner"|"folder"|"rateslibrary"|"costplanner"|"aiengine"|"mail","id":"<project id, takeoff id, mail message id or null>","label":"<button text>"}]
@@ -97,9 +106,10 @@ export async function runChat(body, env = process.env, deps = {}) {
   if (!id) return { status: 503, body: { error: "No AI provider is configured — set ANTHROPIC_API_KEY or OPENAI_API_KEY in the Vercel project's Environment Variables." } };
   let r;
   try {
-    const tools = mailLive ? mailTools(env, deps) : [];
+    const tools = (mailLive ? mailTools(env, deps) : []).concat(deps.history === false ? [] : historyTools());
+    const runTool = (name, args) => (HISTORY_TOOL_NAMES.has(name) ? runHistoryTool(name, args, deps) : runMailTool(name, args, env, deps));
     r = tools.length
-      ? await callChatWithTools(id, { system: chatSystem(context), messages, tools, runTool: (name, args) => runMailTool(name, args, env, deps), maxRounds: 4, maxTokens: 1500, env, fetchImpl: deps.fetchImpl || fetch })
+      ? await callChatWithTools(id, { system: chatSystem(context), messages, tools, runTool, maxRounds: 6, maxTokens: 1800, env, fetchImpl: deps.fetchImpl || fetch })
       : await callChat(id, { system: chatSystem(context), messages, maxTokens: 1200, env, fetchImpl: deps.fetchImpl || fetch });
   } catch (e) {
     const st = providerStatus(env).find((p) => p.id === id);

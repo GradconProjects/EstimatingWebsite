@@ -2522,6 +2522,85 @@ check("Project Geometry carries a COUNT: $/no. leads the benchmark rates, sums a
 }
 
 console.log(`\n${passed} check(s) passed.`);
+// ---------------------------------------------------------------------------
+// Version history for the chat (src/lib/quoteDiff.js, api/_versions.js, savedBy on every version) — Grady, 11 Oct 2026
+// ---------------------------------------------------------------------------
+{
+  const D = await import("../src/lib/quoteDiff.js");
+  const V = await import("../api/_versions.js");
+  const C = await import("../api/ai-chat.js");
+  const QV = await import("../src/lib/quoteVersions.js");
+  const HO = await import("../src/lib/handover.js");
+  const rates = defaultRates();
+  const strip = ELEMENT_TYPES.find((t) => t.id === "strip_footings");
+  const wall = ELEMENT_TYPES.find((t) => t.category === "VERTICAL STRUCTURE");
+  const conc = FULL_CATALOG.find((c) => c.key === "CONCRETE").products.find((p) => /^40 mpa$/i.test(p.name)) || FULL_CATALOG.find((c) => c.key === "CONCRETE").products[0];
+  const ck = rateKey("CONCRETE", conc.name, conc.unit);
+  const el = { ...newElementItem(strip), label: "Strip footing A", qtys: { [ck]: 30 } };
+  const q1 = { projectName: "Diff probe", clientName: "A", status: "Estimating", scope: "both", assumptions: [{ text: "Stairs excluded" }], items: [el] };
+  const q2 = JSON.parse(JSON.stringify(q1));
+  q2.status = "Completed Estimating"; q2.clientName = "B"; q2.assumptions.push({ text: "Piers excluded" });
+  q2.items[0].qtys[ck] = 44; q2.items[0].label = "Strip footing A rev B"; q2.items[0].tasks[0].qtys.concreter_day = 3; q2.items[0].rateOverrides = { "SUB CONTRACTORS / TEMPORARY WORKS::Steel fix::quote": { unitCost: 1200 } };
+  q2.items[0].additional = [{ id: "a1", name: "Certification", qty: 1, rate: 500 }];
+  q2.items.unshift({ ...newElementItem(wall), label: "New wall" });
+  const d = D.diffQuotes(q1, q2, rates);
+  const chg = d.elements.changed[0];
+  check("quoteDiff: project fields (status, client, assumption), an added element, and on the changed element the qty, label, crew cell, quote amount and additional row — with $ before and after", () => assertTrue(d.counts.added === 1 && d.elements.added[0].label === "New wall" && d.project.some((p) => p.field === "status" && p.to === "Completed Estimating") && d.project.some((p) => p.field === "clientName" && p.from === "A" && p.to === "B") && d.project.some((p) => p.field === "assumption" && p.to === "Piers excluded") && chg && chg.label === "Strip footing A rev B" && chg.changes.some((c) => c.kind === "qty" && c.product === conc.name && c.from === 30 && c.to === 44) && chg.changes.some((c) => c.kind === "crew" && c.resource === "Concrete Crew" && c.to === 3) && chg.changes.some((c) => c.kind === "rateOverride" && c.product === "Steel fix" && c.to === 1200) && chg.changes.some((c) => c.kind === "additional" && c.name === "Certification") && chg.changes.some((c) => c.kind === "field" && c.field === "label") && chg.totalTo > chg.totalFrom && d.totals.delta > 0 && chg.bands.CONCRETE && chg.bands.CONCRETE.to > chg.bands.CONCRETE.from, JSON.stringify({ counts: d.counts, chg: chg && chg.changes })));
+  check("quoteDiff: an element added ABOVE the others is not reported as every other element moving; identical copies diff to nothing", () => assertTrue(!chg.moved && d.elements.changed.length === 1 && D.diffQuotes(q2, JSON.parse(JSON.stringify(q2)), rates).any === false));
+  check("quoteDiff: describeDiff reads as one-liners (qty, crew, quote amount, status, direct cost)", () => { const l = D.describeDiff(d).join("\n"); assertTrue(/status: Estimating → Completed Estimating/.test(l) && new RegExp(`qty ${conc.name} \\(CONCRETE\\): 30 → 44`).test(l) && /crew .* Concrete Crew: blank → 3/.test(l) && /quote amount Steel fix: blank → 1200/.test(l) && /direct cost: \$/.test(l), l); });
+  const q3 = HO.applyHandover({ ...q2, completedAt: "2026-10-09" }, rates, "2026-10-09T05:00:00Z");
+  const drift0 = D.handoverDrift(q3);
+  const q4 = JSON.parse(JSON.stringify(q3)); const c0 = q3.handover.cells[0]; const it4 = q4.items.find((i) => i.id === c0.itemId); const t4 = it4.tasks.find((t) => t.id === c0.taskId); t4.qtys[c0.key] = (c0.value || 0) + 5;
+  const c1 = q3.handover.cells[1]; const t5 = q4.items.find((i) => i.id === c1.itemId).tasks.find((t) => t.id === c1.taskId); delete t5.qtys[c1.key];
+  const drift1 = D.handoverDrift(q4);
+  check("quoteDiff: handoverDrift — fresh prefill is all kept; a retyped cell reads changed (prefilled → now), an emptied one cleared; no handover → not prefilled", () => assertTrue(drift0.prefilled && drift0.summary.kept === drift0.entries.length && drift0.summary.kept > 5 && drift1.summary.changed === 1 && drift1.summary.cleared === 1 && drift1.entries.find((e) => e.status === "changed").now === (c0.value || 0) + 5 && drift1.entries.find((e) => e.status === "changed").prefilled === c0.value && D.handoverDrift(q1).prefilled === false, JSON.stringify(drift1.summary)));
+  const tk = D.diffTakeoffs({ project: { name: "a" }, instances: [{ id: "1", label: "PF1", typeKey: "padfooting", data: { L: 1200, W: 1200, _x: 1 } }] }, { project: { name: "b" }, instances: [{ id: "1", label: "PF1", typeKey: "padfooting", data: { L: 1500, W: 1200, _x: 2 }, review: { at: "t" } }, { id: "2", label: "C1", typeKey: "column", data: {} }] });
+  check("quoteDiff: diffTakeoffs — project name, a data field (L 1200 → 1500), the review stamp and an added element; _-prefixed UI flags ignored", () => assertTrue(tk.project[0].field === "name" && tk.elements.added[0].label === "C1" && tk.elements.changed[0].changes.some((c) => c.field === "L" && c.from === 1200 && c.to === 1500) && tk.elements.changed[0].changes.some((c) => c.field === "reviewedAt") && !tk.elements.changed[0].changes.some((c) => c.field === "_x"), JSON.stringify(tk)));
+  const hist = D.historyFromVersions([{ savedAt: "2026-10-09T03:00:00Z", source: "manual", quote: q2 }, { savedAt: "2026-10-09T01:00:00Z", source: "autosave", quote: q1 }, { savedAt: "2026-10-09T02:00:00Z", source: "manual", savedBy: "grady@gradcon.com.au", quote: q1 }], "quote", rates);
+  check("quoteDiff: historyFromVersions sorts oldest → newest, counts the unchanged step and keeps who saved each", () => assertTrue(hist.versions === 3 && hist.unchangedSteps === 1 && hist.steps.length === 1 && hist.steps[0].from.savedBy === "grady@gradcon.com.au" && hist.steps[0].to.savedAt === "2026-10-09T03:00:00Z"));
+  // the server tools on a mock cloud (both naming schemes, the live row, the rates row, the takeoff index)
+  const pid = "p145";
+  const store = {
+    [`quote-versions/${pid}/20261009T010000000Z-autosave.json`]: { ...QV.buildQuoteFile(pid, q1, "autosave", null), savedAt: "2026-10-09T01:00:00.000Z" },
+    [`quote-versions/${pid}/20261009T020000000Z-manual.json`]: { ...QV.buildQuoteFile(pid, q2, "manual", "grady@gradcon.com.au"), savedAt: "2026-10-09T02:00:00.000Z" },
+    "estimate-versions/tk1/2026-10-09T01-00-00-000Z-save.json": { format: "gradcon-estimate-version", savedAt: "2026-10-09T01:00:00.000Z", source: "save", savedBy: "projects@gradcon.com.au", snapshot: { project: { name: "Old" }, instances: [{ id: "1", label: "PF1", typeKey: "padfooting", data: { L: 1200 } }] } },
+  };
+  const kv = { [`gradcon-quote-${pid}`]: { value: q3, updated_at: "2026-10-09T07:00:00Z" }, "gradcon-rates": { value: rates, updated_at: "2026-10-01T00:00:00Z" }, "gradcon-estimate-projects-index": { value: [{ id: "tk1", key: "gradcon-estimate::tk1", name: "Old" }] }, "gradcon-estimate::tk1": { value: { project: { name: "New" }, instances: [{ id: "1", label: "PF1", typeKey: "padfooting", data: { L: 1500 } }] }, updated_at: "2026-10-09T08:00:00Z" } };
+  const cloud = { calls: [], async list(prefix) { this.calls.push("list " + prefix); return Object.keys(store).filter((k) => k.startsWith(prefix + "/")).map((k) => ({ name: k.slice(prefix.length + 1), metadata: { size: JSON.stringify(store[k]).length } })); }, async getJson(path) { this.calls.push("get " + path); if (!store[path]) throw new Error("404"); return store[path]; }, async kvGet(key) { this.calls.push("kv " + key); return kv[key] || null; } };
+  await checkAsync("history tools: list_versions reads both naming schemes, stamps savedBy from the documents and reports the live row's time", async () => {
+    const l = await V.runHistoryTool("list_versions", { projectId: pid }, { cloud });
+    const t = await V.runHistoryTool("list_versions", { projectId: "tk1", kind: "takeoff" }, { cloud });
+    assertTrue(l.result.count === 2 && l.result.versions[0].source === "manual" && l.result.versions[0].savedBy === "grady@gradcon.com.au" && l.result.versions[1].savedBy === null && l.result.versions[0].elements === 2 && l.result.liveUpdatedAt === "2026-10-09T07:00:00Z" && l.result.bySource.autosave === 1 && t.result.count === 1 && t.result.versions[0].savedAt === "2026-10-09T01:00:00.000Z" && t.result.versions[0].savedBy === "projects@gradcon.com.au" && t.result.liveUpdatedAt === "2026-10-09T08:00:00Z", JSON.stringify([l.result, t.result]));
+  });
+  await checkAsync("history tools: compare_versions defaults to the newest version → live (priced on the live rates row), takes oldest/latest/index/date-time/live refs, and diffs a takeoff against its live row", async () => {
+    const a = await V.runHistoryTool("compare_versions", { projectId: pid }, { cloud });
+    const b = await V.runHistoryTool("compare_versions", { projectId: pid, from: "oldest", to: "1" }, { cloud });
+    const c = await V.runHistoryTool("compare_versions", { projectId: pid, from: "2026-10-09T01", to: "latest" }, { cloud });
+    const t = await V.runHistoryTool("compare_versions", { projectId: "tk1", kind: "takeoff", from: "1", to: "live" }, { cloud });
+    assertTrue(a.result.from.source === "manual" && a.result.to.source === "live" && a.result.diff.project.some((p) => p.field === "handoverPrefilled") && a.result.diff.lines.some((x) => /crew /.test(x)) && b.result.from.source === "autosave" && b.result.to.source === "manual" && b.result.diff.counts.added === 1 && b.result.diff.totals.delta > 0 && c.result.diff.counts.added === 1 && t.result.diff.elements.changed[0].changes[0].field === "L" && t.result.diff.project[0].to === "New" && cloud.calls.includes("kv gradcon-rates"), JSON.stringify([a.result.from, a.result.to, b.result.diff.counts, t.result.diff]));
+  });
+  await checkAsync("history tools: project_history walks every kept copy then the live row, with who saved each; handover_changes reports the drift off the live row", async () => {
+    const h = await V.runHistoryTool("project_history", { projectId: pid }, { cloud });
+    const d2 = await V.runHistoryTool("handover_changes", { projectId: pid }, { cloud });
+    assertTrue(h.result.versionsWalked === 3 && h.result.liveIncluded && h.result.steps.length === 2 && h.result.steps[0].to.savedBy === "grady@gradcon.com.au" && h.result.steps[1].to.source === "live" && h.result.savedBy["grady@gradcon.com.au"] === 1 && h.result.steps[0].lines.some((x) => /element added: New wall/.test(x)) && d2.result.summary.kept > 5 && d2.result.changed.length === 0 && d2.result.prefilledAt === "2026-10-09T05:00:00Z", JSON.stringify([h.result.steps.map((s) => [s.from.source, s.to.source, s.counts]), d2.summary]));
+  });
+  let bad = null; try { await V.runHistoryTool("compare_versions", { projectId: "nothing" }, { cloud }); } catch (e) { bad = e; }
+  check("history tools: a project with no versions fails with a plain reason (no crash, nothing invented); parseVersionName reads both apps' file names", () => assertTrue(bad && /no versions kept/.test(bad.message) && V.parseVersionName("20261009T042905226Z-autosave.json").savedAt === "2026-10-09T04:29:05.226Z" && V.parseVersionName("2026-10-09T01-00-00-000Z-before-sync.json").source === "before-sync" && V.parseVersionName("x.txt") === null));
+  check("chat: the system prompt names the four history tools and forbids 'cannot see who changed what'; runChat offers them on every call (with or without mail)", () => { const sys = C.chatSystem({}); assertTrue(/list_versions/.test(sys) && /compare_versions/.test(sys) && /project_history/.test(sys) && /handover_changes/.test(sys) && /never say you cannot see earlier values/.test(sys) && V.historyTools().length === 4 && V.historyTools().every((t) => t.parameters.required.includes("projectId")) && /historyTools\(\)\)/.test(fs.readFileSync(new URL("../api/ai-chat.js", import.meta.url), "utf8"))); });
+  await checkAsync("chat: a history tool call from the model runs through runChat's tool loop (OpenAI shape) and lands in the trace", async () => {
+    let n = 0;
+    const fetchImpl = async (url, opts) => { n++; const body = JSON.parse(opts.body); const last = body.messages[body.messages.length - 1]; if (last.role === "tool") { const r = JSON.parse(last.content); return { ok: true, json: async () => ({ model: "gpt-5", choices: [{ message: { content: `Versions: ${r.count}` } }] }) }; } return { ok: true, json: async () => ({ model: "gpt-5", choices: [{ message: { content: null, tool_calls: [{ id: "c1", type: "function", function: { name: "list_versions", arguments: JSON.stringify({ projectId: pid }) } }] } }] }) }; };
+    const r = await C.runChat({ provider: "openai", messages: [{ role: "user", content: "what changed on 145?" }], context: {} }, { OPENAI_API_KEY: "k" }, { fetchImpl, cloud });
+    assertTrue(r.status === 200 && /Versions: 2/.test(r.body.reply) && r.body.trace.some((t) => t.name === "list_versions" && /2 versions/.test(t.summary)), JSON.stringify(r.body));
+  });
+  check("versions: buildQuoteFile stamps savedBy from the portal session (null outside the portal), parseQuoteFile returns it; Estimates stamps the same on keepEstimateVersion's document", () => {
+    const fake = { getItem: (k) => (k === "gradcon-portal-session" ? JSON.stringify({ currentUser: "grady@gradcon.com.au" }) : null) };
+    const doc = QV.buildQuoteFile("p1", { items: [] }, "manual", QV.signedInUser(fake));
+    const est = fs.readFileSync(new URL("../portal/estimates-app.html", import.meta.url), "utf8");
+    assertTrue(doc.savedBy === "grady@gradcon.com.au" && QV.signedInUser({ getItem: () => "not json" }) === null && QV.buildQuoteFile("p1", { items: [] }, "manual", null).savedBy === null && QV.parseQuoteFile(doc).savedBy === "grady@gradcon.com.au" && /savedBy:portalSignedInUser\(\)/.test(est) && /function portalSignedInUser\(\)/.test(est));
+  });
+}
+
 if (process.exitCode) {
   console.error("\nSome checks FAILED — see above.");
 } else {
