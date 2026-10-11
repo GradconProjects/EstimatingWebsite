@@ -64,10 +64,17 @@ export function verifyState(state, env = process.env, now = Date.now()) {
   if (want.length !== mac.length || !crypto.timingSafeEqual(Buffer.from(want), Buffer.from(mac))) return false;
   return Math.abs(now - Number(t)) < 10 * 60000;
 }
+/** The production portal host: the ONE redirect URI registered with Google. A
+ * portal opened on a Vercel preview / branch alias must still send this one,
+ * or Google answers redirect_uri_mismatch (11 Oct 2026). GOOGLE_OAUTH_REDIRECT
+ * overrides it for another deployment. */
+export const CANONICAL_HOST = "estimating-website.vercel.app";
 export function redirectUri(req, env = process.env) {
   if (env.GOOGLE_OAUTH_REDIRECT) return env.GOOGLE_OAUTH_REDIRECT;
-  const proto = String(req.headers["x-forwarded-proto"] || "https").split(",")[0];
-  return `${proto}://${req.headers.host}/api/google-auth`;
+  const host = String((req && req.headers && req.headers.host) || "").toLowerCase();
+  // localhost keeps its own host (a local Vercel dev run); every hosted alias uses the registered one
+  if (/^localhost(:\d+)?$/.test(host) || /^127\.0\.0\.1/.test(host)) return `http://${host}/api/google-auth`;
+  return `https://${CANONICAL_HOST}/api/google-auth`;
 }
 export function consentUrl(redirect, env = process.env, now = Date.now()) {
   const p = new URLSearchParams({

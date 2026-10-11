@@ -18,6 +18,7 @@ function fromOwnOrigin(req) {
   try { return new URL(from).host.toLowerCase() === host; } catch { return false; }
 }
 const back = (res, q) => { res.statusCode = 302; res.setHeader("location", `/?google=${encodeURIComponent(q)}`); res.end(); };
+// (relative: the callback itself runs on the canonical host Google was given, so "/" is that portal)
 
 export default async function handler(req, res) {
   const env = process.env;
