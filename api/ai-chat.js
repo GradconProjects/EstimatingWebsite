@@ -100,7 +100,7 @@ export async function runChat(body, env = process.env, deps = {}) {
     const tools = mailLive ? mailTools(env, deps) : [];
     r = tools.length
       ? await callChatWithTools(id, { system: chatSystem(context), messages, tools, runTool: (name, args) => runMailTool(name, args, env, deps), maxRounds: 4, maxTokens: 1500, env, fetchImpl: deps.fetchImpl || fetch })
-      : await callChat(id, { system: chatSystem(context), messages, maxTokens: 1200, env });
+      : await callChat(id, { system: chatSystem(context), messages, maxTokens: 1200, env, fetchImpl: deps.fetchImpl || fetch });
   } catch (e) {
     const st = providerStatus(env).find((p) => p.id === id);
     return { status: e.status && e.status >= 400 && e.status < 600 ? e.status : 502, body: { error: e.message, detail: e.detail || null, provider: id, model: st ? st.model : null } };

@@ -17,7 +17,7 @@
  * Shipped to the browser as dist/assets/gradcon-qa.js (vite.qa.config.js →
  * window.GradconQA) for the AI Engine's Quality checks tab; verify-covered.
  */
-import { FULL_CATALOG, ELEMENT_TYPES } from "../data/catalog.js";
+import { FULL_CATALOG, ELEMENT_TYPES, RESOURCE_COLS } from "../data/catalog.js";
 import {
   computeElementCost, computeElementReinforcementTonnes, labourQuantities, computeGrandTotal, computeExcludedTotals,
   rateKey, rowRate, isManualQuoteKey, categoryAppliesTo,
@@ -140,6 +140,8 @@ export function runQualityChecks(quote, liveRates, opts = {}) {
     const f = perM2 / med;
     if (f < BENCHMARK_FACTOR.low || f > BENCHMARK_FACTOR.high) add("sqm-benchmark", "medium", null, `${money(perM2)}/m² direct cost against a median of ${money(med)}/m² over ${bench.length} submitted project${bench.length === 1 ? "" : "s"} (${Math.round(f * 100)}%).`, bench.slice(0, 5).map((b) => `${b.name}: ${money(b.perM2)}/m²`).join(" · "), "Different building type or scope? If not, look for a missing or doubled element.");
   }
+  // 10b. entered rates against the Victorian market bands Grady keeps (AI Engine → Quality checks → benchmarks)
+  rateBenchmarkFindings(rates, opts.rateBenchmarks, used).forEach((f) => { f.id = `${f.check}-${++seq}`; findings.push(f); });
   // 11. project fields
   if (!quote || !String(quote.clientName || "").trim()) add("project-fields", "low", null, "No client recorded.", "", "Type the client in the editor header.");
   if (!quote || !(quote.planner && quote.planner.deadline)) add("project-fields", "low", null, "No tender deadline recorded.", "", "Set it in Project Management.");
@@ -160,4 +162,126 @@ export function runQualityChecks(quote, liveRates, opts = {}) {
     counts: { high: findings.filter((f) => f.severity === "high").length, medium: findings.filter((f) => f.severity === "medium").length, low: findings.filter((f) => f.severity === "low").length },
     summary: { total, gfa, perM2, elements: items.length, concreteM3: costs.reduce((s, c) => s + n(c.concreteQty), 0), steelT: tonnes.reduce((s, t) => s + n(t), 0), pinned: hasFrozenRates(quote) ? quote.ratesFrozen.at : null, benchmarkMedianPerM2: med, benchmarks: bench.length, scope },
   };
+}
+
+/* ======================= Takeoff vs documents =======================
+ * Grady, 11 Oct 2026: "see what grade of concrete for instance was used in
+ * the estimates section against what was specified on the drawings and the
+ * specifications sheet. and do same for all other elements so we dont submit
+ * something wrong". The takeoff's instances (Estimates data fields, read per
+ * calculator by instanceFacts) are matched to the AI Engine's drawing
+ * proposal (the takeoff job's reviewed elements) and to the ticked
+ * specification profile; every difference is a finding with both figures.
+ * Pure; the AI Engine passes `calcOf(typeKey)` from its LIBRARY mirror. */
+const DOC_BUCKET = { stripfooting: "footings", padfooting: "footings", pilecap: "footings", pier: "piers", slab: "slabs", beam: "beams", column: "columns", wall: "walls", retwall: "walls", shotwall: "walls", stairs: "stairs", kerb: "kerbs" };
+const gradeNum = (g) => { if (g == null || g === "") return null; const m = String(g).match(/(\d{2,3})/); return m ? +m[1] : null; };
+const norm = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+const dia = (v) => (v && /^[nrl]\d{2}$/i.test(String(v).trim()) ? String(v).trim().toUpperCase() : null);
+
+/** The facts a calculator's data carries, in the generic shape the drawings proposal uses. */
+export function instanceFacts(inst, calc) {
+  const d = (inst && inst.data) || {};
+  const f = { grade: gradeNum(d.grade), cover: n(d.cover) || null, mesh: null, main: {}, cross: {}, top: {}, ligs: {}, qty: n(d.qty) || null, L: null, W: null, D: null, H: null, DIA: null };
+  const num = (v) => (v == null || v === "" || isNaN(+v) ? null : +v);
+  switch (calc) {
+    case "pier": f.DIA = num(d.dia); f.L = num(d.depth); f.main = { dia: dia(d.vDia), qty: num(d.vBars) }; f.ligs = { dia: dia(d.ligDia), spacing: num(d.genSpacing) }; break;
+    case "pilecap": f.L = num(d.L); f.W = num(d.W); f.D = num(d.D); f.main = { dia: dia(d.botXDia), spacing: num(d.botXSpacing) }; f.top = { dia: dia(d.topXDia), spacing: num(d.topXSpacing) }; break;
+    case "stripfooting": f.L = num(d.length); f.W = num(d.width); f.D = num(d.depth); f.main = { dia: dia(d.botLongDia), qty: num(d.botLongQty) }; f.cross = { dia: dia(d.crossDia), spacing: num(d.crossSpacing) }; if (d.topLong) f.top = { dia: dia(d.topLongDia), qty: num(d.topLongQty) }; if (d.ligs) f.ligs = { dia: dia(d.ligDia), spacing: num(d.ligSpacing) }; break;
+    case "padfooting": f.L = num(d.length); f.W = num(d.width); f.D = num(d.depth); if (d.shape === "round") f.DIA = num(d.diameter); if (d.botReoType === "mesh") f.mesh = d.botMeshType || null; else f.main = { dia: dia(d.botXDia), spacing: num(d.botXSpacing) }; if (d.topMatOn) f.top = { dia: dia(d.topXDia), spacing: num(d.topXSpacing) }; if (d.ligs) f.ligs = { dia: dia(d.ligDia), spacing: num(d.ligSpacing) }; break;
+    case "beam": { f.L = num(d.length); f.W = num(d.width); f.D = num(d.depth); const rows = Array.isArray(d.reoRows) ? d.reoRows : []; const bot = rows.find((r) => /bottom/i.test(r.position)), top = rows.find((r) => /top/i.test(r.position)); if (bot) f.main = { dia: dia(bot.dia), qty: num(bot.qty) }; if (top) f.top = { dia: dia(top.dia), qty: num(top.qty) }; const z = Array.isArray(d.ligZones) ? d.ligZones.find((x) => /mid/i.test(x.zone)) || d.ligZones[0] : null; if (z) f.ligs = { dia: dia(z.dia), spacing: num(z.spacing) }; break; }
+    case "slab": f.L = num(d.length) != null ? num(d.length) * 1000 : null; f.W = num(d.width) != null ? num(d.width) * 1000 : null; f.D = num(d.thickness); f.qty = null; if (d.meshOn) f.mesh = d.meshType || null; if (d.botX) f.main = { dia: dia(d.botXDia), spacing: num(d.botXSpacing) }; if (d.topX) f.top = { dia: dia(d.topXDia), spacing: num(d.topXSpacing) }; break;
+    case "column": if (d.shape === "circular") f.DIA = num(d.dia); else { f.W = num(d.width); f.D = num(d.depth); } f.H = num(d.height); f.main = { dia: dia(d.vDia), qty: num(d.vBars) }; f.ligs = { dia: dia(d.ligDia), spacing: num(d.ligSpacing) }; break;
+    case "wall": f.L = num(d.length); f.D = num(d.thickness); f.H = num(d.height); f.main = { dia: dia(d.vertADia), spacing: num(d.vertASpacing) }; f.cross = { dia: dia(d.horADia), spacing: num(d.horASpacing) }; break;
+    case "retwall": f.L = num(d.length); f.H = num(d.stemH); f.D = num(d.stemT); f.W = num(d.footL); f.qty = null; break;
+    case "stairs": f.W = num(d.width); f.D = num(d.waistT); f.qty = null; break;
+    case "kerb": f.L = num(d.length); f.qty = null; break;
+    case "generic": f.L = num(d.length); f.W = num(d.width); f.D = num(d.depth); break;
+    default: break;
+  }
+  return f;
+}
+const propFacts = (el) => ({
+  grade: gradeNum(el.grade), cover: n(el.cover_mm) || null, mesh: el.mesh || null, qty: n(el.qty) || null,
+  main: { dia: dia(el.mainDia), qty: n(el.mainQty) || null, spacing: n(el.mainSpacing) || null }, cross: { dia: dia(el.crossDia), spacing: n(el.crossSpacing) || null },
+  top: { dia: dia(el.topDia), qty: n(el.topQty) || null, spacing: n(el.topSpacing) || null }, ligs: { dia: dia(el.ligDia), spacing: n(el.ligSpacing) || null },
+  L: n(el.length_mm) || null, W: n(el.width_mm) || null, D: n(el.depth_mm) || null, H: n(el.height_mm) || null, DIA: n(el.diameter_mm) || null,
+});
+const close = (a, b, tol = 0.02) => a != null && b != null && Math.abs(a - b) <= Math.max(1, tol * Math.max(Math.abs(a), Math.abs(b)));
+
+/** Match takeoff instances to drawing elements: by the AI import's mark + sheet, then by label, then by mark inside the label. */
+export function matchInstances(instances, elements) {
+  const pairs = []; const used = new Set();
+  const findEl = (pred) => elements.findIndex((e, i) => !used.has(i) && pred(e, i));
+  instances.forEach((inst) => {
+    const ai = inst.data && inst.data.__aiImport; let i = -1;
+    if (ai && ai.mark) i = findEl((e) => e.mark && norm(e.mark) === norm(ai.mark) && (!ai.sheet || !e.sheet || norm(e.sheet) === norm(ai.sheet)));
+    if (i < 0) i = findEl((e) => norm(e.label) && norm(e.label) === norm(inst.label));
+    if (i < 0) i = findEl((e) => e.mark && norm(inst.label).split(" ").includes(norm(e.mark)));
+    if (i >= 0) { used.add(i); pairs.push({ inst, el: elements[i], index: i }); } else pairs.push({ inst, el: null, index: -1 });
+  });
+  const unmatched = elements.map((e, i) => ({ el: e, index: i })).filter((x) => !used.has(x.index));
+  return { pairs, unmatched };
+}
+
+export function compareTakeoffToDocuments({ instances = [], proposal = null, profile = null, calcOf = () => null, today } = {}) {
+  const findings = []; let seq = 0;
+  const add = (check, severity, inst, message, evidence, fix) => findings.push({ id: `${check}-${++seq}`, check, severity, itemId: inst ? inst.id : null, element: inst ? inst.label || "" : null, message, evidence: evidence || "", fix: fix || "" });
+  const elements = proposal && Array.isArray(proposal.elements) ? proposal.elements.filter((e) => e && (e.include == null || e.include)) : [];
+  const { pairs, unmatched } = matchInstances(instances, elements);
+  const pd = profile && profile.defaults ? profile.defaults : null;
+  pairs.forEach(({ inst, el }) => {
+    const calc = calcOf(inst.typeKey); const f = instanceFacts(inst, calc); const bucket = DOC_BUCKET[calc] || null;
+    const where = el ? `sheet ${el.sheet || "?"}${el.mark ? " mark " + el.mark : ""}` : "";
+    if (el) {
+      const p = propFacts(el);
+      if (p.grade && f.grade && p.grade !== f.grade) add("grade-vs-drawing", "high", inst, `Concrete grade N${f.grade} in the takeoff; the drawings say N${p.grade}.`, `${where}: ${el.evidence || ""}`, `Set the element's grade to N${p.grade}, or record why it differs.`);
+      if (p.cover && f.cover && p.cover !== f.cover) add("cover-vs-drawing", "medium", inst, `Cover ${f.cover} mm in the takeoff; the drawings say ${p.cover} mm.`, `${where}: ${el.evidence || ""}`, "Check the cover on the element.");
+      if (p.mesh && f.mesh && norm(p.mesh) !== norm(f.mesh)) add("reo-vs-drawing", "high", inst, `Mesh ${f.mesh} in the takeoff; the drawings say ${p.mesh}.`, `${where}: ${el.evidence || ""}`, "Change the mesh type.");
+      if (p.mesh && !f.mesh && f.main.dia) add("reo-vs-drawing", "medium", inst, `The takeoff reinforces with ${f.main.dia} bars; the drawings show mesh ${p.mesh}.`, `${where}: ${el.evidence || ""}`, "Confirm bars or mesh.");
+      if (p.main.dia && f.main.dia && p.main.dia !== f.main.dia) add("reo-vs-drawing", "high", inst, `Main bars ${f.main.dia} in the takeoff; the drawings say ${p.main.dia}.`, `${where}: ${el.evidence || ""}`, `Change the main bar size to ${p.main.dia}.`);
+      if (p.main.qty && f.main.qty && p.main.qty !== f.main.qty) add("reo-vs-drawing", "medium", inst, `${f.main.qty} main bars in the takeoff; the drawings say ${p.main.qty}.`, where, "Check the bar count.");
+      if (p.main.spacing && f.main.spacing && !close(p.main.spacing, f.main.spacing, 0.01)) add("reo-vs-drawing", "medium", inst, `Main bars at ${f.main.spacing} mm in the takeoff; the drawings say ${p.main.spacing} mm.`, where, "Check the spacing.");
+      if (p.ligs.dia && f.ligs.dia && p.ligs.dia !== f.ligs.dia) add("reo-vs-drawing", "medium", inst, `Ligatures ${f.ligs.dia} in the takeoff; the drawings say ${p.ligs.dia}.`, where, "Change the ligature size.");
+      if (p.ligs.spacing && f.ligs.spacing && !close(p.ligs.spacing, f.ligs.spacing, 0.01)) add("reo-vs-drawing", "medium", inst, `Ligatures at ${f.ligs.spacing} mm in the takeoff; the drawings say ${p.ligs.spacing} mm.`, where, "Check the ligature spacing.");
+      if (p.top.dia && f.top.dia && p.top.dia !== f.top.dia) add("reo-vs-drawing", "medium", inst, `Top bars ${f.top.dia} in the takeoff; the drawings say ${p.top.dia}.`, where, "Change the top bar size.");
+      [["L", "length"], ["W", "width"], ["D", "depth / thickness"], ["H", "height"], ["DIA", "diameter"]].forEach(([k, name]) => { if (p[k] && f[k] && !close(p[k], f[k])) add("size-vs-drawing", "medium", inst, `${name} ${Math.round(f[k])} mm in the takeoff; the drawings say ${Math.round(p[k])} mm.`, where, "Check the dimension on the sheet."); });
+      if (p.qty && f.qty && p.qty !== f.qty) add("count-vs-drawing", "medium", inst, `${f.qty} in the takeoff; ${p.qty} counted on the drawings.`, where, "Count the mark on the plan again.");
+    } else if (elements.length) {
+      add("not-on-drawings", "low", inst, "No element on the drawings matches this takeoff element.", "matched by mark, sheet and name", "Fine if it was added by hand (blinding, allowances); otherwise check it belongs to this job.");
+    }
+    if (pd && bucket) {
+      const sg = gradeNum((pd.concreteGradeByElement || {})[bucket] || (pd.concreteGradeByElement || {}).all);
+      const sc = n((pd.coverByElement || {})[bucket] || (pd.coverByElement || {}).all) || null;
+      if (sg && f.grade && sg !== f.grade) add("grade-vs-spec", el && gradeNum(el.grade) === f.grade ? "medium" : "high", inst, `Concrete grade N${f.grade} in the takeoff; the specification says N${sg} for ${bucket}${el && gradeNum(el.grade) === f.grade ? " (the drawings agree with the takeoff — specification and drawings differ)" : ""}.`, `specification profile${profile && profile.specName ? " " + profile.specName : ""}`, "Resolve with the engineer which document governs; price the higher grade until then.");
+      if (sc && f.cover && sc !== f.cover) add("cover-vs-spec", "medium", inst, `Cover ${f.cover} mm in the takeoff; the specification says ${sc} mm for ${bucket}.`, "specification profile", "Check the exposure class and cover.");
+    }
+  });
+  unmatched.forEach(({ el }) => add("missing-from-takeoff", "medium", null, `On the drawings but not in the takeoff: ${el.label || el.type}${el.qty ? " × " + el.qty : ""}${el.sheet ? " (sheet " + el.sheet + ")" : ""}.`, el.evidence || "", "Add it to the takeoff, or record that it is out of scope."));
+  const order = { high: 0, medium: 1, low: 2 };
+  findings.sort((a, b) => order[a.severity] - order[b.severity] || a.check.localeCompare(b.check));
+  return { ranAt: (today ? new Date(today) : new Date()).toISOString(), findings, counts: { high: findings.filter((f) => f.severity === "high").length, medium: findings.filter((f) => f.severity === "medium").length, low: findings.filter((f) => f.severity === "low").length }, summary: { elements: instances.length, drawingElements: elements.length, matched: pairs.filter((p) => p.el).length, unmatchedOnDrawings: unmatched.length, hasSpec: !!pd } };
+}
+
+/* ======================= Rates vs Victorian market =======================
+ * Benchmarks are rows Grady keeps in the AI Engine ({name, match, unit, low,
+ * high, source, asOf}; `match` is matched case-insensitively inside catalog
+ * product names and labour resource names, `unit` must agree). An entered
+ * rate outside [low, high] is a finding; nothing is changed. The AI may
+ * SUGGEST rows from a web search (api/ai-engine.js action "benchmarks") but
+ * only a row Grady accepted counts. */
+export function rateBenchmarkFindings(rates, benchmarks, usedKeys = new Set(), opts = {}) {
+  const findings = []; let seq = 0; const r = rates || {};
+  const cands = [];
+  FULL_CATALOG.forEach((cat) => cat.products.forEach((p) => cands.push({ key: rateKey(cat.key, p.name, p.unit), name: p.name, unit: p.unit, cat: cat.key })));
+  RESOURCE_COLS.forEach((res) => cands.push({ key: rateKey("LABOUR", res.name, res.unit), name: res.name, unit: res.unit, cat: "LABOUR" }));
+  (benchmarks || []).forEach((b) => {
+    if (!b || !b.match || !(n(b.low) > 0 || n(b.high) > 0)) return;
+    const m = norm(b.match); const unit = String(b.unit || "").toLowerCase();
+    cands.filter((c) => norm(c.name).includes(m) && (!unit || String(c.unit).toLowerCase() === unit)).forEach((c) => {
+      const v = r[c.key] && r[c.key].unitCost; if (v == null || v === "" || !(n(v) > 0)) return;
+      const low = n(b.low) || 0, high = n(b.high) || Infinity; const inUse = usedKeys.has(c.key);
+      if (n(v) < low || n(v) > high) findings.push({ id: `rate-vs-market-${++seq}`, check: "rate-vs-market", severity: inUse ? "medium" : "low", itemId: null, element: null, message: `${c.name} (${c.unit}): entered ${money(v)}, Victorian market band ${money(low)}–${high === Infinity ? "∞" : money(high)}${b.name ? " (" + b.name + ")" : ""}${inUse ? " — this project uses it" : ""}.`, evidence: `${b.source || "benchmark"}${b.asOf ? " · as of " + b.asOf : ""}`, fix: "Check the supplier's current price list; update the Rates Library if it moved, or the benchmark if the market did." });
+    });
+  });
+  return findings;
 }

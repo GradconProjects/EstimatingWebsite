@@ -132,12 +132,23 @@ tr.excluded td{opacity:.45;} td input[type=text],td input[type=number],td select
     <p class="hint">Pick a Quotes project and run the checks: subcontract quote rows with no figure, rates past their validity, rate drift since the project was pinned (with its cost), kg/m³ of steel and m²/m³ of formwork outside the usual bands, concrete against the recorded measures, crew days against the handover bands, duplicated or empty elements, part-entered rows, and $/m² against Gradcon's own submitted projects. Every finding is a fact from the costing library; the AI then explains what looks wrong and what to look at. Nothing on the project is changed — tick a finding to record that it was reviewed.</p>
     <div class="card">
       <div class="row">
+        <select id="qaMode"><option value="project">Quotes project — pricing, rates, quantities, benchmarks</option><option value="takeoff">Estimates takeoff — against the drawings and the specification</option></select>
         <select id="qaProject"><option value="">— pick a project —</option></select>
+        <select id="qaTakeoff" hidden><option value="">— pick a takeoff —</option></select>
+        <select id="qaTakeoffJob" hidden title="The AI takeoff job whose drawing reading to compare against"><option value="">— drawings: pick an AI takeoff job —</option></select>
+        <select id="qaSpecJob" hidden title="The specification job whose ticked profile to compare against"><option value="">— specification: none —</option></select>
         <button class="btn ai" id="qaRun" disabled>Run quality checks</button>
         <span class="small" id="qaStatus"></span>
       </div>
+      <p class="small" id="qaModeHint" style="margin:8px 0 0;">A Quotes project is checked for unpriced quote rows, steel and formwork bands, concrete against measures, crew bands, duplicates, rate validity and drift, $/m² against submitted projects and the Victorian market bands below.</p>
     </div>
     <div id="qaHost"></div>
+    <div class="card" id="qaBench">
+      <div class="row" style="justify-content:space-between;"><h3 style="margin:0;">Victorian market benchmarks — the bands entered rates are checked against</h3><div class="row"><button class="btn small" id="benchAdd">+ Add row</button><button class="btn ai small" id="benchSuggest">Suggest current ranges (AI web search)</button><span class="small" id="benchStatus"></span></div></div>
+      <p class="small" style="margin:6px 0 8px;">Each row names a fragment of a catalog product or labour resource (matched inside its name, case-insensitive), its unit, the low and high of the current Melbourne / Victoria market in AUD ex GST, the source and the month. Only rows here count; an AI suggestion becomes a row only when you accept it. Nothing changes a rate.</p>
+      <table><thead><tr><th>Name</th><th>Matches product containing</th><th>Unit</th><th>Low $</th><th>High $</th><th>Source</th><th>As of</th><th></th></tr></thead><tbody id="benchBody"></tbody></table>
+      <div id="benchSuggestions"></div>
+    </div>
   </div>
 </div>
 <script>
@@ -383,7 +394,7 @@ async function loadMirror(force){
     const localTk = readLocalJSON("gradcon-estimate-projects-index"); const tkRows = await kvGetRows("select=value&key=eq.gradcon-estimate-projects-index");
     const tkIdx = (Array.isArray(localTk)? localTk : []).concat(tkRows && tkRows[0] && Array.isArray(tkRows[0].value) ? tkRows[0].value : []);
     const tkById = {}; tkIdx.forEach(p=>{ if(!p||!p.key||p.deleted) return; const cur=tkById[p.id]; if(!cur || (p.savedAt||"")>(cur.savedAt||"")) tkById[p.id]=p; });
-    const takeoffs = Object.values(tkById).map(p=>{ const blob=readLocalJSON(p.key); return { id:p.id, name:p.name||"", savedAt:p.savedAt||null, elements: blob&&Array.isArray(blob.instances)? blob.instances.length : null, ai:p.group==="ai" }; }).sort((a,b)=>(a.savedAt||"")<(b.savedAt||"")?1:-1);
+    const takeoffs = Object.values(tkById).map(p=>{ const blob=readLocalJSON(p.key); return { id:p.id, key:p.key, name:p.name||"", savedAt:p.savedAt||null, elements: blob&&Array.isArray(blob.instances)? blob.instances.length : null, ai:p.group==="ai" }; }).sort((a,b)=>(a.savedAt||"")<(b.savedAt||"")?1:-1);
     MIRROR.quotes = quotes; MIRROR.takeoffs = takeoffs; MIRROR.at = Date.now(); MIRROR.cloud = !!idxRows; MIRROR.pending = null;
     MIRROR.raw = {}; Object.values(byKey).forEach(q=>{ MIRROR.raw[q.key] = q.v; });
     renderQaProjects();
@@ -519,12 +530,91 @@ document.getElementById("roadmapHost").addEventListener("click", e=>{ const a=e.
 const QA = { lib:null, current:null };
 const QA_FIRST = ["Completed Estimating","Quoting","Submitted","Tendered"];
 function renderQaProjects(){
+  renderQaTakeoffPickers();
   const sel=document.getElementById("qaProject"); if(!sel) return;
   const cur = sel.value;
   const groups = [["Completed Estimating & quoting", q=>QA_FIRST.includes(q.status)], ["Open work", q=>["Queued","Estimating"].includes(q.status)], ["Closed", q=>!QA_FIRST.includes(q.status) && !["Queued","Estimating"].includes(q.status)]];
   sel.innerHTML = `<option value="">— pick a project —</option>` + groups.map(([label, test])=>{ const rows = MIRROR.quotes.filter(test); return rows.length? `<optgroup label="${esc(label)}">${rows.map(q=>`<option value="${esc(q.key)}" ${q.key===cur?'selected':''}>${esc(q.name||"Untitled")}${q.client?" — "+esc(q.client):""} (${esc(q.status)})</option>`).join("")}</optgroup>` : ""; }).join("");
-  document.getElementById("qaRun").disabled = !sel.value;
+  updateQaRun();
 }
+function qaMode(){ return document.getElementById("qaMode").value; }
+function updateQaRun(){ const m=qaMode(); document.getElementById("qaRun").disabled = m==="project" ? !document.getElementById("qaProject").value : !(document.getElementById("qaTakeoff").value && document.getElementById("qaTakeoffJob").value); }
+function renderQaTakeoffPickers(){
+  const tk=document.getElementById("qaTakeoff"), tj=document.getElementById("qaTakeoffJob"), sj=document.getElementById("qaSpecJob"); if(!tk) return;
+  const curTk=tk.value, curTj=tj.value, curSj=sj.value;
+  tk.innerHTML = `<option value="">— pick a takeoff —</option>` + MIRROR.takeoffs.map(t=>`<option value="${esc(t.id)}" ${t.id===curTk?'selected':''}>${t.ai?"🤖 ":""}${esc(t.name||"Untitled takeoff")}${t.elements!=null?` (${t.elements})`:""}</option>`).join("");
+  const jobs = liveIndex().map(e=>loadJob(e.id)).filter(Boolean);
+  tj.innerHTML = `<option value="">— drawings: pick an AI takeoff job —</option>` + jobs.filter(j=>j.kind==="takeoff" && j.review).map(j=>`<option value="${esc(j.id)}" ${j.id===curTj?'selected':''}>${esc(j.name||"Untitled")} (${j.review.elements.length} elements)</option>`).join("");
+  sj.innerHTML = `<option value="">— specification: none —</option>` + jobs.filter(j=>j.kind==="spec" && j.review).map(j=>`<option value="${esc(j.id)}" ${j.id===curSj?'selected':''}>${esc(j.name||"Untitled spec")}</option>`).join("");
+}
+/** The AI takeoff job a takeoff came from (its export), else one linked to the same project; and that job's specification. */
+function autoJobsForTakeoff(takeoffId){
+  const jobs = liveIndex().map(e=>loadJob(e.id)).filter(j=>j && j.kind==="takeoff" && j.review);
+  const tj = jobs.find(j=>(j.exports||[]).some(x=>x.takeoffId===takeoffId)) || null;
+  return { takeoffJob: tj, specJob: tj && tj.specJobId ? loadJob(tj.specJobId) : null };
+}
+document.getElementById("qaMode").addEventListener("change", ()=>{
+  const m=qaMode(); ["qaTakeoff","qaTakeoffJob","qaSpecJob"].forEach(id=>{ document.getElementById(id).hidden = m!=="takeoff"; }); document.getElementById("qaProject").hidden = m==="takeoff";
+  document.getElementById("qaModeHint").textContent = m==="takeoff" ? "Every element of the takeoff is matched to the drawing reading (by mark and sheet, then by name) and to the ticked specification: concrete grade, cover, bar sizes, counts and spacings, mesh, dimensions and counts are compared, and anything on the drawings with no takeoff element is listed." : "A Quotes project is checked for unpriced quote rows, steel and formwork bands, concrete against measures, crew bands, duplicates, rate validity and drift, $/m² against submitted projects and the Victorian market bands below.";
+  document.getElementById("qaHost").innerHTML=""; document.getElementById("qaStatus").textContent=""; QA.current=null; updateQaRun();
+});
+document.getElementById("qaTakeoff").addEventListener("change", e=>{ const auto = autoJobsForTakeoff(e.target.value); if(auto.takeoffJob) document.getElementById("qaTakeoffJob").value = auto.takeoffJob.id; if(auto.specJob) document.getElementById("qaSpecJob").value = auto.specJob.id; const job = e.target.value && qaJobForTakeoff(e.target.value); QA.current = job||null; if(job){ renderQa(job); document.getElementById("qaStatus").textContent = `last run ${whenLabel(job.ran&&job.ran.at)}`; } else { document.getElementById("qaHost").innerHTML=""; document.getElementById("qaStatus").textContent=""; } updateQaRun(); });
+["qaTakeoffJob","qaSpecJob"].forEach(id=>document.getElementById(id).addEventListener("change", updateQaRun));
+function qaJobForTakeoff(id){ return liveIndex().map(e=>loadJob(e.id)).find(j=>j && j.kind==="qa" && j.subject==="takeoff" && j.takeoffId===id) || null; }
+async function runQaTakeoff(){
+  const id=document.getElementById("qaTakeoff").value, tjId=document.getElementById("qaTakeoffJob").value, sjId=document.getElementById("qaSpecJob").value; if(!id||!tjId) return;
+  const st=document.getElementById("qaStatus"); const btn=document.getElementById("qaRun"); btn.disabled=true; st.textContent="loading the takeoff…";
+  try{
+    const lib = await loadQaLib();
+    const meta = MIRROR.takeoffs.find(t=>t.id===id) || {}; const key = meta.key || ("gradcon-estimate-state::"+id);
+    const rows = await kvGetRows(`select=value&key=eq.${encodeURIComponent(key)}`);
+    const blob = (rows && rows[0] && rows[0].value) || readLocalJSON(key); if(!blob || !Array.isArray(blob.instances)) throw new Error("the takeoff could not be read");
+    const tj = loadJob(tjId); const sj = sjId ? loadJob(sjId) : null;
+    const proposal = { elements: (tj.review.elements||[]).filter(e=>e.include && e.type) };
+    const profile = sj ? profileFromSpecJob(sj) : null;
+    st.textContent = "comparing…";
+    const result = lib.compareTakeoffToDocuments({ instances: blob.instances, proposal, profile, calcOf: (t)=> (TYPE_BY_ID[t]||{}).calc || null });
+    let job = qaJobForTakeoff(id);
+    if(!job){ job = { id:newId(), kind:"qa", subject:"takeoff", name:((blob.project&&blob.project.name)||meta.name||"Takeoff")+" — against the documents", createdAt:nowIso(), updatedAt:nowIso(), status:"done", files:[], result:null, review:null, exports:[], ran:null, lastError:null, takeoffId:id, takeoffKey:key, projectName:(blob.project&&blob.project.name)||meta.name||"", acks:{}, explanation:null }; }
+    job.result = result; job.status="done"; job.ran = { at: nowIso(), takeoffJobId: tjId, specJobId: sjId||null }; job.projectStatus = `takeoff · drawings: ${tj.name||"job"}${sj?" · spec: "+(sj.name||"job"):""}`; job.explanation=null;
+    Object.keys(job.acks||{}).forEach(fid=>{ if(!result.findings.some(f=>f.id===fid)) delete job.acks[fid]; });
+    saveJob(job); QA.current=job;
+    st.textContent = `${result.findings.length} finding${result.findings.length===1?"":"s"} · ${result.summary.matched} of ${result.summary.elements} elements matched to the drawings · ${whenLabel(result.ranAt)}`;
+    renderQa(job);
+  }catch(e){ st.textContent = e.message; }
+  btn.disabled=false;
+}
+/* ---------- Victorian market benchmarks ---------- */
+const BENCH_KEY = "gradcon-ai-benchmarks";
+const BENCH = { rows: (readJSON(BENCH_KEY)||{}).rows || [], updatedAt:(readJSON(BENCH_KEY)||{}).updatedAt||null, suggestions:[] };
+function saveBench(){ BENCH.updatedAt = nowIso(); writeJSON(BENCH_KEY, { rows:BENCH.rows, updatedAt:BENCH.updatedAt }); kvPush(BENCH_KEY, { rows:BENCH.rows, updatedAt:BENCH.updatedAt }); }
+async function syncBench(){ const row = await kvFetch(BENCH_KEY); if(row && row.value && Array.isArray(row.value.rows) && (row.value.updatedAt||"") > (BENCH.updatedAt||"")){ BENCH.rows=row.value.rows; BENCH.updatedAt=row.value.updatedAt; writeJSON(BENCH_KEY, row.value); renderBench(); } }
+function renderBench(){
+  const tb=document.getElementById("benchBody"); if(!tb) return;
+  tb.innerHTML = BENCH.rows.map((b,i)=>`<tr><td><input type="text" data-bk="name" data-bi="${i}" value="${esc(b.name||"")}"></td><td><input type="text" data-bk="match" data-bi="${i}" value="${esc(b.match||"")}" placeholder="e.g. 32 mpa"></td><td><input type="text" class="short" data-bk="unit" data-bi="${i}" value="${esc(b.unit||"")}" placeholder="m3"></td><td><input type="number" class="short" data-bk="low" data-bi="${i}" value="${b.low==null?"":b.low}"></td><td><input type="number" class="short" data-bk="high" data-bi="${i}" value="${b.high==null?"":b.high}"></td><td><input type="text" data-bk="source" data-bi="${i}" value="${esc(b.source||"")}"></td><td><input type="text" class="short" data-bk="asOf" data-bi="${i}" value="${esc(b.asOf||"")}" placeholder="YYYY-MM"></td><td><button class="btn small danger" data-bdel="${i}">✕</button></td></tr>`).join("") || `<tr><td colspan="8" class="small">No benchmarks yet — add a row, or ask the AI to suggest current ranges with sources.</td></tr>`;
+  const sh=document.getElementById("benchSuggestions");
+  sh.innerHTML = BENCH.suggestions.length ? `<h3>Suggested from the web — accept the ones you trust</h3><table><thead><tr><th>Name</th><th>Matches</th><th>Unit</th><th>Low</th><th>High</th><th>Source</th><th>As of</th><th>Note</th><th></th></tr></thead><tbody>${BENCH.suggestions.map((b,i)=>`<tr><td>${esc(b.name)}</td><td>${esc(b.match)}</td><td>${esc(b.unit)}</td><td>${b.low}</td><td>${b.high}</td><td class="small">${esc(b.source)}</td><td>${esc(b.asOf)}</td><td class="small">${esc(b.note||"")}</td><td><button class="btn small primary" data-baccept="${i}">Accept</button></td></tr>`).join("")}</tbody></table>` : "";
+}
+document.getElementById("benchBody").addEventListener("input", e=>{ const t=e.target; if(t.dataset.bk===undefined) return; const row=BENCH.rows[+t.dataset.bi]; if(!row) return; row[t.dataset.bk] = t.type==="number" ? numOrNull(t.value) : t.value; clearTimeout(saveTimer); saveTimer=setTimeout(saveBench, 600); });
+document.getElementById("benchBody").addEventListener("click", e=>{ const d=e.target.closest("[data-bdel]"); if(!d) return; BENCH.rows.splice(+d.dataset.bdel,1); saveBench(); renderBench(); });
+document.getElementById("benchAdd").addEventListener("click", ()=>{ BENCH.rows.push({ name:"", match:"", unit:"", low:null, high:null, source:"", asOf:"" }); saveBench(); renderBench(); });
+document.getElementById("benchSuggestions").addEventListener("click", e=>{ const a=e.target.closest("[data-baccept]"); if(!a) return; const b=BENCH.suggestions.splice(+a.dataset.baccept,1)[0]; BENCH.rows.push({ name:b.name, match:b.match, unit:b.unit, low:b.low, high:b.high, source:b.source, asOf:b.asOf }); saveBench(); renderBench(); });
+document.getElementById("benchSuggest").addEventListener("click", async ()=>{
+  const st=document.getElementById("benchStatus"); const btn=document.getElementById("benchSuggest"); btn.disabled=true; st.textContent=`Searching the web on ${providerInUse().label}… a minute or two.`;
+  try{
+    const lib = await loadQaLib();
+    // the products that matter: every priced catalog product in the key bands plus the labour resources
+    const bands = ["CONCRETE","PROCESSED BAR","SQUARE MESH","TRENCH MESH","FORMWORK","CONCRETE PUMPING"];
+    const products = []; lib.FULL_CATALOG.filter(c=>bands.includes(c.key)).forEach(c=>c.products.forEach(p=>{ if(p.unitCost!=null && products.length<34) products.push({ name:p.name, unit:p.unit }); }));
+    lib.RESOURCE_COLS.slice(0,6).forEach(r=>products.push({ name:r.name, unit:r.unit }));
+    const res = await fetch(API_BASE + "/api/ai-engine", { method:"POST", headers:{ "content-type":"application/json" }, body: JSON.stringify({ action:"benchmarks", provider: portalPref("aiProvider")||undefined, products, region:"Melbourne / Victoria, Australia" }), signal: AbortSignal.timeout(300000) });
+    const data = await res.json().catch(()=>({ error:`Bad reply (${res.status})` }));
+    if(!res.ok) throw new Error(data.error || `Failed (${res.status})`);
+    BENCH.suggestions = data.suggestions||[]; renderBench();
+    st.textContent = `${BENCH.suggestions.length} suggestion${BENCH.suggestions.length===1?"":"s"} with sources${(data.notFound||[]).length?` · not found: ${data.notFound.slice(0,6).join(", ")}${data.notFound.length>6?"…":""}`:""} · ${data.provider||""}`;
+  }catch(e){ st.textContent = e.message; }
+  btn.disabled=false;
+});
 function loadQaLib(){
   if(QA.lib) return Promise.resolve(QA.lib);
   if(window.GradconQA){ QA.lib = window.GradconQA; return Promise.resolve(QA.lib); }
@@ -549,7 +639,7 @@ async function runQa(){
     const others = Object.keys(MIRROR.raw||{}).filter(k=>k!==key).map(k=>MIRROR.raw[k]);
     const benchmarks = lib.benchmarksFrom(others, liveRates);
     st.textContent = "running the checks…";
-    const result = lib.runQualityChecks(quote, liveRates, { benchmarks });
+    const result = lib.runQualityChecks(quote, liveRates, { benchmarks, rateBenchmarks: BENCH.rows });
     const meta = MIRROR.quotes.find(q=>q.key===key) || {};
     let job = qaJobFor(key);
     if(!job){ job = { id:newId(), kind:"qa", name:(quote.projectName||meta.name||"Project")+" — quality checks", createdAt:nowIso(), updatedAt:nowIso(), status:"done", files:[], result:null, review:null, exports:[], ran:null, lastError:null, projectKey:key, projectId:meta.id||null, projectName:quote.projectName||meta.name||"", acks:{}, explanation:null }; }
@@ -569,7 +659,7 @@ function renderQa(job){
   host.innerHTML = `
    <div class="card">
     <div class="row" style="justify-content:space-between;">
-      <div><b>${esc(job.projectName)}</b> <span class="chip">${esc(job.projectStatus)}</span><div class="small">Direct cost ${money(r.summary.total)}${r.summary.perM2!=null?` · ${money(r.summary.perM2)}/m² over ${r.summary.gfa} m²`:""} · ${r.summary.elements} elements · ${Math.round(r.summary.concreteM3)} m³ concrete · ${(r.summary.steelT||0).toFixed(2)} t steel${r.summary.pinned?` · rates pinned ${whenLabel(r.summary.pinned)}`:""}${r.summary.benchmarkMedianPerM2?` · benchmark median ${money(r.summary.benchmarkMedianPerM2)}/m² over ${r.summary.benchmarks} submitted`:" · no submitted project with a GFA to benchmark against"}</div></div>
+      <div><b>${esc(job.projectName)}</b> <span class="chip">${esc(job.projectStatus)}</span>${job.subject==="takeoff" ? `<div class="small">${r.summary.elements} takeoff elements · ${r.summary.drawingElements} on the drawings · ${r.summary.matched} matched · ${r.summary.unmatchedOnDrawings} on the drawings only · ${r.summary.hasSpec?"specification applied":"no specification"}</div>` : `<div class="small">Direct cost ${money(r.summary.total)}${r.summary.perM2!=null?` · ${money(r.summary.perM2)}/m² over ${r.summary.gfa} m²`:""} · ${r.summary.elements} elements · ${Math.round(r.summary.concreteM3)} m³ concrete · ${(r.summary.steelT||0).toFixed(2)} t steel${r.summary.pinned?` · rates pinned ${whenLabel(r.summary.pinned)}`:""}${r.summary.benchmarkMedianPerM2?` · benchmark median ${money(r.summary.benchmarkMedianPerM2)}/m² over ${r.summary.benchmarks} submitted`:" · no submitted project with a GFA to benchmark against"}</div>`}</div>
       <div class="row"><span class="chip low">${r.counts.high} high</span><span class="chip medium">${r.counts.medium} medium</span><span class="chip high">${r.counts.low} low</span><button class="btn ai" id="qaExplain" ${r.findings.length?"":"disabled"}>${job.explanation?"Explain again":"Explain with AI"}</button></div>
     </div>
     ${job.explanation?`<div class="banner" style="margin-top:10px;white-space:pre-wrap;"><b>AI review</b> <span class="small">(${esc(job.explanation.provider||"")} · ${esc(job.explanation.model||"")} · ${whenLabel(job.explanation.at)})</span>\n${esc(job.explanation.text)}</div>`:""}
@@ -594,7 +684,7 @@ async function explainQa(job){
   }catch(e){ st.textContent = e.message; }
 }
 document.getElementById("qaProject").addEventListener("change", e=>{ document.getElementById("qaRun").disabled = !e.target.value; const job = e.target.value && qaJobFor(e.target.value); QA.current = job||null; if(job){ renderQa(job); document.getElementById("qaStatus").textContent = `last run ${whenLabel(job.ran&&job.ran.at)}`; } else { document.getElementById("qaHost").innerHTML=""; document.getElementById("qaStatus").textContent=""; } });
-document.getElementById("qaRun").addEventListener("click", runQa);
+document.getElementById("qaRun").addEventListener("click", ()=>{ if(qaMode()==="takeoff") runQaTakeoff(); else runQa(); });
 
 /* ---------- Mail (the connected Google mailbox, read-only) ---------- */
 const MAIL = { list:[], next:null, q:"", current:null, status:null };
@@ -937,7 +1027,7 @@ document.getElementById("newTakeoff").addEventListener("click", ()=>createJob("t
 document.getElementById("newSpec").addEventListener("click", ()=>createJob("spec"));
 async function openJob(id){
   let job = loadJob(id);
-  if(job && job.kind==="qa"){ showPage("qa"); await loadMirror(false); renderQaProjects(); const sel=document.getElementById("qaProject"); sel.value = job.projectKey; sel.dispatchEvent(new Event("change")); return; }
+  if(job && job.kind==="qa"){ showPage("qa"); await loadMirror(false); renderQaProjects(); if(job.subject==="takeoff"){ const m=document.getElementById("qaMode"); m.value="takeoff"; m.dispatchEvent(new Event("change")); const sel=document.getElementById("qaTakeoff"); sel.value=job.takeoffId; sel.dispatchEvent(new Event("change")); } else { const sel=document.getElementById("qaProject"); sel.value = job.projectKey; sel.dispatchEvent(new Event("change")); } return; }
   if(job){ renderJob(job); }
   const fresh = await refreshJobFromCloud(id);
   if(fresh && CURRENT===id) renderJob(fresh); else if(!job && !fresh) alert("That job could not be loaded.");
@@ -951,6 +1041,7 @@ paintCloud(SUPABASE_URL ? "Cloud: checking…" : "Local only");
 loadProviders();
 syncIndexFromCloud();
 renderMirror(false);
+renderBench(); syncBench();
 absorbMailOpen();
 window.addEventListener("storage", e=>{ if(e.key==="gradcon-preferences") paintProvider(); });
 </script>

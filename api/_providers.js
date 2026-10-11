@@ -211,7 +211,7 @@ export async function callDocuments(id, { system, prompt, documents = [], maxTok
  * user / assistant history (strings), `system` the standing instructions.
  * Backs the portal's chat (api/ai-chat.js).
  */
-export async function callChat(id, { system, messages = [], maxTokens = 1200, timeoutMs = 80000, env = process.env } = {}) {
+export async function callChat(id, { system, messages = [], maxTokens = 1200, timeoutMs = 80000, env = process.env, fetchImpl = fetch } = {}) {
   const p = spec(id);
   if (!p) throw fail(`Unknown provider "${id}"`, 400);
   const apiKey = keyFor(p, env);
@@ -234,7 +234,7 @@ export async function callChat(id, { system, messages = [], maxTokens = 1200, ti
   }
   let res;
   try {
-    res = await fetch(`${p.base}/chat/completions`, {
+    res = await fetchImpl(`${p.base}/chat/completions`, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({ model, ...tokenLimit(p, maxTokens), messages: [...(system ? [{ role: "system", content: system }] : []), ...turns] }),
@@ -258,7 +258,7 @@ export async function callChat(id, { system, messages = [], maxTokens = 1200, ti
  * latencyMs, trace:[{name, args, summary}]}.
  */
 export async function callChatWithTools(id, { system, messages = [], tools = [], runTool, maxRounds = 4, maxTokens = 1500, timeoutMs = 80000, env = process.env, fetchImpl = fetch } = {}) {
-  if (!tools.length || typeof runTool !== "function") return callChat(id, { system, messages, maxTokens, timeoutMs, env });
+  if (!tools.length || typeof runTool !== "function") return callChat(id, { system, messages, maxTokens, timeoutMs, env, fetchImpl });
   const p = spec(id);
   if (!p) throw fail(`Unknown provider "${id}"`, 400);
   const apiKey = keyFor(p, env);
@@ -316,6 +316,45 @@ export async function callChatWithTools(id, { system, messages = [], tools = [],
   }
   const text = ((((data || {}).choices || [])[0] || {}).message || {}).content || "";
   return { text: String(text), model: (data && data.model) || model, latencyMs: Date.now() - started, provider: p.id, trace };
+}
+
+/**
+ * One prompt answered WITH web search (server-side tool): Claude's
+ * web_search_20260209 or OpenAI's Responses web_search. Returns the text and
+ * the cited sources ({url, title}). DeepSeek has no web search → 501. Used
+ * for the Victorian market benchmark suggestions, where a figure without a
+ * source is worthless.
+ */
+export async function callWebSearch(id, { system, prompt, maxUses = 8, maxTokens = 6000, timeoutMs = 240000, env = process.env } = {}) {
+  const p = spec(id);
+  if (!p) throw fail(`Unknown provider "${id}"`, 400);
+  if (p.id === "deepseek") throw fail("DeepSeek cannot search the web — switch to Claude or OpenAI for this.", 501);
+  const apiKey = keyFor(p, env);
+  if (!apiKey) throw fail(`${p.label} is not configured — set ${p.keyVar} in the Vercel project's Environment Variables (server-side, no VITE_ prefix).`, 503);
+  const model = modelFor(p, env);
+  const started = Date.now();
+  if (p.id === "anthropic") {
+    const client = new Anthropic({ apiKey, timeout: timeoutMs, maxRetries: 1 });
+    let r;
+    try {
+      r = await client.beta.messages.create({ model, max_tokens: maxTokens, ...(system ? { system } : {}), messages: [{ role: "user", content: prompt }], tools: [{ type: "web_search_20260209", name: "web_search", max_uses: maxUses }], betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" });
+    } catch (e) { throw fail(`${p.label} request failed`, (e && e.status) || 502, e && e.message); }
+    if (r.stop_reason === "refusal") throw fail(`${p.label} declined the request`, 422, r.stop_details && r.stop_details.explanation);
+    const texts = (r.content || []).filter((b) => b.type === "text");
+    const citations = []; texts.forEach((b) => (b.citations || []).forEach((c) => { if (c && c.url && !citations.some((x) => x.url === c.url)) citations.push({ url: c.url, title: c.title || "" }); }));
+    (r.content || []).filter((b) => b.type === "web_search_tool_result").forEach((b) => { (Array.isArray(b.content) ? b.content : []).forEach((w) => { if (w && w.url && !citations.some((x) => x.url === w.url)) citations.push({ url: w.url, title: w.title || "" }); }); });
+    return { text: texts.map((b) => b.text).join(""), citations, model: r.model || model, latencyMs: Date.now() - started, provider: p.id };
+  }
+  let res;
+  try {
+    res = await fetch(`${p.base}/responses`, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` }, body: JSON.stringify({ model, max_output_tokens: maxTokens, ...(system ? { instructions: system } : {}), tools: [{ type: "web_search" }], input: prompt }), signal: AbortSignal.timeout(timeoutMs) });
+  } catch (e) { throw fail(`${p.label} could not be reached`, 502, e && e.message); }
+  if (!res.ok) throw fail(`${p.label} request failed (${res.status})`, res.status, await res.text().catch(() => ""));
+  const data = await res.json();
+  const citations = [];
+  (data.output || []).flatMap((o) => o.content || []).forEach((c) => { (c.annotations || []).forEach((a) => { if (a && a.type === "url_citation" && a.url && !citations.some((x) => x.url === a.url)) citations.push({ url: a.url, title: a.title || "" }); }); });
+  let text = typeof data.output_text === "string" ? data.output_text : (data.output || []).flatMap((o) => o.content || []).filter((c) => c.type === "output_text").map((c) => c.text).join("");
+  return { text: String(text), citations, model: data.model || model, latencyMs: Date.now() - started, provider: p.id };
 }
 
 /** The ONE loose JSON reader for model replies: strips code fences and takes the outermost {...}. Returns null when nothing parses. */

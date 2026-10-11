@@ -9,6 +9,10 @@
  *   action "qa"       explains the deterministic quality-check findings of a
  *                     Quotes project (src/lib/qualityChecks.js) in plain words:
  *                     what to look at first and why — text, never a new finding.
+ *   action "benchmarks" web-searches current Victorian (Melbourne) market
+ *                     ranges for the products the caller names and returns
+ *                     SUGGESTED benchmark rows with their sources — rows count
+ *                     only once a person accepts them in the AI Engine.
  *   action "spec"     reads a specification / tender document and lists the
  *                     applicable standards, the requirements that change how
  *                     an element is measured or priced (grade, cover, exposure,
@@ -22,7 +26,7 @@
  * (Vercel Environment Variables); the provider is the one chosen in Settings
  * when it is configured, else the default. Same-origin check as ai-providers.
  */
-import { callDocuments, callText, resolveProviderId, parseJsonLoose, salvageArrays, providerStatus } from "./_providers.js";
+import { callDocuments, callText, callWebSearch, resolveProviderId, parseJsonLoose, salvageArrays, providerStatus } from "./_providers.js";
 
 export const config = { maxDuration: 300 };
 
@@ -114,8 +118,31 @@ ${JSON.stringify(findings, null, 1).slice(0, 14000)}
 Write the review note an experienced concrete estimator would hand Grady before this quote goes out: (1) the three things to look at first and why, in order of money at risk; (2) one line per remaining finding grouping the similar ones; (3) what is probably fine and can be acknowledged. Plain English, Australian terms, no headings longer than a few words, no markdown tables, under 350 words. Never invent a figure that is not in the findings.`;
 }
 
+export function benchmarksPrompt({ products, region }) {
+  return `Find CURRENT indicative market price ranges in ${region || "Melbourne / Victoria, Australia"} (AUD, ex GST) for these concrete-subcontract inputs, using the web (supplier price lists, published rate guides, industry notices, recent news). Products, each with the unit the estimator prices in:
+${(products || []).map((p) => `- ${p.name} [${p.unit}]`).join("\n")}
+
+Return ONE JSON object and nothing else:
+{"benchmarks":[{"name": short label, "match": a distinctive lower-case fragment of ONE product name above (copied exactly from it), "unit": its unit, "low": number, "high": number, "source": the page title or supplier and its URL, "asOf": "YYYY-MM" of the source, "note": one short caveat}], "notFound": [product names you could not source]}
+Rules: a range needs a real source you read — never estimate from memory; omit a product rather than invent; give the delivered Melbourne metro figure where the source distinguishes; one row per product; keep notes under 100 characters.`;
+}
+
 export async function runAiJob(body, env = process.env) {
   const { action, provider, files, types, projectName, profile } = body || {};
+  if (action === "benchmarks") {
+    const products = Array.isArray(body.products) ? body.products.filter((p) => p && p.name).slice(0, 40) : [];
+    if (!products.length) return { status: 400, body: { error: "benchmarks needs products: [{name, unit}]" } };
+    const id = resolveProviderId(provider, env);
+    if (!id) return { status: 503, body: { error: "No AI provider is configured — set ANTHROPIC_API_KEY or OPENAI_API_KEY in the Vercel project's Environment Variables." } };
+    try {
+      const r = await callWebSearch(id, { system: "You are a quantity surveyor researching current Victorian construction input prices. You only report figures you found on a page you read, with its source. Reply with the JSON asked for and nothing else.", prompt: benchmarksPrompt({ products, region: body.region }), maxUses: 10, env });
+      const result = parseJsonLoose(r.text) || { benchmarks: [], notFound: products.map((p) => p.name), raw: r.text.slice(0, 1500) };
+      const rows = (Array.isArray(result.benchmarks) ? result.benchmarks : []).filter((b) => b && b.match && (Number(b.low) > 0 || Number(b.high) > 0) && b.source).map((b) => ({ name: String(b.name || b.match).slice(0, 80), match: String(b.match).toLowerCase().slice(0, 60), unit: String(b.unit || "").slice(0, 12), low: Number(b.low) || 0, high: Number(b.high) || 0, source: String(b.source).slice(0, 300), asOf: String(b.asOf || "").slice(0, 10), note: String(b.note || "").slice(0, 160) }));
+      return { status: 200, body: { suggestions: rows, notFound: Array.isArray(result.notFound) ? result.notFound : [], citations: r.citations, provider: r.provider, model: r.model, latencyMs: r.latencyMs } };
+    } catch (e) {
+      return { status: e.status && e.status >= 400 && e.status < 600 ? e.status : 502, body: { error: e.message, detail: e.detail || null, provider: id } };
+    }
+  }
   if (action === "qa") {
     const findings = Array.isArray(body.findings) ? body.findings : null;
     if (!findings) return { status: 400, body: { error: "qa needs findings: [...]" } };
@@ -128,7 +155,7 @@ export async function runAiJob(body, env = process.env) {
       return { status: e.status && e.status >= 400 && e.status < 600 ? e.status : 502, body: { error: e.message, detail: e.detail || null, provider: id } };
     }
   }
-  if (action !== "takeoff" && action !== "spec") return { status: 400, body: { error: 'Body must carry action "takeoff", "spec" or "qa"' } };
+  if (action !== "takeoff" && action !== "spec") return { status: 400, body: { error: 'Body must carry action "takeoff", "spec", "qa" or "benchmarks"' } };
   const bad = validFiles(files);
   if (bad) return { status: 400, body: { error: bad } };
   if (action === "takeoff" && (!Array.isArray(types) || types.length === 0 || types.length > MAX_TYPES)) return { status: 400, body: { error: "takeoff needs the element type list (types: [{id, label, group}])" } };
