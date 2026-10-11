@@ -28,6 +28,8 @@ export const PROVIDERS = [
 ];
 
 const spec = (id) => PROVIDERS.find((p) => p.id === id) || null;
+/** OpenAI's current models reject `max_tokens` on chat completions ("use max_completion_tokens", 11 Oct 2026); DeepSeek still takes `max_tokens`. */
+export const tokenLimit = (p, n) => (p.id === "openai" ? { max_completion_tokens: n } : { max_tokens: n });
 /** The key for a provider: its documented variable, else one of the spellings a person is likely to type (OPEN_AI_KEY was set on 10 Oct 2026). */
 const keyFor = (p, env) => [p.keyVar, ...(p.keyAliases || [])].map((v) => env[v] && String(env[v]).trim()).find(Boolean) || "";
 const modelFor = (p, env) => (env[p.modelVar] && String(env[p.modelVar]).trim()) || p.defaultModel;
@@ -105,7 +107,7 @@ export async function callText(id, { system, prompt, maxTokens = 1024, timeoutMs
       headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({
         model,
-        max_tokens: maxTokens,
+        ...tokenLimit(p, maxTokens),
         messages: [...(system ? [{ role: "system", content: system }] : []), { role: "user", content: prompt }],
       }),
       signal: AbortSignal.timeout(timeoutMs),
@@ -235,7 +237,7 @@ export async function callChat(id, { system, messages = [], maxTokens = 1200, ti
     res = await fetch(`${p.base}/chat/completions`, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({ model, max_tokens: maxTokens, messages: [...(system ? [{ role: "system", content: system }] : []), ...turns] }),
+      body: JSON.stringify({ model, ...tokenLimit(p, maxTokens), messages: [...(system ? [{ role: "system", content: system }] : []), ...turns] }),
       signal: AbortSignal.timeout(timeoutMs),
     });
   } catch (e) {
