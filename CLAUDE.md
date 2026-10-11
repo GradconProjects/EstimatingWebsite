@@ -461,6 +461,31 @@ appears and a deleted one disappears. The printed "Tender Notes:" section
 (`data-testid="tender-notes-print"`) renders when either list has a line.
 `test-tender-notes.mjs` proves both reports.
 
+**Tender wording** (Grady, 11 Oct 2026: "language reconstruction for the
+assumptions before pushing to the tender quote"): the estimator's shorthand
+is rewritten as tender qualification lines by the AI provider and REVIEWED
+before any of it is used. `lib/tenderWording.js` (pure, verify-covered): an
+assumption gains `tenderText` (the accepted line) and `tenderSource` (the
+typed text it was written from); `assumptionTenderLine(a)` is what the
+Tender Notes print (`assumptionLines` / `assumptionNoteItems` in
+`tenderNotes.js` read through it), `wordingState(a)` = none / reworded /
+stale (the typed text changed after the rewording — the accepted line still
+prints, the cell and the Assumptions list say "original changed since" until
+it is redone or cleared), `tenderWordingPrompt` (same ids, no new facts, the
+trade's forms: "Allowance has been made for …", "… is excluded from our
+price", "… to be confirmed", "Please confirm …") and `parseTenderWording`
+(by id, then by position) are what `api/ai-engine.js` action
+`tender-wording` runs through `callText`; `requestTenderWording` posts it
+from the Quotes bundle to `location.origin + "/api/ai-engine"` with the
+browser's provider choice (`preferredProvider`). `TenderNotesCell` carries
+"✎ Reword for tender": every proposal beside its struck-through original,
+editable, each with its own tick, and only "Use ticked wording" writes
+(`applyTenderWording`) through `onChangeAssumptions`, which both reports take
+from App. The typed assumption text is never changed — the quote report and
+the Assumptions list keep it; the list shows the tender wording under each
+with a "clear" (`clearTenderWording`). `test-tender-wording.mjs` proves the
+review, the apply, the stale flag, the clear and the no-provider error.
+
 ## Roof is its own element category (both apps)
 
 Grady, 6 Oct 2026: "INCLUDE ROOF as an element category to include all roof
@@ -663,7 +688,14 @@ login and on the main dashboard". Rules:
    `acks` (ticked = reviewed, with when) and asks `api/ai-engine.js` action
    `qa` (`qaPrompt` → `callText`, plain prose) to explain the OPEN findings.
    Nothing on the project is written. The automatic run on Completed
-   Estimating is still to come.
+   Estimating is still to come. **Takeoff mode's documents are both
+   optional** (Grady, 11 Oct 2026: "i dont need the specification becoming a
+   problem"): a takeoff alone runs; with no drawing reading
+   `compareTakeoffToDocuments` compares nothing to the drawings and flags
+   nothing as missing from them, with no specification it runs no spec
+   check, and the takeoff's own completeness / sanity warnings are always
+   listed as `takeoff-warning` findings (`summary.documents` says what was
+   used).
 8. **A cut-off reply is salvaged** (`salvageArrays` in `_providers.js`): every
    element / standard / requirement that closed before the output limit is
    kept and returned with `partial: {reason, kept, advice}`, which the job page
@@ -1562,8 +1594,12 @@ element families waits on the owner's approval of the pad footing.
   `totalsOf` count the same lines and `procurementRuleFor` buys joint dowels
   in whole bar stock lengths. `lineWeightKg` now weighs the `Joints` group
   too (before this, joint dowels weighed 0 kg in every total while their
-  notes said otherwise). The kg/m³ sanity check and the kg/m³ · kg/m² rate
-  hint stay on the mat (design ratios, not an order). The Quotes bridge
+  notes said otherwise). The kg/m³ · kg/m² rate hint of the by-rate / by-area
+  methods stays on the mat (a design ratio); the kg/m³ SANITY check and the
+  Materials Summary's "All reinforcing steel" strip (`steelByGroup` /
+  `steelSummaryStrip`, also in the summary CSV) count every bar in the pour
+  — Grady, 11 Oct 2026: "reinforcment summing in estimates should include
+  those of the connectors". The Quotes bridge
   already priced Reinforcement + Connections + Joints bars together on
   PROCESSED BAR, so Estimates now agrees with what Quotes charges.
   `test-steel-across-groups.mjs` proves it; `verify-estimates.mjs` covers the

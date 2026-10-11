@@ -1239,6 +1239,56 @@ check("Tender Notes = the project's Assumptions first (recorded order, blanks dr
   assert.deepEqual(typedNoteLines("a\nb"), ["a", "b"]);
 });
 
+{
+  // Tender wording for the assumptions (src/lib/tenderWording.js) — Grady, 11 Oct 2026: "language reconstruction for the assumptions before pushing to the tender quote"
+  const TW = await import("../src/lib/tenderWording.js");
+  const TN = await import("../src/lib/tenderNotes.js");
+  const E = await import("../api/ai-engine.js");
+  const raw = [{ id: "a", text: "Paving slab thickness 150mm and SL82 mesh reinforcment" }, { id: "b", text: "External Staircase excluded" }, { id: "c", text: "Hydronics: Zones 2B and 3B excluded as is under tile - confirm these are included." }];
+  const reply = '```json\n{"lines":[{"id":"a","tender":"A paving slab thickness of 150 mm with SL82 mesh reinforcement has been assumed and is to be confirmed by the engineer."},{"id":"b","tender":"The external staircase is excluded from our price."},{"id":"zzz","tender":"ignored"}]}\n```';
+  check("tenderWording: the reply is read by id (fenced JSON tolerated, unknown ids dropped, a missing line left out), applied as tenderText + tenderSource, and the Tender Notes print the tender wording while the typed text stands", () => {
+    const map = TW.parseTenderWording(reply, raw);
+    assertTrue(Object.keys(map).join() === "a,b" && /150 mm with SL82/.test(map.a), JSON.stringify(map));
+    const after = TW.applyTenderWording(raw, map);
+    assertTrue(after[0].tenderText === map.a && after[0].tenderSource === raw[0].text && after[0].text === raw[0].text && after[2].tenderText === undefined);
+    assertTrue(TW.wordingState(after[0]) === "reworded" && TW.wordingState(after[2]) === "none");
+    const lines = TN.assumptionLines({ assumptions: after });
+    assertTrue(lines[0] === map.a && lines[1] === map.b && lines[2] === raw[2].text, JSON.stringify(lines));
+    const items = TN.assumptionNoteItems({ assumptions: after });
+    assertTrue(items[0].state === "reworded" && items[0].text === raw[0].text && items[2].state === "none");
+    // the original edited after the rewording: stale, the accepted wording still prints, clearing it restores the typed text
+    const edited = after.map((a) => (a.id === "a" ? { ...a, text: "Paving slab 180mm and SL82" } : a));
+    assertTrue(TW.wordingState(edited[0]) === "stale" && TN.assumptionNoteItems({ assumptions: edited })[0].state === "stale" && TN.assumptionLines({ assumptions: edited })[0] === map.a);
+    const cleared = TW.clearTenderWording(edited, "a");
+    assertTrue(TW.wordingState(cleared[0]) === "none" && TN.assumptionLines({ assumptions: cleared })[0] === "Paving slab 180mm and SL82" && !("tenderText" in cleared[0]));
+    // positional fallback when the model drops the ids
+    const pos = TW.parseTenderWording('{"lines":["First line","Second line"]}', raw);
+    assertTrue(pos.a === "First line" && pos.b === "Second line" && !pos.c);
+  });
+  check("tenderWording: the prompt carries every assumption with its id, forbids new facts and asks for the trade's forms (allowance / excluded / to be confirmed) in one JSON object", () => {
+    const pr = TW.tenderWordingPrompt({ projectName: "145 Harrisons Rd", assumptions: raw });
+    assertTrue(/145 Harrisons Rd/.test(pr) && /"id":"c"/.test(pr) && /add NOTHING/.test(pr) && /Allowance has been made for/.test(pr) && /excluded from our price/.test(pr) && /to be confirmed/.test(pr) && /Please confirm/.test(pr) && /\{"lines":\[\{"id"/.test(pr) && /Do not merge or split/.test(pr));
+  });
+  await checkAsync("tenderWording: the server action rejects an empty list (400) and answers 503 with no provider; requestTenderWording posts action tender-wording to the portal origin and reads lines back (missing ids reported)", async () => {
+    const bad = await E.runAiJob({ action: "tender-wording", assumptions: [] }, {});
+    const noProv = await E.runAiJob({ action: "tender-wording", assumptions: raw }, {});
+    assertTrue(bad.status === 400 && noProv.status === 503, JSON.stringify([bad, noProv]));
+    let posted = null;
+    const fetchImpl = async (url, opts) => { posted = { url, body: JSON.parse(opts.body) }; return { ok: true, status: 200, json: async () => ({ lines: [{ id: "a", tender: "Line A." }, { id: "c", tender: "Please confirm zones 2B and 3B." }], provider: "anthropic", model: "m" }) }; };
+    const r = await TW.requestTenderWording(raw, { projectName: "P", provider: "openai", fetchImpl, base: "https://portal.test" });
+    assertTrue(posted.url === "https://portal.test/api/ai-engine" && posted.body.action === "tender-wording" && posted.body.provider === "openai" && posted.body.assumptions.length === 3 && posted.body.assumptions[0].id === "a" && r.wording.a === "Line A." && r.missing.join() === "b" && r.model === "m", JSON.stringify([posted, r]));
+    let failed = null; try { await TW.requestTenderWording(raw, { fetchImpl: async () => ({ ok: false, status: 503, json: async () => ({ error: "No AI provider is configured" }) }), base: "x" }); } catch (e) { failed = e; }
+    assertTrue(failed && /No AI provider/.test(failed.message));
+    assertTrue(TW.preferredProvider({ getItem: () => JSON.stringify({ aiProvider: "openai" }) }) === "openai" && TW.preferredProvider({ getItem: () => "nope" }) === null);
+  });
+  check("tenderWording: the Tender Notes cell offers the reword step with review (ticks, editable proposals, apply), both reports thread onChangeAssumptions from App, and the Assumptions list shows the wording with a clear button", () => {
+    const cell = fs.readFileSync(new URL("../src/components/TenderNotesCell.jsx", import.meta.url), "utf8");
+    const app = fs.readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
+    const geo = fs.readFileSync(new URL("../src/components/ProjectGeometryPanel.jsx", import.meta.url), "utf8");
+    assertTrue(/data-testid="reword-for-tender"/.test(cell) && /data-testid="tender-wording-review"/.test(cell) && /data-testid="apply-tender-wording"/.test(cell) && /requestTenderWording\(/.test(cell) && /applyTenderWording\(/.test(cell) && (app.match(/onChangeAssumptions=\{\(assumptions\) => setQuote/g) || []).length === 3 && /data-testid="assumption-tender-wording"/.test(geo) && /clearTenderWording\(/.test(geo));
+  });
+}
+
 check("Tender quote prints the FLOOR AREA entered in the quote (measureM2), not the Square Mesh coverage", () => {
   const raft = newElementItem(ELEMENT_TYPES.find((t) => t.id === "raft_foundation"));
   raft.label = "Ground Floor Raft";
@@ -2455,6 +2505,12 @@ check("Project Geometry carries a COUNT: $/no. leads the benchmark rates, sums a
     const profile = { specName: "Spec C", defaults: { concreteGradeByElement: { footings: "N40", columns: "N40", all: "N32" }, coverByElement: { footings: 50, all: 40 } } };
     const calcOf = (t) => ({ padfooting: "padfooting", column: "column", slabonground: "slab" })[t] || null;
     const r = Q.compareTakeoffToDocuments({ instances: [inst, col, hand], proposal, profile, calcOf, today: "2026-10-11" });
+    // both documents optional (11 Oct 2026): no drawing reading → nothing "not on the drawings" or "missing from the takeoff"; no spec → no spec findings; the takeoff's own warnings always listed
+    const warned = { ...inst, results: { warnings: [{ text: "Footing length not entered", level: "completeness" }, { text: "Cover 20 mm is below the section", level: "sanity" }, { text: "Confirm the grade", level: "verify" }] } };
+    const none = Q.compareTakeoffToDocuments({ instances: [warned, col, hand], proposal: null, profile: null, calcOf, today: "2026-10-11" });
+    assertTrue(!none.findings.some((f) => /drawing|spec/.test(f.check)) && none.findings.filter((f) => f.check === "takeoff-warning").length === 2 && none.findings.some((f) => f.severity === "medium" && /Incomplete: Footing length/.test(f.message)) && !none.findings.some((f) => /Confirm the grade/.test(f.message)) && none.summary.documents.drawings === false && none.summary.documents.specification === false, JSON.stringify(none.findings));
+    const drawOnly = Q.compareTakeoffToDocuments({ instances: [inst, col, hand], proposal, profile: null, calcOf, today: "2026-10-11" });
+    assertTrue(drawOnly.summary.documents.drawings === true && drawOnly.summary.documents.specification === false && !drawOnly.findings.some((f) => /-vs-spec$/.test(f.check)) && drawOnly.findings.some((f) => /-vs-drawing$/.test(f.check)), JSON.stringify(drawOnly.findings.map((f) => f.check)));
     const by = (c) => r.findings.filter((f) => f.check === c);
     check("Quality (documents): instanceFacts reads each calculator's own fields into the generic shape (pad footing bars and size, column verticals, ligatures and height)", () => { const f = Q.instanceFacts(inst, "padfooting"), g = Q.instanceFacts(col, "column"); assertTrue(f.grade === 32 && f.cover === 50 && f.L === 1200 && f.D === 600 && f.main.dia === "N16" && f.main.spacing === 200 && g.main.qty === 8 && g.ligs.spacing === 200 && g.H === 3200 && g.W === 400); });
     check("Quality (documents): elements match by mark and sheet, a rejected drawing element never counts, and the hand-added element is noted as not on the drawings", () => { const m = Q.matchInstances([inst, col, hand], proposal.elements.filter((e) => e.include)); assertTrue(m.pairs[0].el.mark === "PF1" && m.pairs[1].el.mark === "C1" && m.pairs[2].el === null && m.unmatched.length === 1 && m.unmatched[0].el.label === "L1 slab" && by("not-on-drawings").length === 1 && by("not-on-drawings")[0].element === "Blinding slab (added by hand)"); });

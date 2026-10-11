@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
+import { wordingState, clearTenderWording } from "../lib/tenderWording.js";
 import { ChevronDown, ChevronRight, Wand2, Plus, Trash2 } from "lucide-react";
 import { geometryForLabel } from "../lib/estimateImport.js";
 import { computeProjectUnitRates, money2 } from "../lib/costing.js";
@@ -213,13 +214,30 @@ export default function ProjectGeometryPanel({ items, rates, estimateGeometry, o
                 {list.map((a, i) => (
                   <li key={a.id} className="flex items-start gap-2">
                     <span className="font-mono tabular-nums text-[11px] text-neutral-400 pt-2 w-5 text-right flex-none">{i + 1}.</span>
-                    <textarea
-                      value={a.text}
-                      onChange={(e) => onChangeAssumptions(list.map((x) => (x.id === a.id ? { ...x, text: e.target.value } : x)))}
-                      rows={1}
-                      placeholder="e.g. Slab thickness scaled from Section A — not dimensioned on the structural set"
-                      className="flex-1 border border-neutral-200 rounded px-2 py-1.5 text-sm resize-y focus:outline-none focus:ring-2 focus:ring-orange-400"
-                    />
+                    <div className="flex-1 min-w-0">
+                      <textarea
+                        value={a.text}
+                        onChange={(e) => onChangeAssumptions(list.map((x) => (x.id === a.id ? { ...x, text: e.target.value } : x)))}
+                        rows={1}
+                        placeholder="e.g. Slab thickness scaled from Section A — not dimensioned on the structural set"
+                        className="w-full border border-neutral-200 rounded px-2 py-1.5 text-sm resize-y focus:outline-none focus:ring-2 focus:ring-orange-400"
+                      />
+                      {wordingState(a) !== "none" && (
+                        <div className="mt-1 flex items-start gap-2 text-[11px]" data-testid="assumption-tender-wording">
+                          <span className={`flex-none px-1.5 py-0.5 rounded font-semibold ${wordingState(a) === "stale" ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"}`}>
+                            {wordingState(a) === "stale" ? "Tender wording — original changed since" : "Tender wording"}
+                          </span>
+                          <span className="text-neutral-600 min-w-0">{a.tenderText}</span>
+                          <button
+                            onClick={() => onChangeAssumptions(clearTenderWording(list, a.id))}
+                            title="Drop the tender wording — the Tender Notes print the typed text again"
+                            className="flex-none text-neutral-400 hover:text-red-600"
+                          >
+                            clear
+                          </button>
+                        </div>
+                      )}
+                    </div>
                     <button
                       onClick={() => onChangeAssumptions(list.filter((x) => x.id !== a.id))}
                       title="Remove this assumption"

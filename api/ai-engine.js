@@ -27,6 +27,7 @@
  * when it is configured, else the default. Same-origin check as ai-providers.
  */
 import { callDocuments, callText, callWebSearch, resolveProviderId, parseJsonLoose, salvageArrays, providerStatus } from "./_providers.js";
+import { tenderWordingPrompt, parseTenderWording } from "../src/lib/tenderWording.js";
 
 export const config = { maxDuration: 300 };
 
@@ -177,6 +178,24 @@ export async function runAiJob(body, env = process.env) {
       return { status: e.status && e.status >= 400 && e.status < 600 ? e.status : 502, body: { error: e.message, detail: e.detail || null, provider: id } };
     }
   }
+  if (action === "tender-wording") {
+    // Grady, 11 Oct 2026: "language reconstruction for the assumptions before
+    // pushing to the tender quote" — the estimator's shorthand rewritten as
+    // tender qualification lines, reviewed by a person before it is stored
+    // (src/lib/tenderWording.js holds the prompt and the reader).
+    const assumptions = Array.isArray(body.assumptions) ? body.assumptions.filter((a) => a && a.id != null && String(a.text || "").trim()).slice(0, 60) : [];
+    if (!assumptions.length) return { status: 400, body: { error: "tender-wording needs assumptions: [{id, text}]" } };
+    const id = resolveProviderId(provider, env);
+    if (!id) return { status: 503, body: { error: "No AI provider is configured — set ANTHROPIC_API_KEY or OPENAI_API_KEY in the Vercel project's Environment Variables." } };
+    try {
+      const r = await callText(id, { system: "You are a senior estimator at Gradcon Concrete Constructions, Melbourne, writing the Tender Notes (qualifications and clarifications) of a concrete subcontract quote to a builder. Formal, plain, precise Australian construction English. Reply with ONE JSON object and nothing else — no markdown fences, no prose before or after.", prompt: tenderWordingPrompt({ projectName, assumptions }), maxTokens: 2500, timeoutMs: 110000, env });
+      const map = parseTenderWording(r.text, assumptions);
+      const lines = assumptions.map((a) => ({ id: String(a.id), tender: map[String(a.id)] || null })).filter((l) => l.tender);
+      return { status: 200, body: { lines, provider: r.provider, model: r.model, latencyMs: r.latencyMs } };
+    } catch (e) {
+      return { status: e.status && e.status >= 400 && e.status < 600 ? e.status : 502, body: { error: e.message, detail: e.detail || null, provider: id } };
+    }
+  }
   if (action === "qa") {
     const findings = Array.isArray(body.findings) ? body.findings : null;
     if (!findings) return { status: 400, body: { error: "qa needs findings: [...]" } };
@@ -190,7 +209,7 @@ export async function runAiJob(body, env = process.env) {
     }
   }
   const DOC_ACTIONS = { takeoff: null, spec: specPrompt, geotech: geotechPrompt, contract: contractPrompt };
-  if (!(action in DOC_ACTIONS)) return { status: 400, body: { error: 'Body must carry action "takeoff", "spec", "geotech", "contract", "qa" or "benchmarks"' } };
+  if (!(action in DOC_ACTIONS)) return { status: 400, body: { error: 'Body must carry action "takeoff", "spec", "geotech", "contract", "qa", "benchmarks" or "tender-wording"' } };
   const bad = validFiles(files);
   if (bad) return { status: 400, body: { error: bad } };
   if (action === "takeoff" && (!Array.isArray(types) || types.length === 0 || types.length > MAX_TYPES)) return { status: 400, body: { error: "takeoff needs the element type list (types: [{id, label, group}])" } };

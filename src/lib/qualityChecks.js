@@ -226,9 +226,25 @@ export function matchInstances(instances, elements) {
 export function compareTakeoffToDocuments({ instances = [], proposal = null, profile = null, calcOf = () => null, today } = {}) {
   const findings = []; let seq = 0;
   const add = (check, severity, inst, message, evidence, fix) => findings.push({ id: `${check}-${++seq}`, check, severity, itemId: inst ? inst.id : null, element: inst ? inst.label || "" : null, message, evidence: evidence || "", fix: fix || "" });
-  const elements = proposal && Array.isArray(proposal.elements) ? proposal.elements.filter((e) => e && (e.include == null || e.include)) : [];
-  const { pairs, unmatched } = matchInstances(instances, elements);
+  // Both documents are OPTIONAL (Grady, 11 Oct 2026: "i dont need the
+  // specification becoming a problem"): no drawing reading → nothing is
+  // compared to the drawings and nothing is flagged as missing from them; no
+  // specification → no spec checks. The takeoff's own completeness and sanity
+  // warnings are always listed, so a run with no documents still says what
+  // the takeoff itself is unsure of.
+  const hasDrawings = !!(proposal && Array.isArray(proposal.elements));
+  const elements = hasDrawings ? proposal.elements.filter((e) => e && (e.include == null || e.include)) : [];
+  const { pairs, unmatched } = matchInstances(instances, hasDrawings ? elements : []);
   const pd = profile && profile.defaults ? profile.defaults : null;
+  const hasSpec = !!pd;
+  instances.forEach((inst) => {
+    const warnings = inst && inst.results && Array.isArray(inst.results.warnings) ? inst.results.warnings : [];
+    warnings.forEach((w) => {
+      const level = w && w.level; const text = w && (w.text || w.message || (typeof w === "string" ? w : ""));
+      if (!text || level === "verify") return;
+      add("takeoff-warning", level === "completeness" ? "medium" : "low", inst, `${level === "completeness" ? "Incomplete" : "Review"}: ${text}`, `the takeoff's own ${level || "warning"} check`, "Open the element in Estimates and settle the field it names.");
+    });
+  });
   pairs.forEach(({ inst, el }) => {
     const calc = calcOf(inst.typeKey); const f = instanceFacts(inst, calc); const bucket = DOC_BUCKET[calc] || null;
     const where = el ? `sheet ${el.sheet || "?"}${el.mark ? " mark " + el.mark : ""}` : "";
@@ -246,7 +262,7 @@ export function compareTakeoffToDocuments({ instances = [], proposal = null, pro
       if (p.top.dia && f.top.dia && p.top.dia !== f.top.dia) add("reo-vs-drawing", "medium", inst, `Top bars ${f.top.dia} in the takeoff; the drawings say ${p.top.dia}.`, where, "Change the top bar size.");
       [["L", "length"], ["W", "width"], ["D", "depth / thickness"], ["H", "height"], ["DIA", "diameter"]].forEach(([k, name]) => { if (p[k] && f[k] && !close(p[k], f[k])) add("size-vs-drawing", "medium", inst, `${name} ${Math.round(f[k])} mm in the takeoff; the drawings say ${Math.round(p[k])} mm.`, where, "Check the dimension on the sheet."); });
       if (p.qty && f.qty && p.qty !== f.qty) add("count-vs-drawing", "medium", inst, `${f.qty} in the takeoff; ${p.qty} counted on the drawings.`, where, "Count the mark on the plan again.");
-    } else if (elements.length) {
+    } else if (hasDrawings && elements.length) {
       add("not-on-drawings", "low", inst, "No element on the drawings matches this takeoff element.", "matched by mark, sheet and name", "Fine if it was added by hand (blinding, allowances); otherwise check it belongs to this job.");
     }
     if (pd && bucket) {
@@ -259,7 +275,7 @@ export function compareTakeoffToDocuments({ instances = [], proposal = null, pro
   unmatched.forEach(({ el }) => add("missing-from-takeoff", "medium", null, `On the drawings but not in the takeoff: ${el.label || el.type}${el.qty ? " × " + el.qty : ""}${el.sheet ? " (sheet " + el.sheet + ")" : ""}.`, el.evidence || "", "Add it to the takeoff, or record that it is out of scope."));
   const order = { high: 0, medium: 1, low: 2 };
   findings.sort((a, b) => order[a.severity] - order[b.severity] || a.check.localeCompare(b.check));
-  return { ranAt: (today ? new Date(today) : new Date()).toISOString(), findings, counts: { high: findings.filter((f) => f.severity === "high").length, medium: findings.filter((f) => f.severity === "medium").length, low: findings.filter((f) => f.severity === "low").length }, summary: { elements: instances.length, drawingElements: elements.length, matched: pairs.filter((p) => p.el).length, unmatchedOnDrawings: unmatched.length, hasSpec: !!pd } };
+  return { ranAt: (today ? new Date(today) : new Date()).toISOString(), findings, counts: { high: findings.filter((f) => f.severity === "high").length, medium: findings.filter((f) => f.severity === "medium").length, low: findings.filter((f) => f.severity === "low").length }, summary: { documents: { drawings: hasDrawings, specification: hasSpec }, elements: instances.length, drawingElements: elements.length, matched: pairs.filter((p) => p.el).length, unmatchedOnDrawings: unmatched.length, hasSpec: !!pd } };
 }
 
 /* ======================= Rates vs Victorian market =======================

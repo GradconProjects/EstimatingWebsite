@@ -138,8 +138,8 @@ tr.excluded td{opacity:.45;} td input[type=text],td input[type=number],td select
         <select id="qaMode"><option value="project">Quotes project — pricing, rates, quantities, benchmarks</option><option value="takeoff">Estimates takeoff — against the drawings and the specification</option></select>
         <select id="qaProject"><option value="">— pick a project —</option></select>
         <select id="qaTakeoff" hidden><option value="">— pick a takeoff —</option></select>
-        <select id="qaTakeoffJob" hidden title="The AI takeoff job whose drawing reading to compare against"><option value="">— drawings: pick an AI takeoff job —</option></select>
-        <select id="qaSpecJob" hidden title="The specification job whose ticked profile to compare against"><option value="">— specification: none —</option></select>
+        <select id="qaTakeoffJob" hidden title="The AI takeoff job whose drawing reading to compare against"><option value="">— drawings: none (optional) —</option></select>
+        <select id="qaSpecJob" hidden title="The specification job whose ticked profile to compare against"><option value="">— specification: none (optional) —</option></select>
         <button class="btn ai" id="qaRun" disabled>Run quality checks</button>
         <span class="small" id="qaStatus"></span>
       </div>
@@ -542,14 +542,14 @@ function renderQaProjects(){
   updateQaRun();
 }
 function qaMode(){ return document.getElementById("qaMode").value; }
-function updateQaRun(){ const m=qaMode(); document.getElementById("qaRun").disabled = m==="project" ? !document.getElementById("qaProject").value : !(document.getElementById("qaTakeoff").value && document.getElementById("qaTakeoffJob").value); }
+function updateQaRun(){ const m=qaMode(); document.getElementById("qaRun").disabled = m==="project" ? !document.getElementById("qaProject").value : !document.getElementById("qaTakeoff").value; }
 function renderQaTakeoffPickers(){
   const tk=document.getElementById("qaTakeoff"), tj=document.getElementById("qaTakeoffJob"), sj=document.getElementById("qaSpecJob"); if(!tk) return;
   const curTk=tk.value, curTj=tj.value, curSj=sj.value;
   tk.innerHTML = `<option value="">— pick a takeoff —</option>` + MIRROR.takeoffs.map(t=>`<option value="${esc(t.id)}" ${t.id===curTk?'selected':''}>${t.ai?"🤖 ":""}${esc(t.name||"Untitled takeoff")}${t.elements!=null?` (${t.elements})`:""}</option>`).join("");
   const jobs = liveIndex().map(e=>loadJob(e.id)).filter(Boolean);
-  tj.innerHTML = `<option value="">— drawings: pick an AI takeoff job —</option>` + jobs.filter(j=>j.kind==="takeoff" && j.review).map(j=>`<option value="${esc(j.id)}" ${j.id===curTj?'selected':''}>${esc(j.name||"Untitled")} (${j.review.elements.length} elements)</option>`).join("");
-  sj.innerHTML = `<option value="">— specification: none —</option>` + jobs.filter(j=>j.kind==="spec" && j.review).map(j=>`<option value="${esc(j.id)}" ${j.id===curSj?'selected':''}>${esc(j.name||"Untitled spec")}</option>`).join("");
+  tj.innerHTML = `<option value="">— drawings: none (optional) —</option>` + jobs.filter(j=>j.kind==="takeoff" && j.review).map(j=>`<option value="${esc(j.id)}" ${j.id===curTj?'selected':''}>${esc(j.name||"Untitled")} (${j.review.elements.length} elements)</option>`).join("");
+  sj.innerHTML = `<option value="">— specification: none (optional) —</option>` + jobs.filter(j=>j.kind==="spec" && j.review).map(j=>`<option value="${esc(j.id)}" ${j.id===curSj?'selected':''}>${esc(j.name||"Untitled spec")}</option>`).join("");
 }
 /** The AI takeoff job a takeoff came from (its export), else one linked to the same project; and that job's specification. */
 function autoJobsForTakeoff(takeoffId){
@@ -559,31 +559,32 @@ function autoJobsForTakeoff(takeoffId){
 }
 document.getElementById("qaMode").addEventListener("change", ()=>{
   const m=qaMode(); ["qaTakeoff","qaTakeoffJob","qaSpecJob"].forEach(id=>{ document.getElementById(id).hidden = m!=="takeoff"; }); document.getElementById("qaProject").hidden = m==="takeoff";
-  document.getElementById("qaModeHint").textContent = m==="takeoff" ? "Every element of the takeoff is matched to the drawing reading (by mark and sheet, then by name) and to the ticked specification: concrete grade, cover, bar sizes, counts and spacings, mesh, dimensions and counts are compared, and anything on the drawings with no takeoff element is listed." : "A Quotes project is checked for unpriced quote rows, steel and formwork bands, concrete against measures, crew bands, duplicates, rate validity and drift, $/m² against submitted projects and the Victorian market bands below.";
+  document.getElementById("qaModeHint").textContent = m==="takeoff" ? "The drawing reading and the specification are both optional — pick what you have. With a drawing reading, every element of the takeoff is matched to it (by mark and sheet, then by name) and concrete grade, cover, bar sizes, counts and spacings, mesh, dimensions and counts are compared; with a specification, grade and cover are checked against it; the takeoff's own completeness and sanity warnings are always listed, and anything on the drawings with no takeoff element is listed." : "A Quotes project is checked for unpriced quote rows, steel and formwork bands, concrete against measures, crew bands, duplicates, rate validity and drift, $/m² against submitted projects and the Victorian market bands below.";
   document.getElementById("qaHost").innerHTML=""; document.getElementById("qaStatus").textContent=""; QA.current=null; updateQaRun();
 });
 document.getElementById("qaTakeoff").addEventListener("change", e=>{ const auto = autoJobsForTakeoff(e.target.value); if(auto.takeoffJob) document.getElementById("qaTakeoffJob").value = auto.takeoffJob.id; if(auto.specJob) document.getElementById("qaSpecJob").value = auto.specJob.id; const job = e.target.value && qaJobForTakeoff(e.target.value); QA.current = job||null; if(job){ renderQa(job); document.getElementById("qaStatus").textContent = `last run ${whenLabel(job.ran&&job.ran.at)}`; } else { document.getElementById("qaHost").innerHTML=""; document.getElementById("qaStatus").textContent=""; } updateQaRun(); });
 ["qaTakeoffJob","qaSpecJob"].forEach(id=>document.getElementById(id).addEventListener("change", updateQaRun));
 function qaJobForTakeoff(id){ return liveIndex().map(e=>loadJob(e.id)).find(j=>j && j.kind==="qa" && j.subject==="takeoff" && j.takeoffId===id) || null; }
 async function runQaTakeoff(){
-  const id=document.getElementById("qaTakeoff").value, tjId=document.getElementById("qaTakeoffJob").value, sjId=document.getElementById("qaSpecJob").value; if(!id||!tjId) return;
+  // the drawing reading and the specification are both optional — a takeoff alone runs its own checks
+  const id=document.getElementById("qaTakeoff").value, tjId=document.getElementById("qaTakeoffJob").value, sjId=document.getElementById("qaSpecJob").value; if(!id) return;
   const st=document.getElementById("qaStatus"); const btn=document.getElementById("qaRun"); btn.disabled=true; st.textContent="loading the takeoff…";
   try{
     const lib = await loadQaLib();
     const meta = MIRROR.takeoffs.find(t=>t.id===id) || {}; const key = meta.key || ("gradcon-estimate-state::"+id);
     const rows = await kvGetRows(`select=value&key=eq.${encodeURIComponent(key)}`);
     const blob = (rows && rows[0] && rows[0].value) || readLocalJSON(key); if(!blob || !Array.isArray(blob.instances)) throw new Error("the takeoff could not be read");
-    const tj = loadJob(tjId); const sj = sjId ? loadJob(sjId) : null;
-    const proposal = { elements: (tj.review.elements||[]).filter(e=>e.include && e.type) };
+    const tj = tjId ? loadJob(tjId) : null; const sj = sjId ? loadJob(sjId) : null;
+    const proposal = tj ? { elements: (tj.review.elements||[]).filter(e=>e.include && e.type) } : null;
     const profile = sj ? profileFromSpecJob(sj) : null;
     st.textContent = "comparing…";
     const result = lib.compareTakeoffToDocuments({ instances: blob.instances, proposal, profile, calcOf: (t)=> (TYPE_BY_ID[t]||{}).calc || null });
     let job = qaJobForTakeoff(id);
     if(!job){ job = { id:newId(), kind:"qa", subject:"takeoff", name:((blob.project&&blob.project.name)||meta.name||"Takeoff")+" — against the documents", createdAt:nowIso(), updatedAt:nowIso(), status:"done", files:[], result:null, review:null, exports:[], ran:null, lastError:null, takeoffId:id, takeoffKey:key, projectName:(blob.project&&blob.project.name)||meta.name||"", acks:{}, explanation:null }; }
-    job.result = result; job.status="done"; job.ran = { at: nowIso(), takeoffJobId: tjId, specJobId: sjId||null }; job.projectStatus = `takeoff · drawings: ${tj.name||"job"}${sj?" · spec: "+(sj.name||"job"):""}`; job.explanation=null;
+    job.result = result; job.status="done"; job.ran = { at: nowIso(), takeoffJobId: tjId, specJobId: sjId||null }; job.projectStatus = `takeoff · drawings: ${tj?(tj.name||"job"):"none"} · specification: ${sj?(sj.name||"job"):"none"}`; job.explanation=null;
     Object.keys(job.acks||{}).forEach(fid=>{ if(!result.findings.some(f=>f.id===fid)) delete job.acks[fid]; });
     saveJob(job); QA.current=job;
-    st.textContent = `${result.findings.length} finding${result.findings.length===1?"":"s"} · ${result.summary.matched} of ${result.summary.elements} elements matched to the drawings · ${whenLabel(result.ranAt)}`;
+    st.textContent = `${result.findings.length} finding${result.findings.length===1?"":"s"} · ${tj? `${result.summary.matched} of ${result.summary.elements} elements matched to the drawings` : "no drawing reading picked — the takeoff's own checks only"}${sj? " · against the specification" : " · no specification (optional)"} · ${whenLabel(result.ranAt)}`;
     renderQa(job);
   }catch(e){ st.textContent = e.message; }
   btn.disabled=false;

@@ -18,6 +18,8 @@
  */
 const BULLET_PREFIX = /^[\s•\-–—*·▪◦]+/;
 
+import { assumptionTenderLine, wordingState } from "./tenderWording.js";
+
 export function cleanNoteLine(line) {
   return String(line == null ? "" : line).replace(BULLET_PREFIX, "").replace(/\s+/g, " ").trim();
 }
@@ -26,10 +28,19 @@ function noteKey(line) {
   return cleanNoteLine(line).toLowerCase();
 }
 
-/** The project's assumption texts, recorded order, blanks dropped. */
+/** The project's assumption lines AS THE TENDER READS THEM — the accepted
+ * tender wording where one exists (lib/tenderWording.js), else the typed
+ * text — recorded order, blanks dropped. */
 export function assumptionLines(quote) {
+  return assumptionNoteItems(quote).map((a) => a.line);
+}
+
+/** Each assumption with its typed text, the line the tender prints and the wording state ("none" | "reworded" | "stale"). */
+export function assumptionNoteItems(quote) {
   const list = quote && Array.isArray(quote.assumptions) ? quote.assumptions : [];
-  return list.map((a) => cleanNoteLine(a && a.text)).filter(Boolean);
+  return list
+    .map((a) => ({ id: a && a.id, text: cleanNoteLine(a && a.text), line: cleanNoteLine(assumptionTenderLine(a)), state: wordingState(a) }))
+    .filter((a) => a.line);
 }
 
 /** The notes typed on the report: one per line, bullet marks stripped, blanks dropped. */

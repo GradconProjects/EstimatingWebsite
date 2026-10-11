@@ -29,7 +29,7 @@ const fmtMoney = (n) => `$${(n || 0).toLocaleString("en-AU", { minimumFractionDi
  * printTarget) plus an on-screen editor with a live print preview, since
  * window.print() can be silently blocked in a sandboxed iframe.
  */
-export default function TenderQuoteReport({ quote, items, rates, visible, onClose, onChange, isPrintTarget }) {
+export default function TenderQuoteReport({ quote, items, rates, visible, onClose, onChange, onChangeAssumptions, isPrintTarget }) {
   const tq = quote.tenderQuote || newTenderQuote();
   const set = (field, value) => onChange({ ...tq, [field]: value });
 
@@ -198,7 +198,7 @@ export default function TenderQuoteReport({ quote, items, rates, visible, onClos
               </div>
 
               <Field label="Tender Notes (the project's Assumptions, then one extra note per line — information missing from documentation, discrepancies etc.)">
-                <TenderNotesCell quote={quote} value={tq.tenderNotes} onChange={(v) => set("tenderNotes", v)} rows={4} />
+                <TenderNotesCell quote={quote} value={tq.tenderNotes} onChange={(v) => set("tenderNotes", v)} onChangeAssumptions={onChangeAssumptions} rows={4} />
               </Field>
               <Field label="Inclusions (one per line)">
                 <textarea value={tq.inclusions} onChange={(e) => set("inclusions", e.target.value)} rows={6} className={textareaCls} />

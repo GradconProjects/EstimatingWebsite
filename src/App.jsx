@@ -1097,6 +1097,7 @@ function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, rate
         visible={externalQuoteOpen}
         onClose={() => setExternalQuoteOpen(false)}
         onChange={(externalQuote) => setQuote((q) => ({ ...q, externalQuote }))}
+        onChangeAssumptions={(assumptions) => setQuote((q) => ({ ...q, assumptions }))}
         isPrintTarget={printTarget === "external"}
       />
 
@@ -1107,6 +1108,7 @@ function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, rate
         visible={tenderQuoteOpen}
         onClose={() => setTenderQuoteOpen(false)}
         onChange={(tenderQuote) => setQuote((q) => ({ ...q, tenderQuote }))}
+        onChangeAssumptions={(assumptions) => setQuote((q) => ({ ...q, assumptions }))}
         isPrintTarget={printTarget === "tender"}
       />
 

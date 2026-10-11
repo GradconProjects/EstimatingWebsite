@@ -32,7 +32,7 @@ import { handoverIssues } from "../lib/handover.js";
  * be silently blocked in a sandboxed iframe with no reliable way to detect
  * that failure.
  */
-export default function ExternalQuoteReport({ quote, items, rates, visible, onClose, onChange, isPrintTarget }) {
+export default function ExternalQuoteReport({ quote, items, rates, visible, onClose, onChange, onChangeAssumptions, isPrintTarget }) {
   // A letter never opened before starts with the project's client as the
   // attention company (blank until then — the estimator can still change it).
   const eq = quote.externalQuote || { ...newExternalQuote(), attentionCompany: String(quote.clientName || "").trim() };
@@ -104,7 +104,7 @@ export default function ExternalQuoteReport({ quote, items, rates, visible, onCl
                 <textarea value={eq.drawingsStructural} onChange={(e) => set("drawingsStructural", e.target.value)} rows={2} className={textareaCls} />
               </Field>
               <Field label="Tender Notes (the project's Assumptions, then one extra note per line)">
-                <TenderNotesCell quote={quote} value={eq.tenderNotes} onChange={(v) => set("tenderNotes", v)} rows={3} />
+                <TenderNotesCell quote={quote} value={eq.tenderNotes} onChange={(v) => set("tenderNotes", v)} onChangeAssumptions={onChangeAssumptions} rows={3} />
               </Field>
               <Field label="Inclusions (one per line)">
                 <textarea value={eq.inclusions} onChange={(e) => set("inclusions", e.target.value)} rows={5} className={textareaCls} />
