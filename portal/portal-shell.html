@@ -1652,7 +1652,20 @@
     var host = document.getElementById('settings-google');
     host.innerHTML = '<span class="ai-result">Checking…</span>';
     fetch('/api/google-auth?action=status', { headers:{ accept:'application/json' } }).then(function(r){ return r.ok ? r.json() : Promise.reject(new Error(String(r.status))); }).then(function(d){
-      if(!d.configured){ host.innerHTML = '<div class="ai-row"><div class="name">Not configured<small>Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in the Vercel project, then redeploy. The OAuth client\'s redirect URI is ' + escapeHtml(location.origin) + '/api/google-auth.</small></div><span class="ai-chip off">No client</span></div>'; return; }
+      if(!d.configured){
+        // The credentials are Vercel environment variables. A per-deployment or
+        // preview address (estimating-website-<hash>-gradcon.vercel.app) only
+        // carries the variables ticked for that environment, so it can report
+        // "not configured" while the main address is connected (12 Oct 2026).
+        // The OAuth redirect is pinned to the main host on the server, so that is
+        // the URI to register — never this page's own address.
+        var canonical = 'https://estimating-website.vercel.app';
+        var offCanonical = location.origin !== canonical && /vercel\.app$/.test(location.hostname);
+        host.innerHTML = '<div class="ai-row"><div class="name">' + (offCanonical ? 'Not available at this address' : 'Not configured') + '<small>' +
+          (offCanonical
+            ? 'This is a deployment preview address (' + escapeHtml(location.host) + '). The Google credentials are set for the main site' + (d.connected ? ', where <b>' + escapeHtml(d.email || d.mailbox || 'the mailbox') + '</b> is connected' : '') + ' — open the portal at <a href="' + canonical + '/" style="color:inherit;">' + canonical.replace('https://','') + '</a>. To use mail from preview deployments as well, tick "Preview" on GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in the Vercel project\'s Environment Variables and redeploy.'
+            : 'Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in the Vercel project (Production, and Preview if previews should read mail too), then redeploy. The OAuth client\'s redirect URI is ' + canonical + '/api/google-auth.') +
+          '</small></div><span class="ai-chip off">' + (offCanonical ? 'Main site only' : 'No client') + '</span></div>'; return; }
       if(d.connected){ host.innerHTML = '<div class="ai-row"><div class="name">' + escapeHtml(d.email || d.mailbox) + '<small>connected ' + escapeHtml(d.connectedAt ? whenLabel(d.connectedAt, new Date()) : '') + ' · read-only</small></div><span class="ai-chip on">Connected</span><button type="button" class="ai-test" id="google-disconnect">Disconnect</button><span class="ai-result"></span></div>'; }
       else { host.innerHTML = '<div class="ai-row"><div class="name">' + escapeHtml(d.mailbox) + '<small>not connected — sign in as this mailbox on Google\'s page; any other account is refused</small></div><span class="ai-chip off">Not connected</span><button type="button" class="ai-use" id="google-connect">Connect</button></div>'; }
     }).catch(function(){ host.innerHTML = '<span class="ai-result">Not available in this build — the Google connection lives on the Vercel deployment (api/google-auth).</span>'; });
