@@ -475,6 +475,50 @@ and verify-covered. Rules:
    "Itemise" (`itemiseRolledUp`) replaces only those lines' points from a
    fresh seed, titles and prices kept. `test-tender-items.mjs` proves the
    itemisation, the repair and the review.
+   **The Tender Quote is laid out in STAGES** (Grady, 13 Oct 2026, from his
+   colour-coded printed quote and spreadsheet: "the stages in quote should not
+   change but use the api calls to place those line items in the proper.
+   vertical structures should be only for each level. per element prices
+   should be printed under the right category"): `TENDER_STAGES` in
+   `tenderQuoteDefaults.js` is the ONE fixed list — Retention, Basement, Lower
+   Ground, Ground Floor, First Floor, Second Floor, Roof, External Works, in
+   print order, a stage with nothing under it left off, NO Vertical Structure
+   stage (a column or wall goes under the level it rises from). A line item is
+   `{id, stage, title, price: "", lines: [{id, elementId, name, text, price}]}`
+   — one row per element with ITS OWN price (`fmtTenderPrice` of its
+   `computeExternalScopeLines` share); the stage total is NEVER typed
+   (`itemPriceValue` = the rows' sum whenever any row carries a price, else the
+   item's typed price — a hand-added item, or a tender saved before this).
+   `itemLines(item)` is the ONE reading of an item's rows (a pre-stage item's
+   `points` read as rows with no element and no price); `normalizeTenderItems`
+   gives every item `lines` and mirrors the texts onto `points` for a build
+   that still reads them — `lines` is canonical. Placement:
+   `defaultStageFor(item, allItems)` is the rule — the level named ANYWHERE in
+   the label or the element type's name (`levelStage`: "Strip Footings -
+   Basement", "RC Columns - Basement to Ground floor" → the FIRST level named
+   is the one the column rises from; a level above the second lands on Second
+   Floor), retention work by name (piles, piers, capping beams, shotcrete,
+   retaining) or band, roof / external / suspended by band, everything else on
+   `lowestLevel` (the basement when the quote has one) — and
+   `tenderQuote.elementStages` ({elementId: stage key}) is the recorded
+   decision that `stageForElement` prefers, written by `regroupByStage` on
+   every move (the row's own stage select in the editor, `moveRow`) and
+   honoured by Reseed, refresh and the roll-up repair. **The AI places the
+   elements in the reword step**: `requestTenderItemsWording` sends
+   `elements` (id, name, type, category, description, current stage) and
+   `stages`; `tenderItemsPrompt`'s PLACEMENT rule asks for `placement` by key
+   from the fixed list only (columns never a stage of their own);
+   `parseTenderPlacement` keeps known elements and keys only; the review's
+   "Placement under the stages" block (`items-placement-review`) shows every
+   element with its current → proposed stage as a select (orange when it
+   moves) and "Use ticked wording" regroups by what the selects say whatever
+   the wording ticks; a stage title is never changed by the reword. The print
+   lists each row's text with its price (`print-row`) under its stage with the
+   stage total on the heading; drift is per element row (`title` "Stage ·
+   Element") and `refreshTenderPrices` moves row prices and adds a new element
+   to its stage (creating the stage item in order). `test-tender-stages.mjs`
+   proves the seed, the move, the placement review, the apply, Reseed, a typed
+   row price and the legacy tender's itemise.
    **Tender Quote prices are a snapshot** (`seedTenderItems` on first open;
    `pricesAt` stamped). `tenderPriceDrift` compares each stored line's price
    with a fresh seed by title; the red check strip at the top of the Tender

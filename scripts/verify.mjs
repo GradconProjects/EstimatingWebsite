@@ -1214,13 +1214,87 @@ check("Tender prices: drift against today's figures is reported and refreshed wi
   const tq = { ...tenderPrefill(newTenderQuote(), quote), items: seedTenderItems(quote, quote.items, rates) };
   assert.equal(tq.attentionCompany, "Belair Builders");
   assert.deepEqual(tenderPriceDrift({ ...quote, tenderQuote: tq }, quote.items, rates), { changed: [], missing: [] }, "fresh seed = no drift");
-  tq.items[0].points[0] = "edited point";
+  tq.items[0].lines[0].text = "edited point";
   raft.qtys[rateKey("CONCRETE", "32 mpa", "m3")] = 40;
   const d = tenderPriceDrift({ ...quote, tenderQuote: tq }, quote.items, rates);
-  assert.equal(d.changed.length, 1); assert.notEqual(d.changed[0].stored, d.changed[0].fresh);
+  assert.equal(d.changed.length, 1); assert.notEqual(d.changed[0].stored, d.changed[0].fresh); assert.equal(d.changed[0].elementId, raft.id, "drift is reported per element row");
   const fresh = refreshTenderPrices({ ...quote, tenderQuote: tq }, quote.items, rates, "2026-10-09T00:00:00Z");
-  assert.equal(fresh.items[0].price, d.changed[0].fresh); assert.equal(fresh.items[0].points[0], "edited point", "dot points survive a price refresh"); assert.equal(fresh.pricesAt, "2026-10-09T00:00:00Z");
+  assert.equal(fresh.items[0].lines[0].price, d.changed[0].fresh); assert.equal(fresh.items[0].lines[0].text, "edited point", "dot points survive a price refresh"); assert.equal(fresh.pricesAt, "2026-10-09T00:00:00Z");
   assert.deepEqual(tenderPriceDrift({ ...quote, tenderQuote: fresh }, quote.items, rates).changed, []);
+  // a tender from before the stage layout (level items with points, no row prices) is compared by title and its price moved as before
+  const legacy = { ...tq, items: [{ id: "L", title: "Ground Floor", price: "$1.00 + GST", points: ["Raft — approx. 40 m³ concrete", "", "", ""] }] };
+  const dl = tenderPriceDrift({ ...quote, tenderQuote: legacy }, quote.items, rates);
+  assert.equal(dl.changed.length, 1); assert.equal(dl.changed[0].fresh, d.changed[0].fresh);
+  const fl = refreshTenderPrices({ ...quote, tenderQuote: legacy }, quote.items, rates, "2026-10-09T00:00:00Z");
+  assert.equal(fl.items[0].price, d.changed[0].fresh); assert.equal(fl.items[0].lines[0].text, "Raft — approx. 40 m³ concrete");
+});
+
+await checkAsync("Tender STAGES (Grady, 13 Oct 2026): the fixed list, placement by rule — the level named anywhere in the label or type, retention by name, columns under the level they rise from, the rest on the lowest level — reproduces the colour-coded printed quote; per-element rows carry their own price and the stage total is their sum", async () => {
+  const TQ = await import("../src/lib/tenderQuoteDefaults.js");
+  assert.deepEqual(TQ.TENDER_STAGES.map((s) => s.title), ["Retention", "Basement", "Lower Ground", "Ground Floor", "First Floor", "Second Floor", "Roof", "External Works"]);
+  assert.equal(TQ.levelStage("Strip Footings - Basement"), "basement"); assert.equal(TQ.levelStage("RC Columns - Basement to Ground floor"), "basement", "the FIRST level named is the one the column rises from");
+  assert.equal(TQ.levelStage("Suspended Raft - Ground Floor"), "ground"); assert.equal(TQ.levelStage("L1 slab"), "first"); assert.equal(TQ.levelStage("Level 2 columns"), "second"); assert.equal(TQ.levelStage("Level 3 slab"), "second", "a level above the second lands on Second Floor");
+  assert.equal(TQ.levelStage("Lower ground walls"), "lower_ground"); assert.equal(TQ.levelStage("Rooftop plant deck"), "roof"); assert.equal(TQ.levelStage("Pad Footings"), null);
+  const rates = defaultRates(); const conc = FULL_CATALOG.find((c) => c.key === "CONCRETE").products[0];
+  const T = (id) => ELEMENT_TYPES.find((t) => t.id === id); const byName = (re) => ELEMENT_TYPES.find((t) => re.test(t.name));
+  const mk = (type, label, m3) => { const it = newElementItem(type); it.label = label; it.qtys[rateKey("CONCRETE", conc.name, conc.unit)] = m3; return it; };
+  const els = [mk(byName(/bored pier/i), "Piles - Bored Piers", 30), mk(byName(/capping beam/i), "Capping Beam", 10), mk(byName(/shotcrete/i), "Shotcrete Retention Wall", 20),
+    mk(T("strip_footings"), "Strip Footings - Basement", 18), mk(T("strip_footings"), "Pad Footings", 5), mk(byName(/^Basement Slab$/), "Slab", 30), mk(byName(/^Basement Ramp$/), "Driveway Ramp", 12),
+    mk(ELEMENT_TYPES.find((t) => t.category === "VERTICAL STRUCTURE"), "RC Columns - Basement to Ground floor", 3), mk(T("strip_footings"), "Strip Footings - Ground Floor", 20), mk(T("raft_foundation"), "Suspended Raft - Ground Floor", 60), mk(T("suspended_slab"), "Suspended Slab", 50), mk(ELEMENT_TYPES.find((t) => t.category === "EXTERNAL & LANDSCAPE CONCRETE"), "Driveway", 8)];
+  assert.deepEqual(els.map((e) => TQ.defaultStageFor(e, els)), ["retention", "retention", "retention", "basement", "basement", "basement", "basement", "basement", "ground", "ground", "ground", "external"]);
+  assert.equal(TQ.lowestLevel([{ label: "Ground slab" }, { label: "Lower ground wall" }]), "lower_ground"); assert.equal(TQ.lowestLevel([{ label: "Slab" }]), "ground");
+  const quote = { overheadPct: 0.08, contingencyPct: 0.05, items: els };
+  const seeded = TQ.seedTenderItems(quote, els, rates);
+  assert.deepEqual(seeded.map((s) => [s.stage, s.title, s.lines.length]), [["retention", "Retention", 3], ["basement", "Basement", 5], ["ground", "Ground Floor", 3], ["external", "External Works", 1]], "stage items in the fixed order, only the stages used");
+  const ret = seeded[0];
+  assert.ok(ret.lines.every((l) => l.elementId && /^\$[\d,]+\.\d\d \+ GST$/.test(l.price)), "every row names its element and carries its own price");
+  assert.equal(ret.price, "", "a stage total is never typed"); assert.equal(TQ.itemPriceValue(ret), ret.lines.reduce((t, l) => t + TQ.parseTenderPrice(l.price), 0)); assert.ok(/^\$[\d,]+\.\d\d \+ GST$/.test(TQ.itemPriceLabel(ret)));
+  assert.deepEqual(seeded[0].points, seeded[0].lines.map((l) => l.text), "points mirror the rows for a build that still reads them");
+  const sum = TQ.computeTenderProjectSum({ items: seeded });
+  assert.ok(Math.abs(sum.itemsSum - seeded.reduce((t, it) => t + TQ.itemPriceValue(it), 0)) < 0.005, "the project sum adds the stage totals");
+  // a hand-added item (no rows priced) keeps its typed price; a legacy points item reads as rows with no element
+  assert.equal(TQ.itemPriceValue({ id: "x", title: "Extra", price: "$5.00 + GST", lines: [{ id: "r", elementId: null, text: "typed", price: "" }] }), 5);
+  const legacy = TQ.normalizeTenderItems([{ id: "a", title: "Basement", price: "$9.00 + GST", points: ["x", "", ""] }])[0];
+  assert.deepEqual(legacy.lines.map((l) => [l.elementId, l.text, l.price]), [[null, "x", ""]]); assert.equal(TQ.itemPriceValue(legacy), 9);
+  // regroup: a row moved to another stage, recorded on elementStages, honoured by the next seed; an emptied stage disappears
+  const colId = els[7].id;
+  const rg = TQ.regroupByStage(seeded, (l) => (l.elementId === colId ? "ground" : null));
+  assert.deepEqual(rg.items.map((s) => [s.stage, s.lines.length]), [["retention", 3], ["basement", 4], ["ground", 4], ["external", 1]]); assert.equal(rg.elementStages[colId], "ground");
+  const re = TQ.seedTenderItems({ ...quote, tenderQuote: { elementStages: { [colId]: "roof", [els[11].id]: "retention" } } }, els, rates);
+  assert.deepEqual(re.map((s) => [s.stage, s.lines.length]), [["retention", 4], ["basement", 4], ["ground", 3], ["roof", 1]], "the recorded placement wins over the rule");
+  // drift per element, and a new element joins its stage on refresh (the stage item created in order when the tender lacks it)
+  const tq = { ...TQ.newTenderQuote(), items: rg.items, elementStages: rg.elementStages };
+  assert.deepEqual(TQ.tenderPriceDrift({ ...quote, tenderQuote: tq }, els, rates), { changed: [], missing: [] });
+  const els2 = els.concat([mk(T("suspended_slab"), "First Floor Slab", 22)]);
+  const d = TQ.tenderPriceDrift({ ...quote, tenderQuote: tq }, els2, rates);
+  assert.equal(d.changed.length, 0); assert.equal(d.missing.length, 1); assert.ok(/^First Floor · /.test(d.missing[0].title));
+  const fr = TQ.refreshTenderPrices({ ...quote, tenderQuote: tq }, els2, rates, "2026-10-13T00:00:00Z");
+  assert.deepEqual(fr.items.map((s) => s.stage), ["retention", "basement", "ground", "first", "external"]); assert.equal(fr.items[3].lines[0].elementId, els2[12].id);
+  // the editor, the review and the print
+  const src = fs.readFileSync(new URL("../src/components/TenderQuoteReport.jsx", import.meta.url), "utf8");
+  assertTrue(/normalizeTenderItems\(tq\.items \|\| \[\]\)/.test(src) && /data-testid="items-placement-review"/.test(src) && /data-testid="placement-row"/.test(src) && /regroupByStage\(worded/.test(src) && /elementStages: \{ \.\.\.\(tq\.elementStages \|\| \{\}\), \.\.\.rg\.elementStages \}/.test(src) && /data-testid="stage-total"/.test(src) && /data-testid="print-row"/.test(src) && /moveRow\(row\.id, e\.target\.value\)/.test(src) && /stages: TENDER_STAGES/.test(src), "editor rows with price + stage select, placement review, regroup on apply, per-row print");
+  assertTrue(/title: l\.stage \? l\.title : \(r\.newTitle\.trim\(\) \|\| l\.title\)/.test(src), "a stage title never changes through the reword");
+});
+
+await checkAsync("Tender STAGES: the reword request carries every element with its stage and the fixed stage list, the prompt asks for a placement by key (columns never a stage of their own), parseTenderPlacement keeps only known elements and stage keys, the server answers placement, and the spec context finds a row's element by id", async () => {
+  const TQ = await import("../src/lib/tenderQuoteDefaults.js"); const TW = await import("../src/lib/tenderWording.js"); const SC = await import("../src/lib/tenderSpecContext.js");
+  const elements = [{ id: "e1", name: "RC Columns - Basement to Ground floor", type: "Columns", category: "VERTICAL STRUCTURE", stage: "ground" }, { id: "e2", name: "Piles", type: "Bored Piers", category: "FOUNDATIONS", stage: "basement" }];
+  const items = [{ id: "L1", title: "Ground Floor", points: ["RC Columns - Basement to Ground floor — approx. 3 m³ concrete"] }];
+  const pr = TW.tenderItemsPrompt({ projectName: "P", items, elements, stages: TQ.TENDER_STAGES });
+  assertTrue(/PLACEMENT:/.test(pr) && /Columns and walls are NEVER a stage of their own/.test(pr) && /"placement":\[\{"id":"<element id>","stage":"<stage key>"\}\]/.test(pr) && /STAGES \(JSON\):/.test(pr) && /"key":"retention","title":"Retention"/.test(pr) && /ELEMENTS \(JSON\):/.test(pr) && /"id":"e1","name":"RC Columns - Basement to Ground floor"/.test(pr) && /keep a stage title EXACTLY as given/.test(pr), "prompt");
+  assertTrue(!/PLACEMENT:/.test(TW.tenderItemsPrompt({ projectName: "P", items })), "no elements → no placement block");
+  const pl = TW.parseTenderPlacement('{"items":[],"placement":[{"id":"e1","stage":"basement"},{"id":"e2","stage":"retention"},{"id":"zz","stage":"ground"},{"id":"e1","stage":"mezzanine"}]}', { elements, stages: TQ.TENDER_STAGES });
+  assert.deepEqual(pl, { e1: "basement", e2: "retention" });
+  let posted = null;
+  const r = await TW.requestTenderItemsWording(items, { projectName: "P", base: "https://x.test", elements, stages: TQ.TENDER_STAGES, fetchImpl: async (url, opts) => { posted = JSON.parse(opts.body); return { ok: true, status: 200, json: async () => ({ items: [], placement: { e1: "basement", e2: "nowhere" }, provider: "anthropic", model: "m" }) }; } });
+  assert.deepEqual(posted.elements, elements); assert.deepEqual(posted.stages, TQ.TENDER_STAGES); assert.deepEqual(r.placement, { e1: "basement" }, "a stage key the list lacks is dropped");
+  // the server: the element and stage lists are validated and bounded, the placement read from the model's reply and returned beside the items
+  const apiSrc = fs.readFileSync(new URL("../api/ai-engine.js", import.meta.url), "utf8");
+  assertTrue(/parseTenderPlacement/.test(apiSrc) && /const stages = Array\.isArray\(body\.stages\)/.test(apiSrc) && /slice\(0, 80\)/.test(apiSrc) && /placement, provider: r\.provider/.test(apiSrc) && /tenderItemsPrompt\(\{ projectName, items: lineItems, spec, options, sections, elements, stages \}\)/.test(apiSrc), "server placement path");
+  // spec context: a stage row names its element by id even when its text does not
+  const strip = ELEMENT_TYPES.find((t) => t.id === "strip_footings"); const el = newElementItem(strip); el.id = "q1"; el.label = "Strip Footings - Basement"; el.qtys[rateKey("PROCESSED BAR", "N12", "m")] = 100;
+  const ctx = SC.tenderSpecContext({ quote: { projectName: "P" }, items: [el], lineItems: [{ id: "S", stage: "basement", title: "Basement", lines: [{ id: "r1", elementId: "q1", name: el.label, text: "Reinforced concrete footings — approx. 10 m³", price: "$1.00 + GST" }] }], takeoff: null });
+  assert.equal(ctx.points[0].element, "Strip Footings - Basement"); assert.equal(ctx.matched.quote, 1);
 });
 
 check("Tender Notes = the project's Assumptions first (recorded order, blanks dropped), then the typed notes, bulleted once each", () => {
@@ -1300,7 +1374,7 @@ check("Tender quote itemises EVERY element of a level — one dot point each, ne
   assertTrue(pts.length === 6 && !pts.some((p) => /further items|combined/.test(p)) && /^Piles — 16 no\. \/ approx\. 10 m³ concrete$/.test(pts[0]) && /^Capping Beam — approx\. 42 lm \/ approx\. 11 m³ concrete$/.test(pts[1]) && /^Lift Pit — approx\. 15 m³ concrete$/.test(pts[5]), JSON.stringify(pts));
   // the Tender Quote editor shows every point (plus a spare box) and the print lists them all
   const src = fs.readFileSync(new URL("../src/components/TenderQuoteReport.jsx", import.meta.url), "utf8");
-  assertTrue(!/\.slice\(0, 4\)\.map\(\(p, i\)/.test(src) && /pts\.push\(""\); return pts;/.test(src) && /data-testid="reword-items"/.test(src) && /data-testid="items-wording-review"/.test(src) && /requestTenderItemsWording\(/.test(src));
+  assertTrue(!/\.slice\(0, 4\)\.map\(\(p, i\)/.test(src) && /"tender-row-spare"/.test(src) && /data-testid="reword-items"/.test(src) && /data-testid="items-wording-review"/.test(src) && /requestTenderItemsWording\(/.test(src));
 });
 check("Tender quote: a tender seeded earlier with a 'plus N further items' roll-up is found (rolledUpItems) and itemiseRolledUp replaces ONLY those points from a fresh seed, keeping titles, prices and other lines", async () => {
   const TQ = await import("../src/lib/tenderQuoteDefaults.js");
@@ -1374,7 +1448,7 @@ await checkAsync("Tender quote line items reword (Grady, 13 Oct 2026): prompt ke
   assertTrue(/"id":"L1"/.test(pr) && /SAME NUMBER of dot points/.test(pr) && /never write one/.test(pr) && /\{"items":\[\{"id"/.test(pr) && !/\$1 \+ GST/.test(pr));
   assertTrue(/Never write "further items"/.test(pr));
   const tqSrc = fs.readFileSync(new URL("../src/components/TenderQuoteReport.jsx", import.meta.url), "utf8");
-  assertTrue(/const base = rolledCount \? itemiseRolledUp\(/.test(tqSrc) && /const nextItems = itemReview\.base\.map/.test(tqSrc) && /data-testid="items-itemised-note"/.test(tqSrc), "the reword itemises rolled-up lines first and applies onto that list");
+  assertTrue(/const base = rolledCount \? itemiseRolledUp\(/.test(tqSrc) && /const worded = itemReview\.base\.map/.test(tqSrc) && /data-testid="items-itemised-note"/.test(tqSrc), "the reword itemises rolled-up lines first and applies onto that list");
   const map = TW.parseTenderItems('```json\n{"items":[{"id":"L1","title":"Basement","points":["Bored concrete piles — 16 no., approximately 35.28 m³ of concrete","Reinforced concrete columns, basement to ground floor — approximately 2.79 m³ of concrete"]},{"id":"L2","title":"Ground Floor","points":["Only one"]},{"id":"zz","title":"x","points":[]}]}\n```', li);
   assertTrue(map.L1 && map.L1.countMatches && map.L1.points.length === 2 && /Bored concrete piles/.test(map.L1.points[0]) && map.L2.title === "Ground Floor" && map.L2.countMatches && !map.zz, JSON.stringify(map));
   const bad = await E.runAiJob({ action: "tender-wording", kind: "items", items: [] }, {});

@@ -18,7 +18,7 @@
  */
 import { FULL_CATALOG } from "../data/catalog.js";
 import { normalizeElementName } from "./estimateImport.js";
-import { LEVEL_PREFIX } from "./tenderQuoteDefaults.js";
+import { LEVEL_PREFIX, itemLines } from "./tenderQuoteDefaults.js";
 
 const clean = (s) => String(s == null ? "" : s).replace(/\s+/g, " ").trim();
 const num = (v) => (v == null || v === "" || isNaN(+v) ? null : +v);
@@ -138,9 +138,10 @@ export function tenderSpecContext({ quote, items, lineItems, takeoff, maxChars =
   const build = () => {
     const points = [];
     (Array.isArray(lineItems) ? lineItems : []).forEach((li) => {
-      (li.points || []).forEach((p, index) => {
-        const text = clean(p); if (!text) return;
-        const el = elementForPoint(text, els);
+      itemLines(li).forEach((row, index) => {
+        const text = clean(row.text); if (!text) return;
+        // the row names its element directly (a stage row); a tender from before the stage layout is matched by the point's leading name
+        const el = (row.elementId && els.find((it) => it.id === row.elementId)) || elementForPoint(text, els);
         const matches = el ? takeoffMatches(instances, el.label) : takeoffMatches(instances, text.split(" — ")[0]);
         points.push({
           itemId: String(li.id), index, text,

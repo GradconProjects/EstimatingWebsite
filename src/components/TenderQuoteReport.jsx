@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { uid, getGstRate } from "../lib/costing.js";
 import { GRADCON_LOGO_FULL_DATA_URI } from "../lib/logo.js";
-import { newTenderQuote, seedTenderItems, computeTenderProjectSum, tenderPriceDrift, refreshTenderPrices, tenderPrefill, rolledUpItems, itemiseRolledUp } from "../lib/tenderQuoteDefaults.js";
+import { newTenderQuote, seedTenderItems, computeTenderProjectSum, tenderPriceDrift, refreshTenderPrices, tenderPrefill, rolledUpItems, itemiseRolledUp, normalizeTenderItems, itemLines, itemPriceLabel, itemHasRowPrices, regroupByStage, TENDER_STAGES, stageTitle, isStageKey } from "../lib/tenderQuoteDefaults.js";
+import { ELEMENT_TYPES } from "../data/catalog.js";
 import { handoverIssues } from "../lib/handover.js";
 import { tenderNoteLines } from "../lib/tenderNotes.js";
 import TenderNotesCell from "./TenderNotesCell.jsx";
@@ -14,8 +15,9 @@ const fmtMoney = (n) => `$${(n || 0).toLocaleString("en-AU", { minimumFractionDi
 /**
  * The TENDER QUOTE — a direct copy of Gradcon's real quotation document
  * (logo header, Date / Attention / Project block, numbered Project Details
- * line items each with a right-aligned "$… + GST" price and up to FOUR dot
- * points, Additional Options, Drawings, Tender Notes, Inclusions, Specific
+ * line items — the fixed construction STAGES since 13 Oct 2026, each with its
+ * right-aligned "$… + GST" total and one row per element carrying the
+ * element's own price — Additional Options, Drawings, Tender Notes, Inclusions, Specific
  * Exclusions, General exclusions, Specific Contractual Conditions and the
  * signature block). Unlike the Internal Quote this shows no cost breakdown
  * and — deliberately — NO markup drawings.
@@ -44,12 +46,22 @@ export default function TenderQuoteReport({ quote, items, rates, visible, onClos
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
 
-  const lineItems = tq.items || [];
-  const setLineItems = (next) => set("items", next);
+  // Line items are the fixed construction STAGES (lib/tenderQuoteDefaults.js
+  // TENDER_STAGES), each holding one row per element with its own price; a
+  // tender saved before 13 Oct 2026 reads through the same normaliser.
+  const lineItems = normalizeTenderItems(tq.items || []);
+  const setLineItems = (next) => set("items", normalizeTenderItems(next));
   const patchLine = (id, patch) => setLineItems(lineItems.map((l) => (l.id === id ? { ...l, ...patch } : l)));
-  // a point beyond the stored list appends (the editor always shows one spare box, so a level can carry any number of elements)
-  const patchPoint = (id, i, v) =>
-    setLineItems(lineItems.map((l) => { if (l.id !== id) return l; const pts = (l.points || []).slice(); while (pts.length <= i) pts.push(""); pts[i] = v; return { ...l, points: pts }; }));
+  // a row beyond the stored list appends (the editor always shows one spare box, so a stage can carry any number of elements)
+  const patchRow = (id, i, patch) =>
+    setLineItems(lineItems.map((l) => { if (l.id !== id) return l; const rows = itemLines(l).slice(); while (rows.length <= i) rows.push({ id: uid(), elementId: null, name: "", text: "", price: "" }); rows[i] = { ...rows[i], ...patch }; return { ...l, lines: rows }; }));
+  const removeRow = (id, rowId) => setLineItems(lineItems.map((l) => (l.id === id ? { ...l, lines: itemLines(l).filter((r) => r.id !== rowId) } : l)));
+  // moving one row to another stage (the row's own select) — the stage items are rebuilt in order and the decision recorded on elementStages
+  const moveRow = (rowId, stage) => {
+    const rg = regroupByStage(lineItems, (l) => (l.id === rowId ? stage : null));
+    onChange({ ...tq, items: rg.items, elementStages: { ...(tq.elementStages || {}), ...rg.elementStages } });
+  };
+  const typeName = (typeId) => { const t = ELEMENT_TYPES.find((x) => x.id === typeId); return t ? t.name : ""; };
   // "Reword for tender" on the line items (Grady, 13 Oct 2026: "apply the reword
   // concept to tender quote also"): every title and dot point proposed by the AI
   // provider, reviewed per line, applied only on "Use ticked wording"; prices untouched.
@@ -74,11 +86,17 @@ export default function TenderQuoteReport({ quote, items, rates, visible, onClos
       const spec = tenderSpecContext({ quote, items, lineItems: base, takeoff });
       const options = (tq.additionalOptions || []).filter((o) => o && String(o.text || "").trim());
       const sections = { inclusions: tq.inclusions || "", specificExclusions: tq.specificExclusions || "", generalExclusions: tq.generalExclusions || "" };
-      const r = await requestTenderItemsWording(base, { projectName: quote.projectName, provider: preferredProvider(), spec, options, sections });
+      // every element row, with its current stage, for the model to PLACE under the fixed stages
+      const elements = [];
+      base.forEach((l) => itemLines(l).forEach((row) => { const el = row.elementId && items.find((it) => it.id === row.elementId); if (el) elements.push({ id: el.id, name: el.label || "", type: typeName(el.typeId), category: el.category || "", description: String(el.description || "").slice(0, 200), stage: l.stage || "" }); }));
+      const r = await requestTenderItemsWording(base, { projectName: quote.projectName, provider: preferredProvider(), spec, options, sections, elements, stages: TENDER_STAGES });
       const sectionLabel = { inclusions: "Inclusions", specificExclusions: "Specific exclusions", generalExclusions: "General exclusions" };
+      const placements = [];
+      base.forEach((l) => itemLines(l).forEach((row) => { if (!row.elementId) return; const from = l.stage || null; const proposed = r.placement[row.elementId] || null; placements.push({ rowId: row.id, elementId: row.elementId, name: row.name || row.text.split(" — ")[0], from, proposed, to: proposed || from || "" }); }));
       setItemReview({
         base, itemised: rolledCount, spec: { takeoffName: takeoff ? takeoff.name : null, ...spec.matched },
-        rows: base.map((l) => { const w = r.wording[String(l.id)]; const pts = (l.points || []).map((p) => String(p || "").trim()).filter(Boolean); return { id: l.id, title: l.title || "", points: pts, newTitle: w && w.title ? w.title : l.title || "", newPoints: w ? w.points : [], use: !!w, countMatches: w ? w.points.length === pts.length : false }; }),
+        rows: base.map((l) => { const w = r.wording[String(l.id)]; const pts = itemLines(l).map((row) => String(row.text || "").trim()).filter(Boolean); return { id: l.id, stage: l.stage || null, title: l.title || "", points: pts, newTitle: w && w.title ? w.title : l.title || "", newPoints: w ? w.points : [], use: !!w, countMatches: w ? w.points.length === pts.length : false }; }),
+        placements, placed: Object.keys(r.placement).length,
         optionRows: options.map((o) => ({ id: String(o.id), text: String(o.text).trim(), newText: r.options[String(o.id)] || "", use: !!r.options[String(o.id)] })),
         sectionRows: Object.keys(sections).filter((k) => String(sections[k]).trim()).map((k) => { const got = r.sections[k]; return { key: k, label: sectionLabel[k] || k, text: String(sections[k]), newText: got ? got.lines.join("\n") : "", use: !!got, countMatches: got ? got.countMatches : false }; }),
         model: r.model, missing: r.missing,
@@ -87,10 +105,24 @@ export default function TenderQuoteReport({ quote, items, rates, visible, onClos
   };
   const applyItemReview = () => {
     const by = {}; itemReview.rows.forEach((r) => { if (r.use) by[r.id] = r; });
-    const nextItems = itemReview.base.map((l) => { const r = by[l.id]; if (!r) return l; const pts = r.newPoints.map((p) => String(p || "").trim()).filter(Boolean); while (pts.length < 4) pts.push(""); return { ...l, title: r.newTitle.trim() || l.title, points: pts }; });
+    // the ticked wording onto each row (by position — the same number of points per item), a stage title never changes, prices never move
+    const worded = itemReview.base.map((l) => {
+      const r = by[l.id]; if (!r) return l;
+      const rows = itemLines(l); const texts = rows.map((row) => String(row.text || "").trim());
+      const nonBlank = texts.map((t, i) => (t ? i : -1)).filter((i) => i >= 0);
+      const pts = r.newPoints.map((p) => String(p || "").trim());
+      const lines = rows.map((row) => ({ ...row }));
+      nonBlank.forEach((rowIdx, k) => { if (pts[k]) lines[rowIdx].text = pts[k]; });
+      pts.slice(nonBlank.length).filter(Boolean).forEach((t) => lines.push({ id: uid(), elementId: null, name: "", text: t, price: "" }));
+      return { ...l, title: l.stage ? l.title : (r.newTitle.trim() || l.title), lines };
+    });
+    // then every element under the stage chosen in the review (the AI's placement, or the select)
+    const stageSel = {}; (itemReview.placements || []).forEach((p) => { if (isStageKey(p.to)) stageSel[p.rowId] = p.to; });
+    const rg = regroupByStage(worded, (l) => stageSel[l.id] || null);
+    const nextItems = rg.items;
     const optBy = {}; (itemReview.optionRows || []).forEach((o) => { if (o.use && o.newText.trim()) optBy[o.id] = o.newText.trim(); });
     const nextOpts = (tq.additionalOptions || []).map((o) => (optBy[String(o.id)] ? { ...o, text: optBy[String(o.id)] } : o));
-    const patch = { items: nextItems, additionalOptions: nextOpts };
+    const patch = { items: nextItems, elementStages: { ...(tq.elementStages || {}), ...rg.elementStages }, additionalOptions: nextOpts };
     (itemReview.sectionRows || []).forEach((s) => { if (s.use && s.newText.trim()) patch[s.key] = s.newText.trim(); });
     onChange({ ...tq, ...patch }); // one write: line items, options and sections together, prices untouched
     setItemReview(null);
@@ -98,6 +130,7 @@ export default function TenderQuoteReport({ quote, items, rates, visible, onClos
   const setItemRow = (id, patch) => setItemReview((rv) => ({ ...rv, rows: rv.rows.map((r) => (r.id === id ? { ...r, ...patch } : r)) }));
   const setOptionRow = (id, patch) => setItemReview((rv) => ({ ...rv, optionRows: rv.optionRows.map((r) => (r.id === id ? { ...r, ...patch } : r)) }));
   const setSectionRow = (key, patch) => setItemReview((rv) => ({ ...rv, sectionRows: rv.sectionRows.map((r) => (r.key === key ? { ...r, ...patch } : r)) }));
+  const setPlacement = (rowId, to) => setItemReview((rv) => ({ ...rv, placements: rv.placements.map((p) => (p.rowId === rowId ? { ...p, to } : p)) }));
 
   const opts = tq.additionalOptions || [];
   const setOpts = (next) => set("additionalOptions", next);
@@ -146,9 +179,7 @@ export default function TenderQuoteReport({ quote, items, rates, visible, onClos
             )}
             <div className="flex items-center justify-between gap-4 px-5 py-3 border-b border-neutral-200 bg-amber-50 rounded-t-xl">
               <div className="text-[13px] text-neutral-800">
-                <b>Tender Quote — fully editable.</b> Line items are BUILDING LEVELS: elements grouped by the level
-                named at the start of their label ("Ground Floor - …"), each priced as that level's share of the real
-                sell price, dot points summarising the elements at that level from the estimating quantities — edit anything, add or remove items, then check
+                <b>Tender Quote — fully editable.</b> Line items are the standard CONSTRUCTION STAGES (Retention, Basement, Lower Ground, Ground Floor, First Floor, Second Floor, Roof, External Works — a stage with nothing under it is left off): every element sits under its stage with its own share of the real sell price printed beside it, the stage total is the sum of its rows. Columns and walls go under the level they rise from. "Reword for tender" asks the AI to place each element and to reword each row; you review both before anything is used. Edit anything, move a row with its stage select, add or remove items, then check
                 the preview below and use <kbd className="px-1 py-0.5 bg-white border border-neutral-300 rounded text-[11px]">Ctrl+P</kbd> / <kbd className="px-1 py-0.5 bg-white border border-neutral-300 rounded text-[11px]">Cmd+P</kbd> → "Save as PDF". No markup drawings are ever included.
               </div>
               <div className="flex items-center gap-2 flex-none">
@@ -187,7 +218,7 @@ export default function TenderQuoteReport({ quote, items, rates, visible, onClos
 
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Project Details — line items (title · price · one dot point per element)</span>
+                  <span className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Project Details — stages (one row per element: dot point · price · stage)</span>
                   <div className="flex gap-2">
                     <button
                       type="button"
@@ -207,7 +238,7 @@ export default function TenderQuoteReport({ quote, items, rates, visible, onClos
                       ↺ Reseed from quote &amp; estimates
                     </button>
                     <button
-                      onClick={() => setLineItems([...lineItems, { id: uid(), elementId: null, title: "New item", price: "", points: ["", "", "", ""] }])}
+                      onClick={() => setLineItems([...lineItems, { id: uid(), elementId: null, title: "New item", price: "", lines: [] }])}
                       className="text-[11px] font-semibold text-neutral-700 border border-neutral-300 rounded px-2 py-0.5 hover:bg-neutral-50"
                     >
                       + Add line item
@@ -234,8 +265,8 @@ export default function TenderQuoteReport({ quote, items, rates, visible, onClos
                         <div className="flex items-start gap-2">
                           <input type="checkbox" checked={r.use} onChange={(e) => setItemRow(r.id, { use: e.target.checked })} className="mt-1.5 flex-none" aria-label="Use this line's wording" disabled={!r.newTitle.trim() && !r.newPoints.length} />
                           <div className="flex-1 min-w-0 space-y-1">
-                            <div className="text-[11px] text-neutral-500 line-through decoration-neutral-300">{r.title}</div>
-                            <input value={r.newTitle} onChange={(e) => setItemRow(r.id, { newTitle: e.target.value })} className={`${inputCls} font-semibold`} placeholder="Title" />
+                            {!r.stage && <div className="text-[11px] text-neutral-500 line-through decoration-neutral-300">{r.title}</div>}
+                            {r.stage ? <div className="text-[12px] font-semibold text-neutral-800">{r.title} <span className="text-[10px] font-normal text-neutral-500">(stage — title fixed)</span></div> : <input value={r.newTitle} onChange={(e) => setItemRow(r.id, { newTitle: e.target.value })} className={`${inputCls} font-semibold`} placeholder="Title" />}
                             {!r.countMatches && r.newPoints.length > 0 && <div className="text-[11px] text-amber-700">The proposal has {r.newPoints.length} dot point{r.newPoints.length === 1 ? "" : "s"} for {r.points.length} typed — check nothing was merged or dropped.</div>}
                             {r.newPoints.map((p, i) => (
                               <div key={i}>
@@ -248,6 +279,24 @@ export default function TenderQuoteReport({ quote, items, rates, visible, onClos
                         </div>
                       </div>
                     ))}
+                    {(itemReview.placements || []).length > 0 && (
+                      <div className="space-y-1" data-testid="items-placement-review">
+                        <div className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">Placement under the stages — {itemReview.placed} of {itemReview.placements.length} element{itemReview.placements.length === 1 ? "" : "s"} placed by the AI; {itemReview.placements.filter((p) => p.proposed && p.proposed !== p.from).length} would move</div>
+                        <div className="text-[11px] text-neutral-600">The stages are fixed. Change any stage here; every row is placed where this says when you click Use ticked wording (whatever its wording tick).</div>
+                        <div className="bg-white border border-neutral-200 rounded divide-y divide-neutral-100">
+                          {itemReview.placements.map((p) => (
+                            <div key={p.rowId} className="flex items-center gap-2 px-2 py-1" data-testid="placement-row" data-moves={p.proposed && p.proposed !== p.from ? "1" : "0"}>
+                              <span className="flex-1 min-w-0 text-[12px] truncate" title={p.name}>{p.name}</span>
+                              <span className="text-[11px] text-neutral-500 flex-none">{p.from ? stageTitle(p.from) : "—"} →</span>
+                              <select value={p.to} onChange={(e) => setPlacement(p.rowId, e.target.value)} className={`border rounded px-1 py-0.5 text-[12px] flex-none ${p.proposed && p.proposed !== p.from ? "border-orange-400 bg-orange-50 font-semibold" : "border-neutral-300"}`} aria-label={`Stage for ${p.name}`}>
+                                {TENDER_STAGES.map((st) => <option key={st.key} value={st.key}>{st.title}</option>)}
+                              </select>
+                              {!p.proposed && <span className="text-[10px] text-amber-700 flex-none">no proposal</span>}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                     {(itemReview.optionRows || []).length > 0 && (
                       <div className="space-y-1" data-testid="items-options-review">
                         <div className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">Additional options — text only, prices untouched</div>
@@ -285,21 +334,38 @@ export default function TenderQuoteReport({ quote, items, rates, visible, onClos
                   </div>
                 )}
                 <div className="space-y-2">
-                  {lineItems.map((l, idx) => (
-                    <div key={l.id} className="border border-neutral-200 rounded-lg p-2">
-                      <div className="flex gap-2 items-center">
-                        <span className="text-xs text-neutral-400 font-mono w-5 text-right">{idx + 1}.</span>
-                        <input value={l.title} onChange={(e) => patchLine(l.id, { title: e.target.value })} className={`${inputCls} font-semibold`} placeholder="Item title (e.g. Ground floor)" />
-                        <input value={l.price} onChange={(e) => patchLine(l.id, { price: e.target.value })} className={`${inputCls} w-52 flex-none text-right font-mono`} placeholder="$0.00 + GST" />
-                        <button onClick={() => setLineItems(lineItems.filter((x) => x.id !== l.id))} className="text-neutral-300 hover:text-red-500 text-sm flex-none">✕</button>
+                  {lineItems.map((l, idx) => {
+                    const rows = itemLines(l).slice(); if (!rows.length || rows[rows.length - 1].text.trim() || rows[rows.length - 1].price.trim()) rows.push({ id: "__spare", elementId: null, name: "", text: "", price: "" });
+                    const rowPriced = itemHasRowPrices(l);
+                    return (
+                      <div key={l.id} className="border border-neutral-200 rounded-lg p-2" data-testid="tender-item" data-stage={l.stage || ""}>
+                        <div className="flex gap-2 items-center">
+                          <span className="text-xs text-neutral-400 font-mono w-5 text-right">{idx + 1}.</span>
+                          {l.stage ? <span className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-blue-950 text-white flex-none" title="A construction stage — the fixed list every quote uses">stage</span> : null}
+                          <input value={l.title} onChange={(e) => patchLine(l.id, { title: e.target.value })} className={`${inputCls} flex-1 min-w-0 font-semibold`} placeholder="Item title (e.g. Ground Floor)" />
+                          {rowPriced
+                            ? <span className="w-52 flex-none text-right font-mono text-sm font-semibold text-neutral-800 px-2" title="The stage total is the sum of its rows' prices — it is never typed" data-testid="stage-total">{itemPriceLabel(l)}</span>
+                            : <input value={l.price} onChange={(e) => patchLine(l.id, { price: e.target.value })} className={`${fixedCls} w-52 flex-none text-right font-mono`} placeholder="$0.00 + GST" />}
+                          <button onClick={() => setLineItems(lineItems.filter((x) => x.id !== l.id))} className="text-neutral-300 hover:text-red-500 text-sm flex-none" title="Remove this item and every row under it">✕</button>
+                        </div>
+                        <div className="space-y-1 mt-1.5 pl-7">
+                          {rows.map((row, i) => (
+                            <div key={row.id} className="flex gap-1.5 items-start" data-testid={row.id === "__spare" ? "tender-row-spare" : "tender-row"} data-element={row.elementId || ""}>
+                              <textarea value={row.text} onChange={(e) => patchRow(l.id, i, { text: e.target.value })} rows={1} className={`${inputCls} flex-1 min-w-0 text-[12px]`} placeholder={row.id === "__spare" ? "• add a row" : "• dot point"} />
+                              <input value={row.price} onChange={(e) => patchRow(l.id, i, { price: e.target.value })} className={`${fixedCls} w-40 flex-none text-right font-mono text-[12px]`} placeholder={l.stage || rowPriced ? "$0.00 + GST" : "price (optional)"} aria-label="Row price" />
+                              {row.id !== "__spare" && (l.stage || row.elementId) ? (
+                                <select value={l.stage || ""} onChange={(e) => moveRow(row.id, e.target.value)} className="border border-neutral-300 rounded px-1 py-1 text-[11px] flex-none w-32" title="Move this row to another stage" aria-label="Stage">
+                                  {!l.stage && <option value="">(no stage)</option>}
+                                  {TENDER_STAGES.map((st) => <option key={st.key} value={st.key}>{st.title}</option>)}
+                                </select>
+                              ) : <span className="w-32 flex-none" />}
+                              {row.id !== "__spare" ? <button onClick={() => removeRow(l.id, row.id)} className="text-neutral-300 hover:text-red-500 text-sm flex-none pt-1" title="Remove this row">✕</button> : <span className="w-3 flex-none" />}
+                            </div>
+                          ))}
+                        </div>
                       </div>
-                      <div className="grid grid-cols-2 gap-1.5 mt-1.5 pl-7">
-                        {(() => { const pts = (l.points || []).slice(); while (pts.length < 4) pts.push(""); if (pts[pts.length - 1].trim()) pts.push(""); return pts; })().map((p, i) => (
-                          <input key={i} value={p} onChange={(e) => patchPoint(l.id, i, e.target.value)} className={`${inputCls} text-[12px]`} placeholder={`• dot point ${i + 1}`} />
-                        ))}
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
 
@@ -377,6 +443,7 @@ export default function TenderQuoteReport({ quote, items, rates, visible, onClos
 }
 
 const inputCls = "w-full border border-neutral-300 rounded px-2 py-1.5 text-sm";
+const fixedCls = "border border-neutral-300 rounded px-2 py-1.5 text-sm"; // a fixed-width cell beside a growing one (w-full would win over w-40)
 const textareaCls = "w-full border border-neutral-300 rounded px-2 py-1.5 text-sm";
 
 /** The Project Sum controls: show/hide the block, override the sum, bolt an
@@ -465,7 +532,7 @@ function Bullets({ text }) {
 }
 
 function ReportContent({ quote, tq }) {
-  const lineItems = tq.items || [];
+  const lineItems = normalizeTenderItems(tq.items || []);
   const addr = (tq.projectAddress || "").split("\n").map((l) => l.trim()).filter(Boolean);
   const gstRate = getGstRate();
   const ps = computeTenderProjectSum(tq, gstRate);
@@ -497,15 +564,26 @@ function ReportContent({ quote, tq }) {
         <div className="font-bold mb-1">Project Details:</div>
         {lineItems.length === 0 && <div className="text-neutral-500 italic">No line items yet.</div>}
         <ol className="space-y-2">
-          {lineItems.map((l, i) => (
-            <li key={l.id} className="break-inside-avoid">
-              <div className="flex justify-between">
-                <span className="font-bold">{i + 1}. {l.title}{l.title && !/[:：]\s*$/.test(l.title) ? ":" : ""}</span>
-                <span className="font-bold">{l.price}</span>
-              </div>
-              <Bullets text={(l.points || []).join("\n")} />
-            </li>
-          ))}
+          {lineItems.map((l, i) => {
+            const rows = itemLines(l).filter((r) => String(r.text || "").trim() || String(r.price || "").trim());
+            return (
+              <li key={l.id} className="break-inside-avoid" data-testid="print-item" data-stage={l.stage || ""}>
+                <div className="flex justify-between">
+                  <span className="font-bold">{i + 1}. {l.title}{l.title && !/[:：]\s*$/.test(l.title) ? ":" : ""}</span>
+                  <span className="font-bold">{itemPriceLabel(l)}</span>
+                </div>
+                {rows.length > 0 && (
+                  <ul className="list-disc pl-6 space-y-0.5">
+                    {rows.map((r) => (
+                      <li key={r.id} data-testid="print-row">
+                        <div className="flex justify-between gap-4"><span>{r.text}</span>{String(r.price || "").trim() ? <span className="pl-4 flex-none font-mono tabular-nums">{r.price}</span> : null}</div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </li>
+            );
+          })}
         </ol>
         {tq.showProjectSum !== false && (
           <div className="mt-3 ml-auto w-80 break-inside-avoid">

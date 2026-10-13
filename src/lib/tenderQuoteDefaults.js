@@ -14,6 +14,7 @@
  * the estimator has already edited unless they ask for it.
  */
 import { uid, computeElementCost, labourQuantities, computeExternalScopeLines, getDefaultMargin } from "./costing.js";
+import { ELEMENT_TYPES } from "../data/catalog.js";
 
 export const TENDER_INCLUSIONS = [
   "All detailed excavation.",
@@ -129,25 +130,138 @@ export const TENDER_DEFAULT_OPTIONS = [
   { text: "Blinding Contingency", price: "$365.00/m3 + GST" },
 ];
 
-/** Tender line items are BUILDING LEVELS, not elements: elements are grouped
- * by the level named at the start of their label ("Basement - …",
- * "Ground Floor Raft", "First floor columns …"), each level priced as the
- * SUM of its elements' shares of the real sell price, with one dot point per
- * element — EVERY element, itemised (Grady, 13 Oct 2026: "i dont want this
- * statement, i want a very professional itemization of them rather than an
- * approximate given" — until then a level with more than four elements rolled
- * the rest into "plus N further items — approx. X m³ concrete combined") —
- * drawn from its published estimating quantities in the Project Geometry
- * order: count, run, area, concrete. Elements without a level prefix group by
- * their broad category instead. Every field is editable afterwards. */
-export const LEVEL_PREFIX = /^(lower ground floor|lower ground|basement|ground floor|ground|first floor|second floor|third floor|fourth floor|fifth floor|first|second|third|fourth|fifth|level\s*\d+|l\d+\b|mezzanine|podium|rooftop|roof)/i;
-const titleCase = (s) => s.replace(/\w\S*/g, (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+/** The STAGES a tender is laid out in — the one fixed list every quote uses
+ * (Grady, 13 Oct 2026, from his colour-coded printed quote and spreadsheet:
+ * "yes that is the standard stage list … the stages in quote should not
+ * change"). There is NO Vertical Structure stage: "vertical structures should
+ * be only for each level" — a column or wall sits under the level it stands
+ * on. The order here is the print order; a stage with nothing under it is
+ * left off the document. */
+export const TENDER_STAGES = [
+  { key: "retention", title: "Retention" },
+  { key: "basement", title: "Basement" },
+  { key: "lower_ground", title: "Lower Ground" },
+  { key: "ground", title: "Ground Floor" },
+  { key: "first", title: "First Floor" },
+  { key: "second", title: "Second Floor" },
+  { key: "roof", title: "Roof" },
+  { key: "external", title: "External Works" },
+];
+export const stageTitle = (key) => { const st = TENDER_STAGES.find((x) => x.key === key); return st ? st.title : ""; };
+export const stageIndex = (key) => { const i = TENDER_STAGES.findIndex((x) => x.key === key); return i < 0 ? TENDER_STAGES.length : i; };
+export const isStageKey = (key) => TENDER_STAGES.some((x) => x.key === key);
 
+/** The building level named at the start of an element label ("Basement - …",
+ * "Ground Floor Raft", "First floor columns …"); `levelStage(label)` reads it
+ * as a stage key, null when the label names none. */
+export const LEVEL_PREFIX = /^(lower ground floor|lower ground|basement|ground floor|ground|first floor|second floor|third floor|fourth floor|fifth floor|first|second|third|fourth|fifth|level\s*\d+|l\d+\b|mezzanine|podium|rooftop|roof)/i;
+const LEVEL_WORD = /\b(lower ground(?: floor)?|\blg\b|basement|\bb[12]\b|ground floor|ground level|upper ground|\bgf\b|\bground\b|podium|first floor|mezzanine|\bmezz\b|second floor|third floor|fourth floor|fifth floor|level\s*(\d+)|\bl(\d+)\b|rooftop|roof)\b/i;
+/** The building level an element label names ANYWHERE in it ("Strip Footings
+ * - Basement", "RC Columns - Basement to Ground floor" → the FIRST level named
+ * is the one the element stands on), as a stage key; null when none. A level
+ * above the second has no stage of its own in the standard list — it lands on
+ * Second Floor and the review says so. */
+export function levelStage(label) {
+  const m = String(label || "").match(LEVEL_WORD);
+  if (!m) return null;
+  const w = m[1].toLowerCase().replace(/\s+/g, " ").trim();
+  const n = m[2] || m[3];
+  if (n != null) return Number(n) <= 1 ? "first" : "second";
+  if (w.startsWith("basement") || w === "b1" || w === "b2") return "basement";
+  if (w.startsWith("lower ground") || w === "lg") return "lower_ground";
+  if (w.startsWith("ground") || w === "upper ground" || w === "gf" || w === "podium") return "ground";
+  if (w === "first floor" || w === "mezzanine" || w === "mezz") return "first";
+  if (w === "second floor") return "second";
+  if (w === "roof" || w === "rooftop") return "roof";
+  return "second"; // third / fourth / fifth floor
+}
+/** Retention work named on its face — piles, piers, capping beams, shotcrete, retaining — belongs to the Retention stage whatever its catalog band (Grady's printed quote lists bored piers and the capping beam under RETENTION). */
+const RETENTION_WORD = /\b(piles?|piling|piers?|capping beams?|shotcrete|retaining|retention|soldier|anchors?|sheet pil\w*)\b/i;
+const CATEGORY_STAGE = { "RETENTION & TEMPORARY WORKS": "retention", ROOF: "roof", "EXTERNAL & LANDSCAPE CONCRETE": "external", "CIVIL & INFRASTRUCTURE": "external", "POOL CONSTRUCTION": "external", "SUSPENDED STRUCTURE": "ground" };
+const LEVEL_ORDER = ["basement", "lower_ground", "ground"];
+/** The lowest building level any element of the quote names — where the
+ * footings, the columns and the earthworks of an unlabelled element belong
+ * (the basement when the job has one, else the lower ground, else the ground). */
+export function lowestLevel(items) {
+  let best = null;
+  (items || []).forEach((it) => { const st = levelStage(it && it.label); if (st && LEVEL_ORDER.includes(st) && (best == null || LEVEL_ORDER.indexOf(st) < LEVEL_ORDER.indexOf(best))) best = st; });
+  return best || "ground";
+}
+/** The stage an element falls under BEFORE anyone has placed it (the AI
+ * placement in the reword review and the row's own select override it, and
+ * `tenderQuote.elementStages` remembers the decision): the level named anywhere in its
+ * label or in its element type's name first; retention work by name; retention, roof, external and
+ * suspended work by catalog category; everything else — footings, slabs on
+ * ground, columns, walls, earthworks, preliminaries — on the lowest level the
+ * quote names. */
+export function defaultStageFor(item, allItems, elementTypes = ELEMENT_TYPES) {
+  const byLabel = levelStage(item && item.label);
+  if (byLabel) return byLabel;
+  const type = (elementTypes || []).find((t) => t.id === (item && item.typeId));
+  const byType = type ? levelStage(type.name) : null; // "Basement Slab", "Roof Beam"
+  if (byType) return byType;
+  const cat = String((item && item.category) || "").toUpperCase();
+  if (cat === "RETENTION & TEMPORARY WORKS" || RETENTION_WORD.test(String((item && item.label) || "")) || (type && RETENTION_WORD.test(type.name))) return "retention";
+  if (CATEGORY_STAGE[cat]) return CATEGORY_STAGE[cat];
+  return lowestLevel(allItems || []);
+}
+/** The stage a tender places an element under: the recorded decision, else the rule. */
+export function stageForElement(item, allItems, elementStages) {
+  const rec = elementStages && item && elementStages[item.id];
+  return isStageKey(rec) ? rec : defaultStageFor(item, allItems);
+}
+
+const titleCase = (s) => s.replace(/\w\S*/g, (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+export const fmtTenderPrice = (n) => (n > 0 ? `$${Number(n).toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} + GST` : "");
+
+/** A line item's rows — `lines` [{id, elementId, name, text, price}] is the
+ * stored form (one row per element, each with its own price); a tender saved
+ * before 13 Oct 2026 holds only `points` (strings, no row prices) and reads
+ * as rows with no element and no price. ONE reading for the editor, the print,
+ * the drift, the reword and the spec context. */
+export function itemLines(item) {
+  if (item && Array.isArray(item.lines)) return item.lines;
+  return (item && Array.isArray(item.points) ? item.points : []).map((p, i) => ({ id: `${item.id}:${i}`, elementId: null, name: "", text: String(p == null ? "" : p), price: "" }));
+}
+/** Every item carries `lines` (its `points` become rows once) and `points`
+ * mirrors the texts for a build that still reads them; blank trailing rows
+ * are dropped. Lossless on a tender from before the stage layout. */
+export function normalizeTenderItems(items) {
+  return (Array.isArray(items) ? items : []).map((it) => {
+    const lines = itemLines(it).map((l) => ({ id: l.id || uid(), elementId: l.elementId || null, name: String(l.name || ""), text: String(l.text == null ? "" : l.text), price: String(l.price == null ? "" : l.price) }));
+    while (lines.length && !lines[lines.length - 1].text.trim() && !lines[lines.length - 1].price.trim() && !lines[lines.length - 1].elementId) lines.pop();
+    return { ...it, lines, points: lines.map((l) => l.text) };
+  });
+}
+/** A line item's price in dollars: the SUM of its rows' prices when any row
+ * carries one (a stage total is never typed — Grady, 13 Oct 2026: "per element
+ * prices should be printed under the right category"), else the item's own
+ * typed price (a hand-added item, or a tender from before the stage layout). */
+export function itemPriceValue(item) {
+  const lines = itemLines(item);
+  if (lines.some((l) => String(l.price || "").trim())) return lines.reduce((s, l) => s + parseTenderPrice(l.price), 0);
+  return parseTenderPrice(item && item.price);
+}
+export const itemHasRowPrices = (item) => itemLines(item).some((l) => String(l.price || "").trim());
+/** What the item's price prints as: the row sum as "$… + GST", else the typed price string. */
+export const itemPriceLabel = (item) => (itemHasRowPrices(item) ? fmtTenderPrice(itemPriceValue(item)) : String((item && item.price) || ""));
+
+/** Tender line items are the fixed STAGES, each holding one row per element
+ * placed under it — the element's dot point (its name and its published
+ * estimating quantities in the Project Geometry order: count, run, area,
+ * concrete) and its own share of the real sell price. Every element is
+ * itemised (Grady, 13 Oct 2026: "i dont want this statement, i want a very
+ * professional itemization of them rather than an approximate given" — until
+ * then a level with more than four elements rolled the rest into "plus N
+ * further items"). The stage comes from `quote.tenderQuote.elementStages`
+ * (the AI placement or the row's select, recorded) else `defaultStageFor`.
+ * Every field is editable afterwards. */
 export function seedTenderItems(quote, items, rates) {
   const { lines } = computeExternalScopeLines(items, rates, quote.overheadPct, quote.contingencyPct, getDefaultMargin(), quote.scope);
   const sellById = {};
   lines.forEach((l) => { sellById[l.id] = l.sellExGst; });
   const fmt = (n, dp = 2) => Number(n).toLocaleString("en-AU", { maximumFractionDigits: dp });
+  const elementStages = (quote.tenderQuote && quote.tenderQuote.elementStages) || {};
 
   // one short summary point per element — name + its most telling figure
   const summarize = (item) => {
@@ -173,33 +287,43 @@ export function seedTenderItems(quote, items, rates) {
     if (cost.concreteQty > 0) figs.push(`approx. ${fmt(cost.concreteQty)} m³ concrete`);
     if (!figs.length && lq.formworkM2 > 0) figs.push(`approx. ${fmt(lq.formworkM2)} m² formwork`);
     if (!figs.length && lq.reinfTonnes > 0.005) figs.push(`approx. ${fmt(lq.reinfTonnes)} t reinforcement`);
-    return { text: figs.length ? `${name} — ${figs.slice(0, 3).join(" / ")}` : name, concreteM3: cost.concreteQty || 0, sell: sellById[item.id] || 0 };
+    const sell = sellById[item.id] || 0;
+    return { id: uid(), elementId: item.id, name: item.label || "", text: figs.length ? `${name} — ${figs.slice(0, 3).join(" / ")}` : name, price: fmtTenderPrice(sell) };
   };
 
-  // group elements by building level (label prefix), else broad category
-  const groups = []; // [{key, title, members:[summaries]}] in first-seen order
-  const byKey = {};
+  // one line item per stage used, in the fixed stage order; elements keep the quote's order inside it
+  const byStage = {};
   items.forEach((item) => {
-    const m = (item.label || "").match(LEVEL_PREFIX);
-    const key = m ? m[0].trim().toLowerCase() : `cat:${item.category || "general"}`;
-    const title = m ? titleCase(m[0].trim()) : titleCase(String(item.category || "General works").toLowerCase());
-    if (!byKey[key]) { byKey[key] = { key, title, members: [] }; groups.push(byKey[key]); }
-    byKey[key].members.push(summarize(item));
+    const key = stageForElement(item, items, elementStages);
+    if (!byStage[key]) byStage[key] = [];
+    byStage[key].push(summarize(item));
   });
+  return TENDER_STAGES.filter((st) => byStage[st.key]).map((st) => ({ id: uid(), elementId: null, stage: st.key, title: st.title, price: "", lines: byStage[st.key], points: byStage[st.key].map((l) => l.text) }));
+}
 
-  return groups.map((g) => {
-    const sell = g.members.reduce((s, mm) => s + mm.sell, 0);
-    // one point per element, every element — never a "plus N further items" roll-up
-    const points = g.members.map((mm) => mm.text);
-    while (points.length < 4) points.push("");
-    return {
-      id: uid(),
-      elementId: null,
-      title: g.title,
-      price: sell > 0 ? `$${sell.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} + GST` : "",
-      points,
-    };
+/** Moves every element row onto the stage `stageOf(line)` names (a stage key;
+ * anything else keeps the row where it is): stage items are rebuilt in the
+ * fixed order, an emptied stage item is dropped, a row `stageOf` says nothing
+ * about stays with its item, hand-added items (no stage) are untouched. Returns the items
+ * and the `elementStages` record to keep on the tender. */
+export function regroupByStage(items, stageOf) {
+  const list = normalizeTenderItems(items);
+  const stageItems = {}; const others = [];
+  list.forEach((it) => { if (it.stage && isStageKey(it.stage)) stageItems[it.stage] = { ...it, lines: [] }; else others.push(it); });
+  const elementStages = {};
+  list.forEach((it) => {
+    it.lines.forEach((l) => {
+      const want = stageOf(l, it);
+      const key = isStageKey(want) ? want : (it.stage && isStageKey(it.stage) ? it.stage : null);
+      if (l.elementId && key) elementStages[l.elementId] = key;
+      if (!key) { const o = others.find((x) => x.id === it.id); if (o) { if (!o._lines) o._lines = []; o._lines.push(l); } return; }
+      if (!stageItems[key]) stageItems[key] = { id: uid(), elementId: null, stage: key, title: stageTitle(key), price: "", lines: [] };
+      stageItems[key].lines.push(l);
+    });
   });
+  const staged = TENDER_STAGES.filter((st) => stageItems[st.key] && stageItems[st.key].lines.length).map((st) => ({ ...stageItems[st.key], points: stageItems[st.key].lines.map((l) => l.text) }));
+  const rest = others.map((o) => { const lines = o._lines || []; const { _lines, ...it } = o; return { ...it, lines, points: lines.map((l) => l.text) }; });
+  return { items: staged.concat(rest), elementStages };
 }
 
 /** The category prices a tender was seeded with against what the quote's
@@ -213,13 +337,25 @@ export function tenderPriceDrift(quote, items, rates) {
   const tq = quote && quote.tenderQuote;
   if (!tq || !Array.isArray(tq.items)) return { changed: [], missing: [] };
   const fresh = seedTenderItems(quote, items, rates);
+  const freshRows = {}; fresh.forEach((f) => f.lines.forEach((l) => { freshRows[l.elementId] = { ...l, stage: f.title }; }));
   const key = (t) => String(t || "").trim().toLowerCase();
-  const changed = [];
-  tq.items.forEach((it) => {
+  const changed = []; const seen = new Set();
+  normalizeTenderItems(tq.items).forEach((it) => {
+    const rows = it.lines.filter((l) => l.elementId);
+    if (rows.length) {
+      rows.forEach((l) => {
+        seen.add(l.elementId);
+        const f = freshRows[l.elementId]; if (!f) return;
+        if (String(f.price) !== String(l.price)) changed.push({ id: l.id, itemId: it.id, elementId: l.elementId, title: `${it.title} · ${l.name || l.text.split(" — ")[0]}`, stored: l.price, fresh: f.price });
+      });
+      return;
+    }
+    // a tender from before the stage layout: its level items are compared by title to the stage items
     const f = fresh.find((x) => key(x.title) === key(it.title));
-    if (f && String(f.price) !== String(it.price)) changed.push({ id: it.id, title: it.title, stored: it.price, fresh: f.price });
+    if (f) { f.lines.forEach((l) => seen.add(l.elementId)); if (fmtTenderPrice(itemPriceValue(f)) !== String(it.price)) changed.push({ id: it.id, title: it.title, stored: it.price, fresh: fmtTenderPrice(itemPriceValue(f)) }); }
   });
-  const missing = fresh.filter((f) => f.price && !tq.items.some((it) => key(it.title) === key(f.title))).map((f) => ({ title: f.title, price: f.price }));
+  const missing = [];
+  fresh.forEach((f) => f.lines.forEach((l) => { if (l.price && !seen.has(l.elementId)) missing.push({ elementId: l.elementId, title: `${f.title} · ${l.name || l.text}`, price: l.price }); }));
   return { changed, missing };
 }
 
@@ -230,28 +366,51 @@ export function tenderPriceDrift(quote, items, rates) {
 export function refreshTenderPrices(quote, items, rates, at) {
   const tq = quote.tenderQuote;
   const fresh = seedTenderItems(quote, items, rates);
+  const freshRows = {}; fresh.forEach((f) => f.lines.forEach((l) => { freshRows[l.elementId] = l; }));
   const key = (t) => String(t || "").trim().toLowerCase();
-  const kept = (tq.items || []).map((it) => { const f = fresh.find((x) => key(x.title) === key(it.title)); return f && f.price ? { ...it, price: f.price } : it; });
-  const added = fresh.filter((f) => f.price && !kept.some((it) => key(it.title) === key(f.title)));
-  return { ...tq, items: kept.concat(added), pricesAt: at || new Date().toISOString() };
+  const seen = new Set();
+  let kept = normalizeTenderItems(tq.items).map((it) => {
+    if (it.lines.some((l) => l.elementId)) {
+      const lines = it.lines.map((l) => { if (!l.elementId) return l; seen.add(l.elementId); const f = freshRows[l.elementId]; return f && f.price !== l.price ? { ...l, price: f.price } : l; });
+      return { ...it, lines, points: lines.map((l) => l.text) };
+    }
+    const f = fresh.find((x) => key(x.title) === key(it.title));
+    if (f) { f.lines.forEach((l) => seen.add(l.elementId)); const p = fmtTenderPrice(itemPriceValue(f)); return p ? { ...it, price: p } : it; }
+    return it;
+  });
+  // elements not on the tender yet join their stage (the stage item is created in order when the tender lacks it)
+  const add = []; fresh.forEach((f) => f.lines.forEach((l) => { if (l.price && !seen.has(l.elementId)) add.push({ ...l, _stage: f.stage }); }));
+  if (add.length) {
+    const byStage = {}; add.forEach((l) => { const { _stage, ...row } = l; (byStage[_stage] = byStage[_stage] || []).push(row); });
+    Object.keys(byStage).forEach((st) => {
+      const idx = kept.findIndex((it) => it.stage === st);
+      if (idx >= 0) { const lines = kept[idx].lines.concat(byStage[st]); kept[idx] = { ...kept[idx], lines, points: lines.map((l) => l.text) }; }
+      else {
+        const item = { id: uid(), elementId: null, stage: st, title: stageTitle(st), price: "", lines: byStage[st], points: byStage[st].map((l) => l.text) };
+        const after = kept.findIndex((it) => it.stage && stageIndex(it.stage) > stageIndex(st));
+        kept = after < 0 ? kept.concat([item]) : kept.slice(0, after).concat([item], kept.slice(after));
+      }
+    });
+  }
+  return { ...tq, items: kept, pricesAt: at || new Date().toISOString() };
 }
 
 /** A dot point an earlier seed wrote in place of the elements it did not list. */
 export const ROLLUP_POINT = /^plus \d+ further items?\b/i;
 /** The stored line items still carrying that roll-up (Grady, 13 Oct 2026: "the plus 3 other further items i dont want that going forward"). */
 export function rolledUpItems(tq) {
-  return (tq && Array.isArray(tq.items) ? tq.items : []).filter((it) => (it.points || []).some((p) => ROLLUP_POINT.test(String(p || "").trim())));
+  return (tq && Array.isArray(tq.items) ? tq.items : []).filter((it) => itemLines(it).some((l) => ROLLUP_POINT.test(String(l.text || "").trim())));
 }
-/** Replaces ONLY the rolled-up items' dot points with the fresh seed's itemised points for the same title; titles, prices and every other item are kept. */
+/** Replaces ONLY the rolled-up items' rows with the fresh seed's itemised rows for the same stage / title (each element on its own row with its own price); every other item is kept. */
 export function itemiseRolledUp(quote, items, rates) {
   const tq = quote.tenderQuote || newTenderQuote();
   const fresh = seedTenderItems(quote, items, rates);
   const key = (t) => String(t || "").trim().toLowerCase();
-  const next = (tq.items || []).map((it) => {
-    if (!(it.points || []).some((p) => ROLLUP_POINT.test(String(p || "").trim()))) return it;
-    const f = fresh.find((x) => key(x.title) === key(it.title));
-    if (!f) return { ...it, points: (it.points || []).filter((p) => !ROLLUP_POINT.test(String(p || "").trim())) };
-    return { ...it, points: f.points.slice() };
+  const next = normalizeTenderItems(tq.items).map((it) => {
+    if (!it.lines.some((l) => ROLLUP_POINT.test(String(l.text || "").trim()))) return it;
+    const f = fresh.find((x) => (it.stage && x.stage === it.stage) || key(x.title) === key(it.title));
+    const lines = f ? f.lines.slice() : it.lines.filter((l) => !ROLLUP_POINT.test(String(l.text || "").trim()));
+    return { ...it, stage: it.stage || (f ? f.stage : undefined), lines, points: lines.map((l) => l.text) };
   });
   return { ...tq, items: next };
 }
@@ -283,7 +442,7 @@ export const parseTenderPrice = (s) => {
  * legacy tenderQuote objects saved before these fields existed get the
  * same defaults via the `!== false` / falsy checks here. */
 export function computeTenderProjectSum(tq, gstRate = 0.1) {
-  const itemsSum = (tq.items || []).reduce((s, l) => s + parseTenderPrice(l.price), 0);
+  const itemsSum = (tq.items || []).reduce((s, l) => s + itemPriceValue(l), 0);
   const hasOverride = String(tq.projectSumOverride ?? "").trim() !== "";
   const base = hasOverride ? parseTenderPrice(tq.projectSumOverride) : itemsSum;
   const pct = Number(tq.markupPct);
@@ -304,6 +463,7 @@ export function newTenderQuote() {
     projectTitle: "",      // e.g. "New residence"
     projectAddress: "",    // one line per address line
     items: null,           // null = seed from the quote on first open
+    elementStages: {},     // {elementId: stage key} — where each element was placed (AI placement / the row select); seeds and refreshes honour it
     showProjectSum: true,  // print the Project Sum block under the line items
     projectSumOverride: "", // blank = sum of the line items; typed $ replaces it
     markupOn: false,       // extra document-level markup (prices already carry margin)
