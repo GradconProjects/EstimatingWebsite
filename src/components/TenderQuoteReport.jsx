@@ -57,16 +57,24 @@ export default function TenderQuoteReport({ quote, items, rates, visible, onClos
   const rewordItems = async () => {
     setItemBusy(true); setItemErr(null);
     try {
-      const r = await requestTenderItemsWording(lineItems, { projectName: quote.projectName, provider: preferredProvider() });
+      // A line still carrying the old "plus N further items" roll-up is itemised
+      // FIRST, so the model sees every element and names each one — never a
+      // reworded roll-up (Grady, 13 Oct 2026: "name the three further items
+      // individually: dont bind them up"). The itemised list is what the
+      // review shows and what "Use ticked wording" writes.
+      const rolledCount = rolledUpItems(tq).length;
+      const base = rolledCount ? itemiseRolledUp({ ...quote, tenderQuote: tq }, items, rates).items : lineItems;
+      const r = await requestTenderItemsWording(base, { projectName: quote.projectName, provider: preferredProvider() });
       setItemReview({
-        rows: lineItems.map((l) => { const w = r.wording[String(l.id)]; const pts = (l.points || []).map((p) => String(p || "").trim()).filter(Boolean); return { id: l.id, title: l.title || "", points: pts, newTitle: w && w.title ? w.title : l.title || "", newPoints: w ? w.points : [], use: !!w, countMatches: w ? w.points.length === pts.length : false }; }),
+        base, itemised: rolledCount,
+        rows: base.map((l) => { const w = r.wording[String(l.id)]; const pts = (l.points || []).map((p) => String(p || "").trim()).filter(Boolean); return { id: l.id, title: l.title || "", points: pts, newTitle: w && w.title ? w.title : l.title || "", newPoints: w ? w.points : [], use: !!w, countMatches: w ? w.points.length === pts.length : false }; }),
         model: r.model, missing: r.missing,
       });
     } catch (e) { setItemErr(String((e && e.message) || e)); } finally { setItemBusy(false); }
   };
   const applyItemReview = () => {
     const by = {}; itemReview.rows.forEach((r) => { if (r.use) by[r.id] = r; });
-    setLineItems(lineItems.map((l) => { const r = by[l.id]; if (!r) return l; const pts = r.newPoints.map((p) => String(p || "").trim()).filter(Boolean); while (pts.length < 4) pts.push(""); return { ...l, title: r.newTitle.trim() || l.title, points: pts }; }));
+    setLineItems(itemReview.base.map((l) => { const r = by[l.id]; if (!r) return l; const pts = r.newPoints.map((p) => String(p || "").trim()).filter(Boolean); while (pts.length < 4) pts.push(""); return { ...l, title: r.newTitle.trim() || l.title, points: pts }; }));
     setItemReview(null);
   };
   const setItemRow = (id, patch) => setItemReview((rv) => ({ ...rv, rows: rv.rows.map((r) => (r.id === id ? { ...r, ...patch } : r)) }));
@@ -191,6 +199,7 @@ export default function TenderQuoteReport({ quote, items, rates, visible, onClos
                   <div className="border border-blue-200 bg-blue-50/40 rounded-lg p-2 mb-2 space-y-2" data-testid="items-wording-review">
                     <div className="text-[11px] text-neutral-700">
                       Proposed wording for each line item — the typed version is shown struck through above each proposal. Edit anything, untick a line to keep it as typed. Nothing changes until you click <b>Use ticked wording</b>; prices are never touched.
+                      {itemReview.itemised > 0 && <span className="text-emerald-800" data-testid="items-itemised-note"> {itemReview.itemised} line{itemReview.itemised === 1 ? "" : "s"} carried a &quot;plus N further items&quot; roll-up and {itemReview.itemised === 1 ? "was" : "were"} itemised first, so every element is named.</span>}
                       {itemReview.missing.length > 0 && <span className="text-amber-700"> {itemReview.missing.length} line{itemReview.missing.length === 1 ? "" : "s"} came back without a proposal and stay as typed.</span>}
                     </div>
                     {itemReview.rows.map((r) => (

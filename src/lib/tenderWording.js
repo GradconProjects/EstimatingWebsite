@@ -119,7 +119,7 @@ Below are the PROJECT DETAILS line items of a concrete subcontract tender quote:
 Rewrite them as a professional itemised description for the client, as a Melbourne concrete subcontractor writes to a builder.
 
 Rules:
-- Same ids, same order; the SAME NUMBER of dot points per item, in the same order — one per element, never merged, split, dropped or added.
+- Same ids, same order; the SAME NUMBER of dot points per item, in the same order — one per element, never merged, split, dropped or added. Never write "further items", "other items" or any line that stands for several elements: every element is named on its own line.
 - Keep every figure, unit, grade, element name and level exactly (a figure may be reformatted, e.g. "approx. 35.28 m²" → "approximately 35.28 m² in plan"); add NO figure, scope or product that is not in the shorthand; keep "approx." / "approximately" wherever the shorthand says approx.
 - Title: a clean level or work-group name ("Basement", "Ground Floor", "Suspended Structure"), no trailing punctuation.
 - Dot point: "<Element>, supply and install, …" style is NOT required — write a tidy noun phrase: the element, then its quantities, e.g. "Bored concrete piles — 16 no., approximately 35.28 m³ of concrete"; expand estimator abbreviations (reo → reinforcement, RC → reinforced concrete), fix spelling, drop stray question marks and internal notes, Australian terms and metric units, no bullet marks, no trailing full stop.

@@ -1325,6 +1325,9 @@ await checkAsync("Tender quote line items reword (Grady, 13 Oct 2026): prompt ke
   const li = [{ id: "L1", title: "Basement", price: "$1 + GST", points: ["Piles - Bored Piers — 16 no. / approx. 35.28 m³ concrete", "RC Columns - Basement to Ground floor? — approx. 2.79 m³ concrete", ""] }, { id: "L2", title: "ground floor", points: ["Slab — approx. 255 m² / approx. 50.7 m³ concrete"] }];
   const pr = TW.tenderItemsPrompt({ projectName: "P", items: li });
   assertTrue(/"id":"L1"/.test(pr) && /SAME NUMBER of dot points/.test(pr) && /never write one/.test(pr) && /\{"items":\[\{"id"/.test(pr) && !/\$1 \+ GST/.test(pr));
+  assertTrue(/Never write "further items"/.test(pr));
+  const tqSrc = fs.readFileSync(new URL("../src/components/TenderQuoteReport.jsx", import.meta.url), "utf8");
+  assertTrue(/const base = rolledCount \? itemiseRolledUp\(/.test(tqSrc) && /setLineItems\(itemReview\.base\.map/.test(tqSrc) && /data-testid="items-itemised-note"/.test(tqSrc), "the reword itemises rolled-up lines first and applies onto that list");
   const map = TW.parseTenderItems('```json\n{"items":[{"id":"L1","title":"Basement","points":["Bored concrete piles — 16 no., approximately 35.28 m³ of concrete","Reinforced concrete columns, basement to ground floor — approximately 2.79 m³ of concrete"]},{"id":"L2","title":"Ground Floor","points":["Only one"]},{"id":"zz","title":"x","points":[]}]}\n```', li);
   assertTrue(map.L1 && map.L1.countMatches && map.L1.points.length === 2 && /Bored concrete piles/.test(map.L1.points[0]) && map.L2.title === "Ground Floor" && map.L2.countMatches && !map.zz, JSON.stringify(map));
   const bad = await E.runAiJob({ action: "tender-wording", kind: "items", items: [] }, {});
