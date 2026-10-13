@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { uid, getGstRate } from "../lib/costing.js";
 import { GRADCON_LOGO_FULL_DATA_URI } from "../lib/logo.js";
-import { newTenderQuote, seedTenderItems, computeTenderProjectSum, tenderPriceDrift, refreshTenderPrices, tenderPrefill, rolledUpItems, itemiseRolledUp, normalizeTenderItems, itemLines, itemPriceLabel, itemHasRowPrices, regroupByStage, TENDER_STAGES, stageTitle, isStageKey } from "../lib/tenderQuoteDefaults.js";
+import { newTenderQuote, seedTenderItems, computeTenderProjectSum, tenderPriceDrift, refreshTenderPrices, tenderPrefill, rolledUpItems, itemiseRolledUp, normalizeTenderItems, itemLines, itemPriceLabel, itemHasRowPrices, regroupByStage, TENDER_STAGES, stageTitle, isStageKey, printedPrice, gstSuffixOn } from "../lib/tenderQuoteDefaults.js";
 import { ELEMENT_TYPES } from "../data/catalog.js";
 import { handoverIssues } from "../lib/handover.js";
 import { tenderNoteLines } from "../lib/tenderNotes.js";
@@ -490,11 +490,17 @@ function ProjectSumEditor({ tq, set }) {
           </Field>
         </div>
       </div>
-      <div className="flex items-center justify-between mt-2">
-        <label className="flex items-center gap-1.5 text-xs text-neutral-700">
-          <input type="checkbox" checked={tq.gstOn !== false} onChange={(e) => set("gstOn", e.target.checked)} />
-          Add GST — print GST ({(gstRate * 100).toLocaleString("en-AU", { maximumFractionDigits: 2 })}%) and TOTAL incl. GST lines
-        </label>
+      <div className="flex items-center justify-between mt-2 gap-3 flex-wrap">
+        <div className="flex items-center gap-4 flex-wrap">
+          <label className="flex items-center gap-1.5 text-xs text-neutral-700">
+            <input type="checkbox" checked={tq.gstOn !== false} onChange={(e) => set("gstOn", e.target.checked)} />
+            Add GST — print GST ({(gstRate * 100).toLocaleString("en-AU", { maximumFractionDigits: 2 })}%) and TOTAL incl. GST lines
+          </label>
+          <label className="flex items-center gap-1.5 text-xs text-neutral-700" title="Off: every price on the document prints as a plain figure — the stored prices are not changed">
+            <input type="checkbox" checked={gstSuffixOn(tq)} onChange={(e) => set("gstSuffix", e.target.checked)} data-testid="gst-suffix-toggle" />
+            Print &quot;+ GST&quot; after every price (stages, rows, options, project sum)
+          </label>
+        </div>
         <div className="text-[12px] font-mono tabular-nums text-neutral-700">
           {ps.markupOn && <>sub {fmtMoney(ps.base)} + {ps.markupPct}% markup {fmtMoney(ps.markupAmt)} → </>}
           <b>PROJECT SUM {fmtMoney(ps.exGst)} ex GST</b>
@@ -570,13 +576,13 @@ function ReportContent({ quote, tq }) {
               <li key={l.id} className="break-inside-avoid" data-testid="print-item" data-stage={l.stage || ""}>
                 <div className="flex justify-between">
                   <span className="font-bold">{i + 1}. {l.title}{l.title && !/[:：]\s*$/.test(l.title) ? ":" : ""}</span>
-                  <span className="font-bold">{itemPriceLabel(l)}</span>
+                  <span className="font-bold">{printedPrice(itemPriceLabel(l), tq)}</span>
                 </div>
                 {rows.length > 0 && (
                   <ul className="list-disc pl-6 space-y-0.5">
                     {rows.map((r) => (
                       <li key={r.id} data-testid="print-row">
-                        <div className="flex justify-between gap-4"><span>{r.text}</span>{String(r.price || "").trim() ? <span className="pl-4 flex-none font-mono tabular-nums">{r.price}</span> : null}</div>
+                        <div className="flex justify-between gap-4"><span>{r.text}</span>{String(r.price || "").trim() ? <span className="pl-4 flex-none font-mono tabular-nums">{printedPrice(r.price, tq)}</span> : null}</div>
                       </li>
                     ))}
                   </ul>
@@ -601,7 +607,7 @@ function ReportContent({ quote, tq }) {
             )}
             <div className="flex justify-between py-0.5 font-bold border-t-2 border-black">
               <span>PROJECT SUM {ps.gstOn ? "(ex GST)" : ""}</span>
-              <span className="font-mono tabular-nums">{fmtMoney(ps.exGst)}{ps.gstOn ? "" : " + GST"}</span>
+              <span className="font-mono tabular-nums">{fmtMoney(ps.exGst)}{ps.gstOn || !gstSuffixOn(tq) ? "" : " + GST"}</span>
             </div>
             {ps.gstOn && (
               <>
@@ -625,7 +631,7 @@ function ReportContent({ quote, tq }) {
           <ul className="list-disc pl-6 space-y-0.5">
             {(tq.additionalOptions || []).filter((o) => (o.text || "").trim()).map((o) => (
               <li key={o.id}>
-                <div className="flex justify-between"><span>{o.text}</span><span className="pl-4 flex-none">{o.price}</span></div>
+                <div className="flex justify-between"><span>{o.text}</span><span className="pl-4 flex-none">{printedPrice(o.price, tq)}</span></div>
               </li>
             ))}
           </ul>

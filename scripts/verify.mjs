@@ -1276,6 +1276,14 @@ await checkAsync("Tender STAGES (Grady, 13 Oct 2026): the fixed list, placement 
   assertTrue(/title: l\.stage \? l\.title : \(r\.newTitle\.trim\(\) \|\| l\.title\)/.test(src), "a stage title never changes through the reword");
 });
 
+await checkAsync("Tender '+ GST' toggle (Grady, 13 Oct 2026): gstSuffix off prints every price as a plain figure, stored strings untouched; the Project Sum editor carries the toggle and the print reads every price through printedPrice", async () => {
+  const TQ = await import("../src/lib/tenderQuoteDefaults.js");
+  assert.equal(TQ.printedPrice("$316,852.45 + GST", { gstSuffix: false }), "$316,852.45"); assert.equal(TQ.printedPrice("$40.00/m3 +GST", { gstSuffix: false }), "$40.00/m3");
+  assert.equal(TQ.printedPrice("$316,852.45 + GST", { gstSuffix: true }), "$316,852.45 + GST"); assert.equal(TQ.printedPrice("$1.00 + GST", {}), "$1.00 + GST", "a tender saved before the toggle keeps the suffix");
+  assert.equal(TQ.newTenderQuote().gstSuffix, true);
+  const src = fs.readFileSync(new URL("../src/components/TenderQuoteReport.jsx", import.meta.url), "utf8");
+  assertTrue(/data-testid="gst-suffix-toggle"/.test(src) && /printedPrice\(itemPriceLabel\(l\), tq\)/.test(src) && /printedPrice\(r\.price, tq\)/.test(src) && /printedPrice\(o\.price, tq\)/.test(src) && /ps\.gstOn \|\| !gstSuffixOn\(tq\) \? "" : " \+ GST"/.test(src));
+});
 await checkAsync("Tender STAGES: the reword request carries every element with its stage and the fixed stage list, the prompt asks for a placement by key (columns never a stage of their own), parseTenderPlacement keeps only known elements and stage keys, the server answers placement, and the spec context finds a row's element by id", async () => {
   const TQ = await import("../src/lib/tenderQuoteDefaults.js"); const TW = await import("../src/lib/tenderWording.js"); const SC = await import("../src/lib/tenderSpecContext.js");
   const elements = [{ id: "e1", name: "RC Columns - Basement to Ground floor", type: "Columns", category: "VERTICAL STRUCTURE", stage: "ground" }, { id: "e2", name: "Piles", type: "Bored Piers", category: "FOUNDATIONS", stage: "basement" }];

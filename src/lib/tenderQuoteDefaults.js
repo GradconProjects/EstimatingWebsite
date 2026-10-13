@@ -425,6 +425,16 @@ export function tenderPrefill(tq, quote) {
   return next;
 }
 
+/** A price as the document prints it: the stored "$… + GST" string, with the
+ * "+ GST" dropped when the tender's `gstSuffix` toggle is off (Grady, 13 Oct
+ * 2026: "we need to toggle if we want to remove the gst or not"). Stored
+ * strings are never changed — only the print reads through this. */
+export const gstSuffixOn = (tq) => !(tq && tq.gstSuffix === false);
+export function printedPrice(str, tq) {
+  const s = String(str == null ? "" : str).trim();
+  return gstSuffixOn(tq) ? s : s.replace(/\s*\+\s*GST\s*$/i, "");
+}
+
 /** Pull the first number out of a tender price string like
  * "$46,050.47 + GST" or "46050.47". Anything without a digit is $0. */
 export const parseTenderPrice = (s) => {
@@ -470,6 +480,7 @@ export function newTenderQuote() {
     markupPct: "",         // whole %, e.g. 10 for 10%
     markupLabel: "Markup",
     gstOn: true,           // print GST and TOTAL incl. GST lines
+    gstSuffix: true,       // print "+ GST" after every price (stage totals, rows, options, the project sum)
     additionalOptions: TENDER_DEFAULT_OPTIONS.map((o) => ({ id: uid(), ...o })),
     drawingsArchitect: "",
     drawingsStructural: "",

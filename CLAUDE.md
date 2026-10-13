@@ -519,6 +519,11 @@ and verify-covered. Rules:
    to its stage (creating the stage item in order). `test-tender-stages.mjs`
    proves the seed, the move, the placement review, the apply, Reseed, a typed
    row price and the legacy tender's itemise.
+   **The "+ GST" after every price is a toggle** (`tq.gstSuffix`, default on,
+   beside the GST-lines toggle in the Project Sum editor; Grady, 13 Oct 2026:
+   "we need to toggle if we want to remove the gst or not"): off, the print
+   reads every price — stage totals, rows, options, the project sum — through
+   `printedPrice(str, tq)`, which drops the suffix; stored strings never change.
    **Tender Quote prices are a snapshot** (`seedTenderItems` on first open;
    `pricesAt` stamped). `tenderPriceDrift` compares each stored line's price
    with a fresh seed by title; the red check strip at the top of the Tender
