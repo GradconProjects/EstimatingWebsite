@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { handoverIssues, handoverSummary, HANDOVER_STATUS } from "../lib/handover.js";
+import { handoverIssues, handoverSummary, HANDOVER_STATUS, liveHandoverApplies } from "../lib/handover.js";
 import { isRatesLocked } from "../lib/rateFreeze.js";
 
 /**
@@ -18,7 +18,9 @@ export default function HandoverBanner({ quote, items, elementTypes, onPrefill, 
   const [undoArmed, setUndoArmed] = useState(false);
   const h = quote.handover;
   const applied = !!(h && !h.undoneAt);
-  if (!applied && !isRatesLocked(quote.status)) return null;
+  const live = liveHandoverApplies(quote);
+  // shown on a locked project, while the live prefill is on and there is something to fill, and after an Undo (so the live prefill can be turned back on)
+  if (!applied && !isRatesLocked(quote.status) && !(live && (quote.items || []).length) && !(h && h.undoneAt)) return null;
   const issues = handoverIssues(items, elementTypes);
   const oh = Number(quote.overheadPct) || 0, cont = Number(quote.contingencyPct) || 0;
   const presets = [[0, 0], [0, 0.1], [0.08, 0.05]].filter(([a, b]) => Math.abs(a - oh) > 1e-9 || Math.abs(b - cont) > 1e-9);
@@ -26,11 +28,15 @@ export default function HandoverBanner({ quote, items, elementTypes, onPrefill, 
     <div className="border border-amber-300 bg-amber-50 rounded-lg px-3 py-2 text-[12px] text-amber-950 space-y-1.5" role="status" data-testid="handover-banner">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <b>Handover prefill</b>{" "}
-          {applied ? (
+          <b>{live ? "Live handover prefill" : "Handover prefill"}</b>{" "}
+          {live && applied ? (
+            <span data-testid="handover-live">— the crew sheets follow the quantities as you type them: {handoverSummary(h)} (last moved {fmtDay(h.updatedAt || h.at)}). Every figure is yours to change — prefilled cells are tinted on each crew sheet; a cell you retype is yours, a cell you clear stays clear. Undo switches the live prefill off.</span>
+          ) : live ? (
+            <span data-testid="handover-live">— on: the crew sheets will fill from the handover bands the moment an element carries concrete or reinforcement, and follow the quantities as you type them.</span>
+          ) : applied ? (
             <>applied {fmtDay(h.at)}: {handoverSummary(h)}. Every figure is yours to change — prefilled cells are tinted on each crew sheet; a cell you retype stops being "prefilled".</>
           ) : h && h.undoneAt ? (
-            <>undone {fmtDay(h.undoneAt)}. Blank crew cells can be prefilled again from the handover bands in the Rates Library.</>
+            <>undone {fmtDay(h.undoneAt)} and the live prefill switched off. "Prefill crew sheets now" turns it back on (blank cells only; what you typed stays).</>
           ) : (
             <>not run on this project (completed before the prefill existed, or still {HANDOVER_STATUS === quote.status ? "to run" : "open"}). It fills blank crew cells only, from the "Handover" bands in the Rates Library.</>
           )}
@@ -47,7 +53,7 @@ export default function HandoverBanner({ quote, items, elementTypes, onPrefill, 
             </button>
           )}
           <button type="button" onClick={onPrefill} className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-amber-800 hover:bg-amber-700 text-white" title="Fill blank crew cells from the handover bands (typed cells are never overwritten)">
-            {applied ? "Prefill again (blank cells only)" : "Prefill crew sheets now"}
+            {live && applied ? "Re-plan now" : applied ? "Prefill again (blank cells only)" : h && h.undoneAt ? "Turn live prefill on" : "Prefill crew sheets now"}
           </button>
         </div>
       </div>

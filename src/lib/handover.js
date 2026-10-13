@@ -106,18 +106,30 @@ function steelCells(item, rates, lq, mode) {
 /** Everything the handover pass WOULD write for these items — cells into blank
  * crew cells, renames of spare rows, the Steel fix tonnage, the steel mode
  * each element lands on. Nothing is applied here. */
-export function handoverPlan(items, rates) {
+export function handoverPlan(items, rates, prev) {
   const plan = { cells: [], rows: [], qtys: [], steel: [] };
   const list = Array.isArray(items) ? items : [];
   const lqs = list.map((it) => labourQuantities(it, rates));
   const maxConc = Math.max(0, ...lqs.map((q) => q.concreteM3 || 0));
+  const same = (a, b) => String(a) === String(b);
+  // The previous record (live mode): a cell that still holds the figure the
+  // pass wrote is the pass's to update; one the estimator cleared is never
+  // written again; one retyped is theirs.
+  const prevCell = (itemId, taskId, key) => (prev && !prev.undoneAt ? (prev.cells || []).find((c) => c.itemId === itemId && c.taskId === taskId && c.key === key) : null);
+  const prevRow = (itemId, taskId) => (prev && !prev.undoneAt ? (prev.rows || []).find((r) => r.itemId === itemId && r.taskId === taskId) : null);
+  const prevQty = (itemId, key) => (prev && !prev.undoneAt ? (prev.qtys || []).find((q) => q.itemId === itemId && q.key === key) : null);
+  const heldRow = (item, t) => { const r = prevRow(item.id, t.id); return !!(r && t.name === r.to && same((t.qtys || {})[r.key], r.value) && Object.keys(t.qtys || {}).every((k) => k === r.key || blank((t.qtys || {})[k]))); };
   list.forEach((item, i) => {
     const lq = lqs[i];
     const conc = lq.concreteM3 || 0;
     const tasks = item.tasks || [];
     if (conc <= 0 && (lq.reinfTonnes || 0) <= 0) return; // nothing poured, nothing tied — prelims and empty cards stay as they are
     const put = (task, key, value) => {
-      if (!task || !blank((task.qtys || {})[key])) return;
+      if (!task) return;
+      const cur = (task.qtys || {})[key];
+      const pc = prevCell(item.id, task.id, key);
+      if (pc && (pc.cleared || blank(cur))) return; // the estimator cleared it — never refilled
+      if (!blank(cur) && !(pc && same(cur, pc.value))) return; // typed by hand (or retyped) — theirs
       plan.cells.push({ itemId: item.id, taskId: task.id, key, value });
     };
     const find = (re, skip) => tasks.find((t) => re.test(t.name || "") && !(skip && skip.test(t.name || "")));
@@ -141,7 +153,11 @@ export function handoverPlan(items, rates) {
     const tie = find(TIE);
     const sc = steelCells(item, rates, lq, mode);
     Object.entries(sc.cells).forEach(([k, v]) => put(tie, k, v));
-    if (sc.steelFixQty != null && blank((item.qtys || {})[STEEL_FIX_KEY])) plan.qtys.push({ itemId: item.id, key: STEEL_FIX_KEY, value: sc.steelFixQty });
+    if (sc.steelFixQty != null) {
+      const cur = (item.qtys || {})[STEEL_FIX_KEY]; const pq = prevQty(item.id, STEEL_FIX_KEY);
+      if (pq && (pq.cleared || blank(cur))) { /* the estimator cleared it — never written again */ }
+      else if (blank(cur) || (pq && same(cur, pq.value))) plan.qtys.push({ itemId: item.id, key: STEEL_FIX_KEY, value: sc.steelFixQty });
+    }
     // Pour / place / vibrate (the first pour row that is not a blinding pour)
     if (conc > 0) {
       const pour = find(POUR, /blinding/i) || find(POUR);
@@ -153,14 +169,14 @@ export function handoverPlan(items, rates) {
       put(find(WASHOUT), "labourer_day", 0);
     }
     // Spare rows → the rows Grady always adds
-    const spares = tasks.filter((t) => SPARE.test(t.name || "") && isBlankRow(t));
+    const spares = tasks.filter((t) => (SPARE.test(t.name || "") && isBlankRow(t)) || heldRow(item, t)); // a blank spare row, or one the pass named before and nobody touched
     const groundWork = !SUSPENDED.has(item.category) && (lq.formworkM2 > 0 || ["FOUNDATIONS", "SUBSTRUCTURE", "EXTERNAL & LANDSCAPE CONCRETE"].includes(item.category));
     const wanted = [["Material D+C", "ho_material_dc_days"], groundWork ? ["Boxing and Rebates", "ho_boxing_days"] : ["Tool D+C", "ho_tool_dc_days"]];
     wanted.forEach(([name, key], n) => {
       const days = handoverRate(rates, key);
       if (!(days > 0)) return;
       const spare = spares[n];
-      if (spare) plan.rows.push({ itemId: item.id, taskId: spare.id, from: spare.name, to: name, key: "concreter_day", value: days });
+      if (spare) { const pr = prevRow(item.id, spare.id); plan.rows.push({ itemId: item.id, taskId: spare.id, from: pr ? pr.from : spare.name, to: name, key: "concreter_day", value: days }); }
       else if (n === 0) plan.rows.push({ itemId: item.id, taskId: null, from: null, to: name, key: "concreter_day", value: days }); // no spare row left: add the one row he never skips
     });
   });
@@ -195,6 +211,98 @@ export function applyHandover(quote, rates, at) {
   return { ...quote, items, handover };
 }
 
+/** The statuses a project is worked in: the live prefill runs on these only
+ * (a quote that has gone out, won, lost, missed or on hold never re-prices
+ * itself). */
+export const LIVE_HANDOVER_STATUSES = new Set(["Queued", "Estimating", "Completed Estimating", "Quoting"]);
+/** Whether the live prefill runs on this project right now: not switched off
+ * (Undo switches it off), a working status, and — on a finished status — a
+ * project completed on or after HANDOVER_SINCE (one Grady worked through by
+ * hand before the prefill existed is never touched on its own). */
+export function liveHandoverApplies(quote) {
+  if (!quote || quote.handoverLive === false) return false;
+  const status = quote.status || "Queued";
+  if (!LIVE_HANDOVER_STATUSES.has(status)) return false;
+  if (status === "Completed Estimating" || status === "Quoting") { const day = quote.completedAt || ""; if (!(typeof day === "string" && day >= HANDOVER_SINCE)) return false; }
+  return true;
+}
+
+/** The LIVE prefill (Grady, 13 Oct 2026: "i want the prefill to happen
+ * realtime and automatically as the values are entered"): the crew sheets
+ * follow the quantities as they are typed. Every run re-plans from the current
+ * quantities and writes where the cell is blank or still holds the figure the
+ * pass wrote last time; a cell retyped by hand is theirs and is left alone; a
+ * cell they CLEARED stays clear for good (recorded `cleared`); a cell the new
+ * plan no longer wants (the concrete was removed) is cleared again if it still
+ * holds the pass's figure; a spare row named by the pass and untouched is
+ * re-used, never duplicated. `quote.handover` records what the sheet holds
+ * from the pass right now. Returns the SAME quote object when nothing moves,
+ * so an effect can call it on every change without looping. */
+export function liveHandover(quote, rates, at) {
+  const prev = quote.handover && !quote.handover.undoneAt ? quote.handover : null;
+  const plan = handoverPlan(quote.items || [], rates, prev);
+  const same = (a, b) => String(a) === String(b);
+  const byItem = {};
+  const idx = (id) => (byItem[id] = byItem[id] || { cells: [], rows: [], qtys: [] });
+  plan.cells.forEach((c) => idx(c.itemId).cells.push(c));
+  plan.rows.forEach((r) => idx(r.itemId).rows.push(r));
+  plan.qtys.forEach((q) => idx(q.itemId).qtys.push(q));
+  const planned = (c) => plan.cells.some((x) => x.itemId === c.itemId && x.taskId === c.taskId && x.key === c.key);
+  const plannedRow = (r) => plan.rows.some((x) => x.itemId === r.itemId && x.taskId === r.taskId);
+  const plannedQty = (q) => plan.qtys.some((x) => x.itemId === q.itemId && x.key === q.key);
+  const prevAdded = prev ? prev.addedRows || [] : [];
+  const addedRows = [];
+  const clearedCells = [], clearedQtys = [];
+  let changed = false;
+  const items = (quote.items || []).map((item) => {
+    const p = byItem[item.id] || { cells: [], rows: [], qtys: [] };
+    let tasks = (item.tasks || []).map((t) => ({ ...t, qtys: { ...(t.qtys || {}) } }));
+    let touched = false;
+    // cells the plan wants
+    p.cells.forEach((c) => { const t = tasks.find((x) => x.id === c.taskId); if (t && !same(t.qtys[c.key], c.value)) { t.qtys[c.key] = c.value; touched = true; } });
+    // cells written before: cleared by the estimator → remembered; no longer wanted and still held → cleared
+    (prev ? prev.cells || [] : []).filter((c) => c.itemId === item.id).forEach((c) => {
+      const t = tasks.find((x) => x.id === c.taskId); if (!t) return;
+      if (c.cleared) { if (blank(t.qtys[c.key])) clearedCells.push(c); return; }
+      if (blank(t.qtys[c.key])) { clearedCells.push({ ...c, cleared: true }); return; }
+      if (!planned(c) && same(t.qtys[c.key], c.value)) { delete t.qtys[c.key]; touched = true; }
+    });
+    // spare rows
+    p.rows.forEach((r) => {
+      if (r.taskId) { const t = tasks.find((x) => x.id === r.taskId); if (t && (t.name !== r.to || !same(t.qtys[r.key], r.value))) { t.name = r.to; t.qtys[r.key] = r.value; touched = true; } if (t && prevAdded.some((a) => a.taskId === r.taskId)) addedRows.push({ itemId: item.id, taskId: r.taskId }); }
+      else { const id = uid(); tasks = tasks.concat({ id, name: r.to, qtys: { [r.key]: r.value } }); addedRows.push({ itemId: item.id, taskId: id }); r.taskId = id; touched = true; }
+    });
+    (prev ? prev.rows || [] : []).filter((r) => r.itemId === item.id && !plannedRow(r)).forEach((r) => {
+      const t = tasks.find((x) => x.id === r.taskId); if (!t) return;
+      const untouched = t.name === r.to && same(t.qtys[r.key], r.value) && Object.keys(t.qtys).every((k) => k === r.key || blank(t.qtys[k]));
+      if (!untouched) return;
+      if (prevAdded.some((a) => a.taskId === r.taskId)) tasks = tasks.filter((x) => x.id !== r.taskId); else { t.name = r.from; delete t.qtys[r.key]; }
+      touched = true;
+    });
+    // the Steel fix tonnage
+    const qtys = { ...(item.qtys || {}) };
+    p.qtys.forEach((q) => { if (!same(qtys[q.key], q.value)) { qtys[q.key] = q.value; touched = true; } });
+    (prev ? prev.qtys || [] : []).filter((q) => q.itemId === item.id).forEach((q) => {
+      if (q.cleared) { if (blank(qtys[q.key])) clearedQtys.push(q); return; }
+      if (blank(qtys[q.key])) { clearedQtys.push({ ...q, cleared: true }); return; }
+      if (!plannedQty(q) && same(qtys[q.key], q.value)) { delete qtys[q.key]; touched = true; }
+    });
+    // the steel mode: set when unset; followed while it is still the pass's own choice
+    const steel = plan.steel.find((s) => s.itemId === item.id);
+    const prevSteel = prev ? (prev.steel || []).find((s) => s.itemId === item.id) : null;
+    let steelMode = item.steelMode;
+    if (steel && (steelMode == null || (prevSteel && steelMode === prevSteel.mode)) && steelMode !== steel.mode) { steelMode = steel.mode; touched = true; }
+    if (!touched) return item;
+    changed = true;
+    return { ...item, tasks, qtys, steelMode };
+  });
+  const handover = { at: prev ? prev.at : at || new Date().toISOString(), live: true, cells: plan.cells.concat(clearedCells), rows: plan.rows, qtys: plan.qtys.concat(clearedQtys), steel: plan.steel, addedRows };
+  const strip = (h) => h && JSON.stringify({ ...h, at: null, updatedAt: null });
+  if (!changed && prev && strip(prev) === strip(handover)) return quote;
+  if (!changed && !prev && !handover.cells.length && !handover.rows.length && !handover.qtys.length) return quote; // nothing to prefill yet — no record either
+  return { ...quote, items, handover: { ...handover, updatedAt: at || new Date().toISOString() } };
+}
+
 /** Clear what the pass filled — only cells, rows and quantities that STILL
  * hold the prefilled figure; anything Grady changed since stays. */
 export function undoHandover(quote) {
@@ -217,7 +325,7 @@ export function undoHandover(quote) {
     const steelMode = steel && item.steelMode === steel.mode ? undefined : item.steelMode;
     return { ...item, tasks, qtys, steelMode };
   });
-  return { ...quote, items, handover: { ...h, undoneAt: new Date().toISOString() } };
+  return { ...quote, items, handover: { ...h, undoneAt: new Date().toISOString() }, handoverLive: false }; // undo also switches the live prefill off, or it would refill at once
 }
 
 /** The cells on one element the pass filled and that still hold its figure —
@@ -295,7 +403,8 @@ export function shouldAutoHandover(quote) {
 /** Human summary for the banner. */
 export function handoverSummary(handover) {
   if (!handover) return "";
-  const elements = new Set([...(handover.cells || []).map((c) => c.itemId), ...(handover.rows || []).map((r) => r.itemId), ...(handover.qtys || []).map((q) => q.itemId)]);
+  const cells = (handover.cells || []).filter((c) => !c.cleared), qtys = (handover.qtys || []).filter((q) => !q.cleared);
+  const elements = new Set([...cells.map((c) => c.itemId), ...(handover.rows || []).map((r) => r.itemId), ...qtys.map((q) => q.itemId)]);
   const sub = (handover.steel || []).filter((s) => s.mode === "subcontract").length;
-  return `${(handover.cells || []).length} crew cells and ${(handover.rows || []).length} extra rows on ${elements.size} element${elements.size === 1 ? "" : "s"}${sub ? `, steel fixing subcontracted on ${sub}` : ""}`;
+  return `${cells.length} crew cells and ${(handover.rows || []).length} extra rows on ${elements.size} element${elements.size === 1 ? "" : "s"}${sub ? `, steel fixing subcontracted on ${sub}` : ""}`;
 }

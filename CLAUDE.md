@@ -382,14 +382,29 @@ to be able to change all cell entries". Modelled on the 12 Submitted projects
 and 8 version histories (read-only, anon REST); `lib/handover.js` is pure
 and verify-covered. Rules:
 
-1. **It runs ONCE, in the editor, the first time a project stands at
-   `Completed Estimating`** (`shouldAutoHandover`: that status, no
-   `quote.handover` yet, `completedAt >= HANDOVER_SINCE` = 2026-10-08 so a
-   project Grady already worked through by hand is never touched on its
-   own). `ProjectEditor`'s settle effect applies it whether the status was
-   set in the editor or on the Dashboard; the Dashboard itself never writes
-   items (its copies are stripped of drawings). The banner's "Prefill crew
-   sheets now" runs it by hand on any locked project.
+1. **It runs LIVE, in the editor, as the quantities are typed** (Grady,
+   13 Oct 2026: "i want the prefill to happen realtime and automatically as
+   the values are entered"): `liveHandover(quote, rates)` re-plans from the
+   current quantities on every change to `quote.items` (App.jsx's effect; the
+   Dashboard never writes items — its copies are stripped of drawings) and
+   returns the SAME quote object when nothing moves, so the effect cannot
+   loop. It writes where a crew cell is blank or still holds the figure the
+   pass wrote last time (`handoverPlan(items, rates, prev)` reads the previous
+   record); a cell retyped by hand is the estimator's for good; a cell they
+   CLEARED is recorded `cleared: true` and never refilled; a cell the new plan
+   no longer wants (the concrete was removed) is cleared again while it still
+   holds the pass's figure; a spare row the pass named and nobody touched is
+   re-used, never duplicated; the steel mode is set when unset and followed
+   while it is still the pass's own choice. `liveHandoverApplies(quote)`:
+   `handoverLive !== false`, a working status (`LIVE_HANDOVER_STATUSES` =
+   Queued, Estimating, Completed Estimating, Quoting — a quote that went out,
+   won, lost, missed or on hold never re-prices itself) and, on a finished
+   status, `completedAt >= HANDOVER_SINCE` = 2026-10-08 (a project Grady worked
+   through by hand before the prefill existed is never touched on its own).
+   `undoHandover` also sets `handoverLive: false` (or it would refill at
+   once); the banner's "Turn live prefill on" / "Prefill crew sheets now" sets
+   it back. `applyHandover` / `shouldAutoHandover` remain the one-shot form
+   (blank cells only) for a project the live rule does not cover.
 2. **Blank cells only, every cell stays an ordinary typed cell.**
    `handoverPlan` writes only where the crew cell is blank, renames only a
    blank "Additional labour / plant" row, sets the Steel fix tonnage only

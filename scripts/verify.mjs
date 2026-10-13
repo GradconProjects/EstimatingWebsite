@@ -1207,6 +1207,47 @@ check("Handover prefill: Grady's crew-sheet bands, blank cells only, recorded an
   assert.deepEqual(issues.labelSuggestions.map((x) => x.to), ["Provisional Sum - Retaining Wall", "Screw Piles"]);
 });
 
+check("LIVE handover prefill (Grady, 13 Oct 2026): the crew sheets follow the quantities as they are typed — blank cells fill, cells still holding the pass's figure move with the quantity, a retyped cell is the estimator's, a cleared cell stays clear, a removed quantity clears what the pass wrote; same object when nothing moves; Undo switches it off; only on working statuses", () => {
+  const rates = defaultRates();
+  const T = (id) => ELEMENT_TYPES.find((t) => t.id === id);
+  const bar = rateKey("PROCESSED BAR", "N12", "m"), conc = rateKey("CONCRETE", "32 mpa", "m3");
+  const cell = (it, re, key) => (it.tasks.find((t) => re.test(t.name)) || { qtys: {} }).qtys[key];
+  const raft = newElementItem(T("raft_foundation")); raft.label = "Raft";
+  const q0 = { items: [raft], status: "Estimating" };
+  assert.strictEqual(HO.liveHandover(q0, rates, "t0"), q0, "nothing poured, nothing tied — nothing written, no record");
+  raft.qtys[conc] = 10; raft.qtys[bar] = 500;
+  const q1 = HO.liveHandover({ items: [raft], status: "Estimating" }, rates, "t1");
+  const r1 = q1.items[0];
+  assert.equal(cell(r1, /excavate/i, "concreter_day"), 3); assert.equal(cell(r1, /pour/i, "concreter_day"), 5); assert.equal(cell(r1, /pour/i, "pump_hr"), undefined, "no pump under 25 m³"); assert.equal(r1.steelMode, "concreters");
+  assert.deepEqual(r1.tasks.filter((t) => /D\+C|Boxing/.test(t.name)).map((t) => [t.name, t.qtys.concreter_day]), [["Material D+C", 2], ["Boxing and Rebates", 2]]);
+  assert.ok(q1.handover.live && q1.handover.at === "t1" && q1.handover.updatedAt === "t1");
+  assert.strictEqual(HO.liveHandover(q1, rates, "t2"), q1, "a second run with nothing changed returns the same quote (no loop)");
+  // the quantity grows: the held cells follow, the pump appears, the record moves
+  const q3 = HO.liveHandover({ ...q1, items: q1.items.map((it) => ({ ...it, qtys: { ...it.qtys, [conc]: 60 } })) }, rates, "t3");
+  const r3 = q3.items[0];
+  assert.equal(cell(r3, /excavate/i, "concreter_day"), 5); assert.equal(cell(r3, /pour/i, "concreter_day"), 8); assert.equal(cell(r3, /pour/i, "pump_hr"), 8); assert.equal(q3.handover.at, "t1"); assert.equal(q3.handover.updatedAt, "t3");
+  assert.ok(HO.prefilledCells(q3.handover, r3)[r3.tasks.find((t) => /pour/i.test(t.name)).id].concreter_day, "the moved cell still reads prefilled");
+  // retype the pour, clear the excavate concreters
+  const q5 = { ...q3, items: q3.items.map((it) => ({ ...it, tasks: it.tasks.map((t) => (/pour/i.test(t.name) ? { ...t, qtys: { ...t.qtys, concreter_day: 12 } } : /excavate/i.test(t.name) ? { ...t, qtys: { ...t.qtys, concreter_day: "" } } : t)) })) };
+  const q6 = HO.liveHandover(q5, rates, "t4"); const r6 = q6.items[0];
+  assert.equal(cell(r6, /pour/i, "concreter_day"), 12, "retyped — theirs"); assert.equal(cell(r6, /excavate/i, "concreter_day"), "", "cleared — stays clear"); assert.equal(q6.handover.cells.filter((c) => c.cleared).length, 1);
+  assert.ok(!HO.prefilledCells(q6.handover, r6)[r6.tasks.find((t) => /pour/i.test(t.name)).id].concreter_day, "a retyped cell is no longer tinted");
+  const q7 = HO.liveHandover({ ...q6, items: q6.items.map((it) => ({ ...it, qtys: { ...it.qtys, [conc]: 80 } })) }, rates, "t5"); const r7 = q7.items[0];
+  assert.equal(cell(r7, /pour/i, "concreter_day"), 12, "a later quantity change never touches the retyped cell"); assert.equal(cell(r7, /excavate/i, "concreter_day"), "", "…or refills the cleared one"); assert.equal(cell(r7, /excavate/i, "excavator_day"), 2, "the other cells still follow");
+  // the concrete removed: what the pass wrote is cleared again, spare rows revert, the retyped cell stays
+  const q8 = HO.liveHandover({ ...q7, items: q7.items.map((it) => ({ ...it, qtys: { ...it.qtys, [conc]: "", [bar]: "" } })) }, rates, "t6"); const r8 = q8.items[0];
+  assert.equal(cell(r8, /pour/i, "concreter_day"), 12); assert.equal(cell(r8, /excavate/i, "excavator_day"), undefined); assert.equal(r8.tasks.filter((t) => /D\+C|Boxing/.test(t.name)).length, 0); assert.equal(q8.handover.cells.filter((c) => !c.cleared).length, 0);
+  // undo switches the live prefill off; where it runs
+  const u = HO.undoHandover(q7); assert.equal(u.handoverLive, false); assert.ok(u.handover.undoneAt);
+  assert.ok(HO.liveHandoverApplies({ status: "Estimating" }) && HO.liveHandoverApplies({ status: "Queued" }) && HO.liveHandoverApplies({}) && HO.liveHandoverApplies({ status: "Completed Estimating", completedAt: "2026-10-13" }));
+  assert.ok(!HO.liveHandoverApplies({ status: "Submitted" }) && !HO.liveHandoverApplies({ status: "On Hold" }) && !HO.liveHandoverApplies({ status: "Completed Estimating", completedAt: "2026-09-01" }) && !HO.liveHandoverApplies({ status: "Estimating", handoverLive: false }));
+  // the editor runs it on every change to the elements, the banner says it is live
+  const app = fs.readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
+  assertTrue(/liveHandover\(q, effectiveRates\(q, liveRates\)\)/.test(app) && /\[quoteStatus, ratesStatus, quote\.status, quote\.items, quote\.handoverLive, quote\.completedAt, liveRates\]/.test(app) && !/shouldAutoHandover\(quote\)\) setQuote/.test(app));
+  const banner = fs.readFileSync(new URL("../src/components/HandoverBanner.jsx", import.meta.url), "utf8");
+  assertTrue(/data-testid="handover-live"/.test(banner) && /liveHandoverApplies\(quote\)/.test(banner));
+});
+
 check("Tender prices: drift against today's figures is reported and refreshed without losing edits; attention company prefills from the client", () => {
   const rates = defaultRates();
   const raft = newElementItem(ELEMENT_TYPES.find((t) => t.id === "raft_foundation")); raft.qtys[rateKey("CONCRETE", "32 mpa", "m3")] = 20;

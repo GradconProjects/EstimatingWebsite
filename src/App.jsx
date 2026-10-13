@@ -26,7 +26,7 @@ import TenderQuoteReport from "./components/TenderQuoteReport.jsx";
 import ExportExcelModal from "./components/ExportExcelModal.jsx";
 import ImportFlagsBanner from "./components/ImportFlagsBanner.jsx";
 import HandoverBanner from "./components/HandoverBanner.jsx";
-import { applyHandover, undoHandover, shouldAutoHandover } from "./lib/handover.js";
+import { applyHandover, liveHandover, liveHandoverApplies, undoHandover } from "./lib/handover.js";
 import { needsOffload, offloadMarkups, applyOffload, markupStoreEnabled } from "./lib/markupStore.js";
 import ManageElementTypesModal from "./components/ManageElementTypesModal.jsx";
 import ProjectGeometryPanel from "./components/ProjectGeometryPanel.jsx";
@@ -535,14 +535,23 @@ function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, rate
   useEffect(() => {
     if (quoteStatus === "loading" || ratesStatus === "loading" || ratesStatus === "syncing") return;
     if (needsFreeze(quote)) setQuote((q) => (needsFreeze(q) ? { ...q, ratesFrozen: freezeRates(liveRates, q.status) } : q));
-    // The handover pass (lib/handover.js): the first time a project stands at
-    // Completed Estimating — set here or on the Dashboard — its crew sheets
-    // are prefilled the way Grady fills them, blank cells only, recorded in
-    // quote.handover so the banner can undo it. Runs once; the editor only,
-    // never from a Dashboard summary (those copies must not write items).
-    if (shouldAutoHandover(quote)) setQuote((q) => (shouldAutoHandover(q) ? applyHandover(q, effectiveRates(q, liveRates)) : q));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quoteStatus, ratesStatus, quote.status]);
+  // The LIVE handover prefill (lib/handover.js; Grady, 13 Oct 2026: "i want
+  // the prefill to happen realtime and automatically as the values are
+  // entered"): on every change to the elements — a quantity typed, an element
+  // added — the crew sheets are re-planned from the handover bands and the
+  // cells that are blank or still hold the pass's own figure follow; a cell
+  // retyped is the estimator's, one cleared stays clear. liveHandover returns
+  // the same quote when nothing moves, so this cannot loop. The editor only,
+  // never from a Dashboard summary (those copies must not write items); only
+  // on a working status (liveHandoverApplies), never on a quote that went out.
+  useEffect(() => {
+    if (quoteStatus === "loading" || ratesStatus === "loading" || ratesStatus === "syncing") return;
+    if (!liveHandoverApplies(quote)) return;
+    setQuote((q) => (liveHandoverApplies(q) ? liveHandover(q, effectiveRates(q, liveRates)) : q));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quoteStatus, ratesStatus, quote.status, quote.items, quote.handoverLive, quote.completedAt, liveRates]);
   // Markup drawings go to the bucket, never into the row (lib/markupStore.js):
   // the moment the row has settled — and again whenever a drawing with its
   // bytes inline appears (just dropped onto a card) — every such markup is
@@ -1021,8 +1030,8 @@ function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, rate
             quote={quote}
             items={items}
             elementTypes={elementTypes}
-            onPrefill={() => { setQuote((q) => applyHandover(q, effectiveRates(q, liveRates))); note("Crew sheets prefilled — blank cells only; every figure stays editable"); }}
-            onUndo={() => { setQuote((q) => undoHandover(q)); note("Handover prefill undone — cells you changed were kept"); }}
+            onPrefill={() => { setQuote((q) => (liveHandoverApplies({ ...q, handoverLive: true }) ? liveHandover({ ...q, handoverLive: true }, effectiveRates(q, liveRates)) : applyHandover(q, effectiveRates(q, liveRates)))); note("Crew sheets prefilled from the handover bands — live from here on; every figure stays editable"); }}
+            onUndo={() => { setQuote((q) => undoHandover(q)); note("Handover prefill undone and switched off — cells you changed were kept"); }}
             onRenameItem={(id, label) => setItems((its) => its.map((it) => (it.id === id ? { ...it, label } : it)))}
             onSetOnCosts={(overheadPct, contingencyPct) => setQuote((q) => ({ ...q, overheadPct, contingencyPct }))}
           />
