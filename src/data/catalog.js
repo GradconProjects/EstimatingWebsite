@@ -404,6 +404,38 @@ export const FULL_CATALOG = [
     ["101mm-150mm setdown", "m", null, 80], ["Steps", "m", null, 200], ["Screeds", "m2", null, 120], ["Screeds (decorative)", "m2", null, 140],
     ["Insitu Walls", "m2", null, 760], ["Stair (floor-floor)", "l/m risers", null, 682], ["Shotcrete", "m2", null, 300],
   ]},
+  /* Finished pavements & concrete finishes, $/m² supply & install — Grady,
+   * 13 Oct 2026, from published Melbourne contractor guides for 2026 and his
+   * own cost build-up: preliminary ESTIMATING ALLOWANCES ex GST, not
+   * confirmed subcontractor quotations (the guides vary in GST treatment and
+   * scope; where a guide states incl. GST the ex-GST figure is seeded). The
+   * recommended preliminary rate for a standard 100 mm reinforced carport
+   * pavement is $180/m² — a budget allowance with estimating contingency,
+   * subject to structural confirmation. The "Build-up:" rows are the
+   * components that sum to the indicative direct cost ($116–172/m²; edge
+   * formwork and movement joints are better measured in lm). Every row is a
+   * live rate: the Rates Library's "Finished pavements & concrete finishes"
+   * section lists the same names (verify-covered) and governs them. Scope
+   * "always": an installed rate is typed deliberately, like RATE ITEMS. */
+  { key: "FINISHED PAVEMENTS & CONCRETE FINISHES", label: "FINISHED PAVEMENTS & CONCRETE FINISHES ($/m² supply & install — preliminary estimating allowances ex GST from 2026 Melbourne guides and Gradcon's build-up, not subcontractor quotes; $180/m² recommended for a standard 100 mm reinforced carport pavement)", weightBasis: false, scopeBucket: "always", products: [
+    ["Exposed aggregate pavement, 100 mm reinforced — RECOMMENDED preliminary estimate rate (budget allowance incl. estimating contingency; structural confirmation required)", "m2", null, 180],
+    ["Exposed aggregate — standard, supply & install (2026 Melbourne guide $130–185/m²)", "m2", null, 157.5],
+    ["Exposed aggregate — premium (2026 Melbourne guide $180–220/m²)", "m2", null, 200],
+    ["Exposed aggregate — difficult access (2026 Melbourne guide $180–240+/m²)", "m2", null, 210],
+    ["Ordinary grey concrete pavement, broom finish (2026 Melbourne guide $85–120/m²)", "m2", null, 102.5],
+    ["Coloured concrete pavement (2026 Melbourne guide $100–210/m² incl. GST, typ. $145 ≈ $132 ex GST)", "m2", null, 132],
+    ["Stamped / stencilled concrete pavement (2026 Melbourne guide $125–210/m² incl. GST, typ. $165 ≈ $150 ex GST)", "m2", null, 150],
+    ["Polished concrete — grind & polish of a placed slab, excl. slab & prep (2026 Melbourne guide $50–120/m²)", "m2", null, 85],
+    ["Burnished concrete finish — mechanical trowel burnish of a placed slab (guide $30–85/m²)", "m2", null, 57.5],
+    ["Honed concrete finish — light grind & seal of a placed slab (no 2026 Melbourne guide found; seeded between burnished and polished — confirm)", "m2", null, 70],
+    ["Sealer only — reseal of an existing pavement (indicative $6–16/m²; confirm with supplier)", "m2", null, 11],
+    ["Build-up: concrete supply incl. decorative aggregate ($40–55/m²)", "m2", null, 47.5],
+    ["Build-up: reinforcement mesh, chairs & installation ($15–22/m²)", "m2", null, 18.5],
+    ["Build-up: edge formwork, per m² of pavement ($8–15/m²; ideally measured in lm)", "m2", null, 11.5],
+    ["Build-up: placement, screeding & exposed finish ($35–50/m²)", "m2", null, 42.5],
+    ["Build-up: movement / control joints allowance ($8–15/m²; ideally measured in lm)", "m2", null, 11.5],
+    ["Build-up: curing, cleaning & sealing ($10–15/m²)", "m2", null, 12.5],
+  ]},
   { key: "FORMWORK", weightBasis: false, products: [
     ["Material", "unit", null, 400], ["Conventional", "m2", null, 150], ["Bondek", "m2", null, 125], ["Edgeform", "m", null, 50],
     ["Beam/fold sides <400mm d", "m", null, 100], ["Beam/fold sides >400mm d", "m2", null, 250], ["Handrail", "m", null, 30],

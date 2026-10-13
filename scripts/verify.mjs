@@ -96,10 +96,10 @@ check("every element type has both a category and a section", () => {
   });
 });
 
-check("19 material categories, 367 products (incl. the 45-row SAW CUTS & DOWELS band, CONCRETE PUMPING, REINFORCEMENT BY RATE, the 32-board INSULATION range, 31 SCREEDS, 17 HYDRONIC HEATING, 48 SPECIALIST FINISHING CONCRETE, 45 PRELIMINARIES, the full 24-size TRENCH MESH grid, Bored Piers subcontract, minimum cartage, levy, surcharge)", () => {
-  assert.equal(FULL_CATALOG.length, 19);
+check("20 material categories, 384 products (incl. the 17-row FINISHED PAVEMENTS & CONCRETE FINISHES band, the 45-row SAW CUTS & DOWELS band, CONCRETE PUMPING, REINFORCEMENT BY RATE, the 32-board INSULATION range, 31 SCREEDS, 17 HYDRONIC HEATING, 48 SPECIALIST FINISHING CONCRETE, 45 PRELIMINARIES, the full 24-size TRENCH MESH grid, Bored Piers subcontract, minimum cartage, levy, surcharge)", () => {
+  assert.equal(FULL_CATALOG.length, 20);
   const total = FULL_CATALOG.reduce((s, c) => s + c.products.length, 0);
-  assert.equal(total, 367);
+  assert.equal(total, 384);
   const pre = FULL_CATALOG.find((c) => c.key === "PRELIMINARIES");
   assert.equal(pre.products.length, 45);
   assert.ok(!pre.weightBasis && !pre.areaBasis && !pre.lengthBasis && !pre.volumeRateBasis, "preliminaries cost plain qty × rate");
@@ -2017,6 +2017,26 @@ check("SPECIALIST FINISHING CONCRETE: 27 VicMix mixes at the published $/m³, pl
   const libNames = [...block.matchAll(/\{p:("(?:[^"\\]|\\.)*"),u:"[^"]*",cost:([\d.]+)\}/g)].map((m) => [JSON.parse(m[1]), Number(m[2])]);
   assert.equal(libNames.length, 48, "library lists all 48");
   cat.products.forEach((p) => { const hit = libNames.find(([n]) => n === p.name); assert.ok(hit, `library missing "${p.name}"`); assert.equal(hit[1], p.unitCost, `library price for ${p.name}`); });
+});
+
+await checkAsync("FINISHED PAVEMENTS & CONCRETE FINISHES (Grady, 13 Oct 2026): $/m² installed allowances on every card, scope always, $180/m² recommended exposed-aggregate rate, the six build-up rows, and the Rates Library lists every product by the same name and price (finishRates is a priced section)", async () => {
+  const cat = FULL_CATALOG.find((c) => c.key === "FINISHED PAVEMENTS & CONCRETE FINISHES");
+  assert.ok(cat && !cat.weightBasis && !cat.areaBasis && !cat.volumeRateBasis && !cat.visibleFor && cat.scopeBucket === "always");
+  assert.ok(cat.products.every((p) => p.unit === "m2" && p.unitCost > 0));
+  assert.equal(cat.products.find((p) => /RECOMMENDED preliminary estimate rate/.test(p.name)).unitCost, 180);
+  assert.equal(cat.products.find((p) => /^Exposed aggregate — standard/.test(p.name)).unitCost, 157.5);
+  assert.equal(cat.products.find((p) => /^Ordinary grey/.test(p.name)).unitCost, 102.5);
+  const build = cat.products.filter((p) => /^Build-up: /.test(p.name));
+  assert.equal(build.length, 6); const sum = build.reduce((t, p) => t + p.unitCost, 0); assert.ok(sum >= 116 && sum <= 172, `build-up midpoints sum ${sum} inside the indicative $116–172`);
+  const html = fs.readFileSync(new URL("../portal/rates-library.html", import.meta.url), "utf8");
+  const block = html.slice(html.indexOf("const PAVEMENT_FINISH_ITEMS"), html.indexOf("const SPECIALIST_CONCRETE_ITEMS"));
+  const libNames = [...block.matchAll(/\{p:("(?:[^"\\]|\\.)*"),u:"m2",cost:([\d.]+)\}/g)].map((m) => [JSON.parse(m[1]), Number(m[2])]);
+  assert.equal(libNames.length, cat.products.length, "library lists every product");
+  cat.products.forEach((p) => { const hit = libNames.find(([n]) => n === p.name); assert.ok(hit, `library missing "${p.name}"`); assert.equal(hit[1], p.unitCost, `library price for ${p.name}`); });
+  assert.ok(/finishRates: \{\}/.test(html) && /s\.finishRates\[it\.p\] = \{cost:it\.cost\}/.test(html) && /sec-finish-rates/.test(html) && /mapName:"finishRates"/.test(html));
+  const RL = await import("../src/lib/ratesLibrarySync.js");
+  const prices = RL.libraryPrices({ finishRates: { [cat.products[0].name]: { cost: 195 } } });
+  assert.equal(prices.length, 1); assert.equal(prices[0].key, rateKey(cat.key, cat.products[0].name, "m2")); assert.equal(prices[0].price, 195);
 });
 
 check("VicMix pigment washout auto-applies per Maxi truck of PIGMENTED mix; short load flags under 4 m³; Holcim fees never touch specialist volume", () => {

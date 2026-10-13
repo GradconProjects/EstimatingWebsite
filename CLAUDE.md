@@ -164,6 +164,24 @@ safety net silently. Keep all cost arithmetic in `lib/costing.js`.
    the same name so its prices govern Quotes through `ratesLibrarySync`;
    `verify.mjs` fails if the two lists drift.
 
+   **Finished pavements & concrete finishes are $/m² installed allowances**
+   (`FINISHED PAVEMENTS & CONCRETE FINISHES`, scope "always", on every card —
+   Grady, 13 Oct 2026, from published 2026 Melbourne contractor guides and his
+   own cost build-up): preliminary estimating allowances ex GST, never
+   confirmed subcontractor quotations — exposed aggregate standard / premium
+   / difficult access, ordinary grey, coloured, stamped / stencilled,
+   polished, burnished, honed, sealer only, and six "Build-up:" component
+   rows (concrete supply with decorative aggregate, mesh, edge formwork,
+   placement and finish, joints, curing and sealing — their midpoints sum
+   inside the indicative $116–172/m²). The headline row is the recommended
+   $180/m² for a standard 100 mm reinforced carport pavement (budget
+   allowance with contingency, structural confirmation required). A guide
+   stated incl. GST is seeded ex GST; a figure no guide covers says so in its
+   name. The Rates Library's "Finished pavements & concrete finishes" section
+   (`finishRates`, a `PRICED_SECTIONS` entry of `ratesLibrarySync.js`) lists
+   the same names, so its figures govern Quotes; `verify.mjs` fails if the
+   two lists drift.
+
 8. **Contract minimums bill through `computeRowTotal`.** A product can
    carry a `minQty` (the 7th field in its catalog row) — a "4 hour min"
    pump bills 4 hours for a 1-hour job. `computeRowTotal` raises the

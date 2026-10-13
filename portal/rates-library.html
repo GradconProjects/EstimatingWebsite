@@ -412,6 +412,28 @@ const FORMWORK_ITEMS = [
  * PUBLISHED $/m³ (ex GST), then other decorative finishes and VicMix's own
  * charges. Names match the Quotes catalog product names exactly: the Quotes
  * sync (src/lib/ratesLibrarySync.js) takes these prices by name. */
+// Finished pavements & concrete finishes, $/m\u00b2 supply & install \u2014 preliminary
+// estimating allowances ex GST (Grady, 13 Oct 2026; published 2026 Melbourne guides +
+// his cost build-up). Same names as the Quotes catalog band so the prices flow by name.
+const PAVEMENT_FINISH_ITEMS = [
+  {p:"Exposed aggregate pavement, 100 mm reinforced \u2014 RECOMMENDED preliminary estimate rate (budget allowance incl. estimating contingency; structural confirmation required)",u:"m2",cost:180},
+  {p:"Exposed aggregate \u2014 standard, supply & install (2026 Melbourne guide $130\u2013185/m\u00b2)",u:"m2",cost:157.5},
+  {p:"Exposed aggregate \u2014 premium (2026 Melbourne guide $180\u2013220/m\u00b2)",u:"m2",cost:200},
+  {p:"Exposed aggregate \u2014 difficult access (2026 Melbourne guide $180\u2013240+/m\u00b2)",u:"m2",cost:210},
+  {p:"Ordinary grey concrete pavement, broom finish (2026 Melbourne guide $85\u2013120/m\u00b2)",u:"m2",cost:102.5},
+  {p:"Coloured concrete pavement (2026 Melbourne guide $100\u2013210/m\u00b2 incl. GST, typ. $145 \u2248 $132 ex GST)",u:"m2",cost:132},
+  {p:"Stamped / stencilled concrete pavement (2026 Melbourne guide $125\u2013210/m\u00b2 incl. GST, typ. $165 \u2248 $150 ex GST)",u:"m2",cost:150},
+  {p:"Polished concrete \u2014 grind & polish of a placed slab, excl. slab & prep (2026 Melbourne guide $50\u2013120/m\u00b2)",u:"m2",cost:85},
+  {p:"Burnished concrete finish \u2014 mechanical trowel burnish of a placed slab (guide $30\u201385/m\u00b2)",u:"m2",cost:57.5},
+  {p:"Honed concrete finish \u2014 light grind & seal of a placed slab (no 2026 Melbourne guide found; seeded between burnished and polished \u2014 confirm)",u:"m2",cost:70},
+  {p:"Sealer only \u2014 reseal of an existing pavement (indicative $6\u201316/m\u00b2; confirm with supplier)",u:"m2",cost:11},
+  {p:"Build-up: concrete supply incl. decorative aggregate ($40\u201355/m\u00b2)",u:"m2",cost:47.5},
+  {p:"Build-up: reinforcement mesh, chairs & installation ($15\u201322/m\u00b2)",u:"m2",cost:18.5},
+  {p:"Build-up: edge formwork, per m\u00b2 of pavement ($8\u201315/m\u00b2; ideally measured in lm)",u:"m2",cost:11.5},
+  {p:"Build-up: placement, screeding & exposed finish ($35\u201350/m\u00b2)",u:"m2",cost:42.5},
+  {p:"Build-up: movement / control joints allowance ($8\u201315/m\u00b2; ideally measured in lm)",u:"m2",cost:11.5},
+  {p:"Build-up: curing, cleaning & sealing ($10\u201315/m\u00b2)",u:"m2",cost:12.5},
+];
 const SPECIALIST_CONCRETE_ITEMS = [
   {p:"VicMix Fusion Ash \u2014 grey cement, grey granite/dark aggregate",u:"m3",cost:330},
   {p:"VicMix Meridian 37 Ash \u2014 grey cement, predominantly dark stone",u:"m3",cost:340},
@@ -606,7 +628,7 @@ function freshRates(){
     global: {...GLOBAL},
     steel: JSON.parse(JSON.stringify(STEEL_BUILDUPS)),
     reinfAcc: {}, concrete: {}, concreteLabour: {...CONCRETE_LABOUR}, formwork: {},
-    rateItems: {}, bciRef: {}, concreteGrade: {}, specialistConcrete: {}, formworkLegacy: {}, otherAcc: {}, otherAllow: {}, labourPlant: {}, prelim: {},
+    rateItems: {}, bciRef: {}, concreteGrade: {}, specialistConcrete: {}, finishRates: {}, formworkLegacy: {}, otherAcc: {}, otherAllow: {}, labourPlant: {}, prelim: {},
     // "Valid until" dates on the time-limited rates, keyed by the Quotes
     // catalog product name (see VALIDITY_ITEMS); Quotes takes them through
     // src/lib/ratesLibrarySync.js and alarms as they near.
@@ -626,6 +648,7 @@ function freshRates(){
   BCI_REFERENCE.forEach((row,i)=> s.bciRef[i] = {rate: row[3]});
   CONCRETE_GRADE_ITEMS.forEach(it=> s.concreteGrade[it.p] = {cost:it.cost});
   SPECIALIST_CONCRETE_ITEMS.forEach(it=> s.specialistConcrete[it.p] = {cost:it.cost});
+  PAVEMENT_FINISH_ITEMS.forEach(it=> s.finishRates[it.p] = {cost:it.cost});
   FORMWORK_LEGACY_ITEMS.forEach(it=> s.formworkLegacy[it.p] = {cost:it.cost});
   OTHER_ACCESSORIES.forEach(it=> s.otherAcc[it.p] = {cost:it.cost});
   OTHER_ALLOWANCES.forEach(it=> s.otherAllow[it.p] = {cost:it.cost});
@@ -1036,6 +1059,12 @@ function renderApp(){
     SPECIALIST_CONCRETE_ITEMS.length,
     `<p class="hint">VicMix published prices, $/m³ ex GST. VicMix says its displayed pricing applies to <b>minimum 4 m³ deliveries in a Maxi truck within 25 km of the plant</b>, <b>prices can change</b>, and <b>pigment mixes attract a $40 per truck + GST washout charge</b>. Quotes applies the washout automatically per truck of pigmented mix (truck size and the 4 m³ minimum are production rates in the Quotes Rates modal) and flags a short-load charge under 4 m³ — VicMix does not publish that amount, so enter it on the "short-load charge" row when known. Every price here flows to the Quotes catalog by name.</p>` +
     editableTable(SPECIALIST_CONCRETE_ITEMS, state.specialistConcrete, it=>it.p, [{field:"cost",label:"Rate ($)"}], {mapName:"specialistConcrete"}));
+
+  // Finished pavements & concrete finishes ($/m\u00b2 installed, preliminary)
+  h += section("sec-finish-rates", "Pavement finishes", "Finished pavements & concrete finishes \u2014 $/m\u00b2 supply & install (preliminary estimating allowances)",
+    PAVEMENT_FINISH_ITEMS.length,
+    `<p class="hint"><b>Preliminary estimating allowances, ex GST \u2014 not confirmed subcontractor quotations.</b> Published Melbourne contractor guides for 2026 put standard exposed aggregate at $130\u2013185/m\u00b2 supply &amp; install, premium at $180\u2013220, difficult access at $180\u2013240+ and ordinary grey pavement at $85\u2013120; the guides vary in GST treatment and scope (a guide stated incl. GST is seeded here ex GST). The <b>recommended preliminary estimate rate is $180/m\u00b2 ex GST</b> for a standard 100 mm reinforced carport pavement \u2014 a budget allowance with estimating contingency, subject to structural confirmation. The <b>Build-up</b> rows are Gradcon's component allowances for a 100 mm slab with conventional mesh, standard decorative aggregate, standard access and no unusual ground (indicative direct cost $116\u2013172/m\u00b2); edge formwork and movement joints are better measured separately in lineal metres. Every rate here flows to the Quotes band of the same name.</p>` +
+    editableTable(PAVEMENT_FINISH_ITEMS, state.finishRates, it=>it.p, [{field:"cost",label:"Rate ($/m\u00b2)"}], {mapName:"finishRates"}));
 
 h += section("sec-reinforcement", "Reinforcement", "Reinforcement", REINFORCEMENT_ITEMS["Trench mesh"].items.length+REINFORCEMENT_ITEMS["Square Mesh"].items.length+REINFORCEMENT_ITEMS["Stock Bar"].items.length+REINFORCEMENT_ITEMS["Processed Bar"].items.length, reoBody, false);
 
