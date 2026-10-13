@@ -140,7 +140,7 @@ export const TENDER_DEFAULT_OPTIONS = [
  * drawn from its published estimating quantities in the Project Geometry
  * order: count, run, area, concrete. Elements without a level prefix group by
  * their broad category instead. Every field is editable afterwards. */
-const LEVEL_PREFIX = /^(lower ground floor|lower ground|basement|ground floor|ground|first floor|second floor|third floor|fourth floor|fifth floor|first|second|third|fourth|fifth|level\s*\d+|l\d+\b|mezzanine|podium|rooftop|roof)/i;
+export const LEVEL_PREFIX = /^(lower ground floor|lower ground|basement|ground floor|ground|first floor|second floor|third floor|fourth floor|fifth floor|first|second|third|fourth|fifth|level\s*\d+|l\d+\b|mezzanine|podium|rooftop|roof)/i;
 const titleCase = (s) => s.replace(/\w\S*/g, (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
 
 export function seedTenderItems(quote, items, rates) {

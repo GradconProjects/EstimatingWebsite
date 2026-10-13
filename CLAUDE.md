@@ -446,8 +446,32 @@ and verify-covered. Rules:
    original, editable, one tick per line, with a warning when a proposal's
    point count differs from the typed one; only "Use ticked wording" writes
    titles and points — prices are never touched, and "Reseed" still rebuilds
-   from the quote. A tender seeded before this still holds the
-   roll-up line: `rolledUpItems` finds it and the red check strip's
+   from the quote. **The wording is industry language specified from the
+   project's own records** (Grady, same day: "refine the language … to proper
+   industry standard jargon … get specifications where needed from the
+   corresponding quote line items and the estimates sections corresponding in
+   name to the project"): `lib/tenderSpecContext.js` (pure) builds the
+   context one request carries — for every dot point the matching quote
+   element (`elementForPoint`: the point's leading name against the element
+   labels with the level stripped, `elementNameForTender`), its priced
+   catalog rows in a tender-minded band order (`quoteElementSpec`, fee rows
+   left out, subcontract quotes named) and its free-text description, and
+   the same-named elements (`takeoffMatches`) of the Estimates takeoff whose
+   project name matches the quote's (`findTakeoffEntry`: exact, then
+   containment, newest wins), each as its calculator fields and register
+   lines (`takeoffElementSpec`; `takeoffSnapshot` reads v1 and v2 rows);
+   `tenderSpecContext` trims line and row lists to `maxChars`, never a point,
+   and reports `matched`. `lib/estimatesRead.js` reads the takeoff index and
+   row from the cloud, then this browser (`readTakeoffForProject`; deps are
+   the test seam). The prompt tells the model to fold ONLY those facts in
+   (grade, section, bars and spacing, mesh, cover, finish, formwork, blinding,
+   membrane, subcontract items) and never to invent one; the review note
+   says what matched. The same request rewords the Additional Options (text
+   only, every $ figure kept, prices never sent) and the Inclusions /
+   Specific exclusions / General exclusions sections line for line
+   (`parseTenderExtras`), each with its own tick in the review; one `onChange`
+   writes items, options and sections together. A tender seeded before this
+   still holds the roll-up line: `rolledUpItems` finds it and the red check strip's
    "Itemise" (`itemiseRolledUp`) replaces only those lines' points from a
    fresh seed, titles and prices kept. `test-tender-items.mjs` proves the
    itemisation, the repair and the review.

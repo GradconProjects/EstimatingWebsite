@@ -27,7 +27,7 @@
  * when it is configured, else the default. Same-origin check as ai-providers.
  */
 import { callDocuments, callText, callWebSearch, resolveProviderId, parseJsonLoose, salvageArrays, providerStatus } from "./_providers.js";
-import { tenderWordingPrompt, parseTenderWording, tenderItemsPrompt, parseTenderItems } from "../src/lib/tenderWording.js";
+import { tenderWordingPrompt, parseTenderWording, tenderItemsPrompt, parseTenderItems, parseTenderExtras } from "../src/lib/tenderWording.js";
 
 export const config = { maxDuration: 300 };
 
@@ -186,11 +186,18 @@ export async function runAiJob(body, env = process.env) {
     if (!lineItems.length) return { status: 400, body: { error: "tender-wording (items) needs items: [{id, title, points}]" } };
     const id = resolveProviderId(provider, env);
     if (!id) return { status: 503, body: { error: "No AI provider is configured — set ANTHROPIC_API_KEY or OPENAI_API_KEY in the Vercel project's Environment Variables." } };
+    // the specification context (quote rows + matching takeoff elements), the Additional Options and the
+    // Inclusions / Exclusions sections ride along — bounded so a runaway context cannot swamp the prompt
+    const specJson = body.spec && typeof body.spec === "object" ? JSON.stringify(body.spec) : "";
+    const spec = specJson && specJson.length <= 120000 ? body.spec : (specJson ? { ...body.spec, points: (body.spec.points || []).map((p) => ({ ...p, takeoff: (p.takeoff || []).slice(0, 2).map((t) => ({ ...t, lines: (t.lines || []).slice(0, 6) })), quoteRows: (p.quoteRows || []).slice(0, 8) })) } : null);
+    const options = Array.isArray(body.options) ? body.options.filter((o) => o && o.id != null && String(o.text || "").trim()).slice(0, 30) : [];
+    const sections = {}; Object.entries(body.sections && typeof body.sections === "object" ? body.sections : {}).slice(0, 6).forEach(([k, v]) => { if (/^[a-zA-Z]+$/.test(k) && String(v || "").trim()) sections[k] = String(v).slice(0, 6000); });
     try {
-      const r = await callText(id, { system: "You are a senior estimator at Gradcon Concrete Constructions, Melbourne, writing the Project Details of a concrete subcontract tender quote to a builder. Formal, plain, precise Australian construction English. Reply with ONE JSON object and nothing else — no markdown fences, no prose before or after.", prompt: tenderItemsPrompt({ projectName, items: lineItems }), maxTokens: 4000, timeoutMs: 110000, env });
+      const r = await callText(id, { system: "You are a senior estimator and quantity surveyor at Gradcon Concrete Constructions, Melbourne, writing the Project Details, options and inclusions / exclusions of a concrete subcontract tender quote to a builder. Proper Australian concrete-industry tender language (AS 3600 / AS 2870 practice, N-grade concrete, D500N bars, SL/RL mesh, millimetres), tight and precise; you specify only what the context states and invent nothing. Reply with ONE JSON object and nothing else — no markdown fences, no prose before or after.", prompt: tenderItemsPrompt({ projectName, items: lineItems, spec, options, sections }), maxTokens: 7000, timeoutMs: 170000, env });
       const map = parseTenderItems(r.text, lineItems);
+      const extras = parseTenderExtras(r.text, { options, sections });
       const out = lineItems.map((l) => ({ id: String(l.id), ...(map[String(l.id)] || {}) })).filter((l) => l.title || (l.points && l.points.length));
-      return { status: 200, body: { items: out, provider: r.provider, model: r.model, latencyMs: r.latencyMs } };
+      return { status: 200, body: { items: out, options: extras.options, sections: extras.sections, provider: r.provider, model: r.model, latencyMs: r.latencyMs, specPoints: spec ? (spec.points || []).length : 0 } };
     } catch (e) {
       return { status: e.status && e.status >= 400 && e.status < 600 ? e.status : 502, body: { error: e.message, detail: e.detail || null, provider: id } };
     }

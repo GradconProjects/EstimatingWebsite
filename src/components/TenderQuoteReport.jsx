@@ -6,6 +6,8 @@ import { handoverIssues } from "../lib/handover.js";
 import { tenderNoteLines } from "../lib/tenderNotes.js";
 import TenderNotesCell from "./TenderNotesCell.jsx";
 import { requestTenderItemsWording, preferredProvider } from "../lib/tenderWording.js";
+import { tenderSpecContext } from "../lib/tenderSpecContext.js";
+import { readTakeoffForProject } from "../lib/estimatesRead.js";
 
 const fmtMoney = (n) => `$${(n || 0).toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -64,20 +66,38 @@ export default function TenderQuoteReport({ quote, items, rates, visible, onClos
       // review shows and what "Use ticked wording" writes.
       const rolledCount = rolledUpItems(tq).length;
       const base = rolledCount ? itemiseRolledUp({ ...quote, tenderQuote: tq }, items, rates).items : lineItems;
-      const r = await requestTenderItemsWording(base, { projectName: quote.projectName, provider: preferredProvider() });
+      // Specifications for the model: every dot point's quote element (its priced
+      // rows and description) and the Estimates takeoff of the same project name
+      // (lib/tenderSpecContext.js) — Grady, 13 Oct 2026: "get specifications where
+      // needed from the corresponding quote line items and the estimates sections".
+      const takeoff = await readTakeoffForProject(quote.projectName).catch(() => null);
+      const spec = tenderSpecContext({ quote, items, lineItems: base, takeoff });
+      const options = (tq.additionalOptions || []).filter((o) => o && String(o.text || "").trim());
+      const sections = { inclusions: tq.inclusions || "", specificExclusions: tq.specificExclusions || "", generalExclusions: tq.generalExclusions || "" };
+      const r = await requestTenderItemsWording(base, { projectName: quote.projectName, provider: preferredProvider(), spec, options, sections });
+      const sectionLabel = { inclusions: "Inclusions", specificExclusions: "Specific exclusions", generalExclusions: "General exclusions" };
       setItemReview({
-        base, itemised: rolledCount,
+        base, itemised: rolledCount, spec: { takeoffName: takeoff ? takeoff.name : null, ...spec.matched },
         rows: base.map((l) => { const w = r.wording[String(l.id)]; const pts = (l.points || []).map((p) => String(p || "").trim()).filter(Boolean); return { id: l.id, title: l.title || "", points: pts, newTitle: w && w.title ? w.title : l.title || "", newPoints: w ? w.points : [], use: !!w, countMatches: w ? w.points.length === pts.length : false }; }),
+        optionRows: options.map((o) => ({ id: String(o.id), text: String(o.text).trim(), newText: r.options[String(o.id)] || "", use: !!r.options[String(o.id)] })),
+        sectionRows: Object.keys(sections).filter((k) => String(sections[k]).trim()).map((k) => { const got = r.sections[k]; return { key: k, label: sectionLabel[k] || k, text: String(sections[k]), newText: got ? got.lines.join("\n") : "", use: !!got, countMatches: got ? got.countMatches : false }; }),
         model: r.model, missing: r.missing,
       });
     } catch (e) { setItemErr(String((e && e.message) || e)); } finally { setItemBusy(false); }
   };
   const applyItemReview = () => {
     const by = {}; itemReview.rows.forEach((r) => { if (r.use) by[r.id] = r; });
-    setLineItems(itemReview.base.map((l) => { const r = by[l.id]; if (!r) return l; const pts = r.newPoints.map((p) => String(p || "").trim()).filter(Boolean); while (pts.length < 4) pts.push(""); return { ...l, title: r.newTitle.trim() || l.title, points: pts }; }));
+    const nextItems = itemReview.base.map((l) => { const r = by[l.id]; if (!r) return l; const pts = r.newPoints.map((p) => String(p || "").trim()).filter(Boolean); while (pts.length < 4) pts.push(""); return { ...l, title: r.newTitle.trim() || l.title, points: pts }; });
+    const optBy = {}; (itemReview.optionRows || []).forEach((o) => { if (o.use && o.newText.trim()) optBy[o.id] = o.newText.trim(); });
+    const nextOpts = (tq.additionalOptions || []).map((o) => (optBy[String(o.id)] ? { ...o, text: optBy[String(o.id)] } : o));
+    const patch = { items: nextItems, additionalOptions: nextOpts };
+    (itemReview.sectionRows || []).forEach((s) => { if (s.use && s.newText.trim()) patch[s.key] = s.newText.trim(); });
+    onChange({ ...tq, ...patch }); // one write: line items, options and sections together, prices untouched
     setItemReview(null);
   };
   const setItemRow = (id, patch) => setItemReview((rv) => ({ ...rv, rows: rv.rows.map((r) => (r.id === id ? { ...r, ...patch } : r)) }));
+  const setOptionRow = (id, patch) => setItemReview((rv) => ({ ...rv, optionRows: rv.optionRows.map((r) => (r.id === id ? { ...r, ...patch } : r)) }));
+  const setSectionRow = (key, patch) => setItemReview((rv) => ({ ...rv, sectionRows: rv.sectionRows.map((r) => (r.key === key ? { ...r, ...patch } : r)) }));
 
   const opts = tq.additionalOptions || [];
   const setOpts = (next) => set("additionalOptions", next);
@@ -200,6 +220,13 @@ export default function TenderQuoteReport({ quote, items, rates, visible, onClos
                     <div className="text-[11px] text-neutral-700">
                       Proposed wording for each line item — the typed version is shown struck through above each proposal. Edit anything, untick a line to keep it as typed. Nothing changes until you click <b>Use ticked wording</b>; prices are never touched.
                       {itemReview.itemised > 0 && <span className="text-emerald-800" data-testid="items-itemised-note"> {itemReview.itemised} line{itemReview.itemised === 1 ? "" : "s"} carried a &quot;plus N further items&quot; roll-up and {itemReview.itemised === 1 ? "was" : "were"} itemised first, so every element is named.</span>}
+                      {itemReview.spec && (
+                        <span className="block text-neutral-600" data-testid="items-spec-note">
+                          Specifications drawn from this quote&apos;s elements ({itemReview.spec.quote} of {itemReview.spec.points} points matched)
+                          {itemReview.spec.takeoffName ? ` and the Estimates takeoff "${itemReview.spec.takeoffName}" (${itemReview.spec.takeoff} points matched)` : " — no Estimates takeoff carries this project's name, so only the quote's rows were used"}.
+                          {" "}Every specification in a proposal must be one the context holds — check anything you did not type.
+                        </span>
+                      )}
                       {itemReview.missing.length > 0 && <span className="text-amber-700"> {itemReview.missing.length} line{itemReview.missing.length === 1 ? "" : "s"} came back without a proposal and stay as typed.</span>}
                     </div>
                     {itemReview.rows.map((r) => (
@@ -221,8 +248,37 @@ export default function TenderQuoteReport({ quote, items, rates, visible, onClos
                         </div>
                       </div>
                     ))}
+                    {(itemReview.optionRows || []).length > 0 && (
+                      <div className="space-y-1" data-testid="items-options-review">
+                        <div className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">Additional options — text only, prices untouched</div>
+                        {itemReview.optionRows.map((o) => (
+                          <div key={o.id} className="bg-white border border-neutral-200 rounded p-2 flex items-start gap-2" data-testid="option-wording-row">
+                            <input type="checkbox" checked={o.use} onChange={(e) => setOptionRow(o.id, { use: e.target.checked })} className="mt-1.5 flex-none" aria-label="Use this option's wording" disabled={!o.newText.trim()} />
+                            <div className="flex-1 min-w-0">
+                              <div className="text-[11px] text-neutral-500 line-through decoration-neutral-300">{o.text}</div>
+                              <textarea value={o.newText} onChange={(e) => setOptionRow(o.id, { newText: e.target.value, use: !!e.target.value.trim() })} rows={1} className={`${inputCls} text-[12px]`} placeholder="No proposal — kept as typed" />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {(itemReview.sectionRows || []).length > 0 && (
+                      <div className="space-y-1" data-testid="items-sections-review">
+                        <div className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">Inclusions &amp; exclusions — one line per clause</div>
+                        {itemReview.sectionRows.map((s) => (
+                          <div key={s.key} className="bg-white border border-neutral-200 rounded p-2 flex items-start gap-2" data-testid="section-wording-row" data-section={s.key}>
+                            <input type="checkbox" checked={s.use} onChange={(e) => setSectionRow(s.key, { use: e.target.checked })} className="mt-1.5 flex-none" aria-label={`Use the ${s.label} wording`} disabled={!s.newText.trim()} />
+                            <div className="flex-1 min-w-0">
+                              <div className="text-[11px] font-semibold text-neutral-700">{s.label}{!s.countMatches && s.newText.trim() ? <span className="text-amber-700 font-normal"> — the proposal has a different number of lines than typed; check nothing was merged or dropped</span> : null}</div>
+                              <div className="text-[11px] text-neutral-500 line-through decoration-neutral-300 whitespace-pre-line max-h-24 overflow-auto">{s.text}</div>
+                              <textarea value={s.newText} onChange={(e) => setSectionRow(s.key, { newText: e.target.value, use: !!e.target.value.trim() })} rows={Math.min(10, Math.max(3, s.newText.split("\n").length))} className={`${inputCls} text-[12px]`} placeholder="No proposal — kept as typed" />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     <div className="flex items-center gap-2 flex-wrap">
-                      <button type="button" onClick={applyItemReview} data-testid="apply-items-wording" className="text-[11px] font-semibold px-2.5 py-1 rounded bg-orange-600 text-white hover:bg-orange-700">Use ticked wording ({itemReview.rows.filter((r) => r.use).length})</button>
+                      <button type="button" onClick={applyItemReview} data-testid="apply-items-wording" className="text-[11px] font-semibold px-2.5 py-1 rounded bg-orange-600 text-white hover:bg-orange-700">Use ticked wording ({itemReview.rows.filter((r) => r.use).length + (itemReview.optionRows || []).filter((o) => o.use).length + (itemReview.sectionRows || []).filter((s) => s.use).length})</button>
                       <button type="button" onClick={() => setItemReview(null)} className="text-[11px] font-semibold px-2.5 py-1 rounded border border-neutral-300 text-neutral-700 hover:bg-neutral-100">Cancel</button>
                       <span className="text-[10px] text-neutral-400">{itemReview.model ? `proposed by ${itemReview.model}` : ""}</span>
                     </div>

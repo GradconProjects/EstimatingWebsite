@@ -1319,6 +1319,53 @@ check("Tender quote: a tender seeded earlier with a 'plus N further items' roll-
   const src = fs.readFileSync(new URL("../src/components/TenderQuoteReport.jsx", import.meta.url), "utf8");
   assertTrue(/data-testid="tender-itemise"/.test(src) && /itemiseRolledUp\(/.test(src));
 });
+await checkAsync("Tender spec context (Grady, 13 Oct 2026): each dot point carries its quote element's priced rows and description and the same-named takeoff elements (fields + register lines, v1 or v2 rows); the takeoff is found by project name; the prompt folds the context in with industry-language rules; options and sections ride along and parse back", async () => {
+  const SC = await import("../src/lib/tenderSpecContext.js");
+  const ER = await import("../src/lib/estimatesRead.js");
+  const TW = await import("../src/lib/tenderWording.js");
+  const rates = defaultRates();
+  const strip = ELEMENT_TYPES.find((t) => t.id === "strip_footings");
+  const conc = FULL_CATALOG.find((c) => c.key === "CONCRETE").products.find((p) => /^40 mpa$/i.test(p.name)) || FULL_CATALOG.find((c) => c.key === "CONCRETE").products[0];
+  const bar = FULL_CATALOG.find((c) => c.key === "PROCESSED BAR").products[0];
+  const piles = { ...newElementItem(strip), label: "Basement - Piles", description: "600 dia bored piers to engineer's detail", qtys: { [rateKey("CONCRETE", conc.name, conc.unit)]: 35.28, [rateKey("PROCESSED BAR", bar.name, bar.unit)]: 1.2, [rateKey("CONCRETE", "Minimum cartage", "m3")]: 2 }, rateOverrides: { "SUB CONTRACTORS / TEMPORARY WORKS::Piling::quote": { unitCost: 50000 } } };
+  const slab = { ...newElementItem(strip), label: "Ground Floor - Slab", qtys: {} };
+  assertTrue(SC.elementNameForTender("Basement - Piles") === "Piles" && SC.elementNameForTender("Ground Floor Raft") === "Raft");
+  const rows = SC.quoteElementSpec(piles);
+  assertTrue(rows[0].category === "CONCRETE" && rows[0].product === conc.name && rows[0].qty === 35.28 && rows.some((r) => r.category === "PROCESSED BAR") && rows.some((r) => r.note === "subcontract quote received" && r.product === "Piling") && !rows.some((r) => /cartage/i.test(r.product)), JSON.stringify(rows));
+  const instV2 = { id: "i1", label: "Piles", typeKey: "pier", data: { grade: 40, cover: 50, dia: 600, depth: 6000, vDia: "N16", vBars: 6, ligDia: "N10", genSpacing: 200, qty: 16, extraConn: [] }, results: { lines: [{ materialGroup: "Concrete", material: "N40 concrete", spec: "600 dia", finalQty: 35.28, unit: "m³" }, { materialGroup: "Reinforcement", material: "N16", spec: "vertical bars", finalQty: 640, unit: "m" }, { materialGroup: "Excavation", material: "Bored spoil", finalQty: 40, unit: "m³" }, { materialGroup: "Formwork", material: "x", finalQty: 0, unit: "m²" }] } };
+  const spec1 = SC.takeoffElementSpec(instV2);
+  assertTrue(spec1.fields.grade === 40 && spec1.fields.dia === 600 && spec1.fields.vDia === "N16" && !("extraConn" in spec1.fields) && spec1.lines.length === 3 && spec1.lines[0].material === "N40 concrete" && spec1.lines[0].qty === 35.28, JSON.stringify(spec1));
+  assertTrue(SC.takeoffMatches([instV2, { label: "Basement Strip Footings 1", data: {} }], "Basement - Piles").length === 1 && SC.takeoffMatches([instV2], "Ground Floor - Slab").length === 0);
+  assertTrue(SC.elementForPoint("Piles — 16 no. / approx. 35.28 m³ concrete", [piles, slab]) === piles && SC.elementForPoint("Slab — approx. 255 m²", [piles, slab]) === slab && SC.elementForPoint("Nothing here", [piles, slab]) === null);
+  const lineItems = [{ id: "L1", title: "Basement", points: ["Piles — 16 no. / approx. 35.28 m³ concrete", "", "Unknown thing — approx. 1 m³ concrete"] }, { id: "L2", title: "Ground Floor", points: ["Slab — approx. 255 m²"] }];
+  const ctx = SC.tenderSpecContext({ quote: { projectName: "40 Jacksons Road", clientName: "RACM" }, items: [piles, slab], lineItems, takeoff: { name: "40 Jacksons Road, Mount Eliza", instances: [instV2] } });
+  assertTrue(ctx.points.length === 3 && ctx.points[0].element === "Basement - Piles" && ctx.points[0].description === "600 dia bored piers to engineer's detail" && ctx.points[0].quoteRows.length >= 2 && ctx.points[0].takeoff.length === 1 && ctx.points[0].takeoff[0].fields.dia === 600 && ctx.points[1].element === null && ctx.points[1].takeoff.length === 0 && ctx.points[2].element === "Ground Floor - Slab" && ctx.matched.quote === 2 && ctx.matched.takeoff === 1 && ctx.takeoff.name === "40 Jacksons Road, Mount Eliza", JSON.stringify(ctx).slice(0, 600));
+  // a huge context trims its line and row lists, never a point
+  const big = { ...instV2, results: { lines: new Array(400).fill(0).map((_, i) => ({ materialGroup: "Reinforcement", material: "N16 bar number " + i + " with a long specification string ".repeat(6), finalQty: 1, unit: "m" })) } };
+  const bigCtx = SC.tenderSpecContext({ quote: { projectName: "P" }, items: [piles], lineItems: [{ id: "L", title: "B", points: new Array(30).fill("Piles — approx. 1 m³ concrete") }], takeoff: { name: "P", instances: [big, big, big, big] }, maxChars: 30000 });
+  assertTrue(bigCtx.points.length === 30 && JSON.stringify(bigCtx).length < 45000 && bigCtx.points[0].takeoff.length === 1 && bigCtx.points[0].takeoff[0].lines.length <= 3, String(JSON.stringify(bigCtx).length));
+  // the takeoff is found by project name (exact, then containment, newest wins) in either row schema
+  const idx = [{ id: "a", key: "gradcon-estimate-state::a", name: "40 Jacksons Road, Mount Eliza", savedAt: "2026-10-01" }, { id: "b", key: "gradcon-estimate-state::b", name: "Other job", savedAt: "2026-10-05" }, { id: "c", key: "gradcon-estimate-state::c", name: "40 Jacksons Road", savedAt: "2026-09-01", deleted: true }];
+  assertTrue(SC.findTakeoffEntry(idx, "40 Jacksons Road - Concrete").id === "a" && SC.findTakeoffEntry(idx, "Nope") === null && SC.findTakeoffEntry(idx, "41 Jacksons Road") === null, "street numbers tell jobs apart");
+  assertTrue(SC.projectNameScore("145 Harrisons Rd - Concrete Structure Package", "145 Harrisons Road") === 1 && SC.projectNameScore("3206 Point Nepean Rd", "3206 Point Nepean Road, Sorrento") === 1 && SC.projectNameScore("25 Spindrift Ave", "18 Beach Road") === 0 && SC.projectNameTokens("145 Harrisons Rd.").join() === "145,harrisons,road");
+  assertTrue(SC.takeoffSnapshot({ INSTANCES: [instV2], PROJECT: { name: "x" } }).instances.length === 1 && SC.takeoffSnapshot({ instances: [], project: {} }).instances.length === 0 && SC.takeoffSnapshot({ foo: 1 }) === null);
+  const store = { "gradcon-estimate-projects-index": idx, "gradcon-estimate-state::a": { INSTANCES: [instV2], PROJECT: { name: "40 Jacksons Road, Mount Eliza" } } };
+  const tk = await ER.readTakeoffForProject("40 Jacksons Road", { cloudValue: async (k) => (k in store ? store[k] : null), localValue: () => null });
+  assertTrue(tk && tk.name === "40 Jacksons Road, Mount Eliza" && tk.instances.length === 1 && (await ER.readTakeoffForProject("Nope", { cloudValue: async () => null, localValue: () => null })) === null, JSON.stringify(tk && tk.name));
+  const local = await ER.readTakeoffForProject("40 Jacksons Road", { cloudValue: async () => null, localValue: (k) => (k in store ? store[k] : null) });
+  assertTrue(local && local.instances.length === 1, "a browser-held takeoff stands in when the cloud has none");
+  // the prompt
+  const pr = TW.tenderItemsPrompt({ projectName: "P", items: lineItems, spec: ctx, options: [{ id: "o1", text: "Spoil removal $40.00/m3 + GST" }], sections: { inclusions: "All detailed excavation.\nVapour barrier as required.", specificExclusions: "" } });
+  assertTrue(/SPECIFICATION CONTEXT \(JSON\)/.test(pr) && /600 dia bored piers/.test(pr) && /"dia":600/.test(pr) && /industry language|Industry language/.test(pr) && /N16 bars at 200 mm centres/.test(pr) && /Never invent a grade/.test(pr) && /ADDITIONAL OPTIONS/.test(pr) && /\$40\.00\/m3 \+ GST/.test(pr) && /"inclusions":\["All detailed excavation\."/.test(pr) && /"sections":\{"inclusions"/.test(pr) && !/specificExclusions/.test(pr), pr.slice(0, 300));
+  assertTrue(/no specification context is available/.test(TW.tenderItemsPrompt({ projectName: "P", items: lineItems })));
+  const extras = TW.parseTenderExtras('{"items":[],"options":[{"id":"o1","text":"Removal of spoil from site — provisional sum, $40.00/m3 + GST thereafter"},{"id":"zz","text":"x"}],"sections":{"inclusions":["All detailed excavation to the structural drawings","Supply and installation of a polythene vapour barrier as required"],"generalExclusions":["ignored — not asked"]}}', { options: [{ id: "o1", text: "x" }], sections: { inclusions: "a\nb", specificExclusions: "c" } });
+  assertTrue(extras.options.o1 && !extras.options.zz && extras.sections.inclusions.lines.length === 2 && extras.sections.inclusions.countMatches && !extras.sections.specificExclusions && !extras.sections.generalExclusions, JSON.stringify(extras));
+  let posted = null;
+  const r = await TW.requestTenderItemsWording(lineItems, { projectName: "P", base: "https://x.test", spec: ctx, options: [{ id: "o1", text: "Spoil" }], sections: { inclusions: "a\nb", specificExclusions: "" }, fetchImpl: async (url, opts) => { posted = JSON.parse(opts.body); return { ok: true, status: 200, json: async () => ({ items: [], options: { o1: "Spoil removal — provisional sum" }, sections: { inclusions: { lines: ["A", "B"], countMatches: true } }, provider: "anthropic", model: "m" }) }; } });
+  assertTrue(posted.spec.points.length === 3 && posted.options.length === 1 && posted.sections.inclusions === "a\nb" && !("specificExclusions" in posted.sections) && r.options.o1 === "Spoil removal — provisional sum" && r.sections.inclusions.lines.length === 2, JSON.stringify(posted).slice(0, 200));
+  const tqSrc = fs.readFileSync(new URL("../src/components/TenderQuoteReport.jsx", import.meta.url), "utf8");
+  assertTrue(/readTakeoffForProject\(quote\.projectName\)/.test(tqSrc) && /tenderSpecContext\(\{ quote, items, lineItems: base, takeoff \}\)/.test(tqSrc) && /data-testid="items-options-review"/.test(tqSrc) && /data-testid="items-sections-review"/.test(tqSrc) && /data-testid="items-spec-note"/.test(tqSrc) && /onChange\(\{ \.\.\.tq, \.\.\.patch \}\)/.test(tqSrc));
+});
 await checkAsync("Tender quote line items reword (Grady, 13 Oct 2026): prompt keeps ids and point counts, the reply is read by id with a count check, the server takes kind \"items\" (400 empty, 503 no provider), the request posts action tender-wording kind items", async () => {
   const TW = await import("../src/lib/tenderWording.js");
   const E = await import("../api/ai-engine.js");
@@ -1327,7 +1374,7 @@ await checkAsync("Tender quote line items reword (Grady, 13 Oct 2026): prompt ke
   assertTrue(/"id":"L1"/.test(pr) && /SAME NUMBER of dot points/.test(pr) && /never write one/.test(pr) && /\{"items":\[\{"id"/.test(pr) && !/\$1 \+ GST/.test(pr));
   assertTrue(/Never write "further items"/.test(pr));
   const tqSrc = fs.readFileSync(new URL("../src/components/TenderQuoteReport.jsx", import.meta.url), "utf8");
-  assertTrue(/const base = rolledCount \? itemiseRolledUp\(/.test(tqSrc) && /setLineItems\(itemReview\.base\.map/.test(tqSrc) && /data-testid="items-itemised-note"/.test(tqSrc), "the reword itemises rolled-up lines first and applies onto that list");
+  assertTrue(/const base = rolledCount \? itemiseRolledUp\(/.test(tqSrc) && /const nextItems = itemReview\.base\.map/.test(tqSrc) && /data-testid="items-itemised-note"/.test(tqSrc), "the reword itemises rolled-up lines first and applies onto that list");
   const map = TW.parseTenderItems('```json\n{"items":[{"id":"L1","title":"Basement","points":["Bored concrete piles — 16 no., approximately 35.28 m³ of concrete","Reinforced concrete columns, basement to ground floor — approximately 2.79 m³ of concrete"]},{"id":"L2","title":"Ground Floor","points":["Only one"]},{"id":"zz","title":"x","points":[]}]}\n```', li);
   assertTrue(map.L1 && map.L1.countMatches && map.L1.points.length === 2 && /Bored concrete piles/.test(map.L1.points[0]) && map.L2.title === "Ground Floor" && map.L2.countMatches && !map.zz, JSON.stringify(map));
   const bad = await E.runAiJob({ action: "tender-wording", kind: "items", items: [] }, {});
