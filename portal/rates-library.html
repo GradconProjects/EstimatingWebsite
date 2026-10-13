@@ -119,6 +119,9 @@ input:disabled{background:#f0f4f7;color:#7c8a96;}
 .boq-meta td:first-child{color:#5a7186;width:110px;}
 .boq-meta td{border:none;padding:2px 6px;}
 .boq-table td, .boq-table th{white-space:normal;}
+/* an editable rate table wraps its item name so the Unit and Rate cells stay in view beside a long name (the 2026 pavement-finish rows carry their guide range in the name) */
+.item-table td:first-child{white-space:normal;min-width:260px;}
+.item-table input.lib-input{min-width:90px;}
 
 /* Print / PDF export */
 @media print{
