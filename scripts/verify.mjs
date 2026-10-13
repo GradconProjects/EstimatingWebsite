@@ -1289,6 +1289,52 @@ check("Tender Notes = the project's Assumptions first (recorded order, blanks dr
   });
 }
 
+check("Tender quote itemises EVERY element of a level — one dot point each, never 'plus N further items' (Grady, 13 Oct 2026); count, run and area precede the concrete", () => {
+  const rates = defaultRates();
+  const strip = ELEMENT_TYPES.find((t) => t.id === "strip_footings");
+  const conc = FULL_CATALOG.find((c) => c.key === "CONCRETE").products[0];
+  const els = ["Piles", "Capping Beam", "Strip Footings", "RC Columns", "Shotcrete Wall", "Lift Pit"].map((n, i) => { const it = newElementItem(strip); it.label = `Basement - ${n}`; it.qtys[rateKey("CONCRETE", conc.name, conc.unit)] = 10 + i; if (i === 0) it.measureNo = 16; if (i === 1) it.measureLm = 42; return it; });
+  const seeded = seedTenderItems({ overheadPct: 0.08, contingencyPct: 0.05 }, els, rates);
+  assertTrue(seeded.length === 1 && seeded[0].title === "Basement", JSON.stringify(seeded.map((s) => s.title)));
+  const pts = seeded[0].points.filter(Boolean);
+  assertTrue(pts.length === 6 && !pts.some((p) => /further items|combined/.test(p)) && /^Piles — 16 no\. \/ approx\. 10 m³ concrete$/.test(pts[0]) && /^Capping Beam — approx\. 42 lm \/ approx\. 11 m³ concrete$/.test(pts[1]) && /^Lift Pit — approx\. 15 m³ concrete$/.test(pts[5]), JSON.stringify(pts));
+  // the Tender Quote editor shows every point (plus a spare box) and the print lists them all
+  const src = fs.readFileSync(new URL("../src/components/TenderQuoteReport.jsx", import.meta.url), "utf8");
+  assertTrue(!/\.slice\(0, 4\)\.map\(\(p, i\)/.test(src) && /pts\.push\(""\); return pts;/.test(src) && /data-testid="reword-items"/.test(src) && /data-testid="items-wording-review"/.test(src) && /requestTenderItemsWording\(/.test(src));
+});
+check("Tender quote: a tender seeded earlier with a 'plus N further items' roll-up is found (rolledUpItems) and itemiseRolledUp replaces ONLY those points from a fresh seed, keeping titles, prices and other lines", async () => {
+  const TQ = await import("../src/lib/tenderQuoteDefaults.js");
+  const rates = defaultRates();
+  const strip = ELEMENT_TYPES.find((t) => t.id === "strip_footings");
+  const conc = FULL_CATALOG.find((c) => c.key === "CONCRETE").products[0];
+  const els = ["Piles", "Capping Beam", "Strip Footings", "RC Columns", "Shotcrete Wall"].map((n, i) => { const it = newElementItem(strip); it.label = `Basement - ${n}`; it.qtys[rateKey("CONCRETE", conc.name, conc.unit)] = 10 + i; return it; });
+  const quote = { overheadPct: 0.08, contingencyPct: 0.05, tenderQuote: { ...TQ.newTenderQuote(), items: [
+    { id: "a", title: "Basement", price: "$999.00 + GST", points: ["Piles — approx. 10 m³ concrete", "Capping Beam — approx. 11 m³ concrete", "Strip Footings — approx. 12 m³ concrete", "plus 2 further items — approx. 27 m³ concrete combined"] },
+    { id: "b", title: "Extras", price: "$5.00 + GST", points: ["typed by hand", "", "", ""] },
+  ] } };
+  assertTrue(TQ.rolledUpItems(quote.tenderQuote).map((r) => r.id).join() === "a" && TQ.ROLLUP_POINT.test("plus 1 further item"));
+  const next = TQ.itemiseRolledUp(quote, els, rates);
+  const a = next.items.find((i) => i.id === "a"), b = next.items.find((i) => i.id === "b");
+  assertTrue(a.price === "$999.00 + GST" && a.title === "Basement" && a.points.filter(Boolean).length === 5 && !a.points.some((p) => /further/.test(p)) && /Shotcrete Wall/.test(a.points[4]) && b.points[0] === "typed by hand" && b.price === "$5.00 + GST" && TQ.rolledUpItems(next).length === 0, JSON.stringify(next.items));
+  const src = fs.readFileSync(new URL("../src/components/TenderQuoteReport.jsx", import.meta.url), "utf8");
+  assertTrue(/data-testid="tender-itemise"/.test(src) && /itemiseRolledUp\(/.test(src));
+});
+await checkAsync("Tender quote line items reword (Grady, 13 Oct 2026): prompt keeps ids and point counts, the reply is read by id with a count check, the server takes kind \"items\" (400 empty, 503 no provider), the request posts action tender-wording kind items", async () => {
+  const TW = await import("../src/lib/tenderWording.js");
+  const E = await import("../api/ai-engine.js");
+  const li = [{ id: "L1", title: "Basement", price: "$1 + GST", points: ["Piles - Bored Piers — 16 no. / approx. 35.28 m³ concrete", "RC Columns - Basement to Ground floor? — approx. 2.79 m³ concrete", ""] }, { id: "L2", title: "ground floor", points: ["Slab — approx. 255 m² / approx. 50.7 m³ concrete"] }];
+  const pr = TW.tenderItemsPrompt({ projectName: "P", items: li });
+  assertTrue(/"id":"L1"/.test(pr) && /SAME NUMBER of dot points/.test(pr) && /never write one/.test(pr) && /\{"items":\[\{"id"/.test(pr) && !/\$1 \+ GST/.test(pr));
+  const map = TW.parseTenderItems('```json\n{"items":[{"id":"L1","title":"Basement","points":["Bored concrete piles — 16 no., approximately 35.28 m³ of concrete","Reinforced concrete columns, basement to ground floor — approximately 2.79 m³ of concrete"]},{"id":"L2","title":"Ground Floor","points":["Only one"]},{"id":"zz","title":"x","points":[]}]}\n```', li);
+  assertTrue(map.L1 && map.L1.countMatches && map.L1.points.length === 2 && /Bored concrete piles/.test(map.L1.points[0]) && map.L2.title === "Ground Floor" && map.L2.countMatches && !map.zz, JSON.stringify(map));
+  const bad = await E.runAiJob({ action: "tender-wording", kind: "items", items: [] }, {});
+  const noProv = await E.runAiJob({ action: "tender-wording", kind: "items", items: li }, {});
+  assertTrue(bad.status === 400 && noProv.status === 503, JSON.stringify([bad.status, noProv.status]));
+  let posted = null;
+  const r = await TW.requestTenderItemsWording(li, { projectName: "P", provider: "anthropic", base: "https://x.test", fetchImpl: async (url, opts) => { posted = { url, body: JSON.parse(opts.body) }; return { ok: true, status: 200, json: async () => ({ items: [{ id: "L1", title: "Basement", points: ["a", "b"], countMatches: true }], provider: "anthropic", model: "m" }) }; } });
+  assertTrue(posted.url === "https://x.test/api/ai-engine" && posted.body.action === "tender-wording" && posted.body.kind === "items" && posted.body.items.length === 2 && posted.body.items[0].points.length === 2 && !("price" in posted.body.items[0]) && r.wording.L1.points.length === 2 && r.missing.join() === "L2", JSON.stringify([posted, r]));
+});
+
 check("Tender quote prints the FLOOR AREA entered in the quote (measureM2), not the Square Mesh coverage", () => {
   const raft = newElementItem(ELEMENT_TYPES.find((t) => t.id === "raft_foundation"));
   raft.label = "Ground Floor Raft";

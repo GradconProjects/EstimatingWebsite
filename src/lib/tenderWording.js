@@ -109,6 +109,66 @@ export async function requestTenderWording(assumptions, { projectName, provider,
   return { wording: map, provider: body && body.provider, model: body && body.model, missing: rows.filter((r) => !map[r.id]).map((r) => r.id) };
 }
 
+/* ---------------- Tender Quote line items (titles and dot points) ---------------- */
+
+/** The prompt for the Tender Quote's line items: every level's title and its itemised dot points rewritten as professional tender descriptions — same ids, same number of points, every figure kept. */
+export function tenderItemsPrompt({ projectName, items }) {
+  const rows = (items || []).map((l) => ({ id: String(l.id), title: clean(l.title), points: (l.points || []).map(clean).filter(Boolean) }));
+  return `Project: ${projectName || "(unnamed)"}.
+Below are the PROJECT DETAILS line items of a concrete subcontract tender quote: each item is a building level (or work group) with its price (not shown — never write one) and one dot point per structural element, typed by the estimator as shorthand from the takeoff ("Strip Footings - Basement — approx. 35.28 m² / approx. 18.53 m³ concrete").
+Rewrite them as a professional itemised description for the client, as a Melbourne concrete subcontractor writes to a builder.
+
+Rules:
+- Same ids, same order; the SAME NUMBER of dot points per item, in the same order — one per element, never merged, split, dropped or added.
+- Keep every figure, unit, grade, element name and level exactly (a figure may be reformatted, e.g. "approx. 35.28 m²" → "approximately 35.28 m² in plan"); add NO figure, scope or product that is not in the shorthand; keep "approx." / "approximately" wherever the shorthand says approx.
+- Title: a clean level or work-group name ("Basement", "Ground Floor", "Suspended Structure"), no trailing punctuation.
+- Dot point: "<Element>, supply and install, …" style is NOT required — write a tidy noun phrase: the element, then its quantities, e.g. "Bored concrete piles — 16 no., approximately 35.28 m³ of concrete"; expand estimator abbreviations (reo → reinforcement, RC → reinforced concrete), fix spelling, drop stray question marks and internal notes, Australian terms and metric units, no bullet marks, no trailing full stop.
+
+Reply with ONE JSON object and nothing else: {"items":[{"id":"<id>","title":"<title>","points":["<point>", …]}]}
+
+LINE ITEMS (JSON):
+${JSON.stringify(rows)}`;
+}
+
+/** Reads the model's reply back onto the line items: {id → {title, points}}. A point count that differs from the original is still returned (the review shows it); missing items are left out. */
+export function parseTenderItems(text, items) {
+  const list = (items || []).map((l) => ({ id: String(l.id), n: (l.points || []).map(clean).filter(Boolean).length }));
+  let doc = null;
+  const s = String(text == null ? "" : text);
+  try { doc = JSON.parse(s); } catch {
+    const m = s.match(/\{[\s\S]*\}/);
+    if (m) { try { doc = JSON.parse(m[0]); } catch { doc = null; } }
+  }
+  const rows = doc && Array.isArray(doc.items) ? doc.items : [];
+  const out = {};
+  rows.forEach((r, i) => {
+    if (!r || typeof r !== "object") return;
+    const id = r.id != null ? String(r.id) : null;
+    const target = (id && list.find((l) => l.id === id)) || (!id && list[i]) || null;
+    if (!target || out[target.id]) return;
+    const title = clean(r.title);
+    const points = Array.isArray(r.points) ? r.points.map(clean).filter(Boolean) : [];
+    if (!title && !points.length) return;
+    out[target.id] = { title, points, countMatches: points.length === target.n };
+  });
+  return out;
+}
+
+/** Asks the portal's AI function for the line-item wording (a button click calls this). */
+export async function requestTenderItemsWording(items, { projectName, provider, fetchImpl, base } = {}) {
+  const rows = (items || []).map((l) => ({ id: String(l.id), title: clean(l.title), points: (l.points || []).map(clean).filter(Boolean) })).filter((l) => l.title || l.points.length);
+  if (!rows.length) throw new Error("No line items to reword.");
+  const f = fetchImpl || fetch;
+  const origin = base || (typeof location !== "undefined" ? location.origin : "");
+  const res = await f(`${origin}/api/ai-engine`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "tender-wording", kind: "items", provider: provider || undefined, projectName: projectName || "", items: rows }) });
+  let body = null;
+  try { body = await res.json(); } catch { body = null; }
+  if (!res.ok) throw new Error((body && body.error) || `The AI function answered ${res.status}`);
+  const map = {};
+  (Array.isArray(body && body.items) ? body.items : []).forEach((r) => { if (r && r.id != null) map[String(r.id)] = { title: clean(r.title), points: Array.isArray(r.points) ? r.points.map(clean).filter(Boolean) : [], countMatches: !!r.countMatches }; });
+  return { wording: map, provider: body && body.provider, model: body && body.model, missing: rows.filter((r) => !map[r.id]).map((r) => r.id) };
+}
+
 /** The per-browser provider choice the portal Settings keep (`gradcon-preferences.aiProvider`); null when none. */
 export function preferredProvider(storage) {
   try {

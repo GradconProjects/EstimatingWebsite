@@ -27,7 +27,7 @@
  * when it is configured, else the default. Same-origin check as ai-providers.
  */
 import { callDocuments, callText, callWebSearch, resolveProviderId, parseJsonLoose, salvageArrays, providerStatus } from "./_providers.js";
-import { tenderWordingPrompt, parseTenderWording } from "../src/lib/tenderWording.js";
+import { tenderWordingPrompt, parseTenderWording, tenderItemsPrompt, parseTenderItems } from "../src/lib/tenderWording.js";
 
 export const config = { maxDuration: 300 };
 
@@ -174,6 +174,23 @@ export async function runAiJob(body, env = process.env) {
       const result = parseJsonLoose(r.text) || { benchmarks: [], notFound: products.map((p) => p.name), raw: r.text.slice(0, 1500) };
       const rows = (Array.isArray(result.benchmarks) ? result.benchmarks : []).filter((b) => b && b.match && (Number(b.low) > 0 || Number(b.high) > 0) && b.source).map((b) => ({ name: String(b.name || b.match).slice(0, 80), match: String(b.match).toLowerCase().slice(0, 60), unit: String(b.unit || "").slice(0, 12), low: Number(b.low) || 0, high: Number(b.high) || 0, source: String(b.source).slice(0, 300), asOf: String(b.asOf || "").slice(0, 10), note: String(b.note || "").slice(0, 160) }));
       return { status: 200, body: { suggestions: rows, notFound: Array.isArray(result.notFound) ? result.notFound : [], citations: r.citations, provider: r.provider, model: r.model, latencyMs: r.latencyMs } };
+    } catch (e) {
+      return { status: e.status && e.status >= 400 && e.status < 600 ? e.status : 502, body: { error: e.message, detail: e.detail || null, provider: id } };
+    }
+  }
+  if (action === "tender-wording" && body.kind === "items") {
+    // the Tender Quote's line items — every level's title and its itemised
+    // dot points — rewritten as professional descriptions, reviewed before use
+    // (Grady, 13 Oct 2026: "apply the reword concept to tender quote also")
+    const lineItems = Array.isArray(body.items) ? body.items.filter((l) => l && l.id != null && (String(l.title || "").trim() || (Array.isArray(l.points) && l.points.some((p) => String(p || "").trim())))).slice(0, 40) : [];
+    if (!lineItems.length) return { status: 400, body: { error: "tender-wording (items) needs items: [{id, title, points}]" } };
+    const id = resolveProviderId(provider, env);
+    if (!id) return { status: 503, body: { error: "No AI provider is configured — set ANTHROPIC_API_KEY or OPENAI_API_KEY in the Vercel project's Environment Variables." } };
+    try {
+      const r = await callText(id, { system: "You are a senior estimator at Gradcon Concrete Constructions, Melbourne, writing the Project Details of a concrete subcontract tender quote to a builder. Formal, plain, precise Australian construction English. Reply with ONE JSON object and nothing else — no markdown fences, no prose before or after.", prompt: tenderItemsPrompt({ projectName, items: lineItems }), maxTokens: 4000, timeoutMs: 110000, env });
+      const map = parseTenderItems(r.text, lineItems);
+      const out = lineItems.map((l) => ({ id: String(l.id), ...(map[String(l.id)] || {}) })).filter((l) => l.title || (l.points && l.points.length));
+      return { status: 200, body: { items: out, provider: r.provider, model: r.model, latencyMs: r.latencyMs } };
     } catch (e) {
       return { status: e.status && e.status >= 400 && e.status < 600 ? e.status : 502, body: { error: e.message, detail: e.detail || null, provider: id } };
     }

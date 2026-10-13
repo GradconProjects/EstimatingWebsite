@@ -132,9 +132,13 @@ export const TENDER_DEFAULT_OPTIONS = [
 /** Tender line items are BUILDING LEVELS, not elements: elements are grouped
  * by the level named at the start of their label ("Basement - …",
  * "Ground Floor Raft", "First floor columns …"), each level priced as the
- * SUM of its elements' shares of the real sell price, with one summary dot
- * point per element (up to 4 — extras roll into the fourth) drawn from its
- * published estimating quantities. Elements without a level prefix group by
+ * SUM of its elements' shares of the real sell price, with one dot point per
+ * element — EVERY element, itemised (Grady, 13 Oct 2026: "i dont want this
+ * statement, i want a very professional itemization of them rather than an
+ * approximate given" — until then a level with more than four elements rolled
+ * the rest into "plus N further items — approx. X m³ concrete combined") —
+ * drawn from its published estimating quantities in the Project Geometry
+ * order: count, run, area, concrete. Elements without a level prefix group by
  * their broad category instead. Every field is editable afterwards. */
 const LEVEL_PREFIX = /^(lower ground floor|lower ground|basement|ground floor|ground|first floor|second floor|third floor|fourth floor|fifth floor|first|second|third|fourth|fifth|level\s*\d+|l\d+\b|mezzanine|podium|rooftop|roof)/i;
 const titleCase = (s) => s.replace(/\w\S*/g, (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
@@ -163,11 +167,13 @@ export function seedTenderItems(quote, items, rates) {
     // finishM2 stays the fallback for an element nobody has measured yet
     // (and stays untouched as the finishing crew-day driver in costing.js).
     const areaM2 = Number(item.measureM2) > 0 ? Number(item.measureM2) : lq.finishM2;
+    if (Number(item.measureNo) > 0) figs.push(`${fmt(Number(item.measureNo), 0)} no.`);
+    if (Number(item.measureLm) > 0) figs.push(`approx. ${fmt(Number(item.measureLm))} lm`);
     if (areaM2 > 0) figs.push(`approx. ${fmt(areaM2)} m²`);
     if (cost.concreteQty > 0) figs.push(`approx. ${fmt(cost.concreteQty)} m³ concrete`);
     if (!figs.length && lq.formworkM2 > 0) figs.push(`approx. ${fmt(lq.formworkM2)} m² formwork`);
     if (!figs.length && lq.reinfTonnes > 0.005) figs.push(`approx. ${fmt(lq.reinfTonnes)} t reinforcement`);
-    return { text: figs.length ? `${name} — ${figs.slice(0, 2).join(" / ")}` : name, concreteM3: cost.concreteQty || 0, sell: sellById[item.id] || 0 };
+    return { text: figs.length ? `${name} — ${figs.slice(0, 3).join(" / ")}` : name, concreteM3: cost.concreteQty || 0, sell: sellById[item.id] || 0 };
   };
 
   // group elements by building level (label prefix), else broad category
@@ -183,19 +189,15 @@ export function seedTenderItems(quote, items, rates) {
 
   return groups.map((g) => {
     const sell = g.members.reduce((s, mm) => s + mm.sell, 0);
-    let points = g.members.map((mm) => mm.text);
-    if (points.length > 4) {
-      const extra = g.members.slice(3);
-      const extraM3 = extra.reduce((s, mm) => s + mm.concreteM3, 0);
-      points = points.slice(0, 3).concat(`plus ${extra.length} further items${extraM3 > 0 ? ` — approx. ${fmt(extraM3)} m³ concrete combined` : ""}`);
-    }
+    // one point per element, every element — never a "plus N further items" roll-up
+    const points = g.members.map((mm) => mm.text);
     while (points.length < 4) points.push("");
     return {
       id: uid(),
       elementId: null,
       title: g.title,
       price: sell > 0 ? `$${sell.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} + GST` : "",
-      points: points.slice(0, 4),
+      points,
     };
   });
 }
@@ -232,6 +234,26 @@ export function refreshTenderPrices(quote, items, rates, at) {
   const kept = (tq.items || []).map((it) => { const f = fresh.find((x) => key(x.title) === key(it.title)); return f && f.price ? { ...it, price: f.price } : it; });
   const added = fresh.filter((f) => f.price && !kept.some((it) => key(it.title) === key(f.title)));
   return { ...tq, items: kept.concat(added), pricesAt: at || new Date().toISOString() };
+}
+
+/** A dot point an earlier seed wrote in place of the elements it did not list. */
+export const ROLLUP_POINT = /^plus \d+ further items?\b/i;
+/** The stored line items still carrying that roll-up (Grady, 13 Oct 2026: "the plus 3 other further items i dont want that going forward"). */
+export function rolledUpItems(tq) {
+  return (tq && Array.isArray(tq.items) ? tq.items : []).filter((it) => (it.points || []).some((p) => ROLLUP_POINT.test(String(p || "").trim())));
+}
+/** Replaces ONLY the rolled-up items' dot points with the fresh seed's itemised points for the same title; titles, prices and every other item are kept. */
+export function itemiseRolledUp(quote, items, rates) {
+  const tq = quote.tenderQuote || newTenderQuote();
+  const fresh = seedTenderItems(quote, items, rates);
+  const key = (t) => String(t || "").trim().toLowerCase();
+  const next = (tq.items || []).map((it) => {
+    if (!(it.points || []).some((p) => ROLLUP_POINT.test(String(p || "").trim()))) return it;
+    const f = fresh.find((x) => key(x.title) === key(it.title));
+    if (!f) return { ...it, points: (it.points || []).filter((p) => !ROLLUP_POINT.test(String(p || "").trim())) };
+    return { ...it, points: f.points.slice() };
+  });
+  return { ...tq, items: next };
 }
 
 /** What a tender is seeded with for THIS project beyond its line items: the

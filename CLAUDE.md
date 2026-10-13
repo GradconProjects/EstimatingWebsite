@@ -430,7 +430,28 @@ and verify-covered. Rules:
    a trailing "?" dropped) and the on-cost presets Grady uses (0 / 0,
    0 / 10, 8 / 5 — no rule was derivable, so they are one-click, never
    automatic).
-6. **Tender Quote prices are a snapshot** (`seedTenderItems` on first open;
+6. **Tender Quote line items itemise EVERY element** (13 Oct 2026, Grady: "i
+   dont want this statement, i want a very professional itemization of them
+   rather than an approximate given"): `seedTenderItems` gives a level one dot
+   point per element — count, run, area, concrete in the Project Geometry
+   order — with no cap and never a "plus N further items — approx. X m³
+   combined" roll-up; the editor shows every point plus one spare box
+   (`patchPoint` appends) and the print lists them all. **The reword step
+   applies here too** (Grady, same day: "apply the reword concept to tender
+   quote also"): "✎ Reword for tender" above the line items asks the AI
+   provider (`api/ai-engine.js` action `tender-wording`, `kind: "items"` →
+   `tenderItemsPrompt` / `parseTenderItems` / `requestTenderItemsWording` in
+   `lib/tenderWording.js` — same ids, the SAME number of points, every figure
+   kept, no prices) and shows every title and point beside its struck-through
+   original, editable, one tick per line, with a warning when a proposal's
+   point count differs from the typed one; only "Use ticked wording" writes
+   titles and points — prices are never touched, and "Reseed" still rebuilds
+   from the quote. A tender seeded before this still holds the
+   roll-up line: `rolledUpItems` finds it and the red check strip's
+   "Itemise" (`itemiseRolledUp`) replaces only those lines' points from a
+   fresh seed, titles and prices kept. `test-tender-items.mjs` proves the
+   itemisation, the repair and the review.
+   **Tender Quote prices are a snapshot** (`seedTenderItems` on first open;
    `pricesAt` stamped). `tenderPriceDrift` compares each stored line's price
    with a fresh seed by title; the red check strip at the top of the Tender
    Quote lists the drift and `refreshTenderPrices` moves ONLY the prices

@@ -1,10 +1,11 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { uid, getGstRate } from "../lib/costing.js";
 import { GRADCON_LOGO_FULL_DATA_URI } from "../lib/logo.js";
-import { newTenderQuote, seedTenderItems, computeTenderProjectSum, tenderPriceDrift, refreshTenderPrices, tenderPrefill } from "../lib/tenderQuoteDefaults.js";
+import { newTenderQuote, seedTenderItems, computeTenderProjectSum, tenderPriceDrift, refreshTenderPrices, tenderPrefill, rolledUpItems, itemiseRolledUp } from "../lib/tenderQuoteDefaults.js";
 import { handoverIssues } from "../lib/handover.js";
 import { tenderNoteLines } from "../lib/tenderNotes.js";
 import TenderNotesCell from "./TenderNotesCell.jsx";
+import { requestTenderItemsWording, preferredProvider } from "../lib/tenderWording.js";
 
 const fmtMoney = (n) => `$${(n || 0).toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -44,8 +45,31 @@ export default function TenderQuoteReport({ quote, items, rates, visible, onClos
   const lineItems = tq.items || [];
   const setLineItems = (next) => set("items", next);
   const patchLine = (id, patch) => setLineItems(lineItems.map((l) => (l.id === id ? { ...l, ...patch } : l)));
+  // a point beyond the stored list appends (the editor always shows one spare box, so a level can carry any number of elements)
   const patchPoint = (id, i, v) =>
-    setLineItems(lineItems.map((l) => (l.id === id ? { ...l, points: l.points.map((p, j) => (j === i ? v : p)) } : l)));
+    setLineItems(lineItems.map((l) => { if (l.id !== id) return l; const pts = (l.points || []).slice(); while (pts.length <= i) pts.push(""); pts[i] = v; return { ...l, points: pts }; }));
+  // "Reword for tender" on the line items (Grady, 13 Oct 2026: "apply the reword
+  // concept to tender quote also"): every title and dot point proposed by the AI
+  // provider, reviewed per line, applied only on "Use ticked wording"; prices untouched.
+  const [itemReview, setItemReview] = useState(null); // {rows:[{id, title, points, newTitle, newPoints, use, countMatches}], model, missing}
+  const [itemBusy, setItemBusy] = useState(false);
+  const [itemErr, setItemErr] = useState(null);
+  const rewordItems = async () => {
+    setItemBusy(true); setItemErr(null);
+    try {
+      const r = await requestTenderItemsWording(lineItems, { projectName: quote.projectName, provider: preferredProvider() });
+      setItemReview({
+        rows: lineItems.map((l) => { const w = r.wording[String(l.id)]; const pts = (l.points || []).map((p) => String(p || "").trim()).filter(Boolean); return { id: l.id, title: l.title || "", points: pts, newTitle: w && w.title ? w.title : l.title || "", newPoints: w ? w.points : [], use: !!w, countMatches: w ? w.points.length === pts.length : false }; }),
+        model: r.model, missing: r.missing,
+      });
+    } catch (e) { setItemErr(String((e && e.message) || e)); } finally { setItemBusy(false); }
+  };
+  const applyItemReview = () => {
+    const by = {}; itemReview.rows.forEach((r) => { if (r.use) by[r.id] = r; });
+    setLineItems(lineItems.map((l) => { const r = by[l.id]; if (!r) return l; const pts = r.newPoints.map((p) => String(p || "").trim()).filter(Boolean); while (pts.length < 4) pts.push(""); return { ...l, title: r.newTitle.trim() || l.title, points: pts }; }));
+    setItemReview(null);
+  };
+  const setItemRow = (id, patch) => setItemReview((rv) => ({ ...rv, rows: rv.rows.map((r) => (r.id === id ? { ...r, ...patch } : r)) }));
 
   const opts = tq.additionalOptions || [];
   const setOpts = (next) => set("additionalOptions", next);
@@ -54,6 +78,7 @@ export default function TenderQuoteReport({ quote, items, rates, visible, onClos
   // $0), and category prices seeded earlier that no longer match the quote.
   const unpriced = visible ? handoverIssues(items).unpricedQuoteRows : [];
   const drift = visible && tq.items ? tenderPriceDrift({ ...quote, tenderQuote: tq }, items, rates) : { changed: [], missing: [] };
+  const rolled = visible && tq.items ? rolledUpItems(tq) : [];
 
   return (
     <>
@@ -65,8 +90,16 @@ export default function TenderQuoteReport({ quote, items, rates, visible, onClos
       {visible && (
         <div className="print:hidden fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
           <div className="bg-white rounded-xl max-w-5xl w-full max-h-[92vh] flex flex-col shadow-2xl">
-            {(unpriced.length > 0 || drift.changed.length > 0 || drift.missing.length > 0) && (
+            {(unpriced.length > 0 || drift.changed.length > 0 || drift.missing.length > 0 || rolled.length > 0) && (
               <div className="px-5 py-2 border-b border-red-200 bg-red-50 text-[12px] text-red-900 space-y-1 rounded-t-xl" role="alert" data-testid="tender-checks">
+                {rolled.length > 0 && (
+                  <div className="flex items-start justify-between gap-3" data-testid="tender-rollup">
+                    <div><b>{rolled.length} line item{rolled.length === 1 ? "" : "s"} still carr{rolled.length === 1 ? "ies" : "y"} a &quot;plus N further items&quot; roll-up</b> from an earlier seed: {rolled.map((r) => r.title).join("; ")}. Every element is itemised now — replace those dot points with one per element (titles and prices kept).</div>
+                    <button type="button" onClick={() => onChange(itemiseRolledUp({ ...quote, tenderQuote: tq }, items, rates))} data-testid="tender-itemise" className="flex-none px-2.5 py-1 rounded-lg bg-red-700 hover:bg-red-800 text-white text-[11px] font-semibold" title="Replace only the rolled-up lines' dot points with one point per element from a fresh seed; titles, prices and your other edits are kept">
+                      Itemise
+                    </button>
+                  </div>
+                )}
                 {unpriced.length > 0 && (
                   <div data-testid="tender-unpriced"><b>{unpriced.length} subcontract quote row{unpriced.length === 1 ? "" : "s"} price at $0</b> — a quantity but no amount: {unpriced.map((r) => `${r.label} — ${r.product} (${r.qty})`).join("; ")}. Type the received quote on the element before this goes out.</div>
                 )}
@@ -126,8 +159,18 @@ export default function TenderQuoteReport({ quote, items, rates, visible, onClos
 
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Project Details — line items (title · price · up to 4 dot points)</span>
+                  <span className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Project Details — line items (title · price · one dot point per element)</span>
                   <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={rewordItems}
+                      disabled={itemBusy || !!itemReview || lineItems.length === 0}
+                      data-testid="reword-items"
+                      className="text-[11px] font-semibold px-2 py-0.5 rounded bg-blue-950 text-white hover:bg-blue-900 disabled:opacity-50"
+                      title="Rewrite every title and dot point as a professional tender description — you review each line before any of it is used; prices are never touched"
+                    >
+                      {itemBusy ? "Rewording…" : "✎ Reword for tender"}
+                    </button>
                     <button
                       onClick={() => setLineItems(seedTenderItems(quote, items, rates))}
                       className="text-[11px] font-semibold text-amber-800 border border-amber-400 rounded px-2 py-0.5 hover:bg-amber-50"
@@ -143,6 +186,39 @@ export default function TenderQuoteReport({ quote, items, rates, visible, onClos
                     </button>
                   </div>
                 </div>
+                {itemErr && <div className="text-[11px] text-red-700 mb-1" data-testid="reword-items-error">Could not reword: {itemErr}</div>}
+                {itemReview && (
+                  <div className="border border-blue-200 bg-blue-50/40 rounded-lg p-2 mb-2 space-y-2" data-testid="items-wording-review">
+                    <div className="text-[11px] text-neutral-700">
+                      Proposed wording for each line item — the typed version is shown struck through above each proposal. Edit anything, untick a line to keep it as typed. Nothing changes until you click <b>Use ticked wording</b>; prices are never touched.
+                      {itemReview.missing.length > 0 && <span className="text-amber-700"> {itemReview.missing.length} line{itemReview.missing.length === 1 ? "" : "s"} came back without a proposal and stay as typed.</span>}
+                    </div>
+                    {itemReview.rows.map((r) => (
+                      <div key={r.id} className="bg-white border border-neutral-200 rounded p-2" data-testid="items-wording-row">
+                        <div className="flex items-start gap-2">
+                          <input type="checkbox" checked={r.use} onChange={(e) => setItemRow(r.id, { use: e.target.checked })} className="mt-1.5 flex-none" aria-label="Use this line's wording" disabled={!r.newTitle.trim() && !r.newPoints.length} />
+                          <div className="flex-1 min-w-0 space-y-1">
+                            <div className="text-[11px] text-neutral-500 line-through decoration-neutral-300">{r.title}</div>
+                            <input value={r.newTitle} onChange={(e) => setItemRow(r.id, { newTitle: e.target.value })} className={`${inputCls} font-semibold`} placeholder="Title" />
+                            {!r.countMatches && r.newPoints.length > 0 && <div className="text-[11px] text-amber-700">The proposal has {r.newPoints.length} dot point{r.newPoints.length === 1 ? "" : "s"} for {r.points.length} typed — check nothing was merged or dropped.</div>}
+                            {r.newPoints.map((p, i) => (
+                              <div key={i}>
+                                {r.points[i] && <div className="text-[11px] text-neutral-500 line-through decoration-neutral-300">{r.points[i]}</div>}
+                                <textarea value={p} onChange={(e) => setItemRow(r.id, { newPoints: r.newPoints.map((x, j) => (j === i ? e.target.value : x)) })} rows={1} className={`${inputCls} text-[12px]`} />
+                              </div>
+                            ))}
+                            {r.points.slice(r.newPoints.length).map((p, i) => <div key={"k" + i} className="text-[11px] text-neutral-500">{p} <span className="text-amber-700">(no proposal — kept as typed only if you untick this line)</span></div>)}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button type="button" onClick={applyItemReview} data-testid="apply-items-wording" className="text-[11px] font-semibold px-2.5 py-1 rounded bg-orange-600 text-white hover:bg-orange-700">Use ticked wording ({itemReview.rows.filter((r) => r.use).length})</button>
+                      <button type="button" onClick={() => setItemReview(null)} className="text-[11px] font-semibold px-2.5 py-1 rounded border border-neutral-300 text-neutral-700 hover:bg-neutral-100">Cancel</button>
+                      <span className="text-[10px] text-neutral-400">{itemReview.model ? `proposed by ${itemReview.model}` : ""}</span>
+                    </div>
+                  </div>
+                )}
                 <div className="space-y-2">
                   {lineItems.map((l, idx) => (
                     <div key={l.id} className="border border-neutral-200 rounded-lg p-2">
@@ -153,7 +229,7 @@ export default function TenderQuoteReport({ quote, items, rates, visible, onClos
                         <button onClick={() => setLineItems(lineItems.filter((x) => x.id !== l.id))} className="text-neutral-300 hover:text-red-500 text-sm flex-none">✕</button>
                       </div>
                       <div className="grid grid-cols-2 gap-1.5 mt-1.5 pl-7">
-                        {(l.points || ["", "", "", ""]).slice(0, 4).map((p, i) => (
+                        {(() => { const pts = (l.points || []).slice(); while (pts.length < 4) pts.push(""); if (pts[pts.length - 1].trim()) pts.push(""); return pts; })().map((p, i) => (
                           <input key={i} value={p} onChange={(e) => patchPoint(l.id, i, e.target.value)} className={`${inputCls} text-[12px]`} placeholder={`• dot point ${i + 1}`} />
                         ))}
                       </div>
