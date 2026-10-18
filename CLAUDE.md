@@ -1419,7 +1419,16 @@ element families waits on the owner's approval of the pad footing.
   `addlRowCount(r)` = that × the typed count (blank = one run), else the
   count — `addlRowQty`, `addlRowEach` and the compute formula all read it, so
   "N12 starters @400 over 12 m, 900 each" is 31 × 0.9 m without counting by
-  hand. `test-slab-starters.mjs` proves all three.
+  hand. **A TYPED numeric box that rebuilds the card (`inpNumR`, or any
+  `data-num` input with `data-rerender`) rebuilds on blur / Enter, never per
+  keystroke** (same day, Grady: "entering run cell is too tight and doesnt
+  allow me see what has been entered and also doesnt allow decimals"): the
+  card's `input` handler stores and costs the value at once and marks the box
+  `rerenderPending`; the `change` handler runs `rerenderCardKeepTab`. A
+  per-keystroke rebuild threw the focus away and normalised "5." to "5".
+  Selects and checkboxes still rebuild on the event. The Additional
+  Connections set-out shows "= N bars" live through `refreshExtraConnCount`.
+  `test-slab-starters.mjs` proves all three, the typed decimal and the fit.
 - **Retaining walls** also carry a plan shape (`planShape`: straight, curved —
   `planRadius` × `planAngle` gives the developed length, or irregular —
   the developed length is typed), a battered stem (`stemBatter`: mean of
