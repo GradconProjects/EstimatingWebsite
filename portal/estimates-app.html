@@ -1970,6 +1970,41 @@ function trenchReoMassPerM(type, widthMm){
   if(MESHTYPES[type]!==undefined) return MESHTYPES[type]*(num(widthMm,300)/1000);
   return 21.8/6;
 }
+/* A pad footing can be reinforced with TRENCH MESH STRIPS laid side by side to
+ * FILL its plan area (Grady, 18 Oct 2026: "pad footings should also have
+ * option of trench mesh to fill the area specified"): strips of the product's
+ * width run the pad's clear length, as many across the clear width as it
+ * takes (whole strips, rounded up), optionally each way, in N layers. An
+ * L-series mesh is (bars − 1) × 100 mm wide (bars at 100 mm centres: 3 bar =
+ * 200, 4 bar = 300 … 8 bar = 700); a square-mesh strip is as wide as typed
+ * (300 mm when blank). Straight stock bars do not fill an area, so the
+ * selector offers the two strip products only. */
+function trenchFillSel(field,val,rerender){
+  let tm=TRENCH_MESH_TYPES.map(t=>`<option value="${t[0]}" ${String(val)===t[0]?'selected':''}>${t[0]} (${trenchStripWidthMm(t[0])} mm wide)</option>`).join('');
+  let sq=Object.keys(MESHTYPES).map(m=>`<option value="${m}" ${String(val)===m?'selected':''}>${m} (mesh strip)</option>`).join('');
+  return `<select data-field="${field}" ${rerender?'data-rerender="true"':''}><optgroup label="Trench mesh (L-series)">${tm}</optgroup><optgroup label="Square mesh cut as strips">${sq}</optgroup></select>`;
+}
+function trenchStripWidthMm(type,typed){
+  if(num(typed,0)>0) return num(typed);
+  const m=/^(\d+) Bar-L/.exec(String(type||""));
+  if(m) return Math.max(100,(+m[1]-1)*100);
+  return 300;
+}
+/** Metres of strip to fill a clear rectangle (or circle) with strips `swMm` wide along the length, optionally each way. */
+function trenchFillRun(opts){
+  const sw=Math.max(0.05,opts.swMm/1000);
+  if(opts.round){ const area=Math.PI*opts.clearDiaM*opts.clearDiaM/4; const one=area/sw; return {runM:one*(opts.eachWay?2:1), strips:Math.ceil(opts.clearDiaM/sw), stripLen:null, text:`π(Ø−2c)²/4 ÷ ${opts.swMm} mm strip${opts.eachWay?' × 2 (each way)':''}`}; }
+  const strips=Math.max(0,Math.ceil(opts.clearWm/sw)); const runM=strips*opts.clearLm;
+  if(!opts.eachWay) return {runM, strips, stripLen:opts.clearLm, text:`${strips} strips × ${fmt(opts.clearLm,2)} m`};
+  const strips2=Math.max(0,Math.ceil(opts.clearLm/sw));
+  return {runM:runM+strips2*opts.clearWm, strips:strips+strips2, stripLen:opts.clearLm, text:`${strips} strips × ${fmt(opts.clearLm,2)} m + ${strips2} strips × ${fmt(opts.clearWm,2)} m (each way)`};
+}
+function trenchFillUI(d,p){
+  const type=d[p+"TrenchType"]||"3 Bar-L8TM";
+  return `<div class="grid cols4">${F("Trench product",trenchFillSel(p+"TrenchType",type,true))}${F(`Strip width (mm) — blank = ${trenchStripWidthMm(type)}`,inpNum(p+"TrenchWidth",d[p+"TrenchWidth"]))}${F("Layers",inpNumR(p+"TrenchLayers",d[p+"TrenchLayers"]===undefined?1:d[p+"TrenchLayers"]))}<div>${chk(p+"TrenchEachWay",d[p+"TrenchEachWay"],"Lay each way (both axes)")}${chk(p+"TrenchLap",d[p+"TrenchLap"],"Include lap allowance (%)",p+"TrenchLap")}</div></div>
+  ${layerTypeSelects(d,p+"TrenchLayers",p+"TrenchType",p+"TrenchLayerTypes",trenchFillSel,"trench product")}
+  <p class="small">Strips run the pad's clear length (L − 2 × cover) and are laid side by side across the clear width — as many whole strips as the width needs (rounded up); "each way" adds a second set across. The register prices lineal metres of the product (trench mesh is bought in 6 m lengths); a round pad takes strips over π(Ø − 2c)²/4.</p>`;
+}
 const ANCHOR_OPTS = [["straight","Straight development"],["hook90","90° hook (section depth − cover)"],["hook135","135° hook (section depth − cover)"],["hook180","180° hook (section depth − cover)"],["coupler","Mechanical coupler"],["starter","Cast-in starter"],["chemical","Chemical anchor"],["custom","Custom length (mm)"]];
 function anchorLen(type,d,custom){
   d=d||12;
@@ -4208,23 +4243,25 @@ function renderPadFooting(inst){
   <div class="grid cols2">${chk("pedestal",d.pedestal,"Pedestal above footing","pedestal")}${chk("sloping",d.sloping,"Sloping faces")}</div>
   <div class="subsec ${d.pedestal?'':'hidden'}" data-show-if="pedestal"><div class="grid cols3">${F("Pedestal W (mm)",inpNum("pedW",d.pedW))}${F("Pedestal D (mm)",inpNum("pedD",d.pedD))}${F("Pedestal H (mm)",inpNum("pedH",d.pedH))}</div></div>`;
   let reo=`<div class="sechead">Bottom Mat</div>
-  <div class="grid cols3">${F("Reinforcement type",selOpts("botReoType",d.botReoType,[["bars","Bars (X+Y)"],["mesh","Mesh sheet"]]))}</div>
+  <div class="grid cols3">${F("Reinforcement type",selOpts("botReoType",d.botReoType,[["bars","Bars (X+Y)"],["mesh","Mesh sheet"],["trench","Trench mesh strips — fill the plan area"]]))}</div>
   <div class="subsec ${d.botReoType=='bars'?'':'hidden'}" data-show-if="botReoType_bars"><div class="grid cols4">
    ${chk("botX",d.botX,"Bottom X bars")}${F("Dia",barSizeSel("botXDia",d.botXDia))}${F("Spacing",inpNum("botXSpacing",d.botXSpacing))}${chk("botXLap",d.botXLap,"Include lap allowance (%)","botXLap")}
    ${chk("botY",d.botY,"Bottom Y bars")}${F("Dia",barSizeSel("botYDia",d.botYDia))}${F("Spacing",inpNum("botYSpacing",d.botYSpacing))}${chk("botYLap",d.botYLap,"Include lap allowance (%)","botYLap")}
   </div></div>
   <div class="subsec ${d.botReoType=='mesh'?'':'hidden'}" data-show-if="botReoType_mesh"><div class="grid cols3">${F("Mesh type",selOpts("botMeshType",d.botMeshType,Object.keys(MESHTYPES).map(m=>[m,m]),true))}${F("Layers",inpNumR("botMeshLayers",d.botMeshLayers))}${chk("botMeshLap",d.botMeshLap,"Include lap allowance (%)","botMeshLap")}</div>
   ${layerTypeSelects(d,"botMeshLayers","botMeshType","botMeshLayerTypes",(f,v)=>selOpts(f,v,Object.keys(MESHTYPES).map(m=>[m,m])),"mesh type")}</div>
+  <div class="subsec ${d.botReoType=='trench'?'':'hidden'}" data-show-if="botReoType_trench">${trenchFillUI(d,"bot")}</div>
   <div class="sechead">Top Mat</div>
   ${chk("topMatOn",d.topMatOn,"Top mat — reinforced top and bottom, both ways","topMatOn")}
   <div class="subsec ${d.topMatOn?'':'hidden'}" data-show-if="topMatOn">
-  <div class="grid cols3">${F("Reinforcement type",selOpts("topReoType",d.topReoType||"bars",[["bars","Bars (X+Y)"],["mesh","Mesh sheet"]]))}</div>
+  <div class="grid cols3">${F("Reinforcement type",selOpts("topReoType",d.topReoType||"bars",[["bars","Bars (X+Y)"],["mesh","Mesh sheet"],["trench","Trench mesh strips — fill the plan area"]]))}</div>
   <div class="subsec ${(d.topReoType||"bars")=='bars'?'':'hidden'}" data-show-if="topReoType_bars"><div class="grid cols4">
    ${chk("topX",d.topX,"Top X bars")}${F("Dia",barSizeSel("topXDia",d.topXDia))}${F("Spacing",inpNum("topXSpacing",d.topXSpacing))}${chk("topXLap",d.topXLap,"Include lap allowance (%)","topXLap")}
    ${chk("topY",d.topY,"Top Y bars")}${F("Dia",barSizeSel("topYDia",d.topYDia))}${F("Spacing",inpNum("topYSpacing",d.topYSpacing))}${chk("topYLap",d.topYLap,"Include lap allowance (%)","topYLap")}
   </div></div>
   <div class="subsec ${d.topReoType=='mesh'?'':'hidden'}" data-show-if="topReoType_mesh"><div class="grid cols3">${F("Mesh type",selOpts("topMeshType",d.topMeshType||"SL82",Object.keys(MESHTYPES).map(m=>[m,m]),true))}${F("Layers",inpNumR("topMeshLayers",d.topMeshLayers===undefined?1:d.topMeshLayers))}${chk("topMeshLap",d.topMeshLap,"Include lap allowance (%)","topMeshLap")}</div>
   ${layerTypeSelects(d,"topMeshLayers","topMeshType","topMeshLayerTypes",(f,v)=>selOpts(f,v,Object.keys(MESHTYPES).map(m=>[m,m])),"mesh type")}</div>
+  <div class="subsec ${d.topReoType=='trench'?'':'hidden'}" data-show-if="topReoType_trench">${trenchFillUI(d,"top")}</div>
   </div>
   <div class="sechead">Ligatures / Starter-cage Ties</div>
   ${chk("ligs",d.ligs,"Ligatures around the column starter cage / pedestal","ligs")}
@@ -4286,7 +4323,22 @@ function computePadFooting(inst,def){
     let lapPct = lapFlag? PROJECT.lapPct : 0;
     lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:diaName,spec:label+" (circular mat)",qty:totLen,unit:"m",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,lapPct),formula:`π(Ø-2c)²/4 ÷ spacing ×${N}`,notes:`${fmt(wt,1)} kg`}));
   }
-  if(d.botReoType==="mesh"){
+  // trench mesh strips laid to FILL the plan area (trenchFillSel / trenchFillRun)
+  function trenchFill(p,label){
+    const lapPct=d[p+"TrenchLap"]?MESH_LAP_PCT:0; const eachWay=!!d[p+"TrenchEachWay"];
+    const clearL=Math.max(0,L-2*cover/1000), clearW=Math.max(0,W-2*cover/1000), clearDia=Math.max(0,diaM-2*cover/1000);
+    layerTypeCounts(d,p+"TrenchLayers",p+"TrenchType",p+"TrenchLayerTypes").forEach((n,type)=>{
+      const swMm=trenchStripWidthMm(type,d[p+"TrenchWidth"]);
+      const fill=trenchFillRun({round,clearLm:clearL,clearWm:clearW,clearDiaM:clearDia,swMm,eachWay});
+      const mpm=trenchReoMassPerM(type,swMm); const totLen=N*n*fill.runM; const wt=totLen*mpm;
+      const layerNote=n>1?` × ${n} layers`:"";
+      lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:type,spec:`${label} — trench mesh strips to fill the plan area (${swMm} mm wide${eachWay?', each way':''})${layerNote}`,qty:totLen,unit:"lm",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,lapPct),massPerUnit:mpm,formula:`${N} × ${n} layer(s) × (${fill.text})`,notes:`${fmt(wt,1)} kg`}));
+    });
+    if((round?clearDia:Math.min(clearL,clearW))<=0) warnings.push({text:`${label}: the pad has no clear plan area for trench mesh strips — check the dimensions and cover`,section:"reo",level:"completeness"});
+  }
+  if(d.botReoType==="trench"){
+    trenchFill("bot","Bottom mat");
+  } else if(d.botReoType==="mesh"){
     // one line per DISTINCT layer material — layers can be different products
     let meshLapPct=d.botMeshLap?MESH_LAP_PCT:0;
     layerTypeCounts(d,"botMeshLayers","botMeshType","botMeshLayerTypes").forEach((n,type)=>{
@@ -4303,7 +4355,9 @@ function computePadFooting(inst,def){
     mat(d.botY,d.botYDia,d.botYSpacing,d.length,d.width,"Bottom Y bars",d.botYLap);
   }
   if(d.topMatOn){
-    if((d.topReoType||"bars")==="mesh"){
+    if(d.topReoType==="trench"){
+      trenchFill("top","Top mat");
+    } else if((d.topReoType||"bars")==="mesh"){
       let topMeshLapPct=d.topMeshLap?MESH_LAP_PCT:0;
       layerTypeCounts(d,"topMeshLayers","topMeshType","topMeshLayerTypes").forEach((n,type)=>{
         let area=N*planArea*n;
@@ -7298,7 +7352,7 @@ function padComponents(inst){
   add({id:"membrane",label:"Vapour / waterproofing membrane",purpose:"thin layer over the base, with laps",kind:d.vapourMembrane?"included":"suggested",role:"membrane",fields:["vapourMembrane"],tab:"blind",include:{field:"vapourMembrane",on:true,off:false},match:l=>l.materialGroup==="Vapour Barrier",unit:"m²"});
   add({id:"insulation",label:"Insulation",purpose:"boards under the pad where scoped",kind:d.insulationOn?"included":"suggested",role:"insulation",fields:["insulationOn"],tab:"blind",include:{field:"insulationOn",on:true,off:false},match:l=>l.materialGroup==="Insulation",unit:"m²"});
   add({id:"pad",label:"Pad concrete",purpose:`${round?`Ø${DIA}`:`${L}×${W}`} × ${D} deep · N${d.grade||PROJECT.grade} · ×${N}`,kind:"core",role:"concrete",fields:["qty","shape","length","width","diameter","depth","grade"],tab:"geom",match:l=>l.materialGroup==="Concrete"&&!/blind/i.test(l.spec),unit:"m³"});
-  add({id:"reo-bottom",label:"Bottom reinforcement",purpose:d.botReoType==="mesh"?`mesh ${d.botMeshType||"SL82"}`:`${d.botXDia||"N16"}@${num(d.botXSpacing,200)} / ${d.botYDia||"N16"}@${num(d.botYSpacing,200)}, cover ${cov}`,kind:(d.botX||d.botY||d.botReoType==="mesh")?"core":"suggested",role:"reoBottom",fields:["botReoType","botXDia","botXSpacing","botYDia","botYSpacing","cover"],tab:"reo",match:l=>l.materialGroup==="Reinforcement"&&/bottom/i.test(l.spec),unit:"m"});
+  add({id:"reo-bottom",label:"Bottom reinforcement",purpose:d.botReoType==="trench"?`trench mesh strips ${d.botTrenchType||"3 Bar-L8TM"} filling the plan area${d.botTrenchEachWay?", each way":""}`:d.botReoType==="mesh"?`mesh ${d.botMeshType||"SL82"}`:`${d.botXDia||"N16"}@${num(d.botXSpacing,200)} / ${d.botYDia||"N16"}@${num(d.botYSpacing,200)}, cover ${cov}`,kind:(d.botX||d.botY||d.botReoType==="mesh"||d.botReoType==="trench")?"core":"suggested",role:"reoBottom",fields:["botReoType","botXDia","botXSpacing","botYDia","botYSpacing","botTrenchType","botTrenchWidth","cover"],tab:"reo",match:l=>l.materialGroup==="Reinforcement"&&/bottom/i.test(l.spec),unit:"m"});
   add({id:"reo-top",label:"Top reinforcement",purpose:"independent top mat — only where detailed",kind:d.topMatOn?"included":"suggested",role:"reoTop",fields:["topMatOn","topXDia","topXSpacing","topYDia","topYSpacing"],tab:"reo",include:{field:"topMatOn",on:true,off:false},match:l=>l.materialGroup==="Reinforcement"&&/top/i.test(l.spec)&&!/ligature/i.test(l.spec),unit:"m"});
   add({id:"pedestal",label:"Pedestal / plinth",purpose:d.pedestal?`${num(d.pedW)}×${num(d.pedD)} × ${num(d.pedH)} high`:"grows from the pad; carries the column",kind:d.pedestal?"included":"suggested",role:"pedestal",fields:["pedestal","pedW","pedD","pedH"],tab:"geom",include:{field:"pedestal",on:true,off:false},match:l=>false,unit:"m³",note:"volume is inside the pad concrete line"});
   add({id:"starters",label:"Column starter bars",purpose:d.starters?`${num(d.connQty)}${d.connDia||"N20"} · embed ${num(d.connEmbed)} / proj ${num(d.connProj)}${d.connTarget?" → "+targetLabelOf(d.connTarget):""}`:"bars cast in, projecting into the column",kind:d.starters?"included":"suggested",role:"starter",fields:["starters","connTarget","connQty","connDia","connEmbed","connProj","connHook"],tab:"conns",include:{field:"starters",on:true,off:false},match:l=>l.materialGroup==="Connections",unit:"m"});

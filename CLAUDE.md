@@ -1368,6 +1368,24 @@ element families waits on the owner's approval of the pad footing.
   pit saved before this gains the dig on next open (no `excOn` = native =
   included) but keeps blinding off until it is entered — the card's
   Blinding tab turns it on.
+- **A pad footing can be reinforced with TRENCH MESH STRIPS that fill its plan
+  area** (18 Oct 2026, Grady: "pad footings should also have option of trench
+  mesh to fill the area specified"): the Bottom Mat and Top Mat "Reinforcement
+  type" selects carry a third choice, "Trench mesh strips — fill the plan
+  area" (`botReoType` / `topReoType` = `"trench"`, fields `<p>TrenchType`,
+  `<p>TrenchWidth`, `<p>TrenchLayers`, `<p>TrenchLayerTypes`,
+  `<p>TrenchEachWay`, `<p>TrenchLap`). `trenchFillSel` offers the L-series
+  meshes and square-mesh strips only (straight bars do not fill an area);
+  `trenchStripWidthMm(type, typed)` is the ONE strip width — a typed width,
+  else (bars − 1) × 100 mm for an L-series mesh (3 bar = 200 … 8 bar = 700),
+  else 300 mm for a mesh strip; `trenchFillRun` is the ONE arithmetic: whole
+  strips across the clear width (ceil((W − 2c) ÷ width)), each the clear
+  length (L − 2c), "each way" adding the second set, a round pad taking
+  π(Ø − 2c)²/4 ÷ width. The line is lineal metres of the product (unit `lm`,
+  `massPerUnit` from `trenchReoMassPerM`), so the Reinforcement Summary, the
+  orders schedule (6 m stock) and the Quotes bridge treat it exactly like a
+  strip footing's trench mesh; `padComponents` reads the choice. No clear
+  area is a completeness warning. `test-pad-trench.mjs` proves it.
 - **Retaining walls** also carry a plan shape (`planShape`: straight, curved —
   `planRadius` × `planAngle` gives the developed length, or irregular —
   the developed length is typed), a battered stem (`stemBatter`: mean of
