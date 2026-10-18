@@ -6830,7 +6830,7 @@ function diagPadFooting(inst){ let d=inst.data;
    ${starters?dimV(stTop-proj,stTop,ped?sx-28:sx-12,`PROJ ${N_(d.connProj,900)}`):''}
    ${BL>0?DG.mono(sx+2,sy+ed-bl-2,`BLINDING ${BL}`,5.5,DWG.dim):''}
    ${DG.cov(fx+2,fy+fd-cv2-3,cov)}
-   ${specLine(sx,sy+ed+36,`BOT ${d.botReoType==='mesh'?(d.botMeshType||'SL82'):`${d.botXDia||'N16'}@${N_(d.botXSpacing,200)} EW`}${d.topMatOn?` · TOP ${d.topXDia||'N16'}@${N_(d.topXSpacing,200)}`:''}`)}
+   ${specLine(sx,sy+ed+36,`BOT ${d.botReoType==='trench'?`${d.botTrenchType||'3 Bar-L8TM'} STRIPS${d.botTrenchEachWay?' EW':''}`:d.botReoType==='mesh'?(d.botMeshType||'SL82'):`${d.botXDia||'N16'}@${N_(d.botXSpacing,200)} EW`}${d.topMatOn?` · TOP ${d.topReoType==='trench'?`${d.topTrenchType||'3 Bar-L8TM'} STRIPS`:d.topReoType==='mesh'?(d.topMeshType||'SL82'):`${d.topXDia||'N16'}@${N_(d.topXSpacing,200)}`}`:''}`)}
    ${starters?specLine(sx,sy+ed+46,`${N_(d.connQty,4)}${d.connDia||'N20'} STARTERS`):(d.ligs?specLine(sx,sy+ed+46,`LIGS ${d.ligDia||'N10'}@${N_(d.ligSpacing,200)}`):'')}`;
   return sheetFrame(inst, d.qty>1?`${N_(d.qty,1)}× Pad Footing`:"Pad Footing", [316,ped?226:206], plan+section);
 }
