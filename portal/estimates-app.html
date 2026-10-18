@@ -114,6 +114,11 @@ table.rows input,table.rows select{padding:4px 6px;font-size:12px;}
 table.rows select{width:auto;max-width:260px;}
 table.rows input[data-num],table.rows input[type=number]{min-width:56px;}
 table.rows input[type=text]:not([data-num]){min-width:110px;}
+/* the Additional Connections table sits beside the sketch: keep it narrow enough to fit (its ✕ used to slide under the sketch box, which swallowed the clicks) */
+table.rows.extra-conn select{max-width:150px;}
+table.rows.extra-conn input[type=text]:not([data-num]){min-width:70px;width:90px;}
+table.rows.extra-conn input[data-num]{min-width:0;width:62px;}
+table.rows.extra-conn td{white-space:nowrap;}
 table.results{width:100%;border-collapse:collapse;font-size:12px;}
 table.results th{background:var(--panel2);text-align:left;padding:6px 8px;font-size:10.5px;color:var(--text);position:sticky;top:0;text-transform:uppercase;letter-spacing:.06em;}
 table.results td{padding:5px 8px;border-bottom:1px dotted rgba(33,56,47,.3);font-variant-numeric:tabular-nums;}
@@ -8140,16 +8145,25 @@ function diagStripFooting(inst){ let d=inst.data;
 function clampN(v,lo,hi,fb){ v=num(v); return (v>0)? Math.min(hi,Math.max(lo,v)) : fb; }
 
 /* ============================= INSTANCE MGMT ============================= */
-function targetSelect(field,val,selfId,filterCalc){
+/* `allowManual` (the Additional Connections table — Grady, 18 Oct 2026:
+ * "target element should allow one manually add the target element") adds a
+ * "✎ Type a name…" choice (MANUAL_TARGET) that reveals a text box, so a bar
+ * can connect to an element that is not on this takeoff (a precast panel, a
+ * steel column, another trade's work); the typed name prints on the line. */
+const MANUAL_TARGET="__manual__";
+function targetSelect(field,val,selfId,filterCalc,allowManual){
   let opts=[["","— none —"]];
   INSTANCES.filter(i=>i.id!==selfId).forEach(i=>{
     let def=LIB_INDEX[i.typeKey];
     if(filterCalc && def.calc!==filterCalc) return;
     opts.push([i.id, i.label]);
   });
-  return selOpts(field,val,opts);
+  if(allowManual) opts.push([MANUAL_TARGET,"✎ Type a name…"]);
+  return selOpts(field,val,opts,!!allowManual);
 }
 function targetLabelOf(id){ if(!id) return ""; let i=INSTANCES.find(x=>x.id===id); return i? i.label : ""; }
+/** The name an Additional Connections row points at: the linked element, or the typed name. */
+function extraConnTargetLabel(r){ return r && r.target===MANUAL_TARGET ? String(r.targetName||"").trim() : targetLabelOf(r && r.target); }
 
 /* ============================= PROVENANCE & STATUS (Phase 2) =============================
  * The data a fresh element starts with, exactly as addInstance seeds it —
@@ -8285,7 +8299,7 @@ function validateInstance(inst, def, out){
   if(conc>0.05 && reoKg>0){ const r=reoKg/conc; if(r>checks.reoMaxKgM3) push(`Reinforcement ratio ${fmt(r,0)} kg/m³ is above the review prompt (${checks.reoMaxKgM3}) — check bar sizes, spacing and count`, "reo"); else if(r<checks.reoMinKgM3) push(`Reinforcement ratio ${fmt(r,0)} kg/m³ is below the review prompt (${checks.reoMinKgM3}) — check nothing is missing`, "reo"); }
   if(conc>0.05 && formM2/conc>checks.formMaxM2M3) push(`Formwork ${fmt(formM2/conc,1)} m² per m³ of concrete is above the review prompt (${checks.formMaxM2M3}) — check faces and dimensions`, "form");
   // sanity: duplicate linked connection
-  if(Array.isArray(d.extraConn)){ const seen={}; d.extraConn.forEach(r=>{ const k=(r.target||"")+"|"+(r.role||""); if(r.target && seen[k]) push(`Two connection rows point at the same element (${targetLabelOf(r.target)||r.target}) — the bars may be counted twice`, "conns"); seen[k]=true; }); }
+  if(Array.isArray(d.extraConn)){ const seen={}; d.extraConn.forEach(r=>{ const name=extraConnTargetLabel(r); const k=(r.target===MANUAL_TARGET?"name:"+name.toLowerCase():(r.target||""))+"|"+(r.role||""); if(r.target && r.target!==MANUAL_TARGET && seen[k]) push(`Two connection rows point at the same element (${name||r.target}) — the bars may be counted twice`, "conns"); if(r.target===MANUAL_TARGET && !name) push("An additional connection has a typed target with no name — type the element it connects to", "conns"); seen[k]=true; }); }
   // verify: values that depend on design/exposure/geotech — from defaults, never auto-approved
   const defaults=defaultDataFor(inst.typeKey);
   if("cover" in d){ const pv=fieldProvenance(inst,"cover",defaults); if(pv==="default") push("Cover is the project/element default — confirm exposure classification and cover from the engineer's documents", "reo", "verify"); }
@@ -8750,7 +8764,7 @@ function buildCard(inst){
      <div class="card-tabs">${availTabs.map((t,i)=>`<button data-tab="${t[0]}" class="${t[0]===activeTab?'active':''}" title="Alt+${i+1}">${bp?`<span class="rail-ico">○</span><span>${t[1]}</span><span class="rail-meta"></span>`:t[1]}</button>`).join('')}</div>
      <div class="card-panes">
        ${TABS.map((t)=>parts[t[0]]!==undefined?`<div class="pane ${t[0]===activeTab?'active':''}" data-pane="${t[0]}">
-          <div style="display:flex;gap:16px;flex-wrap:wrap;"><div style="flex:2;min-width:280px;">${parts[t[0]]}</div><div class="diag-host" style="flex:1;min-width:220px;">${calc.diagram(inst)}</div></div>
+          <div style="display:flex;gap:16px;flex-wrap:wrap;"><div class="pane-fields" style="flex:2 1 280px;min-width:0;overflow-x:auto;">${parts[t[0]]}</div><div class="diag-host" style="flex:1;min-width:220px;">${calc.diagram(inst)}</div></div>
         </div>`:'').join('')}
        <div class="pane ${activeTab==="results"?'active':''}" data-pane="results"><div class="resultsHost"></div></div>
      </div>
@@ -8924,20 +8938,21 @@ function renderExtraConnRows(inst){
   let rows = inst.data.extraConn || (inst.data.extraConn=[]);
   return `<div class="subsec"><div class="sechead">Additional Connections (any element, any quantity)</div>
   <p class="small">Use this for any bar connection not covered above — e.g. a beam landing on two different columns, or a wall dowelling into two different slabs. You state the exact number of bars for each connection; nothing is assumed from a "typical" pier-to-cap or column-to-beam pattern.</p>
-  <table class="rows"><thead><tr><th>Target element</th><th>Role</th><th>Qty (bars)</th><th>Dia</th><th>Embedment (mm)</th><th>Projection (mm)</th><th>Hook/lap</th><th></th></tr></thead>
+  <table class="rows extra-conn"><thead><tr><th>Target element</th><th>Role</th><th>Bars</th><th>Dia</th><th>Embed (mm)</th><th>Proj (mm)</th><th>Hook/lap</th><th></th></tr></thead>
   <tbody>${rows.map((r,i)=>extraConnRowHtml(inst,r,i)).join('')}</tbody></table>
   <button class="btn small" data-action="addRow" data-target="extraConn">+ Add connection</button></div>`;
 }
 function extraConnRowHtml(inst,r,i){
-  return `<tr data-row="extraConn.${i}">
-   <td>${targetSelect(`extraConn.${i}.target`,r.target,inst.id)}</td>
+  const manual=r.target===MANUAL_TARGET;
+  return `<tr data-row="extraConn.${i}" class="extra-conn-row">
+   <td>${targetSelect(`extraConn.${i}.target`,r.target,inst.id,null,true)}${manual?`<input type="text" data-field="extraConn.${i}.targetName" value="${String(r.targetName||"").replace(/"/g,'&quot;')}" placeholder="Element name" style="margin-top:3px;display:block;width:100%;min-width:0;">`:""}</td>
    <td>${inpText(`extraConn.${i}.role`,r.role)}</td>
-   <td style="width:70px">${inpNum(`extraConn.${i}.qty`,r.qty)}</td>
-   <td style="width:85px">${barSizeSel(`extraConn.${i}.dia`,r.dia)}</td>
-   <td style="width:90px">${inpNum(`extraConn.${i}.embed`,r.embed)}</td>
-   <td style="width:90px">${inpNum(`extraConn.${i}.proj`,r.proj)}</td>
+   <td>${inpNum(`extraConn.${i}.qty`,r.qty)}</td>
+   <td>${barSizeSel(`extraConn.${i}.dia`,r.dia)}</td>
+   <td>${inpNum(`extraConn.${i}.embed`,r.embed)}</td>
+   <td>${inpNum(`extraConn.${i}.proj`,r.proj)}</td>
    <td>${anchorSel(`extraConn.${i}.hook`,r.hook)}</td>
-   <td><button class="btn small danger" data-action="delRow" data-target="extraConn" data-idx="${i}">✕</button></td>
+   <td><button type="button" class="btn small danger" data-action="delRow" data-target="extraConn" data-idx="${i}" title="Remove this connection">✕</button></td>
   </tr>`;
 }
 function computeExtraConnections(inst,def,out){
@@ -8947,7 +8962,7 @@ function computeExtraConnections(inst,def,out){
     let hk=hookLeg(inst,r.hook,dia);
     let len=(num(r.embed)+num(r.proj)+hk.mm)/1000;
     let totLen=num(r.qty)*len; let wt=totLen*massPerM(dia);
-    let tgt=targetLabelOf(r.target);
+    let tgt=extraConnTargetLabel(r);
     out.lines.push(baseLine(inst,def,{materialGroup:"Connections",material:r.dia||"N16",spec:(r.role||"Connection")+" → "+(tgt||"(unlinked)"),qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`${r.qty}×(embed ${r.embed||0}+proj ${r.proj||0}+hook)/1000`,linkedElement:tgt,notes:`${fmt(wt,1)} kg${hookNote(hk)}`}));
   });
   return out;

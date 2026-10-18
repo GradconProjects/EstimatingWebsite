@@ -1386,6 +1386,17 @@ element families waits on the owner's approval of the pad footing.
   orders schedule (6 m stock) and the Quotes bridge treat it exactly like a
   strip footing's trench mesh; `padComponents` reads the choice. No clear
   area is a completeness warning. `test-pad-trench.mjs` proves it.
+- **A card's fields column clips its own overflow** (`.pane-fields`, `flex:2 1
+  280px; min-width:0; overflow-x:auto`, beside the `.diag-host` sketch — 18 Oct
+  2026, Grady: "the delete elements is hidden under the sketch and
+  unclickable"): a table wider than the column used to slide under the sketch
+  box, which then swallowed the clicks on its tail. The Additional
+  Connections table (`table.rows.extra-conn`) is kept narrow enough to fit
+  beside the sketch. **Its target can be TYPED** (`targetSelect(…, allowManual)`
+  adds "✎ Type a name…" = `MANUAL_TARGET`, which reveals `extraConn[i].targetName`;
+  `extraConnTargetLabel(r)` is the ONE reading the line, the duplicate-target
+  warning and the "typed target with no name" completeness warning use), so a
+  bar can connect to an element that is not on the takeoff.
 - **Retaining walls** also carry a plan shape (`planShape`: straight, curved —
   `planRadius` × `planAngle` gives the developed length, or irregular —
   the developed length is typed), a battered stem (`stemBatter`: mean of
