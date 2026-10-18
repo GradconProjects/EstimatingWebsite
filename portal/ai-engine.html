@@ -422,7 +422,7 @@ function openInPortal(target, extra){
 }
 document.querySelector(".mirror").addEventListener("click", e=>{
   const q=e.target.closest("[data-open-quote]"); if(q){ openInPortal("quotes", { "gradcon-active-project": q.dataset.openQuote, "gradcon-quotes-initial-view": null }); return; }
-  const t=e.target.closest("[data-open-takeoff]"); if(t){ openInPortal("estimates", { "gradcon-estimate-active": t.dataset.openTakeoff }); }
+  const t=e.target.closest("[data-open-takeoff]"); if(t){ openInPortal("estimates", { "gradcon-estimate-active": t.dataset.openTakeoff, "gradcon-estimate-open": t.dataset.openTakeoff }); }
 });
 
 /* ---------- Roadmap: the specification as tabs, with honest status ---------- */

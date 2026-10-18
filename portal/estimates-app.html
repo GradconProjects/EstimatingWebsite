@@ -898,11 +898,29 @@ function initTakeoffRegistry(){
     startUnregisteredDraft();
     return;
   }
-  let activeId = null;
+  // Which takeoff opens (18 Oct 2026, Grady: "opening estimates should
+  // default to the last project worked on"):
+  //  1. an explicit request — the welcome card, the chat's button or the AI
+  //     Engine's mirror wrote ESTIMATE_OPEN_REQUEST_KEY just before opening
+  //     the app; it is consumed here so it can never apply twice;
+  //  2. else the takeoff with the NEWEST savedAt in the registry — the one
+  //     last worked on, on any device (the registry is the cloud-merged list
+  //     and every save, autosave and open stamps it) — never simply the first
+  //     entry in the list or whatever this browser happened to leave open;
+  //  3. else this browser's last-active id, else the first live entry.
+  let activeId = null, requested = null;
   try{ activeId = localStorage.getItem(ESTIMATE_ACTIVE_KEY); }catch(e){}
-  let entry = live.find(p=>p.id===activeId) || live[0];
+  try{ requested = localStorage.getItem(ESTIMATE_OPEN_REQUEST_KEY); localStorage.removeItem(ESTIMATE_OPEN_REQUEST_KEY); }catch(e){}
+  let entry = (requested && live.find(p=>p.id===requested)) || lastWorkedTakeoff(live) || live.find(p=>p.id===activeId) || live[0];
   CURRENT_PROJECT_KEY = entry.key;
   try{ localStorage.setItem(ESTIMATE_ACTIVE_KEY, entry.id); }catch(e){}
+}
+/** The live registry entry saved most recently (ISO savedAt compares as text);
+ * entries with no stamp lose to any stamped one; a tie keeps list order. */
+function lastWorkedTakeoff(live){
+  let best = null;
+  (live||[]).forEach(p=>{ if(!best || (p.savedAt||"") > (best.savedAt||"")) best = p; });
+  return best;
 }
 // A blank workspace that is NOT in the saved list yet — "delete all sessions"
 // must actually leave zero sessions. The draft earns its list entry the first
@@ -1232,6 +1250,9 @@ const ESTIMATE_STATE_KEY = "gradcon-estimate-state";
 // key. CURRENT_PROJECT_KEY is what save/load/sync actually read and write.
 const ESTIMATE_INDEX_KEY = "gradcon-estimate-projects-index";
 const ESTIMATE_ACTIVE_KEY = "gradcon-estimate-active";
+// One-shot "open THIS takeoff" request written by the portal shell / AI Engine
+// right before Estimates is (re)loaded; initTakeoffRegistry consumes it.
+const ESTIMATE_OPEN_REQUEST_KEY = "gradcon-estimate-open";
 let CURRENT_PROJECT_KEY = ESTIMATE_STATE_KEY;
 // True while the open takeoff has no local blob and its cloud copy hasn't
 // arrived yet — autosave must not write the placeholder state over the save.

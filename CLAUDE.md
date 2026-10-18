@@ -651,6 +651,23 @@ verify-covered; the CSV importer's label rules match box gutter / parapet /
 plant deck / overrun / cantilever / roof beam before the generic slab and
 wall rules.
 
+## Estimates opens on the takeoff last worked on
+
+Grady, 18 Oct 2026: "opening estimates should default to the last project
+worked on". `initTakeoffRegistry` picks, in order: (1) a one-shot request in
+`gradcon-estimate-open` (`ESTIMATE_OPEN_REQUEST_KEY`) — written beside
+`gradcon-estimate-active` by the shell's welcome cards / "Coming up" rows,
+the Gradcon AI chat's open-takeoff button and the AI Engine mirror's
+`openInPortal`, and REMOVED the moment it is read so it can never apply
+twice; (2) `lastWorkedTakeoff(live)` — the live registry entry with the
+newest `savedAt` (every save, autosave, tab-hide and unload stamps the open
+takeoff; the registry is the cloud-merged list, so "last worked on" is
+across devices and matches the welcome panel's "Last worked on"); (3) this
+browser's `gradcon-estimate-active`; (4) the first live entry. Before this
+the boot opened whatever this browser last left open, else the FIRST entry
+in the list. `test-last-worked.mjs` proves the stale-active case, the
+request, an unknown request and the welcome card.
+
 ## Welcome panel (portal sign-in)
 
 Grady, 10 Oct 2026: "when Grady logs in, it welcomes him and gives random

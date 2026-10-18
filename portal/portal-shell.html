@@ -1588,7 +1588,7 @@
       try{ localStorage.setItem('gradcon-active-project', id); localStorage.removeItem('gradcon-quotes-initial-view'); }catch(err){}
       openApp('quotes', true); setActiveMenu('quotes');
     } else {
-      try{ localStorage.setItem('gradcon-estimate-active', id); }catch(err){}
+      try{ localStorage.setItem('gradcon-estimate-active', id); localStorage.setItem('gradcon-estimate-open', id); }catch(err){}
       openApp('estimates', true); setActiveMenu('estimates');
     }
   }
@@ -1854,7 +1854,7 @@
       else if(app !== 'quotes'){ try{ localStorage.setItem('gradcon-quotes-initial-view', app); }catch(err){} }
       openApp('quotes', true); setActiveMenu(app === 'quotes' ? 'quotes' : app);
     } else if(app === 'estimates'){
-      if(a.id){ try{ localStorage.setItem('gradcon-estimate-active', String(a.id)); }catch(err){} }
+      if(a.id){ try{ localStorage.setItem('gradcon-estimate-active', String(a.id)); localStorage.setItem('gradcon-estimate-open', String(a.id)); }catch(err){} }
       openApp('estimates', true); setActiveMenu('estimates');
     } else if(app === 'mail'){
       if(a.id){ try{ localStorage.setItem('gradcon-ai-open-mail', String(a.id)); }catch(err){} }
