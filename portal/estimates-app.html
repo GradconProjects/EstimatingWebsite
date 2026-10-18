@@ -120,7 +120,7 @@ table.rows.extra-conn input[type=text]:not([data-num]){min-width:64px;width:78px
 table.rows.extra-conn input[data-num]{min-width:0;width:56px;}
 table.rows.extra-conn td{white-space:nowrap;padding-left:4px;padding-right:4px;}
 table.rows.extra-conn .extra-conn-setout{display:flex;align-items:center;gap:3px;margin-top:3px;}
-table.rows.extra-conn .extra-conn-setout input[data-num]{width:50px;}
+table.rows.extra-conn .extra-conn-setout input[data-num]{width:72px;}
 table.rows.extra-conn .extra-conn-setout select{max-width:76px;}
 table.results{width:100%;border-collapse:collapse;font-size:12px;}
 table.results th{background:var(--panel2);text-align:left;padding:6px 8px;font-size:10.5px;color:var(--text);position:sticky;top:0;text-transform:uppercase;letter-spacing:.06em;}
@@ -8978,6 +8978,13 @@ function extraConnSetOut(r){
   let rows=Math.max(1,Math.round(num(r.rows,1)));
   return `@${num(r.spacing,400)} over ${fmt(num(r.runM),2)} m${rows>1?` × ${rows} rows`:""} = ${extraConnCount(r)} no.`;
 }
+/** Live "= N bars" on an Additional Connections set-out row while its run,
+ * spacing or rows are typed (the card is not rebuilt per keystroke). */
+function refreshExtraConnCount(card,inst,field){
+  const m=/^extraConn\.(\d+)\.(runM|spacing|rows)$/.exec(field||""); if(!m) return;
+  const r=(inst.data.extraConn||[])[+m[1]]; const lab=card.querySelector(`[data-extraconn-count="${m[1]}"]`);
+  if(r && lab) lab.textContent=String(extraConnCount(r));
+}
 function renderExtraConnRows(inst){
   let rows = inst.data.extraConn || (inst.data.extraConn=[]);
   return `<div class="subsec"><div class="sechead">Additional Connections (any element, any quantity)</div>
@@ -8993,8 +9000,9 @@ function extraConnRowHtml(inst,r,i){
    <td>${inpText(`extraConn.${i}.role`,r.role)}</td>
    <td>${selOpts(`extraConn.${i}.mode`,r.mode||"count",[["count","Number"],["spacing","Run @ spacing"]],true)}
     ${extraConnBySpacing(r)
-      ?`<div class="extra-conn-setout"><input type="text" inputmode="decimal" data-num="1" data-field="extraConn.${i}.runM" data-rerender="true" value="${r.runM===undefined?'':r.runM}" placeholder="run m" title="Run of bars (m)"><span class="small">m @</span><input type="text" inputmode="decimal" data-num="1" data-field="extraConn.${i}.spacing" data-rerender="true" value="${r.spacing===undefined?400:r.spacing}" placeholder="mm" title="Spacing (mm)"><span class="small">mm</span></div>
-        <div class="extra-conn-setout">${selOpts(`extraConn.${i}.rows`,Math.max(1,Math.round(num(r.rows,1))),[[1,"1 row"],[2,"2 rows"]],true)}<span class="small">= <b data-extraconn-count="${i}">${extraConnCount(r)}</b> bars</span></div>`
+      ?`<div class="extra-conn-setout"><input type="text" inputmode="decimal" data-num="1" data-field="extraConn.${i}.runM" value="${r.runM===undefined?'':r.runM}" placeholder="run" title="Run of bars (m)"><span class="small">m run</span></div>
+        <div class="extra-conn-setout"><input type="text" inputmode="decimal" data-num="1" data-field="extraConn.${i}.spacing" value="${r.spacing===undefined?400:r.spacing}" placeholder="mm" title="Spacing along the run (mm)"><span class="small">mm crs</span></div>
+        <div class="extra-conn-setout">${selOpts(`extraConn.${i}.rows`,Math.max(1,Math.round(num(r.rows,1))),[[1,"1 row"],[2,"2 rows"]])}<span class="small">= <b data-extraconn-count="${i}">${extraConnCount(r)}</b> bars</span></div>`
       :`<div class="extra-conn-setout">${inpNum(`extraConn.${i}.qty`,r.qty)}</div>`}</td>
    <td>${barSizeSel(`extraConn.${i}.dia`,r.dia)}</td>
    <td>${inpNum(`extraConn.${i}.embed`,r.embed)}</td>
@@ -9101,10 +9109,19 @@ function attachCardEvents(card,inst){
     if(e.target.dataset.rerender){
       // this field changes which fields exist elsewhere in the card (e.g. manual-area slabs swap the
       // whole reinforcement layout), so a show/hide toggle isn't enough — rebuild the card from scratch.
+      // A TYPED numeric box (a starter run's length or spacing, a set-out run)
+      // rebuilds on blur / Enter instead (the change handler below): rebuilding
+      // on every keystroke threw the focus away and normalised "5." to "5", so
+      // a decimal could never be typed (18 Oct 2026, Grady: "entering run cell
+      // is too tight and doesnt allow me see what has been entered and also
+      // doesnt allow decimals"). The value is stored and costed at once; only
+      // the rebuild waits.
+      if(e.target.dataset.num!==undefined){ e.target.dataset.rerenderPending="1"; computeAllAndRefresh(); refreshExtraConnCount(card,inst,f); return; }
       computeAllAndRefresh();
       rerenderCardKeepTab(card,inst);
       return;
     }
+    refreshExtraConnCount(card,inst,f);
     if(e.target.dataset.toggle){
       card.querySelectorAll(`[data-show-if="${e.target.dataset.toggle}"]`).forEach(sec=>sec.classList.toggle('hidden',!val));
       let offSecs=card.querySelectorAll(`[data-show-if="${e.target.dataset.toggle}_off"]`);
@@ -9157,9 +9174,10 @@ function attachCardEvents(card,inst){
   card.addEventListener('change',e=>{
     if(e.target.dataset && e.target.dataset.num!==undefined){
       // on blur / Enter the expression becomes its result in the field's display unit
-      const raw=e.target.value.trim(); if(raw==="") return;
-      const r=parseNumInput(raw, fieldDisplayUnit(e.target)); if(!r.ok) return;
-      e.target.value=String(r.value); e.target.classList.remove('num-expr');
+      const raw=e.target.value.trim();
+      if(raw!==""){ const r=parseNumInput(raw, fieldDisplayUnit(e.target)); if(!r.ok) return; e.target.value=String(r.value); e.target.classList.remove('num-expr'); }
+      // a typed rerendering box rebuilds the card now that typing has finished
+      if(e.target.dataset.rerenderPending){ delete e.target.dataset.rerenderPending; rerenderCardKeepTab(card,inst); }
     }
   });
   card.addEventListener('keydown',e=>{
