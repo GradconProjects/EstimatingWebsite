@@ -119,6 +119,9 @@ table.rows.extra-conn select{max-width:150px;}
 table.rows.extra-conn input[type=text]:not([data-num]){min-width:70px;width:90px;}
 table.rows.extra-conn input[data-num]{min-width:0;width:62px;}
 table.rows.extra-conn td{white-space:nowrap;}
+table.rows.extra-conn .extra-conn-setout{display:flex;align-items:center;gap:3px;margin-top:3px;}
+table.rows.extra-conn .extra-conn-setout input[data-num]{width:58px;}
+table.rows.extra-conn .extra-conn-setout select{max-width:86px;}
 table.results{width:100%;border-collapse:collapse;font-size:12px;}
 table.results th{background:var(--panel2);text-align:left;padding:6px 8px;font-size:10.5px;color:var(--text);position:sticky;top:0;text-transform:uppercase;letter-spacing:.06em;}
 table.results td{padding:5px 8px;border-bottom:1px dotted rgba(33,56,47,.3);font-variant-numeric:tabular-nums;}
@@ -3977,8 +3980,8 @@ function starterRunDesc(run,elemLenM){
   if((run.mode||"spacing")==="count") return `${n} no. ${run.dia||"N16"}`;
   return `${run.dia||"N16"} @${num(run.spacing,400)} crs over ${fmt(starterRunM(run,elemLenM),2)} m${rows>1?` × ${rows} rows`:""} = ${n} no.`;
 }
-function starterRunsUI(inst,d,elemLenM,noun){
-  let runs=starterRunsOf(d);
+function starterRunsUI(inst,d,elemLenM,noun,lenNote){
+  let runs=starterRunsOf(d); lenNote=lenNote||("whole "+noun);
   let rowsHtml=runs.map((r,i)=>{
     let base=`starterRuns.${i}.`, bySpacing=(r.mode||"spacing")!=="count";
     let n=starterRunCount(r,elemLenM);
@@ -3991,7 +3994,7 @@ function starterRunsUI(inst,d,elemLenM,noun){
       ${bySpacing?F("Spacing along run (mm)",inpNumR(base+"spacing",r.spacing===undefined?400:r.spacing)):F(`Qty (per ${noun})`,inpNumR(base+"qty",r.qty===undefined?4:r.qty))}
      </div>
      <div class="grid cols4">
-      ${bySpacing?F("Run of starters (m)",`<input type="text" inputmode="decimal" data-num="1" data-field="${base}runM" data-rerender="true" value="${r.runM===undefined?'':r.runM}" placeholder="= whole ${noun} ${fmt(elemLenM,2)} m">`):""}
+      ${bySpacing?F("Run of starters (m)",`<input type="text" inputmode="decimal" data-num="1" data-field="${base}runM" data-rerender="true" value="${r.runM===undefined?'':r.runM}" placeholder="= ${lenNote} ${fmt(elemLenM,2)} m">`):""}
       ${bySpacing?F("Starts at (m from one end)",`<input type="text" inputmode="decimal" data-num="1" data-field="${base}startM" value="${r.startM===undefined?'':r.startM}" placeholder="0">`):""}
       ${bySpacing?F("Rows across the section",selOpts(base+"rows",Math.max(1,Math.round(num(r.rows,1))),[[1,"1 row (centre)"],[2,"2 rows (one each face)"]],true)):""}
       ${F("Embedment (mm)",inpNum(base+"embed",r.embed===undefined?500:r.embed))}${F("Projection (mm)",inpNum(base+"proj",r.proj===undefined?600:r.proj))}
@@ -3999,7 +4002,7 @@ function starterRunsUI(inst,d,elemLenM,noun){
       ${F("Fixing",selOpts(base+"fix",r.fix||"cast",[["cast","Cast in (wet set)"],["epoxy","Drill & epoxy into existing"]]))}
      </div>
      <p class="small">A drawing note like "N16 starter bars @ 400 max cts, all faces, cog 300, drill & Ramset ChemSet REO 502, 150 embedment into slab" is: bar N16, spacing 400, 2 rows (one each face), embedment 150, projection = the lap into the wall, cog 300, fixing Drill & epoxy. Each bar is embedment + projection + cog; the epoxy fixing adds a "Drill & epoxy" holes line that Quotes prices on its ChemSet hole-only allowance beside the bar.</p>
-     ${bySpacing?`<p class="small">→ <b>${n}</b> per ${noun}: ${fmt(starterRunM(r,elemLenM),2)} m ÷ ${num(r.spacing,400)} mm + 1 end bar${num(r.rows,1)>1?` × ${Math.round(num(r.rows,1))} rows`:""}${num(d.qty,1)>1?` · × ${num(d.qty,1)} = <b>${n*num(d.qty,1)}</b>`:""}. Leave the run blank for the whole ${noun}; give a shorter run (and where it starts) for a wall or column line on part of it.</p>`:""}
+     ${bySpacing?`<p class="small">→ <b>${n}</b> per ${noun}: ${fmt(starterRunM(r,elemLenM),2)} m ÷ ${num(r.spacing,400)} mm + 1 end bar${num(r.rows,1)>1?` × ${Math.round(num(r.rows,1))} rows`:""}${num(d.qty,1)>1?` · × ${num(d.qty,1)} = <b>${n*num(d.qty,1)}</b>`:""}. Leave the run blank for the ${lenNote}; give a shorter run (and where it starts) for a wall or column line on part of it.</p>`:""}
     </div>`;
   }).join("");
   return `<div class="sechead" style="display:flex;align-items:center;justify-content:space-between;gap:8px;"><span>Starter bars / dowels along the ${noun}</span><button class="btn small" data-action="addRow" data-target="starterRuns" type="button">+ Add starter run</button></div>
@@ -5173,10 +5176,15 @@ function renderSlab(inst,def){
     ${chk("dowels",d.dowels,"Joint dowels","dowels")}
    </div>
    <div class="subsec ${d.dowels?'':'hidden'}" data-show-if="dowels"><div class="grid cols3">${F("Dowel size",barSizeSel("dowelDia",d.dowelDia))}${F("Spacing (mm)",inpNum("dowelSpacing",d.dowelSpacing))}${F("Total dowel length (mm, both sides of joint)",inpNum("dowelLength",d.dowelLength))}</div></div></div>`;
-  let conns=`${chk("starters",d.starters,"Starter bars in from footing/wall below","starters")}
-  <div class="subsec ${d.starters?'':'hidden'}" data-show-if="starters"><div class="grid cols4">
-   ${F("Connects to",targetSelect("connTarget",d.connTarget,inst.id))}${F("Qty",inpNum("connQty",d.connQty))}${F("Dia",barSizeSel("connDia",d.connDia))}${F("Embedment (mm)",inpNum("connEmbed",d.connEmbed))}${F("Projection (mm)",inpNum("connProj",d.connProj))}
-  </div></div>`;
+  // Starter bars out of the slab (into the walls and columns above) are set
+  // out as RUNS — bar, spacing, run length, rows — through the shared
+  // starter-runs section the footings and beams use (18 Oct 2026, Grady: "i
+  // want to be able to enter a length the starter runs, the spacing etc.").
+  // A slab saved with the old single count ("Starter bars in from
+  // footing/wall below", connQty) is migrated by starterRunsOf into one
+  // run set out by total number, so it prices exactly as before. The default
+  // run is the slab perimeter.
+  let conns=starterRunsUI(inst,d,slabPerimM(d),"slab","slab perimeter");
   let steps = `<div class="sechead">Step-down / Level Change</div>
   ${chk("stepdown",d.stepdown,"Slab has a step-down / level change requiring connecting dowels","stepdown")}
   <div class="subsec ${d.stepdown?'':'hidden'}" data-show-if="stepdown"><div class="grid cols4">
@@ -5240,6 +5248,13 @@ function areaBarGeom(d,prefix){
   let totLen = area>0? perM2*area*layers : 0;
   return {area, spacing, layers, totLen, perM2, extra};
 }
+/** The slab's perimeter — the ONE reading the edgeform, the starter runs'
+ * default run and the strip insulation share: the typed override, else the
+ * sketched outline's perimeter, else 2 × (L + W). */
+function slabPerimM(d){
+  let outline = slabOutlinePts(d);
+  return !d.perimeterAuto? num(d.perimeterOverride) : (outline? polyPerim(outline) : 2*(num(d.length)+num(d.width)));
+}
 function computeSlab(inst,def){
   let d=inst.data, lines=[], warnings=[];
   let outline = slabOutlinePts(d);
@@ -5251,7 +5266,7 @@ function computeSlab(inst,def){
   let t=num(d.thickness)/1000;
   let vol=netArea*t;
   lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:`${d.category} ${d.thickness}mm`,qty:vol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(vol,concWastePct(d)),formula:`(${d.manualArea?'manual area':'L×W'} ${fmt(area,1)} − openings ${fmt(openArea,1)})×${fmt(t,3)}`}));
-  let perim = !d.perimeterAuto? num(d.perimeterOverride) : (outline? polyPerim(outline) : 2*(num(d.length)+num(d.width)));
+  let perim = slabPerimM(d);
   d._autoInsPerim = perim; // strip insulation (per-m products) defaults to the perimeter
   if(!d.suspended){
     let baseVol=netArea*(num(d.baseThickness)/1000);
@@ -5520,12 +5535,7 @@ function computeSlab(inst,def){
       lines.push(baseLine(inst,def,{materialGroup:"Joints",material:d.dowelDia,spec:"Joint dowels",qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`joints × dowels/joint × ${d.dowelLength}mm`,notes:`${fmt(wt,1)} kg`}));
     }
   }
-  if(d.starters && num(d.connQty)>0){
-    let dia=barDiaOf(d.connDia); let len=(num(d.connEmbed)+num(d.connProj))/1000;
-    let totLen=num(d.connQty)*len; let wt=totLen*massPerM(dia);
-    let tgt=targetLabelOf(d.connTarget);
-    lines.push(baseLine(inst,def,{materialGroup:"Connections",material:d.connDia,spec:"Incoming starters → "+(tgt||"(unlinked)"),qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`${d.connQty}×len/1000`,linkedElement:tgt,notes:`${fmt(wt,1)} kg`}));
-  }
+  lines.push(...starterRunLines(inst,def,d,1,perim,"Starter bars"));
   if(d.stepdown){
     let dia=barDiaOf(d.sdDia);
     let sdRunM = d.sdLength!==undefined? num(d.sdLength) : perim;
@@ -8299,7 +8309,7 @@ function validateInstance(inst, def, out){
   if(conc>0.05 && reoKg>0){ const r=reoKg/conc; if(r>checks.reoMaxKgM3) push(`Reinforcement ratio ${fmt(r,0)} kg/m³ is above the review prompt (${checks.reoMaxKgM3}) — check bar sizes, spacing and count`, "reo"); else if(r<checks.reoMinKgM3) push(`Reinforcement ratio ${fmt(r,0)} kg/m³ is below the review prompt (${checks.reoMinKgM3}) — check nothing is missing`, "reo"); }
   if(conc>0.05 && formM2/conc>checks.formMaxM2M3) push(`Formwork ${fmt(formM2/conc,1)} m² per m³ of concrete is above the review prompt (${checks.formMaxM2M3}) — check faces and dimensions`, "form");
   // sanity: duplicate linked connection
-  if(Array.isArray(d.extraConn)){ const seen={}; d.extraConn.forEach(r=>{ const name=extraConnTargetLabel(r); const k=(r.target===MANUAL_TARGET?"name:"+name.toLowerCase():(r.target||""))+"|"+(r.role||""); if(r.target && r.target!==MANUAL_TARGET && seen[k]) push(`Two connection rows point at the same element (${name||r.target}) — the bars may be counted twice`, "conns"); if(r.target===MANUAL_TARGET && !name) push("An additional connection has a typed target with no name — type the element it connects to", "conns"); seen[k]=true; }); }
+  if(Array.isArray(d.extraConn)){ const seen={}; d.extraConn.forEach(r=>{ const name=extraConnTargetLabel(r); const k=(r.target===MANUAL_TARGET?"name:"+name.toLowerCase():(r.target||""))+"|"+(r.role||""); if(r.target && r.target!==MANUAL_TARGET && seen[k]) push(`Two connection rows point at the same element (${name||r.target}) — the bars may be counted twice`, "conns"); if(r.target===MANUAL_TARGET && !name) push("An additional connection has a typed target with no name — type the element it connects to", "conns"); if(r.target && extraConnBySpacing(r) && !(num(r.runM)>0)) push(`An additional connection (${name||"unlinked"}) is set out at a spacing but has no run length — type the run in metres`, "conns"); seen[k]=true; }); }
   // verify: values that depend on design/exposure/geotech — from defaults, never auto-approved
   const defaults=defaultDataFor(inst.typeKey);
   if("cover" in d){ const pv=fieldProvenance(inst,"cover",defaults); if(pv==="default") push("Cover is the project/element default — confirm exposure classification and cover from the engineer's documents", "reo", "verify"); }
@@ -8365,16 +8375,31 @@ const ADDL_UNITS=[["m","m (length)"],["m²","m² (area)"],["m³","m³ (volume)"]
  * a lone quantity still stands on its own; a count with nothing to multiply
  * counts pieces only when the unit is "no." (23 Sep 2026: before this the
  * typed quantity ignored the count on no./kg/item rows). */
+/** Pieces set out along a run: run m ÷ spacing mm + 1 end bar, when both are
+ * typed; 0 otherwise. 18 Oct 2026, Grady: "i want to be able to enter a
+ * length the starter runs, the spacing etc." — a row of starters or trimmer
+ * bars is set out off the drawing, not counted by hand. */
+function addlRowSetOut(r){
+  let run=num(r.runM), sp=num(r.spacing);
+  if(run>0 && sp>0) return Math.floor(run*1000/sp+1e-9)+1;
+  return 0;
+}
+/** The row's COUNT — the typed count, or the set-out pieces × the typed count
+ * (blank = one run) when a run and spacing are given. */
+function addlRowCount(r){
+  let n=num(r.count), so=addlRowSetOut(r);
+  return so>0? so*(n>0? n:1) : n;
+}
 function addlRowEach(r){
   let L=num(r.lengthMm), a=num(r.area), q=num(r.qty);
   if(r.unit==="m" && L>0) return L/1000;
   if((r.unit==="m²"||r.unit==="m³") && a>0) return a;
   if(q>0) return q;
-  if(r.unit==="no." && num(r.count)>0) return 1;
+  if(r.unit==="no." && addlRowCount(r)>0) return 1;
   return 0;
 }
 function addlRowQty(r){
-  let n=num(r.count), each=addlRowEach(r);
+  let n=addlRowCount(r), each=addlRowEach(r);
   if(!(each>0)) return 0;
   return (n>0? n:1)*each;
 }
@@ -8385,6 +8410,8 @@ function additionalItemsSection(inst){
     <td>${selOpts(`addlRows.${i}.kind`,r.kind===undefined?"Reinforcement":r.kind,ADDL_KINDS)}</td>
     <td>${barSizeSel(`addlRows.${i}.dia`,r.dia||"N12")}</td>
     <td style="width:72px;min-width:72px">${inpNum(`addlRows.${i}.count`,r.count)}</td>
+    <td style="width:72px;min-width:72px">${inpNum(`addlRows.${i}.runM`,r.runM)}</td>
+    <td style="width:72px;min-width:72px">${inpNum(`addlRows.${i}.spacing`,r.spacing)}</td>
     <td style="width:96px;min-width:96px">${inpNum(`addlRows.${i}.lengthMm`,r.lengthMm)}</td>
     <td style="width:84px;min-width:84px">${inpNum(`addlRows.${i}.area`,r.area)}</td>
     <td style="width:84px;min-width:84px">${inpNum(`addlRows.${i}.qty`,r.qty)}</td>
@@ -8394,10 +8421,10 @@ function additionalItemsSection(inst){
     <td><button class="btn small danger" data-action="addlDel" data-i="${i}" type="button">✕</button></td>
    </tr>`).join('');
   return `<div class="subsec"><div class="sechead">Additional Reinforcement / Elements</div>
-   <p class="small">Anything with no obvious home on the other tabs — a trimmer bar round a penetration, an extra pour, a one-off item. The <b>count</b> multiplies the row: <b>count × length each</b> for bars (m), <b>count × area</b> for sheet or volume items (m², m³), <b>count × qty each</b> for anything else (no., kg, item). Leave the count blank for a single quantity. A row needs a description and a quantity before it reaches the takeoff. Rows sized in metres against a bar diameter also report their mass.</p>
+   <p class="small">Anything with no obvious home on the other tabs — a trimmer bar round a penetration, an extra pour, a one-off item. The <b>count</b> multiplies the row: <b>count × length each</b> for bars (m), <b>count × area</b> for sheet or volume items (m², m³), <b>count × qty each</b> for anything else (no., kg, item). Leave the count blank for a single quantity. <b>Run (m)</b> and <b>@ (mm)</b> set the pieces out along a run instead — run ÷ spacing + 1 end bar (12 m @ 400 = 31), × the count when more than one such run — so a line of starter or trimmer bars is taken off the drawing, not counted by hand. A row needs a description and a quantity before it reaches the takeoff. Rows sized in metres against a bar diameter also report their mass.</p>
    <div style="overflow-x:auto"><table class="rows"><thead><tr>
-     <th>Description</th><th>Goes under</th><th>Bar size</th><th>Count</th><th>Length each (mm)</th><th>Area each (m²)</th><th>Qty each</th><th>Unit</th><th>Waste %</th><th>Total</th><th></th>
-   </tr></thead><tbody>${body||`<tr><td colspan="11" class="small">No additional items yet.</td></tr>`}</tbody></table></div>
+     <th>Description</th><th>Goes under</th><th>Bar size</th><th>Count</th><th title="Set out along a run: run m ÷ spacing mm + 1 end bar, × the count (blank = one run)">Run (m)</th><th title="Spacing along the run (mm)">@ (mm)</th><th>Length each (mm)</th><th>Area each (m²)</th><th>Qty each</th><th>Unit</th><th>Waste %</th><th>Total</th><th></th>
+   </tr></thead><tbody>${body||`<tr><td colspan="13" class="small">No additional items yet.</td></tr>`}</tbody></table></div>
    <div class="toolbar" style="margin-top:8px;"><button class="btn small primary" data-action="addlAdd" type="button">+ Add row</button></div>
   </div>`;
 }
@@ -8934,11 +8961,28 @@ function startersSection(inst){
   </div>`;
 }
 
+/** Bars on an Additional Connections row — the ONE count: typed ("Number"),
+ * or set out along a run ("Run @ spacing": run m ÷ spacing mm + 1 end bar, ×
+ * rows). No run typed in that mode is no bars (and a completeness warning),
+ * never a silent count. 18 Oct 2026, Grady: "i want to be able to enter a
+ * length the starter runs, the spacing etc." */
+function extraConnBySpacing(r){ return (r.mode||"count")==="spacing"; }
+function extraConnCount(r){
+  if(!extraConnBySpacing(r)) return Math.max(0,num(r.qty));
+  let run=num(r.runM); if(!(run>0)) return 0;
+  let sp=num(r.spacing,400); if(!(sp>0)) sp=400;
+  return (Math.floor(run*1000/sp+1e-9)+1)*Math.max(1,Math.round(num(r.rows,1)));
+}
+function extraConnSetOut(r){
+  if(!extraConnBySpacing(r)) return `${extraConnCount(r)} no.`;
+  let rows=Math.max(1,Math.round(num(r.rows,1)));
+  return `@${num(r.spacing,400)} over ${fmt(num(r.runM),2)} m${rows>1?` × ${rows} rows`:""} = ${extraConnCount(r)} no.`;
+}
 function renderExtraConnRows(inst){
   let rows = inst.data.extraConn || (inst.data.extraConn=[]);
   return `<div class="subsec"><div class="sechead">Additional Connections (any element, any quantity)</div>
-  <p class="small">Use this for any bar connection not covered above — e.g. a beam landing on two different columns, or a wall dowelling into two different slabs. You state the exact number of bars for each connection; nothing is assumed from a "typical" pier-to-cap or column-to-beam pattern.</p>
-  <table class="rows extra-conn"><thead><tr><th>Target element</th><th>Role</th><th>Bars</th><th>Dia</th><th>Embed (mm)</th><th>Proj (mm)</th><th>Hook/lap</th><th></th></tr></thead>
+  <p class="small">Use this for any bar connection not covered above — e.g. a beam landing on two different columns, or a wall dowelling into two different slabs. Give the bars as a <b>number</b>, or set them out along a <b>run at a spacing</b> (run m ÷ spacing mm + 1 end bar, × rows); nothing is assumed from a "typical" pier-to-cap or column-to-beam pattern.</p>
+  <table class="rows extra-conn"><thead><tr><th>Target element</th><th>Role</th><th>Bars / set out</th><th>Dia</th><th>Embed (mm)</th><th>Proj (mm)</th><th>Hook/lap</th><th></th></tr></thead>
   <tbody>${rows.map((r,i)=>extraConnRowHtml(inst,r,i)).join('')}</tbody></table>
   <button class="btn small" data-action="addRow" data-target="extraConn">+ Add connection</button></div>`;
 }
@@ -8947,7 +8991,11 @@ function extraConnRowHtml(inst,r,i){
   return `<tr data-row="extraConn.${i}" class="extra-conn-row">
    <td>${targetSelect(`extraConn.${i}.target`,r.target,inst.id,null,true)}${manual?`<input type="text" data-field="extraConn.${i}.targetName" value="${String(r.targetName||"").replace(/"/g,'&quot;')}" placeholder="Element name" style="margin-top:3px;display:block;width:100%;min-width:0;">`:""}</td>
    <td>${inpText(`extraConn.${i}.role`,r.role)}</td>
-   <td>${inpNum(`extraConn.${i}.qty`,r.qty)}</td>
+   <td>${selOpts(`extraConn.${i}.mode`,r.mode||"count",[["count","Number"],["spacing","Run @ spacing"]],true)}
+    ${extraConnBySpacing(r)
+      ?`<div class="extra-conn-setout"><input type="text" inputmode="decimal" data-num="1" data-field="extraConn.${i}.runM" data-rerender="true" value="${r.runM===undefined?'':r.runM}" placeholder="run m" title="Run of bars (m)"><span class="small">m @</span><input type="text" inputmode="decimal" data-num="1" data-field="extraConn.${i}.spacing" data-rerender="true" value="${r.spacing===undefined?400:r.spacing}" placeholder="mm" title="Spacing (mm)"><span class="small">mm</span></div>
+        <div class="extra-conn-setout">${selOpts(`extraConn.${i}.rows`,Math.max(1,Math.round(num(r.rows,1))),[[1,"1 row"],[2,"2 rows"]],true)}<span class="small">= <b data-extraconn-count="${i}">${extraConnCount(r)}</b> bars</span></div>`
+      :`<div class="extra-conn-setout">${inpNum(`extraConn.${i}.qty`,r.qty)}</div>`}</td>
    <td>${barSizeSel(`extraConn.${i}.dia`,r.dia)}</td>
    <td>${inpNum(`extraConn.${i}.embed`,r.embed)}</td>
    <td>${inpNum(`extraConn.${i}.proj`,r.proj)}</td>
@@ -8957,13 +9005,15 @@ function extraConnRowHtml(inst,r,i){
 }
 function computeExtraConnections(inst,def,out){
   (inst.data.extraConn||[]).forEach(r=>{
-    if(!r.target || !num(r.qty)) return;
+    let n=extraConnCount(r);
+    if(!r.target || !(n>0)) return;
     let dia=barDiaOf(r.dia||"N16");
     let hk=hookLeg(inst,r.hook,dia);
     let len=(num(r.embed)+num(r.proj)+hk.mm)/1000;
-    let totLen=num(r.qty)*len; let wt=totLen*massPerM(dia);
+    let totLen=n*len; let wt=totLen*massPerM(dia);
     let tgt=extraConnTargetLabel(r);
-    out.lines.push(baseLine(inst,def,{materialGroup:"Connections",material:r.dia||"N16",spec:(r.role||"Connection")+" → "+(tgt||"(unlinked)"),qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`${r.qty}×(embed ${r.embed||0}+proj ${r.proj||0}+hook)/1000`,linkedElement:tgt,notes:`${fmt(wt,1)} kg${hookNote(hk)}`}));
+    let bySp=extraConnBySpacing(r), rows=Math.max(1,Math.round(num(r.rows,1)));
+    out.lines.push(baseLine(inst,def,{materialGroup:"Connections",material:r.dia||"N16",spec:(r.role||"Connection")+(bySp?` ${r.dia||"N16"} ${extraConnSetOut(r)}`:"")+" → "+(tgt||"(unlinked)"),qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`${bySp?`(${fmt(num(r.runM),2)}m/${num(r.spacing,400)}+1)${rows>1?`×${rows}`:""}=${n}`:n}×(embed ${r.embed||0}+proj ${r.proj||0}+hook)/1000`,linkedElement:tgt,notes:`${fmt(wt,1)} kg · ${n} bars${hookNote(hk)}`}));
   });
   return out;
 }
@@ -9173,7 +9223,7 @@ function attachCardEvents(card,inst){
        : /Groups$/.test(leaf)? newExtraBeamGroup(inst.data,leaf,arr.length)
        : leaf==="reoAreaRows"? {area:"", dia:"N12", spacing:200, ways:"each"}
        : /Rows$/.test(leaf)? {position:"Additional",qty:2,dia:"N16",layers:1,startA:"straight",endA:"straight"}
-       : leaf==="extraConn"? {target:"",role:"Dowel",qty:4,dia:"N16",embed:400,proj:400,hook:"straight"}
+       : leaf==="extraConn"? {target:"",role:"Dowel",mode:"count",qty:4,runM:"",spacing:400,rows:1,dia:"N16",embed:400,proj:400,hook:"straight"}
        : leaf==="starterRuns"? newStarterRun()
        : leaf==="slabs"? {label:`Slab ${arr.length+1}`, L:1.0, W:1.0, t:150, area:"", grade:"", reo:"mesh", meshType:"SL82", meshLayers:1, barDia:"N12", barSp:200, barLayers:1, edgeForm:true, edgeLm:"", soffitForm:false, blindOn:false, blindT:50}
        : leaf==="walls"? {label:`Wall ${arr.length+1}`, L:1000, H:600, T:150, grade:"", vertDia:"N12", vertSp:400, horDia:"N12", horSp:400, faces:2, formFaces:2, formEnds:true}
@@ -9210,7 +9260,7 @@ function attachCardEvents(card,inst){
     } else if(act==="addlAdd"){
       let dd=inst.data;
       if(!Array.isArray(dd.addlRows)) dd.addlRows=[];
-      dd.addlRows.push({desc:"",kind:"Reinforcement",dia:"N12",count:"",lengthMm:"",area:"",qty:"",unit:"m",waste:""});
+      dd.addlRows.push({desc:"",kind:"Reinforcement",dia:"N12",count:"",runM:"",spacing:"",lengthMm:"",area:"",qty:"",unit:"m",waste:""});
       computeAllAndRefresh(); rerenderCardKeepTab(card,inst); return;
     } else if(act==="addlDel"){
       let dd=inst.data, i=parseInt(e.target.dataset.i,10);
@@ -9370,15 +9420,17 @@ function computeInstance(inst){
     // Grady: "additional reinforcement doesnt seem to add up or shown in the
     // material summaries" — before this such a row was a nameless no./kg
     // item at 0 kg).
+    let count=addlRowCount(r), setOut=addlRowSetOut(r);
     let pieceLenM = steel && unit==="no." && num(r.lengthMm)>0 ? num(r.lengthMm)/1000 : 0;
     let isPieces = pieceLenM>0, isKg = steel && unit==="kg";
     let kgm = steel? massPerM(barDiaOf(r.dia)) : 0;
     let notes = isBar? `${fmt(qty*kgm,1)} kg` : isPieces? `${fmt(qty*pieceLenM,2)} m, ${fmt(qty*pieceLenM*kgm,1)} kg` : "";
-    let cnt = num(r.count)>0? `${num(r.count)}×` : "";
+    let so = setOut>0? `(${num(r.runM)}m/${num(r.spacing)}+1)${num(r.count)>1?`×${num(r.count)}`:""}=${count}` : "";
+    let cnt = count>0? `${so||count}×` : "";
     let formula = (unit==="m" && num(r.lengthMm)>0) ? `${cnt}${num(r.lengthMm)}mm`
-      : isPieces ? `${num(r.count)||1} no. × ${num(r.lengthMm)}mm`
+      : isPieces ? `${so? so+" no." : (count||1)+" no."} × ${num(r.lengthMm)}mm`
       : ((unit==="m²"||unit==="m³") && num(r.area)>0) ? `${cnt}${num(r.area)}`
-      : (num(r.qty)>0 ? `${cnt}${num(r.qty)}` : (cnt? `${num(r.count)} no.` : "entered"));
+      : (num(r.qty)>0 ? `${cnt}${num(r.qty)}` : (cnt? `${so||count} no.` : "entered"));
     let line={materialGroup:group,material:(isBar||isPieces||isKg)? r.dia : desc,
       spec:(isBar||isPieces||isKg)? desc : "Additional item",qty,unit,waste,finalQty:withWaste(qty,waste),formula,notes,source:"addl"};
     if(isPieces){ line.massPerUnit=pieceLenM*kgm; line.lengthM=withWaste(qty,waste)*pieceLenM; }

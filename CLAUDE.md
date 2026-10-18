@@ -1397,6 +1397,29 @@ element families waits on the owner's approval of the pad footing.
   `extraConnTargetLabel(r)` is the ONE reading the line, the duplicate-target
   warning and the "typed target with no name" completeness warning use), so a
   bar can connect to an element that is not on the takeoff.
+- **Starter bars are set out as RUNS on slabs too, and any additional bar row
+  can be set out along a run** (18 Oct 2026, Grady: "still not gotten the
+  starter or additional bars part right. i want to be able to enter a length
+  the starter runs, the spacing etc."). The slab calculator's Connections tab
+  (raft, ground, suspended, roof slabs) now carries the shared
+  `starterRunsUI` / `starterRunLines` the footings, beams and composites use
+  — bar, "At a spacing along the run" (run m ÷ spacing mm + 1 end bar × rows)
+  or "Total number", embedment, projection, cog, cast / epoxy — with the
+  default run = `slabPerimM(d)` (the ONE perimeter reading: typed override,
+  sketched outline, else 2 × (L + W); the 5th `starterRunsUI` argument names
+  it in the placeholder). A slab saved with the old single "Starter bars in
+  from footing/wall below" count is migrated lazily by `starterRunsOf` into
+  one run by total number, so it prices as before. **Additional Connections**
+  rows carry `mode` ("count", the default, or "spacing" with `runM`,
+  `spacing`, `rows`): `extraConnCount(r)` is the ONE bar count
+  (`extraConnSetOut` the words on the line), a spacing row with no run prices
+  nothing and is a completeness warning. **Additional Reinforcement /
+  Elements** rows carry `runM` and `spacing` columns ("Run (m)", "@ (mm)"):
+  `addlRowSetOut(r)` = run ÷ spacing + 1 when both are typed and
+  `addlRowCount(r)` = that × the typed count (blank = one run), else the
+  count — `addlRowQty`, `addlRowEach` and the compute formula all read it, so
+  "N12 starters @400 over 12 m, 900 each" is 31 × 0.9 m without counting by
+  hand. `test-slab-starters.mjs` proves all three.
 - **Retaining walls** also carry a plan shape (`planShape`: straight, curved —
   `planRadius` × `planAngle` gives the developed length, or irregular —
   the developed length is typed), a battered stem (`stemBatter`: mean of
