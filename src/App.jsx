@@ -6,7 +6,9 @@ import VersionsModal from "./components/VersionsModal.jsx";
 import { ELEMENT_TYPES, QUOTE_STATUSES, QUOTE_STATUS_STYLES, QUOTE_SCOPES } from "./data/catalog.js";
 import { defaultRates, newElementItem, computeGrandTotal, uid, money, rateKey, isManualQuoteKey, SCOPE_KEYS, scopeLabel } from "./lib/costing.js";
 import { pendingRateUpdates, readLibraryState, readLastSynced, writeLastSynced, RATES_LIBRARY_KEY } from "./lib/ratesLibrarySync.js";
-import { effectiveRates, statusChangePatch, needsFreeze, freezeRates, frozenRateDrift, hasFrozenRates, isRatesLocked } from "./lib/rateFreeze.js";
+import { effectiveRates, statusChangePatch, needsFreeze, freezeRates, frozenRateDrift, hasFrozenRates, isRatesLocked, pricesOffPin } from "./lib/rateFreeze.js";
+import { RATE_CHANGES_KEY, recordRateChanges, pendingRateChanges, applyRateChangesPatch, keepPreviousRatesPatch, isLibraryPin } from "./lib/rateChanges.js";
+import RateChangesPrompt from "./components/RateChangesPrompt.jsx";
 import RateValidityBanner from "./components/RateValidityBanner.jsx";
 import { buildQuoteExcelHtml, quoteExcelFilename, buildQuoteCsv } from "./lib/exportQuote.js";
 import { useStoredState } from "./lib/storage.js";
@@ -206,16 +208,27 @@ export default function App() {
    * typed in the Rates modal is left alone (the modal's drift banner shows it
    * and offers a restore). Runs on load and on the storage event the library
    * fires when it saves, the same signal Cost Planner listens for. */
+  // Every figure the library moves is logged (lib/rateChanges.js) so an
+  // existing project can be asked whether to take it — the log is a shared
+  // row, so the decision waits on whichever device the project is opened.
+  const [rateChanges, setRateChanges, rateChangesStatus] = useStoredState(RATE_CHANGES_KEY, []);
   useEffect(() => {
-    if (!settled(ratesStatus)) return;
+    if (!settled(ratesStatus) || !settled(rateChangesStatus)) return;
     const apply = () => {
       const updates = pendingRateUpdates(rates, readLibraryState(), readLastSynced());
       if (!updates.length) return;                 // nothing to do — never loops
+      const now = new Date().toISOString();
+      const logged = recordRateChanges(rateChanges, updates, now);
+      if (logged !== rateChanges) setRateChanges(logged);
       const next = { ...rates };
       const synced = { ...readLastSynced() };
+      // A key the row lacks starts from its catalog seed (unitWeight,
+      // sheetArea, minQty…) so the library's price never strips those.
+      const seeds = defaultRates();
       updates.forEach(({ key, price, validUntil }) => {
-        if (validUntil !== undefined) { next[key] = { ...(next[key] || {}), validUntil: validUntil || undefined }; return; }
-        next[key] = { ...(next[key] || {}), unitCost: price };
+        const base = next[key] || seeds[key] || {};
+        if (validUntil !== undefined) { next[key] = { ...base, validUntil: validUntil || undefined }; return; }
+        next[key] = { ...base, unitCost: price };
         synced[key] = price;
       });
       writeLastSynced(synced);
@@ -226,7 +239,7 @@ export default function App() {
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ratesStatus, rates]);
+  }, [ratesStatus, rateChangesStatus, rates]);
   const [ratesOpen, setRatesOpen] = useState(false);
   const [elementTypesOpen, setElementTypesOpen] = useState(false);
   // Which top-level tab shows when no project is open — Dashboard, Planner
@@ -475,7 +488,7 @@ export default function App() {
           </div>
         </div>
         {view === "dashboard" && (
-          <Dashboard projects={projects} rates={rates} onOpen={setActiveId} onCreate={createProject} onDelete={deleteProject} onImportFile={importQuoteFile} onPrune={pruneProjects} />
+          <Dashboard projects={projects} rates={rates} rateChanges={rateChanges} onOpen={setActiveId} onCreate={createProject} onDelete={deleteProject} onImportFile={importQuoteFile} onPrune={pruneProjects} />
         )}
         {view === "planner" && <PlannerView projects={projects} onOpen={setActiveId} />}
         {view === "folder" && (
@@ -491,6 +504,7 @@ export default function App() {
 
   return (
     <ProjectEditor
+      rateChanges={rateChanges}
       key={activeProject.id}
       project={activeProject}
       rates={rates}
@@ -509,7 +523,7 @@ export default function App() {
   );
 }
 
-function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, ratesStatus, saveProjectsNow, onBack, isDraft, onPromote, elementTypes, categoryOrder, sectionOrder, customTypes, setCustomTypes }) {
+function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, ratesStatus, rateChanges, saveProjectsNow, onBack, isDraft, onPromote, elementTypes, categoryOrder, sectionOrder, customTypes, setCustomTypes }) {
   const [quote, setQuote, quoteStatus, saveQuoteNow, quoteLoaded] = useStoredState(project.storageKey, blankQuote());
 
   /* ---- Pinned rates on a finished project (see lib/rateFreeze.js) ----
@@ -519,7 +533,7 @@ function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, rate
    * the export, the Rates modal — goes through `rates`, and every rate WRITE
    * from inside a locked project lands on the pinned copy, so a fee typed
    * on a finished quote's card cannot leak into the live rates either. */
-  const locked = isRatesLocked(quote.status);
+  const locked = pricesOffPin(quote);   // a status pin, or a library pin the estimator chose to keep (lib/rateChanges.js)
   const rates = useMemo(() => effectiveRates(quote, liveRates), [quote, liveRates]);
   const setRates = (updater) => {
     if (!locked) { setLiveRates(updater); return; }
@@ -995,10 +1009,19 @@ function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, rate
       <div className="print:hidden max-w-7xl mx-auto px-4 pb-16 grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-4 items-start">
         <div className="space-y-3">
           <RateValidityBanner rates={liveRates} />
+          <RateChangesPrompt
+            changes={pendingRateChanges(quote, rateChanges, project.createdAt)}
+            quote={quote}
+            liveRates={liveRates}
+            onApply={() => { setQuote((q) => ({ ...q, ...applyRateChangesPatch() })); note("This project now prices at the new Rates Library figures"); }}
+            onKeep={(changes) => { setQuote((q) => ({ ...q, ...keepPreviousRatesPatch(q, liveRates, changes) })); note("Previous rates kept for this project — it is pinned; re-price it from the blue banner whenever you want today's figures"); }}
+          />
           {locked && hasFrozenRates(quote) && (
-            <div className="border border-blue-200 bg-blue-50 rounded-lg px-3 py-2 text-[12px] text-blue-950 flex items-start justify-between gap-3" role="status">
+            <div className="border border-blue-200 bg-blue-50 rounded-lg px-3 py-2 text-[12px] text-blue-950 flex items-start justify-between gap-3" role="status" data-testid="rates-pinned-banner">
               <div>
-                <b>Rates pinned</b> on {new Date(quote.ratesFrozen.at).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" })} when this project was marked <b>{quote.ratesFrozen.status}</b>.
+                {isLibraryPin(quote)
+                  ? <><b>Previous rates kept</b> on {new Date(quote.ratesFrozen.at).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" })} when the Rates Library changed — this project prices at the figures it was estimated with.</>
+                  : <><b>Rates pinned</b> on {new Date(quote.ratesFrozen.at).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" })} when this project was marked <b>{quote.ratesFrozen.status}</b>.</>}
                 {" "}Changes in the Rates Library do not touch this quote; a rate edited here changes this quote only.
                 {frozenDrift.length > 0 && (
                   <span className="ml-1 text-amber-900">{frozenDrift.length} pinned rate{frozenDrift.length === 1 ? "" : "s"} now differ{frozenDrift.length === 1 ? "s" : ""} from the current library.</span>

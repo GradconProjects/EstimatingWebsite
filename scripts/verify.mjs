@@ -1139,12 +1139,94 @@ check("Rates Library rules: its price flows into Quotes over ANY stored value, i
   rates = defaultRates();
   rates[CONV] = { ...rates[CONV], unitCost: 60 };
   up = pendingRateUpdates(rates, { formworkLegacy: { Conventional: { cost: 150 } } }, undefined);
-  assert.deepEqual(up, [{ key: CONV, price: 150 }]);
+  assert.deepEqual(up.map(({ key, price }) => ({ key, price })), [{ key: CONV, price: 150 }]);
 
   // already in agreement = no update at all, so this can never render-loop
   rates = defaultRates();
   rates[CONV] = { ...rates[CONV], unitCost: 175 };
   assert.equal(pendingRateUpdates(rates, { formworkLegacy: { Conventional: { cost: 175 } } }, { [CONV]: 175 }).length, 0);
+});
+
+check("Rates Library entries flow wherever they apply: reinforcement tables, labour & plant day rates, preliminaries, and products the stored row never carried", async () => {
+  const RL = await import("../src/lib/ratesLibrarySync.js");
+  const SL82 = rateKey("SQUARE MESH", "SL82", "m2"), N12 = rateKey("PROCESSED BAR", "N12", "m"), TM = rateKey("TRENCH MESH", "3 Bar-L8TM", "length"), SB = rateKey("STOCK BAR", "N12 - 6.0m length", "m");
+  const CREW = rateKey("LABOUR", "Concrete Crew", "man-day"), PUMPM3 = rateKey("LABOUR", "Pump", "m³"), PUMPHR = rateKey("LABOUR", "Pump", "hr"), FORM = rateKey("LABOUR", "Formwork Crew", "man-day"), TRUCK = rateKey("LABOUR", "Trucks", "day");
+  const PROPS = rateKey("SUB CONTRACTORS / TEMPORARY WORKS", "Temporary steel props/struts (150UC23.4) — supply/hire", "tonne");
+  const lib = {
+    reinforcementEstablished: { squareMesh: { SL82: 123 }, processedBar: { N12: 2.0 }, trenchMesh: { "3 Bar-L8TM": 15.5 }, stockBar: { "N12 - 6.0m length": 11 } },
+    labourPlant: { 2: { cost: 555 }, 5: { cost: 260 }, 6: { cost: 9 }, 9: { cost: 3300 }, 10: { cost: 480 }, 12: { cost: 950 } },
+  };
+  let up = RL.pendingRateUpdates(defaultRates(), lib);
+  const got = Object.fromEntries(up.filter((u) => u.price !== undefined).map((u) => [u.key, u.price]));
+  assert.equal(got[SL82], 123, "square mesh $/sheet by name");
+  assert.equal(got[N12], Math.round(2.0 * 1000 / 0.91 * 100) / 100, "processed bar: library $/m becomes Quotes $/tonne through the bar's kg/m");
+  assert.deepEqual(RL.pendingRateUpdates(defaultRates(), { reinforcementEstablished: { processedBar: { N12: +(1925 * 0.91 / 1000).toFixed(4), N24: +(1925 * 3.55 / 1000).toFixed(4) } } }), [], "the library's four-decimal $/m seeds round-trip to the same $/t (within a dollar) — no churn");
+  assert.equal(got[TM], 15.5, "trench mesh per length"); assert.equal(got[SB], 11, "stock bar per 6 m length");
+  assert.equal(got[CREW], 555, "Concreter/day → Concrete Crew man-day"); assert.equal(got[PUMPHR], 260); assert.equal(got[PUMPM3], 9, "the two Pump rows land on pump_hr and pump_m3 by UNIT");
+  assert.equal(got[PROPS], 3300, "the props row lands on the SUB CONTRACTORS tonne product by name");
+  assert.equal(got[FORM], 480, "the appended Formworker row → Formwork Crew"); assert.equal(got[TRUCK], 950, "Truck → Trucks");
+  assert.ok(!Object.keys(got).some((k) => /Steel fix|Factory labour/.test(k)), "library-only rows reach nothing");
+  // a stored row that never carried the key: compared with the catalog default, gains the key when the library differs
+  const bare = {};
+  assert.deepEqual(RL.pendingRateUpdates(bare, { reinforcementEstablished: { squareMesh: { SL82: 98.12 } } }), [], "equal to the catalog default = nothing to write");
+  assert.deepEqual(RL.pendingRateUpdates(bare, { reinforcementEstablished: { squareMesh: { SL82: 99 } } }).map(({ key, price }) => ({ key, price })), [{ key: SL82, price: 99 }], "different = written even though the row lacked the key");
+  // the modal knows every one of them is governed
+  const gov = RL.libraryGovernedKeys(lib);
+  [SL82, N12, TM, SB, CREW, PUMPM3, PROPS, FORM, TRUCK].forEach((k) => assert.ok(gov.has(k), `${k} governed`));
+  // the labour mirror matches the library's own table, row for row
+  const html = fs.readFileSync(new URL("../portal/rates-library.html", import.meta.url), "utf8");
+  const block = html.slice(html.indexOf("const LABOUR_PLANT_ITEMS"), html.indexOf("const PRELIMINARIES_ITEMS"));
+  const rows = [...block.matchAll(/\{p:("(?:[^"\\]|\\.)*"),u:"([^"]+)",cost:[\d.]+\}/g)].map((m) => [JSON.parse(m[1]), m[2]]);
+  assert.deepEqual(rows, RL.LIBRARY_LABOUR_PLANT.map(([n, u]) => [n, u]), "LIBRARY_LABOUR_PLANT mirrors LABOUR_PLANT_ITEMS in order");
+  RL.LIBRARY_LABOUR_PLANT.forEach(([n, u, t]) => { if (Array.isArray(t)) assert.ok(RESOURCE_COLS.some((r) => r.name === t[0] && r.unit === t[1]), `${n} → a real crew-sheet resource`); });
+  // preliminaries: any library name the catalog carries flows by name
+  const pre = html.slice(html.indexOf("const PRELIMINARIES_ITEMS"), html.indexOf("];", html.indexOf("const PRELIMINARIES_ITEMS")));
+  const preNames = [...pre.matchAll(/\{p:("(?:[^"\\]|\\.)*")/g)].map((m) => JSON.parse(m[1]));
+  const cat = FULL_CATALOG.find((c) => c.key === "PRELIMINARIES");
+  const shared = preNames.filter((n) => cat.products.filter((p) => p.name.toLowerCase() === n.toLowerCase()).length === 1);
+  shared.forEach((n) => { const p = cat.products.find((p) => p.name.toLowerCase() === n.toLowerCase()); const u = RL.pendingRateUpdates(defaultRates(), { prelim: { [n]: { cost: p.unitCost + 7 } } }); assert.ok(u.some((x) => x.key === rateKey(cat.key, p.name, p.unit) && x.price === p.unitCost + 7), `prelim "${n}" flows`); });
+});
+
+check("Rates Library changes are logged and an existing project is prompted: apply (ack) or keep (a library pin that survives open statuses and locking)", async () => {
+  const RC = await import("../src/lib/rateChanges.js");
+  const { effectiveRates, statusChangePatch, pricesOffPin } = await import("../src/lib/rateFreeze.js");
+  const SL82 = rateKey("SQUARE MESH", "SL82", "m2"), CREW = rateKey("LABOUR", "Concrete Crew", "man-day");
+  const live = defaultRates();
+  const t0 = "2026-10-20T10:00:00.000Z", t1 = "2026-10-21T10:00:00.000Z", t2 = "2026-10-21T10:05:00.000Z";
+  let log = RC.recordRateChanges([], [{ key: SL82, price: 123, from: 98.12, name: "SL82" }, { key: CREW, price: 555, from: 500, name: "Concreter (day)" }, { key: "x", price: 5, from: 5, name: "same" }], t1);
+  assert.equal(log.length, 2, "a move to the same figure is not a change");
+  assert.deepEqual(log[0], { at: t1, key: SL82, name: "SL82", from: 98.12, to: 123 });
+  assert.equal(RC.recordRateChanges(log, [{ key: SL82, price: 123, from: 98.12, name: "SL82" }], t2), log, "the same move minutes later (a second browser) is not logged twice");
+  live[SL82] = { ...live[SL82], unitCost: 123 }; live[CREW] = { ...live[CREW], unitCost: 555 };
+  // a project created BEFORE the change, with an element using mesh and a crew day
+  const type = ELEMENT_TYPES.find((t) => t.labour === "slab_ground") || ELEMENT_TYPES[0];
+  const item = newElementItem(type); item.qtys[SL82] = 144; // 10 sheets
+  const quote = { status: "Estimating", items: [item], scope: "both" };
+  const pend = RC.pendingRateChanges(quote, log, t0);
+  assert.equal(pend.length, 2, "both changes are newer than the project");
+  assert.deepEqual(RC.pendingRateChanges(quote, log, t2), [], "a project created after the change is never asked");
+  assert.deepEqual(RC.pendingRateChanges({ ...quote, items: [] }, log, t0), [], "nothing to re-price = no prompt");
+  const impact = RC.rateChangeImpact(quote, live, pend);
+  assert.ok(impact.after - impact.before > 0 && Math.abs((impact.after - impact.before) - 10 * (123 - 98.12)) < 0.01, `10 sheets × $24.88 dearer: ${JSON.stringify(impact)}`);
+  // apply: acknowledged, prices live, asked again only for a LATER change
+  const applied = { ...quote, ...RC.applyRateChangesPatch(t2) };
+  assert.deepEqual(RC.pendingRateChanges(applied, log, t0), []);
+  assert.equal(effectiveRates(applied, live)[SL82].unitCost, 123);
+  const later = RC.recordRateChanges(log, [{ key: SL82, price: 130, from: 123, name: "SL82" }], "2026-10-22T09:00:00.000Z");
+  assert.deepEqual(RC.pendingRateChanges(applied, later, t0).map((c) => [c.key, c.from, c.to]), [[SL82, 123, 130]]);
+  // keep: a library pin at the previous figures, honoured on an open status
+  const kept = { ...quote, ...RC.keepPreviousRatesPatch(quote, live, pend, t2) };
+  assert.ok(RC.isLibraryPin(kept) && pricesOffPin(kept));
+  assert.equal(effectiveRates(kept, live)[SL82].unitCost, 98.12); assert.equal(effectiveRates(kept, live)[CREW].unitCost, 500);
+  assert.deepEqual(RC.pendingRateChanges(kept, later, t0), [], "a pinned project is never prompted — the library does not touch its copy");
+  // the pin travels: open → open keeps it; open → locked keeps ITS figures (no fresh copy of the live rates); locked → open drops it as always
+  let p = statusChangePatch(kept, "Queued", live, t2); assert.ok(!("ratesFrozen" in p), "open → open leaves a library pin alone");
+  p = statusChangePatch(kept, "Completed Estimating", live, t2); assert.ok(!("ratesFrozen" in p) || p.ratesFrozen.rates[SL82].unitCost === 98.12, "locking keeps the kept figures");
+  const lockedKept = { ...kept, status: "Completed Estimating" };
+  p = statusChangePatch(lockedKept, "Estimating", live, t2); assert.equal(p.ratesFrozen, null, "back to open from a locked status drops the pin, as ever");
+  const plain = { status: "Estimating", items: [item], ratesFrozen: { at: t1, status: "Completed Estimating", rates: { ...live } } };
+  assert.equal(effectiveRates(plain, live), live, "a STATUS pin on an open status is still ignored");
+  assert.equal(statusChangePatch(plain, "Queued", live, t2).ratesFrozen, null, "...and still cleared on an open→open move");
 });
 
 const { computeTenderProjectSum, parseTenderPrice, seedTenderItems } = await import("../src/lib/tenderQuoteDefaults.js");
@@ -1979,7 +2061,7 @@ check("Rates Library rules: a listed product moves to the library price whatever
   const upd = pendingRateUpdates(rates, lib, {});                              // no last-synced record at all (a fresh browser)
   assert.deepEqual(upd.map((u) => [u.key, u.price]).sort(), [[conv, 150], [edge, 50]].sort());
   assert.deepEqual(pendingRateUpdates({ [conv]: { unitCost: 150 }, [edge]: { unitCost: 50 } }, lib, {}), [], "nothing pending once they agree");
-  assert.deepEqual(pendingRateUpdates({ [conv]: { unitCost: 999 } }, lib, {}), [{ key: conv, price: 150 }], "a hand-typed $999 does not block the library either");
+  assert.deepEqual(pendingRateUpdates({ [conv]: { unitCost: 999 } }, lib, {}).map(({ key, price }) => ({ key, price })), [{ key: conv, price: 150 }], "a hand-typed $999 does not block the library either");
 });
 check("Rates Library rules: excluded and ambiguous names never move a Quotes rate", () => {
   assert.ok(LIBRARY_EXCLUDED_NAMES.includes("Delivery fee"));
@@ -2392,7 +2474,9 @@ check("Rates Library: the GLOBAL fuel/transport surcharge now governs Quotes' su
   assert.ok(libraryGovernedKeys(lib).has(SUR), "the modal shows the surcharge as library-governed");
   let rates = defaultRates();
   let up = pendingRateUpdates(rates, lib, {});
-  assert.deepEqual(up.find((u) => u.key === SUR && u.price !== undefined), { key: SUR, price: 11.4 }, "price entry keeps its {key, price} shape");
+  const sur = up.find((u) => u.key === SUR && u.price !== undefined);
+  assert.deepEqual({ key: sur.key, price: sur.price }, { key: SUR, price: 11.4 }, "price entry keeps its {key, price} shape (plus from + name for the change log)");
+  assert.equal(sur.from, 9.17); assert.equal(sur.name, "Production & transport surcharge");
   assert.deepEqual(up.find((u) => u.key === SUR && u.validUntil !== undefined), { key: SUR, validUntil: "2026-10-12" });
   assert.deepEqual(up.find((u) => u.validUntil === "2026-12-31"), { key: rateKey("CONCRETE", "Environment levy", "m3"), validUntil: "2026-12-31" });
   assert.equal(up.filter((u) => u.validUntil !== undefined).length, 2, "an unmatched name and an unreadable date are ignored");

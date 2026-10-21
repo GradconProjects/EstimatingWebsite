@@ -339,6 +339,48 @@ lived in the one shared rate that two other projects also carried):
    the page. Nothing changes a figure when its date lapses — the alarm is
    the reminder to enter the supplier's next notice and date together.
 
+   **Everything the library prices reaches Quotes on its own** (Grady, 21 Oct
+   2026: "entries made in rates library should automatically update where
+   applicable"): beside the seven priced sections, `REO_SECTIONS` map the
+   library's `reinforcementEstablished` tables by product name — trench mesh
+   per length, square mesh per sheet, stock bar per 6 m length, and
+   processed bar, which the library stores as $/m per size and Quotes prices
+   per TONNE, converted through the catalog `unitWeight` — `prelim` by name,
+   and the index-keyed "Labour & Plant" table through `LIBRARY_LABOUR_PLANT`
+   (a mirror of `LABOUR_PLANT_ITEMS`, row for row, `verify.mjs` fails on
+   drift; APPEND rows, never reorder) onto the crew-sheet resources
+   (`rateKey("LABOUR", <RESOURCE_COLS name>, <unit>)` — the two Pump rows by
+   unit) and the temporary-props tonne product. A key the stored rates row
+   never carried is compared with its catalog default and gains the key when
+   the library differs (before this such a product never took the library's
+   price; the app seeds the new entry from `defaultRates()` so unitWeight /
+   sheetArea / minQty survive). A rate the library governs cannot be edited
+   in the Rates modal, and a crew rate typed on a card snaps back to the
+   library figure on the next sync — change it in the library.
+   **Existing projects are PROMPTED** (same day: "it should prompt for
+   existing projects if the new rates entered should be updated or applied"):
+   `lib/rateChanges.js` (pure, verify-covered). Every figure the sync moves is
+   logged in the shared `gradcon-rates-changes` row (`recordRateChanges`:
+   `{at, key, name, from, to}`, the same move within ten minutes once, capped
+   at 400). `pendingRateChanges(quote, log, createdAt)` = the changes newer
+   than the project's `ratesAck.at` (else its creation) on an UNPINNED project
+   with elements, one per key (earliest from → latest to). `RateChangesPrompt`
+   (top of the editor) lists them with the project's direct cost at the
+   previous figures and now (`rateChangeImpact`) and offers **Apply the new
+   rates** (`applyRateChangesPatch` → `ratesAck`; it already prices at them)
+   or **Keep the previous rates** (`keepPreviousRatesPatch` → `ratesFrozen
+   = {at, status, reason: "library", rates: previousRates(live, changes)}` +
+   `ratesAck`). A `reason: "library"` pin is honoured on an OPEN status
+   (`effectiveRates`; `pricesOffPin(quote)` is the ONE test the editor, the
+   modal and the Dashboard use), travels through open-status moves and into a
+   locked status with ITS figures (`statusChangePatch`), and drops only on a
+   move back from a locked status, as any pin; the blue banner reads
+   "Previous rates kept" and its "Re-price with current rates" button is the
+   way back. The Dashboard lists the projects still to decide
+   (`rate-changes-waiting`), each opening on its prompt. A project with no
+   elements, or created after the change, is never asked. Edits typed in the
+   Rates modal or on a card are not logged — only library-driven moves.
+
 3. **A finished project keeps its own copy of the rates** (`lib/rateFreeze.js`,
    pure): the moment a status enters `RATES_LOCKED_STATUSES` (Completed
    Estimating, Quoting, Submitted, Tendered, Successful, Unsuccessful — never

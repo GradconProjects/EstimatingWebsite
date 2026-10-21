@@ -44,9 +44,17 @@ export const hasFrozenRates = (quote) =>
  */
 export function effectiveRates(quote, liveRates) {
   const live = liveRates || {};
-  if (!quote || !isRatesLocked(quote.status) || !hasFrozenRates(quote)) return live;
+  if (!quote || !hasFrozenRates(quote)) return live;
+  // A pin taken because the estimator chose to KEEP a project's previous
+  // figures when the Rates Library changed (lib/rateChanges.js, reason
+  // "library") holds on an open status too; a status pin only while locked.
+  if (!isRatesLocked(quote.status) && quote.ratesFrozen.reason !== "library") return live;
   return { ...live, ...quote.ratesFrozen.rates };
 }
+/** Does this quote price off a pinned copy right now (status pin or a kept
+ * library pin)? The ONE test the editor, the modal and the Dashboard use. */
+export const pricesOffPin = (quote) =>
+  hasFrozenRates(quote) && (isRatesLocked(quote.status) || quote.ratesFrozen.reason === "library");
 
 /** A fresh pinned copy of `liveRates` stamped with when and why. */
 export function freezeRates(liveRates, status, at = new Date().toISOString()) {
@@ -70,8 +78,13 @@ export function statusChangePatch(quote, nextStatus, liveRates, at) {
   const wasLocked = isRatesLocked(quote && quote.status);
   const willLock = isRatesLocked(nextStatus);
   const patch = { status: nextStatus };
-  if (willLock && !(wasLocked && hasFrozenRates(quote))) patch.ratesFrozen = freezeRates(liveRates, nextStatus, at);
-  else if (!willLock && quote && quote.ratesFrozen) patch.ratesFrozen = null;
+  const keptLibraryPin = !!(quote && hasFrozenRates(quote) && quote.ratesFrozen.reason === "library");
+  // A kept library pin travels with the project: locking keeps the figures
+  // it was estimated with (never a fresh copy of the live rates over them),
+  // and a move between open statuses leaves it alone; only a move back from
+  // a LOCKED status drops a pin, as it always has.
+  if (willLock && !((wasLocked || keptLibraryPin) && hasFrozenRates(quote))) patch.ratesFrozen = freezeRates(liveRates, nextStatus, at);
+  else if (!willLock && quote && quote.ratesFrozen && !(keptLibraryPin && !wasLocked)) patch.ratesFrozen = null;
   // The deadline clock stops the day the quote goes out (lib/planner.js):
   // entering Submitted (or later) from an open status records the day; a
   // move between submitted statuses keeps it; moving back to an open status

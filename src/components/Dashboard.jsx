@@ -8,6 +8,7 @@ import { dashboardDueLabel, formatDay, OPEN_STATUSES } from "../lib/planner.js";
 import { effectiveRates, statusChangePatch, completedDay } from "../lib/rateFreeze.js";
 import { PROJECT_SORTS, sortProjects, defaultSortDir, preferredSortKey } from "../lib/projectSort.js";
 import RateValidityBanner from "./RateValidityBanner.jsx";
+import { pendingRateChanges } from "../lib/rateChanges.js";
 
 const OPEN_FILTER = "__open";   // the tile value for OPEN_STATUSES (lib/planner.js)
 
@@ -80,7 +81,7 @@ function StatTile({ label, value, highlight }) {
   );
 }
 
-export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete, onImportFile, onPrune }) {
+export default function Dashboard({ projects, rates, rateChanges, onOpen, onCreate, onDelete, onImportFile, onPrune }) {
   // First paint comes from the last-known summary mirror (instant), then the
   // effect below replaces it with what the database actually holds. An
   // install without a mirror yet starts empty exactly as before.
@@ -288,6 +289,24 @@ export default function Dashboard({ projects, rates, onOpen, onCreate, onDelete,
       </div>
       <SummaryLoadNotice failedCount={failedCount} onRetry={() => setReloadTick((t) => t + 1)} />
       <RateValidityBanner rates={rates} />
+      {/* Projects still to decide on Rates Library changes they were priced
+          with (lib/rateChanges.js) — each opens on its prompt. */}
+      {(() => {
+        const waiting = projects
+          .map((p) => ({ p, q: quotesByKey[p.storageKey] }))
+          .filter(({ p, q }) => q && pendingRateChanges(q, rateChanges, p.createdAt).length > 0);
+        if (!waiting.length) return null;
+        return (
+          <div className="border border-orange-300 bg-orange-50 rounded-lg px-3 py-2 text-[12px] text-neutral-900 flex flex-wrap items-center gap-2" role="status" data-testid="rate-changes-waiting">
+            <span className="font-semibold text-orange-900">Rates Library changed — {waiting.length} project{waiting.length === 1 ? " has" : "s have"} new rates to apply or keep:</span>
+            {waiting.map(({ p, q }) => (
+              <button key={p.id} type="button" onClick={() => onOpen(p.id)} className="px-2 py-0.5 rounded-md bg-white border border-orange-300 hover:bg-orange-100 text-orange-900 text-[11px] font-medium">
+                {q.projectName || "Untitled project"}
+              </button>
+            ))}
+          </div>
+        );
+      })()}
 
       {/* Status filter tiles — one per status plus All projects. Each tile is
           FILLED with its status's own solid colour (the same `bar` shade the

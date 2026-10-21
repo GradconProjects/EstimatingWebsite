@@ -557,6 +557,13 @@ const LABOUR_PLANT_ITEMS = [
   {p:"Steel fixer",u:"day",cost:650},
   {p:"Crane",u:"day",cost:1600},
   {p:"Temporary steel props/struts (150UC23.4) — supply/hire",u:"tonne",cost:3200},
+  // The three crew-sheet resources Quotes carries that had no row here.
+  // APPEND ONLY: the saved state keys this table by row index, and
+  // src/lib/ratesLibrarySync.js mirrors the rows (LIBRARY_LABOUR_PLANT) to
+  // land each day rate on its Quotes crew-sheet column.
+  {p:"Formworker",u:"day",cost:500},
+  {p:"General labourer",u:"day",cost:400},
+  {p:"Truck",u:"day",cost:900},
 ];
 
 const PRELIMINARIES_ITEMS = [
@@ -1090,6 +1097,7 @@ h += section("sec-reinforcement", "Reinforcement", "Reinforcement", REINFORCEMEN
       <tr><td>General labour ($/day)</td><td><input type="number" step="any" id="g_general" value="${state.global.labourGeneral}"></td></tr>
     </tbody></table></div>
     <div class="panel-block" style="margin-top:10px;"><h3>Plant &amp; equipment</h3>` +
+    `<p class="hint">These day / hour rates flow straight onto the Quotes crew sheets (Concrete, Steel, Formwork and General Labour crews, Excavator, Bobcat, Truck, Pump per hour and per m³, Crane) and the temporary props row — every open project re-prices the moment a figure here changes; a project with pinned rates keeps its copy. Steel fix per tonne and Factory labour are library-only figures.</p>` +
     editableTable(LABOUR_PLANT_ITEMS, state.labourPlant, (it,idx)=>idx, [{field:"cost",label:"Rate ($)"}], {mapName:"labourPlant"}) +
     `</div>`);
 
