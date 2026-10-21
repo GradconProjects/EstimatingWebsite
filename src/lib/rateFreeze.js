@@ -79,11 +79,12 @@ export function statusChangePatch(quote, nextStatus, liveRates, at) {
   const willLock = isRatesLocked(nextStatus);
   const patch = { status: nextStatus };
   const keptLibraryPin = !!(quote && hasFrozenRates(quote) && quote.ratesFrozen.reason === "library");
-  // A kept library pin travels with the project: locking keeps the figures
-  // it was estimated with (never a fresh copy of the live rates over them),
-  // and a move between open statuses leaves it alone; only a move back from
-  // a LOCKED status drops a pin, as it always has.
-  if (willLock && !((wasLocked || keptLibraryPin) && hasFrozenRates(quote))) patch.ratesFrozen = freezeRates(liveRates, nextStatus, at);
+  // A project that KEPT some previous figures when the library changed
+  // (lib/rateChanges.js) locks with those figures inside its status pin —
+  // the pin is taken from what it prices at today, never a bare copy of the
+  // live rates over them; a move between open statuses leaves the kept
+  // figures alone; only a move back from a LOCKED status drops a pin.
+  if (willLock && !(wasLocked && hasFrozenRates(quote))) patch.ratesFrozen = freezeRates(effectiveRates(quote, liveRates), nextStatus, at);
   else if (!willLock && quote && quote.ratesFrozen && !(keptLibraryPin && !wasLocked)) patch.ratesFrozen = null;
   // The deadline clock stops the day the quote goes out (lib/planner.js):
   // entering Submitted (or later) from an open status records the day; a
@@ -121,7 +122,10 @@ export function completedDay(quote) {
  * before pins existed, or was patched by an older build) gets one the first
  * time it is opened — that is the moment its figures stop moving. */
 export function needsFreeze(quote) {
-  return !!quote && isRatesLocked(quote.status) && !hasFrozenRates(quote);
+  // a library pin (kept figures only) is not a status pin: a locked project
+  // carrying one still needs its full copy — taken from effectiveRates so
+  // the kept figures stay inside it
+  return !!quote && isRatesLocked(quote.status) && (!hasFrozenRates(quote) || quote.ratesFrozen.reason === "library");
 }
 
 /** Which pinned rates no longer match the live ones: [{ key, pinned, live }].

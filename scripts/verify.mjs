@@ -1147,7 +1147,7 @@ check("Rates Library rules: its price flows into Quotes over ANY stored value, i
   assert.equal(pendingRateUpdates(rates, { formworkLegacy: { Conventional: { cost: 175 } } }, { [CONV]: 175 }).length, 0);
 });
 
-check("Rates Library entries flow wherever they apply: reinforcement tables, labour & plant day rates, preliminaries, and products the stored row never carried", async () => {
+await checkAsync("Rates Library entries flow wherever they apply: reinforcement tables, labour & plant day rates, preliminaries, and products the stored row never carried", async () => {
   const RL = await import("../src/lib/ratesLibrarySync.js");
   const SL82 = rateKey("SQUARE MESH", "SL82", "m2"), N12 = rateKey("PROCESSED BAR", "N12", "m"), TM = rateKey("TRENCH MESH", "3 Bar-L8TM", "length"), SB = rateKey("STOCK BAR", "N12 - 6.0m length", "m");
   const CREW = rateKey("LABOUR", "Concrete Crew", "man-day"), PUMPM3 = rateKey("LABOUR", "Pump", "m³"), PUMPHR = rateKey("LABOUR", "Pump", "hr"), FORM = rateKey("LABOUR", "Formwork Crew", "man-day"), TRUCK = rateKey("LABOUR", "Trucks", "day");
@@ -1160,7 +1160,9 @@ check("Rates Library entries flow wherever they apply: reinforcement tables, lab
   const got = Object.fromEntries(up.filter((u) => u.price !== undefined).map((u) => [u.key, u.price]));
   assert.equal(got[SL82], 123, "square mesh $/sheet by name");
   assert.equal(got[N12], Math.round(2.0 * 1000 / 0.91 * 100) / 100, "processed bar: library $/m becomes Quotes $/tonne through the bar's kg/m");
-  assert.deepEqual(RL.pendingRateUpdates(defaultRates(), { reinforcementEstablished: { processedBar: { N12: +(1925 * 0.91 / 1000).toFixed(4), N24: +(1925 * 3.55 / 1000).toFixed(4) } } }), [], "the library's four-decimal $/m seeds round-trip to the same $/t (within a dollar) — no churn");
+  const pb = FULL_CATALOG.find((c) => c.key === "PROCESSED BAR").products;
+  const seeds = Object.fromEntries(pb.map((p) => [p.name, +(1925 * p.unitWeight / 1000).toFixed(4)]));
+  assert.deepEqual(RL.pendingRateUpdates(defaultRates(), { reinforcementEstablished: { processedBar: seeds } }), [], "the library's four-decimal $/m seeds round-trip to the same $/t (within a dollar) — no churn");
   assert.equal(got[TM], 15.5, "trench mesh per length"); assert.equal(got[SB], 11, "stock bar per 6 m length");
   assert.equal(got[CREW], 555, "Concreter/day → Concrete Crew man-day"); assert.equal(got[PUMPHR], 260); assert.equal(got[PUMPM3], 9, "the two Pump rows land on pump_hr and pump_m3 by UNIT");
   assert.equal(got[PROPS], 3300, "the props row lands on the SUB CONTRACTORS tonne product by name");
@@ -1187,9 +1189,9 @@ check("Rates Library entries flow wherever they apply: reinforcement tables, lab
   shared.forEach((n) => { const p = cat.products.find((p) => p.name.toLowerCase() === n.toLowerCase()); const u = RL.pendingRateUpdates(defaultRates(), { prelim: { [n]: { cost: p.unitCost + 7 } } }); assert.ok(u.some((x) => x.key === rateKey(cat.key, p.name, p.unit) && x.price === p.unitCost + 7), `prelim "${n}" flows`); });
 });
 
-check("Rates Library changes are logged and an existing project is prompted: apply (ack) or keep (a library pin that survives open statuses and locking)", async () => {
+await checkAsync("Rates Library changes are logged and an existing project is prompted per rate: ticked rates apply, unticked ones are kept (a partial library pin) and the pin travels", async () => {
   const RC = await import("../src/lib/rateChanges.js");
-  const { effectiveRates, statusChangePatch, pricesOffPin } = await import("../src/lib/rateFreeze.js");
+  const { effectiveRates, statusChangePatch, needsFreeze } = await import("../src/lib/rateFreeze.js");
   const SL82 = rateKey("SQUARE MESH", "SL82", "m2"), CREW = rateKey("LABOUR", "Concrete Crew", "man-day");
   const live = defaultRates();
   const t0 = "2026-10-20T10:00:00.000Z", t1 = "2026-10-21T10:00:00.000Z", t2 = "2026-10-21T10:05:00.000Z";
@@ -1198,7 +1200,6 @@ check("Rates Library changes are logged and an existing project is prompted: app
   assert.deepEqual(log[0], { at: t1, key: SL82, name: "SL82", from: 98.12, to: 123 });
   assert.equal(RC.recordRateChanges(log, [{ key: SL82, price: 123, from: 98.12, name: "SL82" }], t2), log, "the same move minutes later (a second browser) is not logged twice");
   live[SL82] = { ...live[SL82], unitCost: 123 }; live[CREW] = { ...live[CREW], unitCost: 555 };
-  // a project created BEFORE the change, with an element using mesh and a crew day
   const type = ELEMENT_TYPES.find((t) => t.labour === "slab_ground") || ELEMENT_TYPES[0];
   const item = newElementItem(type); item.qtys[SL82] = 144; // 10 sheets
   const quote = { status: "Estimating", items: [item], scope: "both" };
@@ -1206,23 +1207,35 @@ check("Rates Library changes are logged and an existing project is prompted: app
   assert.equal(pend.length, 2, "both changes are newer than the project");
   assert.deepEqual(RC.pendingRateChanges(quote, log, t2), [], "a project created after the change is never asked");
   assert.deepEqual(RC.pendingRateChanges({ ...quote, items: [] }, log, t0), [], "nothing to re-price = no prompt");
-  const impact = RC.rateChangeImpact(quote, live, pend);
-  assert.ok(impact.after - impact.before > 0 && Math.abs((impact.after - impact.before) - 10 * (123 - 98.12)) < 0.01, `10 sheets × $24.88 dearer: ${JSON.stringify(impact)}`);
-  // apply: acknowledged, prices live, asked again only for a LATER change
-  const applied = { ...quote, ...RC.applyRateChangesPatch(t2) };
-  assert.deepEqual(RC.pendingRateChanges(applied, log, t0), []);
-  assert.equal(effectiveRates(applied, live)[SL82].unitCost, 123);
+  const all = RC.rateChangeImpact(quote, live, pend), meshOnly = RC.rateChangeImpact(quote, live, pend, [SL82]), crewOnly = RC.rateChangeImpact(quote, live, pend, [CREW]);
+  assert.ok(Math.abs((meshOnly.after - meshOnly.before) - 10 * (123 - 98.12)) < 0.01, `ticking the mesh alone: 10 sheets × $24.88 dearer: ${JSON.stringify(meshOnly)}`);
+  assert.ok(crewOnly.after > crewOnly.before, "ticking the crew rate alone moves the auto crew days' cost");
+  assert.ok(Math.abs((all.after - all.before) - ((meshOnly.after - meshOnly.before) + (crewOnly.after - crewOnly.before))) < 0.01, "both ticked = the two together");
+  // tick the crew rate, keep the mesh: a partial pin of the mesh only
+  const part = { ...quote, ...RC.decideRateChangesPatch(quote, live, pend, [CREW], t2) };
+  assert.ok(RC.isLibraryPin(part) && Object.keys(part.ratesFrozen.rates).length === 1 && part.ratesFrozen.rates[SL82].unitCost === 98.12, JSON.stringify(part.ratesFrozen));
+  assert.equal(effectiveRates(part, live)[SL82].unitCost, 98.12, "the kept mesh prices at the previous figure on an OPEN status");
+  assert.equal(effectiveRates(part, live)[CREW].unitCost, 555, "the ticked crew rate follows the library");
+  assert.deepEqual(RC.keptRates(part).map((k) => [k.name, k.unitCost]), [["SL82", 98.12]]);
+  assert.deepEqual(RC.pendingRateChanges(part, log, t0), [], "decided — not asked again for the same changes");
+  // a LATER library move on the kept key asks again, from the kept figure
   const later = RC.recordRateChanges(log, [{ key: SL82, price: 130, from: 123, name: "SL82" }], "2026-10-22T09:00:00.000Z");
-  assert.deepEqual(RC.pendingRateChanges(applied, later, t0).map((c) => [c.key, c.from, c.to]), [[SL82, 123, 130]]);
-  // keep: a library pin at the previous figures, honoured on an open status
+  assert.deepEqual(RC.pendingRateChanges(part, later, t0).map((c) => [c.key, c.from, c.to]), [[SL82, 98.12, 130]]);
+  // apply all / keep all are the two ends of the same decision
+  const applied = { ...quote, ...RC.applyRateChangesPatch(quote, live, pend, t2) };
+  assert.equal(applied.ratesFrozen, null); assert.deepEqual(RC.pendingRateChanges(applied, log, t0), []); assert.equal(effectiveRates(applied, live)[SL82].unitCost, 123);
   const kept = { ...quote, ...RC.keepPreviousRatesPatch(quote, live, pend, t2) };
-  assert.ok(RC.isLibraryPin(kept) && pricesOffPin(kept));
   assert.equal(effectiveRates(kept, live)[SL82].unitCost, 98.12); assert.equal(effectiveRates(kept, live)[CREW].unitCost, 500);
-  assert.deepEqual(RC.pendingRateChanges(kept, later, t0), [], "a pinned project is never prompted — the library does not touch its copy");
-  // the pin travels: open → open keeps it; open → locked keeps ITS figures (no fresh copy of the live rates); locked → open drops it as always
-  let p = statusChangePatch(kept, "Queued", live, t2); assert.ok(!("ratesFrozen" in p), "open → open leaves a library pin alone");
-  p = statusChangePatch(kept, "Completed Estimating", live, t2); assert.ok(!("ratesFrozen" in p) || p.ratesFrozen.rates[SL82].unitCost === 98.12, "locking keeps the kept figures");
-  const lockedKept = { ...kept, status: "Completed Estimating" };
+  // release: one key, then the rest — the pin goes when empty
+  const rel1 = { ...kept, ...RC.releaseKeptRatesPatch(kept, [CREW]) };
+  assert.equal(effectiveRates(rel1, live)[CREW].unitCost, 555); assert.equal(effectiveRates(rel1, live)[SL82].unitCost, 98.12);
+  assert.equal(RC.releaseKeptRatesPatch(rel1).ratesFrozen, null, "releasing the last kept key drops the pin");
+  // the kept figures travel: open → open leaves them; locking pins what the project prices at today (kept figures inside); locked → open drops the pin as ever
+  let p = statusChangePatch(part, "Queued", live, t2); assert.ok(!("ratesFrozen" in p), "open → open leaves a library pin alone");
+  p = statusChangePatch(part, "Completed Estimating", live, t2);
+  assert.ok(p.ratesFrozen && p.ratesFrozen.reason === undefined && p.ratesFrozen.rates[SL82].unitCost === 98.12 && p.ratesFrozen.rates[CREW].unitCost === 555, "locking takes a full status pin of the EFFECTIVE rates");
+  assert.ok(needsFreeze({ ...part, status: "Completed Estimating" }), "a locked project still carrying only a library pin needs its full copy");
+  const lockedKept = { ...part, status: "Completed Estimating", ratesFrozen: p.ratesFrozen };
   p = statusChangePatch(lockedKept, "Estimating", live, t2); assert.equal(p.ratesFrozen, null, "back to open from a locked status drops the pin, as ever");
   const plain = { status: "Estimating", items: [item], ratesFrozen: { at: t1, status: "Completed Estimating", rates: { ...live } } };
   assert.equal(effectiveRates(plain, live), live, "a STATUS pin on an open status is still ignored");

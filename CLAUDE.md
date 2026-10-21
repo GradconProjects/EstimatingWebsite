@@ -357,26 +357,38 @@ lived in the one shared rate that two other projects also carried):
    sheetArea / minQty survive). A rate the library governs cannot be edited
    in the Rates modal, and a crew rate typed on a card snaps back to the
    library figure on the next sync — change it in the library.
-   **Existing projects are PROMPTED** (same day: "it should prompt for
-   existing projects if the new rates entered should be updated or applied"):
-   `lib/rateChanges.js` (pure, verify-covered). Every figure the sync moves is
-   logged in the shared `gradcon-rates-changes` row (`recordRateChanges`:
-   `{at, key, name, from, to}`, the same move within ten minutes once, capped
-   at 400). `pendingRateChanges(quote, log, createdAt)` = the changes newer
-   than the project's `ratesAck.at` (else its creation) on an UNPINNED project
-   with elements, one per key (earliest from → latest to). `RateChangesPrompt`
-   (top of the editor) lists them with the project's direct cost at the
-   previous figures and now (`rateChangeImpact`) and offers **Apply the new
-   rates** (`applyRateChangesPatch` → `ratesAck`; it already prices at them)
-   or **Keep the previous rates** (`keepPreviousRatesPatch` → `ratesFrozen
-   = {at, status, reason: "library", rates: previousRates(live, changes)}` +
-   `ratesAck`). A `reason: "library"` pin is honoured on an OPEN status
-   (`effectiveRates`; `pricesOffPin(quote)` is the ONE test the editor, the
-   modal and the Dashboard use), travels through open-status moves and into a
-   locked status with ITS figures (`statusChangePatch`), and drops only on a
-   move back from a locked status, as any pin; the blue banner reads
-   "Previous rates kept" and its "Re-price with current rates" button is the
-   way back. The Dashboard lists the projects still to decide
+   **Existing projects are PROMPTED, rate by rate** (same day: "it should
+   prompt for existing projects if the new rates entered should be updated
+   or applied" and "the actual rates changed should have a checkbox for user
+   to select the applicable rates from the library rather than the entire
+   rates applied to that project"): `lib/rateChanges.js` (pure,
+   verify-covered). Every figure the sync moves is logged in the shared
+   `gradcon-rates-changes` row (`recordRateChanges`: `{at, key, name, from,
+   to}`, the same move within ten minutes once, capped at 400).
+   `pendingRateChanges(quote, log, createdAt)` = the changes newer than the
+   project's `ratesAck.at` (else its creation) on a project with elements
+   that is not status-pinned, one per key — `from` is what the project
+   prices that key at today (a figure it KEPT, else the earliest logged
+   previous one), `to` the live rate. `RateChangesPrompt` (top of the
+   editor) lists them with a TICK each (all / none), the project's direct
+   cost at the previous figures and with the ticked ones
+   (`rateChangeImpact(quote, live, changes, apply)`), and ONE button:
+   `decideRateChangesPatch(quote, live, changes, apply)` — a ticked key
+   follows the live rates, an unticked one is KEPT at its previous figure
+   in a PARTIAL library pin (`ratesFrozen = {at, status, reason: "library",
+   rates: ONLY the kept keys, names}` + `ratesAck = {at, applied, kept}`;
+   `applyRateChangesPatch` / `keepPreviousRatesPatch` are the two ends).
+   `effectiveRates` lays a library pin over the live rates on an OPEN status
+   too, so the rest of the project follows the library; a later library move
+   on a kept key asks again. `KeptRatesBanner` (open project) lists the kept
+   figures beside the library's and releases one or all
+   (`releaseKeptRatesPatch`; an empty pin is dropped). The editor's `locked`
+   (rate writes to the pin, the modal's lock) is the STATUS pin only.
+   Locking a project that kept figures takes a full status pin of its
+   EFFECTIVE rates (`statusChangePatch`, `needsFreeze` → `freezeRates(
+   effectiveRates(q, live))`), so the kept figures stay inside; open-status
+   moves leave the library pin alone; a move back from a locked status drops
+   any pin. The Dashboard lists the projects still to decide
    (`rate-changes-waiting`), each opening on its prompt. A project with no
    elements, or created after the change, is never asked. Edits typed in the
    Rates modal or on a card are not logged — only library-driven moves.

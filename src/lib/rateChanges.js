@@ -8,12 +8,16 @@
  * This module is the second half: every figure the library moves is
  * RECORDED here ({at, key, name, from, to}, a cloud-shared log under
  * RATE_CHANGES_KEY, capped), and an existing project that was priced before
- * a change is PROMPTED the next time it is opened — "Apply the new rates"
- * (it already prices at them; the prompt is acknowledged) or "Keep the
- * previous rates" (a pin of the figures it was estimated with, `reason:
- * "library"`, honoured on an OPEN status too — see rateFreeze.effectiveRates).
- * `quote.ratesAck = {at, kept}` is the decision; changes older than it (or
- * older than the project itself) never prompt again. Pure, verify-covered.
+ * a change is PROMPTED the next time it is opened — each changed
+ * rate has a tick (Grady, same day: "the actual rates changed should have a
+ * checkbox for user to select the applicable rates from the library rather
+ * than the entire rates applied to that project"): a ticked rate takes the
+ * library's figure, an unticked one is KEPT at the figure the project was
+ * estimated with — a library pin holding only the kept keys (`reason:
+ * "library"`, laid over the live rates by rateFreeze.effectiveRates, honoured
+ * on an OPEN status). `quote.ratesAck = {at, applied, kept}` is the decision;
+ * changes older than it (or older than the project itself) never prompt
+ * again, a later library move on a kept key asks again. Pure, verify-covered.
  */
 import { computeGrandTotal } from "./costing.js";
 import { hasFrozenRates } from "./rateFreeze.js";
@@ -47,17 +51,28 @@ export function rateAckAt(quote, createdAt) {
   return Number.isFinite(t) ? t : 0;
 }
 
+/** The keys this project keeps at previous figures (its library pin), with
+ * the figure each is held at. Empty for a status pin or no pin. */
+export function keptRates(quote) {
+  if (!isLibraryPin(quote)) return [];
+  const rates = quote.ratesFrozen.rates || {};
+  return Object.keys(rates).map((key) => ({ key, unitCost: rates[key] && rates[key].unitCost, name: (quote.ratesFrozen.names || {})[key] || key }));
+}
+
 /**
  * The library changes this project has not decided on, one per rate key:
- * the earliest `from` (what it was priced at) and the latest `to` (what the
- * live rate is now); a key that moved and moved back is left out. Empty for
- * a pinned project (its copy is untouched by the library) and for a project
- * with no elements (nothing to re-price).
+ * `from` = what the project prices that key at today (the figure it KEEPS,
+ * if it kept one, else the earliest logged previous figure) and `to` = the
+ * live rate now. A key that moved and moved back is left out. Empty for a
+ * status-pinned project (its copy is untouched by the library) and for a
+ * project with no elements (nothing to re-price). A project that kept some
+ * previous figures is asked again when the library moves those keys.
  */
 export function pendingRateChanges(quote, log, createdAt) {
-  if (!quote || hasFrozenRates(quote)) return [];
+  if (!quote || (hasFrozenRates(quote) && !isLibraryPin(quote))) return [];
   if (!Array.isArray(quote.items) || !quote.items.length) return [];
   const since = rateAckAt(quote, createdAt);
+  const kept = isLibraryPin(quote) ? quote.ratesFrozen.rates || {} : {};
   const byKey = new Map();
   (Array.isArray(log) ? log : []).forEach((e) => {
     if (!e || !(Date.parse(e.at) > since)) return;
@@ -65,7 +80,17 @@ export function pendingRateChanges(quote, log, createdAt) {
     if (!cur) byKey.set(e.key, { key: e.key, name: e.name || e.key, from: e.from, to: e.to, at: e.at });
     else { cur.to = e.to; cur.at = e.at; }
   });
+  byKey.forEach((c) => { if (kept[c.key] && kept[c.key].unitCost != null) c.from = kept[c.key].unitCost; });
   return [...byKey.values()].filter((c) => Number(c.from) !== Number(c.to));
+}
+
+/** The project's rates with each change's figure chosen: `to` for a key in
+ * `apply`, `from` otherwise — laid over what the project prices at today. */
+export function ratesWithChoice(quote, liveRates, changes, apply) {
+  const out = { ...(liveRates || {}), ...(isLibraryPin(quote) ? quote.ratesFrozen.rates : {}) };
+  const take = new Set(apply || []);
+  (changes || []).forEach((c) => { out[c.key] = { ...(out[c.key] || {}), unitCost: take.has(c.key) ? c.to : c.from }; });
+  return out;
 }
 
 /** The live rates with the previous figures laid back over the changed keys. */
@@ -75,27 +100,59 @@ export function previousRates(liveRates, changes) {
   return out;
 }
 
-/** The project's direct cost at the previous figures and at today's. */
-export function rateChangeImpact(quote, liveRates, changes) {
+/** The project's direct cost at the previous figures, and with the ticked
+ * changes applied (every change when `apply` is omitted). */
+export function rateChangeImpact(quote, liveRates, changes, apply) {
   const items = (quote && quote.items) || [];
   const scope = quote && quote.scope;
-  return { before: computeGrandTotal(items, previousRates(liveRates, changes), scope), after: computeGrandTotal(items, liveRates || {}, scope) };
-}
-
-/** "Apply the new rates": the project goes on pricing at the live rates; the
- * changes are acknowledged so they never prompt again. */
-export function applyRateChangesPatch(at = new Date().toISOString()) {
-  return { ratesAck: { at, kept: false } };
-}
-
-/** "Keep the previous rates": pin the figures the project was estimated with
- * (the live rates with every pending change reverted) under reason
- * "library" — honoured whatever the status — and acknowledge. */
-export function keepPreviousRatesPatch(quote, liveRates, changes, at = new Date().toISOString()) {
+  const keys = apply === undefined ? (changes || []).map((c) => c.key) : apply;
   return {
-    ratesFrozen: { at, status: quote && quote.status, reason: "library", rates: previousRates(liveRates, changes) },
-    ratesAck: { at, kept: true },
+    before: computeGrandTotal(items, ratesWithChoice(quote, liveRates, changes, []), scope),
+    after: computeGrandTotal(items, ratesWithChoice(quote, liveRates, changes, keys), scope),
   };
+}
+
+/**
+ * The decision: the ticked keys (`apply`) take the library's figure — they
+ * follow the live rates from here — and every other change is KEPT at its
+ * previous figure in the project's library pin ({reason: "library", rates:
+ * only the kept keys, laid over the live rates by effectiveRates). Keys the
+ * project kept earlier stay kept unless ticked now. An empty pin is dropped.
+ */
+export function decideRateChangesPatch(quote, liveRates, changes, apply, at = new Date().toISOString()) {
+  const take = new Set(apply || []);
+  const rates = { ...(isLibraryPin(quote) ? quote.ratesFrozen.rates : {}) };
+  const names = { ...((isLibraryPin(quote) && quote.ratesFrozen.names) || {}) };
+  (changes || []).forEach((c) => {
+    if (take.has(c.key)) { delete rates[c.key]; delete names[c.key]; return; }
+    rates[c.key] = { ...((liveRates || {})[c.key] || {}), unitCost: c.from };
+    names[c.key] = c.name || c.key;
+  });
+  const keptKeys = Object.keys(rates);
+  return {
+    ratesFrozen: keptKeys.length ? { at, status: quote && quote.status, reason: "library", rates, names } : null,
+    ratesAck: { at, applied: [...take], kept: keptKeys },
+  };
+}
+
+/** "Apply the new rates" — every change ticked. */
+export function applyRateChangesPatch(quote, liveRates, changes, at = new Date().toISOString()) {
+  return decideRateChangesPatch(quote, liveRates, changes, (changes || []).map((c) => c.key), at);
+}
+
+/** "Keep the previous rates" — nothing ticked. */
+export function keepPreviousRatesPatch(quote, liveRates, changes, at = new Date().toISOString()) {
+  return decideRateChangesPatch(quote, liveRates, changes, [], at);
+}
+
+/** Release kept figures: the given keys (all when omitted) follow the live
+ * rates again; the pin goes when nothing is left in it. */
+export function releaseKeptRatesPatch(quote, keys, at = new Date().toISOString()) {
+  if (!isLibraryPin(quote)) return {};
+  const drop = new Set(keys || Object.keys(quote.ratesFrozen.rates || {}));
+  const rates = {}; const names = {};
+  Object.keys(quote.ratesFrozen.rates || {}).forEach((k) => { if (!drop.has(k)) { rates[k] = quote.ratesFrozen.rates[k]; if (quote.ratesFrozen.names && quote.ratesFrozen.names[k]) names[k] = quote.ratesFrozen.names[k]; } });
+  return { ratesFrozen: Object.keys(rates).length ? { ...quote.ratesFrozen, at, rates, names } : null };
 }
 
 export const isLibraryPin = (quote) => !!(quote && hasFrozenRates(quote) && quote.ratesFrozen.reason === "library");

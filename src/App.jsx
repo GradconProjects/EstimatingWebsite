@@ -6,9 +6,9 @@ import VersionsModal from "./components/VersionsModal.jsx";
 import { ELEMENT_TYPES, QUOTE_STATUSES, QUOTE_STATUS_STYLES, QUOTE_SCOPES } from "./data/catalog.js";
 import { defaultRates, newElementItem, computeGrandTotal, uid, money, rateKey, isManualQuoteKey, SCOPE_KEYS, scopeLabel } from "./lib/costing.js";
 import { pendingRateUpdates, readLibraryState, readLastSynced, writeLastSynced, RATES_LIBRARY_KEY } from "./lib/ratesLibrarySync.js";
-import { effectiveRates, statusChangePatch, needsFreeze, freezeRates, frozenRateDrift, hasFrozenRates, isRatesLocked, pricesOffPin } from "./lib/rateFreeze.js";
-import { RATE_CHANGES_KEY, recordRateChanges, pendingRateChanges, applyRateChangesPatch, keepPreviousRatesPatch, isLibraryPin } from "./lib/rateChanges.js";
-import RateChangesPrompt from "./components/RateChangesPrompt.jsx";
+import { effectiveRates, statusChangePatch, needsFreeze, freezeRates, frozenRateDrift, hasFrozenRates, isRatesLocked } from "./lib/rateFreeze.js";
+import { RATE_CHANGES_KEY, recordRateChanges, pendingRateChanges, decideRateChangesPatch, releaseKeptRatesPatch } from "./lib/rateChanges.js";
+import RateChangesPrompt, { KeptRatesBanner } from "./components/RateChangesPrompt.jsx";
 import RateValidityBanner from "./components/RateValidityBanner.jsx";
 import { buildQuoteExcelHtml, quoteExcelFilename, buildQuoteCsv } from "./lib/exportQuote.js";
 import { useStoredState } from "./lib/storage.js";
@@ -533,7 +533,11 @@ function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, rate
    * the export, the Rates modal — goes through `rates`, and every rate WRITE
    * from inside a locked project lands on the pinned copy, so a fee typed
    * on a finished quote's card cannot leak into the live rates either. */
-  const locked = pricesOffPin(quote);   // a status pin, or a library pin the estimator chose to keep (lib/rateChanges.js)
+  // `locked` is the STATUS pin only: an open project that kept some previous
+  // figures (a library pin, lib/rateChanges.js) still writes its rate edits
+  // to the live rates like any open project; `rates` lays its kept figures
+  // over the live ones through effectiveRates.
+  const locked = isRatesLocked(quote.status) && hasFrozenRates(quote);
   const rates = useMemo(() => effectiveRates(quote, liveRates), [quote, liveRates]);
   const setRates = (updater) => {
     if (!locked) { setLiveRates(updater); return; }
@@ -548,7 +552,7 @@ function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, rate
   // is the reconciled figure set, never the cache-first placeholder.
   useEffect(() => {
     if (quoteStatus === "loading" || ratesStatus === "loading" || ratesStatus === "syncing") return;
-    if (needsFreeze(quote)) setQuote((q) => (needsFreeze(q) ? { ...q, ratesFrozen: freezeRates(liveRates, q.status) } : q));
+    if (needsFreeze(quote)) setQuote((q) => (needsFreeze(q) ? { ...q, ratesFrozen: freezeRates(effectiveRates(q, liveRates), q.status) } : q));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quoteStatus, ratesStatus, quote.status]);
   // The LIVE handover prefill (lib/handover.js; Grady, 13 Oct 2026: "i want
@@ -1013,15 +1017,19 @@ function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, rate
             changes={pendingRateChanges(quote, rateChanges, project.createdAt)}
             quote={quote}
             liveRates={liveRates}
-            onApply={() => { setQuote((q) => ({ ...q, ...applyRateChangesPatch() })); note("This project now prices at the new Rates Library figures"); }}
-            onKeep={(changes) => { setQuote((q) => ({ ...q, ...keepPreviousRatesPatch(q, liveRates, changes) })); note("Previous rates kept for this project — it is pinned; re-price it from the blue banner whenever you want today's figures"); }}
+            onDecide={(changes, apply) => {
+              setQuote((q) => ({ ...q, ...decideRateChangesPatch(q, liveRates, changes, apply) }));
+              const kept = changes.length - apply.length;
+              note(kept === 0 ? "This project now prices at the new Rates Library figures" : apply.length === 0 ? "Previous rates kept for this project — release them from the blue banner whenever you want today's figures" : `${apply.length} new rate${apply.length === 1 ? "" : "s"} applied, ${kept} kept at the previous figure${kept === 1 ? "" : "s"}`);
+            }}
           />
-          {locked && hasFrozenRates(quote) && (
+          {!locked && (
+            <KeptRatesBanner quote={quote} liveRates={liveRates} onRelease={(keys) => { setQuote((q) => ({ ...q, ...releaseKeptRatesPatch(q, keys) })); note(keys ? "That rate now follows the Rates Library" : "Every rate now follows the Rates Library"); }} />
+          )}
+          {locked && (
             <div className="border border-blue-200 bg-blue-50 rounded-lg px-3 py-2 text-[12px] text-blue-950 flex items-start justify-between gap-3" role="status" data-testid="rates-pinned-banner">
               <div>
-                {isLibraryPin(quote)
-                  ? <><b>Previous rates kept</b> on {new Date(quote.ratesFrozen.at).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" })} when the Rates Library changed — this project prices at the figures it was estimated with.</>
-                  : <><b>Rates pinned</b> on {new Date(quote.ratesFrozen.at).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" })} when this project was marked <b>{quote.ratesFrozen.status}</b>.</>}
+                <b>Rates pinned</b> on {new Date(quote.ratesFrozen.at).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" })} when this project was marked <b>{quote.ratesFrozen.status}</b>.
                 {" "}Changes in the Rates Library do not touch this quote; a rate edited here changes this quote only.
                 {frozenDrift.length > 0 && (
                   <span className="ml-1 text-amber-900">{frozenDrift.length} pinned rate{frozenDrift.length === 1 ? "" : "s"} now differ{frozenDrift.length === 1 ? "s" : ""} from the current library.</span>
