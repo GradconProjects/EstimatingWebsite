@@ -158,9 +158,9 @@ export default function LabourMatrix({
                   ) : <span className="block text-center text-neutral-300">—</span>}
                   {isFinishRow && finishEdgeLm && onFinishField && (
                     /* the exposed edge depth sits UNDER the Qty so the Qty stays the row's first number box */
-                    <label className="flex items-center gap-1 mt-0.5 text-[10px] text-neutral-500">edge depth
-                      <NumInput step="1" value={(item.finish && item.finish.edgeDepthMm) ?? ""} placeholder="mm" onChange={(v) => onFinishField("edgeDepthMm", v)} className="w-14 text-[10px]" data-testid="finish-edge-depth" />
-                      <span>mm exposed</span>
+                    <label className="block mt-1 text-[10px] leading-tight text-neutral-500" title="Depth of the slab edge left exposed after stripping — the edgeform metres × this depth are finished faces; blank = the metres are listed, not counted">
+                      <span className="block whitespace-nowrap">edge depth exposed (mm)</span>
+                      <NumInput step="1" value={(item.finish && item.finish.edgeDepthMm) ?? ""} placeholder="mm" onChange={(v) => onFinishField("edgeDepthMm", v)} className="block mt-0.5 min-w-[4.5rem] text-[11px] px-1" data-testid="finish-edge-depth" />
                     </label>
                   )}
                 </td>
