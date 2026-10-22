@@ -67,6 +67,7 @@ function summarizeQuote(quote, liveRates) {
     scope: quote.scope && quote.scope !== "both" ? quote.scope : "both",
     gfa: Number(quote.gfa) || 0,
     elementCount: items.length,
+    doneCount: items.filter((it) => it && it.done && it.done.at).length,
     directCost,
     subtotal,
     sellExGst: defaultRow?.sellExGst || 0,
@@ -455,7 +456,7 @@ export default function Dashboard({ projects, rates, rateChanges, onOpen, onCrea
                     ))}
                   </select>
                 </td>
-                <td className="px-3 py-2.5 text-right font-mono tabular-nums text-neutral-400 text-xs">{s.elementCount}</td>
+                <td className="px-3 py-2.5 text-right font-mono tabular-nums text-neutral-400 text-xs" title={s.doneCount ? `${s.doneCount} of ${s.elementCount} elements ticked done` : undefined}>{s.doneCount ? <span className="text-emerald-700 font-semibold">{s.doneCount}/{s.elementCount} ✓</span> : s.elementCount}</td>
                 <td className="px-3 py-2.5 text-right font-mono tabular-nums text-neutral-500">{money(s.directCost)}</td>
                 <td className="px-3 py-2.5 text-right font-mono tabular-nums text-orange-600 font-semibold">
                   {money(s.sellExGst)}

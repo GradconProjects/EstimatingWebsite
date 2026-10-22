@@ -25,7 +25,7 @@ function ValidityChip({ validUntil }) {
  * shouldn't apply to a given job, the estimator just leaves those rows
  * blank (blank quantities cost nothing — see computeElementCost).
  */
-export default function CategoryBlock({ cat, item, rates, onQtyChange, onRateChange, onRowRateChange, onQuoteAmountChange, catOpen, toggleCat, catTotal, onAddCustom, onRemoveCustom, onChangeCustom, charged = true, excludedTotal = 0, scopeName = "" }) {
+export default function CategoryBlock({ cat, item, rates, onQtyChange, entryTone, onRateChange, onRowRateChange, onQuoteAmountChange, catOpen, toggleCat, catTotal, onAddCustom, onRemoveCustom, onChangeCustom, charged = true, excludedTotal = 0, scopeName = "" }) {
   const hasWeight = cat.products.some((p) => p.unitWeight != null);
   // Custom rows the estimator added under THIS category (item.additional
   // rows carrying cat === this key). They sit after the last catalog product,
@@ -155,6 +155,8 @@ export default function CategoryBlock({ cat, item, rates, onQtyChange, onRateCha
                         value={item.qtys[qKey]}
                         placeholder={autoRow ? String(autoRow.qty) : undefined}
                         className={autoRow ? "placeholder:text-amber-800 placeholder:opacity-100 placeholder:font-semibold border-amber-400" : ""}
+                        data-entry={entryTone ? entryTone(qKey) || undefined : undefined}
+                        title={entryTone && entryTone(qKey) ? (entryTone(qKey) === "me" ? "Your entry" : `Entered by ${(item.entries && item.entries[qKey] && item.entries[qKey].by) || "someone else"}`) : undefined}
                         onChange={(v) => onQtyChange(qKey, v)}
                       />
                     </td>

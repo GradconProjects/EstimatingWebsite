@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { CATEGORY_ORDER, SECTION_ORDER } from "../data/catalog.js";
+import { isDone } from "../lib/workTrail.js";
 import { computeElementCost, computeGrandTotal, computeExcludedTotals, computeProvisionalTotals, isProvisional, computeMarginLadder, money, money2, getDefaultMargin, getMarginSteps, scopeLabel } from "../lib/costing.js";
 import { NumInput } from "./atoms.jsx";
 
@@ -68,7 +69,7 @@ export default function QuoteSummary({
                         className={`flex justify-between text-[13px] py-0.5 ${onReorder ? "cursor-grab active:cursor-grabbing hover:bg-neutral-50 rounded" : ""}`}
                         title={onReorder ? "Drag to reorder" : undefined}
                       >
-                        <span className="text-neutral-600 truncate pr-2">{r.item.label}{isProvisional(r.item) && <span className="ml-1 px-1 rounded bg-amber-100 text-amber-800 text-[10px] font-semibold" title="Provisional sum">PS</span>}{r.scope !== projectScope && <span className="ml-1 text-[10px] text-orange-700 font-medium">({scopeLabel(r.scope)})</span>}</span>
+                        <span className="text-neutral-600 truncate pr-2">{isDone(r.item) && <span className="mr-1 text-emerald-600 font-bold" title="Done">✓</span>}{r.item.label}{isProvisional(r.item) && <span className="ml-1 px-1 rounded bg-amber-100 text-amber-800 text-[10px] font-semibold" title="Provisional sum">PS</span>}{r.scope !== projectScope && <span className="ml-1 text-[10px] text-orange-700 font-medium">({scopeLabel(r.scope)})</span>}</span>
                         <span className="font-mono tabular-nums text-neutral-800 flex-none">{money2(r.total)}</span>
                       </div>
                     ))}

@@ -1,6 +1,8 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { ChevronDown, ChevronRight, Copy, Trash2, Paperclip, X, RotateCw, ZoomIn, ZoomOut, Maximize2, ArrowUp, ArrowDown, GripVertical } from "lucide-react";
 import { FULL_CATALOG, LABOUR_TEMPLATES, QUOTE_SCOPES, CREW_TASKS_VER } from "../data/catalog.js";
+import { userKey, markEntry, entryTone, ENTRY_KEY, isDone, donePatch, whenLabel } from "../lib/workTrail.js";
+import { signedInUser } from "../lib/quoteVersions.js";
 import { uid, money, money2, isProvisional, upgradeCrewTasks, computeElementCost, computeElementUnitRates, autoLabourQtys, labourQuantities, categoryAppliesTo, elementScope, categoryChargedUnder, scopeLabel, SCOPE_KEYS } from "../lib/costing.js";
 import { prefilledCells, applySteelMode, steelModeFor } from "../lib/handover.js";
 import { pdfToJpegPages } from "../lib/pdfToImages.js";
@@ -17,6 +19,11 @@ import AdditionalItems from "./AdditionalItems.jsx";
  * export all follow it), the same order QuoteSummary's own drag edits.
  */
 export default function ElementCard({ item, rates, onChange, onRemove, onDuplicate, onLabourRateChange, onMaterialRateChange, onMoveUp, onMoveDown, onReorder, projectScope , handover, onPickFromDrive, rateChanges }) {
+  // who is typing (lib/workTrail.js): every figure entered records the
+  // signed-in account, so Grady's own entries read in his colour
+  const me = userKey(signedInUser());
+  const stamp = (it, key) => markEntry(it, key, me);
+  const tone = (key) => entryTone(item, key, me);
   const [dragOver, setDragOver] = useState(false);
   // Every material category starts collapsed — only Labour/Equipment starts
   // expanded (it's still collapsible too, just defaults open).
@@ -124,7 +131,7 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
       tasks: it.tasks.map((t) => ({ ...t, qtys: {}, qty: undefined })),
     }));
 
-  const setQty = (qKey, v) => patch((it) => ({ ...it, qtys: { ...it.qtys, [qKey]: v } }));
+  const setQty = (qKey, v) => patch((it) => stamp({ ...it, qtys: { ...it.qtys, [qKey]: v } }, ENTRY_KEY.qty(qKey)));
   // A rate that belongs to THIS element (a received subcontract quote, say):
   // stored on the item under the same key as its quantity, read back through
   // rowRate in lib/costing.js. Clearing removes the override, so the row
@@ -159,10 +166,10 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
   const removeTask = (taskId) => patch((it) => ({ ...it, tasks: it.tasks.filter((t) => t.id !== taskId) }));
   const renameTask = (taskId, name) => patch((it) => ({ ...it, tasks: it.tasks.map((t) => (t.id === taskId ? { ...t, name } : t)) }));
   const setTaskQty = (taskId, resKey, v) =>
-    patch((it) => ({ ...it, tasks: it.tasks.map((t) => (t.id === taskId ? { ...t, qtys: { ...t.qtys, [resKey]: v } } : t)) }));
+    patch((it) => stamp({ ...it, tasks: it.tasks.map((t) => (t.id === taskId ? { ...t, qtys: { ...t.qtys, [resKey]: v } } : t)) }, ENTRY_KEY.cell(taskId, resKey)));
   // Row Qty override and Notes on the crew sheet
   const setTaskMeta = (taskId, field, v) =>
-    patch((it) => ({ ...it, tasks: it.tasks.map((t) => (t.id === taskId ? { ...t, [field]: v } : t)) }));
+    patch((it) => { const next = { ...it, tasks: it.tasks.map((t) => (t.id === taskId ? { ...t, [field]: v } : t)) }; return field === "qty" ? stamp(next, ENTRY_KEY.taskQty(taskId)) : next; });
 
   // cat = a FULL_CATALOG key when the row is added from inside a category
   // block (it then lives after that category's last product and costs into
@@ -171,7 +178,7 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
     patch((it) => ({ ...it, additional: [...it.additional, { id: uid(), name: "", unit: "", qty: undefined, rate: undefined, ...(typeof cat === "string" && cat ? { cat } : {}) }] }));
   const removeAdditional = (id) => patch((it) => ({ ...it, additional: it.additional.filter((a) => a.id !== id) }));
   const changeAdditional = (id, field, v) =>
-    patch((it) => ({ ...it, additional: it.additional.map((a) => (a.id === id ? { ...a, [field]: v } : a)) }));
+    patch((it) => stamp({ ...it, additional: it.additional.map((a) => (a.id === id ? { ...a, [field]: v } : a)) }, ENTRY_KEY.additional(id, field)));
   // Multi-field fill in one patch — used by the catalog picker, which sets
   // name+unit+rate together (three changeAdditional calls would each start
   // from the same stale `item` and drop each other's fields).
@@ -299,9 +306,9 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
   const viewerMarkup = markups.find((m) => m.id === viewerId) || null;
 
   return (
-    <div className="flex items-stretch gap-2">
+    <div className="flex items-stretch gap-2" id={`element-${item.id}`} data-done={isDone(item) ? "1" : undefined}>
     <div
-      className={`rounded-xl border border-neutral-200 shadow-sm overflow-hidden flex-1 min-w-0 flex flex-col ${
+      className={`rounded-xl border shadow-sm overflow-hidden flex-1 min-w-0 flex flex-col ${isDone(item) ? "border-emerald-400" : "border-neutral-200"} ${
         cardOpen ? "bg-white" : "bg-blue-950"
       }`}
     >
@@ -336,6 +343,10 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
                 </span>
               )}
             </div>
+            <label className={`flex-none flex items-center gap-1 text-[10px] uppercase tracking-widest cursor-pointer ${isDone(item) ? "text-emerald-300" : "text-blue-400"}`} onClick={(e) => e.stopPropagation()} title={isDone(item) ? `Marked done by ${item.done.by || "someone"} ${whenLabel(item.done.at)} — untick to reopen` : "Tick when this element is finished — the project then shows where you left off"} data-testid="element-done">
+              <input type="checkbox" checked={isDone(item)} onChange={(e) => patch((it) => ({ ...it, ...donePatch(e.target.checked, me) }))} className="accent-emerald-500" aria-label="Element done" />
+              <span>{isDone(item) ? "✓ Done" : "Done"}</span>
+            </label>
             <label className={`flex-none flex items-center gap-1 text-[10px] uppercase tracking-widest cursor-pointer ${isProvisional(item) ? "text-amber-300" : "text-blue-400"}`} onClick={(e) => e.stopPropagation()} title="Provisional sum: priced and carried in the total, but listed as PROVISIONAL on the card, the summary, the print report, the exports and the tender's line item" data-testid="element-provisional">
               <input type="checkbox" checked={isProvisional(item)} onChange={(e) => patch((it) => ({ ...it, provisional: e.target.checked || undefined }))} className="accent-amber-400" aria-label="Provisional sum" />
               <span>Provisional</span>
@@ -579,6 +590,7 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
               item={item}
               rates={rates}
               onQtyChange={setQty}
+              entryTone={tone}
               onRateChange={onMaterialRateChange}
               onRowRateChange={setRowRate}
               onQuoteAmountChange={setQuoteAmount}
@@ -610,6 +622,7 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
             item={item}
             rates={rates}
             onTaskQtyChange={setTaskQty}
+            entryTone={tone}
             onAddTask={addTask}
             onRemoveTask={removeTask}
             onRenameTask={renameTask}
@@ -628,6 +641,7 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
             onRemove={removeAdditional}
             onChange={changeAdditional}
             onFill={fillAdditional}
+            entryTone={tone}
             total={cost.additionalTotal}
           />
         </div>

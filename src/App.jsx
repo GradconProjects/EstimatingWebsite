@@ -14,6 +14,8 @@ import { AddressOptions } from "./components/AddressNaming.jsx";
 import { needsAddressReview, requestProjectNames, autoApplies, applyNamePatch, keepNamePatch } from "./lib/projectNaming.js";
 import { preferredProvider } from "./lib/tenderWording.js";
 import { resolveTheme, applyTheme } from "./lib/quoteTheme.js";
+import { progress as workProgress, whenLabel as workWhen, userKey as workUser } from "./lib/workTrail.js";
+import { signedInUser as portalUser } from "./lib/quoteVersions.js";
 import DriveFilesDrawer from "./components/DriveFilesDrawer.jsx";
 import { driveFiles } from "./lib/driveFiles.js";
 import RateValidityBanner from "./components/RateValidityBanner.jsx";
@@ -1113,6 +1115,27 @@ function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, rate
       <div className="print:hidden max-w-7xl mx-auto px-4 pb-16 grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-4 items-start">
         <div className="space-y-3">
           <RateValidityBanner rates={liveRates} />
+          {items.length > 0 && (() => {
+            // where you left off (lib/workTrail.js): done / total, the next element to work on, the last one touched
+            const pr = workProgress(items); const me = workUser(portalUser());
+            const jump = (id) => { // under the sticky header, with a short flash so the card is found at a glance
+              const el = document.getElementById(`element-${id}`); if (!el) return;
+              window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - 120, behavior: "auto" });
+              el.classList.add("ring-4", "ring-emerald-400", "rounded-xl"); el.setAttribute("data-jumped", "1");
+              setTimeout(() => { el.classList.remove("ring-4", "ring-emerald-400", "rounded-xl"); el.removeAttribute("data-jumped"); }, 1600);
+            };
+            return (
+              <div className="border border-emerald-200 bg-emerald-50 rounded-lg px-3 py-2 text-[12px] text-emerald-950 flex flex-wrap items-center gap-x-4 gap-y-1" role="status" data-testid="work-trail">
+                <span><b>{pr.done} of {pr.total}</b> element{pr.total === 1 ? "" : "s"} ticked done</span>
+                {pr.next ? <span>Next up: <button type="button" className="underline font-semibold" onClick={() => jump(pr.next.id)} data-testid="work-trail-next">{pr.next.label || "Untitled element"}</button></span> : <span className="font-semibold">Every element is done.</span>}
+                {pr.last && <span className="text-emerald-800">Last worked on: <button type="button" className="underline" onClick={() => jump(pr.last.item.id)} data-testid="work-trail-last">{pr.last.item.label || "Untitled element"}</button> {workWhen(pr.last.at)}{pr.last.by && pr.last.by !== me ? ` by ${pr.last.by}` : ""}</span>}
+                <span className="ml-auto flex items-center gap-2 text-[11px]" data-testid="work-trail-legend">
+                  <span><span className="inline-block w-2.5 h-2.5 rounded-sm align-middle mr-1" style={{ background: "var(--t-entry-me, #047857)" }} />{me ? `typed by ${me}` : "typed by you"}</span>
+                  <span><span className="inline-block w-2.5 h-2.5 rounded-sm align-middle mr-1" style={{ background: "var(--t-entry-other, #7c3aed)" }} />typed by others</span>
+                </span>
+              </div>
+            );
+          })()}
           <RateChangesPrompt
             changes={pendingChanges}
             quote={quote}

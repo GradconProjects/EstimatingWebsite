@@ -4,7 +4,7 @@ import { FULL_CATALOG, RESOURCE_COLS } from "../data/catalog.js";
 import { money2, rateKey, lookupRate, additionalRowsFor } from "../lib/costing.js";
 import { NumInput } from "./atoms.jsx";
 
-export default function AdditionalItems({ item, rates, onAdd, onRemove, onChange, onFill, total }) {
+export default function AdditionalItems({ item, rates, onAdd, onRemove, onChange, onFill, total, entryTone }) {
   // Rolled up by default like every other section of the card.
   const [open, setOpen] = useState(false);
   // Only the free-standing rows: custom rows added under a catalog category
@@ -81,8 +81,8 @@ export default function AdditionalItems({ item, rates, onAdd, onRemove, onChange
               placeholder="unit"
               className="w-16 border border-neutral-200 rounded px-2 py-1 text-[13px] text-center focus:outline-none focus:ring-2 focus:ring-orange-400"
             />
-            <NumInput value={a.qty} onChange={(v) => onChange(a.id, "qty", v)} className="w-24 flex-none" />
-            <NumInput value={a.rate} onChange={(v) => onChange(a.id, "rate", v)} className="w-24 flex-none" />
+            <NumInput value={a.qty} onChange={(v) => onChange(a.id, "qty", v)} className="w-24 flex-none" data-entry={entryTone ? entryTone(`add:${a.id}:qty`) || undefined : undefined} />
+            <NumInput value={a.rate} onChange={(v) => onChange(a.id, "rate", v)} className="w-24 flex-none" data-entry={entryTone ? entryTone(`add:${a.id}:rate`) || undefined : undefined} />
             <span className="w-24 text-right font-mono text-[13px] tabular-nums text-neutral-800 flex-none">
               {money2((Number(a.qty) || 0) * (Number(a.rate) || 0))}
             </span>

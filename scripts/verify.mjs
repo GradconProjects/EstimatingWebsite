@@ -1158,6 +1158,8 @@ const { pendingRateUpdates, libraryPrices, libraryGovernedKeys, LIBRARY_EXCLUDED
 const { isProvisional, computeProvisionalTotals } = await import("../src/lib/costing.js");
 const DF = await import("../src/lib/driveFiles.js");
 const PN = await import("../src/lib/projectNaming.js");
+const WT = await import("../src/lib/workTrail.js");
+const THEME = await import("../src/lib/quoteTheme.js");
 
 check("Rates Library rules: its price flows into Quotes over ANY stored value, including a typed one", () => {
   const CONV = rateKey("FORMWORK", "Conventional", "m2");
@@ -1467,6 +1469,25 @@ check("Blinding is decided on the crew sheet: ticked (the default) it is charged
   // the Holcim fees follow the poured volume: 16 m³ = 4 loads exactly (no cartage) vs 11 m³ = 1 m³ short
   assert.equal(autoMinimumCartage(item, rates), null); assert.ok(autoMinimumCartage(offItem, rates) && autoMinimumCartage(offItem, rates).qty === 1);
   assert.equal(offItem.qtys[rateKey("CONCRETE", "Blinding concrete", "m3")], 5, "the typed figure is never touched");
+});
+check("work trail (Grady's colour-coded entries, 22 Oct 2026): an entry records who typed it and when, the tone is 'me' for the signed-in account and 'other' for anyone else, nothing is stamped with no account; Done per element; progress says done / total, the next element and the last one touched", () => {
+  const W = WT;
+  assert.equal(W.userKey("grady@gradcon.com.au"), "grady"); assert.equal(W.userKey(""), null);
+  let it = { id: "a", label: "Raft", qtys: {}, tasks: [{ id: "t1", qtys: {} }] };
+  const unstamped = W.markEntry(it, "CONCRETE::32 mpa::m3", null); assert.strictEqual(unstamped, it, "no account — nothing recorded");
+  it = W.markEntry(it, "CONCRETE::32 mpa::m3", "grady", "2026-10-22T01:00:00Z");
+  it = W.markEntry(it, W.ENTRY_KEY.cell("t1", "concreter_day"), "projects", "2026-10-22T02:00:00Z");
+  assert.equal(W.entryTone(it, "CONCRETE::32 mpa::m3", "grady"), "me"); assert.equal(W.entryTone(it, "CONCRETE::32 mpa::m3", "projects"), "other");
+  assert.equal(W.entryTone(it, "task:t1:concreter_day", "grady"), "other"); assert.equal(W.entryTone(it, "nothing", "grady"), null);
+  assert.equal(W.ENTRY_KEY.taskQty("t1"), "task:t1:qty"); assert.equal(W.ENTRY_KEY.additional("r9", "rate"), "add:r9:rate");
+  assert.ok(!W.isDone(it)); const done = { ...it, ...W.donePatch(true, "grady", "2026-10-22T03:00:00Z") }; assert.ok(W.isDone(done)); assert.equal(done.done.by, "grady");
+  assert.ok(!W.isDone({ ...done, ...W.donePatch(false) }), "untick reopens");
+  const b = { id: "b", label: "Slab", entries: { x: { by: "grady", at: "2026-10-22T04:00:00Z" } } }, c = { id: "c", label: "Walls" };
+  const pr = W.progress([done, b, c]);
+  assert.deepEqual([pr.done, pr.total, pr.next.id, pr.last.item.id, pr.last.by], [1, 3, "b", "b", "grady"], "1 of 3 done; next = the first not done; last = the newest stamp");
+  assert.equal(W.progress([]).next, null); assert.equal(W.progress([done]).next, null, "every element done");
+  assert.ok(/at \d/.test(W.whenLabel("2026-10-22T04:00:00Z")));
+  const T = THEME.THEME_TOKENS; assert.ok(T.some((t) => t.key === "entryMe") && T.some((t) => t.key === "entryOther"), "the two entry colours are theme tokens");
 });
 check("driveFiles helpers: a project's folder and attachments live on the quote (sync with it); attach is idempotent by Drive id; detach removes one", () => {
   const F = { id: "p1", name: "plan.pdf", kind: "pdf", mimeType: "application/pdf", size: 1200, modifiedTime: "2026-10-20T00:00:00Z", webViewLink: "https://drive.google.com/file/d/p1" };

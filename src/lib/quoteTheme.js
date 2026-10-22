@@ -35,6 +35,8 @@ export const THEME_TOKENS = [
   { key: "bandSummary", css: "--t-band-summary", group: "Bands", label: "Summary rail headings & grand total" },
   { key: "bandCategory", css: "--t-band-category", group: "Bands", label: "Category headers on a card" },
   { key: "page", css: "--t-page", group: "Page", label: "Page background" },
+  { key: "entryMe", css: "--t-entry-me", group: "Entries", label: "Figures you typed (signed-in account)" },
+  { key: "entryOther", css: "--t-entry-other", group: "Entries", label: "Figures typed by someone else" },
 ];
 
 export const PRESETS = {
@@ -42,16 +44,19 @@ export const PRESETS = {
     chrome950: "#0f2e4c", chrome900: "#1F4E78", chrome800: "#2a5f8f", chrome700: "#35709f", chrome300: "#a9cdf0", chrome200: "#D9EAF7", chrome100: "#e8f2fb", chrome50: "#eef4f9",
     accent600: "#2f7fd6", accent700: "#2566ad", accent500: "#3b8be0", accent400: "#5fa3ea", accent300: "#a9cdf0", accent200: "#c9dff5", accent100: "#D9EAF7", accent50: "#eef4f9", accent900: "#1a4a7c", accent800: "#1f5a95",
     bandLabour: "#1F4E78", bandLabourHead: "#2a5f8f", bandGeometry: "#0f2e4c", bandSummary: "#0f2e4c", bandCategory: "#1F4E78", page: "#eef2f6",
+    entryMe: "#047857", entryOther: "#7c3aed",
   },
   classic: {
     chrome950: "#172554", chrome900: "#1e3a8a", chrome800: "#1e40af", chrome700: "#1d4ed8", chrome300: "#93c5fd", chrome200: "#bfdbfe", chrome100: "#dbeafe", chrome50: "#eff6ff",
     accent600: "#ea580c", accent700: "#c2410c", accent500: "#f97316", accent400: "#fb923c", accent300: "#fdba74", accent200: "#fed7aa", accent100: "#ffedd5", accent50: "#fff7ed", accent900: "#7c2d12", accent800: "#9a3412",
     bandLabour: "#78350f", bandLabourHead: "#92400e", bandGeometry: "#78350f", bandSummary: "#171717", bandCategory: "#262626", page: "#f5f5f5",
+    entryMe: "#047857", entryOther: "#7c3aed",
   },
   graphite: {
     chrome950: "#1c2126", chrome900: "#2b333b", chrome800: "#3a444e", chrome700: "#4a5661", chrome300: "#b6c0c9", chrome200: "#d8dee3", chrome100: "#e8ecef", chrome50: "#f1f3f5",
     accent600: "#059669", accent700: "#047857", accent500: "#10b981", accent400: "#34d399", accent300: "#6ee7b7", accent200: "#a7f3d0", accent100: "#d1fae5", accent50: "#ecfdf5", accent900: "#064e3b", accent800: "#065f46",
     bandLabour: "#2b333b", bandLabourHead: "#3a444e", bandGeometry: "#1c2126", bandSummary: "#1c2126", bandCategory: "#2b333b", page: "#f3f4f6",
+    entryMe: "#b45309", entryOther: "#7c3aed",
   },
 };
 export const PRESET_FONTS = { library: '"Segoe UI", Calibri, ui-sans-serif, system-ui, Arial, sans-serif', classic: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif', graphite: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif' };

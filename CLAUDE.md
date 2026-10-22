@@ -539,6 +539,56 @@ report show "Of which provisional sums (N elements) · firm work $…").
 Verify-covered; `test-provisional.mjs` proves the card, the rail and the
 print.
 
+## Grady's trail: who typed a figure, and what is done
+
+Grady, 22 Oct 2026: "colour code Grady's inputs going forward. each time
+grady logs in, activate the colour code. change text colours of his input so
+he knows what he has worked on and also a checkbox for each element he has
+worked on so in the project he will easily see where he left off and continue
+from what he hasnt clicked done on. this should be applied to line items".
+`src/lib/workTrail.js` (pure, verify-covered):
+
+1. **Every figure typed on an element records its author.** `ElementCard`
+   stamps `item.entries[<key>] = {by, at}` through `markEntry` on every
+   quantity (`setQty` — key = the rate key), crew cell (`setTaskQty` —
+   `task:<taskId>:<resource key>`), crew Qty (`task:<taskId>:qty`) and
+   additional row (`add:<rowId>:<field>`); `ENTRY_KEY` builds the keys.
+   `by` is `userKey(signedInUser())` — the portal account's part before the
+   @ (`grady`, `projects`); outside the portal nothing is stamped. The
+   figures are never touched, and a stamp is never removed (a cleared cell
+   keeps who cleared it).
+2. **The colour follows the signed-in account.** `entryTone(item, key, me)`
+   → `"me"` / `"other"` / null is the ONE reading; the card passes it as
+   `entryTone` to `CategoryBlock`, `LabourMatrix` and `AdditionalItems`,
+   whose `NumInput`s carry `data-entry` (and a title "Your entry" /
+   "Entered by <by>"). `index.css` colours `[data-entry="me"]` and
+   `[data-entry="other"]` from the two theme tokens `entryMe` /
+   `entryOther` (`quoteTheme.js`, group "Entries" — green and purple on the
+   library and classic schemes, amber and purple on graphite, each editable
+   in Settings → "Every colour, one by one"). So Grady's own figures read in
+   his colour when he is signed in, and projects@ sees the same figures in
+   the "other" colour. New chrome for an entry must read `entryTone`, never
+   compare `entries[...].by` inline.
+3. **Done is a tick per element** (band top row, before Provisional,
+   `data-testid="element-done"`): `item.done = {by, at}` through
+   `donePatch(checked, by)`; `isDone(item)` is the ONE test — the card's
+   border turns emerald and the row reads "✓ Done" (hover: who and when),
+   the Quote Summary rail ticks the element, the Dashboard's Elements
+   column reads "N/M ✓". Untick to reopen. Done changes no figure and no
+   total — it is a bookmark, not a lock.
+4. **"Where you left off"** (`data-testid="work-trail"`, under the rate
+   validity banner, every project with elements): `progress(items)` →
+   `{done, total, next, last}` — done / total, **Next up** = the FIRST
+   element not ticked done (in the quote's own order), **Last worked on** =
+   the element with the newest entry or Done stamp (`lastTouched`), with
+   `whenLabel` ("today at 4:12 pm" / "Mon 9 Oct at …") and "by <account>"
+   when it was someone else — and the colour legend ("typed by grady" /
+   "typed by others"). Both names jump to the card (`#element-<id>`,
+   scrolled under the sticky header and flashed with an emerald ring for
+   1.6 s).
+`test-work-trail.mjs` proves the stamps, both colours on both accounts,
+the tick, the rail, the Dashboard count and the jump.
+
 ## The handover pass (Completed Estimating → Grady)
 
 Grady, 8 Oct 2026: "model how grady assigns the works after i have marked

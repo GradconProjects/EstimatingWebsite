@@ -20,7 +20,7 @@ export default function LabourMatrix({
   item, rates, onTaskQtyChange, onTaskMetaChange, onAddTask, onRemoveTask, onRenameTask,
   resourceTotals, resourceCosts, labourTotal, excludedLabour = 0, labourOpen, toggleLabour,
   labourAuto, autoQtys, onToggleAuto, onResetAuto, labourQtyCtx, onLabourRateChange,
-  prefilled, steelMode = "auto", steelModeResolved, onSteelMode, onBlindingToggle,
+  prefilled, steelMode = "auto", steelModeResolved, onSteelMode, onBlindingToggle, entryTone,
 }) {
   const blindingIn = blindingIncluded(item);
   const modeLabel = (m) => (STEEL_MODES.find((x) => x[0] === m) || [m, m])[1];
@@ -141,6 +141,7 @@ export default function LabourMatrix({
                     <NumInput
                       step="0.01"
                       value={task.qty}
+                      data-entry={entryTone ? entryTone(`task:${task.id}:qty`) || undefined : undefined}
                       placeholder={labourAuto && meta.autoQty ? String(meta.autoQty) : "—"}
                       className={labourAuto && meta.autoQty ? "placeholder:text-amber-800 placeholder:opacity-100 placeholder:font-semibold border-amber-400" : ""}
                       onChange={(v) => onTaskMetaChange(task.id, "qty", v)}
@@ -163,6 +164,7 @@ export default function LabourMatrix({
                       placeholder={autoVal !== undefined ? String(autoVal) : "—"}
                       title={isPrefilled ? "Prefilled at handover from the Rates Library's handover bands — edit freely" : undefined}
                       data-prefilled={isPrefilled ? "1" : undefined}
+                      data-entry={entryTone ? entryTone(`task:${task.id}:${r.key}`) || undefined : undefined}
                       className={isPrefilled ? "bg-amber-100 border-amber-400 text-amber-950" : autoVal !== undefined ? "placeholder:text-amber-800 placeholder:opacity-100 placeholder:font-semibold border-amber-400" : ""}
                       onChange={(v) => {
                         const n = Number(v);

@@ -66,6 +66,12 @@ html[data-theme="classic"] {
   --t-page: #f5f5f5; --t-font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 html[data-theme] body { font-family: var(--t-font); }
+/* who typed a figure (lib/workTrail.js): the signed-in account's own entries
+   and everyone else's, each its own token so Settings can change them */
+html[data-theme] [data-entry="me"] { color: var(--t-entry-me, #047857); font-weight: 700; }
+html[data-theme] [data-entry="other"] { color: var(--t-entry-other, #7c3aed); font-weight: 600; }
+[data-entry="me"] { color: #047857; font-weight: 700; }
+[data-entry="other"] { color: #7c3aed; font-weight: 600; }
 /* the dark bands by name (data-band set by the components) */
 html[data-theme] [data-band="summary"].bg-neutral-900 { background-color: var(--t-band-summary); }
 html[data-theme] [data-band="category"].bg-neutral-800 { background-color: var(--t-band-category); }
