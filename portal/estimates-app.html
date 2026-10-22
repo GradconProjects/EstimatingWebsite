@@ -1007,43 +1007,40 @@ function deleteTakeoff(id){
 function renderTakeoffsBar(){
   let host = document.getElementById("takeoffsBar");
   if(!host) return;
+  // The saved takeoffs ROLLED UP into one dropdown (Grady, 22 Oct 2026: "i
+  // want the saved takeoffs rolled up with a drop down to select the projects
+  // and it should default to opening the last project worked on"): newest
+  // saved first, the open one selected, AI drafts in their own group; picking
+  // one resumes it (the open takeoff is saved first — switchToTakeoff). The
+  // boot rule in initTakeoffRegistry already opens the last one worked on.
   let all = liveProjects();
   let idx = all.filter(p=>p.group!=="ai"), aiIdx = all.filter(p=>p.group==="ai");
+  const bySaved = (a,b)=> (b.savedAt||"").localeCompare(a.savedAt||"");
+  idx = idx.slice().sort(bySaved); aiIdx = aiIdx.slice().sort(bySaved);
   let activeKey = CURRENT_PROJECT_KEY;
-  // One chip per saved takeoff: full save date AND time, plus what the saved
-  // file holds — so the list reads like a proper file browser: which job,
-  // saved when, how big. AI drafts (index group "ai") get their own strip.
-  const chip = (p)=>{
-     let active = p.key===activeKey;
-     let label = (p.name||"Untitled takeoff");
-     let when = p.savedAt? new Date(p.savedAt).toLocaleString([], {day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"}) : "never saved";
-     let count = "";
-     try{
-       let blob = JSON.parse(localStorage.getItem(p.key)||"null");
-       if(blob && Array.isArray(blob.instances)) count = blob.instances.length+" element"+(blob.instances.length===1?"":"s");
-     }catch(e){}
-     return `<span class="takeoff-chip${active?' active':''}${p.group==="ai"?' ai-draft':''}" data-takeoff="${p.id}">
-       <button class="takeoff-open" data-action="openTakeoff" data-id="${p.id}" ${active?'disabled':''} title="${active?'Currently open — everything autosaves':'Resume this takeoff — your current work is saved automatically first'}">
-         <span style="display:block;text-align:left;">${active?'▶ ':''}${label}</span>
-         <span class="small" style="display:block;text-align:left;opacity:.7;">💾 ${when}${count?` · ${count}`:''}</span>
-       </button>
-       <button class="takeoff-del" data-action="deleteTakeoff" data-id="${p.id}" title="Delete this saved takeoff">✕</button>
-      </span>`;
-  };
+  const cur = all.find(p=>p.key===activeKey) || null;
+  const esc = (t)=>String(t||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
+  const when = (p)=> p.savedAt? new Date(p.savedAt).toLocaleString([], {day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"}) : "never saved";
+  const count = (p)=>{ try{ let blob = JSON.parse(localStorage.getItem(p.key)||"null"); if(blob && Array.isArray(blob.instances)) return blob.instances.length+" element"+(blob.instances.length===1?"":"s"); }catch(e){} return ""; };
+  const opt = (p)=>`<option value="${esc(p.id)}" ${p.key===activeKey?'selected':''}>${esc(p.name||"Untitled takeoff")} — saved ${esc(when(p))}${count(p)?` · ${esc(count(p))}`:''}</option>`;
   host.innerHTML = `<div class="sechead">Saved Takeoffs</div>
-   <div class="tip"><span class="ico">💾</span><div>Each takeoff saves independently — 💾 Save writes only the one that's open. Start another with <b>+ New takeoff</b> and resume any saved one from this list at any time; nothing here touches the others.</div></div>
-   <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
-   ${idx.length===0? `<span class="small">No saved takeoffs — this blank workspace will appear here automatically as soon as you name it, add an element, or hit 💾 Save.</span>`:""}
-   ${idx.map(chip).join('')}
+   <div class="tip"><span class="ico">💾</span><div>Pick a saved takeoff to resume it — the one that is open is saved first, automatically. Estimates opens on the takeoff you last worked on, on any device. Each takeoff saves independently.</div></div>
+   <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;" data-testid="takeoffs-bar">
+   <label class="small" for="takeoffSelect" style="font-weight:600;">Takeoff</label>
+   <select id="takeoffSelect" data-testid="takeoff-select" style="min-width:320px;max-width:100%;" title="Saved takeoffs, newest first — pick one to resume it">
+     ${idx.length? idx.map(opt).join('') : `<option value="" selected>No saved takeoffs — this blank workspace appears here as soon as you name it, add an element, or hit 💾 Save</option>`}
+     ${!cur && idx.length? `<option value="" selected>Unsaved new takeoff (open now)</option>` : ""}
+     ${aiIdx.length? `<optgroup label="AI drafts — proposed by the AI Engine, review before use">${aiIdx.map(opt).join('')}</optgroup>` : ""}
+   </select>
    <button class="btn small primary" data-action="newTakeoff">+ New takeoff</button>
-   </div>
-   ${aiIdx.length? `<div class="sechead" style="margin-top:12px;">AI drafts — proposed by the AI Engine, review before use</div>
-   <div class="tip"><span class="ico">🤖</span><div>Each of these takeoffs was exported from an AI Engine job. Every element is marked <b>AI draft — verify</b> until you check it against the drawings and mark it reviewed; nothing here was typed by a person.</div></div>
-   <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;" id="aiDraftsBar">${aiIdx.map(chip).join('')}</div>` : ""}`;
+   ${cur? `<button class="btn small danger" data-action="deleteTakeoff" data-id="${esc(cur.id)}" title="Delete the open takeoff and all its elements">✕ Delete this takeoff</button>` : ""}
+   ${cur? `<span class="small" data-testid="takeoff-current">▶ <b>${esc(cur.name||"Untitled takeoff")}</b> · 💾 ${esc(when(cur))}${count(cur)?` · ${esc(count(cur))}`:''}${cur.group==="ai"?" · 🤖 AI draft — verify":""}</span>` : ""}
+   </div>`;
+  const sel = host.querySelector("#takeoffSelect");
+  if(sel) sel.onchange = ()=>{ const id = sel.value; if(id) switchToTakeoff(id); };
   host.onclick = (e)=>{
     let btn = e.target.closest('button[data-action]'); if(!btn) return;
     if(btn.dataset.action==="newTakeoff") newTakeoff();
-    else if(btn.dataset.action==="openTakeoff") switchToTakeoff(btn.dataset.id);
     else if(btn.dataset.action==="deleteTakeoff") deleteTakeoff(btn.dataset.id);
   };
   updateProjHeaderBtn();

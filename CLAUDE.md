@@ -950,7 +950,19 @@ across devices and matches the welcome panel's "Last worked on"); (3) this
 browser's `gradcon-estimate-active`; (4) the first live entry. Before this
 the boot opened whatever this browser last left open, else the FIRST entry
 in the list. `test-last-worked.mjs` proves the stale-active case, the
-request, an unknown request and the welcome card.
+request, an unknown request and the welcome card. **The Saved Takeoffs bar
+is ONE dropdown** (Grady, 22 Oct 2026: "i want the saved takeoffs rolled up
+with a drop down to select the projects and it should default to opening the
+last project worked on"): `renderTakeoffsBar` renders `#takeoffSelect`
+(`data-testid="takeoff-select"`) — every live takeoff newest-saved first,
+each option "name — saved <when> · N elements", the open one selected, AI
+drafts in their own optgroup, an "Unsaved new takeoff" option while the open
+draft is not yet registered — beside "+ New takeoff", "✕ Delete this takeoff"
+(the open one) and a `takeoff-current` line; picking an option runs
+`switchToTakeoff` (the open takeoff is saved first). The header's
+"📁 Projects ▾" picker and the cloud versions list are unchanged.
+`test-takeoff-select.mjs` proves the order, the switch and the reload
+opening on the takeoff last worked on.
 
 ## Welcome panel (portal sign-in)
 
