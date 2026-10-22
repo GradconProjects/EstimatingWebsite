@@ -1113,6 +1113,7 @@ check("The agreed house margin is 25%, and 25% margin means cost / 0.75 (a 33.33
 
 const { pendingRateUpdates, libraryPrices, libraryGovernedKeys, LIBRARY_EXCLUDED_NAMES } = await import("../src/lib/ratesLibrarySync.js");
 const DF = await import("../src/lib/driveFiles.js");
+const PN = await import("../src/lib/projectNaming.js");
 
 check("Rates Library rules: its price flows into Quotes over ANY stored value, including a typed one", () => {
   const CONV = rateKey("FORMWORK", "Conventional", "m2");
@@ -1337,6 +1338,25 @@ await checkAsync("Drive function: unconfigured → 503; no connection → 409; a
   const stored = { drive: { rootId: "folder12BeachRd01", rootName: "12 Beach Rd" } };
   const scoped = await DR.runDrive({ action: "list" }, genv, mk(conn, stored)); assert.deepEqual(scoped.body.files.map((x) => x.id), ["p1", "d1"], "the chosen root scopes the listing");
   assert.equal((await DR.runDrive({ action: "file", id: "n1" }, genv, mk(conn, stored))).status, 403, "...and refuses what is above it");
+});
+check("project naming: the convention test, the reader of the model's reply (known ids, conventional names only), auto-apply only on a confident single answer, the patch a choice writes", () => {
+  assert.ok(PN.isConventionName("19 Paringa Road, Portsea VIC 3944 — Tennis Pavilion")); assert.ok(PN.isConventionName("2/12 Beach Road, Mentone VIC 3194")); assert.ok(PN.isConventionName("Unit 3, 8 Main Street, Mornington VIC 3931"));
+  assert.ok(!PN.isConventionName("33 Churchill (from Estimates)")); assert.ok(!PN.isConventionName("18 Beach Road")); assert.ok(!PN.isConventionName(""));
+  assert.ok(PN.needsAddressReview({ projectName: "18 Beach Road" })); assert.ok(!PN.needsAddressReview({ projectName: "18 Beach Road", nameReviewedFor: "18 Beach Road" }), "a typed name once reviewed is not asked again"); assert.ok(!PN.needsAddressReview({ projectName: "2/12 Beach Road, Mentone VIC 3194" }));
+  const rows = [{ id: "a", name: "18 Beach Road" }, { id: "b", name: "9 Stonecutters" }];
+  assert.ok(/18 Beach Road/.test(PN.addressPrompt(rows)) && /NEVER invent a street number/.test(PN.addressPrompt(rows)));
+  const reply = JSON.stringify({ projects: [
+    { id: "a", confidence: "low", note: "suburb not typed", options: [{ name: "18 Beach Road, Mentone VIC 3194", street: "18 Beach Road", suburb: "Mentone", state: "vic", postcode: "3194" }, { name: "18 Beach Road, Hampton VIC 3188", street: "18 Beach Road", suburb: "Hampton", state: "VIC", postcode: "3188" }, { name: "not an address", street: "", suburb: "", state: "", postcode: "" }] },
+    { id: "b", confidence: "high", options: [{ name: "9 Stonecutters Road, Portsea VIC 3944", street: "9 Stonecutters Road", suburb: "Portsea", state: "VIC", postcode: "3944" }] },
+    { id: "zzz", confidence: "high", options: [{ name: "1 Fake Street, Nowhere VIC 3000" }] },
+  ] });
+  const res = PN.parseAddressReply("```json\n" + reply + "\n```", rows);
+  assert.deepEqual(Object.keys(res).sort(), ["a", "b"], "unknown ids are dropped"); assert.equal(res.a.options.length, 2, "a non-conventional option is dropped"); assert.equal(res.a.options[0].state, "VIC");
+  assert.ok(!PN.autoApplies(res.a), "two options at low confidence = a choice"); assert.ok(PN.autoApplies(res.b), "one option at high confidence applies on its own");
+  const patch = PN.applyNamePatch({ projectName: "9 Stonecutters" }, res.b.options[0], "9 Stonecutters");
+  assert.deepEqual(patch, { projectName: "9 Stonecutters Road, Portsea VIC 3944", siteAddress: "9 Stonecutters Road, Portsea VIC 3944", nameSource: "9 Stonecutters", nameReviewedFor: "9 Stonecutters Road, Portsea VIC 3944" });
+  assert.equal(PN.applyNamePatch({ projectName: "x", nameSource: "the first typed" }, res.b.options[0], "x").nameSource, "the first typed", "the FIRST typed name is kept through later renames");
+  assert.deepEqual(PN.keepNamePatch({ projectName: " 18 Beach Road " }), { nameReviewedFor: "18 Beach Road" });
 });
 check("driveFiles helpers: a project's folder and attachments live on the quote (sync with it); attach is idempotent by Drive id; detach removes one", () => {
   const F = { id: "p1", name: "plan.pdf", kind: "pdf", mimeType: "application/pdf", size: 1200, modifiedTime: "2026-10-20T00:00:00Z", webViewLink: "https://drive.google.com/file/d/p1" };

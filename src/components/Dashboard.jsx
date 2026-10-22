@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Trash2, ArrowRight, LayoutDashboard, Loader2, FolderOpen, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
+import { Plus, Trash2, ArrowRight, LayoutDashboard, Loader2, FolderOpen, ArrowUp, ArrowDown, ArrowUpDown, MapPin } from "lucide-react";
 import { QUOTE_STATUSES, QUOTE_STATUS_STYLES } from "../data/catalog.js";
 import { computeGrandTotal, computeMarginLadder, money, getDefaultMargin, getMarginSteps, scopeLabel } from "../lib/costing.js";
 import { readQuoteSummariesDetailed, readQuotesCached, patchQuoteFields } from "../lib/projects.js";
@@ -9,6 +9,8 @@ import { effectiveRates, statusChangePatch, completedDay } from "../lib/rateFree
 import { PROJECT_SORTS, sortProjects, defaultSortDir, preferredSortKey } from "../lib/projectSort.js";
 import RateValidityBanner from "./RateValidityBanner.jsx";
 import { pendingRateChanges } from "../lib/rateChanges.js";
+import { RenameProjectsModal } from "./AddressNaming.jsx";
+import { applyNamePatch, isConventionName } from "../lib/projectNaming.js";
 
 const OPEN_FILTER = "__open";   // the tile value for OPEN_STATUSES (lib/planner.js)
 
@@ -201,6 +203,18 @@ export default function Dashboard({ projects, rates, rateChanges, onOpen, onCrea
   // the dashboard is where projects get scanned by who they belong to, so
   // it isn't duplicated in the project editor's own header. Same
   // optimistic-local-then-write path as the status dropdown above.
+  // "Standardise names" (Grady, 22 Oct 2026): the projects not yet named by
+  // the address convention, renamed through the AI provider's proposals —
+  // the typed name is kept on the row as nameSource (lib/projectNaming.js).
+  const [renaming, setRenaming] = useState(false);
+  const renameRows = useMemo(() => projects.map((p) => { const q = quotesByKey[p.storageKey] || {}; return { id: p.id, storageKey: p.storageKey, name: q.projectName || "", client: q.clientName || "" }; }).filter((r) => r.name), [projects, quotesByKey]);
+  const unconventional = renameRows.filter((r) => !isConventionName(r.name)).length;
+  const renameProject = (row, option) => {
+    const quote = quotesByKey[row.storageKey] || {};
+    const patch = applyNamePatch(quote, option, row.name);
+    setQuotesByKey((m) => ({ ...m, [row.storageKey]: { ...quote, ...patch } }));
+    patchQuoteFields(row.storageKey, patch);
+  };
   const changeClient = (project, clientName) => {
     const quote = quotesByKey[project.storageKey] || {};
     const updated = { ...quote, clientName };
@@ -280,6 +294,15 @@ export default function Dashboard({ projects, rates, rateChanges, onOpen, onCrea
             </label>
           )}
           <button
+            type="button"
+            onClick={() => setRenaming(true)}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-neutral-300 bg-white hover:bg-neutral-50 text-neutral-700 text-sm font-medium transition-colors"
+            title="Rename projects by the address convention — <number> <Street>, <Suburb> VIC <postcode> — through the AI provider, with a tick per project"
+            data-testid="standardise-names"
+          >
+            <MapPin size={16} /> Standardise names{unconventional ? <span className="ml-0.5 px-1.5 rounded-full bg-amber-100 text-amber-800 text-[10.5px] font-semibold">{unconventional}</span> : null}
+          </button>
+          <button
             onClick={onCreate}
             className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-950 hover:bg-blue-900 text-white text-sm font-medium transition-colors"
           >
@@ -287,6 +310,7 @@ export default function Dashboard({ projects, rates, rateChanges, onOpen, onCrea
           </button>
         </div>
       </div>
+      {renaming && <RenameProjectsModal rows={renameRows} onRename={renameProject} onClose={() => setRenaming(false)} />}
       <SummaryLoadNotice failedCount={failedCount} onRetry={() => setReloadTick((t) => t + 1)} />
       <RateValidityBanner rates={rates} />
       {/* Projects still to decide on Rates Library changes they were priced
@@ -398,7 +422,7 @@ export default function Dashboard({ projects, rates, rateChanges, onOpen, onCrea
                     title={s.status}
                   />
                 </td>
-                <td className="px-4 py-3 font-semibold text-[15px] text-neutral-900">{s.name}{s.scope !== "both" && <span className="ml-2 align-middle text-[10px] font-medium px-1.5 py-0.5 rounded bg-orange-100 text-orange-800" title="Quote scope">{scopeLabel(s.scope)}</span>}</td>
+                <td className="px-4 py-3 font-semibold text-[15px] text-neutral-900 min-w-[18rem] max-w-[26rem] whitespace-normal break-words">{s.name}{s.scope !== "both" && <span className="ml-2 align-middle text-[10px] font-medium px-1.5 py-0.5 rounded bg-orange-100 text-orange-800" title="Quote scope">{scopeLabel(s.scope)}</span>}</td>
                 <td className="px-3 py-2.5">
                   <input
                     value={s.client}

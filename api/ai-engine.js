@@ -28,6 +28,7 @@
  */
 import { callDocuments, callText, callWebSearch, resolveProviderId, parseJsonLoose, salvageArrays, providerStatus } from "./_providers.js";
 import { tenderWordingPrompt, parseTenderWording, tenderItemsPrompt, parseTenderItems, parseTenderExtras, parseTenderPlacement } from "../src/lib/tenderWording.js";
+import { addressPrompt, parseAddressReply } from "../src/lib/projectNaming.js";
 
 export const config = { maxDuration: 300 };
 
@@ -174,6 +175,20 @@ export async function runAiJob(body, env = process.env) {
       const result = parseJsonLoose(r.text) || { benchmarks: [], notFound: products.map((p) => p.name), raw: r.text.slice(0, 1500) };
       const rows = (Array.isArray(result.benchmarks) ? result.benchmarks : []).filter((b) => b && b.match && (Number(b.low) > 0 || Number(b.high) > 0) && b.source).map((b) => ({ name: String(b.name || b.match).slice(0, 80), match: String(b.match).toLowerCase().slice(0, 60), unit: String(b.unit || "").slice(0, 12), low: Number(b.low) || 0, high: Number(b.high) || 0, source: String(b.source).slice(0, 300), asOf: String(b.asOf || "").slice(0, 10), note: String(b.note || "").slice(0, 160) }));
       return { status: 200, body: { suggestions: rows, notFound: Array.isArray(result.notFound) ? result.notFound : [], citations: r.citations, provider: r.provider, model: r.model, latencyMs: r.latencyMs } };
+    } catch (e) {
+      return { status: e.status && e.status >= 400 && e.status < 600 ? e.status : 502, body: { error: e.message, detail: e.detail || null, provider: id } };
+    }
+  }
+  if (action === "address") {
+    // Project names in the address convention (src/lib/projectNaming.js;
+    // Grady, 22 Oct 2026). The model proposes, a person applies or chooses.
+    const rows = Array.isArray(body.projects) ? body.projects.filter((p) => p && p.id != null && String(p.name || "").trim()).slice(0, 40) : [];
+    if (!rows.length) return { status: 400, body: { error: "address needs projects: [{id, name}]" } };
+    const id = resolveProviderId(provider, env);
+    if (!id) return { status: 503, body: { error: "No AI provider is configured — set ANTHROPIC_API_KEY or OPENAI_API_KEY in the Vercel project's Environment Variables." } };
+    try {
+      const r = await callText(id, { system: "You are the office administrator of Gradcon Concrete Constructions, Melbourne, who knows Victorian street addresses, suburbs and postcodes precisely. Reply with ONE JSON object and nothing else — no markdown fences, no prose before or after.", prompt: addressPrompt(rows), maxTokens: 3000, timeoutMs: 110000, env });
+      return { status: 200, body: { projects: parseAddressReply(r.text, rows), provider: r.provider, model: r.model, latencyMs: r.latencyMs } };
     } catch (e) {
       return { status: e.status && e.status >= 400 && e.status < 600 ? e.status : 502, body: { error: e.message, detail: e.detail || null, provider: id } };
     }

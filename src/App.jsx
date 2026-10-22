@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from "react";
-import { Settings2, ArrowLeft, Printer, ListPlus, FileSpreadsheet, LayoutDashboard, Radar, FolderOpen, History, HardDriveDownload, AlertTriangle } from "lucide-react";
+import { Settings2, ArrowLeft, Printer, ListPlus, FileSpreadsheet, LayoutDashboard, Radar, FolderOpen, History, HardDriveDownload, AlertTriangle, MapPin, Loader2 } from "lucide-react";
 import { saveVersion, downloadQuoteFile, parseQuoteFile } from "./lib/quoteVersions.js";
 import { quoteStorageKey } from "./lib/projects.js";
 import VersionsModal from "./components/VersionsModal.jsx";
@@ -10,6 +10,9 @@ import { effectiveRates, statusChangePatch, needsFreeze, freezeRates, frozenRate
 import { RATE_CHANGES_KEY, recordRateChanges, pendingRateChanges, elementRateChanges, decideRateChangesPatch, releaseKeptRatesPatch } from "./lib/rateChanges.js";
 import RateChangesPrompt, { KeptRatesBanner } from "./components/RateChangesPrompt.jsx";
 import CloudStorageView from "./components/CloudStorageView.jsx";
+import { AddressOptions } from "./components/AddressNaming.jsx";
+import { needsAddressReview, requestProjectNames, autoApplies, applyNamePatch, keepNamePatch } from "./lib/projectNaming.js";
+import { preferredProvider } from "./lib/tenderWording.js";
 import DriveFilesDrawer from "./components/DriveFilesDrawer.jsx";
 import { driveFiles } from "./lib/driveFiles.js";
 import RateValidityBanner from "./components/RateValidityBanner.jsx";
@@ -709,6 +712,34 @@ function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, rate
     if (!seenLoadedQuoteRef.current) { seenLoadedQuoteRef.current = true; return; }
     changedSinceVersionRef.current = true;
   }, [quote, quoteStatus]);
+  // The address convention on the project name (lib/projectNaming.js): when
+  // the field is left, a name not yet in the convention is sent to the AI
+  // provider — a confident single answer is applied at once (with Undo in
+  // the note), anything less opens the options under the field. The same
+  // typed name is never asked about twice (nameReviewedFor).
+  const [addressReview, setAddressReview] = useState(null); // {typed, result} | {typed, loading} | null
+  const reviewProjectName = async (force = false) => {
+    const typed = String(quoteRef.current.projectName || "").trim();
+    if (!typed) return;
+    if (!force && !needsAddressReview(quoteRef.current)) return;
+    setAddressReview({ typed, loading: true });
+    try {
+      const r = await requestProjectNames([{ id: "this", name: typed, client: quoteRef.current.clientName }], { provider: preferredProvider() });
+      const res = r.results.this;
+      if (!res) { setQuote((q) => ({ ...q, ...keepNamePatch({ projectName: typed }) })); setAddressReview(null); return; }
+      if (autoApplies(res) && !force) {
+        const patch = applyNamePatch(quoteRef.current, res.options[0], typed);
+        setQuote((q) => ({ ...q, ...patch }));
+        setAddressReview(null);
+        note(`Named by the address convention: ${patch.projectName} (was "${typed}") — the pin beside the name offers other options or the name as typed`);
+      } else {
+        setAddressReview({ typed, result: res });
+      }
+    } catch (e) {
+      setAddressReview(null);
+      note(`Could not check the address convention: ${e.message}`, "warn");
+    }
+  };
   const note = (text, tone = "ok") => {
     setSaveNote({ text, tone });
     setTimeout(() => setSaveNote((cur) => (cur && cur.text === text ? null : cur)), tone === "ok" ? 4000 : 12000);
@@ -892,17 +923,36 @@ function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, rate
           >
             <ArrowLeft size={16} />
           </button>
-          <div className="flex-1 min-w-0">
+          <div className="flex-1 min-w-[18rem]">
             <div className="text-[10px] uppercase tracking-widest text-blue-300 font-semibold">Gradcon Concrete Constructions</div>
             {/* The client/owner is NOT edited here — it lives beside the
                 project name on the Projects Dashboard (Dashboard.jsx), which
                 is where projects are scanned by owner. */}
-            <input
-              value={quote.projectName}
-              onChange={(e) => setQuote((q) => ({ ...q, projectName: e.target.value }))}
-              placeholder="Project name — click to edit"
-              className="bg-transparent border-0 text-white font-semibold text-base w-full focus:outline-none focus:underline decoration-orange-400 placeholder:text-blue-400"
-            />
+            <div className="flex items-center gap-1 w-full">
+              <input
+                value={quote.projectName}
+                onChange={(e) => setQuote((q) => ({ ...q, projectName: e.target.value }))}
+                onBlur={() => reviewProjectName(false)}
+                onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+                placeholder="Project name — click to edit"
+                className="bg-transparent border-0 text-white font-semibold text-base flex-1 min-w-0 focus:outline-none focus:underline decoration-orange-400 placeholder:text-blue-400"
+                data-testid="project-name"
+              />
+              <button type="button" onClick={() => reviewProjectName(true)} className="flex-none p-1 rounded text-blue-300 hover:text-white hover:bg-blue-900" title={quote.nameSource && quote.nameSource !== quote.projectName ? `Named by the address convention (typed: "${quote.nameSource}") — click for other options` : "Name this project by the address convention (number, street, suburb, postcode)"} aria-label="Address convention" data-testid="project-name-address">
+                {addressReview && addressReview.loading ? <Loader2 size={14} className="animate-spin" /> : <MapPin size={14} />}
+              </button>
+            </div>
+            {addressReview && addressReview.result && (
+              <AddressOptions
+                typed={addressReview.typed}
+                result={addressReview.result}
+                onChoose={(opt) => { const patch = applyNamePatch(quoteRef.current, opt, addressReview.typed); setQuote((q) => ({ ...q, ...patch })); setAddressReview(null); }}
+                onKeep={() => { setQuote((q) => ({ ...q, ...keepNamePatch(q) })); setAddressReview(null); }}
+                source={quote.nameSource}
+                onRevert={() => { setQuote((q) => ({ ...q, projectName: q.nameSource, nameReviewedFor: q.nameSource })); setAddressReview(null); }}
+                onClose={() => setAddressReview(null)}
+              />
+            )}
             {/* Quote SCOPE — set once for the project here, under the name so
                 the header row keeps its width; any element can differ on its
                 own card (Grady, 2 Oct 2026: "at project setup, one should be
