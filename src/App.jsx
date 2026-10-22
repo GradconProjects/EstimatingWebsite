@@ -115,8 +115,9 @@ const blankQuote = () => ({
 // uses. Clearing it here means a later plain reload of Quotes (no flag set)
 // falls through to the normal remembered-project/Dashboard behaviour.
 // Colour scheme (index.css `html[data-theme]`): the portal preference
-// `quotesTheme` — "library" (the Rates Library's palette, the default since
-// 22 Oct 2026), "classic" (blueprint navy & orange) or "graphite". Read on
+// `quotesTheme` — "portal" (the portal dashboard's own charcoal & lime, the
+// default since 23 Oct 2026), "library" (the Rates Library's navy & blue),
+// "classic" (blueprint navy & orange) or "graphite". Read on
 // mount and on every preference save (the shell writes localStorage; the
 // `storage` event reaches this blob: frame), so a change in Settings shows
 // without a reload.

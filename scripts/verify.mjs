@@ -1408,7 +1408,13 @@ check("project naming: the convention test, the reader of the model's reply (kno
 await checkAsync("Quotes colour tokens: every preset values every token; overrides lay over the preset one by one (bad hex ignored); the portal Settings mirror matches the library", async () => {
   const T = await import("../src/lib/quoteTheme.js");
   T.PRESET_KEYS.forEach((k) => T.THEME_TOKENS.forEach((t) => assert.ok(/^#[0-9a-f]{6}$/i.test(T.PRESETS[k][t.key]), `${k}.${t.key}`)));
-  assert.equal(T.resolveTheme({}).preset, "library"); assert.equal(T.resolveTheme({ quotesTheme: "nope" }).preset, "library");
+  assert.equal(T.resolveTheme({}).preset, "portal"); assert.equal(T.resolveTheme({ quotesTheme: "nope" }).preset, "portal");
+  // the portal preset (Grady, 23 Oct 2026) is the shell's own palette: its lime accent carries DARK ink on buttons and a dark olive for figures on white; the older schemes keep white ink
+  assert.deepEqual([T.PRESETS.portal.page, T.PRESETS.portal.chrome950, T.PRESETS.portal.accent600, T.PRESETS.portal.accentInk, T.PRESETS.portal.accentHover], ["#fafafa", "#231f20", "#d5de5d", "#1c1c1c", "#c6d045"]);
+  assert.ok(T.PRESETS.portal.accentText !== T.PRESETS.portal.accent600, "money figures on white must not be the lime itself");
+  ["library", "classic", "graphite"].forEach((k) => { assert.equal(T.PRESETS[k].accentInk, "#ffffff"); assert.equal(T.PRESETS[k].accentText, T.PRESETS[k].accent600); assert.equal(T.PRESETS[k].accentHover, T.PRESETS[k].accent700); });
+  const css = fs.readFileSync(new URL("../src/index.css", import.meta.url), "utf8");
+  assert.ok(/\.bg-orange-600\.text-white[^{]*\{ color: var\(--t-accent-ink/.test(css) && /\.text-orange-600[^{]*\{ color: var\(--t-accent-text/.test(css) && /hover\\:bg-orange-700:hover \{ background-color: var\(--t-accent-hover/.test(css) && /html\[data-theme="portal"\]/.test(css), "index.css maps the ink / text / hover tokens");
   const r = T.resolveTheme({ quotesTheme: "classic", quotesThemeColors: { chrome950: "#101010", accent600: "not a colour", page: "#F5F5F5" } });
   assert.equal(r.tokens.chrome950, "#101010"); assert.equal(r.tokens.accent600, "#ea580c", "a bad value is ignored"); assert.deepEqual(r.overridden, ["chrome950"], "a value equal to the preset is not an override");
   const fake = { dataset: {}, style: { props: {}, setProperty(k, v) { this.props[k] = v; } } };

@@ -35,6 +35,17 @@ input[type="number"] {
    blueprint navy & orange the app shipped with (no overrides); "graphite" a
    neutral dark chrome with an emerald accent.
    --------------------------------------------------------------------------- */
+/* "portal" (the DEFAULT since 23 Oct 2026): the portal shell's own palette — #fafafa page, charcoal
+   chrome, the lime accent with dark ink on buttons and a dark olive for figures on white. */
+html[data-theme="portal"] {
+  --t-chrome-950: #231f20; --t-chrome-900: #2e2a2b; --t-chrome-800: #3b3637; --t-chrome-700: #4a4546;
+  --t-chrome-300: #b9b4b5; --t-chrome-200: #dcd8d9; --t-chrome-100: #ececec; --t-chrome-50: #f5f5f5;
+  --t-accent-700: #7c8620; --t-accent-600: #d5de5d; --t-accent-500: #dde566; --t-accent-400: #e3ea7a; --t-accent-300: #eaf09a;
+  --t-accent-200: #eef3b4; --t-accent-100: #f4f7d2; --t-accent-50: #fafce9; --t-accent-900: #4d5410; --t-accent-800: #656d1a;
+  --t-accent-ink: #1c1c1c; --t-accent-text: #6b7416; --t-accent-hover: #c6d045;
+  --t-band-labour: #2e2a2b; --t-band-labour-head: #3b3637; --t-band-geometry: #231f20; --t-band-summary: #231f20; --t-band-category: #2e2a2b;
+  --t-page: #fafafa; --t-font: "Inter", -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+}
 html[data-theme="library"] {
   --t-chrome-950: #0f2e4c; --t-chrome-900: #1F4E78; --t-chrome-800: #2a5f8f; --t-chrome-700: #35709f;
   --t-chrome-300: #a9cdf0; --t-chrome-200: #D9EAF7; --t-chrome-100: #e8f2fb; --t-chrome-50: #eef4f9;
@@ -104,7 +115,10 @@ html[data-theme] .border-blue-900, html[data-theme] .border-blue-900\/60 { borde
 html[data-theme] .ring-blue-950 { --tw-ring-color: var(--t-chrome-950); }
 /* accent: money figures and primary actions */
 html[data-theme] .bg-orange-600 { background-color: var(--t-accent-600); }
-html[data-theme] .bg-orange-700, html[data-theme] .hover\:bg-orange-700:hover { background-color: var(--t-accent-700); }
+html[data-theme] .bg-orange-700 { background-color: var(--t-accent-700); }
+html[data-theme] .hover\:bg-orange-700:hover { background-color: var(--t-accent-hover, var(--t-accent-700)); }
+/* a light accent (the portal's lime) needs dark ink on its buttons; the other schemes keep white */
+html[data-theme] .bg-orange-600.text-white, html[data-theme] .bg-orange-500.text-white, html[data-theme] .hover\:bg-orange-700.text-white { color: var(--t-accent-ink, #fff); }
 html[data-theme] .hover\:bg-orange-600:hover { background-color: var(--t-accent-600); }
 html[data-theme] .bg-orange-500, html[data-theme] .hover\:bg-orange-500:hover { background-color: var(--t-accent-500); }
 html[data-theme] .bg-orange-200 { background-color: var(--t-accent-200); }
@@ -113,7 +127,7 @@ html[data-theme] .bg-orange-50, html[data-theme] .bg-orange-50\/40 { background-
 html[data-theme] .text-orange-900 { color: var(--t-accent-900); }
 html[data-theme] .text-orange-800 { color: var(--t-accent-800); }
 html[data-theme] .text-orange-700, html[data-theme] .hover\:text-orange-700:hover { color: var(--t-accent-700); }
-html[data-theme] .text-orange-600, html[data-theme] .hover\:text-orange-600:hover { color: var(--t-accent-600); }
+html[data-theme] .text-orange-600, html[data-theme] .hover\:text-orange-600:hover { color: var(--t-accent-text, var(--t-accent-600)); }
 html[data-theme] .text-orange-500 { color: var(--t-accent-500); }
 html[data-theme] .text-orange-400 { color: var(--t-accent-400); }
 html[data-theme] .text-orange-300 { color: var(--t-accent-300); }

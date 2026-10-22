@@ -29,6 +29,9 @@ export const THEME_TOKENS = [
   { key: "accent50", css: "--t-accent-50", group: "Accent", label: "Filled-row tint" },
   { key: "accent900", css: "--t-accent-900", group: "Accent", label: "Accent text (darkest)" },
   { key: "accent800", css: "--t-accent-800", group: "Accent", label: "Accent text (dark)" },
+  { key: "accentInk", css: "--t-accent-ink", group: "Accent", label: "Text on accent buttons" },
+  { key: "accentText", css: "--t-accent-text", group: "Accent", label: "Money figures & accent text on white" },
+  { key: "accentHover", css: "--t-accent-hover", group: "Accent", label: "Accent button hover" },
   { key: "bandLabour", css: "--t-band-labour", group: "Bands", label: "Labour / crew sheet band" },
   { key: "bandLabourHead", css: "--t-band-labour-head", group: "Bands", label: "Labour sheet header" },
   { key: "bandGeometry", css: "--t-band-geometry", group: "Bands", label: "Project Geometry band" },
@@ -40,27 +43,40 @@ export const THEME_TOKENS = [
 ];
 
 export const PRESETS = {
+  // "portal": the portal shell's own palette (Grady, 23 Oct 2026: "change the default quotes colour
+  // to the uploaded. background and accent, etc") — #fafafa page, #231f20 charcoal chrome, #d5de5d
+  // lime accent with DARK ink on buttons (#1c1c1c) and a dark olive for money figures on white.
+  portal: {
+    chrome950: "#231f20", chrome900: "#2e2a2b", chrome800: "#3b3637", chrome700: "#4a4546", chrome300: "#b9b4b5", chrome200: "#dcd8d9", chrome100: "#ececec", chrome50: "#f5f5f5",
+    accent600: "#d5de5d", accent700: "#7c8620", accent500: "#dde566", accent400: "#e3ea7a", accent300: "#eaf09a", accent200: "#eef3b4", accent100: "#f4f7d2", accent50: "#fafce9", accent900: "#4d5410", accent800: "#656d1a",
+    bandLabour: "#2e2a2b", bandLabourHead: "#3b3637", bandGeometry: "#231f20", bandSummary: "#231f20", bandCategory: "#2e2a2b", page: "#fafafa",
+    entryMe: "#047857", entryOther: "#7c3aed",
+    accentInk: "#1c1c1c", accentText: "#6b7416", accentHover: "#c6d045",
+  },
   library: {
     chrome950: "#0f2e4c", chrome900: "#1F4E78", chrome800: "#2a5f8f", chrome700: "#35709f", chrome300: "#a9cdf0", chrome200: "#D9EAF7", chrome100: "#e8f2fb", chrome50: "#eef4f9",
     accent600: "#2f7fd6", accent700: "#2566ad", accent500: "#3b8be0", accent400: "#5fa3ea", accent300: "#a9cdf0", accent200: "#c9dff5", accent100: "#D9EAF7", accent50: "#eef4f9", accent900: "#1a4a7c", accent800: "#1f5a95",
     bandLabour: "#1F4E78", bandLabourHead: "#2a5f8f", bandGeometry: "#0f2e4c", bandSummary: "#0f2e4c", bandCategory: "#1F4E78", page: "#eef2f6",
     entryMe: "#047857", entryOther: "#7c3aed",
+    accentInk: "#ffffff", accentText: "#2f7fd6", accentHover: "#2566ad",
   },
   classic: {
     chrome950: "#172554", chrome900: "#1e3a8a", chrome800: "#1e40af", chrome700: "#1d4ed8", chrome300: "#93c5fd", chrome200: "#bfdbfe", chrome100: "#dbeafe", chrome50: "#eff6ff",
     accent600: "#ea580c", accent700: "#c2410c", accent500: "#f97316", accent400: "#fb923c", accent300: "#fdba74", accent200: "#fed7aa", accent100: "#ffedd5", accent50: "#fff7ed", accent900: "#7c2d12", accent800: "#9a3412",
     bandLabour: "#78350f", bandLabourHead: "#92400e", bandGeometry: "#78350f", bandSummary: "#171717", bandCategory: "#262626", page: "#f5f5f5",
     entryMe: "#047857", entryOther: "#7c3aed",
+    accentInk: "#ffffff", accentText: "#ea580c", accentHover: "#c2410c",
   },
   graphite: {
     chrome950: "#1c2126", chrome900: "#2b333b", chrome800: "#3a444e", chrome700: "#4a5661", chrome300: "#b6c0c9", chrome200: "#d8dee3", chrome100: "#e8ecef", chrome50: "#f1f3f5",
     accent600: "#059669", accent700: "#047857", accent500: "#10b981", accent400: "#34d399", accent300: "#6ee7b7", accent200: "#a7f3d0", accent100: "#d1fae5", accent50: "#ecfdf5", accent900: "#064e3b", accent800: "#065f46",
     bandLabour: "#2b333b", bandLabourHead: "#3a444e", bandGeometry: "#1c2126", bandSummary: "#1c2126", bandCategory: "#2b333b", page: "#f3f4f6",
     entryMe: "#b45309", entryOther: "#7c3aed",
+    accentInk: "#ffffff", accentText: "#059669", accentHover: "#047857",
   },
 };
-export const PRESET_FONTS = { library: '"Segoe UI", Calibri, ui-sans-serif, system-ui, Arial, sans-serif', classic: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif', graphite: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif' };
-export const DEFAULT_PRESET = "library";
+export const PRESET_FONTS = { portal: '"Inter", -apple-system, "Segoe UI", Roboto, Arial, sans-serif', library: '"Segoe UI", Calibri, ui-sans-serif, system-ui, Arial, sans-serif', classic: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif', graphite: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif' };
+export const DEFAULT_PRESET = "portal";
 export const PRESET_KEYS = Object.keys(PRESETS);
 
 const HEX = /^#[0-9a-f]{6}$/i;
