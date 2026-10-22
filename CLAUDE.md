@@ -324,8 +324,20 @@ safety net silently. Keep all cost arithmetic in `lib/costing.js`.
   of blinding and width then this autofills the volume in the labour
   section"; then "lets add Blinding as a separate item here and what is
   filled here should autopopulate in the labour row"): `BlindingBand.jsx`
-  shows the three parts of `BLINDING_PARTS` — Slab (plan area × depth), Edge
-  beams and Internal beams (total run × width × depth) — each with its own
+  shows the parts the ELEMENT ALLOWS (`blindingPartsFor(item)`, read off its
+  type — Grady, same day: "strips dont have slabs … blinding should be
+  applied according to what that element allows. columns shouldnt have
+  blinding"): a ground slab or raft (every `slab_ground` type) blinds under
+  its Slab (plan area × depth), Edge beams and Internal beams (total run ×
+  width × depth); a strip, ground, edge, internal or capping beam, a
+  retaining / boundary / planter wall, a headwall or abutment under its
+  Footing run; a pad, stump or pile cap, a column base plate or anchor block
+  under its Pad / cap area; a hearth, plinth, culvert or pit under its Base
+  area; a kerb under its Kerb run; a column, a wall, a pile, anything
+  suspended, a roof, stairs, screeds, toppings, finishes, heating, earthworks
+  and the preliminaries have NO band at all (the component returns null and a
+  stray figure under another part is ignored). `BLINDING_PARTS` holds every
+  part definition; each shown part has its own
   tick (`item.blinding[part].on`: undefined / true = in, false = out, the
   master "Blinding added" reading) and figures (`areaM2` / `lengthM` /
   `widthMm` / `tMm`, stamped on the work trail as `blinding:<part>:<field>`).

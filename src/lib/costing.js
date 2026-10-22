@@ -701,7 +701,44 @@ export const BLINDING_PARTS = [
   { key: "slab", label: "Slab", kind: "area", hint: "the slab's plan area × the blinding depth" },
   { key: "edge", label: "Edge beams", kind: "run", hint: "the edge beams' total run × the blinding width × depth" },
   { key: "internal", label: "Internal beams", kind: "run", hint: "the internal beams' total run × the blinding width × depth" },
+  { key: "footing", label: "Footing", kind: "run", hint: "the footing's total run × the blinding width × depth" },
+  { key: "pad", label: "Pad / cap", kind: "area", hint: "the pads' or caps' total plan area × the blinding depth" },
+  { key: "base", label: "Base", kind: "area", hint: "the base's plan area × the blinding depth" },
+  { key: "kerb", label: "Kerb run", kind: "run", hint: "the kerb's total run × the blinding width × depth" },
 ];
+const BP = Object.fromEntries(BLINDING_PARTS.map((p) => [p.key, p]));
+/**
+ * The blinding parts an element ALLOWS (Grady, 22 Oct 2026: "strips dont
+ * have slabs … blinding should be applied according to what that element
+ * allows. columns shouldnt have blinding"): a ground slab or raft blinds
+ * under its slab, its edge beams and its internal beams; a strip, ground,
+ * edge, internal or capping beam, a retaining, boundary or planter wall's
+ * footing, a headwall or abutment under its footing run; a pad, stump or
+ * pile cap, an anchor block, a hearth, plinth, culvert or pit under its
+ * plan area; a kerb under its run; a column, a wall, a pile, anything
+ * suspended, a roof, stairs, screeds, toppings, finishes, heating and the
+ * preliminaries have none — the BLINDING band does not show on them. Read
+ * off the element type (ELEMENT_TYPES by typeId, else the category and
+ * section an element carries, so a custom type follows its family).
+ */
+export function blindingPartsFor(item) {
+  if (!item) return [];
+  const type = ELEMENT_TYPES.find((t) => t.id === item.typeId) || null;
+  const id = String(item.typeId || "");
+  const category = type ? type.category : item.category || "";
+  const section = type ? type.section : item.section || "";
+  const labour = type ? type.labour : item.labour || "";
+  const keys = (...k) => k.map((x) => BP[x]);
+  if (["PRELIMINARIES", "EARTHWORKS", "VERTICAL STRUCTURE", "SUSPENDED STRUCTURE", "ROOF", "SCREEDS", "TOPPINGS", "HYDRONIC HEATING", "SPECIALIST FINISHING CONCRETE"].includes(category)) return [];
+  if (section === "PILING & PIERS") return [];
+  if (labour === "slab_ground" || /slab|raft|driveway|paths|paving|hardstand|ramp/.test(id)) return id === "pool_slab" ? keys("slab", "edge") : keys("slab", "edge", "internal");
+  if (/pile_cap|pad|stump|anchor_block|base_plate/.test(id)) return keys("pad");
+  if (/hearth|plinth|irregular|culvert|manhole|pit/.test(id) || category === "IRREGULAR CONCRETE CONSTRUCTIONS") return keys("base");
+  if (/kerb/.test(id)) return keys("kerb");
+  if (/shotcrete|secant|soldier|pool_wall|spa/.test(id)) return [];
+  if (section === "FOOTINGS" || labour === "footing" || /retaining|boundary|planter|headwall|abutment/.test(id) || (category === "EXTERNAL & LANDSCAPE CONCRETE" && labour === "wall")) return keys("footing");
+  return [];
+}
 const numOr0 = (v) => (v === "" || v === undefined || v === null ? 0 : Number(v) || 0);
 export function blindingPartM3(part, p) {
   if (!p || p.on === false) return 0;
@@ -711,7 +748,7 @@ export function blindingPartM3(part, p) {
 }
 export function blindingBuildUp(item) {
   const b = (item && item.blinding) || {};
-  const parts = BLINDING_PARTS.map((part) => {
+  const parts = blindingPartsFor(item).map((part) => {
     const p = b[part.key] || {};
     const on = p.on !== false;
     const m3 = blindingPartM3(part, p);

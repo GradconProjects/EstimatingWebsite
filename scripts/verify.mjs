@@ -1473,7 +1473,7 @@ check("Blinding is decided on the crew sheet: ticked (the default) it is charged
 });
 check("blinding build-up on the crew sheet (22 Oct 2026): slab = area × depth, a beam = run × width × depth, each part its own tick; the total costs the CONCRETE blinding row while nothing is typed there, feeds the crew Blinding row and the poured volume; the master tick leaves it out", () => {
   const C = costingAll;
-  const base = { id: "r1", typeId: "raft_slab", category: "FOUNDATIONS", label: "Raft", qtys: {}, tasks: [{ id: "t1", name: "Blinding concrete", qtys: {} }, { id: "t2", name: "Pour concrete", qtys: {} }], additional: [],
+  const base = { id: "r1", typeId: "raft_foundation", category: "FOUNDATIONS", label: "Raft", qtys: {}, tasks: [{ id: "t1", name: "Blinding concrete", qtys: {} }, { id: "t2", name: "Pour concrete", qtys: {} }], additional: [],
     blinding: { slab: { areaM2: 200, tMm: 50 }, edge: { lengthM: 40, widthMm: 350, tMm: 50 }, internal: { lengthM: 20, widthMm: 400, tMm: 75 } } };
   const bu = C.blindingBuildUp(base);
   assert.deepEqual(bu.parts.map((p) => [p.key, p.on, p.m3]), [["slab", true, 10], ["edge", true, 0.7], ["internal", true, 0.6]]); assert.equal(bu.m3, 11.3);
@@ -1487,6 +1487,15 @@ check("blinding build-up on the crew sheet (22 Oct 2026): slab = area × depth, 
   const cost = C.computeElementCost(base, rates), costOut = C.computeElementCost({ ...base, blindingIncluded: false }, rates);
   assert.ok(cost.categoryTotals["CONCRETE"] >= 11.3 * auto.unitCost - 1e-6, "the build-up prices on the CONCRETE band (plus the Holcim fees on the poured m³)");
   assert.equal(costOut.categoryTotals["CONCRETE"] || 0, 0); assert.ok(costOut.excludedBlinding >= 11.3 * auto.unitCost - 1e-6, "the master tick leaves the build-up out and states the money");
+  // the parts follow what the element allows
+  const partsOf = (typeId) => C.blindingPartsFor({ typeId }).map((p) => p.key);
+  assert.deepEqual(partsOf("raft_foundation"), ["slab", "edge", "internal"]); assert.deepEqual(partsOf("slab_on_ground"), ["slab", "edge", "internal"]); assert.deepEqual(partsOf("driveway_hardstand"), ["slab", "edge", "internal"]);
+  assert.deepEqual(partsOf("strip_footings"), ["footing"], "a strip has no slab"); assert.deepEqual(partsOf("edge_beam"), ["footing"]); assert.deepEqual(partsOf("capping_beam"), ["footing"]); assert.deepEqual(partsOf("retaining_wall"), ["footing"]);
+  assert.deepEqual(partsOf("pile_caps_pad"), ["pad"]); assert.deepEqual(partsOf("stump_footings"), ["pad"]); assert.deepEqual(partsOf("kerbs_channels"), ["kerb"]); assert.deepEqual(partsOf("hearth_fireplace_base"), ["base"]); assert.deepEqual(partsOf("manhole_pit"), ["base"]);
+  ["rc_columns", "core_shear_wall", "suspended_slab", "roof_slab_propped", "staircase", "piles_bored", "shotcrete_wall", "screed_bonded", "prelim_supervision", "excavation_bulk", "finish_polished"].forEach((t) => assert.deepEqual(partsOf(t), [], `${t} has no blinding`));
+  const strip = { ...base, typeId: "strip_footings", blinding: { slab: { areaM2: 200, tMm: 50 }, footing: { lengthM: 30, widthMm: 600, tMm: 50 } } };
+  assert.deepEqual(C.blindingBuildUp(strip).parts.map((p) => [p.key, p.m3]), [["footing", 0.9]], "a strip's build-up is its footing run only — a stray slab figure is ignored");
+  assert.equal(C.autoBlindingConcrete({ ...base, typeId: "rc_columns" }, rates), null, "a column never blinds");
 });
 check("blinding concrete crosses the bridge (22 Oct 2026): Base/Blinding m³ lines under a slab and under each raft beam land on the CONCRETE 'Blinding concrete' row (the crew sheet's Blinding row reads it); a sand blinding line stays for a manual pick", () => {
   const { quote, flags } = buildImportFromEstimate({ project: { name: "Blinding" }, lines: [

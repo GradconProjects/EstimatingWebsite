@@ -14,6 +14,7 @@ import { money2, blindingBuildUp, autoBlindingConcrete, blindingIncluded } from 
  */
 export default function BlindingBand({ item, rates, open, toggle, onPart, entryTone }) {
   const bu = blindingBuildUp(item);
+  if (!bu.parts.length) return null; // this element type does not blind (columns, walls, suspended work, piles…)
   const auto = autoBlindingConcrete(item, rates);
   const included = blindingIncluded(item);
   const typedOnRow = !auto && bu.m3 > 0;
@@ -27,7 +28,7 @@ export default function BlindingBand({ item, rates, open, toggle, onPart, entryT
         <span className="flex items-center gap-1.5">
           {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
           Blinding
-          <span className="normal-case tracking-normal font-medium text-[10px] text-neutral-300">— slab, edge beams, internal beams → the crew sheet's Blinding row</span>
+          <span className="normal-case tracking-normal font-medium text-[10px] text-neutral-300">— {bu.parts.map((p) => p.label.toLowerCase()).join(", ")} → the crew sheet's Blinding row</span>
           {!included && <span className="normal-case tracking-normal font-medium text-[10px] px-1.5 py-0.5 rounded bg-neutral-600 text-neutral-200">not added (crew sheet)</span>}
         </span>
         <span className="font-mono tabular-nums normal-case font-semibold text-orange-300">
