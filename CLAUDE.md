@@ -2536,9 +2536,21 @@ if Estimates gains an element type Quotes already has a match for.
   that of the rates library with options in settings to change the colour
   scheme"): the components keep the Tailwind classes below; `index.css`
   re-colours the chrome (`blue-9xx`) and accent (`orange-*`) utilities under
-  `html[data-theme]` — `library` (the Rates Library's navy #0f2e4c / #1F4E78,
-  #2f7fd6 accent, #eef2f6 page, Segoe UI; the DEFAULT), `classic` (the
-  blueprint navy & orange, no overrides), `graphite` (charcoal & emerald).
+  `html[data-theme]` — `portal` (the DEFAULT since 23 Oct 2026 — Grady:
+  "change the default quotes colour to the uploaded. background and accent,
+  etc": the portal shell's own palette, #fafafa page, #231f20 charcoal
+  chrome, the #d5de5d lime accent, Inter), `library` (the Rates Library's
+  navy #0f2e4c / #1F4E78, #2f7fd6 accent, #eef2f6 page, Segoe UI), `classic`
+  (the blueprint navy & orange, no overrides), `graphite` (charcoal &
+  emerald). **A light accent needs three tokens of its own**: `accentInk`
+  (the text on `bg-orange-600 / -500` buttons — dark #1c1c1c on the lime,
+  white on the other three), `accentText` (`text-orange-600` money figures on
+  white — a dark olive #6b7416 on the portal scheme, the accent itself
+  elsewhere) and `accentHover` (`hover:bg-orange-700` — #c6d045 on the lime
+  so the dark ink stays readable). index.css maps exactly those classes to
+  them; every other orange utility still follows the accent shades.
+  `verify.mjs` pins the portal values, the white ink on the older schemes and
+  the three mappings.
   `applyQuotesTheme` / `readQuotesTheme` in App.jsx read the portal
   preference `quotesTheme` (Settings → App behaviour → "Quotes colour
   scheme") on mount and on every Settings save (the `storage` event reaches
@@ -2547,7 +2559,7 @@ if Estimates gains an element type Quotes already has a match for.
   under every scheme. **Every colour is a named TOKEN** (Grady, same day:
   "the settings to change the colours and themes should get up to macro
   level so basically everything could be individually changed"):
-  `src/lib/quoteTheme.js` — `THEME_TOKENS` (24: the chrome and accent shades,
+  `src/lib/quoteTheme.js` — `THEME_TOKENS` (29: the chrome and accent shades, the ink / text / hover trio above,
   the five dark BANDS — labour sheet, labour header, Project Geometry,
   summary rail / grand total, category headers — and the page), `PRESETS`
   (every preset values every token; classic = Tailwind's own values),
