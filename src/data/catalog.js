@@ -436,11 +436,37 @@ export const FULL_CATALOG = [
     ["Build-up: movement / control joints allowance ($8–15/m²; ideally measured in lm)", "m2", null, 11.5],
     ["Build-up: curing, cleaning & sealing ($10–15/m²)", "m2", null, 12.5],
   ]},
+  /* FORMWORK follows Grady's 22 Oct 2026 sheet: every product carries its
+   * APPLICATION (`group` — Ground slabs / Suspended / Vertical / Other, the
+   * order the band, the Rates modal and the Rates Library show), its unit and
+   * ONE rate. Edgeform splits by DEPTH on ground slabs (up to 400 mm by the
+   * lineal metre, over 400 mm by the m²); suspended work keeps its three
+   * rates — conventional soffit, Bondek and the suspended edgeform by the
+   * lineal metre. The two "Beam/fold sides" rows are gone from the sheet:
+   * a beam or fold side prices through the depth rows like a slab edge.
+   * A `name` is the rate KEY (never renamed — a saved quote carries its
+   * quantities under it); `label` is what the card shows; `legacy: true`
+   * keeps a retired product costing on the elements that still hold a
+   * quantity on it (hidden everywhere else, never in the library). */
   { key: "FORMWORK", weightBasis: false, products: [
-    ["Material", "unit", null, 400], ["Conventional", "m2", null, 150], ["Bondek", "m2", null, 125], ["Edgeform", "m", null, 50],
-    ["Beam/fold sides <400mm d", "m", null, 100], ["Beam/fold sides >400mm d", "m2", null, 250], ["Handrail", "m", null, 30],
-    ["Walls", "m2", null, 250], ["Walls Curved", "m2", null, 350], ["Columns (eg 300x300)", "each", null, 1000],
-    ["Oregon boards", "m2", null, 125], ["Crane Truck hire", "each", null, 1500], ["Scaffold Hire", "day", null, 175], ["Certification", "each", null, 400],
+    { name: "Edgeform", unit: "m", unitCost: 25, group: "Ground slabs", label: "Edgeform — up to 400 mm deep" },
+    { name: "Edgeform >400mm deep", unit: "m2", unitCost: 250, group: "Ground slabs", label: "Edgeform — over 400 mm deep" },
+    { name: "Conventional", unit: "m2", unitCost: 200, group: "Suspended", label: "Conventional (soffit)" },
+    { name: "Bondek", unit: "m2", unitCost: 150, group: "Suspended" },
+    { name: "Edgeform (suspended)", unit: "m", unitCost: 50, group: "Suspended" },
+    { name: "Walls", unit: "m2", unitCost: 250, group: "Vertical" },
+    { name: "Walls Curved", unit: "m2", unitCost: 350, group: "Vertical" },
+    { name: "Columns (eg 300x300)", unit: "each", unitCost: 1500, group: "Vertical" },
+    { name: "Oregon boards", unit: "m2", unitCost: 125, group: "Vertical" },
+    { name: "Crane Truck hire", unit: "each", unitCost: 2500, group: "Other" },
+    { name: "Scaffold hire (set-up)", unit: "each", unitCost: 600, group: "Other" },
+    { name: "Certification", unit: "each", unitCost: 400, group: "Other" },
+    { name: "Material", unit: "unit", unitCost: 400, group: "Other" },
+    { name: "Handrail", unit: "m", unitCost: 50, group: "Other" },
+    // retired on 22 Oct 2026 — still cost on an element that carries a quantity
+    { name: "Beam/fold sides <400mm d", unit: "m", unitCost: 100, group: "Other", legacy: true, label: "Beam/fold sides <400mm d (retired — use Edgeform up to 400 mm)" },
+    { name: "Beam/fold sides >400mm d", unit: "m2", unitCost: 250, group: "Other", legacy: true, label: "Beam/fold sides >400mm d (retired — use Edgeform over 400 mm)" },
+    { name: "Scaffold Hire", unit: "day", unitCost: 175, group: "Other", legacy: true, label: "Scaffold Hire per day (retired — use Scaffold hire (set-up))" },
   ]},
   // Specified insulation products (under-slab, slab edge, thermal break) —
   // the estimator picks the actual material/thickness/R-value, not a generic
@@ -739,7 +765,9 @@ export const FULL_CATALOG = [
   // deliberately) is charged under every scope. Quantities are ALWAYS kept:
   // they still drive the crew days. See categoryChargedUnder in costing.js.
   scopeBucket: c.scopeBucket || "material",
-  products: c.products.map(([name, unit, unitWeight, unitCost, sheetArea, barLength, minQty]) => ({ name, unit, unitWeight, unitCost, sheetArea, barLength, minQty })),
+  products: c.products.map((p) => Array.isArray(p)
+    ? (([name, unit, unitWeight, unitCost, sheetArea, barLength, minQty]) => ({ name, unit, unitWeight, unitCost, sheetArea, barLength, minQty }))(p)
+    : { unitWeight: null, sheetArea: undefined, barLength: undefined, minQty: undefined, ...p }),
 }));
 
 /* ---------- Quote scope ----------

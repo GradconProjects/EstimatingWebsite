@@ -505,21 +505,36 @@ const CONCRETE_GRADE_ITEMS = [
 ];
 
 const FORMWORK_LEGACY_ITEMS = [
-  {p:"Material",u:"unit",cost:400},
-  {p:"Conventional",u:"m2",cost:150,note:"<3.5m $150, >3.5m $200"},
-  {p:"Bondek",u:"m2",cost:125},
-  {p:"Edgeform",u:"m",cost:50},
-  {p:"Beam/fold sides <400mm d",u:"m",cost:100},
-  {p:"Beam/fold sides >400mm d",u:"m2",cost:250},
-  {p:"Handrail",u:"m",cost:30},
-  {p:"Walls",u:"m2",cost:250},
-  {p:"Walls Curved",u:"m2",cost:350},
-  {p:"Columns (eg 300 x 300)",u:"each",cost:1000},
-  {p:"Oregon boards",u:"m2",cost:125},
-  {p:"Crane Truck hire",u:"each",cost:1500},
-  {p:"Scaffold Hire",u:"day",cost:175},
-  {p:"Certification",u:"each",cost:400},
+  // Grady's 22 Oct 2026 sheet: application → unit → one rate. The names are
+  // the Quotes FORMWORK product names (the rate keys), verify.mjs fails on
+  // drift. "Beam/fold sides" are retired — a beam or fold side prices through
+  // the Edgeform depth rows like a slab edge.
+  {g:"Ground slabs", p:"Edgeform",u:"m",cost:25,note:"up to 400 mm deep — by the lineal metre"},
+  {g:"Ground slabs", p:"Edgeform >400mm deep",u:"m2",cost:250,note:"over 400 mm deep — by the m²"},
+  {g:"Suspended", p:"Conventional",u:"m2",cost:200,note:"conventional soffit"},
+  {g:"Suspended", p:"Bondek",u:"m2",cost:150},
+  {g:"Suspended", p:"Edgeform (suspended)",u:"m",cost:50,note:"by the lineal metre"},
+  {g:"Vertical", p:"Walls",u:"m2",cost:250},
+  {g:"Vertical", p:"Walls Curved",u:"m2",cost:350},
+  {g:"Vertical", p:"Columns (eg 300x300)",u:"each",cost:1500},
+  {g:"Vertical", p:"Oregon boards",u:"m2",cost:125},
+  {g:"Other", p:"Crane Truck hire",u:"each",cost:2500},
+  {g:"Other", p:"Scaffold hire (set-up)",u:"each",cost:600},
+  {g:"Other", p:"Certification",u:"each",cost:400},
+  {g:"Other", p:"Material",u:"unit",cost:400},
+  {g:"Other", p:"Handrail",u:"m",cost:50},
 ];
+// The sheet's figures replace what the library held before (one move, logged
+// to every project as a rate change to apply or keep): formworkPattern 2.
+const FORMWORK_PATTERN = 2;
+function migrateFormworkPattern(st){
+  if(!st || st.formworkPattern === FORMWORK_PATTERN) return false;
+  st.formworkLegacy = st.formworkLegacy || {};
+  FORMWORK_LEGACY_ITEMS.forEach(it=>{ st.formworkLegacy[it.p] = {cost: it.cost}; });
+  ["Beam/fold sides <400mm d","Beam/fold sides >400mm d","Scaffold Hire"].forEach(k=>{ delete st.formworkLegacy[k]; });
+  st.formworkPattern = FORMWORK_PATTERN;
+  return true;
+}
 
 const OTHER_ACCESSORIES = [
   {p:"Packing sand",u:"m3",cost:50},
@@ -732,6 +747,7 @@ function loadRates(){
 }
 let state = backfill(loadRates() || {}, freshRates());
 if(!state.ratesVersion) state.ratesVersion = RATES_VERSION;
+if(migrateFormworkPattern(state)){ try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }catch(e){} }
 // Reinforcement wastage is standardised at 5% — coerce any stored steel
 // entry still carrying an old default (8% bar / 3% processed) once on load,
 // so saved rate blobs can't keep the retired figures alive. Runs on every
@@ -774,6 +790,7 @@ async function syncFromCloud(){
     if(localSyncedAt && row.updated_at <= localSyncedAt) return;
     state = backfill(row.value || {}, freshRates());
     if(!state.ratesVersion) state.ratesVersion = RATES_VERSION;
+    if(migrateFormworkPattern(state)){ try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }catch(e){} kvPush(STORAGE_KEY, state).then(function(p){ if(p) try{ localStorage.setItem(STORAGE_KEY+"__syncedAt", p.updated_at); }catch(e){} }); }
     try{ if(state.global && state.global.concreteSurchargePerM3===2.59) state.global.concreteSurchargePerM3=9.17; }catch(e){}
     try{
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -824,10 +841,12 @@ function fmt$(v){ if(v==null||isNaN(v)) v=0; return "$"+Number(v).toLocaleString
 function editableTable(items, stateMap, keyOf, fields, opts){
   opts = opts||{};
   let h = `<table class="item-table"><thead><tr><th>${opts.itemLabel||"Item"}</th>${opts.showUnit!==false?"<th>Unit</th>":""}${fields.map(f=>`<th>${f.label}</th>`).join("")}</tr></thead><tbody>`;
+  let lastGroup = null;
   items.forEach((it,idx)=>{
     const key = keyOf(it, idx);
     const row = stateMap[key];
-    h += `<tr><td>${it.p}</td>${opts.showUnit!==false?`<td>${it.u||""}</td>`:""}`;
+    if(opts.groupOf){ const g = opts.groupOf(it); if(g && g !== lastGroup){ h += `<tr class="group-row"><td colspan="${2+fields.length}" style="background:var(--navy-light);font-weight:700;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--navy);">${g}</td></tr>`; lastGroup = g; } }
+    h += `<tr><td>${it.p}${it.note?`<br><small style="color:#6b7a86;">${it.note}</small>`:""}</td>${opts.showUnit!==false?`<td>${it.u||""}</td>`:""}`;
     fields.forEach(f=>{
       h += `<td><input type="number" step="any" class="lib-input" data-map="${opts.mapName}" data-key="${key}" data-field="${f.field}" value="${row[f.field]}"></td>`;
     });
@@ -1083,8 +1102,8 @@ h += section("sec-reinforcement", "Reinforcement", "Reinforcement", REINFORCEMEN
     editableTable(REINFORCING_ACCESSORIES, state.reinfAcc, it=>it.p, [{field:"cost",label:"Cost ($)"},{field:"waste",label:"Wastage %"}], {mapName:"reinfAcc"}));
 
   h += section("sec-formwork", "Formwork", "Formwork", FORMWORK_LEGACY_ITEMS.length+FORMWORK_ITEMS.length,
-    `<div class="panel-block"><h3>General</h3>` +
-    editableTable(FORMWORK_LEGACY_ITEMS, state.formworkLegacy, it=>it.p, [{field:"cost",label:"Rate ($)"}], {mapName:"formworkLegacy"}) +
+    `<div class="panel-block"><h3>Formwork rates by application</h3><p class="hint">Grady's pattern (22 Oct 2026): every product sits under its application — Ground slabs, Suspended, Vertical, Other — with its unit and one rate, every figure editable here and flowing straight to the Quotes FORMWORK band. Ground-slab edgeform splits by depth (up to 400 mm by the lineal metre, over 400 mm by the m²); suspended work keeps its three rates. Beam / fold sides are no longer separate products — they price through the edgeform depth rows.</p>` +
+    editableTable(FORMWORK_LEGACY_ITEMS, state.formworkLegacy, it=>it.p, [{field:"cost",label:"Rate ($)"}], {mapName:"formworkLegacy", groupOf:it=>it.g}) +
     `</div><div class="panel-block" style="margin-top:10px;"><h3>By position (fix/strip labour)</h3>` +
     editableTable(FORMWORK_ITEMS, state.formwork, it=>it.p, [{field:"material",label:"Material ($)"},{field:"fixHrs",label:"Fix (hrs)"},{field:"stripHrs",label:"Strip (hrs)"}], {mapName:"formwork"}) +
     `</div>`);

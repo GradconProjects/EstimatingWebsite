@@ -27,6 +27,7 @@ export default function LabourMatrix({
     <div className="border border-amber-300 rounded-lg overflow-hidden bg-white">
       <button
         onClick={toggleLabour}
+        data-band="labour-head"
         className="w-full px-3 py-2 bg-amber-800 text-white text-xs font-semibold tracking-wide uppercase flex items-center justify-between hover:bg-amber-700 transition-colors"
       >
         <span className="flex items-center gap-1.5">

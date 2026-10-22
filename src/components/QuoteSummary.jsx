@@ -33,7 +33,7 @@ export default function QuoteSummary({
   return (
     <div className="space-y-3">
       <div className="rounded-xl border border-neutral-200 bg-white shadow-sm overflow-hidden">
-        <div className="bg-neutral-900 text-white px-4 py-2 text-xs font-semibold uppercase tracking-wide flex items-center justify-between gap-2">
+        <div data-band="summary" className="bg-neutral-900 text-white px-4 py-2 text-xs font-semibold uppercase tracking-wide flex items-center justify-between gap-2">
           <span>Quote Summary</span>
           <span className={`normal-case tracking-normal font-medium text-[11px] ${projectScope !== "both" ? "text-orange-300" : "text-neutral-400"}`} title="The project's scope — set in the editor header; an element can differ on its own card">
             {scopeLabel(projectScope)}
@@ -85,7 +85,7 @@ export default function QuoteSummary({
             <div className="text-sm text-neutral-400 text-center py-6">No elements added yet.</div>
           )}
         </div>
-        <div className="px-4 py-3 bg-neutral-900 text-white flex items-center justify-between">
+        <div data-band="summary" className="px-4 py-3 bg-neutral-900 text-white flex items-center justify-between">
           <span className="text-xs font-semibold uppercase tracking-wide">Grand Total (ex GST)</span>
           <span className="font-mono tabular-nums text-xl font-bold text-orange-400">{money2(grandTotal)}</span>
         </div>
@@ -118,7 +118,7 @@ export default function QuoteSummary({
       </div>
 
       <div className="rounded-xl border border-neutral-200 bg-white shadow-sm overflow-hidden">
-        <div className="bg-neutral-900 text-white px-4 py-2 text-xs font-semibold uppercase tracking-wide">
+        <div data-band="summary" className="bg-neutral-900 text-white px-4 py-2 text-xs font-semibold uppercase tracking-wide">
           Margin Ladder
         </div>
         <table className="w-full text-[12px]">

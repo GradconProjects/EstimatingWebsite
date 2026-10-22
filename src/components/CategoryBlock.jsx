@@ -1,5 +1,6 @@
+import { Fragment } from "react";
 import { ChevronDown, ChevronRight, Plus, X } from "lucide-react";
-import { rateKey, money2, rowRate, computeRowTotal, rowContext, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, additionalRowsFor, additionalRowTotal, autoPigmentWashout, autoSpecialistShortLoad } from "../lib/costing.js";
+import { rateKey, money2, rowRate, computeRowTotal, rowContext, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, additionalRowsFor, additionalRowTotal, autoPigmentWashout, autoSpecialistShortLoad, productLabel, visibleProducts } from "../lib/costing.js";
 import { SPECIALIST_CONCRETE_KEY } from "../data/catalog.js";
 import { NumInput } from "./atoms.jsx";
 import { validityState, validityLabel, formatValidUntil } from "../lib/rateValidity.js";
@@ -53,6 +54,7 @@ export default function CategoryBlock({ cat, item, rates, onQtyChange, onRateCha
     <div className="border border-neutral-200 rounded-lg overflow-hidden bg-white">
       <button
         onClick={toggleCat}
+        data-band="category"
         className="w-full flex items-center justify-between px-3 py-2 bg-neutral-800 text-white text-xs font-semibold tracking-wide uppercase hover:bg-neutral-700 transition-colors"
       >
         <span className="flex items-center gap-1.5">
@@ -87,8 +89,9 @@ export default function CategoryBlock({ cat, item, rates, onQtyChange, onRateCha
               </tr>
             </thead>
             <tbody>
-              {cat.products.map((p) => {
+              {visibleProducts(cat, item).map((p, pi, list) => {
                 const qKey = rateKey(cat.key, p.name, p.unit);
+                const groupHead = p.group && (pi === 0 || list[pi - 1].group !== p.group) ? p.group : null;
                 // The shared rate with this element's own figure laid over it —
                 // a subcontract "quote" row's amount belongs to THIS project.
                 const rate = rowRate(item, rates, qKey, { unitCost: p.unitCost ?? 0, unitWeight: p.unitWeight, sheetArea: p.sheetArea, barLength: p.barLength });
@@ -113,9 +116,15 @@ export default function CategoryBlock({ cat, item, rates, onQtyChange, onRateCha
                 const rateTonnes = hasVolumeRate ? (qty * ctx.concreteM3) / 1000 : null;
                 const filled = qty > 0 || !!autoRow;
                 return (
-                  <tr key={qKey} className={`border-t border-neutral-100 ${filled ? "bg-orange-50/40" : ""}`}>
+                  <Fragment key={qKey}>
+                  {groupHead && (
+                    <tr className="border-t border-neutral-200 bg-neutral-50" data-testid="product-group">
+                      <td colSpan={99} className="px-3 py-0.5 text-[10px] font-semibold uppercase tracking-widest text-neutral-500">{groupHead}</td>
+                    </tr>
+                  )}
+                  <tr className={`border-t border-neutral-100 ${filled ? "bg-orange-50/40" : ""}`}>
                     <td className="px-3 py-1 text-neutral-700">
-                      {p.name}
+                      {productLabel(p)}{p.legacy && <span className="ml-1 text-[10px] text-neutral-400">retired</span>}
                       {isAutoCartage && (
                         <span
                           className="ml-1.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700"
@@ -234,6 +243,7 @@ export default function CategoryBlock({ cat, item, rates, onQtyChange, onRateCha
                       )}
                     </td>
                   </tr>
+                  </Fragment>
                 );
               })}
               {customRows.map((a) => {

@@ -58,7 +58,7 @@ function buildElementLines(item, rates, projectScope) {
           unitCost: p.unitCost ?? 0, unitWeight: p.unitWeight, sheetArea: p.sheetArea, barLength: p.barLength,
         });
         const rowTotal = computeRowTotal(cat, rate, qty, ctx);
-        materialLines.push(scoped(cat, { label: `${p.name} (${cat.key})`, qty, unit: p.unit, total: rowTotal }));
+        materialLines.push(scoped(cat, { label: `${p.label || p.name} (${cat.key}${p.group ? " · " + p.group : ""})`, qty, unit: p.unit, total: rowTotal }));
       }
     });
     additionalRowsFor(item, cat.key).forEach((a) => {

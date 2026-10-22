@@ -36,6 +36,7 @@ export default function AdditionalItems({ item, rates, onAdd, onRemove, onChange
     <div className="border border-neutral-200 rounded-lg overflow-hidden bg-white">
       <button
         onClick={() => setOpen(!open)}
+        data-band="category"
         className="w-full px-3 py-2 bg-neutral-800 text-white text-xs font-semibold tracking-wide uppercase flex items-center justify-between"
       >
         <span className="flex items-center gap-1.5">

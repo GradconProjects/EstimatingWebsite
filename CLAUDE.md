@@ -216,6 +216,35 @@ safety net silently. Keep all cost arithmetic in `lib/costing.js`.
 
 ## How to extend
 
+- **FORMWORK follows Grady's 22 Oct 2026 pattern** ("i want the formwork to
+  adopt this pattern going forward … remove the beam fold rather let's work on
+  the depth instead"): every product is an OBJECT row `{name, unit, unitCost,
+  group, label?, legacy?}` — `group` is the APPLICATION (Ground slabs /
+  Suspended / Vertical / Other, in that order; the band shows a group header
+  row, `product-group`, the Rates modal and the Rates Library the same
+  groups), `name` is the rate KEY and is never renamed (a saved quote holds
+  its quantities under it), `label` is what the card / modal / report show
+  (`productLabel(p)`). Ground-slab edgeform splits by DEPTH: "Edgeform" (m,
+  up to 400 mm, $25/lm) and "Edgeform >400mm deep" (m², $250); suspended work
+  keeps THREE rates — "Conventional" (soffit, $200/m²), "Bondek" ($150/m²),
+  "Edgeform (suspended)" ($50 per LINEAL METRE, Grady: "suspended edgeforms
+  should be lm"); Vertical and Other carry the sheet's figures (Columns
+  $1,500, Crane truck $2,500, "Scaffold hire (set-up)" $600 each, Handrail
+  $50/lm). The two "Beam/fold sides" rows and the per-day "Scaffold Hire" are
+  `legacy: true`: `visibleProducts(cat, item)` shows a retired row ONLY on an
+  element still carrying a quantity on it (marked "retired"), it still costs
+  there (`defaultRates()` seeds every product, retired too), and the Rates
+  modal and the library never list it. The bridge prices a beam / fold side
+  by depth (`edgeDepthMm` / `edgeProductForDepth` in `estimateImport.js`:
+  up to 400 mm → lineal metres = m² ÷ depth on "Edgeform", over → the m²
+  row; no depth stated → the m² row with a flag). The library's
+  `FORMWORK_LEGACY_ITEMS` carry `g` (the group) and a `note`; `editableTable`
+  prints a group row (`opts.groupOf`); `migrateFormworkPattern` moves a saved
+  library onto the sheet's figures ONCE (`formworkPattern = 2`, both load
+  paths), after which the sync logs the moves and every project is prompted
+  rate by rate. `verify.mjs` pins the order, the units, the seeds, the retired
+  behaviour and the library ↔ catalog names; `test-formwork-pattern.mjs`
+  proves the library table, the move, the band and the modal.
 - **Add a new material product:** add a row to the relevant category's
   `products` array in `catalog.js` — `[name, unit, unitWeight, unitCost]`,
   `unitWeight`/`unitCost` are `null` if not applicable. It will
@@ -2188,7 +2217,24 @@ if Estimates gains an element type Quotes already has a match for.
   scheme") on mount and on every Settings save (the `storage` event reaches
   the blob: frame), so a change shows at once. A new chrome / accent utility
   class needs its override line in `index.css` or it stays orange / navy
-  under every scheme. `test-quotes-theme.mjs` proves the three.
+  under every scheme. **Every colour is a named TOKEN** (Grady, same day:
+  "the settings to change the colours and themes should get up to macro
+  level so basically everything could be individually changed"):
+  `src/lib/quoteTheme.js` — `THEME_TOKENS` (24: the chrome and accent shades,
+  the five dark BANDS — labour sheet, labour header, Project Geometry,
+  summary rail / grand total, category headers — and the page), `PRESETS`
+  (every preset values every token; classic = Tailwind's own values),
+  `resolveTheme(prefs)` = preset + `prefs.quotesThemeColors` ({token key:
+  "#rrggbb"}, a bad value ignored, a value equal to the preset not an
+  override) and `applyTheme(root, theme)` (data-theme + every `--t-*`
+  custom property inline on <html>). The components tag their dark bands
+  `data-band="summary|category|labour|labour-head|geometry"` and index.css
+  maps each to its token, so the element lists, rails and bands follow the
+  scheme. Settings → "Every colour, one by one" renders a picker per token
+  from the shell's JSON mirrors `QUOTE_THEME_TOKENS` / `QUOTE_THEME_PRESETS`
+  (verify.mjs fails on drift) with ↺ per token and "Reset all to the
+  scheme". `test-quotes-theme.mjs` proves the three presets and the
+  overrides.
 - Tailwind utility classes throughout, no CSS-in-JS. Palette: `neutral-*`
   for structure, `blue-950`/`blue-9xx` for the "blueprint navy" header
   chrome, `orange-*` (safety/hi-vis) for money figures and primary

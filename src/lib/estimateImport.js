@@ -174,8 +174,23 @@ const FORMWORK_SYSTEM_PRODUCTS = [
   [/bondek/i, "Bondek"],
   [/oregon/i, "Oregon boards"],
   [/walls curved|curved wall/i, "Walls Curved"],
-  [/beam \/ fold|beam\/fold|fold sides/i, "Beam/fold sides >400mm d"],
 ];
+// A beam / fold side is an EDGE priced by its depth (22 Oct 2026, the "Beam/fold
+// sides" products are retired): up to 400 mm deep by the lineal metre on the
+// ground-slab Edgeform row (the m² face ÷ the depth = the metres), over 400 mm
+// by the m² on "Edgeform >400mm deep". The depth is read off the line's text
+// ("… 450 mm deep", "D=350"); a face with no depth stated goes to the m² row.
+const FOLD_RE = /beam \/ fold|beam\/fold|fold sides|beam side/i;
+export const EDGE_DEPTH_SPLIT_MM = 400;
+export function edgeDepthMm(text) {
+  const m = /(\d{2,4})\s*(?:mm)?\s*(?:deep|depth|d\b)/i.exec(String(text || "")) || /\bD\s*=?\s*(\d{2,4})/.exec(String(text || ""));
+  const d = m ? Number(m[1]) : 0;
+  return d > 0 ? d : null;
+}
+export function edgeProductForDepth(depthMm) {
+  if (depthMm != null && depthMm <= EDGE_DEPTH_SPLIT_MM) return { name: "Edgeform", unit: "m", perMetre: true };
+  return { name: "Edgeform >400mm deep", unit: "m2", perMetre: false };
+}
 function findConventionalFormworkProduct() {
   if (!FORMWORK_CAT) return null;
   return FORMWORK_CAT.products.find((p) => p.name === "Conventional" && p.unit === "m2") || null;
@@ -382,6 +397,19 @@ export function buildImportFromEstimate(estimateExport) {
     formworkLines.forEach((l) => {
       const text = `${l.spec || ""} ${l.material || ""}`;
       const isM2 = l.unit === "m²" || l.unit === "m2";
+      // A beam / fold side: the depth rows (lineal metres up to 400 mm, m² over).
+      if (isM2 && FOLD_RE.test(text)) {
+        const depth = edgeDepthMm(text);
+        const pick = edgeProductForDepth(depth);
+        const product = findFormworkProduct(pick.name, pick.unit);
+        if (product) {
+          const area = Number(l.finalQty) || 0;
+          const qty = pick.perMetre ? area / (depth / 1000) : area;
+          map(l, rateKey("FORMWORK", product.name, product.unit), Math.round(qty * 100) / 100);
+          if (depth == null) flag(l, `${elementLabel}: ${area.toFixed(2)} m² of beam / fold side formwork with no depth stated — priced on "Edgeform — over 400 mm deep" (m²); move it to the up-to-400 mm row (lineal metres) if the beam is shallower.`);
+          return;
+        }
+      }
       // Named system on the line -> the exact priced FORMWORK product.
       if (isM2) {
         const sys = FORMWORK_SYSTEM_PRODUCTS.find(([re]) => re.test(text));

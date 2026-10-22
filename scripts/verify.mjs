@@ -14,11 +14,11 @@ import {
   FULL_CATALOG, RESOURCE_COLS, ELEMENT_TYPES, CATEGORY_ORDER, SECTION_ORDER, LABOUR_TEMPLATES, MARGIN_STEPS, PRODUCTION_RATES } from "../src/data/catalog.js";
 import * as catalogAll from "../src/data/catalog.js";
 import {
-  computeElementCost, computeGrandTotal, computeMarginLadder,
+  computeElementCost, computeGrandTotal, computeMarginLadder, productLabel, visibleProducts,
   defaultRates, newElementItem, rateKey, suggestedLabourPrefill, computeExternalScopeLines,
   labourResourceRate, taskRowMeta, labourQuantities, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, computeRowTotal,
   computeElementUnitRates, computeProjectUnitRates, rowContext, computeElementReinforcementTonnes, getMarginSteps, additionalRowsFor, autoPigmentWashout, autoSpecialistShortLoad, autoSpecialistFees, categoryAppliesTo } from "../src/lib/costing.js";
-import { buildImportFromEstimate, normalizeElementName, geometryForLabel } from "../src/lib/estimateImport.js";
+import { buildImportFromEstimate, normalizeElementName, geometryForLabel, edgeDepthMm } from "../src/lib/estimateImport.js";
 import * as importAll from "../src/lib/estimateImport.js";
 import * as costingAll from "../src/lib/costing.js";
 import { PROJECT_SORTS, sortProjects, sortValue, defaultSortDir, preferredSortKey, isProjectSortKey } from "../src/lib/projectSort.js";
@@ -96,10 +96,10 @@ check("every element type has both a category and a section", () => {
   });
 });
 
-check("20 material categories, 384 products (incl. the 17-row FINISHED PAVEMENTS & CONCRETE FINISHES band, the 45-row SAW CUTS & DOWELS band, CONCRETE PUMPING, REINFORCEMENT BY RATE, the 32-board INSULATION range, 31 SCREEDS, 17 HYDRONIC HEATING, 48 SPECIALIST FINISHING CONCRETE, 45 PRELIMINARIES, the full 24-size TRENCH MESH grid, Bored Piers subcontract, minimum cartage, levy, surcharge)", () => {
+check("20 material categories, 387 products (incl. the 17-row FINISHED PAVEMENTS & CONCRETE FINISHES band, the 45-row SAW CUTS & DOWELS band, CONCRETE PUMPING, REINFORCEMENT BY RATE, the 32-board INSULATION range, 31 SCREEDS, 17 HYDRONIC HEATING, 48 SPECIALIST FINISHING CONCRETE, 45 PRELIMINARIES, the full 24-size TRENCH MESH grid, Bored Piers subcontract, minimum cartage, levy, surcharge)", () => {
   assert.equal(FULL_CATALOG.length, 20);
   const total = FULL_CATALOG.reduce((s, c) => s + c.products.length, 0);
-  assert.equal(total, 384);
+  assert.equal(total, 387);
   const pre = FULL_CATALOG.find((c) => c.key === "PRELIMINARIES");
   assert.equal(pre.products.length, 45);
   assert.ok(!pre.weightBasis && !pre.areaBasis && !pre.lengthBasis && !pre.volumeRateBasis, "preliminaries cost plain qty × rate");
@@ -439,8 +439,8 @@ check("Formwork rates match the Rates Library: Conventional $150/m², Edgeform $
   // formwork at well under half its real rate. The library rules; this check
   // exists so the two can never drift apart again unnoticed.
   const rates = defaultRates();
-  assert.equal(rates[rateKey("FORMWORK", "Conventional", "m2")].unitCost, 150);
-  assert.equal(rates[rateKey("FORMWORK", "Edgeform", "m")].unitCost, 50);
+  assert.equal(rates[rateKey("FORMWORK", "Conventional", "m2")].unitCost, 200); // Grady's 22 Oct 2026 formwork sheet
+  assert.equal(rates[rateKey("FORMWORK", "Edgeform", "m")].unitCost, 25);
   // and the concrete grades the same drift affected
   assert.equal(rates[rateKey("CONCRETE", "32 mpa", "m3")].unitCost, 213);
   assert.equal(rates[rateKey("CONCRETE", "25 mpa", "m3")].unitCost, 204);
@@ -948,6 +948,49 @@ check("Import: wall formwork area maps to Walls; other m² formwork maps to Conv
   assert.ok(flags.some((f) => f.includes("Opening reveals")), `expected the non-wall formwork to still be flagged for review, got: ${flags.join(" | ")}`);
 });
 
+await checkAsync("FORMWORK follows the 22 Oct 2026 pattern: application groups in order, the depth-split edgeform, the three suspended rates, the retired beam/fold and per-day scaffold rows costing only where carried, the library's table matching name for name", async () => {
+  const cat = FULL_CATALOG.find((c) => c.key === "FORMWORK");
+  const live = cat.products.filter((p) => !p.legacy), retired = cat.products.filter((p) => p.legacy);
+  assert.deepEqual([...new Set(live.map((p) => p.group))], ["Ground slabs", "Suspended", "Vertical", "Other"], "the application order");
+  const byName = (n) => cat.products.find((p) => p.name === n);
+  assert.deepEqual([byName("Edgeform").unit, byName("Edgeform").unitCost, byName("Edgeform").group], ["m", 25, "Ground slabs"], "ground-slab edgeform up to 400 mm: lineal metres at $25");
+  assert.deepEqual([byName("Edgeform >400mm deep").unit, byName("Edgeform >400mm deep").unitCost], ["m2", 250]);
+  assert.deepEqual(live.filter((p) => p.group === "Suspended").map((p) => [p.name, p.unit, p.unitCost]), [["Conventional", "m2", 200], ["Bondek", "m2", 150], ["Edgeform (suspended)", "m", 50]], "three suspended rates, the edgeform by the lineal metre");
+  assert.equal(byName("Columns (eg 300x300)").unitCost, 1500); assert.equal(byName("Crane Truck hire").unitCost, 2500); assert.equal(byName("Scaffold hire (set-up)").unitCost, 600); assert.equal(byName("Handrail").unitCost, 50);
+  assert.deepEqual(retired.map((p) => p.name).sort(), ["Beam/fold sides <400mm d", "Beam/fold sides >400mm d", "Scaffold Hire"]);
+  assert.equal(productLabel(byName("Edgeform")), "Edgeform — up to 400 mm deep"); assert.equal(productLabel(byName("Bondek")), "Bondek");
+  // a retired row shows only on an element that carries a quantity on it — and still costs there
+  const type = ELEMENT_TYPES[0];
+  const blank = newElementItem(type), carrying = newElementItem(type);
+  carrying.qtys[rateKey("FORMWORK", "Beam/fold sides <400mm d", "m")] = 12;
+  assert.ok(!visibleProducts(cat, blank).some((p) => p.legacy), "nothing retired on a fresh element");
+  assert.deepEqual(visibleProducts(cat, carrying).filter((p) => p.legacy).map((p) => p.name), ["Beam/fold sides <400mm d"]);
+  assert.equal(computeElementCost(carrying, defaultRates(), "both").categoryTotals.FORMWORK, 12 * 100, "the retired row still costs at its rate");
+  assert.equal(Object.keys(defaultRates()).filter((k) => k.startsWith("FORMWORK::")).length, cat.products.length, "every product, retired too, seeds a rate");
+  // the Rates Library lists the live products name for name, in the same groups, at the same seeds
+  const html = fs.readFileSync(new URL("../portal/rates-library.html", import.meta.url), "utf8");
+  const m = /const FORMWORK_LEGACY_ITEMS = \[([\s\S]*?)\n\];/.exec(html); assert.ok(m, "FORMWORK_LEGACY_ITEMS in rates-library.html");
+  const rows = [...m[1].matchAll(/\{g:"([^"]+)", p:"([^"]+)",u:"([^"]+)",cost:([\d.]+)/g)].map((x) => ({ g: x[1], p: x[2], u: x[3], cost: Number(x[4]) }));
+  assert.deepEqual(rows.map((r) => [r.g, r.p, r.u, r.cost]), live.map((p) => [p.group, p.name, p.unit, p.unitCost]), "library ↔ catalog drift");
+  assert.ok(/formworkPattern === FORMWORK_PATTERN/.test(html) && /const FORMWORK_PATTERN = 2/.test(html), "the one-time move of the live library figures");
+  const RLx = await import("../src/lib/ratesLibrarySync.js");
+  assert.ok(RLx.libraryPrices({ formworkLegacy: { "Edgeform (suspended)": { cost: 55 } } }).some((x) => x.key === rateKey("FORMWORK", "Edgeform (suspended)", "m") && x.price === 55), "the library prices the suspended edgeform onto its key");
+});
+check("Import: a beam / fold side prices by DEPTH — up to 400 mm as lineal metres on Edgeform (m² ÷ depth), over 400 mm on the m² row, no depth stated → the m² row with a flag", () => {
+  const { quote, flags } = buildImportFromEstimate({
+    project: {},
+    lines: [
+      { ...estLine({}), category: "Raft Slab", element: "Raft 1", elementId: "EL20", materialGroup: "Formwork", material: "Side formwork", spec: "Beam / fold sides — 300mm deep, 2 faces", unit: "m²", finalQty: 9 },
+      { ...estLine({}), category: "Raft Slab", element: "Raft 1", elementId: "EL20", materialGroup: "Formwork", material: "Side formwork", spec: "Beam / fold sides — 600 mm deep", unit: "m²", finalQty: 18 },
+      { ...estLine({}), category: "Raft Slab", element: "Raft 1", elementId: "EL20", materialGroup: "Formwork", material: "Side formwork", spec: "Beam / fold sides", unit: "m²", finalQty: 4 },
+    ],
+  });
+  const item = quote.items[0];
+  assert.equal(item.qtys[rateKey("FORMWORK", "Edgeform", "m")], 30, "9 m² at 300 deep = 30 lm");
+  assert.equal(item.qtys[rateKey("FORMWORK", "Edgeform >400mm deep", "m2")], 22, "18 m² over 400 + 4 m² with no depth");
+  assert.ok(flags.some((f) => /no depth stated/.test(f)), flags.join(" | "));
+  assert.equal(edgeDepthMm("Beam / fold sides — 350 mm deep"), 350); assert.equal(edgeDepthMm("D=450 fold"), 450); assert.equal(edgeDepthMm("fold sides"), null);
+});
 check("Import: a named formwork system on the spec (Bondek) maps to that exact FORMWORK product, and per-m edge formwork maps to Edgeform", () => {
   const { quote, flags } = buildImportFromEstimate({
     project: {},
@@ -1358,6 +1401,19 @@ check("project naming: the convention test, the reader of the model's reply (kno
   assert.deepEqual(patch, { projectName: "9 Stonecutters Road, Portsea VIC 3944", siteAddress: "9 Stonecutters Road, Portsea VIC 3944", nameSource: "9 Stonecutters", nameReviewedFor: "9 Stonecutters Road, Portsea VIC 3944" });
   assert.equal(PN.applyNamePatch({ projectName: "x", nameSource: "the first typed" }, res.b.options[0], "x").nameSource, "the first typed", "the FIRST typed name is kept through later renames");
   assert.deepEqual(PN.keepNamePatch({ projectName: " 18 Beach Road " }), { nameReviewedFor: "18 Beach Road" });
+});
+await checkAsync("Quotes colour tokens: every preset values every token; overrides lay over the preset one by one (bad hex ignored); the portal Settings mirror matches the library", async () => {
+  const T = await import("../src/lib/quoteTheme.js");
+  T.PRESET_KEYS.forEach((k) => T.THEME_TOKENS.forEach((t) => assert.ok(/^#[0-9a-f]{6}$/i.test(T.PRESETS[k][t.key]), `${k}.${t.key}`)));
+  assert.equal(T.resolveTheme({}).preset, "library"); assert.equal(T.resolveTheme({ quotesTheme: "nope" }).preset, "library");
+  const r = T.resolveTheme({ quotesTheme: "classic", quotesThemeColors: { chrome950: "#101010", accent600: "not a colour", page: "#F5F5F5" } });
+  assert.equal(r.tokens.chrome950, "#101010"); assert.equal(r.tokens.accent600, "#ea580c", "a bad value is ignored"); assert.deepEqual(r.overridden, ["chrome950"], "a value equal to the preset is not an override");
+  const fake = { dataset: {}, style: { props: {}, setProperty(k, v) { this.props[k] = v; } } };
+  T.applyTheme(fake, r); assert.equal(fake.dataset.theme, "classic"); assert.equal(fake.style.props["--t-chrome-950"], "#101010"); assert.equal(fake.style.props["--t-band-summary"], "#171717");
+  const html = fs.readFileSync(new URL("../portal/portal-shell.html", import.meta.url), "utf8");
+  const tok = /var QUOTE_THEME_TOKENS = (\[[\s\S]*?\]);\n/.exec(html), pre = /var QUOTE_THEME_PRESETS = (\{[\s\S]*?\});\n/.exec(html);
+  assert.ok(tok && pre, "the shell carries the two mirrors");
+  assert.deepEqual(JSON.parse(tok[1]), T.THEME_TOKENS, "QUOTE_THEME_TOKENS mirror drifted"); assert.deepEqual(JSON.parse(pre[1]), T.PRESETS, "QUOTE_THEME_PRESETS mirror drifted");
 });
 check("driveFiles helpers: a project's folder and attachments live on the quote (sync with it); attach is idempotent by Drive id; detach removes one", () => {
   const F = { id: "p1", name: "plan.pdf", kind: "pdf", mimeType: "application/pdf", size: 1200, modifiedTime: "2026-10-20T00:00:00Z", webViewLink: "https://drive.google.com/file/d/p1" };
@@ -2213,12 +2269,12 @@ check("Margin ladder rungs are editable, and bad input falls back to the catalog
 
 check("Rates Library rules: a listed product moves to the library price whatever Quotes stores", () => {
   const conv = rateKey("FORMWORK", "Conventional", "m2"), edge = rateKey("FORMWORK", "Edgeform", "m");
-  const lib = { formworkLegacy: { Conventional: { cost: 150 }, Edgeform: { cost: 50 } } };
+  const lib = { formworkLegacy: { Conventional: { cost: 200 }, Edgeform: { cost: 25 } } };
   const rates = { [conv]: { unitCost: 60 }, [edge]: { unitCost: 8 } };          // what a stale device left in the shared row
   const upd = pendingRateUpdates(rates, lib, {});                              // no last-synced record at all (a fresh browser)
-  assert.deepEqual(upd.map((u) => [u.key, u.price]).sort(), [[conv, 150], [edge, 50]].sort());
-  assert.deepEqual(pendingRateUpdates({ [conv]: { unitCost: 150 }, [edge]: { unitCost: 50 } }, lib, {}), [], "nothing pending once they agree");
-  assert.deepEqual(pendingRateUpdates({ [conv]: { unitCost: 999 } }, lib, {}).map(({ key, price }) => ({ key, price })), [{ key: conv, price: 150 }], "a hand-typed $999 does not block the library either");
+  assert.deepEqual(upd.map((u) => [u.key, u.price]).sort(), [[conv, 200], [edge, 25]].sort());
+  assert.deepEqual(pendingRateUpdates({ [conv]: { unitCost: 200 }, [edge]: { unitCost: 25 } }, lib, {}), [], "nothing pending once they agree");
+  assert.deepEqual(pendingRateUpdates({ [conv]: { unitCost: 999 } }, lib, {}).map(({ key, price }) => ({ key, price })), [{ key: conv, price: 200 }], "a hand-typed $999 does not block the library either");
 });
 check("Rates Library rules: excluded and ambiguous names never move a Quotes rate", () => {
   assert.ok(LIBRARY_EXCLUDED_NAMES.includes("Delivery fee"));

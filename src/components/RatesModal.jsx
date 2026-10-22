@@ -146,7 +146,7 @@ export default function RatesModal({ rates, setRates, onClose, lockedFor = null 
           {/* Subcontract "quote" rows have NO rate anywhere but the element they
               are typed on (lib/costing.js rowRate / isManualQuoteKey) — they are
               not listed here, and a band made only of them is skipped. */}
-          {FULL_CATALOG.map((cat) => ({ ...cat, products: cat.products.filter((p) => !isManualQuoteKey(rateKey(cat.key, p.name, p.unit))) })).filter((cat) => cat.products.length > 0).map((cat) => (
+          {FULL_CATALOG.map((cat) => ({ ...cat, products: cat.products.filter((p) => !p.legacy && !isManualQuoteKey(rateKey(cat.key, p.name, p.unit))) })).filter((cat) => cat.products.length > 0).map((cat) => (
             <div key={cat.key}>
               <div className="text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-1">
                 {cat.label}
@@ -172,7 +172,7 @@ export default function RatesModal({ rates, setRates, onClose, lockedFor = null 
                     const unitRate = unitRateOf(cat, r);
                     return (
                       <tr key={k} className="border-t border-neutral-100">
-                        <td className="py-1 pr-2 text-neutral-700">{p.name} <span className="text-neutral-400">({p.unit})</span></td>
+                        <td className="py-1 pr-2 text-neutral-700">{p.group && <span className="mr-1.5 text-[10px] uppercase tracking-wide text-neutral-400">{p.group}</span>}{p.label || p.name} <span className="text-neutral-400">({p.unit})</span></td>
                         {p.unitWeight != null ? (
                           <td className="py-1 pr-2 w-28">
                             <NumInput value={r.unitWeight} onChange={(v) => update(k, "unitWeight", v)} />

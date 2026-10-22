@@ -94,7 +94,7 @@ export default function ProjectGeometryPanel({ items, rates, estimateGeometry, o
 
   return (
     <div className="rounded-xl border border-neutral-200 bg-white shadow-sm overflow-hidden">
-      <div className="bg-amber-900 text-white px-4 py-3 flex items-center gap-3">
+      <div data-band="geometry" className="bg-amber-900 text-white px-4 py-3 flex items-center gap-3">
         <button onClick={() => setOpen(!open)} className="text-amber-200 hover:text-white transition-colors flex-none">
           {open ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
         </button>

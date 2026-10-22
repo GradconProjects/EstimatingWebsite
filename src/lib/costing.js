@@ -838,6 +838,22 @@ export function computeGrandTotal(items, rates, projectScope) {
  * provisional sums can be stated side by side. `isProvisional(item)` is the
  * ONE test; `computeProvisionalTotals` the ONE split.
  */
+/** What a product row is CALLED on a card / in the modal / on a report:
+ * `label` when the catalog gives one (the `name` is the rate key and never
+ * changes), else the name. */
+export function productLabel(p) {
+  return (p && (p.label || p.name)) || "";
+}
+/** A retired product: it still costs on an element that carries a quantity
+ * on it (nothing already quoted loses money) but is shown nowhere else. */
+export function isLegacyProduct(p) {
+  return !!(p && p.legacy);
+}
+/** The products a band SHOWS for this element: every current product, plus a
+ * retired one only while the element still holds a quantity on it. */
+export function visibleProducts(cat, item) {
+  return (cat.products || []).filter((p) => !isLegacyProduct(p) || (item && item.qtys && item.qtys[rateKey(cat.key, p.name, p.unit)] !== "" && item.qtys[rateKey(cat.key, p.name, p.unit)] != null));
+}
 export function isProvisional(item) {
   return !!(item && item.provisional);
 }

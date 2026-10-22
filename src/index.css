@@ -49,7 +49,33 @@ html[data-theme="graphite"] {
   --t-accent-200: #a7f3d0; --t-accent-100: #d1fae5; --t-accent-50: #ecfdf5; --t-accent-900: #064e3b; --t-accent-800: #065f46;
   --t-page: #f3f4f6; --t-font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
-html[data-theme="library"] body, html[data-theme="graphite"] body { font-family: var(--t-font); }
+html[data-theme="library"] {
+  --t-band-labour: #1F4E78; --t-band-labour-head: #2a5f8f; --t-band-geometry: #0f2e4c; --t-band-summary: #0f2e4c; --t-band-category: #1F4E78;
+}
+html[data-theme="graphite"] {
+  --t-band-labour: #2b333b; --t-band-labour-head: #3a444e; --t-band-geometry: #1c2126; --t-band-summary: #1c2126; --t-band-category: #2b333b;
+}
+/* "classic" = Tailwind's own blue / orange / amber / neutral, as tokens, so every
+   one of them can be changed on its own in Settings like the other schemes */
+html[data-theme="classic"] {
+  --t-chrome-950: #172554; --t-chrome-900: #1e3a8a; --t-chrome-800: #1e40af; --t-chrome-700: #1d4ed8;
+  --t-chrome-300: #93c5fd; --t-chrome-200: #bfdbfe; --t-chrome-100: #dbeafe; --t-chrome-50: #eff6ff;
+  --t-accent-700: #c2410c; --t-accent-600: #ea580c; --t-accent-500: #f97316; --t-accent-400: #fb923c; --t-accent-300: #fdba74;
+  --t-accent-200: #fed7aa; --t-accent-100: #ffedd5; --t-accent-50: #fff7ed; --t-accent-900: #7c2d12; --t-accent-800: #9a3412;
+  --t-band-labour: #78350f; --t-band-labour-head: #92400e; --t-band-geometry: #78350f; --t-band-summary: #171717; --t-band-category: #262626;
+  --t-page: #f5f5f5; --t-font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+html[data-theme] body { font-family: var(--t-font); }
+/* the dark bands by name (data-band set by the components) */
+html[data-theme] [data-band="summary"].bg-neutral-900 { background-color: var(--t-band-summary); }
+html[data-theme] [data-band="category"].bg-neutral-800 { background-color: var(--t-band-category); }
+html[data-theme] [data-band="category"].hover\:bg-neutral-700:hover { background-color: var(--t-chrome-800); }
+html[data-theme] [data-band="labour-head"].bg-amber-800 { background-color: var(--t-band-labour-head); }
+html[data-theme] [data-band="labour-head"].hover\:bg-amber-700:hover { background-color: var(--t-chrome-800); }
+html[data-theme] [data-band="labour"].bg-amber-900 { background-color: var(--t-band-labour); border-color: var(--t-band-labour); }
+html[data-theme] [data-band="geometry"].bg-amber-900 { background-color: var(--t-band-geometry); }
+html[data-theme] [data-band] .text-amber-200, html[data-theme] [data-band] .text-amber-300 { color: var(--t-chrome-200); }
+html[data-theme] [data-band] .hover\:text-white:hover { color: #fff; }
 html[data-theme] .bg-neutral-100 { background-color: var(--t-page); }
 /* chrome: the blue-9xx bands, tabs and text */
 html[data-theme] .bg-blue-950 { background-color: var(--t-chrome-950); }

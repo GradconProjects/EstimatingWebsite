@@ -319,6 +319,13 @@
   .storage-badge.warn .dot{ background:#e0a200; }
   .storage-badge b{ font-weight:600; }
   .welcome-badges{ display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
+  .theme-color-grid{ display:grid; grid-template-columns:repeat(auto-fill, minmax(230px, 1fr)); gap:6px 14px; }
+  .theme-color-grid .tc-group{ grid-column:1 / -1; font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin-top:6px; }
+  .theme-color-row{ display:flex; align-items:center; gap:8px; font-size:12.5px; }
+  .theme-color-row input[type=color]{ width:34px; height:24px; padding:0; border:1px solid var(--line); border-radius:6px; background:none; cursor:pointer; }
+  .theme-color-row .tc-label{ flex:1; min-width:0; }
+  .theme-color-row .tc-reset{ font-size:11px; color:var(--muted); background:none; border:0; cursor:pointer; }
+  .theme-color-row.changed .tc-label{ font-weight:600; }
   .weather-chip{ display:inline-flex; align-items:center; gap:8px; margin:4px 0 10px; padding:6px 12px; border-radius:999px; border:1px solid var(--line); background:#fff; font:inherit; font-size:12.5px; color:var(--text); cursor:pointer; }
   .weather-chip:hover{ border-color:var(--accent); }
   .weather-chip .icon{ font-size:16px; line-height:1; }
@@ -796,6 +803,10 @@
           <option value="graphite">Graphite — charcoal &amp; green</option>
         </select>
         <div class="hint">Re-colours the Quotes header bands, buttons and money figures. Applies the moment it is saved, in every open Quotes tab.</div>
+        <details class="theme-colors" style="margin-top:8px;"><summary style="cursor:pointer;font-weight:600;">Every colour, one by one</summary>
+          <div class="hint" style="margin:6px 0;">Each picker starts on the scheme's own colour; change any of them and only that one is kept — the rest follow the scheme. <button type="button" class="btn small" id="theme-colors-reset">Reset all to the scheme</button></div>
+          <div id="settings-theme-colors" class="theme-color-grid"></div>
+        </details>
       </div>
       <div class="field">
         <label for="settings-page-orient">PDF / print page orientation</label>
@@ -1185,6 +1196,38 @@
     ['settings-est-barstock','estBarStock'], ['settings-est-grade','estGrade'],
     ['settings-autosave','quotesAutosaveMinutes']
   ];
+  // Quotes colour tokens — a JSON MIRROR of src/lib/quoteTheme.js (THEME_TOKENS
+  // and PRESETS; verify.mjs fails on drift). The pickers under "Every colour,
+  // one by one" write prefs.quotesThemeColors = {token key: "#rrggbb"} for
+  // the colours that differ from the chosen scheme; Quotes lays them over the
+  // scheme on every Settings save.
+  var QUOTE_THEME_TOKENS = [{"key":"chrome950","css":"--t-chrome-950","group":"Chrome","label":"Header & element bands"},{"key":"chrome900","css":"--t-chrome-900","group":"Chrome","label":"Tabs & secondary buttons"},{"key":"chrome800","css":"--t-chrome-800","group":"Chrome","label":"Button hover"},{"key":"chrome700","css":"--t-chrome-700","group":"Chrome","label":"Chrome text (dark)"},{"key":"chrome300","css":"--t-chrome-300","group":"Chrome","label":"Band text (muted)"},{"key":"chrome200","css":"--t-chrome-200","group":"Chrome","label":"Band text (light)"},{"key":"chrome100","css":"--t-chrome-100","group":"Chrome","label":"Pale chrome fill"},{"key":"chrome50","css":"--t-chrome-50","group":"Chrome","label":"Pale chrome background"},{"key":"accent600","css":"--t-accent-600","group":"Accent","label":"Accent — primary buttons, active tab"},{"key":"accent700","css":"--t-accent-700","group":"Accent","label":"Accent hover / dark text"},{"key":"accent500","css":"--t-accent-500","group":"Accent","label":"Accent (light)"},{"key":"accent400","css":"--t-accent-400","group":"Accent","label":"Money figures on dark bands"},{"key":"accent300","css":"--t-accent-300","group":"Accent","label":"Accent tint on bands"},{"key":"accent200","css":"--t-accent-200","group":"Accent","label":"Accent border"},{"key":"accent100","css":"--t-accent-100","group":"Accent","label":"Accent tag fill"},{"key":"accent50","css":"--t-accent-50","group":"Accent","label":"Filled-row tint"},{"key":"accent900","css":"--t-accent-900","group":"Accent","label":"Accent text (darkest)"},{"key":"accent800","css":"--t-accent-800","group":"Accent","label":"Accent text (dark)"},{"key":"bandLabour","css":"--t-band-labour","group":"Bands","label":"Labour / crew sheet band"},{"key":"bandLabourHead","css":"--t-band-labour-head","group":"Bands","label":"Labour sheet header"},{"key":"bandGeometry","css":"--t-band-geometry","group":"Bands","label":"Project Geometry band"},{"key":"bandSummary","css":"--t-band-summary","group":"Bands","label":"Summary rail headings & grand total"},{"key":"bandCategory","css":"--t-band-category","group":"Bands","label":"Category headers on a card"},{"key":"page","css":"--t-page","group":"Page","label":"Page background"}];
+  var QUOTE_THEME_PRESETS = {"library":{"chrome950":"#0f2e4c","chrome900":"#1F4E78","chrome800":"#2a5f8f","chrome700":"#35709f","chrome300":"#a9cdf0","chrome200":"#D9EAF7","chrome100":"#e8f2fb","chrome50":"#eef4f9","accent600":"#2f7fd6","accent700":"#2566ad","accent500":"#3b8be0","accent400":"#5fa3ea","accent300":"#a9cdf0","accent200":"#c9dff5","accent100":"#D9EAF7","accent50":"#eef4f9","accent900":"#1a4a7c","accent800":"#1f5a95","bandLabour":"#1F4E78","bandLabourHead":"#2a5f8f","bandGeometry":"#0f2e4c","bandSummary":"#0f2e4c","bandCategory":"#1F4E78","page":"#eef2f6"},"classic":{"chrome950":"#172554","chrome900":"#1e3a8a","chrome800":"#1e40af","chrome700":"#1d4ed8","chrome300":"#93c5fd","chrome200":"#bfdbfe","chrome100":"#dbeafe","chrome50":"#eff6ff","accent600":"#ea580c","accent700":"#c2410c","accent500":"#f97316","accent400":"#fb923c","accent300":"#fdba74","accent200":"#fed7aa","accent100":"#ffedd5","accent50":"#fff7ed","accent900":"#7c2d12","accent800":"#9a3412","bandLabour":"#78350f","bandLabourHead":"#92400e","bandGeometry":"#78350f","bandSummary":"#171717","bandCategory":"#262626","page":"#f5f5f5"},"graphite":{"chrome950":"#1c2126","chrome900":"#2b333b","chrome800":"#3a444e","chrome700":"#4a5661","chrome300":"#b6c0c9","chrome200":"#d8dee3","chrome100":"#e8ecef","chrome50":"#f1f3f5","accent600":"#059669","accent700":"#047857","accent500":"#10b981","accent400":"#34d399","accent300":"#6ee7b7","accent200":"#a7f3d0","accent100":"#d1fae5","accent50":"#ecfdf5","accent900":"#064e3b","accent800":"#065f46","bandLabour":"#2b333b","bandLabourHead":"#3a444e","bandGeometry":"#1c2126","bandSummary":"#1c2126","bandCategory":"#2b333b","page":"#f3f4f6"}};
+  var themeColorOverrides = {};
+  function currentThemePreset(){ var sel = document.getElementById('settings-quotes-theme'); return sel && QUOTE_THEME_PRESETS[sel.value] ? sel.value : 'library'; }
+  function renderThemeColors(){
+    var host = document.getElementById('settings-theme-colors'); if(!host) return;
+    var base = QUOTE_THEME_PRESETS[currentThemePreset()];
+    var h = '', lastGroup = null;
+    QUOTE_THEME_TOKENS.forEach(function(t){
+      if(t.group !== lastGroup){ h += '<div class="tc-group">' + escapeHtml(t.group) + '</div>'; lastGroup = t.group; }
+      var v = themeColorOverrides[t.key] || base[t.key];
+      var changed = !!themeColorOverrides[t.key] && themeColorOverrides[t.key].toLowerCase() !== String(base[t.key]).toLowerCase();
+      h += '<label class="theme-color-row' + (changed ? ' changed' : '') + '" data-token="' + t.key + '"><input type="color" value="' + escapeHtml(String(v).toLowerCase()) + '" data-theme-token="' + t.key + '"><span class="tc-label">' + escapeHtml(t.label) + '</span>' + (changed ? '<button type="button" class="tc-reset" data-theme-reset="' + t.key + '" title="Back to the scheme\'s colour">↺</button>' : '') + '</label>';
+    });
+    host.innerHTML = h;
+  }
+  document.addEventListener('input', function(e){
+    var inp = e.target.closest && e.target.closest('[data-theme-token]'); if(!inp) return;
+    var key = inp.getAttribute('data-theme-token'), base = QUOTE_THEME_PRESETS[currentThemePreset()];
+    if(String(inp.value).toLowerCase() === String(base[key]).toLowerCase()) delete themeColorOverrides[key]; else themeColorOverrides[key] = String(inp.value).toLowerCase();
+    var row = inp.closest('.theme-color-row'); if(row) row.classList.toggle('changed', !!themeColorOverrides[key]);
+  });
+  document.addEventListener('click', function(e){
+    var r = e.target.closest && e.target.closest('[data-theme-reset]'); if(r){ delete themeColorOverrides[r.getAttribute('data-theme-reset')]; renderThemeColors(); return; }
+    if(e.target.id === 'theme-colors-reset'){ themeColorOverrides = {}; renderThemeColors(); }
+  });
+  document.addEventListener('change', function(e){ if(e.target.id === 'settings-quotes-theme') renderThemeColors(); });
   // Select-backed preferences: [element id, prefs key, default value]. The
   // default is what the select shows when nothing is stored; saving a value
   // equal to the default deletes the key (so an untouched setting never
@@ -1266,6 +1309,8 @@
     STR_FIELDS.forEach(function(f){
       document.getElementById(f[0]).value = (typeof prefs[f[1]] === 'string') ? prefs[f[1]] : f[2];
     });
+    themeColorOverrides = (prefs.quotesThemeColors && typeof prefs.quotesThemeColors === 'object') ? Object.assign({}, prefs.quotesThemeColors) : {};
+    renderThemeColors();
     BOOL_FIELDS.forEach(function(f){
       document.getElementById(f[0]).checked = (typeof prefs[f[1]] === 'boolean') ? prefs[f[1]] : f[2];
     });
@@ -1310,6 +1355,7 @@
       var v = document.getElementById(f[0]).value;
       if(v === f[2]){ delete prefs[f[1]]; } else { prefs[f[1]] = v; }
     });
+    if(Object.keys(themeColorOverrides).length) prefs.quotesThemeColors = Object.assign({}, themeColorOverrides); else delete prefs.quotesThemeColors;
     BOOL_FIELDS.forEach(function(f){
       prefs[f[1]] = document.getElementById(f[0]).checked;
     });

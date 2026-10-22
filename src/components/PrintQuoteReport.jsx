@@ -214,7 +214,7 @@ function ElementReportBlock({ item, rates, projectScope }) {
       if (qty > 0) {
         const rate = rowRate(item, rates, qKey, { unitCost: p.unitCost ?? 0, unitWeight: p.unitWeight, sheetArea: p.sheetArea, barLength: p.barLength });
         const rowTotal = computeRowTotal(cat, rate, qty, ctx);
-        materialLines.push({ key: qKey, label: `${p.name} (${cat.key})`, qty, unit: p.unit, total: rowTotal });
+        materialLines.push({ key: qKey, label: `${p.label || p.name} (${cat.key}${p.group ? " · " + p.group : ""})`, qty, unit: p.unit, total: rowTotal });
       }
     });
     // custom rows added under this category — after its last catalog line, same band

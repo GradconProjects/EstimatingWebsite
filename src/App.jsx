@@ -13,6 +13,7 @@ import CloudStorageView from "./components/CloudStorageView.jsx";
 import { AddressOptions } from "./components/AddressNaming.jsx";
 import { needsAddressReview, requestProjectNames, autoApplies, applyNamePatch, keepNamePatch } from "./lib/projectNaming.js";
 import { preferredProvider } from "./lib/tenderWording.js";
+import { resolveTheme, applyTheme } from "./lib/quoteTheme.js";
 import DriveFilesDrawer from "./components/DriveFilesDrawer.jsx";
 import { driveFiles } from "./lib/driveFiles.js";
 import RateValidityBanner from "./components/RateValidityBanner.jsx";
@@ -113,17 +114,13 @@ const blankQuote = () => ({
 // mount and on every preference save (the shell writes localStorage; the
 // `storage` event reaches this blob: frame), so a change in Settings shows
 // without a reload.
-export const QUOTES_THEMES = ["library", "classic", "graphite"];
 export function readQuotesTheme() {
-  try {
-    const p = JSON.parse(localStorage.getItem("gradcon-preferences")) || {};
-    return QUOTES_THEMES.includes(p.quotesTheme) ? p.quotesTheme : "library";
-  } catch { return "library"; }
+  try { return resolveTheme(JSON.parse(localStorage.getItem("gradcon-preferences")) || {}); }
+  catch { return resolveTheme({}); }
 }
 export function applyQuotesTheme(theme = readQuotesTheme()) {
-  const root = document.documentElement;
-  if (theme === "classic") delete root.dataset.theme; else root.dataset.theme = theme;
-  return theme;
+  applyTheme(document.documentElement, theme);
+  return theme.preset;
 }
 
 function takeInitialView() {
