@@ -1471,6 +1471,19 @@ check("Blinding is decided on the crew sheet: ticked (the default) it is charged
   assert.equal(autoMinimumCartage(item, rates), null); assert.ok(autoMinimumCartage(offItem, rates) && autoMinimumCartage(offItem, rates).qty === 1);
   assert.equal(offItem.qtys[rateKey("CONCRETE", "Blinding concrete", "m3")], 5, "the typed figure is never touched");
 });
+check("blinding concrete crosses the bridge (22 Oct 2026): Base/Blinding m³ lines under a slab and under each raft beam land on the CONCRETE 'Blinding concrete' row (the crew sheet's Blinding row reads it); a sand blinding line stays for a manual pick", () => {
+  const { quote, flags } = buildImportFromEstimate({ project: { name: "Blinding" }, lines: [
+    estLine({ elementId: "R", element: "Raft Slab 1", category: "Raft Slab", materialGroup: "Base/Blinding", material: "Blinding concrete N20", spec: "50mm", qty: 10, finalQty: 10.5, unit: "m³" }),
+    estLine({ elementId: "R", element: "Raft Slab 1", category: "Raft Slab", materialGroup: "Base/Blinding", material: "Blinding concrete N20", spec: "Edge beam — 50mm × 350mm wide under the beam", qty: 0.7, finalQty: 0.735, unit: "m³", part: "beam" }),
+    estLine({ elementId: "R", element: "Raft Slab 1", category: "Raft Slab", materialGroup: "Base/Blinding", material: "Sand blinding", spec: "50mm", qty: 2, finalQty: 2.1, unit: "m³" }),
+  ], elementGeometry: {} });
+  const key = rateKey("CONCRETE", "Blinding concrete", "m3");
+  const got = quote.items.reduce((t, it) => t + (Number(it.qtys[key]) || 0), 0);
+  assert.equal(Math.round(got * 1000) / 1000, 11.235, "slab + edge beam blinding on the Blinding concrete row");
+  assert.ok((flags || []).some((f) => /Sand blinding/.test(f)), "the sand line is flagged, not silently dropped");
+  const item = quote.items[0]; const lq = labourQuantities(item, defaultRates());
+  assert.equal(Math.round(lq.blindingM3 * 1000) / 1000, 11.235, "…and the crew sheet's Blinding row sees the same m³");
+});
 check("formwork by face size (22 Oct 2026): an Estimates face under 400 mm arrives by the lineal metre and lands on 'Edgeform' (m); an edge-type face of 400 mm or more arrives in m² and lands on 'Edgeform >400mm deep' (m²); walls keep 'Walls'", () => {
   const { quote, flags } = buildImportFromEstimate({ project: { name: "Faces" }, lines: [
     estLine({ elementId: "F1", element: "Strip Footing 1", category: "Strip Footing", materialGroup: "Formwork", material: "Trench formwork", spec: "Selected faces — left side 300 mm, right side 300 mm — under 400 mm — lineal metres", qty: 24, finalQty: 25.2, unit: "m", faceMm: 300, m2Equiv: 7.2 }),

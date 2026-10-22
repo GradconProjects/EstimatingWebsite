@@ -84,6 +84,10 @@ export const PRODUCTION_RATES = [
   { key: "steel_t_crewday", name: "Rebar fixing — tonnes per crew-day", unit: "t/day", rate: 1 },
   { key: "finish_m2_crewday", name: "Surface finishing — m² per crew-day", unit: "m²/day", rate: 300 },
   { key: "general_m3_crewday", name: "General labour — m³ per crew-day", unit: "m³/day", rate: 60 },
+  // Soil removal follows the Excavation line on its own (Grady, 22 Oct 2026:
+  // "autofill the soil removal fields realtime"): loose m³ carted = bank m³
+  // dug × (1 + bulking) — the same 15% the Estimates takeoff bulks spoil by.
+  { key: "soil_bulking_pct", name: "Soil removal — bulking of the dug m³ (%)", unit: "%", rate: 15 },
   // No formwork or excavation blocks: those crew/plant cells are NOT
   // auto-derived (propping effort varies by system, excavator days by ground
   // conditions) — entered manually, always. Their Qty columns still prefill.
@@ -104,9 +108,9 @@ export const PRODUCTION_RATES = [
   { key: "ho_setup_min_m3", name: "Handover: site setup — only on elements over (m³ concrete)", unit: "m³", rate: 20 },
   { key: "ho_exc_base_days", name: "Handover: excavate & prepare — base man-days", unit: "days", rate: 3 },
   { key: "ho_exc_m3_per_day", name: "Handover: excavate & prepare — m³ concrete per extra man-day", unit: "m³/day", rate: 30 },
-  { key: "ho_excavator_band1_m3", name: "Handover: excavator & bobcat — 1 day up to (m³ concrete)", unit: "m³", rate: 45 },
-  { key: "ho_excavator_band2_m3", name: "Handover: excavator & bobcat — 2 days up to (m³ concrete)", unit: "m³", rate: 150 },
-  { key: "ho_excavator_m3_per_day", name: "Handover: excavator & bobcat — m³ concrete per day beyond", unit: "m³/day", rate: 75 },
+  { key: "ho_excavator_band1_m3", name: "Handover: excavator & bobcat — 1 day up to (m³ dug, else concrete)", unit: "m³", rate: 45 },
+  { key: "ho_excavator_band2_m3", name: "Handover: excavator & bobcat — 2 days up to (m³ dug, else concrete)", unit: "m³", rate: 150 },
+  { key: "ho_excavator_m3_per_day", name: "Handover: excavator & bobcat — m³ (dug, else concrete) per day beyond", unit: "m³/day", rate: 75 },
   { key: "ho_steel_base_days", name: "Handover: steel crew — base man-days", unit: "days", rate: 1 },
   { key: "ho_steel_days_per_t", name: "Handover: steel crew — man-days per tonne", unit: "days/t", rate: 2.3 },
   { key: "ho_steel_min_days", name: "Handover: steel crew — minimum man-days", unit: "days", rate: 2 },

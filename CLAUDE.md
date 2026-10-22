@@ -319,10 +319,29 @@ safety net silently. Keep all cost arithmetic in `lib/costing.js`.
   **Excavation** (m³) line, a row saying "spoil" / "soil removal" / "cart
   away" from its **Soil removal** (m³) line — two rows, two quantities,
   never merged (an element from before the Excavation line existed falls
-  back to soil removal for the excavate row). Neither row auto-fills
-  excavator or truck days. Elements keep the task rows they were created
-  with, so an older element gets the spoil row by renaming one of its
-  "Additional labour / plant" rows.
+  back to soil removal for the excavate row). Elements keep the task rows
+  they were created with, so an older element gets the spoil row by renaming
+  one of its "Additional labour / plant" rows.
+  **The Excavation line drives the dig, live** (Grady, 22 Oct 2026:
+  "excavation values entered … should automatically fill in the right cells
+  in the labour and equipment"; "also autofill the soil removal fields
+  realtime"): `autoSoilRemoval(item, rates)` in `costing.js` is the ONE
+  implementation of the OTHER ALLOWANCES "Soil removal" row costing itself as
+  the "Excavation" m³ × (1 + the "Soil removal — bulking of the dug m³ (%)"
+  production rate, seeded 15% — the Estimates spoil default) while nothing is
+  typed on it; a typed Qty takes the row manual, exactly like the Holcim fee
+  rows, and `computeElementCost`, `CategoryBlock` (amber placeholder),
+  `PrintQuoteReport` and `exportQuote` all call it; `labourQuantities` reads
+  the auto figure for the Remove soil row's Qty. The live handover
+  (`handover.js`) runs its excavate band on the DUG m³ when the Excavation
+  line is typed (else on the concrete, as fitted — the "Handover: excavator
+  & bobcat" rates read "m³ dug, else concrete"), fills excavator / bobcat
+  days on the Excavation & prep base row and, while there is spoil, the same
+  dig days on the Remove soil row's Trucks cell (no haul productivity is
+  fitted, so the trucks attend the excavator) — an element with a dig but no
+  concrete yet is planned too. Every cell stays the estimator's to retype.
+  `test-excavation.mjs` types 30 m³ through the real input, watches it hold
+  over 7 s and a reload, and proves the 34.5 m³ soil row and the plant cells.
 
 - **Formwork is measured by FACE SIZE — under 400 mm by the lineal metre**
   (Grady, 22 Oct 2026: "all formwork less than 400mm high or wide should be
@@ -2052,6 +2071,31 @@ element families waits on the owner's approval of the pad footing.
   `capBlindingGrade`, `slabBlindGrade`, composite parts' `blindGrade`) falls
   back to Project Setup's `PROJECT.blindingGrade` (`blindGradeDefault()`,
   20 when unset) rather than a fixed N20.
+- **A raft's blinding is decided PER PART** (22 Oct 2026, Grady: "clearly
+  differentiate blinding for beams internally and edge beams and then the
+  overall slab. these elements should have their individual checkboxes …
+  when lengths are entered, user should be able to enter the depth of
+  blinding and width then this autofills the volume in the labour section"):
+  the slab keeps `slabBlindOn` ("Concrete blinding under the SLAB"); the edge
+  beam (`edgeBeamBlindOn` / `edgeBeamBlindWidth` / `edgeBeamBlindT` /
+  `edgeBeamBlindGrade`), the internal beam strips (`beamStrips…`) and every
+  extra beam group (`g.blindOn` / `blindWidth` / `blindT` / `blindGrade`)
+  carry their own tick, width (blank = that beam's trench width) and
+  thickness (blank = 50 mm) on their tabs, and `raftBeamGroupLinesInner`
+  emits ONE Base/Blinding line per beam = run × width × thickness, named for
+  the beam (`part: "beam"`), once its run length is entered. **The run
+  lengths are asked for** (same day: "request user to enter the lengths of
+  internal beams, edge beams etc during slab element populating"):
+  `slabBeamsNeedingLength(d)` / `slabBeamLengthPrompt(d)` put an amber prompt
+  on the slab's Geometry tab (`data-testid="beam-length-prompt"`) naming every
+  beam switched on with no run and the tab its length is typed on, and
+  `computeSlab` carries a completeness warning per such beam. **The bridge
+  lands blinding concrete on the Quotes blinding row**: `estimateImport.js`
+  maps every Base/Blinding m³ line whose material is blinding concrete / mud
+  slab / lean-mix onto CONCRETE "Blinding concrete" (sand, crushed rock and
+  compacted base stay flagged for a manual pick), so the crew sheet's Blinding
+  row takes the m³. `test-raft-blinding.mjs` proves the prompt, the four
+  ticks, each beam's volume and the untick; `verify.mjs` the bridge.
 - **Slab bars can be measured by AREA COVERED × LAYERS** (6 Oct 2026,
   Grady: "some slabs dont have proper bars designed … lets use the area
   covered and include also layer … i should be able to select more than a

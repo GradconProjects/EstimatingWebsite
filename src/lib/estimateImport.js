@@ -331,6 +331,17 @@ export function buildImportFromEstimate(estimateExport) {
     const flag = (l, msg) => { handled.add(l); flags.push(msg); };
     const map = (l, key, qty) => { handled.add(l); item.qtys[key] = (Number(item.qtys[key]) || 0) + qty; };
 
+    // --- Blinding concrete: the Estimates Base/Blinding m³ lines (under a
+    // slab, a footing, each raft beam — 22 Oct 2026) land on the CONCRETE
+    // "Blinding concrete" row, whose m³ the crew sheet's Blinding row takes.
+    // Sand, crushed rock and compacted base material are not concrete and stay
+    // flagged below for a manual pick.
+    const blindingProduct = CONCRETE_CAT && CONCRETE_CAT.products.find((p) => /^blinding concrete$/i.test(p.name) && p.unit === "m3");
+    group.filter((l) => l.materialGroup === "Base/Blinding" && (l.unit === "m³" || l.unit === "m3") && /blinding concrete|mud slab|lean-mix/i.test(l.material || "")).forEach((l) => {
+      if (blindingProduct) map(l, rateKey("CONCRETE", blindingProduct.name, blindingProduct.unit), Number(l.finalQty) || 0);
+      else flag(l, `${elementLabel}: ${(Number(l.finalQty) || 0).toFixed(2)} m³ of blinding concrete — the CONCRETE "Blinding concrete" row is missing from the catalog, add it manually.`);
+    });
+
     // --- Concrete: group by grade, aggregate m³ ---
     const concreteLines = group.filter((l) => l.materialGroup === "Concrete" && (l.unit === "m³" || l.unit === "m3"));
     const concreteByGrade = {};

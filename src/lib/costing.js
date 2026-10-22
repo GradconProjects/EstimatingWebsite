@@ -338,6 +338,36 @@ export function autoMinimumCartage(item, rates) {
 /** Kept so older imports keep working. */
 export const autoSmallLoadCharge = autoMinimumCartage;
 
+/**
+ * Soil removal follows the Excavation line (Grady, 22 Oct 2026: "excavation
+ * values entered … should automatically fill in the right cells … also
+ * autofill the soil removal fields realtime"): with nothing typed on the
+ * OTHER ALLOWANCES "Soil removal" row, the row costs itself as the bank m³ on
+ * the "Excavation" row bulked by the "Soil removal — bulking" production rate
+ * (loose m³ carted). A typed Qty takes the row manual, exactly like the
+ * Holcim fee rows; the auto figure also feeds the crew sheet's Remove soil row
+ * through labourQuantities. ONE implementation — computeElementCost,
+ * CategoryBlock, PrintQuoteReport and exportQuote all call it.
+ */
+const productName = (p) => (p && typeof p === "object" && !Array.isArray(p) ? p.name : p && p.name);
+export const SOIL_REMOVAL_PRODUCT_MATCH = /^soil removal$/i;
+export const EXCAVATION_PRODUCT_MATCH = /^excavation$/i;
+export function autoSoilRemoval(item, rates) {
+  const cat = FULL_CATALOG.find((c) => c.key === "OTHER ALLOWANCES");
+  const soil = cat && cat.products.find((p) => SOIL_REMOVAL_PRODUCT_MATCH.test(productName(p)));
+  const exc = cat && cat.products.find((p) => EXCAVATION_PRODUCT_MATCH.test(productName(p)));
+  if (!soil || !exc || !item) return null;
+  const key = rateKey(cat.key, productName(soil), soil.unit);
+  const typed = (item.qtys || {})[key];
+  if (typed !== undefined && typed !== "") return null; // the estimator's own entry wins
+  const dug = Number((item.qtys || {})[rateKey(cat.key, productName(exc), exc.unit)]) || 0;
+  if (!(dug > 0)) return null;
+  const pct = prodRate(rates, "Soil removal — bulking of the dug m³ (%)", "%", 15);
+  const qty = round2(dug * (1 + Math.max(0, pct) / 100));
+  const rate = rowRate(item, rates, key, { unitCost: soil.unitCost ?? 0 });
+  return { key, qty, unitCost: rate.unitCost ?? 0, total: qty * (rate.unitCost ?? 0), excavationM3: dug, bulkingPct: pct };
+}
+
 /** A per-m³ concrete fee charged on the WHOLE poured volume with no
  * threshold (the production & transport surcharge and the environment
  * levy both work this way). A typed Qty on the row takes it fully manual. */
@@ -510,6 +540,8 @@ export function computeElementCost(item, rates, projectScope) {
       if (!fee) return;
       land(concreteCat, fee.total);
     });
+  // Soil removal bulked off the Excavation line when nothing is typed on its row
+  { const soil = autoSoilRemoval(item, rates); if (soil) land(FULL_CATALOG.find((c) => c.key === "OTHER ALLOWANCES"), soil.total); }
   // VicMix charges on the specialist band: pigment washout per truck, short load under the minimum
   autoSpecialistFees(item, rates).forEach((fee) => {
     land(specialistCat, fee.total);
@@ -667,7 +699,9 @@ export function labourQuantities(item, rates) {
   });
   // Excavation and soil removal are separate rows with separate drivers. A
   // quote entered before the Excavation line existed only has Soil removal,
-  // so the Excavate row falls back to that volume rather than going blank.
+  // so the Excavate row falls back to that volume rather than going blank;
+  // a Soil removal row left blank follows the Excavation line, bulked.
+  if (soilRemovalM3 <= 0) { const auto = autoSoilRemoval(item, rates); if (auto) soilRemovalM3 = auto.qty; }
   if (excavationM3 <= 0) excavationM3 = soilRemovalM3;
   // the pour row's m³: the blinding has its own crew row when the sheet carries one
   const hasBlindingRow = (item.tasks || []).some((t) => BLINDING_TASK_MATCH.test(t.name || ""));

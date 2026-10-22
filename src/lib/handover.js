@@ -54,6 +54,7 @@ const BOBCAT_CATS = new Set(["FOUNDATIONS", "RETENTION & TEMPORARY WORKS", "EART
 
 const SETUP = /site setup|mobilis/i;
 const EXCAVATE = /excavat/i;
+const SPOIL = /spoil|soil removal|remove soil|cart away/i;   // "Remove soil", legacy "Remove / cart away spoil"
 const TIE = /tie (steel|reinforcement|reo)/i;
 const MATERIAL_ROW = /delivery of materials|material d\+c/i;
 const BOXING_ROW = /^boxing/i;
@@ -125,8 +126,9 @@ export function handoverPlan(items, rates, prev) {
   list.forEach((item, i) => {
     const lq = lqs[i];
     const conc = lq.concreteM3 || 0;
+    const dug = lq.excavationM3 || 0, spoil = lq.soilRemovalM3 || 0;
     const tasks = item.tasks || [];
-    if (conc <= 0 && (lq.reinfTonnes || 0) <= 0) return; // nothing poured, nothing tied — prelims and empty cards stay as they are
+    if (conc <= 0 && (lq.reinfTonnes || 0) <= 0 && dug <= 0 && spoil <= 0) return; // nothing poured, tied or dug — prelims and empty cards stay as they are
     const put = (task, key, value) => {
       if (!task) return;
       const cur = (task.qtys || {})[key];
@@ -141,14 +143,23 @@ export function handoverPlan(items, rates, prev) {
     if (conc >= handoverRate(rates, "ho_setup_min_m3") || (conc > 0 && conc === maxConc)) {
       put(setup, "concreter_day", conc >= handoverRate(rates, "ho_setup_big_m3") ? 2 * handoverRate(rates, "ho_setup_days") : handoverRate(rates, "ho_setup_days"));
     }
-    // Excavate & prepare base — ground elements only
-    if (conc > 0 && !NO_DIG.has(item.category)) {
+    // Excavate & prepare base — ground elements only. The bands run on the
+    // Excavation line's m³ the moment it is typed (Grady, 22 Oct 2026: "when
+    // they are entered, they should automatically fill in the right cells in
+    // the labour and equipment"), else on the concrete as fitted.
+    const dig = dug > 0 ? dug : conc;
+    if (dig > 0 && !NO_DIG.has(item.category)) {
       const exc = find(EXCAVATE);
-      put(exc, "concreter_day", Math.max(1, whole(handoverRate(rates, "ho_exc_base_days") + conc / Math.max(1e-9, handoverRate(rates, "ho_exc_m3_per_day")))));
+      put(exc, "concreter_day", Math.max(1, whole(handoverRate(rates, "ho_exc_base_days") + dig / Math.max(1e-9, handoverRate(rates, "ho_exc_m3_per_day")))));
       const b1 = handoverRate(rates, "ho_excavator_band1_m3"), b2 = handoverRate(rates, "ho_excavator_band2_m3"), per = Math.max(1e-9, handoverRate(rates, "ho_excavator_m3_per_day"));
-      const plantDays = conc <= b1 ? 1 : conc <= b2 ? 2 : Math.max(3, whole(conc / per));
+      const plantDays = dig <= b1 ? 1 : dig <= b2 ? 2 : Math.max(3, whole(dig / per));
       put(exc, "excavator_day", plantDays);
       if (BOBCAT_CATS.has(item.category)) put(exc, "bobcat_day", plantDays);
+      // Remove soil: the trucks attend the excavator for the days it digs (no
+      // haul productivity is fitted, so the dig days are the rule) — only
+      // when there is spoil to cart (the Soil removal line, typed or bulked
+      // off the Excavation line).
+      if (spoil > 0) put(find(SPOIL), "truck_day", plantDays);
     }
     // Tie reinforcement
     const mode = steelModeFor(item, rates, lq);

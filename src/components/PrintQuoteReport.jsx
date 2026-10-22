@@ -3,7 +3,7 @@ import {
 } from "../data/catalog.js";
 import { markupSrc } from "../lib/markupStore.js";
 import {
-  computeElementCost, computeGrandTotal, computeMarginLadder, rateKey, rowRate, computeRowTotal, rowContext, money, money2, getDefaultMargin, getMarginSteps, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, additionalRowsFor, additionalRowTotal, autoSpecialistFees, categoryAppliesTo, computeExcludedTotals, categoryChargedUnder, scopeLabel, isProvisional, computeProvisionalTotals, isBlindingProduct, blindingIncluded } from "../lib/costing.js";
+  computeElementCost, computeGrandTotal, computeMarginLadder, rateKey, rowRate, computeRowTotal, rowContext, money, money2, getDefaultMargin, getMarginSteps, autoSoilRemoval, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, additionalRowsFor, additionalRowTotal, autoSpecialistFees, categoryAppliesTo, computeExcludedTotals, categoryChargedUnder, scopeLabel, isProvisional, computeProvisionalTotals, isBlindingProduct, blindingIncluded } from "../lib/costing.js";
 import { GRADCON_LOGO_DATA_URI } from "../lib/logo.js";
 
 /**
@@ -238,6 +238,10 @@ function ElementReportBlock({ item, rates, projectScope }) {
   const surcharge = autoConcreteSurcharge(item, rates);
   if (surcharge) {
     materialLines.push({ key: `${surcharge.key}::auto`, label: "Production & transport surcharge (CONCRETE — auto, per m³)", qty: surcharge.qty, unit: "m3", total: surcharge.total });
+  }
+  const soil = autoSoilRemoval(item, rates);
+  if (soil) {
+    materialLines.push({ key: `${soil.key}::auto`, label: `Soil removal (OTHER ALLOWANCES — auto, ${soil.excavationM3} m³ dug + ${soil.bulkingPct}% bulking)`, qty: soil.qty, unit: "m3", total: soil.total });
   }
   // VicMix charges on the specialist band, auto-applied like the Holcim fees above
   autoSpecialistFees(item, rates).forEach((fee) => {

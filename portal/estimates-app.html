@@ -4588,6 +4588,7 @@ function newExtraBeamGroup(d,arrName,idx){
   return {
     name:`${k.noun} ${idx+2}`,
     len:"", width:k.dfltWidth, depthMode:"extra", extraDepth:k.dfltDepth, cover:"",
+    blindOn:false, blindWidth:"", blindT:50, blindGrade:"",
     secShape:k.dfltShape, secSides:k.dfltSides, secBaseW:0,
     reo:false, trenchMesh:false, trenchType:"4 Bar-L12TM", layers:1, lap:false, layerTypes:{},
     edgeBeamRows:[{position:"Bottom continuous",qty:4,dia:"N16",layers:1,startA:"straight",endA:"straight",lap:false}],
@@ -4718,6 +4719,13 @@ function extraBeamGroupBlock(inst,d,arrName,g,i){
     ${F("Trench width (mm)",inpNum(base+"trenchWidth",g.trenchWidth===""||g.trenchWidth===undefined?"":g.trenchWidth))}
     ${F("Excavation depth below prepared level (mm)",inpNum(base+"excDepth",g.excDepth===""||g.excDepth===undefined?"":g.excDepth))}
    </div><p class="small">Blank uses this beam's own width + 50mm and its drop below the slab. Dug volume plus a bulked spoil line, exactly as the primary beam.</p></div>`:""}
+
+   <div class="grid cols3">${chk(base+"blindOn",g.blindOn,"Concrete blinding under this beam (its own line, apart from the slab's)",null,true)}</div>
+   ${g.blindOn? `<div class="subsec"><div class="grid cols3">
+    ${F("Blinding width (mm, blank = trench width)",inpNum(base+"blindWidth",g.blindWidth===undefined?"":g.blindWidth))}
+    ${F("Blinding thickness (mm, blank = 50)",inpNum(base+"blindT",g.blindT===undefined?50:g.blindT))}
+    ${F("Blinding grade (N, blank = project default)",inpNum(base+"blindGrade",g.blindGrade===undefined?"":g.blindGrade))}
+   </div><p class="small">Blinding = run length × width × thickness, once the run length is entered — its own Base/Blinding line named for this beam.</p></div>`:""}
   </div>`;
 }
 /* The founded-out-of-the-ground question, asked on EVERY beam on every slab.
@@ -4750,6 +4758,22 @@ function beamFormworkFields(src,base,p,secDepthMm){
  * primary edge beam, the primary rib, and each extra beam of either kind.
  * `src` holds that beam's fields, `base`+`p` build its field names, and
  * secDepthMm is the section the formed depth defaults to. */
+/* The beams this slab has switched on but not yet measured (Grady, 22 Oct
+ * 2026: "request user to enter the lengths of internal beams, edge beams etc
+ * during slab element populating"): a prompt on the Geometry tab naming each
+ * one and the tab its run length is typed on; nothing of a beam is priced
+ * until its run is entered. The same list feeds the completeness warnings. */
+function slabBeamsNeedingLength(d){
+  return slabBeamsForFormwork(d).filter(b=>!(num(b.runM)>0)).map(b=>({name:b.name, where:b.where}));
+}
+function slabBeamLengthPrompt(d){
+  const need=slabBeamsNeedingLength(d);
+  if(!need.length) return "";
+  return `<div class="subsec" data-testid="beam-length-prompt" style="border-left:3px solid #b45309;background:#fff7ed;padding:8px 10px;">
+   <b>Enter the beam run lengths</b> — ${need.length===1? "this beam is" : "these beams are"} switched on but ${need.length===1? "has" : "have"} no run length yet, so nothing of ${need.length===1? "it" : "them"} is priced:
+   <ul style="margin:4px 0 0 18px;">${need.map(b=>`<li><b>${b.name}</b> — total run length (m), from the drawing, on the <b>${b.where}</b></li>`).join("")}</ul>
+  </div>`;
+}
 function slabBeamsForFormwork(d){
   let out=[];
   let ebLegacy = d.edgeBeamOn===undefined && !!(d.edgeThicken && (d.edgeBeamReo||d.edgeBeamLigs||d.edgeBeamExc));
@@ -4907,6 +4931,23 @@ function raftBeamGroupLinesInner(inst,def,lines,d,g){
       lines.push(spoilLine(inst,def,exc));
     }
   }
+  // Blinding under THIS beam — its own tick, width and thickness (Grady,
+  // 22 Oct 2026: "clearly differentiate blinding for beams internally and
+  // edge beams and then the overall slab … when lengths are entered, user
+  // should be able to enter the depth of blinding and width"): run × width
+  // (blank = the trench width) × thickness (blank = 50 mm), one Base/Blinding
+  // line named for the beam, apart from the slab's own blinding line.
+  if(g.blindOn && g.runM>0){
+    const wMm = num(g.blindWidthMm)>0? num(g.blindWidthMm) : num(g.trenchWidthMm);
+    const tMm = num(g.blindTMm)>0? num(g.blindTMm) : 50;
+    const area = g.runM*(wMm/1000);
+    if(area>0 && tMm>0){
+      const bl = blindingLine(inst,def,area,tMm,"concrete",num(g.blindGrade)>0? num(g.blindGrade) : blindGradeDefault());
+      bl.spec=`${g.label} — ${tMm}mm × ${fmt(wMm,0)}mm wide under the beam`;
+      bl.formula=`run ${fmt(g.runM,1)}m × ${fmt(wMm,0)}mm × ${tMm}mm`;
+      lines.push(bl);
+    }
+  }
 }
 function computeBeam(inst,def){
   let d=inst.data, lines=[];
@@ -5011,6 +5052,7 @@ function slabDefaults(cat,suspended){ return {
   wallThickenShape:"rect", wallThickenSides:"both", wallThickenBaseW:0,
   wallThickenReo:false, wallThickenBars:2, wallThickenDia:"N12", wallThickenLap:false,
   edgeBeamOn:false, edgeBeamLen:"", edgeBeamWidth:300, edgeBeamExtraDepth:300, edgeBeamDepthMode:"extra", edgeBeamCover:"", beamStripsCover:"",
+  edgeBeamBlindOn:false, edgeBeamBlindWidth:"", edgeBeamBlindT:50, edgeBeamBlindGrade:"", beamStripsBlindOn:false, beamStripsBlindWidth:"", beamStripsBlindT:50, beamStripsBlindGrade:"",   // blinding under the beams, each its own tick (22 Oct 2026)
   edgeBeamReo:false, edgeBeamTrenchMesh:false, edgeBeamBars:4, edgeBeamDia:"N16", edgeBeamTrenchType:"4 Bar-L12TM", edgeBeamLayers:1, edgeBeamLap:false,
   edgeBeamLigs:false, edgeBeamLigDia:"N10", edgeBeamLigSpacing:300, edgeBeamLigLap:false,
   beamStrips:false, beamStripsLength:0, beamStripsWidth:300, beamStripsExtraDepth:150,
@@ -5038,6 +5080,7 @@ function renderSlab(inst,def){
    ${chk("perimeterAuto",d.perimeterAuto,"Perimeter auto (2×(L+W))","perimeterAuto")}
   </div>
   <div class="subsec ${d.perimeterAuto?'hidden':''}" data-show-if="perimeterAuto_off">${F("Perimeter override (m)",inpNum("perimeterOverride",d.perimeterOverride))}</div>
+  ${slabBeamLengthPrompt(d)}
   <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
    ${chk("outlineOn",d.outlineOn,"Draw slab outline (area & perimeter measured, not guessed)",undefined,true)}
    <button class="btn small primary" data-action="sketchOutline" type="button" title="Draw the slab shape roughly — the app straightens it into sides A, B, C… and you type each side's true length">✏️ Sketch the outline</button>
@@ -5130,6 +5173,9 @@ function renderSlab(inst,def){
   <p class="small">Ligature zones exactly as on a standalone Ground Beam — closed stirrups around each rib's cross-section (strip width × slab thickness + extra depth, less cover, plus two 135° fitment hooks). Zone length 0 spreads over the remaining run; typed zones that fall short of the run are extended at the last zone's spacing, so the whole run always carries ligatures.</p></div>
   <div class="grid cols3">${chk("beamStripsExc",d.beamStripsExc,"Trench excavation for the internal beams (below prepared level)","beamStripsExc")}</div>
   <div class="subsec ${d.beamStripsExc?'':'hidden'}" data-show-if="beamStripsExc"><div class="grid cols3">${F("Trench width (mm)",inpNum("beamStripsTrenchWidth",d.beamStripsTrenchWidth===undefined?(num(d.beamStripsWidth,300)+50):d.beamStripsTrenchWidth))}${F("Excavation depth below prepared level (mm)",inpNum("beamStripsExcDepth",d.beamStripsExcDepth===undefined?num(d.beamStripsExtraDepth,150):d.beamStripsExcDepth))}</div>
+  <div class="grid cols3">${chk("beamStripsBlindOn",d.beamStripsBlindOn,"Concrete blinding under the internal beams (its own line, apart from the slab's)","beamStripsBlindOn")}</div>
+  <div class="subsec ${d.beamStripsBlindOn?'':'hidden'}" data-show-if="beamStripsBlindOn"><div class="grid cols3">${F("Blinding width (mm, blank = trench width)",inpNum("beamStripsBlindWidth",d.beamStripsBlindWidth))}${F("Blinding thickness (mm, blank = 50)",inpNum("beamStripsBlindT",d.beamStripsBlindT===undefined?50:d.beamStripsBlindT))}${F("Blinding grade (N, blank = project default)",inpNum("beamStripsBlindGrade",d.beamStripsBlindGrade))}</div>
+  <p class="small">Blinding = run length × width × thickness, once the run length is entered — a Base/Blinding line named for the internal beams, which the Quotes bridge lands on the CONCRETE blinding row so the crew sheet's Blinding row takes its m³.</p></div>
   <p class="small">Same as a Ground Beam's trench: dug volume + a bulked spoil-disposal line, along the combined run. Off by default so existing takeoffs don't change.</p></div>
   </div>`;
   let edgeThickenGeom = `<div class="subsec"><div class="sechead">⚠ Edge Thickening</div><div class="grid cols3">${chk("edgeThicken",d.edgeThicken,"<b>Edge thickening</b> — simple thickened strip, follows the slab perimeter automatically","edgeThicken")}</div>
@@ -5186,6 +5232,9 @@ function renderSlab(inst,def){
   <p class="small">Ligature zones exactly as on a standalone Ground Beam — closed stirrups around the edge beam's cross-section (strip width × slab thickness + extra depth, less cover, plus two 135° fitment hooks). Zone length 0 spreads over the remaining perimeter, so one "General" zone covers the whole run; add support zones with tighter spacing as needed.</p></div>
   <div class="grid cols3">${chk("edgeBeamExc",d.edgeBeamExc,"Trench excavation for the edge beam (below prepared level)","edgeBeamExc")}</div>
   <div class="subsec ${d.edgeBeamExc?'':'hidden'}" data-show-if="edgeBeamExc"><div class="grid cols3">${F("Trench width (mm)",inpNum("edgeBeamTrenchWidth",d.edgeBeamTrenchWidth===undefined?(num(d.edgeBeamWidth,300)+50):d.edgeBeamTrenchWidth))}${F("Excavation depth below prepared level (mm)",inpNum("edgeBeamExcDepth",d.edgeBeamExcDepth===undefined?num(d.edgeBeamExtraDepth,300):d.edgeBeamExcDepth))}</div>
+  <div class="grid cols3">${chk("edgeBeamBlindOn",d.edgeBeamBlindOn,"Concrete blinding under the edge beam (its own line, apart from the slab's)","edgeBeamBlindOn")}</div>
+  <div class="subsec ${d.edgeBeamBlindOn?'':'hidden'}" data-show-if="edgeBeamBlindOn"><div class="grid cols3">${F("Blinding width (mm, blank = trench width)",inpNum("edgeBeamBlindWidth",d.edgeBeamBlindWidth))}${F("Blinding thickness (mm, blank = 50)",inpNum("edgeBeamBlindT",d.edgeBeamBlindT===undefined?50:d.edgeBeamBlindT))}${F("Blinding grade (N, blank = project default)",inpNum("edgeBeamBlindGrade",d.edgeBeamBlindGrade))}</div>
+  <p class="small">Blinding = run length × width × thickness, once the run length is entered — a Base/Blinding line named for the edge beam, which the Quotes bridge lands on the CONCRETE blinding row so the crew sheet's Blinding row takes its m³.</p></div>
   <p class="small">Same as a Ground Beam's trench: dug volume + a bulked spoil-disposal line, along the perimeter. Off by default so existing takeoffs don't change.</p></div>
   </div>`;
   // The MAT (mesh + the four bar blocks) is what "By rate" / "By area"
@@ -5247,7 +5296,7 @@ function renderSlab(inst,def){
    form,
    blind: d.suspended? undefined : `<div class="sechead">Base Course</div><div class="grid cols3">${F("Base thickness (mm)",inpNum("baseThickness",d.baseThickness))}${F("Base material",selOpts("baseMaterialState",d.baseMaterialState,[["compacted","Compacted"],["loose","Loose"]]))}</div>
    <div class="sechead">Concrete Blinding</div>
-   <div class="grid cols4">${chk("slabBlindOn",!!d.slabBlindOn,"Concrete blinding under slab","slabBlindOn")}
+   <div class="grid cols4">${chk("slabBlindOn",!!d.slabBlindOn,"Concrete blinding under the SLAB (the edge beams and internal beams carry their own ticks on their tabs)","slabBlindOn")}
    <div class="subsec ${d.slabBlindOn?'':'hidden'}" data-show-if="slabBlindOn" style="display:contents;">${F("Blinding thickness (mm, blank = 50)",inpNum("slabBlindT",d.slabBlindT))}${F("Blinding concrete grade (N)",inpNum("slabBlindGrade",(d.slabBlindGrade===undefined||d.slabBlindGrade==="")?blindGradeDefault():d.slabBlindGrade))}</div></div>
    <p class="small">Blinding concrete over the slab's net plan area (openings out), on top of the base course where the detail shows one — its own Base/Blinding line, ordered as concrete in the pour schedule. Untick when the slab pours straight onto the prepared base.</p>
    ${vapourSubsection(d,"Vapour barrier / membrane under slab")}`,
@@ -5392,6 +5441,7 @@ function computeSlab(inst,def){
     let legacy = d.edgeBeamOn===undefined && !!(d.edgeThicken && (d.edgeBeamReo||d.edgeBeamLigs||d.edgeBeamExc));
     let ebOn = d.edgeBeamOn!==undefined? !!d.edgeBeamOn : legacy;
     let ebRun = legacy? (d.edgeBeamLen===undefined? perim : num(d.edgeBeamLen)) : num(d.edgeBeamLen);
+    if(ebOn && !(ebRun>0)) warnings.push({text:"Edge beam is switched on but has no run length — enter its total run length (m) on the Edge Beams tab; nothing of the beam (concrete, bars, trench, blinding, formwork) is priced until it is",section:"edgebeams",level:"completeness"});
     if(ebOn && ebRun>0){
       let ebW = legacy? num(d.edgeThickenWidth,300) : num(d.edgeBeamWidth,300);
       let mode = d.edgeBeamDepthMode||"extra";
@@ -5413,9 +5463,11 @@ function computeSlab(inst,def){
         ligZones:d.edgeBeamLigZones||[{zone:"General",length:0,dia:d.edgeBeamLigDia||"N10",spacing:num(d.edgeBeamLigSpacing,300)}],
         formOn:d.edgeBeamOutOfGround, formDepthMm:d.edgeBeamFormDepth, formSides:d.edgeBeamFormSides,
         excOn:d.edgeBeamExc, trenchWidthMm:d.edgeBeamTrenchWidth===undefined?(ebW+50):num(d.edgeBeamTrenchWidth), excDepthMm:d.edgeBeamExcDepth===undefined?extraMm:num(d.edgeBeamExcDepth),
+        blindOn:d.edgeBeamBlindOn, blindWidthMm:d.edgeBeamBlindWidth, blindTMm:d.edgeBeamBlindT, blindGrade:d.edgeBeamBlindGrade,
       });
     }
   }
+  if(d.beamStrips && !(num(d.beamStripsLength)>0)) warnings.push({text:"Internal beams are switched on but have no run length — enter their total run length (m) on the Internal Beams tab; nothing of the beams is priced until it is",section:"intbeams",level:"completeness"});
   if(d.beamStrips && num(d.beamStripsLength)>0){
     let bw=num(d.beamStripsWidth)/1000, bd=num(d.beamStripsExtraDepth)/1000;
     // Ribs default to tapering on BOTH sides, because an internal rib falls
@@ -5437,6 +5489,7 @@ function computeSlab(inst,def){
       ligZones:d.beamStripsLigZones||[{zone:"General",length:0,dia:d.beamStripsLigDia||"N10",spacing:num(d.beamStripsLigSpacing,300)}],
       formOn:d.beamStripsOutOfGround, formDepthMm:d.beamStripsFormDepth, formSides:d.beamStripsFormSides,
       excOn:d.beamStripsExc, trenchWidthMm:d.beamStripsTrenchWidth===undefined?(num(d.beamStripsWidth,300)+50):num(d.beamStripsTrenchWidth), excDepthMm:d.beamStripsExcDepth===undefined?num(d.beamStripsExtraDepth,150):num(d.beamStripsExcDepth),
+      blindOn:d.beamStripsBlindOn, blindWidthMm:d.beamStripsBlindWidth, blindTMm:d.beamStripsBlindT, blindGrade:d.beamStripsBlindGrade,
     });
   }
   // EXTRA BEAMS — every additional edge beam and internal rib the estimator
@@ -5448,8 +5501,8 @@ function computeSlab(inst,def){
     let kind=extraBeamKind(arrName);
     (d[arrName]||[]).forEach((g,i)=>{
       let geo=extraBeamGeom(d,g);
-      if(!(geo.runM>0)) return;
       let label=(g.name||"").trim()||`${kind.noun} ${i+2}`;
+      if(!(geo.runM>0)){ warnings.push({text:`${label} has no run length — enter its run length (m) on the ${arrName==="edgeBeamGroups"?"Edge Beams":"Internal Beams"} tab; nothing of it is priced until it is`,section:arrName==="edgeBeamGroups"?"edgebeams":"intbeams",level:"completeness"}); return; }
       let shape=g.secShape||kind.dfltShape;
       let sides=g.secSides||kind.dfltSides;
       let area=sectionAreaM2(shape,geo.widthMm,geo.extraMm,g.secBaseW,etSectionAreaM2(d));
@@ -5466,6 +5519,7 @@ function computeSlab(inst,def){
         excOn:g.exc,
         trenchWidthMm:(g.trenchWidth===""||g.trenchWidth===undefined)?(geo.widthMm+50):num(g.trenchWidth),
         excDepthMm:(g.excDepth===""||g.excDepth===undefined)?geo.extraMm:num(g.excDepth),
+        blindOn:g.blindOn, blindWidthMm:g.blindWidth, blindTMm:g.blindT, blindGrade:g.blindGrade,
       });
     });
   });
