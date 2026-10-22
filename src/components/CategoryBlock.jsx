@@ -1,6 +1,6 @@
 import { Fragment } from "react";
 import { ChevronDown, ChevronRight, Plus, X } from "lucide-react";
-import { rateKey, money2, rowRate, computeRowTotal, rowContext, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, additionalRowsFor, additionalRowTotal, autoPigmentWashout, autoSpecialistShortLoad, productLabel, visibleProducts } from "../lib/costing.js";
+import { rateKey, money2, rowRate, computeRowTotal, rowContext, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, additionalRowsFor, additionalRowTotal, autoPigmentWashout, autoSpecialistShortLoad, productLabel, visibleProducts, isBlindingProduct, blindingIncluded } from "../lib/costing.js";
 import { SPECIALIST_CONCRETE_KEY } from "../data/catalog.js";
 import { NumInput } from "./atoms.jsx";
 import { validityState, validityLabel, formatValidUntil } from "../lib/rateValidity.js";
@@ -115,6 +115,7 @@ export default function CategoryBlock({ cat, item, rates, onQtyChange, onRateCha
                 // kg/m³ × the element's poured m³ — the tonnage this rate buys
                 const rateTonnes = hasVolumeRate ? (qty * ctx.concreteM3) / 1000 : null;
                 const filled = qty > 0 || !!autoRow;
+                const blindingOut = isBlindingProduct(cat, p) && !blindingIncluded(item);
                 return (
                   <Fragment key={qKey}>
                   {groupHead && (
@@ -125,6 +126,7 @@ export default function CategoryBlock({ cat, item, rates, onQtyChange, onRateCha
                   <tr className={`border-t border-neutral-100 ${filled ? "bg-orange-50/40" : ""}`}>
                     <td className="px-3 py-1 text-neutral-700">
                       {productLabel(p)}{p.legacy && <span className="ml-1 text-[10px] text-neutral-400">retired</span>}
+                      {blindingOut && qty > 0 && <span className="ml-1.5 text-[10px] font-semibold uppercase tracking-wide text-neutral-500" title="Tick 'Add blinding' on the crew sheet to charge it" data-testid="blinding-not-added">not added — crew sheet</span>}
                       {isAutoCartage && (
                         <span
                           className="ml-1.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700"

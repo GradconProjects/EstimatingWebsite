@@ -1,7 +1,7 @@
 import { ChevronDown, ChevronRight, Plus, Trash2 } from "lucide-react";
 import { RESOURCE_COLS } from "../data/catalog.js";
 import { STEEL_MODES } from "../lib/handover.js";
-import { money2, labourResourceRate, taskRowMeta, rateKey } from "../lib/costing.js";
+import { money2, labourResourceRate, taskRowMeta, rateKey, blindingIncluded, TASK_MATCHERS } from "../lib/costing.js";
 import { NumInput } from "./atoms.jsx";
 
 /**
@@ -20,8 +20,9 @@ export default function LabourMatrix({
   item, rates, onTaskQtyChange, onTaskMetaChange, onAddTask, onRemoveTask, onRenameTask,
   resourceTotals, resourceCosts, labourTotal, excludedLabour = 0, labourOpen, toggleLabour,
   labourAuto, autoQtys, onToggleAuto, onResetAuto, labourQtyCtx, onLabourRateChange,
-  prefilled, steelMode = "auto", steelModeResolved, onSteelMode,
+  prefilled, steelMode = "auto", steelModeResolved, onSteelMode, onBlindingToggle,
 }) {
+  const blindingIn = blindingIncluded(item);
   const modeLabel = (m) => (STEEL_MODES.find((x) => x[0] === m) || [m, m])[1];
   return (
     <div className="border border-amber-300 rounded-lg overflow-hidden bg-white">
@@ -90,13 +91,22 @@ export default function LabourMatrix({
             {item.tasks.map((task, idx) => {
               const filled = RESOURCE_COLS.some((r) => Number(task.qtys[r.key]) > 0);
               const meta = taskRowMeta(task.name, labourQtyCtx);
+              const isBlindingRow = TASK_MATCHERS.blinding.test(task.name || "");
+              const rowOut = isBlindingRow && !blindingIn;
               return (
-              <tr key={task.id} className={`border-t border-neutral-100 ${filled ? "bg-orange-50/40" : ""}`}>
+              <tr key={task.id} className={`border-t border-neutral-100 ${rowOut ? "opacity-60" : filled ? "bg-orange-50/40" : ""}`} data-testid={isBlindingRow ? "blinding-row" : undefined} data-excluded={rowOut ? "1" : undefined}>
                 <td className="px-2 py-1 text-right text-neutral-400 font-mono tabular-nums">{idx + 1}</td>
                 <td className="px-3 py-1">
+                  {isBlindingRow && onBlindingToggle && (
+                    <label className={`flex items-center gap-1 text-[10.5px] font-semibold uppercase tracking-wide cursor-pointer ${blindingIn ? "text-emerald-700" : "text-neutral-500"}`} title="Add the entered blinding to this element: ticked = its material row, this crew row and its delivery fees count; unticked = the figures stay typed but none of them is charged" data-testid="blinding-toggle">
+                      <input type="checkbox" checked={blindingIn} onChange={(e) => onBlindingToggle(e.target.checked)} className="accent-emerald-600" aria-label="Add blinding" />
+                      {blindingIn ? "Blinding added" : "Add blinding"}{!blindingIn && <span className="normal-case tracking-normal font-normal text-neutral-400">— material & labour not charged</span>}
+                    </label>
+                  )}
                   <input
                     value={task.name}
                     onChange={(e) => onRenameTask(task.id, e.target.value)}
+                    title={meta.source ? `Qty prefills from ${meta.source} — type over it to override` : undefined}
                     className="w-full bg-transparent border-0 border-b border-dashed border-neutral-200 focus:border-orange-400 focus:outline-none text-neutral-700 text-[13px] py-0.5"
                   />
                   {/* Per-row crew mode: this row's crew cells are crew-days

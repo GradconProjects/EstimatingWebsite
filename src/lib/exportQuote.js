@@ -19,7 +19,7 @@
  *   can't accept the HTML clipboard format still gets usable text).
  */
 import { FULL_CATALOG, RESOURCE_COLS, CATEGORY_ORDER, SECTION_ORDER } from "../data/catalog.js";
-import { computeElementCost, computeGrandTotal, computeMarginLadder, rateKey, rowRate, computeRowTotal, rowContext, getDefaultMargin, getMarginSteps, additionalRowsFor, additionalRowTotal, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, autoSpecialistFees, categoryAppliesTo, elementScope, categoryChargedUnder, scopeLabel } from "./costing.js";
+import { computeElementCost, computeGrandTotal, computeMarginLadder, rateKey, rowRate, computeRowTotal, rowContext, getDefaultMargin, getMarginSteps, additionalRowsFor, additionalRowTotal, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, autoSpecialistFees, categoryAppliesTo, elementScope, categoryChargedUnder, scopeLabel, isBlindingProduct, blindingIncluded } from "./costing.js";
 import { GRADCON_LOGO_DATA_URI } from "./logo.js";
 
 /** Rate ($/unit) backed out from the line's own total ÷ qty — always exactly
@@ -58,7 +58,8 @@ function buildElementLines(item, rates, projectScope) {
           unitCost: p.unitCost ?? 0, unitWeight: p.unitWeight, sheetArea: p.sheetArea, barLength: p.barLength,
         });
         const rowTotal = computeRowTotal(cat, rate, qty, ctx);
-        materialLines.push(scoped(cat, { label: `${p.label || p.name} (${cat.key}${p.group ? " · " + p.group : ""})`, qty, unit: p.unit, total: rowTotal }));
+        const blindingOut = isBlindingProduct(cat, p) && !blindingIncluded(item);
+        materialLines.push(scoped(cat, { label: `${p.label || p.name} (${cat.key}${p.group ? " · " + p.group : ""})${blindingOut ? " — not added (crew sheet)" : ""}`, qty, unit: p.unit, total: blindingOut ? 0 : rowTotal }));
       }
     });
     additionalRowsFor(item, cat.key).forEach((a) => {

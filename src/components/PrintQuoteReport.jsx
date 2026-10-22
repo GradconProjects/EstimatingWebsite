@@ -3,7 +3,7 @@ import {
 } from "../data/catalog.js";
 import { markupSrc } from "../lib/markupStore.js";
 import {
-  computeElementCost, computeGrandTotal, computeMarginLadder, rateKey, rowRate, computeRowTotal, rowContext, money, money2, getDefaultMargin, getMarginSteps, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, additionalRowsFor, additionalRowTotal, autoSpecialistFees, categoryAppliesTo, computeExcludedTotals, categoryChargedUnder, scopeLabel, isProvisional, computeProvisionalTotals } from "../lib/costing.js";
+  computeElementCost, computeGrandTotal, computeMarginLadder, rateKey, rowRate, computeRowTotal, rowContext, money, money2, getDefaultMargin, getMarginSteps, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, additionalRowsFor, additionalRowTotal, autoSpecialistFees, categoryAppliesTo, computeExcludedTotals, categoryChargedUnder, scopeLabel, isProvisional, computeProvisionalTotals, isBlindingProduct, blindingIncluded } from "../lib/costing.js";
 import { GRADCON_LOGO_DATA_URI } from "../lib/logo.js";
 
 /**
@@ -214,7 +214,8 @@ function ElementReportBlock({ item, rates, projectScope }) {
       if (qty > 0) {
         const rate = rowRate(item, rates, qKey, { unitCost: p.unitCost ?? 0, unitWeight: p.unitWeight, sheetArea: p.sheetArea, barLength: p.barLength });
         const rowTotal = computeRowTotal(cat, rate, qty, ctx);
-        materialLines.push({ key: qKey, label: `${p.label || p.name} (${cat.key}${p.group ? " · " + p.group : ""})`, qty, unit: p.unit, total: rowTotal });
+        const blindingOut = isBlindingProduct(cat, p) && !blindingIncluded(item);
+        materialLines.push({ key: qKey, label: `${p.label || p.name} (${cat.key}${p.group ? " · " + p.group : ""})${blindingOut ? " — not added (crew sheet)" : ""}`, qty, unit: p.unit, total: blindingOut ? 0 : rowTotal });
       }
     });
     // custom rows added under this category — after its last catalog line, same band

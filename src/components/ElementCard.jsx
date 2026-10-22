@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { ChevronDown, ChevronRight, Copy, Trash2, Paperclip, X, RotateCw, ZoomIn, ZoomOut, Maximize2, ArrowUp, ArrowDown, GripVertical } from "lucide-react";
-import { FULL_CATALOG, LABOUR_TEMPLATES, QUOTE_SCOPES } from "../data/catalog.js";
-import { uid, money, money2, isProvisional, computeElementCost, computeElementUnitRates, autoLabourQtys, labourQuantities, categoryAppliesTo, elementScope, categoryChargedUnder, scopeLabel, SCOPE_KEYS } from "../lib/costing.js";
+import { FULL_CATALOG, LABOUR_TEMPLATES, QUOTE_SCOPES, CREW_TASKS_VER } from "../data/catalog.js";
+import { uid, money, money2, isProvisional, upgradeCrewTasks, computeElementCost, computeElementUnitRates, autoLabourQtys, labourQuantities, categoryAppliesTo, elementScope, categoryChargedUnder, scopeLabel, SCOPE_KEYS } from "../lib/costing.js";
 import { prefilledCells, applySteelMode, steelModeFor } from "../lib/handover.js";
 import { pdfToJpegPages } from "../lib/pdfToImages.js";
 import { markupSrc, markupDataURL } from "../lib/markupStore.js";
@@ -65,6 +65,13 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
   // the live engine drive; an element the estimator set to manual keeps its
   // figures untouched. New elements are born at ver 2, and any cell typed
   // AFTER this runs is a genuine override and survives normally.
+  // Grady's crew-sheet names (CREW_TASKS_VER 3, 22 Oct 2026): an element saved
+  // with the earlier names is renamed once, cells kept, missing rows added.
+  useEffect(() => {
+    if (item.tasksVer >= CREW_TASKS_VER) return;
+    patch((it) => upgradeCrewTasks(it));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   useEffect(() => {
     if (item.labourVer === 2) return;
     patch((it) => {
@@ -403,6 +410,7 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
             <span>Materials: <b className="font-mono text-neutral-700">{money2(cost.materialsTotal)}</b>{cost.excludedMaterials > 0 && <span className="text-orange-700" title="Supply bands not charged under this element's labour-only scope — quantities kept, they still drive the crew days"> · {money2(cost.excludedMaterials)} not charged ({scopeLabel(cost.scope)})</span>}</span>
             <span>Labour/Equipment: <b className="font-mono text-neutral-700">{money2(cost.labourTotal)}</b>{cost.excludedLabour > 0 && <span className="text-orange-700" title="Crew sheet not charged under this element's materials-only scope"> · {money2(cost.excludedLabour)} not charged ({scopeLabel(cost.scope)})</span>}</span>
             <span>Custom items: <b className="font-mono text-neutral-700">{money2(cost.additionalTotal)}</b></span>
+            {cost.excludedBlinding > 0 && <span className="text-neutral-500" title="The entered blinding is not added on this element's crew sheet — its material, crew and delivery fees are left out" data-testid="blinding-excluded">Blinding not added: <b className="font-mono line-through">{money2(cost.excludedBlinding)}</b></span>}
           </div>
 
           {showDesc ? (
@@ -598,6 +606,7 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
             steelMode={steelMode}
             steelModeResolved={steelModeResolved}
             onSteelMode={setSteelMode}
+            onBlindingToggle={(on) => patch((it) => ({ ...it, blindingIncluded: on ? undefined : false }))}
             item={item}
             rates={rates}
             onTaskQtyChange={setTaskQty}

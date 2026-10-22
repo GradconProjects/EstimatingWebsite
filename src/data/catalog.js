@@ -139,17 +139,47 @@ export const SPECIALIST_CONCRETE_KEY = "SPECIALIST FINISHING CONCRETE";
 // free additional rows). The template keys survive because every
 // ELEMENT_TYPES entry references one. Elements saved before this change
 // keep the task rows they were created with.
+/* The crew sheet in Grady's own words (22 Oct 2026: "add and use Grady
+ * specific tones on the uploaded labour sections of each line item"). Every
+ * row is matched by NAME in lib/costing.js (taskRowMeta) so its Qty prefills
+ * from the element's own fields — excavation and soil removal from the OTHER
+ * ALLOWANCES lines, blinding from the CONCRETE "Blinding concrete" row (behind
+ * the row's own "add blinding" tick), tie reo from the tonnage, the pour from
+ * the poured m³ (less the blinding, which has its own row), finishing from the
+ * mesh area, stripping from the formed m², BOXING from everything entered on
+ * the FORMWORK band (m² and lineal metres) — and every cell stays editable.
+ * `CREW_TASKS_VER` / `LEGACY_TASK_RENAMES`: an element saved with the earlier
+ * names is brought onto these once (lib/costing.js upgradeCrewTasks), its
+ * cells kept. */
 const CREW_SHEET_TASKS = [
-  "Site setup / mobilisation",
-  "Excavate & prepare base",
-  "Remove / cart away spoil",
-  "Tie reinforcement",
-  "Pour / place / vibrate concrete",
+  "Site setup",
+  "Delivery of materials (yard works)",
+  "Excavation & prep base",
+  "Remove soil",
+  "Blinding concrete",
+  "Tie reo",
+  "Pour concrete",
   "Finish concrete surfaces",
-  "Washout / clean / tidy",
-  "Additional labour / plant",
+  "Site clean and tidy",
+  "Stripping (formwork)",
+  "Collection of materials",
+  "Yard works",
+  "Boxing",
   "Additional labour / plant",
 ];
+export const CREW_TASKS_VER = 3;
+export const LEGACY_TASK_RENAMES = [
+  [/^site setup \/ mobilisation$/i, "Site setup"],
+  [/^excavate & prepare base$/i, "Excavation & prep base"],
+  [/^remove \/ cart away spoil$/i, "Remove soil"],
+  [/^tie reinforcement$/i, "Tie reo"],
+  [/^pour \/ place \/ vibrate concrete$/i, "Pour concrete"],
+  [/^washout \/ clean \/ tidy$/i, "Site clean and tidy"],
+  [/^material d\+c$/i, "Delivery of materials (yard works)"],
+  [/^boxing and rebates$/i, "Boxing"],
+  [/^tool d\+c$/i, "Collection of materials"],
+];
+export const GRADY_CREW_TASKS = CREW_SHEET_TASKS;
 // Preliminaries have no pour: their crew sheet lists the site-management
 // work instead (the only template whose task sequence genuinely differs).
 const PRELIM_TASKS = [

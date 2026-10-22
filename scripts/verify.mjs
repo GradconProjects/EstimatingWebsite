@@ -16,7 +16,7 @@ import * as catalogAll from "../src/data/catalog.js";
 import {
   computeElementCost, computeGrandTotal, computeMarginLadder, productLabel, visibleProducts,
   defaultRates, newElementItem, rateKey, suggestedLabourPrefill, computeExternalScopeLines,
-  labourResourceRate, taskRowMeta, labourQuantities, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, computeRowTotal,
+  labourResourceRate, taskRowMeta, labourQuantities, autoLabourQtys, upgradeCrewTasks, blindingIncluded, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, computeRowTotal,
   computeElementUnitRates, computeProjectUnitRates, rowContext, computeElementReinforcementTonnes, getMarginSteps, additionalRowsFor, autoPigmentWashout, autoSpecialistShortLoad, autoSpecialistFees, categoryAppliesTo } from "../src/lib/costing.js";
 import { buildImportFromEstimate, normalizeElementName, geometryForLabel, edgeDepthMm } from "../src/lib/estimateImport.js";
 import * as importAll from "../src/lib/estimateImport.js";
@@ -466,7 +466,7 @@ check("Labour rolls up: 8 Concrete Crew days + 20 Pump hrs on one task = $17,000
   const rates = defaultRates();
   const type = ELEMENT_TYPES.find((t) => t.id === "strip_footings");
   const item = newElementItem(type);
-  const pourTask = item.tasks.find((t) => t.name === "Pour / place / vibrate concrete");
+  const pourTask = item.tasks.find((t) => t.name === "Pour concrete");
   pourTask.qtys["concreter_day"] = 8; // rows default PER PERSON: 8 man-days × $500
   pourTask.qtys["pump_hr"] = 20; // 20 * $250
   const cost = computeElementCost(item, rates);
@@ -495,8 +495,8 @@ check("Auto labour: crew-days from crew-day blocks with decimals kept (10 m³/cr
   const item = newElementItem(type);
   item.qtys[rateKey("CONCRETE", "25 mpa", "m3")] = 50; // every 10 m³ = one Concrete Crew day -> 5 crew-days
   item.qtys[rateKey("PROCESSED BAR", "N16", "m")] = 2000; // 3.2 t -> 3.2 Steel Crew days (decimals kept, no ceiling)
-  const pourTask = item.tasks.find((t) => t.name === "Pour / place / vibrate concrete");
-  const tieTask = item.tasks.find((t) => t.name === "Tie reinforcement");
+  const pourTask = item.tasks.find((t) => t.name === "Pour concrete");
+  const tieTask = item.tasks.find((t) => t.name === "Tie reo");
 
   // rows default PER PERSON, so suggestions land as man-days: crews × men
   const suggestions = suggestedLabourPrefill(item, rates);
@@ -528,7 +528,7 @@ check("Fractional crew-days: tiny quantities stay fractional (no ceiling, no min
   const item = newElementItem(type);
   // 0.13 t of steel -> 0.13 Steel Crew days, costed 0.13 × 5 men × $650.
   item.qtys[rateKey("PROCESSED BAR", "N12", "m")] = 146; // 146 m × 0.888 kg/m ≈ 0.13 t
-  const tieTask = item.tasks.find((t) => t.name === "Tie reinforcement");
+  const tieTask = item.tasks.find((t) => t.name === "Tie reo");
   const sug = suggestedLabourPrefill(item, rates);
   near(sug[tieTask.id].steelfixer_day, 0.65); // 0.13 crew-days × 5 men (per-person default)
   const shown = taskRowMeta(tieTask.name, labourQuantities(item, rates)).autoQty;
@@ -538,7 +538,7 @@ check("Fractional crew-days: tiny quantities stay fractional (no ceiling, no min
   // 4 m³ of concrete -> 0.4 Concrete Crew days = 1.2 man-days, pump 6 hrs + true 4 m³.
   const small = newElementItem(type);
   small.qtys[rateKey("CONCRETE", "25 mpa", "m3")] = 4;
-  const pourTask = small.tasks.find((t) => t.name === "Pour / place / vibrate concrete");
+  const pourTask = small.tasks.find((t) => t.name === "Pour concrete");
   const sug2 = suggestedLabourPrefill(small, rates);
   near(sug2[pourTask.id].concreter_day, 1.2);
   assert.equal(sug2[pourTask.id].pump_hr, 6);
@@ -551,7 +551,7 @@ check("Per-row crew flexibility: per-crew rows cost days × own men × man-day r
   const type = ELEMENT_TYPES.find((t) => t.id === "strip_footings");
   const item = newElementItem(type);
   item.labourAuto = false;
-  const pourTask = item.tasks.find((t) => t.name === "Pour / place / vibrate concrete");
+  const pourTask = item.tasks.find((t) => t.name === "Pour concrete");
   pourTask.qtys.concreter_day = 2;
   // default: PER PERSON — 2 man-days costed directly at the $500 day rate
   near(computeElementCost(item, rates).resourceCosts.concreter_day, 2 * 500);
@@ -572,7 +572,7 @@ check("Per-row crew flexibility: per-crew rows cost days × own men × man-day r
   // a per-person row's AUTO suggestion converts crews -> man-days (crews × men)
   const auto = newElementItem(type);
   auto.qtys[rateKey("CONCRETE", "25 mpa", "m3")] = 50; // 5 crew-days
-  const autoPour = auto.tasks.find((t) => t.name === "Pour / place / vibrate concrete");
+  const autoPour = auto.tasks.find((t) => t.name === "Pour concrete");
   autoPour.crewMode = "person";
   autoPour.crewSize = 2;
   near(suggestedLabourPrefill(auto, rates)[autoPour.id].concreter_day, 10, "5 crews × 2 men = 10 man-days");
@@ -598,7 +598,7 @@ check("Seamless labour: computeElementCost costs the auto crew days live (no wri
   // tasks were NOT written to — the derivation is live
   assert.ok(item.tasks.every((t) => Object.keys(t.qtys).length === 0), "auto labour must not write into tasks");
   // a typed cell wins over the engine
-  const pourTask = item.tasks.find((t) => t.name === "Pour / place / vibrate concrete");
+  const pourTask = item.tasks.find((t) => t.name === "Pour concrete");
   pourTask.qtys.concreter_day = 4;
   assert.equal(computeElementCost(item, rates).resourceTotals.concreter_day, 4);
   // quantities changing flow straight through (the old one-shot prefill went stale here)
@@ -619,7 +619,7 @@ check("Crew sheet: Finish row draws mesh m², a typed row Qty overrides the draw
   const finishTask = item.tasks.find((t) => t.name === "Finish concrete surfaces");
   const sug = suggestedLabourPrefill(item, rates);
   assert.equal(sug[finishTask.id].concreter_day, 2.01); // 200/300 = 0.67 crew-days × 3 men (per-person default)
-  const pourTask = item.tasks.find((t) => t.name === "Pour / place / vibrate concrete");
+  const pourTask = item.tasks.find((t) => t.name === "Pour concrete");
   assert.equal(sug[pourTask.id].concreter_day, 10.8); // 36/10 = 3.6 crew-days × 3 men — finishing on its own row
 
   // typing a row Qty overrides what the row draws on
@@ -666,8 +666,8 @@ check("Fractional crew cells kept as typed (0.5 stays 0.5, 1.2 stays 1.2); plant
   const type = ELEMENT_TYPES.find((t) => t.id === "strip_footings");
   const item = newElementItem(type);
   item.labourAuto = false;
-  const pourTask = item.tasks.find((t) => t.name === "Pour / place / vibrate concrete");
-  const tieTask = item.tasks.find((t) => t.name === "Tie reinforcement");
+  const pourTask = item.tasks.find((t) => t.name === "Pour concrete");
+  const tieTask = item.tasks.find((t) => t.name === "Tie reo");
   pourTask.qtys.concreter_day = 1.2; // stays 1.2 crew-days
   tieTask.qtys.steelfixer_day = 0.5; // stays half a crew-day
   pourTask.qtys.excavator_day = 0.5; // plant still books whole days -> 1
@@ -683,11 +683,11 @@ check("Fractional crew cells kept as typed (0.5 stays 0.5, 1.2 stays 1.2); plant
 check("Excavate and spoil rows are separate: Excavation (m³) drives the Excavate row, Soil removal (m³) drives the spoil row; neither auto-fills plant", () => {
   const rates = defaultRates();
   const item = newElementItem(ELEMENT_TYPES.find((t) => t.id === "excavation_bulk"));
-  const excTask = item.tasks.find((t) => /excavate/i.test(t.name));
-  const spoilTask = item.tasks.find((t) => /cart away spoil/i.test(t.name));
+  const excTask = item.tasks.find((t) => /excavat/i.test(t.name));
+  const spoilTask = item.tasks.find((t) => /remove soil/i.test(t.name));
   assert.ok(excTask && spoilTask, "a new element carries both rows");
   assert.equal(item.tasks.indexOf(spoilTask), item.tasks.indexOf(excTask) + 1, "the spoil row sits right after the excavate row");
-  assert.ok(!/excavate/i.test(spoilTask.name), "the spoil row never matches the excavate rule");
+  assert.ok(!/excavat/i.test(spoilTask.name), "the spoil row never matches the excavate rule");
   // only soil removal entered (a quote from before the Excavation line existed): excavate falls back to it
   item.qtys[rateKey("OTHER ALLOWANCES", "Soil removal", "m3")] = 85;
   let lq = labourQuantities(item, rates);
@@ -1415,6 +1415,59 @@ await checkAsync("Quotes colour tokens: every preset values every token; overrid
   assert.ok(tok && pre, "the shell carries the two mirrors");
   assert.deepEqual(JSON.parse(tok[1]), T.THEME_TOKENS, "QUOTE_THEME_TOKENS mirror drifted"); assert.deepEqual(JSON.parse(pre[1]), T.PRESETS, "QUOTE_THEME_PRESETS mirror drifted");
 });
+check("Grady's crew sheet (22 Oct 2026): his task names on every new element; each Qty prefills from the element's own fields — excavation and soil removal from their lines, blinding from the CONCRETE blinding row, tie reo from the tonnage, the pour less the blinding, stripping from the formed m², BOXING from everything on the FORMWORK band (m² + lineal metres); an older element is renamed once with its cells kept and the missing rows added", () => {
+  const rates = defaultRates();
+  const type = ELEMENT_TYPES.find((t) => t.id === "slab_on_ground");
+  const item = newElementItem(type);
+  assert.deepEqual(item.tasks.map((t) => t.name), ["Site setup", "Delivery of materials (yard works)", "Excavation & prep base", "Remove soil", "Blinding concrete", "Tie reo", "Pour concrete", "Finish concrete surfaces", "Site clean and tidy", "Stripping (formwork)", "Collection of materials", "Yard works", "Boxing", "Additional labour / plant"]);
+  item.qtys[rateKey("OTHER ALLOWANCES", "Excavation", "m3")] = 30; item.qtys[rateKey("OTHER ALLOWANCES", "Soil removal", "m3")] = 36;
+  item.qtys[rateKey("CONCRETE", "Blinding concrete", "m3")] = 4; item.qtys[rateKey("CONCRETE", "32 mpa", "m3")] = 20;
+  item.qtys[rateKey("FORMWORK", "Edgeform", "m")] = 40; item.qtys[rateKey("FORMWORK", "Conventional", "m2")] = 12; item.qtys[rateKey("SQUARE MESH", "SL82", "m2")] = 100;
+  const lq = labourQuantities(item, rates);
+  const q = (re) => taskRowMeta(item.tasks.find((t) => re.test(t.name)).name, lq);
+  assert.deepEqual([q(/excavat/i).autoQty, q(/remove soil/i).autoQty], [30, 36], "excavation and soil removal from their lines");
+  assert.deepEqual([q(/blinding/i).unit, q(/blinding/i).autoQty], ["m³", 4], "the blinding row from the blinding concrete entered");
+  assert.equal(q(/pour/i).autoQty, 20, "the pour is the poured concrete LESS the blinding (its own row)");
+  assert.deepEqual([q(/boxing/i).unit, q(/boxing/i).autoQty], ["m²/lm", 52], "boxing = everything on the FORMWORK band: 12 m² + 40 lm");
+  assert.equal(q(/strip/i).autoQty, 12); assert.equal(q(/finish/i).autoQty, 100);
+  assert.equal(q(/tie reo/i).unit, "t");
+  // the blinding row books concreters like a pour; typed cells still win
+  const auto = autoLabourQtys(item, rates); const bl = item.tasks.find((t) => /blinding/i.test(t.name));
+  assert.equal(auto[bl.id].concreter_day, 1.2, "4 m³ at 10 m³/crew-day = 0.4 crew-days, shown as man-days for the 3-man crew");
+  // an older element: the earlier names renamed in place (ids and cells kept), the new rows added in Grady's order
+  const old = newElementItem(type);
+  old.tasksVer = undefined;
+  old.tasks = ["Site setup / mobilisation", "Excavate & prepare base", "Remove / cart away spoil", "Tie reinforcement", "Pour / place / vibrate concrete", "Finish concrete surfaces", "Washout / clean / tidy", "Material D+C", "Boxing and Rebates"].map((name, i) => ({ id: "t" + i, name, qtys: i === 4 ? { concreter_day: 9 } : {} }));
+  const up = upgradeCrewTasks(old);
+  assert.equal(up.tasksVer, 3); assert.strictEqual(upgradeCrewTasks(up), up, "once");
+  assert.deepEqual(up.tasks.map((t) => t.name), ["Site setup", "Delivery of materials (yard works)", "Excavation & prep base", "Remove soil", "Blinding concrete", "Tie reo", "Pour concrete", "Finish concrete surfaces", "Site clean and tidy", "Stripping (formwork)", "Collection of materials", "Yard works", "Boxing"]);
+  assert.equal(up.tasks.find((t) => t.name === "Pour concrete").id, "t4"); assert.equal(up.tasks.find((t) => t.name === "Pour concrete").qtys.concreter_day, 9, "cells and ids kept");
+  const pre = newElementItem(ELEMENT_TYPES.find((t) => t.labour === "prelims")); const names = pre.tasks.map((t) => t.name);
+  assert.deepEqual(upgradeCrewTasks({ ...pre, tasksVer: undefined }).tasks.map((t) => t.name), names, "the preliminaries sheet is its own");
+});
+check("Blinding is decided on the crew sheet: ticked (the default) it is charged — material, its crew row, its share of the Holcim fees; unticked ALL of it leaves the totals while the figures stay typed, and the money left out is reported", () => {
+  const rates = defaultRates();
+  const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-6, `${msg || ""}: ${a} !~= ${b}`);
+  const item = newElementItem(ELEMENT_TYPES.find((t) => t.id === "slab_on_ground"));
+  item.qtys[rateKey("CONCRETE", "Blinding concrete", "m3")] = 5; item.qtys[rateKey("CONCRETE", "32 mpa", "m3")] = 11;
+  item.tasks.find((t) => /blinding/i.test(t.name)).qtys.concreter_day = 2;
+  const on = computeElementCost(item, rates, "both");
+  assert.ok(blindingIncluded(item) && on.blindingIncluded && on.excludedBlinding === 0);
+  assert.equal(on.concreteQty, 16, "blinding is poured concrete when added");
+  const offItem = { ...item, blindingIncluded: false };
+  const off = computeElementCost(offItem, rates, "both");
+  const blindingMaterial = 5 * rates[rateKey("CONCRETE", "Blinding concrete", "m3")].unitCost;
+  const crewRate = rates[rateKey("LABOUR", "Concrete Crew", "man-day")].unitCost;
+  assert.ok(off.total < on.total, "unticked = less money");
+  near(off.excludedBlinding, blindingMaterial + 2 * crewRate, "the material and the crew row are what is left out");
+  assert.equal(off.concreteQty, 11, "...and it is no longer poured volume");
+  assert.ok(!off.blindingIncluded);
+  assert.equal(labourQuantities(offItem, rates).blindingM3, 0, "the blinding row's Qty reads 0 while unticked");
+  assert.equal(labourQuantities(offItem, rates).pourM3, 11);
+  // the Holcim fees follow the poured volume: 16 m³ = 4 loads exactly (no cartage) vs 11 m³ = 1 m³ short
+  assert.equal(autoMinimumCartage(item, rates), null); assert.ok(autoMinimumCartage(offItem, rates) && autoMinimumCartage(offItem, rates).qty === 1);
+  assert.equal(offItem.qtys[rateKey("CONCRETE", "Blinding concrete", "m3")], 5, "the typed figure is never touched");
+});
 check("driveFiles helpers: a project's folder and attachments live on the quote (sync with it); attach is idempotent by Drive id; detach removes one", () => {
   const F = { id: "p1", name: "plan.pdf", kind: "pdf", mimeType: "application/pdf", size: 1200, modifiedTime: "2026-10-20T00:00:00Z", webViewLink: "https://drive.google.com/file/d/p1" };
   let q = { projectName: "12 Beach Road", items: [] };
@@ -1465,29 +1518,29 @@ check("Handover prefill: Grady's crew-sheet bands, blank cells only, recorded an
   const cell = (it, re, key) => (it.tasks.find((t) => re.test(t.name)) || { qtys: {} }).qtys[key];
   const r = q2.items[0], s2 = q2.items[1], sm = q2.items[2], pr = q2.items[3];
   assert.equal(cell(r, /site setup/i, "concreter_day"), 1);
-  assert.equal(cell(r, /excavate/i, "concreter_day"), 4); assert.equal(cell(r, /excavate/i, "excavator_day"), 1); assert.equal(cell(r, /excavate/i, "bobcat_day"), 1, "bobcat on a foundation");
+  assert.equal(cell(r, /excavat/i, "concreter_day"), 4); assert.equal(cell(r, /excavat/i, "excavator_day"), 1); assert.equal(cell(r, /excavat/i, "bobcat_day"), 1, "bobcat on a foundation");
   assert.equal(cell(r, /tie/i, "steelfixer_day"), 8, "steel crew: 1 + 2.3 × 2.97 t");
   assert.equal(cell(r, /pour/i, "concreter_day"), 9, "the typed pour figure is kept");
   assert.equal(cell(r, /pour/i, "pump_hr"), 8, "pump booked from 25 m³");
-  assert.equal(cell(r, /finish/i, "concreter_day"), 0); assert.equal(cell(r, /washout/i, "labourer_day"), 0);
-  assert.deepEqual(r.tasks.filter((t) => /Material D\+C|Boxing and Rebates/.test(t.name)).map((t) => [t.name, t.qtys.concreter_day]), [["Material D+C", 2], ["Boxing and Rebates", 2]], "spare rows renamed the way he names them");
+  assert.equal(cell(r, /finish/i, "concreter_day"), 0); assert.equal(cell(r, /washout|tidy/i, "labourer_day"), 0);
+  assert.deepEqual(r.tasks.filter((t) => /Delivery of materials|^Boxing$/.test(t.name)).map((t) => [t.name, t.qtys.concreter_day]), [["Delivery of materials (yard works)", 2], ["Boxing", 2]], "spare rows renamed the way he names them");
   assert.equal(s2.steelMode, "subcontract"); assert.equal(cell(s2, /tie/i, "steelfixer_day"), 0); assert.equal(s2.qtys[HO.STEEL_FIX_KEY], 7.01, "suspended: tonnes on the Steel fix quote row");
-  assert.equal(cell(s2, /excavate/i, "concreter_day"), undefined, "a suspended slab is never dug"); assert.equal(cell(s2, /pour/i, "pump_hr"), 8);
-  assert.ok(s2.tasks.some((t) => t.name === "Tool D+C" && t.qtys.concreter_day === 1));
+  assert.equal(cell(s2, /excavat/i, "concreter_day"), undefined, "a suspended slab is never dug"); assert.equal(cell(s2, /pour/i, "pump_hr"), 8);
+  assert.ok(s2.tasks.some((t) => t.name === "Collection of materials" && t.qtys.concreter_day === 1));
   assert.equal(sm.steelMode, "concreters"); assert.equal(cell(sm, /tie/i, "concreter_day"), 3); assert.equal(cell(sm, /tie/i, "steelfixer_day"), 0);
-  assert.equal(cell(sm, /excavate/i, "bobcat_day"), undefined, "no bobcat on a substructure slab");
+  assert.equal(cell(sm, /excavat/i, "bobcat_day"), undefined, "no bobcat on a substructure slab");
   assert.deepEqual(pr.tasks.map((t) => t.qtys), prelim.tasks.map((t) => t.qtys), "a prelim with no concrete is left alone");
-  assert.match(HO.handoverSummary(q2.handover), /crew cells and 6 extra rows on 3 elements, steel fixing subcontracted on 1/);
+  assert.match(HO.handoverSummary(q2.handover), /crew cells and 0 extra rows on 3 elements, steel fixing subcontracted on 1/); // Grady's sheet carries the delivery / boxing / collection rows itself — nothing is renamed
   // the tint follows the live value: a cell retyped is no longer "prefilled"
-  const tint = HO.prefilledCells(q2.handover, r); assert.ok(tint[r.tasks.find((t) => /excavate/i.test(t.name)).id].excavator_day);
-  const retyped = { ...r, tasks: r.tasks.map((t) => (/excavate/i.test(t.name) ? { ...t, qtys: { ...t.qtys, excavator_day: 2 } } : t)) };
-  assert.ok(!HO.prefilledCells(q2.handover, retyped)[r.tasks.find((t) => /excavate/i.test(t.name)).id].excavator_day);
+  const tint = HO.prefilledCells(q2.handover, r); assert.ok(tint[r.tasks.find((t) => /excavat/i.test(t.name)).id].excavator_day);
+  const retyped = { ...r, tasks: r.tasks.map((t) => (/excavat/i.test(t.name) ? { ...t, qtys: { ...t.qtys, excavator_day: 2 } } : t)) };
+  assert.ok(!HO.prefilledCells(q2.handover, retyped)[r.tasks.find((t) => /excavat/i.test(t.name)).id].excavator_day);
   // undo clears only untouched prefilled cells
   const edited = { ...q2, items: q2.items.map((it, i) => (i === 0 ? retyped : it)) };
   const u = HO.undoHandover(edited);
-  assert.equal(cell(u.items[0], /excavate/i, "excavator_day"), 2, "the changed cell stays"); assert.equal(cell(u.items[0], /excavate/i, "concreter_day"), undefined, "the untouched one is cleared");
+  assert.equal(cell(u.items[0], /excavat/i, "excavator_day"), 2, "the changed cell stays"); assert.equal(cell(u.items[0], /excavat/i, "concreter_day"), undefined, "the untouched one is cleared");
   assert.equal(cell(u.items[0], /pour/i, "concreter_day"), 9); assert.equal(u.items[1].qtys[HO.STEEL_FIX_KEY], undefined); assert.ok(u.handover.undoneAt);
-  assert.ok(!u.items[0].tasks.some((t) => t.name === "Material D+C"), "renamed spare rows go back to spare");
+  assert.ok(u.items[0].tasks.every((t) => !/Delivery of materials/.test(t.name) || t.qtys.concreter_day === undefined || t.qtys.concreter_day === ""), "the delivery row's prefilled cell is cleared (the row is Grady's own, it stays)");
   // the per-element steel switch overwrites the tie row deliberately, and back
   const sub = HO.applySteelMode(r, rates, "subcontract"); assert.equal(cell(sub, /tie/i, "steelfixer_day"), 0); assert.equal(sub.qtys[HO.STEEL_FIX_KEY], 2.97);
   const crew = HO.applySteelMode(sub, rates, "crew"); assert.equal(cell(crew, /tie/i, "steelfixer_day"), 8); assert.equal(crew.qtys[HO.STEEL_FIX_KEY], undefined, "an unpriced memo tonnage leaves with the mode");
@@ -1513,25 +1566,25 @@ check("LIVE handover prefill (Grady, 13 Oct 2026): the crew sheets follow the qu
   raft.qtys[conc] = 10; raft.qtys[bar] = 500;
   const q1 = HO.liveHandover({ items: [raft], status: "Estimating" }, rates, "t1");
   const r1 = q1.items[0];
-  assert.equal(cell(r1, /excavate/i, "concreter_day"), 3); assert.equal(cell(r1, /pour/i, "concreter_day"), 5); assert.equal(cell(r1, /pour/i, "pump_hr"), undefined, "no pump under 25 m³"); assert.equal(r1.steelMode, "concreters");
-  assert.deepEqual(r1.tasks.filter((t) => /D\+C|Boxing/.test(t.name)).map((t) => [t.name, t.qtys.concreter_day]), [["Material D+C", 2], ["Boxing and Rebates", 2]]);
+  assert.equal(cell(r1, /excavat/i, "concreter_day"), 3); assert.equal(cell(r1, /pour/i, "concreter_day"), 5); assert.equal(cell(r1, /pour/i, "pump_hr"), undefined, "no pump under 25 m³"); assert.equal(r1.steelMode, "concreters");
+  assert.deepEqual(r1.tasks.filter((t) => /Delivery of materials|^Boxing$/.test(t.name)).map((t) => [t.name, t.qtys.concreter_day]), [["Delivery of materials (yard works)", 2], ["Boxing", 2]]);
   assert.ok(q1.handover.live && q1.handover.at === "t1" && q1.handover.updatedAt === "t1");
   assert.strictEqual(HO.liveHandover(q1, rates, "t2"), q1, "a second run with nothing changed returns the same quote (no loop)");
   // the quantity grows: the held cells follow, the pump appears, the record moves
   const q3 = HO.liveHandover({ ...q1, items: q1.items.map((it) => ({ ...it, qtys: { ...it.qtys, [conc]: 60 } })) }, rates, "t3");
   const r3 = q3.items[0];
-  assert.equal(cell(r3, /excavate/i, "concreter_day"), 5); assert.equal(cell(r3, /pour/i, "concreter_day"), 8); assert.equal(cell(r3, /pour/i, "pump_hr"), 8); assert.equal(q3.handover.at, "t1"); assert.equal(q3.handover.updatedAt, "t3");
+  assert.equal(cell(r3, /excavat/i, "concreter_day"), 5); assert.equal(cell(r3, /pour/i, "concreter_day"), 8); assert.equal(cell(r3, /pour/i, "pump_hr"), 8); assert.equal(q3.handover.at, "t1"); assert.equal(q3.handover.updatedAt, "t3");
   assert.ok(HO.prefilledCells(q3.handover, r3)[r3.tasks.find((t) => /pour/i.test(t.name)).id].concreter_day, "the moved cell still reads prefilled");
   // retype the pour, clear the excavate concreters
-  const q5 = { ...q3, items: q3.items.map((it) => ({ ...it, tasks: it.tasks.map((t) => (/pour/i.test(t.name) ? { ...t, qtys: { ...t.qtys, concreter_day: 12 } } : /excavate/i.test(t.name) ? { ...t, qtys: { ...t.qtys, concreter_day: "" } } : t)) })) };
+  const q5 = { ...q3, items: q3.items.map((it) => ({ ...it, tasks: it.tasks.map((t) => (/pour/i.test(t.name) ? { ...t, qtys: { ...t.qtys, concreter_day: 12 } } : /excavat/i.test(t.name) ? { ...t, qtys: { ...t.qtys, concreter_day: "" } } : t)) })) };
   const q6 = HO.liveHandover(q5, rates, "t4"); const r6 = q6.items[0];
-  assert.equal(cell(r6, /pour/i, "concreter_day"), 12, "retyped — theirs"); assert.equal(cell(r6, /excavate/i, "concreter_day"), "", "cleared — stays clear"); assert.equal(q6.handover.cells.filter((c) => c.cleared).length, 1);
+  assert.equal(cell(r6, /pour/i, "concreter_day"), 12, "retyped — theirs"); assert.equal(cell(r6, /excavat/i, "concreter_day"), "", "cleared — stays clear"); assert.equal(q6.handover.cells.filter((c) => c.cleared).length, 1);
   assert.ok(!HO.prefilledCells(q6.handover, r6)[r6.tasks.find((t) => /pour/i.test(t.name)).id].concreter_day, "a retyped cell is no longer tinted");
   const q7 = HO.liveHandover({ ...q6, items: q6.items.map((it) => ({ ...it, qtys: { ...it.qtys, [conc]: 80 } })) }, rates, "t5"); const r7 = q7.items[0];
-  assert.equal(cell(r7, /pour/i, "concreter_day"), 12, "a later quantity change never touches the retyped cell"); assert.equal(cell(r7, /excavate/i, "concreter_day"), "", "…or refills the cleared one"); assert.equal(cell(r7, /excavate/i, "excavator_day"), 2, "the other cells still follow");
+  assert.equal(cell(r7, /pour/i, "concreter_day"), 12, "a later quantity change never touches the retyped cell"); assert.equal(cell(r7, /excavat/i, "concreter_day"), "", "…or refills the cleared one"); assert.equal(cell(r7, /excavat/i, "excavator_day"), 2, "the other cells still follow");
   // the concrete removed: what the pass wrote is cleared again, spare rows revert, the retyped cell stays
   const q8 = HO.liveHandover({ ...q7, items: q7.items.map((it) => ({ ...it, qtys: { ...it.qtys, [conc]: "", [bar]: "" } })) }, rates, "t6"); const r8 = q8.items[0];
-  assert.equal(cell(r8, /pour/i, "concreter_day"), 12); assert.equal(cell(r8, /excavate/i, "excavator_day"), undefined); assert.equal(r8.tasks.filter((t) => /D\+C|Boxing/.test(t.name)).length, 0); assert.equal(q8.handover.cells.filter((c) => !c.cleared).length, 0);
+  assert.equal(cell(r8, /pour/i, "concreter_day"), 12); assert.equal(cell(r8, /excavat/i, "excavator_day"), undefined); assert.ok(r8.tasks.filter((t) => /Delivery of materials|^Boxing$/.test(t.name)).every((t) => t.qtys.concreter_day === undefined || t.qtys.concreter_day === ""), "the delivery and boxing rows stay (Grady's own) with their prefilled cells cleared"); assert.equal(q8.handover.cells.filter((c) => !c.cleared).length, 0);
   // undo switches the live prefill off; where it runs
   const u = HO.undoHandover(q7); assert.equal(u.handoverLive, false); assert.ok(u.handover.undoneAt);
   assert.ok(HO.liveHandoverApplies({ status: "Estimating" }) && HO.liveHandoverApplies({ status: "Queued" }) && HO.liveHandoverApplies({}) && HO.liveHandoverApplies({ status: "Completed Estimating", completedAt: "2026-10-13" }));
@@ -2091,7 +2144,7 @@ check("a kg/m³ rate drives steel-fixing crew days just like a bar schedule", ()
   near(computeElementReinforcementTonnes(item, rates), 2, "the rate's tonnage is counted");
   assert.equal(labourQuantities(item, rates).reinfTonnes, 2, "and reaches the labour engine");
   // 2 t at the 1 t/crew-day production rate = 2 crew-days on the steel row
-  const tie = item.tasks.find((t) => /tie (steel|reinforcement)/i.test(t.name));
+  const tie = item.tasks.find((t) => /tie (steel|reinforcement|reo)/i.test(t.name));
   assert.ok(tie, "the crew sheet has a steel-fixing row");
   assert.equal(taskRowMeta(tie.name, labourQuantities(item, rates)).autoQty, 2, "its Qty prefills to 2 t");
   const sug = suggestedLabourPrefill(item, rates)[tie.id];

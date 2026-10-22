@@ -53,8 +53,11 @@ const NO_DIG = new Set(["VERTICAL STRUCTURE", "SUSPENDED STRUCTURE", "ROOF", "PR
 const BOBCAT_CATS = new Set(["FOUNDATIONS", "RETENTION & TEMPORARY WORKS", "EARTHWORKS"]);
 
 const SETUP = /site setup|mobilis/i;
-const EXCAVATE = /excavate/i;
-const TIE = /tie (steel|reinforcement)/i;
+const EXCAVATE = /excavat/i;
+const TIE = /tie (steel|reinforcement|reo)/i;
+const MATERIAL_ROW = /delivery of materials|material d\+c/i;
+const BOXING_ROW = /^boxing/i;
+const TOOL_ROW = /collection of materials|tool d\+c/i;
 const POUR = /pour/i;
 const FINISH = /finish concrete/i;
 const WASHOUT = /washout|tidy|clean/i;
@@ -171,11 +174,15 @@ export function handoverPlan(items, rates, prev) {
     // Spare rows → the rows Grady always adds
     const spares = tasks.filter((t) => (SPARE.test(t.name || "") && isBlankRow(t)) || heldRow(item, t)); // a blank spare row, or one the pass named before and nobody touched
     const groundWork = !SUSPENDED.has(item.category) && (lq.formworkM2 > 0 || ["FOUNDATIONS", "SUBSTRUCTURE", "EXTERNAL & LANDSCAPE CONCRETE"].includes(item.category));
-    const wanted = [["Material D+C", "ho_material_dc_days"], groundWork ? ["Boxing and Rebates", "ho_boxing_days"] : ["Tool D+C", "ho_tool_dc_days"]];
-    wanted.forEach(([name, key], n) => {
+    const wanted = [["Delivery of materials (yard works)", "ho_material_dc_days", MATERIAL_ROW], groundWork ? ["Boxing", "ho_boxing_days", BOXING_ROW] : ["Collection of materials", "ho_tool_dc_days", TOOL_ROW]];
+    let spareIdx = 0;
+    wanted.forEach(([name, key, re], n) => {
       const days = handoverRate(rates, key);
       if (!(days > 0)) return;
-      const spare = spares[n];
+      // Grady's sheet already carries the row (22 Oct 2026): write its cell, never rename a spare
+      const own = tasks.find((t) => re.test(String(t.name || "").trim()));
+      if (own) { put(own, "concreter_day", days); return; }
+      const spare = spares[spareIdx++];
       if (spare) { const pr = prevRow(item.id, spare.id); plan.rows.push({ itemId: item.id, taskId: spare.id, from: pr ? pr.from : spare.name, to: name, key: "concreter_day", value: days }); }
       else if (n === 0) plan.rows.push({ itemId: item.id, taskId: null, from: null, to: name, key: "concreter_day", value: days }); // no spare row left: add the one row he never skips
     });

@@ -275,6 +275,45 @@ safety net silently. Keep all cost arithmetic in `lib/costing.js`.
   concrete/structural element Gradcon might meet across any building or
   civil project, not curated per job (see rule 1).
 
+- **The crew sheet is in Grady's words** (22 Oct 2026: "add and use Grady
+  specific tones on the uploaded labour sections of each line item"):
+  `CREW_SHEET_TASKS` / `GRADY_CREW_TASKS` in `catalog.js` — Site setup,
+  Delivery of materials (yard works), Excavation & prep base, Remove soil,
+  Blinding concrete, Tie reo, Pour concrete, Finish concrete surfaces, Site
+  clean and tidy, Stripping (formwork), Collection of materials, Yard works,
+  Boxing, one spare row — on every element but the preliminaries. Every Qty
+  PREFILLS from the element's own fields through `taskRowMeta` (its `source`
+  names the field on the row's hover) and stays editable: excavation and
+  soil removal from the OTHER ALLOWANCES lines, blinding from the CONCRETE
+  "Blinding concrete" row, tie reo from the tonnage, the pour from the poured
+  m³ LESS the blinding (`lq.pourM3`, only while the sheet carries a blinding
+  row), finishing from the mesh area, stripping from the formed m², **Boxing
+  from everything entered on the FORMWORK band** — `lq.formworkMeasure` = the
+  m² rows + the lineal-metre rows, unit "m²/lm". `TASK_MATCHERS` holds the
+  name tests. The handover pass writes its delivery / boxing / collection
+  man-days INTO those rows (`MATERIAL_ROW` / `BOXING_ROW` / `TOOL_ROW` in
+  `handover.js`) and renames a spare row only when the sheet lacks them.
+  **An element saved with the earlier names is brought onto the sheet once**
+  (`upgradeCrewTasks`, `CREW_TASKS_VER` 3, run by `ElementCard` on mount):
+  `LEGACY_TASK_RENAMES` renames in place — ids and every cell kept, so the
+  handover record and typed figures survive — the missing rows are added and
+  the sheet is put in Grady's order (his rows, then any row the estimator
+  named, the spare rows last); the preliminaries sheet is left alone.
+  **Blinding is decided on the crew sheet** ("we should be able to click, add
+  blinding or not … if not checked to be added, both blinding material and
+  labour should not form part of the overall amounts"): the Blinding concrete
+  row carries the "Blinding added" tick (`item.blindingIncluded`, undefined /
+  true = in, `false` = out; `blindingIncluded(item)` is the ONE test,
+  `isBlindingProduct(cat, p)` the ONE reading of the catalog row). Unticked,
+  `computeElementCost` leaves out the blinding material row, the blinding crew
+  row's cells and its share of the Holcim fees (`pouredVolume` skips it), the
+  row's Qty reads 0 and the card states `excludedBlinding` ("Blinding not
+  added: $…"); the CONCRETE band, the print report and the exports mark the
+  row "not added (crew sheet)" at $0. The typed figures are never touched, so
+  ticking again restores the money exactly. `verify.mjs` covers the names,
+  every prefill source, the upgrade, the handover rows and the tick;
+  `test-crew-sheet.mjs` proves the sheet, the override, the tick and the
+  upgrade in the browser.
 - **Crew-sheet rows are matched by NAME** (`taskRowMeta` in `costing.js`):
   a row whose name says "excavate" draws its Qty from the element's
   **Excavation** (m³) line, a row saying "spoil" / "soil removal" / "cart

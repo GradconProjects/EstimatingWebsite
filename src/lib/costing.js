@@ -5,7 +5,7 @@
  *
  * Read CLAUDE.md → "Costing rules" before editing computeElementCost.
  */
-import { FULL_CATALOG, RESOURCE_COLS, LABOUR_TEMPLATES, GST_RATE, PRODUCTION_RATES, DEFAULT_MARGIN, MARGIN_STEPS, MIN_CARTAGE_THRESHOLD_M3, TRUCK_LOAD_M3, SPECIALIST_CONCRETE_KEY } from "../data/catalog.js";
+import { FULL_CATALOG, RESOURCE_COLS, LABOUR_TEMPLATES, GST_RATE, PRODUCTION_RATES, DEFAULT_MARGIN, MARGIN_STEPS, MIN_CARTAGE_THRESHOLD_M3, TRUCK_LOAD_M3, SPECIALIST_CONCRETE_KEY, ELEMENT_TYPES, CREW_TASKS_VER, LEGACY_TASK_RENAMES, GRADY_CREW_TASKS } from "../data/catalog.js";
 
 // Shared with portal-shell.html's Settings modal (same localStorage key, same
 // origin — the portal embeds this app via a blob: URL created from its own
@@ -189,6 +189,7 @@ function pouredVolume(item) {
   let vol = 0;
   cat.products.forEach((p) => {
     if (CONCRETE_FEE_MATCH(p.name)) return;
+    if (isBlindingProduct(cat, p) && !blindingIncluded(item)) return; // left out on the crew sheet — no cartage, surcharge or levy on it
     vol += Number(item.qtys[rateKey(cat.key, p.name, p.unit)]) || 0;
   });
   return vol;
@@ -463,6 +464,8 @@ export function computeElementCost(item, rates, projectScope) {
   const categoryTotals = {};
   const excludedTotals = {};
   const scope = elementScope(item, projectScope);
+  const blindingIn = blindingIncluded(item);
+  let excludedBlinding = 0; // the blinding material and crew money left out by the tick
   let materialsTotal = 0;
   let excludedMaterials = 0;
   let concreteQty = 0;
@@ -483,6 +486,7 @@ export function computeElementCost(item, rates, projectScope) {
       if (qty > 0) {
         const rate = rowRate(item, rates, qKey, { unitCost: p.unitCost ?? 0, unitWeight: p.unitWeight, sheetArea: p.sheetArea });
         const rowTotal = computeRowTotal(cat, rate, qty, ctx);
+        if (isBlindingProduct(cat, p) && !blindingIn) { excludedBlinding += rowTotal; return; } // blinding left out on the crew sheet: typed, not charged
         catTotal += rowTotal;
         if (cat.key === "CONCRETE" && !CONCRETE_CHARGE_MATCH(p.name)) concreteQty += qty; // the delivery fees are $/m³ charges, not poured volume
         if (cat.key === SPECIALIST_CONCRETE_KEY && p.unit === "m3" && !SPECIALIST_FEE_MATCH(p.name, p.unit)) concreteQty += qty; // VicMix mix is poured concrete too
@@ -525,11 +529,14 @@ export function computeElementCost(item, rates, projectScope) {
   const resourceTotals = {};
   const resourceManDays = {};
   RESOURCE_COLS.forEach((res) => { resourceTotals[res.key] = 0; resourceManDays[res.key] = 0; });
+  let excludedBlindingLabour = 0;
   item.tasks.forEach((task) => {
+    const blindingRowOut = !blindingIn && BLINDING_TASK_MATCH.test(task.name || "");
     RESOURCE_COLS.forEach((res) => {
       const manual = task.qtys[res.key];
       const eff = manual !== undefined && manual !== "" ? Number(manual) || 0
         : (autoQtys && autoQtys[task.id] && autoQtys[task.id][res.key]) || 0;
+      if (blindingRowOut) { excludedBlindingLabour += (res.crew || res.key === "pump_m3" ? eff : Math.ceil(eff - 1e-9)) * taskCrewMen(task, res) * labourResourceRate(rates, res); return; }
       // Crew columns keep their decimals (0.5 crew-days is half a day's
       // crew, not a booked whole crew — the whole-crew rounding is gone);
       // plant days/hours still book whole, pump m³ is a measured volume.
@@ -565,6 +572,8 @@ export function computeElementCost(item, rates, projectScope) {
     resourceCosts,
     labourTotal,
     excludedLabour,
+    excludedBlinding: excludedBlinding + excludedBlindingLabour, // the blinding money left out by the crew sheet's tick (material + crew)
+    blindingIncluded: blindingIn,
     additionalTotal,
     concreteQty,
     total: materialsTotal + labourTotal + additionalTotal,
@@ -608,10 +617,13 @@ export function computeElementReinforcementTonnes(item, rates) {
 }
 
 const CONCRETE_POUR_TASK_MATCH = /pour/i;                     // "Pour / place / vibrate concrete", legacy "Pour concrete (pump)"
-const STEEL_FIXING_TASK_MATCH = /tie (steel|reinforcement)/i; // "Tie reinforcement", legacy "Tie steel"
+const STEEL_FIXING_TASK_MATCH = /tie (steel|reinforcement|reo)/i; // "Tie reo", legacy "Tie reinforcement" / "Tie steel"
 const FINISH_TASK_MATCH = /finish concrete/i;                 // "Finish concrete surfaces"
-const EXCAVATE_TASK_MATCH = /excavate/i;                      // "Excavate & prepare base"
-const SPOIL_TASK_MATCH = /spoil|soil removal|cart away|cartage/i; // "Remove / cart away spoil" (a renamed additional row matches too)
+const EXCAVATE_TASK_MATCH = /excavat/i;                       // "Excavation & prep base", legacy "Excavate & prepare base"
+const SPOIL_TASK_MATCH = /spoil|soil removal|remove soil|cart away|cartage/i; // "Remove soil", legacy "Remove / cart away spoil"
+const BLINDING_TASK_MATCH = /blinding/i;                      // "Blinding concrete" — behind the element's "add blinding" tick
+const BOXING_TASK_MATCH = /boxing/i;                          // "Boxing" — everything entered on the FORMWORK band
+export const TASK_MATCHERS = { pour: CONCRETE_POUR_TASK_MATCH, steel: STEEL_FIXING_TASK_MATCH, finish: FINISH_TASK_MATCH, excavate: EXCAVATE_TASK_MATCH, spoil: SPOIL_TASK_MATCH, blinding: BLINDING_TASK_MATCH, boxing: BOXING_TASK_MATCH };
 const FORMWORK_TASK_MATCH = /formwork|box out|prop & form/i;  // legacy per-type templates only
 const STRIP_TASK_MATCH = /^strip/i;
 const GENERAL_TASK_MATCH = /washout|tidy|clean|patch/i;       // "Washout / clean / tidy"
@@ -621,17 +633,33 @@ const GENERAL_TASK_MATCH = /washout|tidy|clean|patch/i;       // "Washout / clea
  * m² from the FORMWORK rows, finish m² from the mesh coverage entered
  * (mesh area ≈ finished slab surface). Pure qty scan — no costing — so the
  * labour engine can run inside computeElementCost without recursion. */
+/**
+ * Blinding is decided on the crew sheet (Grady, 22 Oct 2026: "for blinding,
+ * we should be able to click, add blinding or not … if not checked to be
+ * added, both blinding material and labour should not form part of the
+ * overall amounts"): `item.blindingIncluded` — undefined / true = the entered
+ * blinding is in (its material row, its crew row, its share of the Holcim
+ * fees), false = all of it is left out while the quantities stay typed.
+ * `blindingIncluded(item)` is the ONE test; `isBlindingProduct(cat, p)` the
+ * ONE reading of which catalog row is the blinding.
+ */
+export const blindingIncluded = (item) => !(item && item.blindingIncluded === false);
+export const isBlindingProduct = (cat, p) => !!(cat && p && cat.key === "CONCRETE" && /^blinding/i.test(p.name));
+
 export function labourQuantities(item, rates) {
-  let concreteM3 = 0, formworkM2 = 0, finishM2 = 0, excavationM3 = 0, soilRemovalM3 = 0;
+  let concreteM3 = 0, formworkM2 = 0, formworkLm = 0, finishM2 = 0, excavationM3 = 0, soilRemovalM3 = 0, blindingM3 = 0;
+  const blindingIn = blindingIncluded(item);
   FULL_CATALOG.forEach((cat) => {
     if (cat.key !== "CONCRETE" && cat.key !== "FORMWORK" && cat.key !== "SQUARE MESH" && cat.key !== "OTHER ALLOWANCES" && cat.key !== SPECIALIST_CONCRETE_KEY) return;
     if (!categoryAppliesTo(cat, item)) return;
     cat.products.forEach((p) => {
       const qty = Number(item.qtys[rateKey(cat.key, p.name, p.unit)]) || 0;
       if (qty <= 0) return;
-      if (cat.key === "CONCRETE" && !SURCHARGE_PRODUCT_MATCH.test(p.name)) concreteM3 += qty; // the surcharge row is a fee, not poured volume
+      if (isBlindingProduct(cat, p)) { if (blindingIn) { blindingM3 += qty; concreteM3 += qty; } }
+      else if (cat.key === "CONCRETE" && !SURCHARGE_PRODUCT_MATCH.test(p.name)) concreteM3 += qty; // the surcharge row is a fee, not poured volume
       else if (cat.key === SPECIALIST_CONCRETE_KEY) { if (p.unit === "m3" && !SPECIALIST_FEE_MATCH(p.name, p.unit)) concreteM3 += qty; } // VicMix mix pours like any concrete
       else if (cat.key === "FORMWORK" && p.unit === "m2") formworkM2 += qty;
+      else if (cat.key === "FORMWORK" && p.unit === "m") formworkLm += qty;
       else if (cat.key === "SQUARE MESH") finishM2 += qty;
       else if (cat.key === "OTHER ALLOWANCES" && /^excavation$/i.test(p.name)) excavationM3 += qty;   // bank m³ dug → the Excavate row
       else if (cat.key === "OTHER ALLOWANCES" && /soil removal/i.test(p.name)) soilRemovalM3 += qty;   // loose m³ carted → the spoil row
@@ -641,7 +669,39 @@ export function labourQuantities(item, rates) {
   // quote entered before the Excavation line existed only has Soil removal,
   // so the Excavate row falls back to that volume rather than going blank.
   if (excavationM3 <= 0) excavationM3 = soilRemovalM3;
-  return { concreteM3, formworkM2, finishM2, excavationM3, soilRemovalM3, reinfTonnes: computeElementReinforcementTonnes(item, rates) };
+  // the pour row's m³: the blinding has its own crew row when the sheet carries one
+  const hasBlindingRow = (item.tasks || []).some((t) => BLINDING_TASK_MATCH.test(t.name || ""));
+  const pourM3 = round2(Math.max(0, concreteM3 - (hasBlindingRow ? blindingM3 : 0)));
+  return { concreteM3, pourM3, blindingM3, formworkM2, formworkLm, formworkMeasure: round2(formworkM2 + formworkLm), finishM2, excavationM3, soilRemovalM3, reinfTonnes: computeElementReinforcementTonnes(item, rates) };
+}
+
+/**
+ * Bring an element's crew sheet onto Grady's task names (CREW_TASKS_VER 3):
+ * the earlier names are renamed in place (ids and every cell kept — the
+ * handover record and typed figures survive), the rows the new sheet has and
+ * this element lacks are added before its spare rows, the preliminaries
+ * sheet is left alone. Returns the SAME item when nothing moves.
+ */
+export function upgradeCrewTasks(item) {
+  if (!item || item.tasksVer >= CREW_TASKS_VER) return item;
+  const type = ELEMENT_TYPES.find((t) => t.id === item.typeId);
+  const prelim = (type && type.labour === "prelims") || (item.tasks || []).some((t) => /traffic management/i.test(t.name || ""));
+  if (prelim) return { ...item, tasksVer: CREW_TASKS_VER };
+  let tasks = (item.tasks || []).map((t) => {
+    const hit = LEGACY_TASK_RENAMES.find(([re]) => re.test(String(t.name || "").trim()));
+    return hit ? { ...t, name: hit[1] } : t;
+  });
+  const canon = (t) => GRADY_CREW_TASKS.findIndex((n) => n.toLowerCase() === String(t.name || "").trim().toLowerCase() && !/^additional labour/i.test(n));
+  const has = (name) => tasks.some((t) => String(t.name || "").trim().toLowerCase() === name.toLowerCase());
+  const missing = GRADY_CREW_TASKS.filter((name) => !/^additional labour/i.test(name) && !has(name)).map((name) => ({ id: uid(), name, qtys: {} }));
+  // Grady's order: his rows in the canonical sequence, then any row the
+  // estimator named themselves (original order), the spare rows last
+  const all = [...tasks, ...missing];
+  const known = all.filter((t) => canon(t) >= 0).sort((a, b) => canon(a) - canon(b));
+  const custom = all.filter((t) => canon(t) < 0 && !/^additional labour \/ plant$/i.test(String(t.name || "").trim()));
+  const spares = all.filter((t) => /^additional labour \/ plant$/i.test(String(t.name || "").trim()));
+  tasks = [...known, ...custom, ...spares];
+  return { ...item, tasksVer: CREW_TASKS_VER, tasks };
 }
 
 /**
@@ -706,12 +766,15 @@ export function computeProjectUnitRates(items, rates, projectScope) {
  * draws on the element's "Excavation" (m³) line and the spoil row on its
  * "Soil removal" (m³) line — two rows, two quantities, never merged. */
 export function taskRowMeta(taskName, lq) {
-  if (CONCRETE_POUR_TASK_MATCH.test(taskName)) return { unit: "m³", autoQty: lq ? lq.concreteM3 : undefined };
-  if (STEEL_FIXING_TASK_MATCH.test(taskName)) return { unit: "t", autoQty: lq ? round2(lq.reinfTonnes) : undefined };
-  if (FINISH_TASK_MATCH.test(taskName)) return { unit: "m²", autoQty: lq ? lq.finishM2 : undefined };
-  if (EXCAVATE_TASK_MATCH.test(taskName)) return { unit: "m³", autoQty: lq ? lq.excavationM3 : undefined };
-  if (SPOIL_TASK_MATCH.test(taskName)) return { unit: "m³", autoQty: lq ? lq.soilRemovalM3 : undefined };
-  if (FORMWORK_TASK_MATCH.test(taskName) && !STRIP_TASK_MATCH.test(taskName)) return { unit: "m²", autoQty: lq ? lq.formworkM2 : undefined };
+  if (BLINDING_TASK_MATCH.test(taskName)) return { unit: "m³", autoQty: lq ? lq.blindingM3 : undefined, source: "the CONCRETE blinding row" };
+  if (BOXING_TASK_MATCH.test(taskName)) return { unit: "m²/lm", autoQty: lq ? lq.formworkMeasure : undefined, source: "everything entered on the FORMWORK band (m² + lineal metres)" };
+  if (CONCRETE_POUR_TASK_MATCH.test(taskName)) return { unit: "m³", autoQty: lq ? (lq.pourM3 != null ? lq.pourM3 : lq.concreteM3) : undefined, source: "the poured concrete (less the blinding, which has its own row)" };
+  if (STEEL_FIXING_TASK_MATCH.test(taskName)) return { unit: "t", autoQty: lq ? round2(lq.reinfTonnes) : undefined, source: "the reinforcement tonnage" };
+  if (FINISH_TASK_MATCH.test(taskName)) return { unit: "m²", autoQty: lq ? lq.finishM2 : undefined, source: "the mesh area" };
+  if (EXCAVATE_TASK_MATCH.test(taskName)) return { unit: "m³", autoQty: lq ? lq.excavationM3 : undefined, source: "the Excavation line" };
+  if (SPOIL_TASK_MATCH.test(taskName)) return { unit: "m³", autoQty: lq ? lq.soilRemovalM3 : undefined, source: "the Soil removal line" };
+  if (STRIP_TASK_MATCH.test(taskName)) return { unit: "m²", autoQty: lq ? lq.formworkM2 : undefined, source: "the formed m²" };
+  if (FORMWORK_TASK_MATCH.test(taskName)) return { unit: "m²", autoQty: lq ? lq.formworkM2 : undefined, source: "the formed m²" };
   return { unit: "", autoQty: undefined };
 }
 
@@ -796,7 +859,9 @@ export function autoLabourQtys(item, rates) {
     const meta = taskRowMeta(task.name, lq);
     // the row's driving quantity: a typed Qty overrides the drawn-in one
     const q = task.qty !== undefined && task.qty !== "" ? Number(task.qty) || 0 : (meta.autoQty || 0);
-    if (CONCRETE_POUR_TASK_MATCH.test(task.name)) {
+    if (BLINDING_TASK_MATCH.test(task.name)) {
+      put(task, "concreter_day", crewDays(q, pourM3Block)); // a blinding pour books concreters like any pour; no pump
+    } else if (CONCRETE_POUR_TASK_MATCH.test(task.name)) {
       // legacy templates had no separate finish row — finishing rode on the pour task
       put(task, "concreter_day", crewDays(q, pourM3Block) + (hasFinishTask ? 0 : crewDays(lq.finishM2, finishM2Block)));
       if (q > 0) {
