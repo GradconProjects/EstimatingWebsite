@@ -19,6 +19,8 @@ import { NOTICE_IDS, noticeSig, isNoticeCleared, clearNotice, restoreNotices, cl
 import { ClearNoticeButton } from "./components/atoms.jsx";
 import { signedInUser as portalUser } from "./lib/quoteVersions.js";
 import DriveFilesDrawer from "./components/DriveFilesDrawer.jsx";
+import TenderChecklist, { TenderChecklistButton } from "./components/TenderChecklist.jsx";
+import { checklistPatch } from "./lib/tenderChecklist.js";
 import { driveFiles } from "./lib/driveFiles.js";
 import RateValidityBanner from "./components/RateValidityBanner.jsx";
 import { buildQuoteExcelHtml, quoteExcelFilename, buildQuoteCsv } from "./lib/exportQuote.js";
@@ -642,6 +644,7 @@ function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, rate
   // same drawer as a picker for an element card's markups — `pickDriveFile`
   // resolves with the copied file once "Use" is pressed, null when closed.
   const [drive, setDrive] = useState(null);   // {mode, accept, resolve}
+  const [checklistOpen, setChecklistOpen] = useState(false); // the tender workflow checklist — rolled up on every open (lib/tenderChecklist.js)
   // Rates Library changes this project still has to decide (lib/rateChanges.js), and
   // which element each one touches — the cards name theirs (Grady, 22 Oct 2026).
   const pendingChanges = useMemo(() => pendingRateChanges(quote, rateChanges, project.createdAt), [quote, rateChanges, project.createdAt]);
@@ -993,6 +996,7 @@ function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, rate
           >
             <Printer size={16} /> Internal Quote
           </button>
+          <TenderChecklistButton quote={quote} open={checklistOpen} onToggle={() => setChecklistOpen((o) => !o)} />
           <button
             onClick={() => setDrive({ mode: "attach" })}
             className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-900 hover:bg-blue-800 text-sm font-medium transition-colors flex-none"
@@ -1121,6 +1125,13 @@ function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, rate
       <div className="print:hidden max-w-7xl mx-auto px-4 pb-16 grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-4 items-start">
         <div className="space-y-3">
           <RateValidityBanner rates={liveRates} cleared={clearedNotices} onClear={clearNoticeOn} />
+          <TenderChecklist
+            quote={quote}
+            open={checklistOpen}
+            me={workUser(portalUser())}
+            onClose={() => setChecklistOpen(false)}
+            onChange={(id, change) => setQuote((q) => ({ ...q, ...checklistPatch(q, id, change, workUser(portalUser())) }))}
+          />
           {items.length > 0 && !isNoticeCleared(clearedNotices, NOTICE_IDS.trail, "trail") && (() => {
             // where you left off (lib/workTrail.js): done / total, the next element to work on, the last one touched
             const pr = workProgress(items); const me = workUser(portalUser());

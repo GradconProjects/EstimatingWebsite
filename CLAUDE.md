@@ -714,6 +714,34 @@ from what he hasnt clicked done on. this should be applied to line items".
 `test-work-trail.mjs` proves the stamps, both colours on both accounts,
 the tick, the rail, the Dashboard count and the jump.
 
+## The tender workflow checklist (one per project, rolled up)
+
+Grady, 22 Oct 2026, from his printed "Estimator Tender Workflow" sheet: "In
+each project always rolled up, I want to create a checklist form. After 05
+add another row … quote received. Both should have date. It should live on
+each project but shouldn't be imposing. Make the button prominent but not
+imposing." `src/lib/tenderChecklist.js` (pure, verify-covered):
+`TENDER_STEPS` is the ONE list — the printed eleven in order plus
+`rfq_received` ("05b Subcontractor quotes received") right after 05; the pen
+notes are in the details (02 "to Grady or the sender", 03 "set up the project
+folder", 05 "be clear on who — get the priority list"); 05 and 05b carry a
+"who" note. Ids never change (the ticks are stored under them).
+`quote.checklist[id] = {done, at, by, note}` — `checklistPatch(quote, id,
+change, by)` dates a tick TODAY (local "YYYY-MM-DD") unless a date is already
+there, keeps the date and note on an untick, and ignores an unknown id;
+`checklistProgress(quote)` → `{done, total, next, last, complete}`. Nothing
+here changes a figure. `TenderChecklist.jsx`: `TenderChecklistButton` in the
+editor header beside Files (`tender-checklist-button`, the count on it,
+accent-coloured once a step is ticked, emerald when all are) and the panel at
+the top of the editor's left column (`tender-checklist`), ROLLED UP on every
+open (`checklistOpen` state in `ProjectEditor`, never saved) — one row per
+step: tick, title, detail, date box (editable), the note where asked, "by
+<account>" when another account ticked it, and the three Key control points.
+The Dashboard's `summarizeQuote` carries `checklist` and the project name
+shows a "☑ N/12" chip (`dashboard-checklist`, next step on hover) once a step
+is ticked. `test-tender-checklist.mjs` proves the rolled-up open, the twelve
+rows, the dating, the note, the reload and the chip.
+
 ## Clearable notices (every banner has a ✕)
 
 Grady, 22 Oct 2026: "i should be able to clear these and other notifications

@@ -3278,6 +3278,38 @@ check("Project Geometry carries a COUNT: $/no. leads the benchmark rates, sums a
   check("Markups: a non-data URL never uploads (dataUrlToBlob throws, offload reports it as failed)", () => assertTrue(threw && r4.failed.length === 1 && r4.uploaded.length === 0));
 }
 
+{
+  const TC = await import("../src/lib/tenderChecklist.js");
+  check("Tender checklist: Grady's eleven steps in order, 'Subcontractor quotes received' right after 05, every tick dated, the Dashboard counts it", () => {
+    const ns = TC.TENDER_STEPS.map((s) => s.n);
+    assert.deepEqual(ns, ["01", "02", "03", "04", "05", "05b", "06", "07", "08", "09", "10", "11"]);
+    assert.equal(TC.TENDER_STEPS[5].id, "rfq_received");
+    assertTrue(TC.TENDER_STEPS[4].note && TC.TENDER_STEPS[5].note, "05 and 05b ask who");
+    assertTrue(/to Grady or the sender/.test(TC.TENDER_STEPS[1].detail) && /priority list/.test(TC.TENDER_STEPS[4].detail), "the pen notes are on the steps");
+    assert.equal(TC.KEY_CONTROL_POINTS.length, 3);
+    let q = { items: [] };
+    let pr = TC.checklistProgress(q);
+    assert.deepEqual([pr.done, pr.total, pr.next.id, pr.complete], [0, 12, "receive", false]);
+    // a tick is dated today and signed; the date can be moved; an untick keeps the date for a re-tick
+    q = { ...q, ...TC.checklistPatch(q, "rfq", { done: true }, "grady", "2026-10-22") };
+    assert.deepEqual(q.checklist.rfq, { done: true, at: "2026-10-22", by: "grady" });
+    q = { ...q, ...TC.checklistPatch(q, "rfq", { at: "2026-10-20" }) };
+    q = { ...q, ...TC.checklistPatch(q, "rfq", { note: "CFA piling — Pile Co; formwork — ABC" }) };
+    assert.equal(q.checklist.rfq.at, "2026-10-20");
+    q = { ...q, ...TC.checklistPatch(q, "rfq_received", { done: true }, "projects", "2026-10-23") };
+    pr = TC.checklistProgress(q);
+    assert.deepEqual([pr.done, pr.next.id, pr.last.id], [2, "receive", "rfq_received"]);
+    q = { ...q, ...TC.checklistPatch(q, "rfq", { done: false }) };
+    assert.deepEqual(q.checklist.rfq, { done: false, at: "2026-10-20", by: "grady", note: "CFA piling — Pile Co; formwork — ABC" });
+    assert.deepEqual(TC.checklistPatch(q, "nope", { done: true }), {});
+    // the wiring: the header button, the rolled-up panel, the Dashboard chip
+    const app = fs.readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
+    const dash = fs.readFileSync(new URL("../src/components/Dashboard.jsx", import.meta.url), "utf8");
+    assertTrue(/useState\(false\); \/\/ the tender workflow checklist/.test(app) && /<TenderChecklistButton quote=\{quote\}/.test(app) && /checklistPatch\(q, id, change, workUser\(portalUser\(\)\)\)/.test(app));
+    assertTrue(/checklist: checklistProgress\(quote\)/.test(dash) && /data-testid="dashboard-checklist"/.test(dash));
+  });
+}
+
 console.log(`\n${passed} check(s) passed.`);
 // ---------------------------------------------------------------------------
 // Version history for the chat (src/lib/quoteDiff.js, api/_versions.js, savedBy on every version) — Grady, 11 Oct 2026
