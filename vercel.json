@@ -11,6 +11,9 @@
     },
     "api/drive.js": {
       "maxDuration": 60
+    },
+    "api/industry-news.js": {
+      "maxDuration": 30
     }
   }
 }

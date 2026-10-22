@@ -1118,6 +1118,46 @@ account and "Dropbox soon" ride on its hover) and the weather chip drops the
 word "today" so both fit one row; an empty chip never paints (`:empty`).
 `test-welcome-layout.mjs` measures the column at 2000 px wide.
 
+**The welcome line is a MARQUEE that changes every 30 minutes** (Grady,
+23 Oct 2026: "the every tender... bit should be a marquee centred horizontally
+with a different quote every 30 mins"): `#welcome-line` is a centred 640 px
+strip (overflow hidden, edges faded by a mask) whose `.track` scrolls right to
+left on the `welcome-marquee` animation (duration from the line's length,
+paused on hover; `prefers-reduced-motion` gets a static centred line).
+`excitedLine(facts, now)` is no longer random: it is the half-hour clock SLOT
+(`welcomeSlot` = floor(now / 30 min)) modulo the lines that apply, so the next
+slot is always the next line and every device shows the same one in the same
+half hour; `paintWelcomeLine(now)` repaints only when the line changes and
+`scheduleWelcomeRotation` fires it on the next boundary. The old
+`gradcon-welcome-last` sessionStorage key is gone. `window.gradconWelcome` is
+the test seam.
+
+**"Industry updates" rail** (Grady, same day: "give construction related
+updates on the side especially from the VBA and recent updates and some
+business related specification snippets"): `api/_news.js` (pure,
+verify-covered) + `api/industry-news.js` (GET, own-origin check, a 30-minute
+server copy, `?refresh=1` re-reads; `vercel.json` maxDuration 30). **Every
+item is a real published article** — nothing is composed. `NEWS_SOURCES`:
+the VBA / Building and Plumbing Commission, the NCC / ABCB, "Standards &
+specs" (AS 3600 / AS 2870 / AS 3610 / Standards Australia / specification),
+"Industry & business" (insolvency, security of payment, building contracts,
+tenders, Master Builders), WorkSafe Victoria — each a Google News RSS search
+(`GNEWS(q)`, en-AU) because the VBA's own site answers server fetches with a
+Cloudflare challenge (403, checked 23 Oct 2026) — and CCAA's own RSS feed.
+`parseFeed` reads RSS 2.0 and Atom (CDATA, `<source>`, Google News' "Title -
+Outlet" suffix → `outlet`), `mergeNews` dedupes by title, ages out items older
+than 120 days, sorts newest first and caps at 30, `fetchNews(sources,
+fetchImpl)` reports every source's ok / count so one dead feed never empties
+the panel. The shell: `#welcome-news` (an `<aside>` in `.welcome-grid` beside
+`.welcome-main` — a 330 px right column from 1180 px, below the cards under
+it; `no-news` keeps the single centred column when nothing could be read),
+`paintIndustryNews(force)` (sessionStorage `gradcon-news`, 30 min; "refresh"
+forces), `renderIndustryNews` (source chips as a filter, 14 newest shown, each
+item a link to the outlet's own page in a new tab with a source chip, the
+outlet — `outletName` turns a URL into its host — the day and a two-line
+snippet). `test-welcome-layout.mjs` proves the marquee, the slot, the rail
+beside / below and the filter on a mocked `/api/industry-news`.
+
 **Weather at the top of the dashboard** (Grady, 22 Oct 2026: "show weather
 and temperature on the top of the dashboard upon loggin in"): `paintWeather`
 in the shell (run by `renderWelcome` and on every Settings save) reads

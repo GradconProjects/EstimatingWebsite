@@ -3316,6 +3316,40 @@ check("Project Geometry carries a COUNT: $/no. leads the benchmark rates, sums a
   });
 }
 
+{
+  const N = await import("../api/_news.js");
+  await checkAsync("Industry updates (api/_news.js): RSS with CDATA, Atom, Google News 'Title - Outlet' and <source>; merge dedupes, ages out, sorts newest first; one dead feed never empties the list", async () => {
+    const rss = `<?xml version="1.0"?><rss><channel><title>CCAA</title>
+      <item><title><![CDATA[Affordable Homes Need Affordable Materials]]></title><link>https://ccaa.example/a</link><pubDate>Wed, 21 Oct 2026 01:00:00 GMT</pubDate><description><![CDATA[<p>CCAA calls for <b>consistent</b> policy &amp; supply.</p>]]></description></item>
+      <item><title>Old news</title><link>https://ccaa.example/old</link><pubDate>Mon, 1 Jan 2026 01:00:00 GMT</pubDate></item>
+      </channel></rss>`;
+    const gn = `<rss><channel><item><title>VCAT clears building surveyor in cladding action - Lander &amp; Rogers</title><link>https://news.google.com/rss/articles/x?oc=5</link><pubDate>Fri, 16 Oct 2026 06:04:38 GMT</pubDate><description>&lt;a href="x"&gt;VCAT clears building surveyor in cladding action&lt;/a&gt;&amp;nbsp;&amp;nbsp;&lt;font color="#6f6f6f"&gt;Lander &amp; Rogers&lt;/font&gt;</description><source url="https://landers.com.au">Lander &amp; Rogers</source></item>
+      <item><title>VCAT clears building surveyor in cladding action - The Age</title><link>https://news.google.com/rss/articles/y?oc=5</link><pubDate>Fri, 16 Oct 2026 08:00:00 GMT</pubDate></item></channel></rss>`;
+    const atom = `<feed xmlns="http://www.w3.org/2005/Atom"><entry><title>NCC 2025 adoption dates</title><link href="https://abcb.example/ncc"/><updated>2026-10-20T03:00:00Z</updated><summary>States adopt the 2025 edition from May 2027.</summary></entry></feed>`;
+    const a = N.parseFeed(rss), b = N.parseFeed(gn), c = N.parseFeed(atom);
+    assert.deepEqual([a.length, a[0].title, a[0].snippet, a[0].at], [2, "Affordable Homes Need Affordable Materials", "CCAA calls for consistent policy & supply.", "2026-10-21T01:00:00.000Z"]);
+    assert.deepEqual([b[0].title, b[0].outlet, b[1].title, b[1].outlet], ["VCAT clears building surveyor in cladding action", "Lander & Rogers", "VCAT clears building surveyor in cladding action", "The Age"], "the outlet is split off a Google News title, from <source> when present");
+    assert.deepEqual([c[0].title, c[0].link, c[0].at, c[0].snippet], ["NCC 2025 adoption dates", "https://abcb.example/ncc", "2026-10-20T03:00:00.000Z", "States adopt the 2025 edition from May 2027."]);
+    const now = new Date("2026-10-23T00:00:00Z");
+    const merged = N.mergeNews([{ source: { id: "ccaa", label: "CCAA" }, items: a }, { source: { id: "vba", label: "VBA / BPC" }, items: b }, { source: { id: "ncc", label: "NCC / ABCB" }, items: c }], { now, maxAgeDays: 120 });
+    assert.deepEqual(merged.map((m) => m.source + ":" + m.at.slice(0, 10)), ["ccaa:2026-10-21", "ncc:2026-10-20", "vba:2026-10-16"], "newest first, the duplicate VCAT story once, the January item aged out");
+    assert.equal(merged[2].sourceLabel, "VBA / BPC"); assert.equal(merged[2].outlet, "Lander & Rogers");
+    assert.equal(N.mergeNews([{ source: { id: "x", label: "x" }, items: a }], { now, maxItems: 1 }).length, 1);
+    // fetchNews: a failing source is reported, the rest stand; the real source list names the VBA, the NCC, standards, business, WorkSafe and CCAA
+    const fake = async (url) => url.includes("ccaa") ? { ok: false, status: 503, text: async () => "" } : { ok: true, status: 200, text: async () => (url.includes("Victorian") ? gn : atom) };
+    const r = await N.fetchNews(N.NEWS_SOURCES, fake, { now });
+    const bySrc = Object.fromEntries(r.sources.map((s) => [s.id, s]));
+    assert.deepEqual([bySrc.ccaa.ok, bySrc.ccaa.error, bySrc.vba.ok, bySrc.vba.count, bySrc.ncc.ok], [false, "HTTP 503", true, 2, true]);
+    assert.ok(r.items.length >= 2 && r.items.every((i) => i.title && i.link && i.sourceLabel), "items carry title, link and source");
+    assert.deepEqual(N.NEWS_SOURCES.map((s) => s.id), ["vba", "ncc", "spec", "business", "worksafe", "ccaa"]);
+    assert.ok(N.NEWS_SOURCES.every((s) => /^https:\/\/(news\.google\.com\/rss\/search\?q=|www\.ccaa\.com\.au\/feed)/.test(s.url)), "every source is a real feed URL");
+    const shell = fs.readFileSync(new URL("../portal/portal-shell.html", import.meta.url), "utf8");
+    assert.ok(/id="welcome-news"/.test(shell) && /fetch\('\/api\/industry-news'/.test(shell) && /paintIndustryNews\(false\);/.test(shell) && /animation:welcome-marquee/.test(shell) && /function excitedLine\(f, now\)/.test(shell), "the shell carries the rail, the fetch, the marquee and the slot pick");
+    const vercel = JSON.parse(fs.readFileSync(new URL("../vercel.json", import.meta.url), "utf8"));
+    assert.equal(vercel.functions["api/industry-news.js"].maxDuration, 30);
+  });
+}
+
 console.log(`\n${passed} check(s) passed.`);
 // ---------------------------------------------------------------------------
 // Version history for the chat (src/lib/quoteDiff.js, api/_versions.js, savedBy on every version) — Grady, 11 Oct 2026
