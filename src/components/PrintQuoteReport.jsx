@@ -3,7 +3,7 @@ import {
 } from "../data/catalog.js";
 import { markupSrc } from "../lib/markupStore.js";
 import {
-  computeElementCost, computeGrandTotal, computeMarginLadder, rateKey, rowRate, computeRowTotal, rowContext, money, money2, getDefaultMargin, getMarginSteps, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, additionalRowsFor, additionalRowTotal, autoSpecialistFees, categoryAppliesTo, computeExcludedTotals, categoryChargedUnder, scopeLabel } from "../lib/costing.js";
+  computeElementCost, computeGrandTotal, computeMarginLadder, rateKey, rowRate, computeRowTotal, rowContext, money, money2, getDefaultMargin, getMarginSteps, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, additionalRowsFor, additionalRowTotal, autoSpecialistFees, categoryAppliesTo, computeExcludedTotals, categoryChargedUnder, scopeLabel, isProvisional, computeProvisionalTotals } from "../lib/costing.js";
 import { GRADCON_LOGO_DATA_URI } from "../lib/logo.js";
 
 /**
@@ -79,6 +79,7 @@ export default function PrintQuoteReport({ quote, items, rates, categoryOrder = 
 
 function ReportContent({ quote, items, rates, categoryOrder, sectionOrder }) {
   const grandTotal = computeGrandTotal(items, rates, quote.scope);
+  const provisional = computeProvisionalTotals(items, rates, quote.scope);
   const excluded = computeExcludedTotals(items, rates, quote.scope);
   const { subtotal, rows } = computeMarginLadder(
     grandTotal, quote.overheadPct, quote.contingencyPct, quote.gfa, getMarginSteps()
@@ -154,6 +155,11 @@ function ReportContent({ quote, items, rates, categoryOrder, sectionOrder }) {
         <div className="px-2 py-1 flex justify-between font-semibold border-t border-neutral-300">
           <span>Subtotal</span><span>{money2(subtotal)}</span>
         </div>
+        {provisional.count > 0 && (
+          <div className="px-2 py-1 flex justify-between text-neutral-700" data-testid="print-provisional">
+            <span>Of which provisional sums ({provisional.count} element{provisional.count === 1 ? "" : "s"}; firm work {money2(provisional.firm)} direct)</span><span>{money2(provisional.provisional)}</span>
+          </div>
+        )}
       </div>
 
       <div className="mt-3 break-inside-avoid">
@@ -252,7 +258,7 @@ function ElementReportBlock({ item, rates, projectScope }) {
   return (
     <div className="mb-2 break-inside-avoid">
       <div className="flex justify-between font-semibold border-b border-neutral-300 py-0.5">
-        <span>{item.label}{cost.scope !== (projectScope && projectScope !== "both" ? projectScope : "both") ? ` (${scopeLabel(cost.scope)})` : ""}</span>
+        <span>{item.label}{isProvisional(item) ? " — PROVISIONAL SUM" : ""}{cost.scope !== (projectScope && projectScope !== "both" ? projectScope : "both") ? ` (${scopeLabel(cost.scope)})` : ""}</span>
         <span>{money2(cost.total)}</span>
       </div>
       {item.description && (

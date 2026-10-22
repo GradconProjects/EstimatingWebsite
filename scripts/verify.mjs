@@ -1112,6 +1112,7 @@ check("The agreed house margin is 25%, and 25% margin means cost / 0.75 (a 33.33
 });
 
 const { pendingRateUpdates, libraryPrices, libraryGovernedKeys, LIBRARY_EXCLUDED_NAMES } = await import("../src/lib/ratesLibrarySync.js");
+const { isProvisional, computeProvisionalTotals } = await import("../src/lib/costing.js");
 const DF = await import("../src/lib/driveFiles.js");
 const PN = await import("../src/lib/projectNaming.js");
 
@@ -1372,6 +1373,20 @@ check("driveFiles helpers: a project's folder and attachments live on the quote 
 });
 
 const { computeTenderProjectSum, parseTenderPrice, seedTenderItems } = await import("../src/lib/tenderQuoteDefaults.js");
+check("provisional items: flagged elements are carried in the grand total and totalled apart from the firm work; the tender seed names them 'Provisional Sum — …'", () => {
+  const type = ELEMENT_TYPES.find((t) => t.labour === "slab_ground") || ELEMENT_TYPES[0];
+  const live = defaultRates();
+  const a = newElementItem(type); a.label = "Firm slab"; a.qtys[Object.keys(live).find((k) => /SQUARE MESH.*SL82/.test(k))] = 144;
+  const b = newElementItem(type); b.label = "Maybe slab"; b.provisional = true; b.qtys[Object.keys(live).find((k) => /SQUARE MESH.*SL82/.test(k))] = 72;
+  assert.ok(isProvisional(b) && !isProvisional(a) && !isProvisional(null));
+  const grand = computeGrandTotal([a, b], live, "both"), split = computeProvisionalTotals([a, b], live, "both");
+  assert.equal(split.count, 1); assert.ok(split.provisional > 0 && split.firm > 0); assert.ok(Math.abs(split.provisional + split.firm - grand) < 0.005, "firm + provisional = the grand total (a provisional sum is IN the quote)");
+  assert.deepEqual(computeProvisionalTotals([a], live, "both"), { provisional: 0, firm: computeGrandTotal([a], live, "both"), count: 0 });
+  const seeded = seedTenderItems({ projectName: "PS probe", items: [a, b], scope: "both" }, [a, b], live);
+  const lines = seeded.flatMap((it) => it.lines || []);
+  assert.ok(lines.some((l) => l.name === "Provisional Sum — Maybe slab" && /^Provisional Sum — /.test(l.text)), JSON.stringify(lines.map((l) => l.name)));
+  assert.ok(lines.some((l) => l.name === "Firm slab"));
+});
 const { tenderNoteLines, assumptionLines, typedNoteLines } = await import("../src/lib/tenderNotes.js");
 const HO = await import("../src/lib/handover.js");
 const { tenderPriceDrift, refreshTenderPrices, tenderPrefill, newTenderQuote } = await import("../src/lib/tenderQuoteDefaults.js");

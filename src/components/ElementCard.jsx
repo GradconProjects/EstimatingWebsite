@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { ChevronDown, ChevronRight, Copy, Trash2, Paperclip, X, RotateCw, ZoomIn, ZoomOut, Maximize2, ArrowUp, ArrowDown, GripVertical } from "lucide-react";
 import { FULL_CATALOG, LABOUR_TEMPLATES, QUOTE_SCOPES } from "../data/catalog.js";
-import { uid, money, money2, computeElementCost, computeElementUnitRates, autoLabourQtys, labourQuantities, categoryAppliesTo, elementScope, categoryChargedUnder, scopeLabel, SCOPE_KEYS } from "../lib/costing.js";
+import { uid, money, money2, isProvisional, computeElementCost, computeElementUnitRates, autoLabourQtys, labourQuantities, categoryAppliesTo, elementScope, categoryChargedUnder, scopeLabel, SCOPE_KEYS } from "../lib/costing.js";
 import { prefilledCells, applySteelMode, steelModeFor } from "../lib/handover.js";
 import { pdfToJpegPages } from "../lib/pdfToImages.js";
 import { markupSrc, markupDataURL } from "../lib/markupStore.js";
@@ -320,12 +320,19 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
           <div className="flex items-center gap-3">
             <div className="flex-1 min-w-0 text-[10px] uppercase tracking-widest text-blue-300 font-semibold flex items-center gap-1.5">
               <span className="truncate">{item.category} {item.category && item.section ? "›" : ""} {item.section}</span>
+              {isProvisional(item) && (
+                <span className="inline-flex items-center px-1.5 rounded bg-amber-400 text-blue-950 font-bold normal-case tracking-normal text-[10px]" title="Provisional sum" data-testid="provisional-tag">Provisional sum</span>
+              )}
               {markups.length > 0 && (
                 <span className="inline-flex items-center gap-0.5 text-orange-400 normal-case tracking-normal" title={`${markups.length} markup drawing(s) attached`}>
                   <Paperclip size={10} /> {markups.length}
                 </span>
               )}
             </div>
+            <label className={`flex-none flex items-center gap-1 text-[10px] uppercase tracking-widest cursor-pointer ${isProvisional(item) ? "text-amber-300" : "text-blue-400"}`} onClick={(e) => e.stopPropagation()} title="Provisional sum: priced and carried in the total, but listed as PROVISIONAL on the card, the summary, the print report, the exports and the tender's line item" data-testid="element-provisional">
+              <input type="checkbox" checked={isProvisional(item)} onChange={(e) => patch((it) => ({ ...it, provisional: e.target.checked || undefined }))} className="accent-amber-400" aria-label="Provisional sum" />
+              <span>Provisional</span>
+            </label>
             <label className="flex-none flex items-center gap-1 text-[10px] uppercase tracking-widest text-blue-400" onClick={(e) => e.stopPropagation()} title={`Scope of this element: ${scopeLabel(cost.scope)}. "Project" follows the quote's own scope (${scopeLabel(elementScope({}, projectScope))}).`}>
               <span>Scope</span>
               <select

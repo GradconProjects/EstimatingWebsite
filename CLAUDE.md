@@ -392,6 +392,16 @@ lived in the one shared rate that two other projects also carried):
    (`rate-changes-waiting`), each opening on its prompt. A project with no
    elements, or created after the change, is never asked. Edits typed in the
    Rates modal or on a card are not logged — only library-driven moves.
+   **The changes are named per ELEMENT** (Grady, 22 Oct 2026: "in each
+   project, list the affected rates within the elements"):
+   `rateChangeElements(quote, live, changes)` → `{key: [{id, label, delta}]}`
+   (the elements whose direct cost moves when that one key takes the
+   library figure, each with its $) and `elementRateChanges` the same by
+   element. The prompt lists the elements beside every rate — the rates an
+   element carries first, the rest ("no element carries this rate today")
+   folded under "and N changed rates…" — and `ElementCard` shows an amber
+   strip ABOVE the fold (`element-rate-changes`, prop `rateChanges` from
+   `changesByElement` in App) naming its changed rates with their deltas.
 
 3. **A finished project keeps its own copy of the rates** (`lib/rateFreeze.js`,
    pure): the moment a status enters `RATES_LOCKED_STATUSES` (Completed
@@ -444,6 +454,22 @@ it silently prices as labour + materials. Cards show a "not charged — <scope>"
 tag on an excluded band (its would-be figure struck through), the labour
 matrix likewise under materials-only; the summary rail, print report and
 exports state the scope and the figures not charged. Verify-covered.
+
+## Provisional items
+
+Grady, 22 Oct 2026: "in the quotes section, we should be able to list items
+as provisional". An element ticked **Provisional** (the band's top row, beside
+Scope; `item.provisional = true`, `isProvisional(item)` in costing.js is the
+ONE test) is a PROVISIONAL SUM: priced and carried in the grand total like
+any other element — the quote includes it — but named as such everywhere it
+is listed (the card's "Provisional sum" tag, a "PS" tag on the summary rail,
+"… — PROVISIONAL SUM" on the print report and in the .xls / .csv exports, and
+the tender's line item seeded "Provisional Sum — <element>") and totalled
+apart by `computeProvisionalTotals(items, rates, scope)` → `{provisional,
+firm, count}` (firm + provisional = the grand total; the rail and the print
+report show "Of which provisional sums (N elements) · firm work $…").
+Verify-covered; `test-provisional.mjs` proves the card, the rail and the
+print.
 
 ## The handover pass (Completed Estimating → Grady)
 
@@ -763,6 +789,18 @@ item (a takeoff only for an account that sees them). `openFromWelcome` is
 the ONE click handler for cards, rows and that link (`data-kind` +
 `data-id`). `test-welcome.mjs` proves both accounts.
 
+**Weather at the top of the dashboard** (Grady, 22 Oct 2026: "show weather
+and temperature on the top of the dashboard upon loggin in"): `paintWeather`
+in the shell (run by `renderWelcome` and on every Settings save) reads
+Open-Meteo straight from the browser — no key — for the place in Settings →
+App behaviour "Weather on the dashboard — place" (`weatherPlace`, blank =
+Melbourne; the first Australian geocoding hit, cached in localStorage
+`gradcon-weather-geo:<place>`; the reading cached 15 min per tab in
+sessionStorage) and paints `#welcome-weather` beside the storage badge: sky
+(`WMO` code → icon and words), temperature, feels-like, today's min–max,
+rain chance and wind. Nothing shows when it cannot be read; the chip opens
+Settings. `test-weather.mjs` proves it on a mocked Open-Meteo.
+
 ## AI provider keys live on the server (api/)
 
 Grady, 10 Oct 2026: "code in the environment variables so i can add the api
@@ -851,7 +889,17 @@ same drawer, later. Rules:
 6. **The AI Engine's "From Google Drive"** (`openDrivePicker`) browses /
    searches the same folder (the job's project folder when matched) and
    copies a PDF / Doc into the job as a mail attachment is.
-7. **Settings → Google mail & Drive** shows the folder the app reads under
+7. **Gradcon Cloud Storage** (Grady, 22 Oct 2026: "use that space and name it
+   Gradcon Cloud Storage and let the gradcon vault and its parameters be under
+   this"): the Quotes tab that was "Gradcon Vault" is now `CloudStorageView`
+   — the office folder browsed IN PLACE (`DriveFilesDrawer inline mode=
+   "browse"`: no project, no attach / use, breadcrumb / search / preview /
+   open in Drive) with `ProjectFolderView` (the Vault, unchanged) beneath.
+   The portal nav reads "Cloud Storage" and carries a dedicated **Google
+   Drive** button (`MENU_ROUTES.drive` → Quotes initial view `drive`, which
+   `takeInitialView` maps to `folder`); the welcome tile 06 is "Gradcon
+   Cloud Storage". `test-cloud-storage.mjs` proves it.
+8. **Settings → Google mail & Drive** shows the folder the app reads under
    (open in Drive, default or chosen) and "Change folder…" (a pasted link,
    or one of projects@'s top-level folders / shared drives). The **Gradcon
    Storage badge** on the portal dashboard (`#welcome-storage`,
@@ -1154,6 +1202,34 @@ object, read via `readQuote`/`readQuotes`. An install that predates
 multi-project support (a single quote under the old fixed `gradcon-quote`
 key) auto-migrates into project #1 the first time the index loads empty —
 see `migrateLegacyQuote`.
+
+**Project names follow ONE address convention** (Grady, 22 Oct 2026: "use
+the API to rename the projects maintaining a proper convention, full address
+and suburbs. when project is entered, the actual address convention should
+automatically apply. where details are scanty, ask the user to select address
+options"): `<number> <Street name> <Street type>, <Suburb> VIC <postcode>[ —
+<descriptor>]`, e.g. "19 Paringa Road, Portsea VIC 3944 — Tennis Pavilion".
+`src/lib/projectNaming.js` (pure, verify-covered): `isConventionName`,
+`needsAddressReview(quote)` (a typed name not in the convention and not yet
+reviewed — `nameReviewedFor`), `addressPrompt` / `parseAddressReply` (known
+ids only, options that pass the convention only, confidence high / medium /
+low; the prompt forbids inventing a street number and asks for up to three
+suburbs when none is typed), `autoApplies` (ONE option at HIGH confidence),
+`applyNamePatch` (projectName, `siteAddress` — the Drive folder match reads
+it — `nameSource` = the FIRST typed name, kept through later renames,
+`nameReviewedFor`), `keepNamePatch`, `requestProjectNames` → `api/ai-engine`
+action **`address`** (up to 40 names per call). In the editor the name
+field asks when it is LEFT (blur / Enter; `reviewProjectName` in App): a
+confident single answer is applied at once with a note, anything less opens
+`AddressOptions` under the field (radios, "Use this name", "Keep …", "Back
+to … as typed" when the name was renamed before); the pin beside the name
+(`project-name-address`) asks again on demand. The Dashboard's
+**Standardise names** (`RenameProjectsModal`, badge = the count not yet in
+the convention) sends every unconventional name in one request, shows the
+proposal (a select when there are several) with a tick — ticked by default
+only at high confidence — and ONE button renames the ticked ones through
+`patchQuoteFields`. The project column is `min-w-[18rem]` and wraps.
+`test-project-naming.mjs` proves both paths on a mocked provider.
 
 ## Optional Supabase backend
 
@@ -2100,6 +2176,19 @@ if Estimates gains an element type Quotes already has a match for.
 
 ## Design conventions
 
+- **Colour schemes** (Grady, 22 Oct 2026: "change the quotes colour theme to
+  that of the rates library with options in settings to change the colour
+  scheme"): the components keep the Tailwind classes below; `index.css`
+  re-colours the chrome (`blue-9xx`) and accent (`orange-*`) utilities under
+  `html[data-theme]` — `library` (the Rates Library's navy #0f2e4c / #1F4E78,
+  #2f7fd6 accent, #eef2f6 page, Segoe UI; the DEFAULT), `classic` (the
+  blueprint navy & orange, no overrides), `graphite` (charcoal & emerald).
+  `applyQuotesTheme` / `readQuotesTheme` in App.jsx read the portal
+  preference `quotesTheme` (Settings → App behaviour → "Quotes colour
+  scheme") on mount and on every Settings save (the `storage` event reaches
+  the blob: frame), so a change shows at once. A new chrome / accent utility
+  class needs its override line in `index.css` or it stays orange / navy
+  under every scheme. `test-quotes-theme.mjs` proves the three.
 - Tailwind utility classes throughout, no CSS-in-JS. Palette: `neutral-*`
   for structure, `blue-950`/`blue-9xx` for the "blueprint navy" header
   chrome, `orange-*` (safety/hi-vis) for money figures and primary

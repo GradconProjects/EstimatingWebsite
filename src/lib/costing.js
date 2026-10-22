@@ -828,6 +828,26 @@ export function suggestedLabourPrefill(item, rates) {
 export function computeGrandTotal(items, rates, projectScope) {
   return items.reduce((s, it) => s + computeElementCost(it, rates, projectScope).total, 0);
 }
+/**
+ * Provisional items (Grady, 22 Oct 2026: "in the quotes section, we should be
+ * able to list items as provisional"): an element flagged `provisional`
+ * is a PROVISIONAL SUM — priced and carried in the total like any other
+ * element (the quote includes it), but named as such everywhere it is
+ * listed (card, summary rail, print report, exports, the tender's line
+ * item "Provisional Sum — …") and totalled apart, so the firm work and the
+ * provisional sums can be stated side by side. `isProvisional(item)` is the
+ * ONE test; `computeProvisionalTotals` the ONE split.
+ */
+export function isProvisional(item) {
+  return !!(item && item.provisional);
+}
+export function computeProvisionalTotals(items, rates, projectScope) {
+  return (items || []).reduce((acc, it) => {
+    const t = computeElementCost(it, rates, projectScope).total;
+    if (isProvisional(it)) { acc.provisional += t; acc.count += 1; } else acc.firm += t;
+    return acc;
+  }, { provisional: 0, firm: 0, count: 0 });
+}
 /** The money every scope leaves out, across the quote — shown beside the
  * total so a labour-only quote states what the materials would have been. */
 export function computeExcludedTotals(items, rates, projectScope) {

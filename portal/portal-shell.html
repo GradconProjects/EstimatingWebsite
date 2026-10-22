@@ -318,6 +318,12 @@
   .storage-badge.on .dot{ background:#2f9e55; }
   .storage-badge.warn .dot{ background:#e0a200; }
   .storage-badge b{ font-weight:600; }
+  .welcome-badges{ display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
+  .weather-chip{ display:inline-flex; align-items:center; gap:8px; margin:4px 0 10px; padding:6px 12px; border-radius:999px; border:1px solid var(--line); background:#fff; font:inherit; font-size:12.5px; color:var(--text); cursor:pointer; }
+  .weather-chip:hover{ border-color:var(--accent); }
+  .weather-chip .icon{ font-size:16px; line-height:1; }
+  .weather-chip b{ font-weight:700; font-size:14px; }
+  .weather-chip .muted{ color:var(--muted); }
   .welcome-upcoming .eyebrow{ display:inline-flex; align-items:center; gap:7px; font-size:11.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--text); margin-bottom:10px; }
   .welcome-upcoming .eyebrow::before{ content:""; width:7px; height:7px; border-radius:2px; background:var(--accent); }
   .upcoming-list{ display:flex; flex-direction:column; gap:6px; max-width:720px; }
@@ -434,7 +440,10 @@
 
   <div class="dash-hero">
     <div class="eyebrow" id="welcome-eyebrow">Dashboard</div>
-    <button type="button" class="storage-badge" id="welcome-storage" hidden title="Gradcon Storage — the office's project files, inside the app"></button>
+    <div class="welcome-badges">
+      <button type="button" class="weather-chip" id="welcome-weather" hidden title="Today's weather at the office — set the place under Settings → App behaviour"></button>
+      <button type="button" class="storage-badge" id="welcome-storage" hidden title="Gradcon Storage — the office's project files, inside the app"></button>
+    </div>
     <h1 id="welcome-greeting">What are you working on?</h1>
     <p id="welcome-line">Four tools, one portal — keep every rate current in one place, plan and control job costs, price a job with the full material and labour catalog, or build a fresh takeoff straight from element geometry.</p>
   </div>
@@ -773,6 +782,12 @@
         <div class="hint">Every Save keeps a full version of the quote for good. While a quote is changing, another version is kept automatically at this interval. 0 turns the automatic ones off.</div>
       </div>
       <div class="field"><label class="settings-check"><input type="checkbox" id="settings-download-on-save"> Quotes: also save a copy to this computer on every Save</label></div>
+      <div class="field">
+        <label for="settings-weather-place">Weather on the dashboard — place</label>
+        <input type="text" id="settings-weather-place" placeholder="Melbourne" list="settings-weather-places">
+        <datalist id="settings-weather-places"><option value="Melbourne"><option value="Mornington"><option value="Frankston"><option value="Dandenong"><option value="Cranbourne"><option value="Mentone"><option value="Rosebud"><option value="Pakenham"></datalist>
+        <div class="hint">The suburb or town whose current temperature and sky show at the top of the dashboard on sign-in (Open-Meteo, no account). Blank = Melbourne.</div>
+      </div>
       <div class="field">
         <label for="settings-quotes-theme">Quotes colour scheme</label>
         <select id="settings-quotes-theme">
@@ -1185,7 +1200,8 @@
     ['settings-est-meshtype','estMeshType','SL82'],
     ['settings-est-startpage','estStartPage','setup'],
     ['settings-page-orient','pageOrientation','portrait'],
-    ['settings-quotes-theme','quotesTheme','library']
+    ['settings-quotes-theme','quotesTheme','library'],
+    ['settings-weather-place','weatherPlace','']
   ];
   // Toggle-backed preferences: [element id, prefs key, default-on?]. Stored
   // as explicit booleans on save (like showHero), so the apps can
@@ -1299,6 +1315,7 @@
     });
     savePrefs(prefs);
     applyAllPrefs();
+    try{ paintWeather(); }catch(e){} // the dashboard's weather chip follows the place at once
     settingsBackdrop.hidden = true;
     // The Quotes/Estimates iframe reads these prefs at render time — force
     // its next open to see them fresh rather than a mid-session stale read.
@@ -1628,10 +1645,52 @@
     }).catch(function(){ b.hidden = true; });
   }
   document.getElementById('welcome-storage').addEventListener('click', function(){ document.getElementById('settings-btn').click(); });
+  // Weather and temperature at the top of the dashboard (Grady, 22 Oct 2026):
+  // Open-Meteo, read straight from the browser (no key), for the place in
+  // Settings (blank = Melbourne). The place is geocoded once and kept; the
+  // reading is kept 15 minutes per tab. Nothing shows when it cannot be read.
+  var WMO = { 0:['☀️','Clear'], 1:['🌤️','Mostly clear'], 2:['⛅','Partly cloudy'], 3:['☁️','Overcast'], 45:['🌫️','Fog'], 48:['🌫️','Rime fog'], 51:['🌦️','Light drizzle'], 53:['🌦️','Drizzle'], 55:['🌧️','Heavy drizzle'], 56:['🌧️','Freezing drizzle'], 57:['🌧️','Freezing drizzle'], 61:['🌧️','Light rain'], 63:['🌧️','Rain'], 65:['🌧️','Heavy rain'], 66:['🌧️','Freezing rain'], 67:['🌧️','Freezing rain'], 71:['🌨️','Light snow'], 73:['🌨️','Snow'], 75:['🌨️','Heavy snow'], 77:['🌨️','Snow grains'], 80:['🌦️','Showers'], 81:['🌧️','Showers'], 82:['⛈️','Heavy showers'], 85:['🌨️','Snow showers'], 86:['🌨️','Snow showers'], 95:['⛈️','Thunderstorm'], 96:['⛈️','Thunderstorm, hail'], 99:['⛈️','Thunderstorm, hail'] };
+  function weatherPlace(){ var p = loadPrefs(); return (typeof p.weatherPlace === 'string' && p.weatherPlace.trim()) ? p.weatherPlace.trim() : 'Melbourne'; }
+  function geocodePlace(place){
+    var key = 'gradcon-weather-geo:' + place.toLowerCase();
+    try{ var c = JSON.parse(localStorage.getItem(key) || 'null'); if(c && c.lat != null) return Promise.resolve(c); }catch(e){}
+    return fetch('https://geocoding-api.open-meteo.com/v1/search?name=' + encodeURIComponent(place) + '&count=5&language=en&format=json').then(function(r){ return r.ok ? r.json() : Promise.reject(new Error(String(r.status))); }).then(function(d){
+      var list = (d && d.results) || []; if(!list.length) throw new Error('place not found');
+      var hit = list.find(function(x){ return x.country_code === 'AU'; }) || list[0];
+      var geo = { lat: hit.latitude, lon: hit.longitude, name: hit.name, admin: hit.admin1 || '' };
+      try{ localStorage.setItem(key, JSON.stringify(geo)); }catch(e){}
+      return geo;
+    });
+  }
+  function paintWeather(){
+    var b = document.getElementById('welcome-weather'); if(!b) return;
+    var place = weatherPlace();
+    var cacheKey = 'gradcon-weather:' + place.toLowerCase();
+    try{ var c = JSON.parse(sessionStorage.getItem(cacheKey) || 'null'); if(c && c.at && Date.now() - c.at < 15 * 60 * 1000){ renderWeather(b, c); return; } }catch(e){}
+    geocodePlace(place).then(function(geo){
+      return fetch('https://api.open-meteo.com/v1/forecast?latitude=' + geo.lat + '&longitude=' + geo.lon + '&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m,precipitation&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=auto&forecast_days=1')
+        .then(function(r){ return r.ok ? r.json() : Promise.reject(new Error(String(r.status))); })
+        .then(function(d){
+          var cur = d.current || {}, day = d.daily || {};
+          var w = { at: Date.now(), place: geo.name, temp: cur.temperature_2m, feels: cur.apparent_temperature, code: cur.weather_code, wind: cur.wind_speed_10m, rain: cur.precipitation, max: day.temperature_2m_max && day.temperature_2m_max[0], min: day.temperature_2m_min && day.temperature_2m_min[0], rainChance: day.precipitation_probability_max && day.precipitation_probability_max[0] };
+          try{ sessionStorage.setItem(cacheKey, JSON.stringify(w)); }catch(e){}
+          renderWeather(b, w);
+        });
+    }).catch(function(){ b.hidden = true; });
+  }
+  function renderWeather(b, w){
+    var sky = WMO[w.code] || ['🌡️', 'Weather'];
+    var r = function(v){ return v == null ? '–' : Math.round(v); };
+    b.hidden = false;
+    b.innerHTML = '<span class="icon">' + sky[0] + '</span><b>' + r(w.temp) + '°C</b><span>' + escapeHtml(sky[1]) + ' · ' + escapeHtml(w.place) + '</span><span class="muted">feels ' + r(w.feels) + '° · ' + r(w.min) + '–' + r(w.max) + '° today' + (w.rainChance != null ? ' · rain ' + r(w.rainChance) + '%' : '') + (w.wind != null ? ' · wind ' + r(w.wind) + ' km/h' : '') + '</span>';
+    b.title = 'Weather at ' + w.place + ' (Open-Meteo) — change the place under Settings → App behaviour';
+  }
+  document.getElementById('welcome-weather').addEventListener('click', function(){ document.getElementById('settings-btn').click(); });
   window.addEventListener('gradcon:storage-changed', paintStorageBadge);
   function renderWelcome(){
     var run = ++welcomeRun; var now = new Date();
     paintStorageBadge();
+    paintWeather();
     var takeoffs = seesTakeoffs(currentUser);
     var items = takeoffs ? localQuotes().concat(localTakeoffs()) : localQuotes();
     paintWelcome(items, now);

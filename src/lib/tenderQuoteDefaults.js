@@ -288,7 +288,8 @@ export function seedTenderItems(quote, items, rates) {
     if (!figs.length && lq.formworkM2 > 0) figs.push(`approx. ${fmt(lq.formworkM2)} m² formwork`);
     if (!figs.length && lq.reinfTonnes > 0.005) figs.push(`approx. ${fmt(lq.reinfTonnes)} t reinforcement`);
     const sell = sellById[item.id] || 0;
-    return { id: uid(), elementId: item.id, name: item.label || "", text: figs.length ? `${name} — ${figs.slice(0, 3).join(" / ")}` : name, price: fmtTenderPrice(sell) };
+    const ps = item.provisional ? "Provisional Sum — " : "";
+    return { id: uid(), elementId: item.id, name: ps + (item.label || ""), text: ps + (figs.length ? `${name} — ${figs.slice(0, 3).join(" / ")}` : name), price: fmtTenderPrice(sell) };
   };
 
   // one line item per stage used, in the fixed stage order; elements keep the quote's order inside it

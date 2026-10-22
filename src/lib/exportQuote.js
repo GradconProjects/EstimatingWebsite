@@ -184,7 +184,7 @@ export function buildQuoteExcelHtml(quote, items, rates, categoryOrder = CATEGOR
       elements.forEach(({ item, cost, lines }) => {
         rowsHtml.push(tr(
           td("", {})
-          + td(esc(item.label), { bold: true })
+          + td(esc(item.label + (item.provisional ? " — PROVISIONAL SUM" : "")), { bold: true })
           + td("", {}) + td("", {}) + td("", {})
           + td(cost.total.toFixed(2), { bold: true, align: "right", color: COLORS.money, numeric: true })
         ));
@@ -332,7 +332,7 @@ export function buildQuoteCsv(quote, items, rates, categoryOrder = CATEGORY_ORDE
     sections.forEach(({ section, elements }) => {
       let sectionPrinted = false;
       elements.forEach(({ item, cost, lines: elLines }) => {
-        lines.push(csvRow("", categoryPrinted ? "" : category, sectionPrinted ? "" : section, item.label, "", "", "", cost.total.toFixed(2)));
+        lines.push(csvRow("", categoryPrinted ? "" : category, sectionPrinted ? "" : section, item.label + (item.provisional ? " — PROVISIONAL SUM" : ""), "", "", "", cost.total.toFixed(2)));
         categoryPrinted = true;
         sectionPrinted = true;
         if (elLines.length === 0) {
