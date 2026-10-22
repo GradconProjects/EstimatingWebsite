@@ -312,6 +312,12 @@
   .recent-card .when{ font-size:12px; color:var(--muted); }
   /* "Coming up": the open quotes whose deadline is today, overdue or within 7 days, and the last project worked on. */
   .welcome-upcoming{ margin:0 0 32px; }
+  .storage-badge{ display:inline-flex; align-items:center; gap:8px; margin:4px 0 10px; padding:6px 12px; border-radius:999px; border:1px solid var(--line); background:#fff; font:inherit; font-size:12px; color:var(--text); cursor:pointer; }
+  .storage-badge:hover{ border-color:var(--accent); }
+  .storage-badge .dot{ width:8px; height:8px; border-radius:50%; background:#c9c9c9; }
+  .storage-badge.on .dot{ background:#2f9e55; }
+  .storage-badge.warn .dot{ background:#e0a200; }
+  .storage-badge b{ font-weight:600; }
   .welcome-upcoming .eyebrow{ display:inline-flex; align-items:center; gap:7px; font-size:11.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--text); margin-bottom:10px; }
   .welcome-upcoming .eyebrow::before{ content:""; width:7px; height:7px; border-radius:2px; background:var(--accent); }
   .upcoming-list{ display:flex; flex-direction:column; gap:6px; max-width:720px; }
@@ -428,6 +434,7 @@
 
   <div class="dash-hero">
     <div class="eyebrow" id="welcome-eyebrow">Dashboard</div>
+    <button type="button" class="storage-badge" id="welcome-storage" hidden title="Gradcon Storage — the office's project files, inside the app"></button>
     <h1 id="welcome-greeting">What are you working on?</h1>
     <p id="welcome-line">Four tools, one portal — keep every rate current in one place, plan and control job costs, price a job with the full material and labour catalog, or build a fresh takeoff straight from element geometry.</p>
   </div>
@@ -671,9 +678,11 @@
     <p class="sub" style="margin-top:-4px;">Pick which provider the AI Engine and the chat use with <b>Use</b> (remembered in this browser). Keys are set in the Vercel project under Settings → Environment Variables (ANTHROPIC_API_KEY, OPENAI_API_KEY or OPEN_AI_KEY, DEEPSEEK_API_KEY, plus AI_PROVIDER for the default) and never leave the server. This panel only shows what is set and lets you test each one.</p>
     <div id="settings-ai" class="field"><span class="ai-result">Checking…</span></div>
 
-    <div class="settings-section">Google mail (projects@gradcon.com.au)</div>
+    <div class="settings-section">Google mail &amp; Drive (projects@gradcon.com.au)</div>
     <p class="sub" style="margin-top:-4px;">Connect the Workspace mailbox so the AI Engine's Mail tab and the chat can read it (read-only — nothing is ever sent, replied to or deleted). The sign-in happens on Google's own page; the token is kept on the server. Setup lives in the Vercel project: GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.</p>
     <div id="settings-google" class="field"><span class="ai-result">Checking…</span></div>
+    <p class="sub" style="margin-top:4px;">The same connection reads the office's <b>project files folder in Google Drive</b> (read-only) so every project's files are in the app — the Files button on a quote, "From Drive" on element cards and in the AI Engine. A mailbox connected before Drive was added needs one reconnect to grant it.</p>
+    <div id="settings-drive" class="field"><span class="ai-result">Checking…</span></div>
 
     <div class="settings-section">Quotes — pricing</div>
     <div class="settings-grid">
@@ -1595,8 +1604,22 @@
   document.getElementById('welcome-recent-grid').addEventListener('click', openFromWelcome);
   document.getElementById('welcome-upcoming').addEventListener('click', openFromWelcome);
   var welcomeRun = 0;
+  // Gradcon Storage badge (Grady, 21 Oct 2026): what the app can reach in
+  // Google Drive, painted from /api/drive?action=status on every welcome paint.
+  function paintStorageBadge(){
+    var b = document.getElementById('welcome-storage'); if(!b) return;
+    fetch('/api/drive?action=status', { headers:{ accept:'application/json' } }).then(function(r){ return r.ok ? r.json() : Promise.reject(new Error(String(r.status))); }).then(function(d){
+      b.hidden = false; b.className = 'storage-badge';
+      if(!d.configured || !d.connected){ b.innerHTML = '<span class="dot"></span>Gradcon Storage · <b>Google Drive not connected</b> · Settings'; return; }
+      if(!d.drive){ b.classList.add('warn'); b.innerHTML = '<span class="dot"></span>Gradcon Storage · <b>Drive access to grant</b> · reconnect projects@ in Settings'; return; }
+      b.classList.add('on'); b.innerHTML = '<span class="dot"></span>Gradcon Storage · Google Drive · <b>' + escapeHtml((d.root && d.root.name) || 'Project files') + '</b> · ' + escapeHtml(d.email || 'projects@') + ' · Dropbox soon';
+    }).catch(function(){ b.hidden = true; });
+  }
+  document.getElementById('welcome-storage').addEventListener('click', function(){ document.getElementById('settings-btn').click(); });
+  window.addEventListener('gradcon:storage-changed', paintStorageBadge);
   function renderWelcome(){
     var run = ++welcomeRun; var now = new Date();
+    paintStorageBadge();
     var takeoffs = seesTakeoffs(currentUser);
     var items = takeoffs ? localQuotes().concat(localTakeoffs()) : localQuotes();
     paintWelcome(items, now);
@@ -1648,7 +1671,41 @@
     });
   }
   // ===================== SETTINGS → GOOGLE MAIL =====================
+  // Google Drive: the project files folder the app reads under (api/drive.js).
+  function loadGoogleDrive(){
+    var host = document.getElementById('settings-drive'); if(!host) return;
+    host.innerHTML = '<span class="ai-result">Checking…</span>';
+    fetch('/api/drive?action=status', { headers:{ accept:'application/json' } }).then(function(r){ return r.ok ? r.json() : Promise.reject(new Error(String(r.status))); }).then(function(d){
+      if(!d.configured){ host.innerHTML = '<span class="ai-result">Google is not configured on this deployment (see above).</span>'; return; }
+      if(!d.connected){ host.innerHTML = '<div class="ai-row"><div class="name">Project files folder<small>connect the mailbox above first — Drive comes with the same sign-in</small></div><span class="ai-chip off">Not connected</span></div>'; return; }
+      if(!d.drive){ host.innerHTML = '<div class="ai-row"><div class="name">Project files folder<small>the current connection was made before Drive was added — reconnect once to grant Drive (read-only)</small></div><span class="ai-chip off">No Drive access</span><button type="button" class="btn small" id="google-connect">Reconnect for Drive</button></div>'; return; }
+      var r = d.root || {};
+      host.innerHTML = '<div class="ai-row"><div class="name">' + escapeHtml(r.name || 'Project files folder') + (r.error ? '<small style="color:#a33">could not read it: ' + escapeHtml(r.error) + '</small>' : '<small>' + (r.isDefault ? 'the office folder (default)' : 'chosen in Settings') + ' · everything the app shows is inside it · <a href="' + escapeHtml(r.webViewLink || '#') + '" target="_blank" rel="noopener">open in Drive</a></small>') + '</div><span class="ai-chip on">Drive connected</span><button type="button" class="btn small" id="drive-change">Change folder…</button></div>' +
+        '<div id="drive-change-panel" hidden style="margin-top:8px;"><div class="sub">Paste a Drive folder link (or id) that projects@ can open, or pick one of its top-level folders.</div>' +
+        '<div style="display:flex;gap:6px;margin:6px 0;"><input id="drive-link" type="text" placeholder="https://drive.google.com/drive/folders/…" style="flex:1;min-width:0;"><button type="button" class="btn small" id="drive-use-link">Use this folder</button></div>' +
+        '<div id="drive-roots" class="ai-result">Loading folders…</div></div>';
+    }).catch(function(){ host.innerHTML = '<span class="ai-result">Not available in this build — Drive lives on the Vercel deployment (api/drive).</span>'; });
+  }
+  document.getElementById('settings-drive').addEventListener('click', function(e){
+    if(e.target.closest('#google-connect')){ window.location.href = '/api/google-auth?action=start'; return; }
+    var post = function(body){ return fetch('/api/drive', { method:'POST', headers:{ 'content-type':'application/json' }, body: JSON.stringify(body) }).then(function(r){ return r.json().then(function(d){ if(!r.ok) throw new Error(d.error || String(r.status)); return d; }); }); };
+    if(e.target.closest('#drive-change')){
+      var panel = document.getElementById('drive-change-panel'); panel.hidden = !panel.hidden; if(panel.hidden) return;
+      post({ action:'roots' }).then(function(d){
+        var host = document.getElementById('drive-roots');
+        host.innerHTML = (d.folders || []).length ? d.folders.map(function(f){ return '<button type="button" class="btn small" data-drive-root="' + escapeHtml(f.id) + '" style="margin:2px;">📁 ' + escapeHtml(f.name) + (f.shared ? ' (shared drive)' : '') + '</button>'; }).join('') : 'No top-level folders found.';
+      }).catch(function(err){ document.getElementById('drive-roots').textContent = 'Could not list folders: ' + err.message; });
+      return;
+    }
+    var pick = e.target.closest('[data-drive-root]');
+    if(pick || e.target.closest('#drive-use-link')){
+      var id = pick ? pick.getAttribute('data-drive-root') : document.getElementById('drive-link').value.trim();
+      if(!id) return;
+      post({ action:'setRoot', id:id }).then(function(){ loadGoogleDrive(); window.dispatchEvent(new Event('gradcon:storage-changed')); }).catch(function(err){ alert('Could not use that folder: ' + err.message); });
+    }
+  });
   function loadGoogleMail(){
+    loadGoogleDrive();
     var host = document.getElementById('settings-google');
     host.innerHTML = '<span class="ai-result">Checking…</span>';
     fetch('/api/google-auth?action=status', { headers:{ accept:'application/json' } }).then(function(r){ return r.ok ? r.json() : Promise.reject(new Error(String(r.status))); }).then(function(d){
@@ -1683,7 +1740,7 @@
     var v = decodeURIComponent(m[1]);
     try{ history.replaceState(null, '', location.pathname); }catch(err){}
     var note = document.createElement('div'); note.className = 'ai-result'; note.style.cssText = 'position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:70;background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 16px;box-shadow:0 14px 30px -14px rgba(35,31,32,.5);font-size:13px;';
-    if(v === 'connected'){ note.textContent = 'Google mail connected — the AI Engine Mail tab and the chat can now read projects@gradcon.com.au.'; note.style.borderColor = '#9ad1aa'; }
+    if(v === 'connected'){ note.textContent = 'Google mail & Drive connected — the AI Engine Mail tab and the chat can read projects@gradcon.com.au, and every project can reach the office\'s Drive files folder.'; note.style.borderColor = '#9ad1aa'; }
     else if(/^error:wrong-account:/.test(v)){ note.textContent = 'That Google account (' + v.replace(/^error:wrong-account:/, '') + ') is not the mailbox allowed to connect. Sign in as projects@gradcon.com.au.'; note.style.borderColor = '#e39a9a'; }
     else { note.textContent = 'Google mail was not connected: ' + v.replace(/^error:/, '') + '.'; note.style.borderColor = '#e39a9a'; }
     document.body.appendChild(note); setTimeout(function(){ note.remove(); }, 12000);

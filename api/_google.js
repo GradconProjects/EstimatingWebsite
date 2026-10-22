@@ -22,6 +22,16 @@ import crypto from "node:crypto";
 
 export const GOOGLE_ROW_KEY = "gradcon-google-mail";
 export const GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
+/* Google Drive, read-only, for the project files folder (Grady, 21 Oct 2026:
+ * "i want that folder accessible to grady … inside the app and should sync
+ * across everywhere"). The SAME connection carries both scopes; a mailbox
+ * connected before this must reconnect once to grant Drive. */
+export const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.readonly";
+/** The office's project files folder in projects@'s Drive — the default root
+ * the app may read under; Settings → Google Drive can point it elsewhere
+ * (stored in STORAGE_ROW_KEY). A folder id is not a secret. */
+export const DEFAULT_DRIVE_ROOT_ID = "1rhMdIuNr3-sYtqEk29Qvwpt1AY9I11WX";
+export const STORAGE_ROW_KEY = "gradcon-storage";
 export const DEFAULT_MAILBOX = "projects@gradcon.com.au";
 const SUPABASE_URL = "https://xbmyhvrcuyapoarmchpv.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_Kr4dTFXhZsifAA28HmMAVQ_EDSR2DL0";
@@ -78,13 +88,24 @@ export function redirectUri(req, env = process.env) {
 }
 export function consentUrl(redirect, env = process.env, now = Date.now()) {
   const p = new URLSearchParams({
-    client_id: env.GOOGLE_CLIENT_ID, redirect_uri: redirect, response_type: "code", scope: `${GMAIL_SCOPE} openid email`,
+    client_id: env.GOOGLE_CLIENT_ID, redirect_uri: redirect, response_type: "code", scope: `${GMAIL_SCOPE} ${DRIVE_SCOPE} openid email`,
     access_type: "offline", prompt: "consent", include_granted_scopes: "true", state: signState(env, now), login_hint: allowedMailbox(env),
   });
   return `https://accounts.google.com/o/oauth2/v2/auth?${p}`;
 }
 
 /* ---------- the stored connection (estimator_kv row) ---------- */
+/** Any estimator_kv row's value (null when absent or unreadable). */
+export async function readRow(key, fetchImpl = fetch) {
+  try {
+    const r = await fetchImpl(`${SUPABASE_URL}/rest/v1/estimator_kv?key=eq.${encodeURIComponent(key)}&select=value,updated_at`, { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` }, signal: AbortSignal.timeout(10000) });
+    if (!r.ok) return null; const rows = await r.json(); return rows[0] && rows[0].value ? rows[0].value : null;
+  } catch { return null; }
+}
+export async function writeRow(key, value, fetchImpl = fetch) {
+  const r = await fetchImpl(`${SUPABASE_URL}/rest/v1/estimator_kv`, { method: "POST", headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}`, "Content-Type": "application/json", Prefer: "resolution=merge-duplicates" }, body: JSON.stringify({ key, value, updated_at: new Date().toISOString() }), signal: AbortSignal.timeout(10000) });
+  if (!r.ok) throw new Error(`could not store ${key} (${r.status})`);
+}
 export async function readConnection(fetchImpl = fetch) {
   try {
     const r = await fetchImpl(`${SUPABASE_URL}/rest/v1/estimator_kv?key=eq.${encodeURIComponent(GOOGLE_ROW_KEY)}&select=value,updated_at`, { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` }, signal: AbortSignal.timeout(8000) });
@@ -99,8 +120,9 @@ export async function deleteConnection(fetchImpl = fetch) {
   await fetchImpl(`${SUPABASE_URL}/rest/v1/estimator_kv?key=eq.${encodeURIComponent(GOOGLE_ROW_KEY)}`, { method: "DELETE", headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` }, signal: AbortSignal.timeout(8000) }).catch(() => {});
 }
 /** Safe to show in the browser: connected or not, which address, when — never a token. */
+export const hasDriveScope = (conn) => !!(conn && typeof conn.scope === "string" && conn.scope.split(/\s+/).includes(DRIVE_SCOPE));
 export function connectionStatus(conn, env = process.env) {
-  return { configured: googleConfigured(env), connected: !!(conn && conn.refresh), email: conn ? conn.email || null : null, connectedAt: conn ? conn.connectedAt || null : null, mailbox: allowedMailbox(env), scope: GMAIL_SCOPE };
+  return { configured: googleConfigured(env), connected: !!(conn && conn.refresh), drive: hasDriveScope(conn), email: conn ? conn.email || null : null, connectedAt: conn ? conn.connectedAt || null : null, mailbox: allowedMailbox(env), scope: GMAIL_SCOPE };
 }
 
 /* ---------- tokens ---------- */
@@ -182,4 +204,126 @@ export async function mailSummaries(env = process.env, { days = 14, max = 25 } =
   const { token, email } = await accessToken(env, fetchImpl);
   const r = await listMessages({ q: `newer_than:${days}d`, max }, token, fetchImpl);
   return { mailbox: email, days, messages: r.messages.map((m) => ({ id: m.id, from: m.from, subject: m.subject, date: m.date, snippet: m.snippet, unread: m.unread, attachments: m.attachments.map((a) => a.filename) })) };
+}
+
+/* ---------- Google Drive reading (drive.readonly) — the ONE adapter ---------- */
+const D = "https://www.googleapis.com/drive/v3";
+export const DRIVE_FILE_FIELDS = "id,name,mimeType,size,modifiedTime,webViewLink,iconLink,thumbnailLink,parents,md5Checksum,driveId,shortcutDetails,trashed";
+const FOLDER_MIME = "application/vnd.google-apps.folder";
+export async function driveGet(path, token, fetchImpl = fetch, { raw = false } = {}) {
+  const sep = path.includes("?") ? "&" : "?";
+  const r = await fetchImpl(`${D}${path}${sep}supportsAllDrives=true`, { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(25000) });
+  if (raw) {
+    if (!r.ok) { const e = new Error(`Drive ${r.status}`); e.status = r.status === 401 ? 401 : r.status === 404 ? 404 : 502; throw e; }
+    return r;
+  }
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) { const e = new Error(`Drive ${r.status}${d.error && d.error.message ? ": " + d.error.message : ""}`); e.status = r.status === 401 ? 401 : r.status === 404 ? 404 : 502; throw e; }
+  return d;
+}
+/** The kind the portal shows and previews by: folder / pdf / image / doc / sheet / slides / cad / other. */
+export function fileKind(mimeType, name) {
+  const m = String(mimeType || ""), n = String(name || "").toLowerCase();
+  if (m === FOLDER_MIME) return "folder";
+  if (m === "application/pdf" || /\.pdf$/.test(n)) return "pdf";
+  if (/^image\//.test(m) || /\.(png|jpe?g|gif|webp|bmp|tiff?)$/.test(n)) return "image";
+  if (m === "application/vnd.google-apps.document" || /\.docx?$/.test(n)) return "doc";
+  if (m === "application/vnd.google-apps.spreadsheet" || /\.xlsx?$|\.csv$/.test(n)) return "sheet";
+  if (m === "application/vnd.google-apps.presentation" || /\.pptx?$/.test(n)) return "slides";
+  if (/\.(dwg|dxf|dwf|rvt|ifc|skp)$/.test(n)) return "cad";
+  return "other";
+}
+const isGoogleNative = (m) => /^application\/vnd\.google-apps\./.test(String(m || "")) && String(m) !== FOLDER_MIME;
+/** One Drive file in the plain shape the portal shows. The ONE reading of a file. */
+export function normalizeFile(f) {
+  if (!f) return null;
+  return { id: f.id, name: f.name || "", mimeType: f.mimeType || "", kind: fileKind(f.mimeType, f.name), size: f.size != null ? Number(f.size) : null, modifiedTime: f.modifiedTime || null, webViewLink: f.webViewLink || `https://drive.google.com/${f.mimeType === FOLDER_MIME ? "drive/folders" : "file/d"}/${f.id}`, iconLink: f.iconLink || null, thumbnailLink: f.thumbnailLink || null, parents: f.parents || [], md5: f.md5Checksum || null, driveId: f.driveId || null, native: isGoogleNative(f.mimeType) };
+}
+export async function driveFile(id, token, fetchImpl = fetch) {
+  return normalizeFile(await driveGet(`/files/${encodeURIComponent(id)}?fields=${encodeURIComponent(DRIVE_FILE_FIELDS)}`, token, fetchImpl));
+}
+const q = (s) => String(s || "").replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+/** The children of a folder, folders first then by name; one page. */
+export async function driveChildren(folderId, token, fetchImpl = fetch, { pageToken = "", max = 200, foldersOnly = false } = {}) {
+  const p = new URLSearchParams({ q: `'${q(folderId)}' in parents and trashed = false${foldersOnly ? ` and mimeType = '${FOLDER_MIME}'` : ""}`, fields: `nextPageToken,files(${DRIVE_FILE_FIELDS})`, pageSize: String(Math.min(Math.max(1, max), 1000)), orderBy: "folder,name", includeItemsFromAllDrives: "true", corpora: "allDrives" });
+  if (pageToken) p.set("pageToken", pageToken);
+  const d = await driveGet(`/files?${p}`, token, fetchImpl);
+  return { files: (d.files || []).map(normalizeFile), nextPageToken: d.nextPageToken || null };
+}
+/** The chain of parents from a file up to its root (nearest first), at most 10 hops; `cache` memoises across one request. */
+export async function driveAncestors(id, token, fetchImpl = fetch, cache = new Map()) {
+  const out = []; let cur = id; const seen = new Set();
+  for (let hop = 0; hop < 10 && cur && !seen.has(cur); hop++) {
+    seen.add(cur);
+    let f = cache.get(cur);
+    if (!f) { try { f = await driveFile(cur, token, fetchImpl); } catch { break; } cache.set(cur, f); }
+    const parent = f.parents && f.parents[0];
+    if (!parent) break;
+    let pf = cache.get(parent);
+    if (!pf) { try { pf = await driveFile(parent, token, fetchImpl); } catch { pf = { id: parent, name: "", kind: "folder", parents: [] }; } cache.set(parent, pf); }
+    out.push({ id: pf.id, name: pf.name });
+    cur = parent;
+  }
+  return out;
+}
+/** Is `id` the root itself or anywhere under it? */
+export async function withinRoot(id, rootId, token, fetchImpl = fetch, cache = new Map()) {
+  if (!rootId) return true;
+  if (id === rootId) return true;
+  const anc = await driveAncestors(id, token, fetchImpl, cache);
+  return anc.some((a) => a.id === rootId);
+}
+/** Full-text + name search, kept to files under `within` (the root or a folder beneath it) by their parent chain. */
+export async function driveSearch({ text, within, max = 40 }, token, fetchImpl = fetch, cache = new Map()) {
+  const t = String(text || "").trim().slice(0, 120);
+  if (!t) return { files: [] };
+  const p = new URLSearchParams({ q: `trashed = false and (name contains '${q(t)}' or fullText contains '${q(t)}')`, fields: `files(${DRIVE_FILE_FIELDS})`, pageSize: "100", orderBy: "modifiedTime desc", includeItemsFromAllDrives: "true", corpora: "allDrives" });
+  const d = await driveGet(`/files?${p}`, token, fetchImpl);
+  const hits = (d.files || []).map(normalizeFile);
+  const out = [];
+  for (const f of hits) {
+    if (out.length >= max) break;
+    if (!within || (await withinRoot(f.id, within, token, fetchImpl, cache))) out.push(f);
+  }
+  return { files: out, scanned: hits.length };
+}
+/** The bytes of a file — a Google Doc / Sheet / Slides exported as PDF, anything else as stored. Capped. */
+export const DRIVE_COPY_MAX_BYTES = 30 * 1024 * 1024;
+export async function driveDownload(id, token, fetchImpl = fetch) {
+  const meta = await driveFile(id, token, fetchImpl);
+  if (meta.kind === "folder") { const e = new Error("that is a folder"); e.status = 400; throw e; }
+  if (meta.size != null && meta.size > DRIVE_COPY_MAX_BYTES) { const e = new Error(`file over ${Math.round(DRIVE_COPY_MAX_BYTES / 1048576)} MB`); e.status = 413; throw e; }
+  const r = meta.native
+    ? await driveGet(`/files/${encodeURIComponent(id)}/export?mimeType=application%2Fpdf`, token, fetchImpl, { raw: true })
+    : await driveGet(`/files/${encodeURIComponent(id)}?alt=media`, token, fetchImpl, { raw: true });
+  const bytes = Buffer.from(await r.arrayBuffer());
+  if (bytes.length > DRIVE_COPY_MAX_BYTES) { const e = new Error(`file over ${Math.round(DRIVE_COPY_MAX_BYTES / 1048576)} MB`); e.status = 413; throw e; }
+  const mimeType = meta.native ? "application/pdf" : (r.headers && r.headers.get && r.headers.get("content-type")) || meta.mimeType || "application/octet-stream";
+  const name = meta.native && !/\.pdf$/i.test(meta.name) ? `${meta.name}.pdf` : meta.name;
+  return { bytes, mimeType, name, meta };
+}
+/* ---------- matching a project to its folder (pure) ---------- */
+const STOP = new Set(["the", "and", "of", "at", "to", "a", "an", "st", "rd", "ave", "avenue", "street", "road", "dr", "drive", "ct", "court", "pl", "place", "cres", "crescent", "lane", "ln", "way", "vic", "nsw", "qld", "project", "projects", "quote", "tender", "job"]);
+export const folderTokens = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").split(" ").filter((w) => w && !STOP.has(w));
+/** How well a folder name fits a project: shared tokens over the project's tokens, a street number counting double, 1 = every token present. */
+export function scoreFolderMatch(folderName, { projectName = "", address = "" } = {}) {
+  const want = [...new Set([...folderTokens(projectName), ...folderTokens(address)])];
+  if (!want.length) return 0;
+  const have = new Set(folderTokens(folderName));
+  let got = 0, total = 0;
+  want.forEach((w) => { const weight = /^\d+[a-z]?$/.test(w) ? 2 : 1; total += weight; if (have.has(w)) got += weight; });
+  return total ? got / total : 0;
+}
+/** The folders ranked for a project; `best` only when one folder clearly fits (score ≥ 0.6 and ahead of the next by 0.2). */
+export function matchProjectFolder(folders, quoteLike) {
+  const ranked = (folders || []).filter((f) => f && f.kind === "folder").map((f) => ({ ...f, score: scoreFolderMatch(f.name, quoteLike) })).filter((f) => f.score > 0).sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
+  const best = ranked.length && ranked[0].score >= 0.6 && (ranked.length === 1 || ranked[0].score - ranked[1].score >= 0.2) ? ranked[0] : null;
+  return { candidates: ranked.slice(0, 8), best };
+}
+/** A Drive folder URL or bare id → the id, or null. */
+export function driveFolderIdFrom(text) {
+  const s = String(text || "").trim();
+  const m = /\/folders\/([A-Za-z0-9_-]{10,})/.exec(s) || /[?&]id=([A-Za-z0-9_-]{10,})/.exec(s);
+  if (m) return m[1];
+  return /^[A-Za-z0-9_-]{10,}$/.test(s) ? s : null;
 }

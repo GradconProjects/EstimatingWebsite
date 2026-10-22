@@ -343,6 +343,57 @@ async function addFiles(job, list){
   if(st){ st.textContent = errors.length ? errors.join(" · ") : (job.files.length ? `${job.files.length} file${job.files.length===1?"":"s"} ready` : ""); st.className = "status " + (errors.length ? "err" : "ok"); }
 }
 function fmtSize(b){ return b>1024*1024 ? (b/1024/1024).toFixed(1)+" MB" : b>1024 ? (b/1024).toFixed(0)+" KB" : b+" B"; }
+/* ---- Google Drive picker (api/drive.js; Grady, 21 Oct 2026): browse / search the
+ * office's project files folder and copy a PDF into this job, exactly as a mail
+ * attachment is copied. Read-only against Drive. ---- */
+async function driveCall(body){
+  const res = await fetch(API_BASE + "/api/drive", { method:"POST", headers:{ "content-type":"application/json" }, body:JSON.stringify(body), signal:AbortSignal.timeout(60000) });
+  const d = await res.json().catch(()=>({}));
+  if(!res.ok) throw new Error(d.error || `Drive request failed (${res.status})`);
+  return d;
+}
+function openDrivePicker(job){
+  document.querySelectorAll(".drive-picker").forEach(x=>x.remove());
+  const wrap = document.createElement("div"); wrap.className = "drive-picker";
+  wrap.style.cssText = "position:fixed;inset:0;z-index:90;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;";
+  wrap.innerHTML = `<div style="background:#fff;border-radius:12px;width:min(640px,94vw);max-height:84vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.3);">
+    <div style="padding:10px 14px;border-bottom:1px solid #e5e5e5;display:flex;align-items:center;gap:10px;"><b style="flex:1;">Google Drive — project files</b><button class="btn small" data-close type="button">✕</button></div>
+    <div style="padding:8px 14px;display:flex;gap:6px;"><input data-q type="text" placeholder="Search the project files folder…" style="flex:1;min-width:0;"><button class="btn small" data-search type="button">Search</button></div>
+    <div data-path class="small" style="padding:0 14px 6px;color:#666;"></div>
+    <div data-list style="flex:1;overflow:auto;padding:4px 8px 10px;"><span class="small">Reading Drive…</span></div>
+    <div data-status class="small" style="padding:6px 14px;border-top:1px solid #eee;color:#666;">Read-only: nothing here changes Drive.</div></div>`;
+  document.body.appendChild(wrap);
+  const list = wrap.querySelector("[data-list]"), pathEl = wrap.querySelector("[data-path]"), status = wrap.querySelector("[data-status]");
+  let path = [];
+  const icon = k => ({folder:"📁",pdf:"📕",image:"🖼️",doc:"📝",sheet:"📊",slides:"📽️",cad:"📐"})[k] || "📄";
+  const render = (files, label)=>{
+    pathEl.innerHTML = label || path.map((p,i)=>`<a href="#" data-jump="${i}">${esc(p.name)}</a>`).join(" › ");
+    list.innerHTML = files.length ? files.map(f=>`<div class="drive-item" data-id="${esc(f.id)}" data-kind="${esc(f.kind)}" style="display:flex;align-items:center;gap:8px;padding:6px 6px;border-radius:8px;${f.kind==="folder"?"cursor:pointer;":""}">
+      <span>${icon(f.kind)}</span><span style="flex:1;min-width:0;"><span style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(f.name)}</span><span class="small" style="color:#777;">${f.kind==="folder"?"Folder":[f.modifiedTime?new Date(f.modifiedTime).toLocaleDateString("en-AU"):"", f.size?fmtSize(f.size):""].filter(Boolean).join(" · ")}</span></span>
+      ${f.kind==="folder" ? "›" : `<a class="small" href="${esc(f.webViewLink)}" target="_blank" rel="noopener">open</a>${f.kind==="pdf"||String(f.mimeType||"").startsWith("application/vnd.google-apps.") ? `<button class="btn small" data-use="${esc(f.id)}" data-name="${esc(f.name)}" type="button">Use</button>` : ""}`}</div>`).join("") : `<span class="small">Nothing here.</span>`;
+  };
+  const load = async (folderId, name)=>{ list.innerHTML = `<span class="small">Reading Drive…</span>`; try{ const r = await driveCall({ action:"list", folderId }); if(!path.length || path[path.length-1].id!==r.folderId) path.push({ id:r.folderId, name: name || "Project files" }); render(r.files||[]); }catch(e){ list.innerHTML = `<span class="small" style="color:#a33;">${esc(e.message)}</span>`; } };
+  (async ()=>{
+    try{
+      const st = await driveCall({ action:"status" });
+      if(!st.connected || !st.drive){ list.innerHTML = `<span class="small" style="color:#a33;">${!st.connected ? "projects@ is not connected to Google — Settings → Google mail & Drive." : "The Google connection has no Drive access yet — reconnect projects@ in Settings → Google mail & Drive."}</span>`; return; }
+      const want = job.projectName || job.name || ""; // the linked Quotes project, else the job's own name
+      const m = want.trim() ? await driveCall({ action:"match", projectName: want }) : null;
+      if(m && m.best){ await load(m.best.id, m.best.name); }
+      else { await load(undefined, (st.root && st.root.name) || "Project files"); }
+    }catch(e){ list.innerHTML = `<span class="small" style="color:#a33;">${esc(e.message)}</span>`; }
+  })();
+  wrap.addEventListener("click", async e=>{
+    if(e.target.closest("[data-close]") || e.target===wrap){ wrap.remove(); return; }
+    const j = e.target.closest("[data-jump]"); if(j){ e.preventDefault(); const i = +j.dataset.jump; path = path.slice(0,i); const p = path.pop(); await load(p.id, p.name); return; }
+    const u = e.target.closest("[data-use]");
+    if(u){ u.disabled = true; status.textContent = `Copying ${u.dataset.name} into this job…`; try{ const r = await driveCall({ action:"copy", id:u.dataset.use, target:"job", jobId:job.id }); job.files.push(r.file); job.status = job.status==="new" ? "uploaded" : job.status; saveJob(job); renderJob(job); wrap.remove(); }catch(err){ status.textContent = "Could not copy: " + err.message; u.disabled = false; } return; }
+    const it = e.target.closest(".drive-item"); if(it && it.dataset.kind==="folder"){ await load(it.dataset.id, it.querySelector("span span").textContent); }
+  });
+  const doSearch = async ()=>{ const t = wrap.querySelector("[data-q]").value.trim(); if(!t) return; list.innerHTML = `<span class="small">Searching…</span>`; try{ const r = await driveCall({ action:"search", text:t, within: path.length ? path[path.length-1].id : undefined }); render(r.files||[], `Search results for "${esc(t)}" · <a href="#" data-jump="${Math.max(0,path.length-1)}">back</a>`); }catch(err){ list.innerHTML = `<span class="small" style="color:#a33;">${esc(err.message)}</span>`; } };
+  wrap.querySelector("[data-search]").addEventListener("click", doSearch);
+  wrap.querySelector("[data-q]").addEventListener("keydown", e=>{ if(e.key==="Enter"){ e.preventDefault(); doSearch(); } });
+}
 
 /* ---------- provider in use ---------- */
 let PROVIDERS = null;
@@ -1025,6 +1076,7 @@ function renderJob(job){
     <h3 style="margin-top:0;">${job.kind==="takeoff"?"Drawings":"Documents"} (PDF)</h3>
     <div class="drop" id="drop">Drop PDF files here, or click to choose. ${({takeoff:"Structural drawings: plans, sections, footing / beam / column schedules.",spec:"The specification and its schedules.",geotech:"The geotechnical investigation report, borehole logs, site classification.",contract:"The contract, tender conditions, scope of works, responsibility matrix."})[job.kind]||""}<input type="file" id="fileInput" accept="application/pdf,.pdf" multiple hidden></div>
     <ul class="files">${job.files.map((f,i)=>`<li><span class="n">📄 ${esc(f.name)}</span><span class="s">${fmtSize(f.size)}</span><a class="small" href="${esc(f.url)}" target="_blank" rel="noopener">open</a><button class="btn small" data-rmfile="${i}" title="Remove from this job (the copy in the bucket stays)">✕</button></li>`).join("")}</ul>
+    <div class="row" style="margin-top:6px;"><button class="btn small" id="fromDrive" type="button" title="Pick a PDF from the office's Google Drive project files folder — it is copied into this job">📁 From Google Drive</button></div>
     <div class="status" id="fileStatus"></div>
     <div class="row" style="margin-top:10px;">
       <button class="btn ai" id="runBtn" ${job.files.length?"":"disabled"}>${job.result?"Read again":"Read "+({takeoff:"drawings",spec:"specification",geotech:"geotech report",contract:"contract"})[job.kind]} with AI</button>
@@ -1053,6 +1105,7 @@ function wireJob(job){
   drop.addEventListener("dragover", e=>{ e.preventDefault(); drop.classList.add("over"); });
   drop.addEventListener("dragleave", ()=>drop.classList.remove("over"));
   drop.addEventListener("drop", e=>{ e.preventDefault(); drop.classList.remove("over"); addFiles(job, e.dataTransfer.files); });
+  const fd = host.querySelector("#fromDrive"); if(fd) fd.addEventListener("click", ()=>openDrivePicker(job));
   host.querySelectorAll("[data-rmfile]").forEach(b=>b.addEventListener("click", ()=>{ job.files.splice(+b.dataset.rmfile,1); saveJob(job); renderJob(job); }));
   host.querySelector("#runBtn").addEventListener("click", ()=>runJob(job));
   const ex = host.querySelector("#exportBtn"); if(ex) ex.addEventListener("click", ()=>exportToEstimates(job));

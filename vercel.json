@@ -1,7 +1,16 @@
 {
   "functions": {
-    "api/ai-engine.js": { "maxDuration": 300 },
-    "api/ai-chat.js": { "maxDuration": 120 },
-    "api/gmail.js": { "maxDuration": 60 }
+    "api/ai-engine.js": {
+      "maxDuration": 300
+    },
+    "api/ai-chat.js": {
+      "maxDuration": 120
+    },
+    "api/gmail.js": {
+      "maxDuration": 60
+    },
+    "api/drive.js": {
+      "maxDuration": 60
+    }
   }
 }

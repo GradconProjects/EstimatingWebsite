@@ -16,7 +16,7 @@ import AdditionalItems from "./AdditionalItems.jsx";
  * the quote's item order (the summary rail, the print report and the
  * export all follow it), the same order QuoteSummary's own drag edits.
  */
-export default function ElementCard({ item, rates, onChange, onRemove, onDuplicate, onLabourRateChange, onMaterialRateChange, onMoveUp, onMoveDown, onReorder, projectScope , handover }) {
+export default function ElementCard({ item, rates, onChange, onRemove, onDuplicate, onLabourRateChange, onMaterialRateChange, onMoveUp, onMoveDown, onReorder, projectScope , handover, onPickFromDrive }) {
   const [dragOver, setDragOver] = useState(false);
   // Every material category starts collapsed — only Labour/Equipment starts
   // expanded (it's still collapsible too, just defaults open).
@@ -437,6 +437,27 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
                 {markupsOpen ? <ChevronDown size={26} /> : <ChevronRight size={26} />}
                 <Paperclip size={22} /> Markup drawings {markups.length > 0 && <span className="text-orange-300">({markups.length})</span>}
               </button>
+              {onPickFromDrive && (
+                <button
+                  type="button"
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    // the Drive picker copies the file into the app's store and hands the copy back;
+                    // its bytes then go through the same path as a dropped file (PDF pages → images)
+                    const copied = await onPickFromDrive(["pdf", "image"]);
+                    if (!copied) return;
+                    try {
+                      const r = await fetch(copied.url); const blob = await r.blob();
+                      addMarkupFiles([new File([blob], copied.name, { type: copied.mimeType || blob.type })]);
+                    } catch (err) { alert(`Could not fetch "${copied.name}" from the app's store: ${err.message}`); }
+                  }}
+                  className="flex-none px-2.5 py-1 rounded-md bg-white/15 hover:bg-white/25 text-white text-[11px] font-semibold"
+                  title="Pick a drawing from the project's Google Drive folder"
+                  data-testid="markup-from-drive"
+                >
+                  From Drive
+                </button>
+              )}
               <label className="flex-none cursor-pointer px-2.5 py-1 rounded-md bg-white/15 hover:bg-white/25 text-white text-[11px] font-semibold">
                 Upload PDF / PNG / JPG
                 <input

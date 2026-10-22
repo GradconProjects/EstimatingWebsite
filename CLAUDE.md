@@ -788,6 +788,81 @@ which deters a drive-by page but is not a security boundary.
 `.env.example` documents the variables; `verify.mjs` covers the status,
 default and the 503 on an unconfigured provider.
 
+## Gradcon Storage: the office's Google Drive project files, inside the app
+
+Grady, 21 Oct 2026: "the office uses dropbox and i have introduced google
+drive … so Grady doesnt have to leave the app to locate stored files … lets
+use the gmail account linked to projects@ … i already have the folders in
+the drive, i want that folder accessible to grady … inside the app and should
+sync across everywhere". Google first; Dropbox is a second adapter behind the
+same drawer, later. Rules:
+
+1. **One Google connection carries both scopes.** `DRIVE_SCOPE`
+   (drive.readonly) joins `GMAIL_SCOPE` in `consentUrl`; `connectionStatus`
+   reports `drive` (the stored `scope` includes it). A mailbox connected
+   before this reconnects ONCE (Settings → Google mail & Drive → "Reconnect
+   for Drive"); until then `api/drive.js` answers 409 `needsReconnect` and
+   every surface says so. The token stays encrypted server-side as for mail.
+2. **`api/_google.js` is the ONE Drive adapter** (read-only, never writes to
+   Drive): `driveFile`, `driveChildren` (folders first), `driveAncestors` /
+   `withinRoot` (the parent chain, memoised per request), `driveSearch` (name
+   + fullText, then KEPT under the root by ancestry — Drive cannot search a
+   subtree itself), `driveDownload` (a Doc / Sheet / Slides exported as PDF,
+   capped `DRIVE_COPY_MAX_BYTES` = 30 MB), `normalizeFile` / `fileKind`
+   (folder / pdf / image / doc / sheet / slides / cad / other),
+   `matchProjectFolder` / `scoreFolderMatch` (pure: shared name tokens over
+   the project's, a street number counting double, stop words dropped;
+   `best` only when one folder scores ≥ 0.6 and leads by 0.2),
+   `driveFolderIdFrom` (a folder link or bare id). Shared drives are
+   included on every call.
+3. **`api/drive.js` reads ONLY under the root folder.** The root is the
+   office folder Grady gave (`DEFAULT_DRIVE_ROOT_ID`, a folder id is not a
+   secret) unless the shared `gradcon-storage` row (`STORAGE_ROW_KEY`,
+   `{drive: {rootId, rootName, chosenAt}}`, written by action `setRoot` from
+   Settings) names another; every `folder` / `list` / `search` / `file` /
+   `copy` id must be the root or beneath it (403 otherwise). Actions: `status`
+   (GET too — the Dashboard badge), `roots`, `setRoot`, `folder`, `list`,
+   `search`, `match`, `file`, `copy` {target: preview | markup | job}. A copy
+   goes to the `gradcon-files` bucket — `drive/<id>/<md5|modified>/<name>`
+   for previews (cached by content) or `ai-engine/<jobId>/<name>` for a job,
+   exactly as a mail attachment — and returns its public URL with `fromDrive`.
+   Same-origin check as the other functions; `maxDuration` 60.
+4. **A project remembers its folder and its attachments ON THE QUOTE** (so
+   they sync with it): `quote.storageFolders.drive = {id, name, webViewLink,
+   chosenAt}` and `quote.files[] = {id, provider: "drive", fileId, name,
+   kind, mimeType, size, modifiedTime, webViewLink, attachedAt}` —
+   `src/lib/driveFiles.js` (pure helpers + the browser client `driveApi`):
+   `setProjectDriveFolderPatch`, `attachFilePatch` (idempotent by Drive id),
+   `detachFilePatch`, `driveFiles`, `projectAddress`. **Attachments are
+   LINKS; a file is copied only when it is used** — "Use" in the picker
+   (a markup, an AI Engine job) or a preview.
+5. **`DriveFilesDrawer`** (Quotes, `mode: "attach"` from the editor's
+   **Files** button — count of attached files on it — or `mode: "pick"` as
+   the picker) opens on the project's folder; with none, `match` offers the
+   fitting folders (the best is taken when clear) or the root to browse, and
+   "This is the project's folder" records the choice. Breadcrumb browse,
+   search within the folder (or the whole root), preview in place (PDF
+   `<embed>` / image from the preview copy), "open in Drive", Attach /
+   Attached, the attached list with remove. `pickDriveFile(accept)` in
+   `ProjectEditor` resolves with the copied file: an element card's **From
+   Drive** button feeds it through `addMarkupFiles` like a dropped file;
+   the Project Folder's "Google Drive files for this project" opens the
+   project on its drawer (`gradcon-open-drive`, one-shot).
+6. **The AI Engine's "From Google Drive"** (`openDrivePicker`) browses /
+   searches the same folder (the job's project folder when matched) and
+   copies a PDF / Doc into the job as a mail attachment is.
+7. **Settings → Google mail & Drive** shows the folder the app reads under
+   (open in Drive, default or chosen) and "Change folder…" (a pasted link,
+   or one of projects@'s top-level folders / shared drives). The **Gradcon
+   Storage badge** on the portal dashboard (`#welcome-storage`,
+   `paintStorageBadge`) states Drive connected + folder, Drive access to
+   grant, or not connected, and opens Settings. Dropbox reads "soon".
+`verify.mjs` covers the scopes, the matching, every `runDrive` action on a
+fake Drive (root scoping, the 403s, the copy paths, a chosen root) and the
+quote helpers; `test-drive-files.mjs` proves the drawer, the card picker, the
+Settings panel, the badge and the AI Engine picker against a mocked
+`/api/drive`.
+
 ## AI Engine (tile 07) and the Gradcon AI chat
 
 Grady, 10 Oct 2026: "dont touch the existing app. rather create another

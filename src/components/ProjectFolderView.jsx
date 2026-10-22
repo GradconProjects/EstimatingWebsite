@@ -254,7 +254,7 @@ function CommsLog({ entries, onAdd }) {
   );
 }
 
-function ProjectFolderCard({ project, name, communications, onAddCommunication, onOpen }) {
+function ProjectFolderCard({ project, name, communications, onAddCommunication, onOpen, onOpenDrive }) {
   const [open, setOpen] = useState(false);
   // Fetched independently of `open` (not just once the Documents panel is
   // expanded) so the "last upload" line is visible on the collapsed row too.
@@ -293,6 +293,11 @@ function ProjectFolderCard({ project, name, communications, onAddCommunication, 
           <div>
             <div className="text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-1.5">Documents</div>
             <FileFolder folderPath={projectFolderPath(project.id)} onFilesChange={(files) => setLastFile(files[0] || null)} />
+            {onOpenDrive && (
+              <button type="button" onClick={() => onOpenDrive(project.id)} className="mt-3 flex items-center gap-1.5 text-xs font-medium text-blue-900 hover:text-blue-700" title="This project's files in the office's Google Drive folder" data-testid="folder-drive-files">
+                <FolderOpen size={13} /> Google Drive files for this project <ArrowRight size={12} />
+              </button>
+            )}
           </div>
           <div>
             <div className="text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-1.5">Communications</div>
@@ -304,7 +309,7 @@ function ProjectFolderCard({ project, name, communications, onAddCommunication, 
   );
 }
 
-export default function ProjectFolderView({ projects, officeComms, setOfficeComms, onOpen }) {
+export default function ProjectFolderView({ projects, officeComms, setOfficeComms, onOpen, onOpenDrive }) {
   const [quotesByKey, setQuotesByKey] = useState({});
   const [loading, setLoading] = useState(true);
 
@@ -397,6 +402,7 @@ export default function ProjectFolderView({ projects, officeComms, setOfficeComm
             {sortedRows.map((r) => (
               <ProjectFolderCard
                 key={r.project.id}
+                onOpenDrive={onOpenDrive}
                 project={r.project}
                 name={r.name}
                 communications={r.communications}

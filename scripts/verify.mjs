@@ -1112,6 +1112,7 @@ check("The agreed house margin is 25%, and 25% margin means cost / 0.75 (a 33.33
 });
 
 const { pendingRateUpdates, libraryPrices, libraryGovernedKeys, LIBRARY_EXCLUDED_NAMES } = await import("../src/lib/ratesLibrarySync.js");
+const DF = await import("../src/lib/driveFiles.js");
 
 check("Rates Library rules: its price flows into Quotes over ANY stored value, including a typed one", () => {
   const CONV = rateKey("FORMWORK", "Conventional", "m2");
@@ -1240,6 +1241,108 @@ await checkAsync("Rates Library changes are logged and an existing project is pr
   const plain = { status: "Estimating", items: [item], ratesFrozen: { at: t1, status: "Completed Estimating", rates: { ...live } } };
   assert.equal(effectiveRates(plain, live), live, "a STATUS pin on an open status is still ignored");
   assert.equal(statusChangePatch(plain, "Queued", live, t2).ratesFrozen, null, "...and still cleared on an open→open move");
+});
+
+// ---------------------------------------------------------------------------
+// Google Drive project files (api/_google.js Drive adapter, api/drive.js, src/lib/driveFiles.js)
+// ---------------------------------------------------------------------------
+await checkAsync("Drive: the consent asks for drive.readonly beside gmail; the connection reports whether Drive was granted; a folder link or id parses; a file's kind follows its mime / name", async () => {
+  const G = await import("../api/_google.js");
+  const genv = { GOOGLE_CLIENT_ID: "cid", GOOGLE_CLIENT_SECRET: "csec" };
+  const u = G.consentUrl("https://estimating-website.vercel.app/api/google-auth", genv, 1000);
+  assert.ok(decodeURIComponent(u).includes(G.DRIVE_SCOPE) && decodeURIComponent(u).includes(G.GMAIL_SCOPE), "both scopes asked");
+  assert.equal(G.connectionStatus({ email: "projects@gradcon.com.au", refresh: "v1.x", scope: `${G.GMAIL_SCOPE} openid email` }, genv).drive, false, "an old mail-only connection has no Drive");
+  assert.equal(G.connectionStatus({ email: "projects@gradcon.com.au", refresh: "v1.x", scope: `${G.GMAIL_SCOPE} ${G.DRIVE_SCOPE} openid email` }, genv).drive, true);
+  assert.equal(G.driveFolderIdFrom("https://drive.google.com/drive/folders/1rhMdIuNr3-sYtqEk29Qvwpt1AY9I11WX?usp=drive_link"), "1rhMdIuNr3-sYtqEk29Qvwpt1AY9I11WX");
+  assert.equal(G.driveFolderIdFrom("1rhMdIuNr3-sYtqEk29Qvwpt1AY9I11WX"), "1rhMdIuNr3-sYtqEk29Qvwpt1AY9I11WX"); assert.equal(G.driveFolderIdFrom("not a link"), null);
+  assert.equal(G.DEFAULT_DRIVE_ROOT_ID, "1rhMdIuNr3-sYtqEk29Qvwpt1AY9I11WX", "the office folder Grady gave is the default root");
+  assert.deepEqual(["application/vnd.google-apps.folder", "application/pdf", "image/png", "application/vnd.google-apps.document", "application/vnd.google-apps.spreadsheet", "application/octet-stream"].map((m) => G.fileKind(m, m === "application/octet-stream" ? "plan.dwg" : "x")), ["folder", "pdf", "image", "doc", "sheet", "cad"]);
+  // folder matching: the street number counts double, stop words are ignored, one clear winner is `best`
+  const folders = [{ id: "a", name: "12 Beach Rd Mentone", kind: "folder" }, { id: "b", name: "145 Harrisons Road", kind: "folder" }, { id: "c", name: "Templates", kind: "folder" }, { id: "d", name: "12 Beach Road - old", kind: "folder" }];
+  const m = G.matchProjectFolder(folders, { projectName: "145 Harrisons Rd Beaconsfield" });
+  assert.equal(m.best && m.best.id, "b"); assert.ok(m.candidates[0].score >= 0.6);
+  const tie = G.matchProjectFolder(folders, { projectName: "12 Beach Road" });
+  assert.equal(tie.best, null, "two folders fit 12 Beach Road equally — no silent pick"); assert.equal(tie.candidates.length, 2);
+  assert.equal(G.matchProjectFolder(folders, { projectName: "" }).candidates.length, 0);
+});
+await checkAsync("Drive function: unconfigured → 503; no connection → 409; a mail-only connection → 409 needsReconnect; with Drive: list / folder / search stay inside the root, a copy lands in the bucket as a public URL (a Doc exported as PDF), an id outside the root is refused", async () => {
+  const G = await import("../api/_google.js");
+  const DR = await import("../api/drive.js");
+  const genv = { GOOGLE_CLIENT_ID: "cid", GOOGLE_CLIENT_SECRET: "csec" };
+  const ROOT = G.DEFAULT_DRIVE_ROOT_ID;
+  // a tiny fake Drive: root → [folder "12 Beach Rd" → [plan.pdf, spec (Google Doc)], notes.pdf]; "elsewhere.pdf" sits outside the root
+  const files = {
+    [ROOT]: { id: ROOT, name: "Gradcon Projects", mimeType: "application/vnd.google-apps.folder", parents: [] },
+    folder12BeachRd01: { id: "folder12BeachRd01", name: "12 Beach Rd", mimeType: "application/vnd.google-apps.folder", parents: [ROOT] },
+    p1: { id: "p1", name: "plan.pdf", mimeType: "application/pdf", size: "1200", modifiedTime: "2026-10-20T00:00:00Z", parents: ["folder12BeachRd01"], md5Checksum: "abc" },
+    d1: { id: "d1", name: "spec", mimeType: "application/vnd.google-apps.document", modifiedTime: "2026-10-19T00:00:00Z", parents: ["folder12BeachRd01"] },
+    n1: { id: "n1", name: "notes.pdf", mimeType: "application/pdf", size: "300", parents: [ROOT] },
+    x1: { id: "x1", name: "elsewhere.pdf", mimeType: "application/pdf", size: "5", parents: ["other"] },
+    other: { id: "other", name: "Private", mimeType: "application/vnd.google-apps.folder", parents: [] },
+  };
+  const uploads = [], writes = [];
+  const mk = (conn, storageRow) => async (url, opts = {}) => {
+    const u = String(url);
+    const json = (body, status = 200) => ({ ok: status < 300, status, json: async () => body, arrayBuffer: async () => Buffer.from("%PDF-fake"), headers: { get: (k) => (k === "content-type" ? "application/pdf" : null) } });
+    if (u.includes("/rest/v1/estimator_kv?key=eq.gradcon-google-mail")) return json(conn ? [{ value: conn }] : []);
+    if (u.includes("/rest/v1/estimator_kv?key=eq.gradcon-storage")) return json(storageRow ? [{ value: storageRow }] : []);
+    if (u.includes("oauth2.googleapis.com/token")) return json({ access_token: "tok", expires_in: 3600 });
+    if (u.endsWith("/rest/v1/estimator_kv") && opts.method === "POST") { writes.push(JSON.parse(opts.body)); return json({}, 201); }
+    if (u.includes("/storage/v1/object/gradcon-files/")) { uploads.push({ path: u.split("/gradcon-files/")[1], type: opts.headers && opts.headers["Content-Type"], bytes: opts.body }); return json({ Key: "ok" }); }
+    const m = /\/drive\/v3\/files\/([^/?]+)(\/export)?\?/.exec(u);
+    if (m) { const f = files[decodeURIComponent(m[1])]; if (!f) return json({ error: { message: "not found" } }, 404); if (m[2] || u.includes("alt=media")) return json({}); return json(f); }
+    if (u.includes("/drive/v3/files?")) {
+      const q = decodeURIComponent(new URL(u).searchParams.get("q") || "");
+      const inParent = /'([^']+)' in parents/.exec(q);
+      let out = Object.values(files).filter((f) => f.id !== ROOT && f.id !== "other");
+      if (inParent) out = out.filter((f) => (f.parents || []).includes(inParent[1]));
+      else { const t = /contains '([^']+)'/.exec(q); out = out.filter((f) => f.name.toLowerCase().includes(t[1].toLowerCase())); }
+      if (/mimeType = 'application\/vnd\.google-apps\.folder'/.test(q)) out = out.filter((f) => f.mimeType.endsWith("folder"));
+      return json({ files: out });
+    }
+    throw new Error("unexpected fetch " + u);
+  };
+  G.resetTokenCache();
+  assert.equal((await DR.runDrive({ action: "list" }, {}, mk(null))).status, 503);
+  assert.equal((await DR.runDrive({ action: "list" }, genv, mk(null))).status, 409);
+  const mailOnly = { email: "projects@gradcon.com.au", refresh: G.encryptText("1//r", genv), scope: G.GMAIL_SCOPE };
+  const r409 = await DR.runDrive({ action: "list" }, genv, mk(mailOnly)); assert.equal(r409.status, 409); assert.ok(r409.body.needsReconnect, "a mail-only connection says reconnect");
+  const st0 = await DR.runDrive({ action: "status" }, genv, mk(mailOnly)); assert.equal(st0.status, 200); assert.equal(st0.body.drive, false); assert.equal(st0.body.root, null);
+  const conn = { email: "projects@gradcon.com.au", refresh: G.encryptText("1//r", genv), scope: `${G.GMAIL_SCOPE} ${G.DRIVE_SCOPE}` };
+  const f = mk(conn);
+  G.resetTokenCache();
+  const st = await DR.runDrive({ action: "status" }, genv, f); assert.equal(st.body.drive, true); assert.equal(st.body.root.name, "Gradcon Projects"); assert.ok(st.body.root.isDefault);
+  const list = await DR.runDrive({ action: "list" }, genv, f); assert.deepEqual(list.body.files.map((x) => x.name), ["12 Beach Rd", "notes.pdf"]); assert.equal(list.body.files[0].kind, "folder");
+  const fo = await DR.runDrive({ action: "folder", id: "folder12BeachRd01" }, genv, f); assert.equal(fo.body.folder.name, "12 Beach Rd"); assert.deepEqual(fo.body.path.map((p) => p.id), [ROOT]);
+  const mt = await DR.runDrive({ action: "match", projectName: "12 Beach Road Mentone" }, genv, f); assert.equal(mt.body.best && mt.body.best.id, "folder12BeachRd01");
+  const se = await DR.runDrive({ action: "search", text: "pdf" }, genv, f); assert.deepEqual(se.body.files.map((x) => x.id).sort(), ["n1", "p1"], "elsewhere.pdf is outside the root and never returned");
+  const se2 = await DR.runDrive({ action: "search", text: "pdf", within: "folder12BeachRd01" }, genv, f); assert.deepEqual(se2.body.files.map((x) => x.id), ["p1"], "a search within the project folder");
+  assert.equal((await DR.runDrive({ action: "file", id: "x1" }, genv, f)).status, 403, "outside the root is refused");
+  assert.equal((await DR.runDrive({ action: "list", folderId: "other" }, genv, f)).status, 403);
+  const cp = await DR.runDrive({ action: "copy", id: "p1", target: "preview" }, genv, f);
+  assert.equal(cp.status, 200); assert.ok(/^drive\/p1\/abc\/plan\.pdf$/.test(cp.body.file.path), cp.body.file.path); assert.ok(/storage\/v1\/object\/public\/gradcon-files\/drive\/p1\/abc\/plan\.pdf$/.test(cp.body.file.url)); assert.equal(cp.body.file.fromDrive.id, "p1");
+  const cj = await DR.runDrive({ action: "copy", id: "d1", target: "job", jobId: "job7" }, genv, f);
+  assert.equal(cj.body.file.path, "ai-engine/job7/spec.pdf", "a Google Doc copies as PDF under the job"); assert.equal(cj.body.file.mimeType, "application/pdf");
+  assert.equal((await DR.runDrive({ action: "copy", id: "p1", target: "job" }, genv, f)).status, 400, "a job copy needs the job id");
+  assert.equal((await DR.runDrive({ action: "copy", id: "x1" }, genv, f)).status, 403);
+  // Settings: another root folder
+  const sr = await DR.runDrive({ action: "setRoot", link: "https://drive.google.com/drive/folders/folder12BeachRd01" }, genv, f); assert.equal(sr.status, 200); assert.equal(sr.body.root.name, "12 Beach Rd"); assert.equal(writes[0].key, "gradcon-storage"); assert.equal(writes[0].value.drive.rootId, "folder12BeachRd01", "the chosen root is stored in the shared row");
+  assert.equal((await DR.runDrive({ action: "setRoot", id: "p1" }, genv, f)).status, 400, "a file is not a root");
+  const stored = { drive: { rootId: "folder12BeachRd01", rootName: "12 Beach Rd" } };
+  const scoped = await DR.runDrive({ action: "list" }, genv, mk(conn, stored)); assert.deepEqual(scoped.body.files.map((x) => x.id), ["p1", "d1"], "the chosen root scopes the listing");
+  assert.equal((await DR.runDrive({ action: "file", id: "n1" }, genv, mk(conn, stored))).status, 403, "...and refuses what is above it");
+});
+check("driveFiles helpers: a project's folder and attachments live on the quote (sync with it); attach is idempotent by Drive id; detach removes one", () => {
+  const F = { id: "p1", name: "plan.pdf", kind: "pdf", mimeType: "application/pdf", size: 1200, modifiedTime: "2026-10-20T00:00:00Z", webViewLink: "https://drive.google.com/file/d/p1" };
+  let q = { projectName: "12 Beach Road", items: [] };
+  q = { ...q, ...DF.setProjectDriveFolderPatch(q, { id: "f1", name: "12 Beach Rd" }, "2026-10-21T00:00:00Z") };
+  assert.deepEqual(DF.projectDriveFolder(q), { id: "f1", name: "12 Beach Rd", webViewLink: "https://drive.google.com/drive/folders/f1", chosenAt: "2026-10-21T00:00:00Z" });
+  q = { ...q, ...DF.attachFilePatch(q, F, "2026-10-21T01:00:00Z") };
+  assert.equal(DF.driveFiles(q).length, 1); assert.ok(DF.isAttached(q, "p1")); assert.equal(DF.driveFiles(q)[0].provider, "drive"); assert.equal(DF.driveFiles(q)[0].fileId, "p1");
+  assert.deepEqual(DF.attachFilePatch(q, F), {}, "attaching the same Drive file again does nothing");
+  const id = DF.driveFiles(q)[0].id; q = { ...q, ...DF.detachFilePatch(q, id) }; assert.equal(DF.driveFiles(q).length, 0);
+  assert.equal(DF.projectAddress({ siteAddress: "12 Beach Rd" }), "12 Beach Rd"); assert.equal(DF.projectAddress({}), "");
+  assert.equal(DF.fmtBytes(2 * 1048576), "2.0 MB"); assert.equal(DF.fileIcon("folder"), "📁");
 });
 
 const { computeTenderProjectSum, parseTenderPrice, seedTenderItems } = await import("../src/lib/tenderQuoteDefaults.js");

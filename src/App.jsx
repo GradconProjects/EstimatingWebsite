@@ -9,6 +9,8 @@ import { pendingRateUpdates, readLibraryState, readLastSynced, writeLastSynced, 
 import { effectiveRates, statusChangePatch, needsFreeze, freezeRates, frozenRateDrift, hasFrozenRates, isRatesLocked } from "./lib/rateFreeze.js";
 import { RATE_CHANGES_KEY, recordRateChanges, pendingRateChanges, decideRateChangesPatch, releaseKeptRatesPatch } from "./lib/rateChanges.js";
 import RateChangesPrompt, { KeptRatesBanner } from "./components/RateChangesPrompt.jsx";
+import DriveFilesDrawer from "./components/DriveFilesDrawer.jsx";
+import { driveFiles } from "./lib/driveFiles.js";
 import RateValidityBanner from "./components/RateValidityBanner.jsx";
 import { buildQuoteExcelHtml, quoteExcelFilename, buildQuoteCsv } from "./lib/exportQuote.js";
 import { useStoredState } from "./lib/storage.js";
@@ -492,7 +494,7 @@ export default function App() {
         )}
         {view === "planner" && <PlannerView projects={projects} onOpen={setActiveId} />}
         {view === "folder" && (
-          <ProjectFolderView projects={projects} officeComms={officeComms} setOfficeComms={setOfficeComms} onOpen={setActiveId} />
+          <ProjectFolderView projects={projects} officeComms={officeComms} setOfficeComms={setOfficeComms} onOpen={setActiveId} onOpenDrive={(id) => { try { window.localStorage.setItem("gradcon-open-drive", id); } catch { /* storage blocked */ } setActiveId(id); }} />
         )}
         {ratesOpen && <RatesModal rates={rates} setRates={setRates} onClose={() => setRatesOpen(false)} />}
         {elementTypesOpen && (
@@ -599,6 +601,16 @@ function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, rate
   }, [quote, quoteStatus]);
   const frozenDrift = useMemo(() => (locked ? frozenRateDrift(quote, liveRates) : []), [locked, quote, liveRates]);
   const [repriceArmed, setRepriceArmed] = useState(false);
+  // Google Drive project files (lib/driveFiles.js): the Files drawer, and the
+  // same drawer as a picker for an element card's markups — `pickDriveFile`
+  // resolves with the copied file once "Use" is pressed, null when closed.
+  const [drive, setDrive] = useState(null);   // {mode, accept, resolve}
+  const pickDriveFile = (accept) => new Promise((resolve) => setDrive({ mode: "pick", accept, resolve }));
+  useEffect(() => {
+    // the Project Folder's "Drive files" button opens the project on its drawer
+    try { if (window.localStorage.getItem("gradcon-open-drive") === project.id) { window.localStorage.removeItem("gradcon-open-drive"); setDrive({ mode: "attach" }); } } catch { /* storage blocked */ }
+  }, [project.id]);
+  const patchQuoteFieldsLocal = (patch) => { if (patch && Object.keys(patch).length) setQuote((q) => ({ ...q, ...patch })); };
 
   // Editing a labour rate on any element's crew sheet writes the SAME rates
   // store the Rates modal shows — one library, one figure, everywhere.
@@ -894,6 +906,14 @@ function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, rate
             <Printer size={16} /> Internal Quote
           </button>
           <button
+            onClick={() => setDrive({ mode: "attach" })}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-900 hover:bg-blue-800 text-sm font-medium transition-colors flex-none"
+            title="This project's files in the office's Google Drive folder — browse, search, preview, attach"
+            data-testid="drive-files-button"
+          >
+            <FolderOpen size={16} /> Files{driveFiles(quote).length > 0 && <span className="text-orange-300">({driveFiles(quote).length})</span>}
+          </button>
+          <button
             onClick={() => {
               setPrintTarget("external");
               setExternalQuoteOpen(true);
@@ -1084,6 +1104,7 @@ function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, rate
               onChange={(next) => updateItem(item.id, next)}
               onRemove={() => removeItem(item.id)}
               onDuplicate={() => duplicateItem(item.id)}
+              onPickFromDrive={pickDriveFile}
               onMoveUp={idx > 0 ? () => moveItem(item.id, -1) : null}
               onMoveDown={idx < items.length - 1 ? () => moveItem(item.id, 1) : null}
               onReorder={reorderItems}
@@ -1162,6 +1183,18 @@ function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, rate
       )}
 
       {ratesOpen && <RatesModal rates={rates} setRates={setRates} lockedFor={locked && hasFrozenRates(quote) ? quote.ratesFrozen : null} onClose={() => setRatesOpen(false)} />}
+      {drive && (
+        <DriveFilesDrawer
+          quote={quote}
+          patchQuote={patchQuoteFieldsLocal}
+          mode={drive.mode}
+          accept={drive.accept || null}
+          copyTarget="markup"
+          projectId={project.id}
+          onPick={(file, copied) => { if (drive.resolve) drive.resolve(copied); setDrive(null); }}
+          onClose={() => { if (drive.resolve) drive.resolve(null); setDrive(null); }}
+        />
+      )}
       {elementTypesOpen && (
         <ManageElementTypesModal customTypes={customTypes} setCustomTypes={setCustomTypes} onClose={() => setElementTypesOpen(false)} />
       )}
