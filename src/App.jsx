@@ -104,6 +104,25 @@ const blankQuote = () => ({
 // force a fresh mount" bridge the Estimates "Publish to Quote" flow already
 // uses. Clearing it here means a later plain reload of Quotes (no flag set)
 // falls through to the normal remembered-project/Dashboard behaviour.
+// Colour scheme (index.css `html[data-theme]`): the portal preference
+// `quotesTheme` — "library" (the Rates Library's palette, the default since
+// 22 Oct 2026), "classic" (blueprint navy & orange) or "graphite". Read on
+// mount and on every preference save (the shell writes localStorage; the
+// `storage` event reaches this blob: frame), so a change in Settings shows
+// without a reload.
+export const QUOTES_THEMES = ["library", "classic", "graphite"];
+export function readQuotesTheme() {
+  try {
+    const p = JSON.parse(localStorage.getItem("gradcon-preferences")) || {};
+    return QUOTES_THEMES.includes(p.quotesTheme) ? p.quotesTheme : "library";
+  } catch { return "library"; }
+}
+export function applyQuotesTheme(theme = readQuotesTheme()) {
+  const root = document.documentElement;
+  if (theme === "classic") delete root.dataset.theme; else root.dataset.theme = theme;
+  return theme;
+}
+
 function takeInitialView() {
   try {
     const initial = window.localStorage.getItem(INITIAL_VIEW_KEY);
@@ -125,6 +144,13 @@ export default function App() {
   const [rates, setRates, ratesStatus] = useStoredState("gradcon-rates", initialRates, { cacheFirst: true });
   const settled = (status) => status !== "loading" && status !== "syncing";
   const [initialView] = useState(takeInitialView);
+  useEffect(() => {
+    applyQuotesTheme();
+    const onStorage = (e) => { if (!e || !e.key || e.key === "gradcon-preferences") applyQuotesTheme(); };
+    window.addEventListener("storage", onStorage);
+    window.addEventListener("gradcon:prefs-changed", onStorage);
+    return () => { window.removeEventListener("storage", onStorage); window.removeEventListener("gradcon:prefs-changed", onStorage); };
+  }, []);
   const [activeId, setActiveId] = useState(() => {
     // A pending Planner/Project Folder jump always wins over whatever project
     // this browser last had open — otherwise ProjectEditor would take over

@@ -22,6 +22,76 @@ input[type="number"] {
   min-width: 0;
 }
 
+
+/* ---------------------------------------------------------------------------
+   Colour schemes (Grady, 22 Oct 2026: "change the quotes colour theme to that
+   of the rates library with options in settings to change the colour scheme").
+   The components keep their Tailwind classes; a scheme re-colours the chrome
+   (the blue-9xx header bands) and the accent (the orange money figures and
+   primary actions) through `html[data-theme]`, set by App.jsx from the portal
+   preference `quotesTheme` (Settings → App behaviour → "Quotes colour
+   scheme"). "library" — the Rates Library's navy #0f2e4c / #1F4E78, its
+   #2f7fd6 accent, its #eef2f6 page — is the default; "classic" is the
+   blueprint navy & orange the app shipped with (no overrides); "graphite" a
+   neutral dark chrome with an emerald accent.
+   --------------------------------------------------------------------------- */
+html[data-theme="library"] {
+  --t-chrome-950: #0f2e4c; --t-chrome-900: #1F4E78; --t-chrome-800: #2a5f8f; --t-chrome-700: #35709f;
+  --t-chrome-300: #a9cdf0; --t-chrome-200: #D9EAF7; --t-chrome-100: #e8f2fb; --t-chrome-50: #eef4f9;
+  --t-accent-700: #2566ad; --t-accent-600: #2f7fd6; --t-accent-500: #3b8be0; --t-accent-400: #5fa3ea; --t-accent-300: #a9cdf0;
+  --t-accent-200: #c9dff5; --t-accent-100: #D9EAF7; --t-accent-50: #eef4f9; --t-accent-900: #1a4a7c; --t-accent-800: #1f5a95;
+  --t-page: #eef2f6; --t-font: "Segoe UI", Calibri, ui-sans-serif, system-ui, Arial, sans-serif;
+}
+html[data-theme="graphite"] {
+  --t-chrome-950: #1c2126; --t-chrome-900: #2b333b; --t-chrome-800: #3a444e; --t-chrome-700: #4a5661;
+  --t-chrome-300: #b6c0c9; --t-chrome-200: #d8dee3; --t-chrome-100: #e8ecef; --t-chrome-50: #f1f3f5;
+  --t-accent-700: #047857; --t-accent-600: #059669; --t-accent-500: #10b981; --t-accent-400: #34d399; --t-accent-300: #6ee7b7;
+  --t-accent-200: #a7f3d0; --t-accent-100: #d1fae5; --t-accent-50: #ecfdf5; --t-accent-900: #064e3b; --t-accent-800: #065f46;
+  --t-page: #f3f4f6; --t-font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+html[data-theme="library"] body, html[data-theme="graphite"] body { font-family: var(--t-font); }
+html[data-theme] .bg-neutral-100 { background-color: var(--t-page); }
+/* chrome: the blue-9xx bands, tabs and text */
+html[data-theme] .bg-blue-950 { background-color: var(--t-chrome-950); }
+html[data-theme] .bg-blue-900 { background-color: var(--t-chrome-900); }
+html[data-theme] .bg-blue-800, html[data-theme] .hover\:bg-blue-800:hover { background-color: var(--t-chrome-800); }
+html[data-theme] .hover\:bg-blue-900:hover { background-color: var(--t-chrome-900); }
+html[data-theme] .hover\:bg-blue-700:hover { background-color: var(--t-chrome-700); }
+html[data-theme] .bg-blue-100 { background-color: var(--t-chrome-100); }
+html[data-theme] .bg-blue-50, html[data-theme] .bg-blue-50\/40 { background-color: var(--t-chrome-50); }
+html[data-theme] .text-blue-950 { color: var(--t-chrome-950); }
+html[data-theme] .text-blue-900 { color: var(--t-chrome-900); }
+html[data-theme] .text-blue-800 { color: var(--t-chrome-800); }
+html[data-theme] .text-blue-700 { color: var(--t-chrome-700); }
+html[data-theme] .text-blue-300 { color: var(--t-chrome-300); }
+html[data-theme] .text-blue-200 { color: var(--t-chrome-200); }
+html[data-theme] .text-blue-100 { color: var(--t-chrome-100); }
+html[data-theme] .border-blue-200 { border-color: var(--t-chrome-200); }
+html[data-theme] .border-blue-800, html[data-theme] .border-blue-800\/70 { border-color: var(--t-chrome-800); }
+html[data-theme] .border-blue-900, html[data-theme] .border-blue-900\/60 { border-color: var(--t-chrome-900); }
+html[data-theme] .ring-blue-950 { --tw-ring-color: var(--t-chrome-950); }
+/* accent: money figures and primary actions */
+html[data-theme] .bg-orange-600 { background-color: var(--t-accent-600); }
+html[data-theme] .bg-orange-700, html[data-theme] .hover\:bg-orange-700:hover { background-color: var(--t-accent-700); }
+html[data-theme] .hover\:bg-orange-600:hover { background-color: var(--t-accent-600); }
+html[data-theme] .bg-orange-500, html[data-theme] .hover\:bg-orange-500:hover { background-color: var(--t-accent-500); }
+html[data-theme] .bg-orange-200 { background-color: var(--t-accent-200); }
+html[data-theme] .bg-orange-100, html[data-theme] .hover\:bg-orange-100:hover { background-color: var(--t-accent-100); }
+html[data-theme] .bg-orange-50, html[data-theme] .bg-orange-50\/40 { background-color: var(--t-accent-50); }
+html[data-theme] .text-orange-900 { color: var(--t-accent-900); }
+html[data-theme] .text-orange-800 { color: var(--t-accent-800); }
+html[data-theme] .text-orange-700, html[data-theme] .hover\:text-orange-700:hover { color: var(--t-accent-700); }
+html[data-theme] .text-orange-600, html[data-theme] .hover\:text-orange-600:hover { color: var(--t-accent-600); }
+html[data-theme] .text-orange-500 { color: var(--t-accent-500); }
+html[data-theme] .text-orange-400 { color: var(--t-accent-400); }
+html[data-theme] .text-orange-300 { color: var(--t-accent-300); }
+html[data-theme] .border-orange-400, html[data-theme] .focus\:border-orange-400:focus { border-color: var(--t-accent-400); }
+html[data-theme] .border-orange-300 { border-color: var(--t-accent-300); }
+html[data-theme] .border-orange-200 { border-color: var(--t-accent-200); }
+html[data-theme] .border-orange-100 { border-color: var(--t-accent-100); }
+html[data-theme] .ring-orange-400, html[data-theme] .focus\:ring-orange-400:focus { --tw-ring-color: var(--t-accent-400); }
+html[data-theme] .decoration-orange-400 { text-decoration-color: var(--t-accent-400); }
+
 /* Print / PDF export (see components/PrintQuoteReport.jsx) — the on-screen
    app is hidden entirely via print:hidden classes, this report is the only
    thing that prints. */

@@ -774,6 +774,15 @@
       </div>
       <div class="field"><label class="settings-check"><input type="checkbox" id="settings-download-on-save"> Quotes: also save a copy to this computer on every Save</label></div>
       <div class="field">
+        <label for="settings-quotes-theme">Quotes colour scheme</label>
+        <select id="settings-quotes-theme">
+          <option value="library">Rates Library — navy &amp; blue (default)</option>
+          <option value="classic">Classic — blueprint navy &amp; orange</option>
+          <option value="graphite">Graphite — charcoal &amp; green</option>
+        </select>
+        <div class="hint">Re-colours the Quotes header bands, buttons and money figures. Applies the moment it is saved, in every open Quotes tab.</div>
+      </div>
+      <div class="field">
         <label for="settings-page-orient">PDF / print page orientation</label>
         <select id="settings-page-orient">
           <option value="portrait">Portrait (default)</option>
@@ -1175,7 +1184,8 @@
     ['settings-est-trenchmesh','estTrenchMeshType','4 Bar-L12TM'],
     ['settings-est-meshtype','estMeshType','SL82'],
     ['settings-est-startpage','estStartPage','setup'],
-    ['settings-page-orient','pageOrientation','portrait']
+    ['settings-page-orient','pageOrientation','portrait'],
+    ['settings-quotes-theme','quotesTheme','library']
   ];
   // Toggle-backed preferences: [element id, prefs key, default-on?]. Stored
   // as explicit booleans on save (like showHero), so the apps can
