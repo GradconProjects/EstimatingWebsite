@@ -13,8 +13,10 @@ import { driveApi, projectDriveFolder, setProjectDriveFolderPatch, driveFiles, i
  * The project's own folder is remembered on the quote (storageFolders.drive);
  * the first open offers the folder whose name fits the project.
  */
-export default function DriveFilesDrawer({ quote, patchQuote, mode = "attach", accept = null, copyTarget = "markup", onPick, onClose, projectId }) {
-  const folder = projectDriveFolder(quote);
+export default function DriveFilesDrawer({ quote, patchQuote, mode = "attach", accept = null, copyTarget = "markup", onPick, onClose, projectId, inline = false }) {
+  // mode "browse" (the Gradcon Cloud Storage page): no project, no attach, no
+  // Use — browse, search, preview and open in Drive from the office folder down.
+  const folder = quote ? projectDriveFolder(quote) : null;
   const [status, setStatus] = useState(null);           // /api/drive status
   const [error, setError] = useState(null);
   const [cwd, setCwd] = useState(null);                 // {id, name}
@@ -48,6 +50,7 @@ export default function DriveFilesDrawer({ quote, patchQuote, mode = "attach", a
         setStatus(st);
         if (!st.connected || !st.drive) return;
         if (folder) { setPath([{ id: folder.id, name: folder.name }]); await load({ id: folder.id, name: folder.name }); return; }
+        if (!quote) { setPath([{ id: st.root.id, name: st.root.name || "Project files" }]); await load({ id: st.root.id, name: st.root.name || "Project files" }); return; }
         const m = await driveApi({ action: "match", projectName: quote.projectName || "", address: projectAddress(quote) });
         if (cancelled) return;
         setCandidates(m);
@@ -61,7 +64,7 @@ export default function DriveFilesDrawer({ quote, patchQuote, mode = "attach", a
 
   const enter = (f) => { const next = [...path, { id: f.id, name: f.name }]; setPath(next); load({ id: f.id, name: f.name }); };
   const jumpTo = (i) => { const next = path.slice(0, i + 1); setPath(next); load(next[next.length - 1]); };
-  const chooseFolder = (f) => { patchQuote(setProjectDriveFolderPatch(quote, f)); setCandidates(null); setPath([{ id: f.id, name: f.name }]); load({ id: f.id, name: f.name }); };
+  const chooseFolder = (f) => { if (!quote) return; patchQuote(setProjectDriveFolderPatch(quote, f)); setCandidates(null); setPath([{ id: f.id, name: f.name }]); load({ id: f.id, name: f.name }); };
   const runSearch = async (e) => {
     if (e) e.preventDefault();
     const t = query.trim(); if (!t) { setResults(null); return; }
@@ -84,7 +87,7 @@ export default function DriveFilesDrawer({ quote, patchQuote, mode = "attach", a
   const showing = useMemo(() => list.filter((f) => f.kind === "folder" || mode === "attach" || canPick(f) || true), [list, mode]);
 
   const Row = ({ f }) => {
-    const att = isAttached(quote, f.id);
+    const att = quote ? isAttached(quote, f.id) : false;
     return (
       <div className={`flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-neutral-50 ${f.kind === "folder" ? "cursor-pointer" : ""}`} data-testid="drive-row" data-kind={f.kind} onClick={f.kind === "folder" ? () => enter(f) : undefined}>
         <span className="w-6 text-center flex-none">{fileIcon(f.kind)}</span>
@@ -96,7 +99,7 @@ export default function DriveFilesDrawer({ quote, patchQuote, mode = "attach", a
           <span className="flex items-center gap-1 flex-none">
             {PREVIEWABLE.has(f.kind) && <button type="button" onClick={() => openPreview(f)} className="p-1 rounded hover:bg-neutral-200 text-neutral-600" title="Preview here" aria-label={`Preview ${f.name}`}><Eye size={14} /></button>}
             <a href={f.webViewLink} target="_blank" rel="noopener" className="p-1 rounded hover:bg-neutral-200 text-neutral-600" title="Open in Google Drive" aria-label={`Open ${f.name} in Drive`}><ExternalLink size={14} /></a>
-            {mode === "attach" ? (
+            {mode === "browse" ? null : mode === "attach" ? (
               att ? <span className="text-[11px] text-emerald-700 font-semibold flex items-center gap-0.5" data-testid="drive-attached"><Check size={12} /> Attached</span>
                 : <button type="button" onClick={() => patchQuote(attachFilePatch(quote, f))} className="px-2 py-0.5 rounded-md bg-orange-600 hover:bg-orange-700 text-white text-[11px] font-semibold" data-testid="drive-attach"><Paperclip size={11} className="inline mr-0.5" />Attach</button>
             ) : (
@@ -108,16 +111,14 @@ export default function DriveFilesDrawer({ quote, patchQuote, mode = "attach", a
     );
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex" role="dialog" aria-label="Google Drive files" data-testid="drive-drawer">
-      <div className="flex-1 bg-black/30" onClick={onClose} />
-      <div className="w-full max-w-xl bg-white h-full shadow-2xl flex flex-col">
+  const body = (
+      <div className={inline ? "w-full bg-white rounded-xl border border-neutral-200 shadow-sm flex flex-col overflow-hidden" : "w-full max-w-xl bg-white h-full shadow-2xl flex flex-col"} style={inline ? { minHeight: "28rem", maxHeight: "40rem" } : undefined}>
         <div className="px-4 py-3 border-b border-neutral-200 flex items-center justify-between gap-3 bg-blue-950 text-white">
           <div className="min-w-0">
             <div className="text-[10px] uppercase tracking-widest text-blue-300 font-semibold">Gradcon Storage · Google Drive</div>
-            <div className="font-semibold truncate">{mode === "pick" ? "Pick a file" : "Project files"}{folder ? <span className="text-blue-200 font-normal"> · {folder.name}</span> : null}</div>
+            <div className="font-semibold truncate">{mode === "pick" ? "Pick a file" : mode === "browse" ? "The office's project files" : "Project files"}{folder ? <span className="text-blue-200 font-normal"> · {folder.name}</span> : null}{mode === "browse" && status && status.root ? <span className="text-blue-200 font-normal"> · {status.root.name}</span> : null}</div>
           </div>
-          <button type="button" onClick={onClose} className="p-1.5 rounded hover:bg-blue-900" aria-label="Close"><X size={18} /></button>
+          {onClose && <button type="button" onClick={onClose} className="p-1.5 rounded hover:bg-blue-900" aria-label="Close"><X size={18} /></button>}
         </div>
 
         {status && (!status.configured || !status.connected || !status.drive) && (
@@ -149,7 +150,7 @@ export default function DriveFilesDrawer({ quote, patchQuote, mode = "attach", a
             <div className="font-semibold text-blue-950 mb-1">Which Drive folder is this project's?</div>
             {candidates.candidates.length ? candidates.candidates.map((c) => (
               <button key={c.id} type="button" onClick={() => chooseFolder(c)} className="block w-full text-left px-2 py-1 rounded hover:bg-blue-100">📁 {c.name} <span className="text-neutral-500">· {Math.round(c.score * 100)}% match</span></button>
-            )) : <div className="text-neutral-600">No folder name resembles "{quote.projectName}". Browse below and use "This is the project's folder" on the right one.</div>}
+            )) : <div className="text-neutral-600">No folder name resembles "{quote && quote.projectName}". Browse below and use "This is the project's folder" on the right one.</div>}
           </div>
         )}
 
@@ -169,7 +170,7 @@ export default function DriveFilesDrawer({ quote, patchQuote, mode = "attach", a
               <button type="button" onClick={() => jumpTo(i)} className={`hover:underline ${i === path.length - 1 ? "font-semibold text-neutral-900" : ""}`}>{p.name}</button>
             </span>
           ))}
-          {cwd && !results && (!folder || folder.id !== cwd.id) && cwd.id !== (status && status.root && status.root.id) && (
+          {quote && cwd && !results && (!folder || folder.id !== cwd.id) && cwd.id !== (status && status.root && status.root.id) && (
             <button type="button" onClick={() => chooseFolder(cwd)} className="ml-auto text-blue-900 underline" data-testid="drive-set-folder">This is the project's folder</button>
           )}
           {cwd && !results && folder && folder.id !== cwd.id && cwd.id === (status && status.root && status.root.id) && (
@@ -206,6 +207,12 @@ export default function DriveFilesDrawer({ quote, patchQuote, mode = "attach", a
         )}
         <div className="px-4 py-2 border-t border-neutral-200 text-[10.5px] text-neutral-500 flex items-center gap-1"><FolderOpen size={11} /> Read-only: nothing here changes Drive. {status && status.email ? `Connected as ${status.email}.` : ""}</div>
       </div>
+  );
+  if (inline) return <div data-testid="drive-browser">{body}</div>;
+  return (
+    <div className="fixed inset-0 z-50 flex" role="dialog" aria-label="Google Drive files" data-testid="drive-drawer">
+      <div className="flex-1 bg-black/30" onClick={onClose} />
+      {body}
     </div>
   );
 }

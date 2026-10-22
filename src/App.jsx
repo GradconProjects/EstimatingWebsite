@@ -7,8 +7,9 @@ import { ELEMENT_TYPES, QUOTE_STATUSES, QUOTE_STATUS_STYLES, QUOTE_SCOPES } from
 import { defaultRates, newElementItem, computeGrandTotal, uid, money, rateKey, isManualQuoteKey, SCOPE_KEYS, scopeLabel } from "./lib/costing.js";
 import { pendingRateUpdates, readLibraryState, readLastSynced, writeLastSynced, RATES_LIBRARY_KEY } from "./lib/ratesLibrarySync.js";
 import { effectiveRates, statusChangePatch, needsFreeze, freezeRates, frozenRateDrift, hasFrozenRates, isRatesLocked } from "./lib/rateFreeze.js";
-import { RATE_CHANGES_KEY, recordRateChanges, pendingRateChanges, decideRateChangesPatch, releaseKeptRatesPatch } from "./lib/rateChanges.js";
+import { RATE_CHANGES_KEY, recordRateChanges, pendingRateChanges, elementRateChanges, decideRateChangesPatch, releaseKeptRatesPatch } from "./lib/rateChanges.js";
 import RateChangesPrompt, { KeptRatesBanner } from "./components/RateChangesPrompt.jsx";
+import CloudStorageView from "./components/CloudStorageView.jsx";
 import DriveFilesDrawer from "./components/DriveFilesDrawer.jsx";
 import { driveFiles } from "./lib/driveFiles.js";
 import RateValidityBanner from "./components/RateValidityBanner.jsx";
@@ -106,9 +107,9 @@ const blankQuote = () => ({
 function takeInitialView() {
   try {
     const initial = window.localStorage.getItem(INITIAL_VIEW_KEY);
-    if (initial === "planner" || initial === "folder") {
+    if (initial === "planner" || initial === "folder" || initial === "drive") {
       window.localStorage.removeItem(INITIAL_VIEW_KEY);
-      return initial;
+      return initial === "drive" ? "folder" : initial; // the portal's Google Drive button lands on Cloud Storage
     }
   } catch { /* best-effort */ }
   return null;
@@ -473,7 +474,7 @@ export default function App() {
             {[
               { key: "dashboard", label: "Dashboard", Icon: LayoutDashboard },
               { key: "planner", label: "Project Management", Icon: Radar },
-              { key: "folder", label: "Gradcon Vault", Icon: FolderOpen },
+              { key: "folder", label: "Gradcon Cloud Storage", Icon: FolderOpen },
             ].map(({ key, label, Icon }) => (
               <button
                 key={key}
@@ -494,7 +495,9 @@ export default function App() {
         )}
         {view === "planner" && <PlannerView projects={projects} onOpen={setActiveId} />}
         {view === "folder" && (
-          <ProjectFolderView projects={projects} officeComms={officeComms} setOfficeComms={setOfficeComms} onOpen={setActiveId} onOpenDrive={(id) => { try { window.localStorage.setItem("gradcon-open-drive", id); } catch { /* storage blocked */ } setActiveId(id); }} />
+          <CloudStorageView>
+            <ProjectFolderView projects={projects} officeComms={officeComms} setOfficeComms={setOfficeComms} onOpen={setActiveId} onOpenDrive={(id) => { try { window.localStorage.setItem("gradcon-open-drive", id); } catch { /* storage blocked */ } setActiveId(id); }} />
+          </CloudStorageView>
         )}
         {ratesOpen && <RatesModal rates={rates} setRates={setRates} onClose={() => setRatesOpen(false)} />}
         {elementTypesOpen && (
@@ -605,6 +608,10 @@ function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, rate
   // same drawer as a picker for an element card's markups — `pickDriveFile`
   // resolves with the copied file once "Use" is pressed, null when closed.
   const [drive, setDrive] = useState(null);   // {mode, accept, resolve}
+  // Rates Library changes this project still has to decide (lib/rateChanges.js), and
+  // which element each one touches — the cards name theirs (Grady, 22 Oct 2026).
+  const pendingChanges = useMemo(() => pendingRateChanges(quote, rateChanges, project.createdAt), [quote, rateChanges, project.createdAt]);
+  const changesByElement = useMemo(() => elementRateChanges(quote, liveRates, pendingChanges), [quote, liveRates, pendingChanges]);
   const pickDriveFile = (accept) => new Promise((resolve) => setDrive({ mode: "pick", accept, resolve }));
   useEffect(() => {
     // the Project Folder's "Drive files" button opens the project on its drawer
@@ -1034,7 +1041,7 @@ function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, rate
         <div className="space-y-3">
           <RateValidityBanner rates={liveRates} />
           <RateChangesPrompt
-            changes={pendingRateChanges(quote, rateChanges, project.createdAt)}
+            changes={pendingChanges}
             quote={quote}
             liveRates={liveRates}
             onDecide={(changes, apply) => {
@@ -1105,6 +1112,7 @@ function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, rate
               onRemove={() => removeItem(item.id)}
               onDuplicate={() => duplicateItem(item.id)}
               onPickFromDrive={pickDriveFile}
+              rateChanges={changesByElement[item.id]}
               onMoveUp={idx > 0 ? () => moveItem(item.id, -1) : null}
               onMoveDown={idx < items.length - 1 ? () => moveItem(item.id, 1) : null}
               onReorder={reorderItems}

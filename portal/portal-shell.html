@@ -579,9 +579,9 @@
           <path d="M27 28.6h4.4l1.6 2.4h7.6l3.3 11H31.4a3 3 0 0 1-2.9-2.2z" fill="#f5b041"/>
         </svg>
       </span>
-      <h2>Gradcon Vault</h2>
-      <p>Documents and communications — one folder per project, plus a shared Office folder for company-wide files. Lives inside Quotes.</p>
-      <span class="cta">Open Gradcon Vault <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
+      <h2>Gradcon Cloud Storage</h2>
+      <p>The office's Google Drive project files inside the app, with the Gradcon Vault beneath — one folder per project, plus a shared Office folder for company-wide files. Lives inside Quotes.</p>
+      <span class="cta">Open Cloud Storage <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
     </button>
 
     <button class="panel-btn" data-target="aiengine">
@@ -897,7 +897,8 @@
       <button data-menu="rateslibrary">Rates Library</button>
       <button data-menu="costplanner">Cost Planner</button>
       <button data-menu="planner">Project Mgmt</button>
-      <button data-menu="folder">Vault</button>
+      <button data-menu="folder">Cloud Storage</button>
+      <button data-menu="drive" title="The office's Google Drive project files, inside the app">Google Drive</button>
       <button data-menu="aiengine">AI Engine</button>
     </nav>
     <button class="back-btn" id="refresh-btn" style="margin-left:auto;" title="Pull the latest saved work from any other device/user right now">
@@ -1379,7 +1380,8 @@
     costplanner:  { target:'costplanner',  view:null },
     aiengine:     { target:'aiengine',     view:null },
     planner:      { target:'quotes',       view:'planner' },
-    folder:       { target:'quotes',       view:'folder' }
+    folder:       { target:'quotes',       view:'folder' },
+    drive:        { target:'quotes',       view:'drive' }
   };
   function setActiveMenu(key){
     try{ localStorage.setItem('gradcon-portal-active-menu', key); }catch(err){}

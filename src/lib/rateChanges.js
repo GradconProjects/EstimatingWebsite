@@ -19,7 +19,7 @@
  * changes older than it (or older than the project itself) never prompt
  * again, a later library move on a kept key asks again. Pure, verify-covered.
  */
-import { computeGrandTotal } from "./costing.js";
+import { computeGrandTotal, computeElementCost } from "./costing.js";
 import { hasFrozenRates } from "./rateFreeze.js";
 
 export const RATE_CHANGES_KEY = "gradcon-rates-changes";
@@ -97,6 +97,38 @@ export function ratesWithChoice(quote, liveRates, changes, apply) {
 export function previousRates(liveRates, changes) {
   const out = { ...(liveRates || {}) };
   (changes || []).forEach((c) => { out[c.key] = { ...(out[c.key] || {}), unitCost: c.from }; });
+  return out;
+}
+
+/**
+ * Which ELEMENTS each change touches (Grady, 22 Oct 2026: "in each project,
+ * list the affected rates within the elements"): for every change, the
+ * elements whose direct cost moves when that one key takes the library's
+ * figure, with the $ each moves — {key: [{id, label, delta}]}. An element
+ * with no quantity on the key is not listed; a change no element carries
+ * has an empty list (it re-prices nothing today).
+ */
+export function rateChangeElements(quote, liveRates, changes) {
+  const out = {};
+  const items = (quote && quote.items) || [];
+  const scope = quote && quote.scope;
+  const base = ratesWithChoice(quote, liveRates, changes, []);
+  (changes || []).forEach((c) => {
+    const one = ratesWithChoice(quote, liveRates, changes, [c.key]);
+    out[c.key] = items.map((it, i) => {
+      const before = computeElementCost(it, base, scope).total;
+      const after = computeElementCost(it, one, scope).total;
+      return { id: it.id, label: it.label || `Element ${i + 1}`, delta: after - before };
+    }).filter((e) => Math.abs(e.delta) >= 0.005);
+  });
+  return out;
+}
+
+/** The same record turned around: {elementId: [{...change, delta}]}. */
+export function elementRateChanges(quote, liveRates, changes) {
+  const byKey = rateChangeElements(quote, liveRates, changes);
+  const out = {};
+  (changes || []).forEach((c) => (byKey[c.key] || []).forEach((e) => { (out[e.id] = out[e.id] || []).push({ ...c, delta: e.delta }); }));
   return out;
 }
 

@@ -1212,6 +1212,12 @@ await checkAsync("Rates Library changes are logged and an existing project is pr
   assert.ok(Math.abs((meshOnly.after - meshOnly.before) - 10 * (123 - 98.12)) < 0.01, `ticking the mesh alone: 10 sheets × $24.88 dearer: ${JSON.stringify(meshOnly)}`);
   assert.ok(crewOnly.after > crewOnly.before, "ticking the crew rate alone moves the auto crew days' cost");
   assert.ok(Math.abs((all.after - all.before) - ((meshOnly.after - meshOnly.before) + (crewOnly.after - crewOnly.before))) < 0.01, "both ticked = the two together");
+  const touched = RC.rateChangeElements(quote, live, pend);
+  assert.equal(touched[SL82].length, 1, "the mesh change touches the one element carrying SL82"); assert.equal(touched[SL82][0].id, item.id); assert.ok(Math.abs(touched[SL82][0].delta - 10 * (123 - 98.12)) < 0.01, "with its own $ move");
+  assert.equal(touched[CREW].length, 1, "the crew rate touches the element through its auto crew days");
+  const second = newElementItem(type); second.label = "Nothing typed yet";
+  assert.deepEqual(RC.rateChangeElements({ ...quote, items: [item, second] }, live, pend)[SL82].map((e) => e.id), [item.id], "an element with no quantity on the key is not listed");
+  const byEl = RC.elementRateChanges(quote, live, pend); assert.equal(byEl[item.id].length, 2, "the element's own list carries both changes with their deltas"); assert.ok(byEl[item.id].every((c) => typeof c.delta === "number" && c.name));
   // tick the crew rate, keep the mesh: a partial pin of the mesh only
   const part = { ...quote, ...RC.decideRateChangesPatch(quote, live, pend, [CREW], t2) };
   assert.ok(RC.isLibraryPin(part) && Object.keys(part.ratesFrozen.rates).length === 1 && part.ratesFrozen.rates[SL82].unitCost === 98.12, JSON.stringify(part.ratesFrozen));

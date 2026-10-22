@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { ChevronDown, ChevronRight, Copy, Trash2, Paperclip, X, RotateCw, ZoomIn, ZoomOut, Maximize2, ArrowUp, ArrowDown, GripVertical } from "lucide-react";
 import { FULL_CATALOG, LABOUR_TEMPLATES, QUOTE_SCOPES } from "../data/catalog.js";
-import { uid, money2, computeElementCost, computeElementUnitRates, autoLabourQtys, labourQuantities, categoryAppliesTo, elementScope, categoryChargedUnder, scopeLabel, SCOPE_KEYS } from "../lib/costing.js";
+import { uid, money, money2, computeElementCost, computeElementUnitRates, autoLabourQtys, labourQuantities, categoryAppliesTo, elementScope, categoryChargedUnder, scopeLabel, SCOPE_KEYS } from "../lib/costing.js";
 import { prefilledCells, applySteelMode, steelModeFor } from "../lib/handover.js";
 import { pdfToJpegPages } from "../lib/pdfToImages.js";
 import { markupSrc, markupDataURL } from "../lib/markupStore.js";
@@ -16,7 +16,7 @@ import AdditionalItems from "./AdditionalItems.jsx";
  * the quote's item order (the summary rail, the print report and the
  * export all follow it), the same order QuoteSummary's own drag edits.
  */
-export default function ElementCard({ item, rates, onChange, onRemove, onDuplicate, onLabourRateChange, onMaterialRateChange, onMoveUp, onMoveDown, onReorder, projectScope , handover, onPickFromDrive }) {
+export default function ElementCard({ item, rates, onChange, onRemove, onDuplicate, onLabourRateChange, onMaterialRateChange, onMoveUp, onMoveDown, onReorder, projectScope , handover, onPickFromDrive, rateChanges }) {
   const [dragOver, setDragOver] = useState(false);
   // Every material category starts collapsed — only Labour/Equipment starts
   // expanded (it's still collapsible too, just defaults open).
@@ -381,6 +381,14 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
         </div>
       </div>
 
+      {rateChanges && rateChanges.length > 0 && (
+        <div className="border border-amber-300 bg-amber-50 rounded-md px-2.5 py-1.5 text-[11px] text-amber-900" role="status" data-testid="element-rate-changes">
+          <b>Rates Library changed {rateChanges.length} rate{rateChanges.length === 1 ? "" : "s"} this element is priced with</b> — decide at the top of the project (apply or keep, rate by rate):{" "}
+          {rateChanges.map((c, i) => (
+            <span key={c.key}>{i > 0 ? "; " : ""}{c.name} <span className="font-mono tabular-nums text-neutral-500 line-through">${Number(c.from).toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span> → <span className="font-mono tabular-nums">${Number(c.to).toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span> <span className={`font-mono tabular-nums ${c.delta > 0 ? "text-red-700" : "text-emerald-700"}`}>({c.delta >= 0 ? "+" : "−"}{money(Math.abs(c.delta))})</span></span>
+          ))}
+        </div>
+      )}
       {cardOpen && (
         <div className="p-3 space-y-2 bg-neutral-50">
           <div className="text-xs text-neutral-500 flex flex-wrap gap-x-4 gap-y-1 px-1">
