@@ -2424,6 +2424,36 @@ function baseLine(inst,def,over){
   return line;
 }
 function withWaste(q,wastePct){ return q*(1+(wastePct||0)/100); }
+/* ---- Formwork by FACE SIZE (Grady, 22 Oct 2026: "all formwork less than
+ * 400mm high or wide should be stated in lm rather than sqm in estimates
+ * section"). formworkLines() is the ONE builder every calculator's formed
+ * faces go through: each face is {name, runM, faceMm, areaM2?} — the run of
+ * the face in metres and its fixed dimension across the run (a footing side's
+ * depth, a beam soffit's width, a column face's width, a casing's diameter).
+ * A face under FORMWORK_LM_MAX_MM is measured by the LINEAL METRE of its run
+ * (the m² kept in the notes and on the line as m2Equiv); a face of 400 mm or
+ * more is measured in m². One register line per unit, so a beam formed on
+ * 450 mm sides with a 300 mm soffit gives a m² line and an lm line. The
+ * Quotes bridge lands the lm line on the ground-slab "Edgeform" (m) product
+ * and the orders schedule / formworkTotals keep the two units apart. */
+const FORMWORK_LM_MAX_MM = 400;
+function formworkLmFace(faceMm){ return num(faceMm)>0 && num(faceMm)<FORMWORK_LM_MAX_MM; }
+function formworkLines(inst,def,o){
+  const faces=(o.faces||[]).filter(f=>f && num(f.runM)>0 && num(f.faceMm)>0);
+  const area=(f)=> f.areaM2!=null? num(f.areaM2) : num(f.runM)*num(f.faceMm)/1000;
+  const lm=faces.filter(f=>formworkLmFace(f.faceMm)), m2=faces.filter(f=>!formworkLmFace(f.faceMm));
+  const out=[];
+  const names=(fs)=>{ const seen=[]; fs.forEach(f=>{ const n=`${f.name} ${fmt(f.faceMm,0)} mm`; if(seen.indexOf(n)<0) seen.push(n); }); return seen.join(", "); };
+  if(m2.length){
+    const q=m2.reduce((t,f)=>t+area(f),0);
+    out.push(baseLine(inst,def,{materialGroup:"Formwork",material:o.material,spec:[o.spec,names(m2)].filter(Boolean).join(" — "),qty:q,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(q,PROJECT.formworkWaste),formula:o.formula||"faces × run × face",notes:o.notes,faceMm:Math.max(...m2.map(f=>num(f.faceMm)))}));
+  }
+  if(lm.length){
+    const q=lm.reduce((t,f)=>t+num(f.runM),0), m2e=lm.reduce((t,f)=>t+area(f),0);
+    out.push(baseLine(inst,def,{materialGroup:"Formwork",material:o.material,spec:[o.spec,names(lm),"under 400 mm — lineal metres"].filter(Boolean).join(" — "),qty:q,unit:"m",waste:PROJECT.formworkWaste,finalQty:withWaste(q,PROJECT.formworkWaste),formula:(o.formula? o.formula+" · " : "")+"run of each face under 400 mm",notes:[o.notes,`≈ ${fmt(m2e,2)} m²`].filter(Boolean).join(" · "),faceMm:Math.max(...lm.map(f=>num(f.faceMm))),m2Equiv:m2e}));
+  }
+  return out;
+}
 // Waste covers offcuts/spillage; lap % is a SEPARATE allowance for splicing bars/mesh that
 // exceed stock length or need continuity laps — the two are never merged into one factor.
 // Every reinforcement item exposes its own "Include lap allowance (%)" checkbox rather than
@@ -3407,7 +3437,8 @@ function computePier(inst,def){
   if(d.capOn) lines.push(...pileCapTabLines(inst,def,N));
   if(d.formworkReq){
     let area = num(d.casingArea)>0? num(d.casingArea) : N*Math.PI*(D/1000)*(H/1000);
-    lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Casing / temporary formwork",spec:"Perimeter × depth",qty:area,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(area,PROJECT.formworkWaste),formula:`${N}×π×D×H`}));
+    // a casing is a face D wide (the diameter) running the pier's depth: under 400 mm it is by the metre of depth
+    lines.push(...formworkLines(inst,def,{material:"Casing / temporary formwork",spec:"Perimeter × depth",faces:[{name:"casing Ø",runM:N*(H/1000),faceMm:D,areaM2:area}],formula:`${N}×π×D×H`}));
   }
   return {lines,warnings};
 }
@@ -3667,16 +3698,16 @@ function pileCapTabLines(inst,def,N){
  * beam is formed on its two sides over the full run, and optionally on its
  * two ends. Anything not ticked is cast against the excavation face. */
 function capFormworkLines(inst,def,caps,L,W,D,beamLenM,bW,bD){
-  let d=inst.data, out=[], area=0, capFaces=[], beamFaces=[];
+  let d=inst.data, out=[], area=0, capFaces=[], beamFaces=[], fw=[];
   if(caps>0&&L>0&&W>0&&D>0){
-    if(d.capFormA){ area+=caps*L*D; capFaces.push("cap A"); }
-    if(d.capFormB){ area+=caps*L*D; capFaces.push("cap B"); }
-    if(d.capFormC){ area+=caps*W*D; capFaces.push("cap C"); }
-    if(d.capFormD){ area+=caps*W*D; capFaces.push("cap D"); }
+    if(d.capFormA){ area+=caps*L*D; capFaces.push("cap A"); fw.push({name:"cap A",runM:caps*L,faceMm:D*1000}); }
+    if(d.capFormB){ area+=caps*L*D; capFaces.push("cap B"); fw.push({name:"cap B",runM:caps*L,faceMm:D*1000}); }
+    if(d.capFormC){ area+=caps*W*D; capFaces.push("cap C"); fw.push({name:"cap C",runM:caps*W,faceMm:D*1000}); }
+    if(d.capFormD){ area+=caps*W*D; capFaces.push("cap D"); fw.push({name:"cap D",runM:caps*W,faceMm:D*1000}); }
   }
   if(beamLenM>0&&bW>0&&bD>0){
-    if(d.capBeamFormSides){ area+=2*beamLenM*bD; beamFaces.push("sides"); }
-    if(d.capBeamFormEnds){ area+=2*bW*bD; beamFaces.push("ends"); }
+    if(d.capBeamFormSides){ area+=2*beamLenM*bD; beamFaces.push("sides"); fw.push({name:"beam sides",runM:2*beamLenM,faceMm:bD*1000}); }
+    if(d.capBeamFormEnds){ area+=2*bW*bD; beamFaces.push("ends"); fw.push({name:"beam ends",runM:2*bW,faceMm:bD*1000}); }
   }
   if(!(area>0)) return out;
   // Name only what is actually formed — a beam-only card must not read
@@ -3684,7 +3715,7 @@ function capFormworkLines(inst,def,caps,L,W,D,beamLenM,bW,bD){
   let what=capFaces.length ? (beamFaces.length? "Pile caps + capping beam" : "Pile caps") : "Capping beam";
   // "beam sides" only needs the qualifier when cap faces share the line
   let faces=capFaces.concat(beamFaces.map((f)=>capFaces.length? `beam ${f}` : f));
-  out.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Side formwork",spec:`${what} — ${faces.join(", ")}`,qty:area,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(area,PROJECT.formworkWaste),formula:`selected faces × depth`}));
+  out.push(...formworkLines(inst,def,{material:"Side formwork",spec:`${what} — ${faces.join(", ")}`,faces:fw,formula:`selected faces × depth`}));
   return out;
 }
 /** The cap/beam blinding and vapour barrier, on the pile card's Blinding /
@@ -3904,12 +3935,12 @@ function computePileCap(inst,def){
       lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.sideDia,spec:"Side face bars (perimeter)",qty:totLen,unit:"m",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,lapPct),formula:`(D−2c)/spacing+1 rows × perimeter ×${N}`,notes:`${fmt(wt,1)} kg`}));
     }
   }
-  let fArea=0, fFaces=[];
-  if(d.formA){ fArea+=N*L*D; fFaces.push("A"); }
-  if(d.formB){ fArea+=N*L*D; fFaces.push("B"); }
-  if(d.formC){ fArea+=N*W*D; fFaces.push("C"); }
-  if(d.formD){ fArea+=N*W*D; fFaces.push("D"); }
-  if(fArea>0) lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Side formwork",spec:`${fFaces.length} of 4 faces (${fFaces.join(',')})`,qty:fArea,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(fArea,PROJECT.formworkWaste),formula:`${N}×selected faces×D`}));
+  let fArea=0, fFaces=[], fw=[];
+  if(d.formA){ fArea+=N*L*D; fFaces.push("A"); fw.push({name:"face A",runM:N*L,faceMm:D*1000}); }
+  if(d.formB){ fArea+=N*L*D; fFaces.push("B"); fw.push({name:"face B",runM:N*L,faceMm:D*1000}); }
+  if(d.formC){ fArea+=N*W*D; fFaces.push("C"); fw.push({name:"face C",runM:N*W,faceMm:D*1000}); }
+  if(d.formD){ fArea+=N*W*D; fFaces.push("D"); fw.push({name:"face D",runM:N*W,faceMm:D*1000}); }
+  if(fArea>0) lines.push(...formworkLines(inst,def,{material:"Side formwork",spec:`${fFaces.length} of 4 faces (${fFaces.join(',')})`,faces:fw,formula:`${N}×selected faces×D`}));
   if(d.colStarters){
     let dia=barDiaOf(d.colDia);
     let hk=hookLeg(inst,d.colHook,dia);
@@ -4127,8 +4158,7 @@ function manualFormworkUI(d,depthLabel){
 function manualFormworkLines(inst,def,d,N,depthM,material,warnings){
   const lm=num(d.formLm), Dm=num(d.formDepthMm)>0? num(d.formDepthMm)/1000 : depthM;
   if(!(lm>0)){ if(warnings) warnings.push({text:"Formwork is set to a manual perimeter but no formed perimeter is typed — no formwork is taken off until it is.",section:"form",level:"completeness"}); return []; }
-  const area=N*lm*Dm;
-  return [baseLine(inst,def,{materialGroup:"Formwork",material,spec:`Manual — ${fmt(lm,2)} lm formed × ${fmt(Dm*1000,0)} deep`,qty:area,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(area,PROJECT.formworkWaste),formula:`${N}×${fmt(lm,2)} lm×${fmt(Dm,3)}`,notes:`${fmt(N*lm,2)} lm formed`})];
+  return formworkLines(inst,def,{material,spec:`Manual — ${fmt(lm,2)} lm formed × ${fmt(Dm*1000,0)} deep`,faces:[{name:"formed perimeter",runM:N*lm,faceMm:Dm*1000}],formula:`${N}×${fmt(lm,2)} lm×${fmt(Dm,3)}`,notes:`${fmt(N*lm,2)} lm formed`});
 }
 function stripAreaMode(d){ return (d.footShape||"run")==="area"; }
 function stripGeom(d){
@@ -4157,12 +4187,12 @@ function computeStripFooting(inst,def){
   if(formworkManual(d)){
     lines.push(...manualFormworkLines(inst,def,d,N,Dm,"Trench formwork",warnings));
   } else {
-    let formArea=0;
-    if(d.formLeft) formArea+=N*Lm*Dm;
-    if(d.formRight) formArea+=N*Lm*Dm;
-    if(d.formStart) formArea+=N*Wm*Dm;
-    if(d.formFinish) formArea+=N*Wm*Dm;
-    if(formArea>0) lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Trench formwork",spec:"Selected faces",qty:formArea,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(formArea,PROJECT.formworkWaste),formula:"selected faces × L×D"}));
+    let fw=[];
+    if(d.formLeft) fw.push({name:"left side",runM:N*Lm,faceMm:Dm*1000});
+    if(d.formRight) fw.push({name:"right side",runM:N*Lm,faceMm:Dm*1000});
+    if(d.formStart) fw.push({name:"start end",runM:N*Wm,faceMm:Dm*1000});
+    if(d.formFinish) fw.push({name:"finish end",runM:N*Wm,faceMm:Dm*1000});
+    lines.push(...formworkLines(inst,def,{material:"Trench formwork",spec:"Selected faces",faces:fw,formula:"selected faces × L×D"}));
   }
   function longBar(flag,qty,dia,label,lapFlag){
     if(!flag) return;
@@ -4183,7 +4213,7 @@ function computeStripFooting(inst,def){
       lines.push(baseLine(inst,def,{materialGroup:"Connections",material:d.sdDia,spec:"Stepped footing — step dowels",qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`count(${count}=${fmt(sdRunM,1)}m/${d.sdSpacing}mm+1 ×${sdf.risers} riser(s) ×${sdf.legs} leg(s))×(proj1+proj2)/1000`,notes:`${count} dowels, ${fmt(wt,1)} kg`}));
       sdExtraBarLines(inst,def,lines,d,sdRunM,1);
       let fLm=sdRunM*sdf.risers;
-      lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Step-down face formwork",spec:`${d.sdDepth}mm deep steps ×${sdf.risers} riser(s)`,qty:fLm,unit:"m",waste:PROJECT.formworkWaste,finalQty:withWaste(fLm,PROJECT.formworkWaste),formula:`step length ${fmt(sdRunM,1)}m ×${sdf.risers}`}));
+      lines.push(...formworkLines(inst,def,{material:"Step-down face formwork",spec:`${d.sdDepth}mm deep steps ×${sdf.risers} riser(s)`,faces:[{name:"step faces",runM:fLm,faceMm:num(d.sdDepth)>0? num(d.sdDepth) : 1}],formula:`step length ${fmt(sdRunM,1)}m ×${sdf.risers}`}));
     }
   }
   if(d.cross){
@@ -4415,16 +4445,15 @@ function computePadFooting(inst,def){
     lines.push(...manualFormworkLines(inst,def,d,N,D,"Side formwork",warnings));
   } else if(round){
     if(d.formRound){
-      let fArea=N*Math.PI*diaM*D;
-      lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Side formwork",spec:"Circular edge form — full perimeter",qty:fArea,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(fArea,PROJECT.formworkWaste),formula:`${N}×π×Ø×D`}));
+      lines.push(...formworkLines(inst,def,{material:"Side formwork",spec:"Circular edge form — full perimeter",faces:[{name:"perimeter",runM:N*Math.PI*diaM,faceMm:D*1000}],formula:`${N}×π×Ø×D`}));
     }
   } else {
-  let fArea=0, fFaces=[];
-  if(d.formA){ fArea+=N*L*D; fFaces.push("A"); }
-  if(d.formB){ fArea+=N*L*D; fFaces.push("B"); }
-  if(d.formC){ fArea+=N*W*D; fFaces.push("C"); }
-  if(d.formD){ fArea+=N*W*D; fFaces.push("D"); }
-  if(fArea>0) lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Side formwork",spec:`${fFaces.length} of 4 faces (${fFaces.join(',')})`,qty:fArea,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(fArea,PROJECT.formworkWaste),formula:`${N}×selected faces×D`}));
+  let fArea=0, fFaces=[], fw=[];
+  if(d.formA){ fArea+=N*L*D; fFaces.push("A"); fw.push({name:"face A",runM:N*L,faceMm:D*1000}); }
+  if(d.formB){ fArea+=N*L*D; fFaces.push("B"); fw.push({name:"face B",runM:N*L,faceMm:D*1000}); }
+  if(d.formC){ fArea+=N*W*D; fFaces.push("C"); fw.push({name:"face C",runM:N*W,faceMm:D*1000}); }
+  if(d.formD){ fArea+=N*W*D; fFaces.push("D"); fw.push({name:"face D",runM:N*W,faceMm:D*1000}); }
+  if(fArea>0) lines.push(...formworkLines(inst,def,{material:"Side formwork",spec:`${fFaces.length} of 4 faces (${fFaces.join(',')})`,faces:fw,formula:`${N}×selected faces×D`}));
   }
   ["anchorBolts","holdDown","ferrules","plates","boltTemplate"].forEach(k=>{
     if(d[k]) lines.push(baseLine(inst,def,{materialGroup:"Cast-ins",material:k,spec:"Cast-in item",qty:N,unit:"no.",waste:0,finalQty:N,formula:"per footing"}));
@@ -4868,7 +4897,7 @@ function raftBeamGroupLinesInner(inst,def,lines,d,g){
     let sides = Number(g.formSides)===1? 1 : 2;
     let area = beamFormworkAreaM2(g.runM,g.secDepthMm,g.formDepthMm,g.formSides);
     if(area>0){
-      lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Beam formwork",spec:`${g.label} — founded out of the ground, ${sides===2?"both sides":"one side"} over the full run`,qty:area,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(area,PROJECT.formworkWaste),formula:`run ${fmt(g.runM,1)}m × ${depthMm}mm deep × ${sides} side${sides===2?"s":""}`}));
+      lines.push(...formworkLines(inst,def,{material:"Beam formwork",spec:`${g.label} — founded out of the ground, ${sides===2?"both sides":"one side"} over the full run`,faces:[{name:sides===2?"both sides":"one side",runM:num(g.runM)*sides,faceMm:depthMm}],formula:`run ${fmt(g.runM,1)}m × ${depthMm}mm deep × ${sides} side${sides===2?"s":""}`}));
     }
   }
   if(g.excOn){
@@ -4892,14 +4921,14 @@ function computeBeam(inst,def){
   let vol=N*Lm*Wm*effD;
   lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:`${d.width}x${d.depth} (${d.beamType})`,qty:vol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(vol,concWastePct(d)),formula:`${N}×${fmt(Lm,2)}×${fmt(Wm,2)}×${fmt(effD,2)} (${d.beamType=='downstand'?'drop below slab':'overall depth'})`}));
   let sideD = d.beamType=="downstand"? effD : Dfull;
-  let fArea=0, fParts=[];
-  if(d.formLeft){ let a=N*Lm*sideD; fArea+=a; fParts.push(`Left ${fmt(a,2)}`); }
-  if(d.formRight){ let a=N*Lm*sideD; fArea+=a; fParts.push(`Right ${fmt(a,2)}`); }
-  if(d.formSoffit){ let a=N*Lm*Wm; fArea+=a; fParts.push(`Soffit ${fmt(a,2)}`); }
-  if(d.formTop){ let a=N*Lm*Wm; fArea+=a; fParts.push(`Top ${fmt(a,2)}`); }
-  if(d.formStart){ let a=N*Wm*sideD; fArea+=a; fParts.push(`Start ${fmt(a,2)}`); }
-  if(d.formFinish){ let a=N*Wm*sideD; fArea+=a; fParts.push(`Finish ${fmt(a,2)}`); }
-  if(fArea>0) lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Beam formwork",spec:"Selected faces",qty:fArea,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(fArea,PROJECT.formworkWaste),formula:fParts.join(" + ")}));
+  let fArea=0, fParts=[], fw=[];
+  if(d.formLeft){ let a=N*Lm*sideD; fArea+=a; fParts.push(`Left ${fmt(a,2)}`); fw.push({name:"left side",runM:N*Lm,faceMm:sideD*1000}); }
+  if(d.formRight){ let a=N*Lm*sideD; fArea+=a; fParts.push(`Right ${fmt(a,2)}`); fw.push({name:"right side",runM:N*Lm,faceMm:sideD*1000}); }
+  if(d.formSoffit){ let a=N*Lm*Wm; fArea+=a; fParts.push(`Soffit ${fmt(a,2)}`); fw.push({name:"soffit",runM:N*Lm,faceMm:Wm*1000}); }
+  if(d.formTop){ let a=N*Lm*Wm; fArea+=a; fParts.push(`Top ${fmt(a,2)}`); fw.push({name:"top",runM:N*Lm,faceMm:Wm*1000}); }
+  if(d.formStart){ let a=N*Wm*sideD; fArea+=a; fParts.push(`Start ${fmt(a,2)}`); fw.push({name:"start end",runM:N*Wm,faceMm:sideD*1000}); }
+  if(d.formFinish){ let a=N*Wm*sideD; fArea+=a; fParts.push(`Finish ${fmt(a,2)}`); fw.push({name:"finish end",runM:N*Wm,faceMm:sideD*1000}); }
+  if(fArea>0) lines.push(...formworkLines(inst,def,{material:"Beam formwork",spec:"Selected faces",faces:fw,formula:fParts.join(" + ")}));
   if(d.trenchMesh){
     // one line per DISTINCT layer material — different layers can be different products
     let lapPct=d.trenchMeshLap?MESH_LAP_PCT:0;
@@ -4949,7 +4978,7 @@ function computeBeam(inst,def){
     let count=(Math.floor(sdRunM*1000/Math.max(1,num(d.sdSpacing,300)))+1)*sdf.risers*sdf.legs;
     if(d.sdLength!==undefined && sdRunM>0){
       let fLm=sdRunM*sdf.risers;
-      lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Step-down face formwork",spec:`${d.sdDepth}mm deep step ×${sdf.risers} riser(s)`,qty:fLm,unit:"m",waste:PROJECT.formworkWaste,finalQty:withWaste(fLm,PROJECT.formworkWaste),formula:`step length ${fmt(sdRunM,1)}m ×${sdf.risers}`}));
+      lines.push(...formworkLines(inst,def,{material:"Step-down face formwork",spec:`${d.sdDepth}mm deep step ×${sdf.risers} riser(s)`,faces:[{name:"step faces",runM:fLm,faceMm:num(d.sdDepth)>0? num(d.sdDepth) : 1}],formula:`step length ${fmt(sdRunM,1)}m ×${sdf.risers}`}));
     }
     let len=sdBarLenMm(d, num(d.sdProj1)+num(d.sdProj2))/1000;
     let totLen=N*count*len; let wt=totLen*massPerM(bd);
@@ -5302,7 +5331,8 @@ function computeSlab(inst,def){
   // Edge formwork is measured and priced by the METRE (matching the Quotes
   // catalog's per-m 'Edgeform' product) — the slab thickness stays on the
   // spec so the height of board is still visible. Soffit stays in m².
-  if(d.edgeForms) lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Edgeform — perimeter edge formwork",spec:`${d.thickness}mm high edge`,qty:perim,unit:"m",waste:PROJECT.formworkWaste,finalQty:withWaste(perim,PROJECT.formworkWaste),formula:`slab perimeter ${fmt(perim,1)}m`}));
+  // Edgeform is by the metre unless the slab is 400 mm or thicker, when the edge is formed over the material's full depth in m² (Grady, 22 Oct 2026)
+  if(d.edgeForms) lines.push(...formworkLines(inst,def,{material:"Edgeform — perimeter edge formwork",spec:`${d.thickness}mm high edge`,faces:[{name:"slab edge",runM:perim,faceMm:num(d.thickness)>0? num(d.thickness) : 1}],formula:`slab perimeter ${fmt(perim,1)}m`}));
   if(d.suspended && d.soffit) lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Soffit formwork",spec:"",qty:netArea,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(netArea,PROJECT.formworkWaste),formula:"net area"}));
   if(openArea>0){
     // Reveals are edge boards — measured by the METRE around each opening
@@ -5310,7 +5340,7 @@ function computeSlab(inst,def){
     // height. Previously area-based AND carried finalQty:0, so reveals
     // never actually reached the register totals.
     let revLm=(d.openings||[]).reduce((s,o)=>s+2*((num(o.w)/1000)+(num(o.h)/1000))*num(o.qty,1),0);
-    lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Opening reveals",spec:`${d.thickness}mm high reveal`,qty:revLm,unit:"m",waste:PROJECT.formworkWaste,finalQty:withWaste(revLm,PROJECT.formworkWaste),formula:"Σ 2×(w+h)×qty"}));
+    lines.push(...formworkLines(inst,def,{material:"Opening reveals",spec:`${d.thickness}mm high reveal`,faces:[{name:"reveals",runM:revLm,faceMm:num(d.thickness)>0? num(d.thickness) : 1}],formula:"Σ 2×(w+h)×qty"}));
   }
   if(d.edgeThicken){
     // EDGE THICKENING — a simple thickening of the slab edge, concrete
@@ -5564,7 +5594,7 @@ function computeSlab(inst,def){
     let count=(Math.floor(sdRunM*1000/Math.max(1,num(d.sdSpacing,300)))+1)*sdf.risers*sdf.legs;
     if(d.sdLength!==undefined && sdRunM>0){
       let fLm=sdRunM*sdf.risers;
-      lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Step-down face formwork",spec:`${d.sdDepth}mm deep step ×${sdf.risers} riser(s)`,qty:fLm,unit:"m",waste:PROJECT.formworkWaste,finalQty:withWaste(fLm,PROJECT.formworkWaste),formula:`step length ${fmt(sdRunM,1)}m ×${sdf.risers}`}));
+      lines.push(...formworkLines(inst,def,{material:"Step-down face formwork",spec:`${d.sdDepth}mm deep step ×${sdf.risers} riser(s)`,faces:[{name:"step faces",runM:fLm,faceMm:num(d.sdDepth)>0? num(d.sdDepth) : 1}],formula:`step length ${fmt(sdRunM,1)}m ×${sdf.risers}`}));
     }
     let len=sdBarLenMm(d, num(d.sdProj1)+num(d.sdProj2))/1000;
     let totLen=count*len; let wt=totLen*massPerM(dia);
@@ -5606,17 +5636,17 @@ function renderColumn(inst){
 function computeColumn(inst,def){
   let d=inst.data, lines=[];
   let N=num(d.qty,1), H=num(d.height)/1000, cover=num(d.cover);
-  let vol,perimFace1,perimFace2,formArea=0;
+  let vol,perimFace1,perimFace2,formArea=0,fw=[];
   if(d.shape=="circular"){
     let Dm=num(d.dia)/1000; vol=N*(Math.PI/4)*Dm*Dm*H;
-    if(d.formA) formArea=N*Math.PI*Dm*H;
+    if(d.formA){ formArea=N*Math.PI*Dm*H; fw.push({name:"round face Ø",runM:N*H,faceMm:num(d.dia),areaM2:formArea}); }
   } else {
     let B=num(d.width)/1000, Dp=num(d.depth)/1000; vol=N*B*Dp*H;
-    if(d.formA) formArea+=N*B*H; if(d.formC) formArea+=N*B*H;
-    if(d.formB) formArea+=N*Dp*H; if(d.formD) formArea+=N*Dp*H;
+    if(d.formA){ formArea+=N*B*H; fw.push({name:"face A",runM:N*H,faceMm:num(d.width)}); } if(d.formC){ formArea+=N*B*H; fw.push({name:"face C",runM:N*H,faceMm:num(d.width)}); }
+    if(d.formB){ formArea+=N*Dp*H; fw.push({name:"face B",runM:N*H,faceMm:num(d.depth)}); } if(d.formD){ formArea+=N*Dp*H; fw.push({name:"face D",runM:N*H,faceMm:num(d.depth)}); }
   }
   lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:d.shape=="circular"?`⌀${d.dia}`:`${d.width}x${d.depth}`,qty:vol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(vol,concWastePct(d)),formula:d.shape=="circular"?`${N}×π/4×${d.dia}²×H`:`${N}×${d.width}×${d.depth}×H`}));
-  if(formArea>0) lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Column formwork",spec:"Selected faces",qty:formArea,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(formArea,PROJECT.formworkWaste),formula:"selected faces × H"}));
+  if(formArea>0) lines.push(...formworkLines(inst,def,{material:"Column formwork",spec:"Selected faces",faces:fw,formula:"selected faces × H (a face under 400 mm wide by the metre of height)"}));
   let vDia=barDiaOf(d.vDia);
   // Vertical bars run the column HEIGHT: the lap onto the starters from the
   // element below sits inside that height (the starters are counted on their
@@ -5697,14 +5727,14 @@ function computeWall(inst,def){
   d._autoAreaM2 = N*grossArea;   // the wall's face — what a wall is measured in per m² (Project Geometry → Quotes $/m²)
   let vol=N*grossArea*Tm;
   lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:`${d.thickness}mm thick${ev?(ev.manual?` — entered face area ${fmt(ev.areaM2,2)} m²`:` — sketched face ${fmt(ev.areaM2,2)} m² (${ev.sides} sides)`):''}`,qty:vol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(vol,concWastePct(d)),formula:`${N}×(${fmt(Lm,1)}×${fmt(Hm,1)} − openings ${fmt(openArea,2)})×${fmt(Tm,2)}`}));
-  let fArea=0;
-  if(d.formA) fArea+=N*grossArea; if(d.formB) fArea+=N*grossArea;
-  if(d.formEnds) fArea+=N*2*Tm*Hm;
-  if(d.formTop) fArea+=N*Lm*Tm;
-  if(fArea>0) lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Wall formwork",spec:"Selected faces",qty:fArea,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(fArea,PROJECT.formworkWaste),formula:"faces × (L×H − openings) / ends"}));
+  let fArea=0, fw=[];
+  if(d.formA){ fArea+=N*grossArea; fw.push({name:"face A",runM:N*Lm,faceMm:Math.max(1,hAvg*1000),areaM2:N*grossArea}); } if(d.formB){ fArea+=N*grossArea; fw.push({name:"face B",runM:N*Lm,faceMm:Math.max(1,hAvg*1000),areaM2:N*grossArea}); }
+  if(d.formEnds){ fArea+=N*2*Tm*Hm; fw.push({name:"ends",runM:N*2*Hm,faceMm:Tm*1000}); }
+  if(d.formTop){ fArea+=N*Lm*Tm; fw.push({name:"top",runM:N*Lm,faceMm:Tm*1000}); }
+  if(fArea>0) lines.push(...formworkLines(inst,def,{material:"Wall formwork",spec:"Selected faces",faces:fw,formula:"faces × (L×H − openings) / ends (a face under 400 mm by the metre)"}));
   if(openArea>0){
     let revLm=N*(d.openings||[]).reduce((s,o)=>s+2*((num(o.w)/1000)+(num(o.h)/1000))*num(o.qty,1),0);
-    lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Opening reveals",spec:`${d.thickness}mm deep reveal`,qty:revLm,unit:"m",waste:PROJECT.formworkWaste,finalQty:withWaste(revLm,PROJECT.formworkWaste),formula:"Σ 2×(w+h)×qty"}));
+    lines.push(...formworkLines(inst,def,{material:"Opening reveals",spec:`${d.thickness}mm deep reveal`,faces:[{name:"reveals",runM:revLm,faceMm:num(d.thickness)>0? num(d.thickness) : 1}],formula:"Σ 2×(w+h)×qty"}));
   }
   function barCalc(vflag,vdia,vsp,vlap,hflag,hdia,hsp,hlap,faceLabel){
     if(vflag){
@@ -5744,7 +5774,7 @@ function computeWall(inst,def){
     let count=(Math.floor(sdRunM*1000/Math.max(1,num(d.sdSpacing,300)))+1)*sdf.risers*sdf.legs;
     if(d.sdLength!==undefined && sdRunM>0){
       let fLm=sdRunM*sdf.risers;
-      lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Step-down face formwork",spec:`${d.sdDepth}mm deep step ×${sdf.risers} riser(s)`,qty:fLm,unit:"m",waste:PROJECT.formworkWaste,finalQty:withWaste(fLm,PROJECT.formworkWaste),formula:`step length ${fmt(sdRunM,1)}m ×${sdf.risers}`}));
+      lines.push(...formworkLines(inst,def,{material:"Step-down face formwork",spec:`${d.sdDepth}mm deep step ×${sdf.risers} riser(s)`,faces:[{name:"step faces",runM:fLm,faceMm:num(d.sdDepth)>0? num(d.sdDepth) : 1}],formula:`step length ${fmt(sdRunM,1)}m ×${sdf.risers}`}));
     }
     let len=sdBarLenMm(d, 2*num(d.sdProj1))/1000;
     let totLen=N*count*len; let wt=totLen*massPerM(dia);
@@ -5932,7 +5962,10 @@ function computeRetWall(inst,def){
   if(!baseOff && incStem && d.waterstop) lines.push(baseLine(inst,def,{materialGroup:"Joints",material:"PVC waterstop",spec:"Footing/stem joint",qty:Lm,unit:"m",waste:5,finalQty:withWaste(Lm,5),formula:"wall length"}));
   let formArea = (incStem? 2*g.area : 0) + (baseOff? 0 : 2*Lm*(num(d.footD)/1000));
   let formName = incStem && !baseOff? "Footing + stem formwork" : (incStem? "Stem formwork" : "Footing formwork");
-  if(formArea>0) lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:formName,spec:"",qty:formArea,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(formArea,PROJECT.formworkWaste),formula:linked?`2 × stem face area ${fmt(g.area,2)} m²`:`2 × stem face area ${fmt(g.area,2)} m² + 2×L×footD`}));
+  let fw=[];
+  if(incStem && g.area>0) fw.push({name:"stem faces",runM:2*Lm,faceMm:Math.max(1,(Lm>0? g.area/Lm : g.hAvg||0)*1000),areaM2:2*g.area});
+  if(!baseOff && num(d.footD)>0) fw.push({name:"footing sides",runM:2*Lm,faceMm:num(d.footD)});
+  if(formArea>0) lines.push(...formworkLines(inst,def,{material:formName,spec:"",faces:fw,formula:linked?`2 × stem face area ${fmt(g.area,2)} m²`:`2 × stem face area ${fmt(g.area,2)} m² + 2×L×footD`}));
   let tgtOut=targetLabelOf(d.dowelsOut);
   if(incStem && tgtOut && num(d.outQty)>0){
     let dia=barDiaOf(d.outDia); let outLen=(num(d.outEmbed)+num(d.outProj))/1000;
@@ -6222,7 +6255,8 @@ function computeKerb(inst,def){
   { const km=String(d.profile||"").match(/(\d+)\s*[x×]\s*(\d+)/); d._autoBlindArea = Lm*((km? num(km[1],150) : 300)/1000); }   // kerb footprint for the shared Blinding tab
   let vol=num(d.crossSectionArea)*Lm;
   lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:d.profile,qty:vol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(vol,concWastePct(d)),formula:"cross-section area × length"}));
-  lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Profile formwork (both sides)",spec:d.profile,qty:2*Lm*0.3,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(2*Lm*0.3,PROJECT.formworkWaste),formula:"2 sides × length × nominal height"}));
+  { const km=String(d.profile||"").match(/(\d+)\s*[x×]\s*(\d+)/); const hMm=km? num(km[2],300) : 300;   // a kerb profile "150x300" is width × height; a face under 400 mm is by the metre
+    lines.push(...formworkLines(inst,def,{material:"Profile formwork (both sides)",spec:d.profile,faces:[{name:"both sides",runM:2*Lm,faceMm:hMm}],formula:`2 sides × length × ${hMm} mm profile height`})); }
   if(d.reoOn){
     let dia=barDiaOf(d.reoDia); let totLen=num(d.reoQty)*Lm; let wt=totLen*massPerM(dia);
     let lapPct=d.reoLap?PROJECT.lapPct:0;
@@ -6311,10 +6345,11 @@ function computeBoxGutter(inst,def){
   d._autoAreaM2=g.extW*run;   // Project Geometry area = the gutter's plan footprint (external width × run); overtype on the Results tab if the job measures it otherwise
   const vol=run>0? g.secArea*run + g.N*g.endWallVol : 0;   // no run, nothing priced — the warning above says so
   if(vol>0) lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:`Box gutter ${fmt(g.W*1000,0)}×${fmt(g.D*1000,0)} int., base ${fmt(g.bt*1000,0)}, walls ${fmt(g.tA*1000,0)}/${fmt(g.tB*1000,0)}`,qty:vol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(vol,concWastePct(d)),formula:`section ${fmt(g.secArea,4)}m² × ${fmt(run,2)}m${g.endWallVol>0?` + ${num(d.endWalls)} end wall(s) × ${g.N}`:''}`}));
-  const face=(mat,perM,spec)=>{ if(!(perM>0)||!(run>0)) return; const a=perM*run; lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:mat,spec,qty:a,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(a,PROJECT.formworkWaste),formula:`${fmt(perM,3)} m²/m × ${fmt(run,2)}m`})); };
-  face("Soffit formwork",g.soffitPerM,"Box gutter — underside, external width");
-  face("Wall formwork (outer faces)",g.outerPerM,`${g.outer} outer face(s), full external height`);
-  face("Wall formwork (inner faces)",g.innerPerM,"both inner faces above the base");
+  // every face of the section runs the gutter's length; a face under 400 mm (a narrow soffit, a low wall) is by the metre of run
+  const face=(mat,perM,spec,sizesM)=>{ if(!(perM>0)||!(run>0)) return; const faces=(sizesM||[]).filter(h=>h>0).map((h,i)=>({name:`${sizesM.length>1?`face ${i+1}`:"face"}`,runM:run,faceMm:h*1000})); lines.push(...formworkLines(inst,def,{material:mat,spec,faces,formula:`${fmt(perM,3)} m²/m × ${fmt(run,2)}m`})); };
+  face("Soffit formwork",g.soffitPerM,"Box gutter — underside, external width",[g.extW]);
+  face("Wall formwork (outer faces)",g.outerPerM,`${g.outer} outer face(s), full external height`, g.outer==="2"? [g.bt+g.hA,g.bt+g.hB] : g.outer==="1"? [g.bt+Math.max(g.hA,g.hB)] : []);
+  face("Wall formwork (inner faces)",g.innerPerM,"both inner faces above the base",[g.hA,g.hB]);
   if(num(d.longQty)>0 && run>0){
     const dia=barDiaOf(d.longDia), tot=num(d.longQty)*run, lap=d.longLap?PROJECT.lapPct:0;
     lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.longDia,spec:"Longitudinal bars (in the section, run the length)",qty:tot,unit:"m",waste:PROJECT.reoWaste,lap,finalQty:withWasteLap(tot,PROJECT.reoWaste,lap),formula:`${num(d.longQty)} bars × ${fmt(run,2)}m`,notes:`${fmt(tot*massPerM(dia),1)} kg`}));
@@ -6509,7 +6544,7 @@ function computeComposite(inst,def){
       const cx=Math.floor(W*1000/sp)+1, cy=Math.floor(L*1000/sp)+1; const tot=N*layers*(cx*L+cy*W); const wt=tot*massPerM(bd); const lap=d.barLap?PROJECT.lapPct:0;
       lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:sl.barDia||"N12",spec:`${label} — bars each way${layers>1?` × ${layers} layers`:""}`,qty:tot,unit:"m",waste:PROJECT.reoWaste,lap,finalQty:withWasteLap(tot,PROJECT.reoWaste,lap),formula:`(${cx}×${fmt(L,2)} + ${cy}×${fmt(W,2)})${layers>1?`×${layers}`:""}×${N}`,notes:`${fmt(wt,1)} kg`})); }
     else if(reo==="bars") warnings.push({text:`${label}: bars each way need a length and width (an area alone cannot set the bar counts)`, section:"geom", level:"completeness"});
-    if(sl.edgeForm!==false){ const lm=N*(num(sl.edgeLm)>0? num(sl.edgeLm) : (L>0&&W>0? 2*(L+W) : 0)); if(lm>0) lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Edgeform — slab edge formwork",spec:`${label} — ${num(sl.t)}mm high edge`,qty:lm,unit:"m",waste:PROJECT.formworkWaste,finalQty:withWaste(lm,PROJECT.formworkWaste),formula:num(sl.edgeLm)>0?"entered length":"perimeter 2(L+W)"})); else warnings.push({text:`${label}: edge formwork needs a length and width or an entered edge length`, section:"geom", level:"completeness"}); }
+    if(sl.edgeForm!==false){ const lm=N*(num(sl.edgeLm)>0? num(sl.edgeLm) : (L>0&&W>0? 2*(L+W) : 0)); if(lm>0) lines.push(...formworkLines(inst,def,{material:"Edgeform — slab edge formwork",spec:`${label} — ${num(sl.t)}mm high edge`,faces:[{name:"slab edge",runM:lm,faceMm:num(sl.t)>0? num(sl.t) : 1}],formula:num(sl.edgeLm)>0?"entered length":"perimeter 2(L+W)"})); else warnings.push({text:`${label}: edge formwork needs a length and width or an entered edge length`, section:"geom", level:"completeness"}); }
     if(sl.soffitForm){ const a=N*A; lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Soffit formwork",spec:`${label} — suspended slab soffit`,qty:a,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(a,PROJECT.formworkWaste),formula:"slab area"})); }
     if(sl.blindOn) lines.push(blindingLine(inst,def,N*A,num(sl.blindT,50),"concrete",num(sl.blindGrade,blindGradeDefault())));
   });
@@ -6524,7 +6559,8 @@ function computeComposite(inst,def){
     const hc=Math.floor(num(w.H)/num(w.horSp,400))+1, hlen=L-2*cover+0.4, htot=N*faces*hc*hlen, hd=barDiaOf(w.horDia||"N12");
     lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:w.horDia||"N12",spec:`${label} — horizontal bars (${faces} face${faces>1?"s":""})`,qty:htot,unit:"m",waste:PROJECT.reoWaste,lap,finalQty:withWasteLap(htot,PROJECT.reoWaste,lap),formula:`${faces}×${hc}×(${fmt(L,2)}−cover+0.4)×${N}`,notes:`${fmt(htot*massPerM(hd),1)} kg`}));
     const ff=Math.max(0,Math.round(num(w.formFaces,2))); let fa=N*ff*L*H; if(w.formEnds!==false) fa+=N*2*T*H;
-    if(fa>0) lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Wall formwork",spec:`${label} — ${ff} face${ff===1?"":"s"}${w.formEnds!==false?" + ends":""}`,qty:fa,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(fa,PROJECT.formworkWaste),formula:`${ff}×${fmt(L,2)}×${fmt(H,2)}${w.formEnds!==false?` + 2×${fmt(T,2)}×${fmt(H,2)}`:""}×${N}`}));
+    const fw=[]; if(ff>0&&L>0&&H>0) fw.push({name:`${ff} face${ff===1?"":"s"}`,runM:N*ff*L,faceMm:H*1000}); if(w.formEnds!==false&&T>0&&H>0) fw.push({name:"ends",runM:N*2*H,faceMm:T*1000});
+    if(fa>0) lines.push(...formworkLines(inst,def,{material:"Wall formwork",spec:`${label} — ${ff} face${ff===1?"":"s"}${w.formEnds!==false?" + ends":""}`,faces:fw,formula:`${ff}×${fmt(L,2)}×${fmt(H,2)}${w.formEnds!==false?` + 2×${fmt(T,2)}×${fmt(H,2)}`:""}×${N}`}));
   });
   lines.push(...starterRunLines(inst,def,d,N,compositeLenM(d),"Starter bars"));
   if(!(d.slabs||[]).length && !(d.walls||[]).length) warnings.push({text:"No slabs or walls yet — add the parts of the detail", section:"geom", level:"completeness"});
@@ -9633,7 +9669,7 @@ function formworkTotals(lines){
   (lines||[]).forEach(l=>{ if(!l || l.materialGroup!=="Formwork") return; const q=num(l.finalQty); if(l.unit==="m²") m2+=q; else if(l.unit==="m"||l.unit==="lm") lm+=q; else if(l.unit==="no.") no+=q; else m2+=q; });
   return {m2,lm,no};
 }
-function formworkStr(ft){ const parts=[`${fmt(ft.m2,2)}m² formwork`]; if(ft.lm) parts.push(`${fmt(ft.lm,2)}lm edge/reveal formwork`); if(ft.no) parts.push(`${fmt(ft.no,0)} formed openings`); return parts.join(' · '); }
+function formworkStr(ft){ const parts=[`${fmt(ft.m2,2)}m² formwork`]; if(ft.lm) parts.push(`${fmt(ft.lm,2)}lm formwork (edges, reveals, faces under 400 mm)`); if(ft.no) parts.push(`${fmt(ft.no,0)} formed openings`); return parts.join(' · '); }
 function blindingVapourTotals(lines){
   // Blinding/base layers (their own "Base/Blinding" group, m³) and vapour
   // barriers/membranes (their own "Vapour Barrier" group, m²) are separate

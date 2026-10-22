@@ -1471,6 +1471,20 @@ check("Blinding is decided on the crew sheet: ticked (the default) it is charged
   assert.equal(autoMinimumCartage(item, rates), null); assert.ok(autoMinimumCartage(offItem, rates) && autoMinimumCartage(offItem, rates).qty === 1);
   assert.equal(offItem.qtys[rateKey("CONCRETE", "Blinding concrete", "m3")], 5, "the typed figure is never touched");
 });
+check("formwork by face size (22 Oct 2026): an Estimates face under 400 mm arrives by the lineal metre and lands on 'Edgeform' (m); an edge-type face of 400 mm or more arrives in m² and lands on 'Edgeform >400mm deep' (m²); walls keep 'Walls'", () => {
+  const { quote, flags } = buildImportFromEstimate({ project: { name: "Faces" }, lines: [
+    estLine({ elementId: "F1", element: "Strip Footing 1", category: "Strip Footing", materialGroup: "Formwork", material: "Trench formwork", spec: "Selected faces — left side 300 mm, right side 300 mm — under 400 mm — lineal metres", qty: 24, finalQty: 25.2, unit: "m", faceMm: 300, m2Equiv: 7.2 }),
+    estLine({ elementId: "F2", element: "Strip Footing 2", category: "Strip Footing", materialGroup: "Formwork", material: "Trench formwork", spec: "Selected faces — left side 600 mm", qty: 12, finalQty: 12.6, unit: "m²", faceMm: 600 }),
+    estLine({ elementId: "W1", element: "Wall 1", category: "Concrete Wall / Core", materialGroup: "Formwork", material: "Wall formwork", spec: "Selected faces — face A 2700 mm", qty: 30, finalQty: 31.5, unit: "m²", faceMm: 2700 }),
+  ], elementGeometry: {} });
+  const sum = (key) => quote.items.reduce((t, it) => t + (Number(it.qtys[key]) || 0), 0);
+  assert.equal(sum(rateKey("FORMWORK", "Edgeform", "m")), 25.2, "300 mm faces → Edgeform by the metre");
+  assert.equal(sum(rateKey("FORMWORK", "Edgeform >400mm deep", "m2")), 12.6, "600 mm face → the over-400 m² row");
+  assert.equal(sum(rateKey("FORMWORK", "Walls", "m2")), 31.5, "a wall face stays on Walls");
+  assert.equal(sum(rateKey("FORMWORK", "Conventional", "m2")), 0, "nothing falls through to Conventional");
+  assert.ok(importAll.isEdgeFaceLine({ materialGroup: "Formwork", material: "Side formwork", spec: "" }) && !importAll.isEdgeFaceLine({ materialGroup: "Formwork", material: "Column formwork", spec: "" }));
+  assert.ok(!(flags || []).some((f) => /Strip Footing/.test(f)), "neither footing line is flagged");
+});
 check("clearable notices (22 Oct 2026): a notice cleared at its signature stays cleared, comes back when its content changes, restore one or all; the browser store survives a bad value", () => {
   const N = NOTICES;
   const sig = N.noticeSig("a@1", null, "", ["b@2", "c@3"]); assert.equal(sig, "a@1|b@2|c@3");

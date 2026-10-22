@@ -224,6 +224,11 @@ console.log("\nOrders, pour schedule and reconciliation (portal/estimates-orders
   const rec3 = O.reconcile([{ name: "a", lines }, { name: "b", lines: lines.slice(1) }]);
   check("reconcile: a missing line fails the line count", !rec3.rows.find((r) => r.key === "lines").ok);
   check("totalsOf splits spoil from excavation and blinding from vapour", (() => { const t = O.totalsOf(lines); return t.excM3 === 20.1 && t.spoilM3 === 23.2 && t.blindM3 === 4.4 && t.vapM2 === 33.22 && t.formworkM2 === 10.55; })());
+  check("totalsOf keeps lineal-metre formwork (faces under 400 mm) apart from the m², and the orders rule rounds it by the metre", (() => {
+    const t = O.totalsOf(lines.concat([{ materialGroup: "Formwork", material: "Trench formwork", unit: "m", finalQty: 25.2, faceMm: 300 }]));
+    const rule = O.procurementRuleFor({ materialGroup: "Formwork", material: "Trench formwork", unit: "m", finalQty: 25.23 }, ctx);
+    return t.formworkM2 === 10.55 && t.formworkLm === 25.2 && rule.orderUnit === "m" && rule.apply(25.23).order === 25.3;
+  })());
 
   // real fixtures: the order schedule reads them without throwing and reconciles with itself
   for (const f of fixtures) {

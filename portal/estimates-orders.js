@@ -106,6 +106,8 @@
         apply: (q) => ({ order: ceilSafe(q) }) };
     }
     if (g === "Formwork") {
+      // a face under 400 mm is measured by the metre (formworkLines in the app) — never folded into the m²
+      if (unit === "m" || unit === "lm") return { id: "lm1", text: "lineal metres, rounded up to 0.1", orderUnit: "m", apply: (q) => ({ order: roundUpTo(q, 0.1) }) };
       return { id: "area1", text: "m², rounded up to 0.1", orderUnit: "m²", apply: (q) => ({ order: roundUpTo(q, 0.1) }) };
     }
     if (g === "Excavation" || g === "Base/Blinding") {
@@ -273,7 +275,7 @@
   /* ------------------------------------------------------------------ */
   /** The same headline totals every totals row in the app shows, from any set of lines. */
   function totalsOf(lines) {
-    const t = { concreteM3: 0, reoKg: 0, formworkM2: 0, blindM3: 0, vapM2: 0, excM3: 0, spoilM3: 0, lines: 0 };
+    const t = { concreteM3: 0, reoKg: 0, formworkM2: 0, formworkLm: 0, blindM3: 0, vapM2: 0, excM3: 0, spoilM3: 0, lines: 0 };
     (lines || []).forEach((l) => {
       if (!l) return;
       t.lines += 1;
@@ -282,7 +284,7 @@
         case "Concrete": t.concreteM3 += q; break;
         case "Reinforcement": t.reoKg += num(l.weightKg); break;
         case "Connections": case "Joints": if (isBarSteelLine(l)) t.reoKg += num(l.weightKg); break;
-        case "Formwork": t.formworkM2 += q; break;
+        case "Formwork": if (l.unit === "m" || l.unit === "lm") t.formworkLm += q; else if (l.unit !== "no.") t.formworkM2 += q; break;
         case "Base/Blinding": t.blindM3 += q; break;
         case "Vapour Barrier": t.vapM2 += q; break;
         case "Excavation": if (/spoil disposal/i.test(String(l.material || ""))) t.spoilM3 += q; else t.excM3 += q; break;
@@ -295,6 +297,7 @@
     ["concreteM3", "Concrete", "m³", 3],
     ["reoKg", "Reinforcement", "kg", 1],
     ["formworkM2", "Formwork", "m²", 2],
+    ["formworkLm", "Formwork (faces under 400 mm)", "lm", 2],
     ["blindM3", "Blinding / base", "m³", 3],
     ["vapM2", "Vapour barrier", "m²", 2],
     ["excM3", "Excavation", "m³", 3],

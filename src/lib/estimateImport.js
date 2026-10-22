@@ -191,6 +191,17 @@ export function edgeProductForDepth(depthMm) {
   if (depthMm != null && depthMm <= EDGE_DEPTH_SPLIT_MM) return { name: "Edgeform", unit: "m", perMetre: true };
   return { name: "Edgeform >400mm deep", unit: "m2", perMetre: false };
 }
+// An Estimates line formed by FACE SIZE (formworkLines in estimates-app.html,
+// 22 Oct 2026): every face under 400 mm arrives by the lineal metre (unit "m",
+// `faceMm`, `m2Equiv`) and lands on the ground-slab "Edgeform" (m) row; a
+// footing side, beam side, slab edge or step face of 400 mm or more arrives in
+// m² with its `faceMm` and lands on "Edgeform >400mm deep" (m²) — the edge is
+// formed over the material's full depth. Walls, columns, soffits and casings
+// keep their own products below.
+const EDGE_FACE_RE = /edgeform|trench formwork|side formwork|beam formwork|step-down|footing formwork|footing \+ stem|reveal/i;
+export function isEdgeFaceLine(l) {
+  return !!l && l.materialGroup === "Formwork" && EDGE_FACE_RE.test(`${l.material || ""} ${l.spec || ""}`) && !/wall formwork|column formwork|soffit|casing/i.test(String(l.material || ""));
+}
 function findConventionalFormworkProduct() {
   if (!FORMWORK_CAT) return null;
   return FORMWORK_CAT.products.find((p) => p.name === "Conventional" && p.unit === "m2") || null;
@@ -397,6 +408,17 @@ export function buildImportFromEstimate(estimateExport) {
     formworkLines.forEach((l) => {
       const text = `${l.spec || ""} ${l.material || ""}`;
       const isM2 = l.unit === "m²" || l.unit === "m2";
+      const isLm = l.unit === "m" || l.unit === "lm";
+      // Formed by face size: a face under 400 mm comes by the metre -> "Edgeform" (m);
+      // an edge-type face of 400 mm or more comes in m² -> "Edgeform >400mm deep".
+      if (isLm && (l.faceMm != null || /lineal metres|edge|reveal|step-down face/i.test(text))) {
+        const product = findFormworkProduct("Edgeform", "m");
+        if (product) { map(l, rateKey("FORMWORK", product.name, product.unit), Number(l.finalQty) || 0); return; }
+      }
+      if (isM2 && Number(l.faceMm) >= EDGE_DEPTH_SPLIT_MM && isEdgeFaceLine(l)) {
+        const product = findFormworkProduct("Edgeform >400mm deep", "m2");
+        if (product) { map(l, rateKey("FORMWORK", product.name, product.unit), Number(l.finalQty) || 0); return; }
+      }
       // A beam / fold side: the depth rows (lineal metres up to 400 mm, m² over).
       if (isM2 && FOLD_RE.test(text)) {
         const depth = edgeDepthMm(text);
@@ -417,12 +439,6 @@ export function buildImportFromEstimate(estimateExport) {
           const product = findFormworkProduct(sys[1], "m2");
           if (product) { map(l, rateKey("FORMWORK", product.name, product.unit), Number(l.finalQty) || 0); return; }
         }
-      }
-      // Per-metre edge-board formwork (slab edges, opening reveals, step-down
-      // faces) -> the per-m "Edgeform" product.
-      if (l.unit === "m" && /edge|reveal|step-down face/i.test(text)) {
-        const product = findFormworkProduct("Edgeform", "m");
-        if (product) { map(l, rateKey("FORMWORK", product.name, product.unit), Number(l.finalQty) || 0); return; }
       }
       const isWall = /wall/i.test(l.spec || "") || /wall/i.test(l.material || "");
       if (!isM2) {

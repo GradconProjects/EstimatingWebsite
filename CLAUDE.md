@@ -324,6 +324,38 @@ safety net silently. Keep all cost arithmetic in `lib/costing.js`.
   with, so an older element gets the spoil row by renaming one of its
   "Additional labour / plant" rows.
 
+- **Formwork is measured by FACE SIZE — under 400 mm by the lineal metre**
+  (Grady, 22 Oct 2026: "all formwork less than 400mm high or wide should be
+  stated in lm rather than sqm in estimates section"; "edge form unless
+  otherwise stated should be less than 400mm"; "if material is above 400mm
+  then edgeform should be the depth of the material"): `formworkLines(inst,
+  def, {material, spec, faces, formula})` in `estimates-app.html` is the ONE
+  builder every calculator's formed faces go through — each face `{name,
+  runM, faceMm, areaM2?}` is the run of the face and its fixed dimension
+  across the run (a footing side's depth, a beam soffit's width, a column
+  face's width, a casing's diameter, a wall end's thickness, a kerb profile's
+  height). A face under `FORMWORK_LM_MAX_MM` = 400 is one line by the METRE
+  (`unit "m"`, `faceMm`, `m2Equiv`, "≈ N m²" in the notes, spec "… under
+  400 mm — lineal metres"); a face of 400 mm or more is one line in m²
+  (`faceMm` carried), so a 300 × 450 beam formed on its sides and soffit
+  gives a m² line and an lm line. A slab's edgeform, its reveals and its
+  step-down faces run through the same rule: by the metre at the slab's
+  thickness, and the full depth in m² once the slab is 400 mm or thicker.
+  Strip / pad / pile-cap faces, trench and manual perimeters, standalone and
+  raft beams, columns, walls (faces by height, ends and top by thickness),
+  retaining walls, box gutters, composite parts, kerbs and pier casings are
+  all on it; the slab soffit, stair and generic entered-area lines stay m².
+  `formworkTotals` (`{m2, lm, no}`) keeps the units apart and `formworkStr`
+  reads "lm formwork (edges, reveals, faces under 400 mm)"; the orders module
+  totals `formworkLm` beside `formworkM2` and rounds an lm line by the metre.
+  **The Quotes bridge** (`estimateImport.js`): an lm Formwork line lands on the
+  ground-slab "Edgeform" (m) row; an m² line with `faceMm` ≥ 400 on an
+  edge-type face (`isEdgeFaceLine`: edgeform / trench / side / beam / step /
+  footing / reveal, never wall, column, soffit or casing) lands on "Edgeform
+  >400mm deep" (m²); walls stay on "Walls", the rest on "Conventional" as
+  before. `verify.mjs` and `verify-estimates.mjs` cover the bridge and the
+  totals; `test-formwork-lm.mjs` proves the footing at 300 / 600, the beam
+  with a 300 soffit, the slab edge at 150 / 450 and the totals.
 - **Every trench-reinforcement layer is one of three products**
   (`trenchMeshTypeSel` is the ONE selector: L-series trench mesh, an SL/RL
   sheet cut as strips, or straight stock bars encoded as `"<count> Bar-N<dia>"`
