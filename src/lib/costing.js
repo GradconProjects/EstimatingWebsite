@@ -121,6 +121,7 @@ export function lookupRate(rates, key, fallback) {
  * rows, CategoryBlock, the print report, the export) reads through here.
  */
 export function rowRate(item, rates, key, fallback) {
+  if (isQuantityOnlyKey(key)) return { ...(fallback || {}), unitCost: 0 }; // a quantity-only row (Excavation) never prices — the crew sheet carries the dig
   const base = lookupRate(rates, key, fallback);
   const ov = item && item.rateOverrides && item.rateOverrides[key];
   const merged = ov && typeof ov === "object" ? { ...base, ...ov } : base;
@@ -353,6 +354,19 @@ export const autoSmallLoadCharge = autoMinimumCartage;
  */
 const productName = (p) => (p && typeof p === "object" && !Array.isArray(p) ? p.name : p && p.name);
 export const SOIL_REMOVAL_PRODUCT_MATCH = /^soil removal$/i;
+/**
+ * Quantity-only rows (catalog `quantityOnly: true` — today the OTHER
+ * ALLOWANCES "Excavation" row): the figure typed is a DRIVER for the crew
+ * sheet (excavator and bobcat days, the soil removal, the Excavation & prep
+ * base Qty), never money on the band — the dig is costed on the crew sheet
+ * alone. `rowRate` answers $0 for such a key whatever the shared or pinned
+ * rates hold (a figure saved earlier, or typed in the Rates modal, cannot
+ * double-count it), the band shows "crew sheet" in place of a unit rate and
+ * the Rates modal does not list it. `isQuantityOnlyKey(key)` is the ONE test.
+ */
+export const isQuantityOnlyProduct = (p) => !!(p && p.quantityOnly);
+export const QUANTITY_ONLY_KEYS = new Set(FULL_CATALOG.flatMap((cat) => cat.products.filter(isQuantityOnlyProduct).map((p) => rateKey(cat.key, p.name, p.unit))));
+export const isQuantityOnlyKey = (key) => QUANTITY_ONLY_KEYS.has(key);
 export const EXCAVATION_PRODUCT_MATCH = /^excavation$/i;
 export function autoSoilRemoval(item, rates) {
   const cat = FULL_CATALOG.find((c) => c.key === "OTHER ALLOWANCES");

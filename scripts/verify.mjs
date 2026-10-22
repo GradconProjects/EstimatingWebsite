@@ -1471,6 +1471,16 @@ check("Blinding is decided on the crew sheet: ticked (the default) it is charged
   assert.equal(autoMinimumCartage(item, rates), null); assert.ok(autoMinimumCartage(offItem, rates) && autoMinimumCartage(offItem, rates).qty === 1);
   assert.equal(offItem.qtys[rateKey("CONCRETE", "Blinding concrete", "m3")], 5, "the typed figure is never touched");
 });
+check("Excavation is a quantity only (22 Oct 2026): a saved $50/m³ against its key still prices $0 on OTHER ALLOWANCES — the dig is costed on the crew sheet; Soil removal keeps its $/m³", () => {
+  const C = costingAll; const excKey = rateKey("OTHER ALLOWANCES", "Excavation", "m3"), soilKey = rateKey("OTHER ALLOWANCES", "Soil removal", "m3");
+  assert.ok(C.isQuantityOnlyKey(excKey) && !C.isQuantityOnlyKey(soilKey));
+  const rates = { ...defaultRates(), [excKey]: { unitCost: 50 } };
+  const item = { id: "e1", typeId: "strip_footings", category: "FOUNDATIONS", label: "Strip", qtys: { [excKey]: 22, [soilKey]: 28.2 }, tasks: [], additional: [] };
+  assert.equal(C.rowRate(item, rates, excKey, { unitCost: 50 }).unitCost, 0, "rowRate answers $0 for the quantity-only key");
+  const cost = C.computeElementCost(item, rates);
+  assert.ok(Math.abs(cost.categoryTotals["OTHER ALLOWANCES"] - 28.2 * 40) < 1e-6, "only the soil removal is money on the band");
+  assert.equal(C.labourQuantities(item, rates).excavationM3, 22, "…while the dig still drives the crew sheet");
+});
 check("blinding build-up on the crew sheet (22 Oct 2026): slab = area × depth, a beam = run × width × depth, each part its own tick; the total costs the CONCRETE blinding row while nothing is typed there, feeds the crew Blinding row and the poured volume; the master tick leaves it out", () => {
   const C = costingAll;
   const base = { id: "r1", typeId: "raft_foundation", category: "FOUNDATIONS", label: "Raft", qtys: {}, tasks: [{ id: "t1", name: "Blinding concrete", qtys: {} }, { id: "t2", name: "Pour concrete", qtys: {} }], additional: [],

@@ -379,8 +379,17 @@ safety net silently. Keep all cost arithmetic in `lib/costing.js`.
   dig days on the Remove soil row's Trucks cell (no haul productivity is
   fitted, so the trucks attend the excavator) — an element with a dig but no
   concrete yet is planned too. Every cell stays the estimator's to retype.
-  `test-excavation.mjs` types 30 m³ through the real input, watches it hold
-  over 7 s and a reload, and proves the 34.5 m³ soil row and the plant cells.
+  **The Excavation row is a QUANTITY ONLY** (same day: "it should be 0 there
+  and the cost determined only in the labour section"): catalog
+  `quantityOnly: true` → `isQuantityOnlyKey(key)` in `costing.js` is the ONE
+  test; `rowRate` answers $0 for it whatever the shared or pinned rates hold,
+  the band's Unit $ reads "crew sheet" and the Rates modal does not list it.
+  Soil removal keeps its $/m³ (cartage and tip). `test-excavation.mjs` seeds
+  $50/m³ against the key and proves $0, types 30 m³ through the real input,
+  watches it hold over 7 s and a reload, and proves the soil row and the
+  plant cells. **Band titles are short**: a category's `label` is its name
+  and any explanation is its `note` (the header's hover and a line inside
+  the open band) — Grady, same day: "too much words".
 
 - **Formwork is measured by FACE SIZE — under 400 mm by the lineal metre**
   (Grady, 22 Oct 2026: "all formwork less than 400mm high or wide should be

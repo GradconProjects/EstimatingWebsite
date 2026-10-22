@@ -1,6 +1,6 @@
 import { Fragment } from "react";
 import { ChevronDown, ChevronRight, Plus, X } from "lucide-react";
-import { rateKey, money2, rowRate, computeRowTotal, rowContext, autoSoilRemoval, autoBlindingConcrete, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, additionalRowsFor, additionalRowTotal, autoPigmentWashout, autoSpecialistShortLoad, productLabel, visibleProducts, isBlindingProduct, blindingIncluded } from "../lib/costing.js";
+import { rateKey, money2, rowRate, computeRowTotal, rowContext, autoSoilRemoval, autoBlindingConcrete, isQuantityOnlyKey, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, additionalRowsFor, additionalRowTotal, autoPigmentWashout, autoSpecialistShortLoad, productLabel, visibleProducts, isBlindingProduct, blindingIncluded } from "../lib/costing.js";
 import { SPECIALIST_CONCRETE_KEY } from "../data/catalog.js";
 import { NumInput } from "./atoms.jsx";
 import { validityState, validityLabel, formatValidUntil } from "../lib/rateValidity.js";
@@ -57,6 +57,7 @@ export default function CategoryBlock({ cat, item, rates, onQtyChange, entryTone
       <button
         onClick={toggleCat}
         data-band="category"
+        title={cat.note || undefined}
         className="w-full flex items-center justify-between px-3 py-2 bg-neutral-800 text-white text-xs font-semibold tracking-wide uppercase hover:bg-neutral-700 transition-colors"
       >
         <span className="flex items-center gap-1.5">
@@ -74,6 +75,7 @@ export default function CategoryBlock({ cat, item, rates, onQtyChange, entryTone
       </button>
       {catOpen && (
         <div className="overflow-x-auto">
+          {cat.note && <p className="px-3 py-1.5 text-[11px] text-neutral-500 border-b border-neutral-100" data-testid="band-note">{cat.note}</p>}
           <table className="w-full text-[13px]">
             <thead>
               <tr className="bg-neutral-50 text-neutral-500 text-[11px] uppercase tracking-wide">
@@ -213,6 +215,9 @@ export default function CategoryBlock({ cat, item, rates, onQtyChange, entryTone
                         // A subcontract row has NO unit rate — nothing is shown or
                         // entered here; the received quote goes in the amount cell.
                         null
+                      ) : isQuantityOnlyKey(qKey) ? (
+                        // a quantity-only row: the dig is costed on the crew sheet, never here
+                        <span className="text-[10px] font-sans uppercase tracking-wide text-emerald-700" title="This row is a quantity only — it drives the crew sheet (Excavation & prep base, excavator and bobcat days, the soil removal) and never costs anything here, whatever rate is saved against it" data-testid="quantity-only">crew sheet</span>
                       ) : onRateChange && ((cat.key === "CONCRETE" && (/minimum cartage|small load/i.test(p.name) || /transport surcharge/i.test(p.name) || /environment levy/i.test(p.name))) || (cat.key === SPECIALIST_CONCRETE_KEY && (/washout|short-load|delivery beyond/i.test(p.name))) || cat.volumeRateBasis) ? (
                         <NumInput
                           step={cat.volumeRateBasis ? "25" : "0.25"}

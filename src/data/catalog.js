@@ -360,7 +360,9 @@ export const FULL_CATALOG = [
    * publish the amount, so it seeds at $0 until entered). This concrete is
    * poured volume for crew days and kg/m³ reinforcement, but NOT for the
    * Holcim delivery fees on the CONCRETE band (different supplier). */
-  { key: "SPECIALIST FINISHING CONCRETE", label: "SPECIALIST FINISHING CONCRETE (VicMix exposed / decorative mixes $/m³ published — min 4 m³ Maxi within 25 km, prices may change; pigment mixes + $40/truck washout)", weightBasis: false,
+  // Band titles are SHORT (Grady, 22 Oct 2026: "too much words"); the
+  // explanation is `note`, shown on the header's hover and inside the band.
+  { key: "SPECIALIST FINISHING CONCRETE", label: "SPECIALIST FINISHING CONCRETE", note: "VicMix exposed / decorative mixes, $/m³ published — min 4 m³ Maxi within 25 km, prices may change; pigment mixes + $40/truck washout", weightBasis: false,
     // The ONE band that is not on every card (rule 1 exception, by request):
     // it appears — and is costed — only on elements of the matching element
     // category (categoryAppliesTo), i.e. the Specialist Finishing Concrete
@@ -451,7 +453,7 @@ export const FULL_CATALOG = [
    * live rate: the Rates Library's "Finished pavements & concrete finishes"
    * section lists the same names (verify-covered) and governs them. Scope
    * "always": an installed rate is typed deliberately, like RATE ITEMS. */
-  { key: "FINISHED PAVEMENTS & CONCRETE FINISHES", label: "FINISHED PAVEMENTS & CONCRETE FINISHES ($/m² supply & install — preliminary estimating allowances ex GST from 2026 Melbourne guides and Gradcon's build-up, not subcontractor quotes; $180/m² recommended for a standard 100 mm reinforced carport pavement)", weightBasis: false, scopeBucket: "always", products: [
+  { key: "FINISHED PAVEMENTS & CONCRETE FINISHES", label: "FINISHED PAVEMENTS & CONCRETE FINISHES", note: "$/m² supply & install — preliminary estimating allowances ex GST from 2026 Melbourne guides and Gradcon's build-up, not subcontractor quotes; $180/m² recommended for a standard 100 mm reinforced carport pavement", weightBasis: false, scopeBucket: "always", products: [
     ["Exposed aggregate pavement, 100 mm reinforced — RECOMMENDED preliminary estimate rate (budget allowance incl. estimating contingency; structural confirmation required)", "m2", null, 180],
     ["Exposed aggregate — standard, supply & install (2026 Melbourne guide $130–185/m²)", "m2", null, 157.5],
     ["Exposed aggregate — premium (2026 Melbourne guide $180–220/m²)", "m2", null, 200],
@@ -772,9 +774,13 @@ export const FULL_CATALOG = [
   { key: "OTHER ALLOWANCES", weightBasis: false, scopeBucket: "always", products: [
     // Excavation (bank m³ dug) and Soil removal (loose m³ carted away) are
     // SEPARATE quantities: each drives its own crew-sheet row (see
-    // labourQuantities / taskRowMeta in costing.js). Excavation seeds at $0
-    // so it is a quantity driver for excavator days unless a $/m³ rate is set.
-    ["Inspector", "each", null, 130], ["Excavation", "m3", null, 0], ["Soil removal", "m3", null, 40], ["Bin Hire", "each", null, 600], ["Sawcutting", "day", null, 450],
+    // labourQuantities / taskRowMeta in costing.js). Excavation is a
+    // QUANTITY ONLY (`quantityOnly: true`, Grady, 22 Oct 2026: "it should be
+    // 0 there and the cost determined only in the labour section"): the row
+    // never costs anything whatever rate is saved against it — the dig is
+    // priced on the crew sheet (excavator, bobcat, concreters). Soil removal
+    // keeps its $/m³ (the cartage and tip fee).
+    ["Inspector", "each", null, 130], { name: "Excavation", unit: "m3", unitWeight: null, unitCost: 0, quantityOnly: true }, ["Soil removal", "m3", null, 40], ["Bin Hire", "each", null, 600], ["Sawcutting", "day", null, 450],
     ["Concrete test", "each", null, 241.5], ["Off-site washout fee", "each", null, 400], ["Truck washout fee", "each", null, 10.5],
   ]},
   { key: "SUB CONTRACTORS / TEMPORARY WORKS", weightBasis: false, scopeBucket: "always", products: [

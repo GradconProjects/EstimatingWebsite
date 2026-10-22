@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { X } from "lucide-react";
 import { FULL_CATALOG, RESOURCE_COLS, PRODUCTION_RATES } from "../data/catalog.js";
-import { rateKey, isManualQuoteKey } from "../lib/costing.js";
+import { rateKey, isManualQuoteKey, isQuantityOnlyKey } from "../lib/costing.js";
 import { NumInput } from "./atoms.jsx";
 import { libraryGovernedKeys, libraryValidity, readLibraryState } from "../lib/ratesLibrarySync.js";
 import { isTimeLimited, validityState, validityLabel, formatValidUntil } from "../lib/rateValidity.js";
@@ -146,7 +146,7 @@ export default function RatesModal({ rates, setRates, onClose, lockedFor = null 
           {/* Subcontract "quote" rows have NO rate anywhere but the element they
               are typed on (lib/costing.js rowRate / isManualQuoteKey) — they are
               not listed here, and a band made only of them is skipped. */}
-          {FULL_CATALOG.map((cat) => ({ ...cat, products: cat.products.filter((p) => !p.legacy && !isManualQuoteKey(rateKey(cat.key, p.name, p.unit))) })).filter((cat) => cat.products.length > 0).map((cat) => (
+          {FULL_CATALOG.map((cat) => ({ ...cat, products: cat.products.filter((p) => !p.legacy && !isManualQuoteKey(rateKey(cat.key, p.name, p.unit)) && !isQuantityOnlyKey(rateKey(cat.key, p.name, p.unit))) })).filter((cat) => cat.products.length > 0).map((cat) => (
             <div key={cat.key}>
               <div className="text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-1">
                 {cat.label}
