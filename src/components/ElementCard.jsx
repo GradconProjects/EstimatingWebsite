@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo, useEffect, useRef, Fragment } from "react";
 import { ChevronDown, ChevronRight, Copy, Trash2, Paperclip, X, RotateCw, ZoomIn, ZoomOut, Maximize2, ArrowUp, ArrowDown, GripVertical } from "lucide-react";
 import { FULL_CATALOG, LABOUR_TEMPLATES, QUOTE_SCOPES, CREW_TASKS_VER } from "../data/catalog.js";
 import { userKey, markEntry, entryTone, ENTRY_KEY, isDone, donePatch, whenLabel } from "../lib/workTrail.js";
@@ -9,6 +9,7 @@ import { pdfToJpegPages } from "../lib/pdfToImages.js";
 import { markupSrc, markupDataURL } from "../lib/markupStore.js";
 import CategoryBlock from "./CategoryBlock.jsx";
 import LabourMatrix from "./LabourMatrix.jsx";
+import BlindingBand from "./BlindingBand.jsx";
 import AdditionalItems from "./AdditionalItems.jsx";
 
 /**
@@ -585,8 +586,8 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
           </div>
 
           {FULL_CATALOG.filter((cat) => categoryAppliesTo(cat, item)).map((cat) => (
+            <Fragment key={cat.key}>
             <CategoryBlock
-              key={cat.key}
               cat={cat}
               item={item}
               rates={rates}
@@ -605,6 +606,18 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
               onRemoveCustom={removeAdditional}
               onChangeCustom={changeAdditional}
             />
+            {cat.key === "CONCRETE" && (
+              /* BLINDING, its own band right under CONCRETE (Grady, 22 Oct 2026) */
+              <BlindingBand
+                item={item}
+                rates={rates}
+                open={!!openCats.BLINDING}
+                toggle={() => setOpenCats((o) => ({ ...o, BLINDING: !o.BLINDING }))}
+                entryTone={tone}
+                onPart={(partKey, field, v) => patch((it) => stamp({ ...it, blinding: { ...(it.blinding || {}), [partKey]: { ...((it.blinding || {})[partKey] || {}), [field]: field === "on" ? (v ? undefined : false) : v } } }, `blinding:${partKey}:${field}`))}
+              />
+            )}
+            </Fragment>
           ))}
 
           <LabourMatrix

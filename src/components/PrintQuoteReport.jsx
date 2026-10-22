@@ -3,7 +3,7 @@ import {
 } from "../data/catalog.js";
 import { markupSrc } from "../lib/markupStore.js";
 import {
-  computeElementCost, computeGrandTotal, computeMarginLadder, rateKey, rowRate, computeRowTotal, rowContext, money, money2, getDefaultMargin, getMarginSteps, autoSoilRemoval, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, additionalRowsFor, additionalRowTotal, autoSpecialistFees, categoryAppliesTo, computeExcludedTotals, categoryChargedUnder, scopeLabel, isProvisional, computeProvisionalTotals, isBlindingProduct, blindingIncluded } from "../lib/costing.js";
+  computeElementCost, computeGrandTotal, computeMarginLadder, rateKey, rowRate, computeRowTotal, rowContext, money, money2, getDefaultMargin, getMarginSteps, autoSoilRemoval, autoBlindingConcrete, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, additionalRowsFor, additionalRowTotal, autoSpecialistFees, categoryAppliesTo, computeExcludedTotals, categoryChargedUnder, scopeLabel, isProvisional, computeProvisionalTotals, isBlindingProduct, blindingIncluded } from "../lib/costing.js";
 import { GRADCON_LOGO_DATA_URI } from "../lib/logo.js";
 
 /**
@@ -238,6 +238,10 @@ function ElementReportBlock({ item, rates, projectScope }) {
   const surcharge = autoConcreteSurcharge(item, rates);
   if (surcharge) {
     materialLines.push({ key: `${surcharge.key}::auto`, label: "Production & transport surcharge (CONCRETE — auto, per m³)", qty: surcharge.qty, unit: "m3", total: surcharge.total });
+  }
+  const blindAuto = autoBlindingConcrete(item, rates);
+  if (blindAuto && blindingIncluded(item)) {
+    materialLines.push({ key: `${blindAuto.key}::auto`, label: `Blinding concrete (CONCRETE — from the crew sheet's build-up: ${blindAuto.parts.map((p) => `${p.label} ${p.m3} m³`).join(", ")})`, qty: blindAuto.qty, unit: "m3", total: blindAuto.total });
   }
   const soil = autoSoilRemoval(item, rates);
   if (soil) {

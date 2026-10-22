@@ -142,8 +142,9 @@ export default function LabourMatrix({
                       step="0.01"
                       value={task.qty}
                       data-entry={entryTone ? entryTone(`task:${task.id}:qty`) || undefined : undefined}
-                      placeholder={labourAuto && meta.autoQty ? String(meta.autoQty) : "—"}
-                      className={labourAuto && meta.autoQty ? "placeholder:text-amber-800 placeholder:opacity-100 placeholder:font-semibold border-amber-400" : ""}
+                      placeholder={meta.autoQty ? String(meta.autoQty) : "—"}
+                      className={meta.autoQty ? "placeholder:text-amber-800 placeholder:opacity-100 placeholder:font-semibold border-amber-400" : ""}
+                      title={meta.autoQty ? `${meta.autoQty} ${meta.unit} from ${meta.source} — type over it to override` : undefined}
                       onChange={(v) => onTaskMetaChange(task.id, "qty", v)}
                     />
                   ) : <span className="block text-center text-neutral-300">—</span>}

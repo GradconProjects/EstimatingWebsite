@@ -19,7 +19,7 @@
  *   can't accept the HTML clipboard format still gets usable text).
  */
 import { FULL_CATALOG, RESOURCE_COLS, CATEGORY_ORDER, SECTION_ORDER } from "../data/catalog.js";
-import { computeElementCost, computeGrandTotal, computeMarginLadder, rateKey, rowRate, computeRowTotal, rowContext, getDefaultMargin, getMarginSteps, additionalRowsFor, additionalRowTotal, autoSoilRemoval, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, autoSpecialistFees, categoryAppliesTo, elementScope, categoryChargedUnder, scopeLabel, isBlindingProduct, blindingIncluded } from "./costing.js";
+import { computeElementCost, computeGrandTotal, computeMarginLadder, rateKey, rowRate, computeRowTotal, rowContext, getDefaultMargin, getMarginSteps, additionalRowsFor, additionalRowTotal, autoSoilRemoval, autoBlindingConcrete, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, autoSpecialistFees, categoryAppliesTo, elementScope, categoryChargedUnder, scopeLabel, isBlindingProduct, blindingIncluded } from "./costing.js";
 import { GRADCON_LOGO_DATA_URI } from "./logo.js";
 
 /** Rate ($/unit) backed out from the line's own total ÷ qty — always exactly
@@ -33,6 +33,7 @@ function autoConcreteFeeLines(item, rates) {
   const mc = autoMinimumCartage(item, rates); if (mc) out.push({ label: `Minimum cartage (CONCRETE — auto, ${mc.qty} m³ short of ${mc.threshold} m³)`, qty: mc.qty, unit: "m3", total: mc.total });
   const sur = autoConcreteSurcharge(item, rates); if (sur) out.push({ label: "Production & transport surcharge (CONCRETE — auto, per m³)", qty: sur.qty, unit: "m3", total: sur.total });
   const levy = autoEnvironmentLevy(item, rates); if (levy) out.push({ label: "Environment levy (CONCRETE — auto, per m³)", qty: levy.qty, unit: "m3", total: levy.total });
+  const bl = autoBlindingConcrete(item, rates); if (bl && blindingIncluded(item)) out.push({ label: `Blinding concrete (CONCRETE — from the crew sheet's build-up: ${bl.parts.map((p) => `${p.label} ${p.m3} m³`).join(", ")})`, qty: bl.qty, unit: "m3", total: bl.total });
   const soil = autoSoilRemoval(item, rates); if (soil) out.push({ label: `Soil removal (OTHER ALLOWANCES — auto, ${soil.excavationM3} m³ dug + ${soil.bulkingPct}% bulking)`, qty: soil.qty, unit: "m3", total: soil.total });
   autoSpecialistFees(item, rates).forEach((fee) => {
     const washout = /pigment washout/i.test(fee.key);

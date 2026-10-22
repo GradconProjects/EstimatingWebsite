@@ -1,6 +1,6 @@
 import { Fragment } from "react";
 import { ChevronDown, ChevronRight, Plus, X } from "lucide-react";
-import { rateKey, money2, rowRate, computeRowTotal, rowContext, autoSoilRemoval, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, additionalRowsFor, additionalRowTotal, autoPigmentWashout, autoSpecialistShortLoad, productLabel, visibleProducts, isBlindingProduct, blindingIncluded } from "../lib/costing.js";
+import { rateKey, money2, rowRate, computeRowTotal, rowContext, autoSoilRemoval, autoBlindingConcrete, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, additionalRowsFor, additionalRowTotal, autoPigmentWashout, autoSpecialistShortLoad, productLabel, visibleProducts, isBlindingProduct, blindingIncluded } from "../lib/costing.js";
 import { SPECIALIST_CONCRETE_KEY } from "../data/catalog.js";
 import { NumInput } from "./atoms.jsx";
 import { validityState, validityLabel, formatValidUntil } from "../lib/rateValidity.js";
@@ -46,6 +46,7 @@ export default function CategoryBlock({ cat, item, rates, onQtyChange, entryTone
   const surcharge = cat.key === "CONCRETE" ? autoConcreteSurcharge(item, rates) : null;
   const levy = cat.key === "CONCRETE" ? autoEnvironmentLevy(item, rates) : null;
   const soil = cat.key === "OTHER ALLOWANCES" ? autoSoilRemoval(item, rates) : null; // follows the Excavation line, bulked
+  const blindAuto = cat.key === "CONCRETE" ? autoBlindingConcrete(item, rates) : null; // the crew sheet's blinding build-up
   // VicMix charges on the specialist band, same amber-ghost treatment: the
   // pigment washout per truck of pigmented mix, and one short-load charge
   // when the pour is under the published-price minimum.
@@ -112,7 +113,8 @@ export default function CategoryBlock({ cat, item, rates, onQtyChange, entryTone
                 const isAutoWashout = washout && washout.key === qKey;
                 const isAutoShort = shortLoad && shortLoad.key === qKey;
                 const isAutoSoil = soil && soil.key === qKey;
-                const autoRow = isAutoCartage ? minCartage : isAutoSur ? surcharge : isAutoLevy ? levy : isAutoWashout ? washout : isAutoShort ? shortLoad : isAutoSoil ? soil : null;
+                const isAutoBlind = blindAuto && blindAuto.key === qKey;
+                const autoRow = isAutoCartage ? minCartage : isAutoSur ? surcharge : isAutoLevy ? levy : isAutoWashout ? washout : isAutoShort ? shortLoad : isAutoSoil ? soil : isAutoBlind ? blindAuto : null;
                 const rowTotal = autoRow ? autoRow.total : computeRowTotal(cat, rate, qty, ctx);
                 // kg/m³ × the element's poured m³ — the tonnage this rate buys
                 const rateTonnes = hasVolumeRate ? (qty * ctx.concreteM3) / 1000 : null;

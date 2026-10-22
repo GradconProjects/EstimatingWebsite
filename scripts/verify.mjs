@@ -1471,6 +1471,23 @@ check("Blinding is decided on the crew sheet: ticked (the default) it is charged
   assert.equal(autoMinimumCartage(item, rates), null); assert.ok(autoMinimumCartage(offItem, rates) && autoMinimumCartage(offItem, rates).qty === 1);
   assert.equal(offItem.qtys[rateKey("CONCRETE", "Blinding concrete", "m3")], 5, "the typed figure is never touched");
 });
+check("blinding build-up on the crew sheet (22 Oct 2026): slab = area × depth, a beam = run × width × depth, each part its own tick; the total costs the CONCRETE blinding row while nothing is typed there, feeds the crew Blinding row and the poured volume; the master tick leaves it out", () => {
+  const C = costingAll;
+  const base = { id: "r1", typeId: "raft_slab", category: "FOUNDATIONS", label: "Raft", qtys: {}, tasks: [{ id: "t1", name: "Blinding concrete", qtys: {} }, { id: "t2", name: "Pour concrete", qtys: {} }], additional: [],
+    blinding: { slab: { areaM2: 200, tMm: 50 }, edge: { lengthM: 40, widthMm: 350, tMm: 50 }, internal: { lengthM: 20, widthMm: 400, tMm: 75 } } };
+  const bu = C.blindingBuildUp(base);
+  assert.deepEqual(bu.parts.map((p) => [p.key, p.on, p.m3]), [["slab", true, 10], ["edge", true, 0.7], ["internal", true, 0.6]]); assert.equal(bu.m3, 11.3);
+  const rates = defaultRates();
+  const auto = C.autoBlindingConcrete(base, rates); assert.ok(auto && auto.qty === 11.3 && auto.key === rateKey("CONCRETE", "Blinding concrete", "m3"), "the auto row");
+  assert.equal(C.labourQuantities(base, rates).blindingM3, 11.3, "the crew Blinding row's Qty");
+  assert.equal(C.taskRowMeta("Blinding concrete", C.labourQuantities(base, rates)).autoQty, 11.3);
+  const off = { ...base, blinding: { ...base.blinding, edge: { ...base.blinding.edge, on: false } } };
+  assert.equal(C.blindingBuildUp(off).m3, 10.6, "unticking the edge beams drops only their 0.7 m³");
+  const typed = { ...base, qtys: { [auto.key]: 4 } }; assert.equal(C.autoBlindingConcrete(typed, rates), null, "a typed figure on the row takes it manual"); assert.equal(C.labourQuantities(typed, rates).blindingM3, 4);
+  const cost = C.computeElementCost(base, rates), costOut = C.computeElementCost({ ...base, blindingIncluded: false }, rates);
+  assert.ok(cost.categoryTotals["CONCRETE"] >= 11.3 * auto.unitCost - 1e-6, "the build-up prices on the CONCRETE band (plus the Holcim fees on the poured m³)");
+  assert.equal(costOut.categoryTotals["CONCRETE"] || 0, 0); assert.ok(costOut.excludedBlinding >= 11.3 * auto.unitCost - 1e-6, "the master tick leaves the build-up out and states the money");
+});
 check("blinding concrete crosses the bridge (22 Oct 2026): Base/Blinding m³ lines under a slab and under each raft beam land on the CONCRETE 'Blinding concrete' row (the crew sheet's Blinding row reads it); a sand blinding line stays for a manual pick", () => {
   const { quote, flags } = buildImportFromEstimate({ project: { name: "Blinding" }, lines: [
     estLine({ elementId: "R", element: "Raft Slab 1", category: "Raft Slab", materialGroup: "Base/Blinding", material: "Blinding concrete N20", spec: "50mm", qty: 10, finalQty: 10.5, unit: "m³" }),

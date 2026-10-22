@@ -314,6 +314,33 @@ safety net silently. Keep all cost arithmetic in `lib/costing.js`.
   every prefill source, the upgrade, the handover rows and the tick;
   `test-crew-sheet.mjs` proves the sheet, the override, the tick and the
   upgrade in the browser.
+  **The Qty prefill does not depend on "Auto from quantities"** (22 Oct
+  2026: an excavation of 22 m³ never showed on the Excavation & prep base row
+  while the toggle was off) — the toggle governs the crew-day cells only; the
+  Qty placeholder always reads the element's fields through `taskRowMeta`.
+  **BLINDING is its own band on the card, right under CONCRETE** (Grady,
+  22 Oct 2026: "clearly differentiate blinding for beams internally and edge
+  beams and then the overall slab … individual checkboxes … enter the depth
+  of blinding and width then this autofills the volume in the labour
+  section"; then "lets add Blinding as a separate item here and what is
+  filled here should autopopulate in the labour row"): `BlindingBand.jsx`
+  shows the three parts of `BLINDING_PARTS` — Slab (plan area × depth), Edge
+  beams and Internal beams (total run × width × depth) — each with its own
+  tick (`item.blinding[part].on`: undefined / true = in, false = out, the
+  master "Blinding added" reading) and figures (`areaM2` / `lengthM` /
+  `widthMm` / `tMm`, stamped on the work trail as `blinding:<part>:<field>`).
+  `blindingBuildUp(item)` in `costing.js` is the ONE arithmetic and
+  `autoBlindingConcrete(item, rates)` the ONE auto row: the CONCRETE
+  "Blinding concrete" row costs itself as the build-up's m³ while nothing is
+  typed on it (a typed Qty takes it manual, as on every auto row;
+  `computeElementCost`, `CategoryBlock` — amber placeholder —,
+  `PrintQuoteReport` and `exportQuote` all call it), `pouredVolume` counts it
+  (Holcim fees), `labourQuantities` feeds it to the crew sheet's Blinding row
+  Qty, and the master tick leaves all of it out (`excludedBlinding`). The
+  band's header reads the m³ and the $; `verify.mjs` covers the arithmetic,
+  the auto row, the crew Qty, the typed override and the master tick;
+  `test-blinding-buildup.mjs` proves the band, the prefill, the CONCRETE
+  placeholder and an untick in the browser.
 - **Crew-sheet rows are matched by NAME** (`taskRowMeta` in `costing.js`):
   a row whose name says "excavate" draws its Qty from the element's
   **Excavation** (m³) line, a row saying "spoil" / "soil removal" / "cart
@@ -2107,7 +2134,9 @@ element families waits on the owner's approval of the pad footing.
   slab / lean-mix onto CONCRETE "Blinding concrete" (sand, crushed rock and
   compacted base stay flagged for a manual pick), so the crew sheet's Blinding
   row takes the m³. `test-raft-blinding.mjs` proves the prompt, the four
-  ticks, each beam's volume and the untick; `verify.mjs` the bridge.
+  ticks, each beam's volume and the untick; `verify.mjs` the bridge. (Grady
+  works the same split on the Quotes card's BLINDING band — see the crew
+  sheet notes; the two meet on the CONCRETE "Blinding concrete" row.)
 - **Slab bars can be measured by AREA COVERED × LAYERS** (6 Oct 2026,
   Grady: "some slabs dont have proper bars designed … lets use the area
   covered and include also layer … i should be able to select more than a

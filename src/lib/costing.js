@@ -190,7 +190,9 @@ function pouredVolume(item) {
   cat.products.forEach((p) => {
     if (CONCRETE_FEE_MATCH(p.name)) return;
     if (isBlindingProduct(cat, p) && !blindingIncluded(item)) return; // left out on the crew sheet — no cartage, surcharge or levy on it
-    vol += Number(item.qtys[rateKey(cat.key, p.name, p.unit)]) || 0;
+    const typed = item.qtys[rateKey(cat.key, p.name, p.unit)];
+    if (isBlindingProduct(cat, p) && (typed === undefined || typed === "")) { const bu = blindingBuildUp(item); vol += bu.m3; return; } // the crew sheet's build-up is poured blinding too
+    vol += Number(typed) || 0;
   });
   return vol;
 }
@@ -542,6 +544,8 @@ export function computeElementCost(item, rates, projectScope) {
     });
   // Soil removal bulked off the Excavation line when nothing is typed on its row
   { const soil = autoSoilRemoval(item, rates); if (soil) land(FULL_CATALOG.find((c) => c.key === "OTHER ALLOWANCES"), soil.total); }
+  // Blinding concrete from the crew sheet's build-up when nothing is typed on its row (left out with the tick, like a typed figure)
+  { const bl = autoBlindingConcrete(item, rates); if (bl) { if (blindingIn) land(concreteCat, bl.total); else excludedBlinding += bl.total; } }
   // VicMix charges on the specialist band: pigment washout per truck, short load under the minimum
   autoSpecialistFees(item, rates).forEach((fee) => {
     land(specialistCat, fee.total);
@@ -676,6 +680,58 @@ const GENERAL_TASK_MATCH = /washout|tidy|clean|patch/i;       // "Washout / clea
  * ONE reading of which catalog row is the blinding.
  */
 export const blindingIncluded = (item) => !(item && item.blindingIncluded === false);
+
+/**
+ * The blinding BUILD-UP on the crew sheet (Grady, 22 Oct 2026: "clearly
+ * differentiate blinding for beams internally and edge beams and then the
+ * overall slab. these elements should have their individual checkboxes …
+ * when lengths are entered, user should be able to enter the depth of
+ * blinding and width then this autofills the volume"): `item.blinding =
+ * {slab: {on, areaM2, tMm}, edge: {on, lengthM, widthMm, tMm}, internal:
+ * {on, lengthM, widthMm, tMm}}`. A part counts while its tick is not off
+ * (`on` undefined / true = in, false = out — the same reading as the master
+ * "Blinding added" tick) and it has figures. `blindingBuildUp(item)` is the
+ * ONE arithmetic — slab = area × depth, a beam = length × width × depth —
+ * and `autoBlindingConcrete(item, rates)` the ONE auto row: the CONCRETE
+ * "Blinding concrete" row costs itself as the build-up's m³ while nothing is
+ * typed on it (a typed Qty takes it manual, like every auto row), so the
+ * crew sheet's Blinding row, the Holcim fees and the pour all see the m³.
+ */
+export const BLINDING_PARTS = [
+  { key: "slab", label: "Slab", kind: "area", hint: "the slab's plan area × the blinding depth" },
+  { key: "edge", label: "Edge beams", kind: "run", hint: "the edge beams' total run × the blinding width × depth" },
+  { key: "internal", label: "Internal beams", kind: "run", hint: "the internal beams' total run × the blinding width × depth" },
+];
+const numOr0 = (v) => (v === "" || v === undefined || v === null ? 0 : Number(v) || 0);
+export function blindingPartM3(part, p) {
+  if (!p || p.on === false) return 0;
+  const t = numOr0(p.tMm) / 1000;
+  if (part.kind === "area") return round2(numOr0(p.areaM2) * t);
+  return round2(numOr0(p.lengthM) * (numOr0(p.widthMm) / 1000) * t);
+}
+export function blindingBuildUp(item) {
+  const b = (item && item.blinding) || {};
+  const parts = BLINDING_PARTS.map((part) => {
+    const p = b[part.key] || {};
+    const on = p.on !== false;
+    const m3 = blindingPartM3(part, p);
+    const typed = part.kind === "area" ? numOr0(p.areaM2) > 0 || numOr0(p.tMm) > 0 : numOr0(p.lengthM) > 0 || numOr0(p.widthMm) > 0 || numOr0(p.tMm) > 0;
+    return { ...part, on, m3, typed, fields: p };
+  });
+  return { parts, m3: round2(parts.reduce((t, p) => t + (p.on ? p.m3 : 0), 0)), any: parts.some((p) => p.typed) };
+}
+export function autoBlindingConcrete(item, rates) {
+  const cat = FULL_CATALOG.find((c) => c.key === "CONCRETE");
+  const prod = cat && cat.products.find((p) => isBlindingProduct(cat, p));
+  if (!prod || !item) return null;
+  const key = rateKey(cat.key, prod.name, prod.unit);
+  const typed = (item.qtys || {})[key];
+  if (typed !== undefined && typed !== "") return null; // the estimator's own entry wins
+  const bu = blindingBuildUp(item);
+  if (!(bu.m3 > 0)) return null;
+  const rate = rowRate(item, rates, key, { unitCost: prod.unitCost ?? 0 });
+  return { key, qty: bu.m3, unitCost: rate.unitCost ?? 0, total: bu.m3 * (rate.unitCost ?? 0), parts: bu.parts.filter((p) => p.on && p.m3 > 0) };
+}
 export const isBlindingProduct = (cat, p) => !!(cat && p && cat.key === "CONCRETE" && /^blinding/i.test(p.name));
 
 export function labourQuantities(item, rates) {
@@ -703,6 +759,8 @@ export function labourQuantities(item, rates) {
   // a Soil removal row left blank follows the Excavation line, bulked.
   if (soilRemovalM3 <= 0) { const auto = autoSoilRemoval(item, rates); if (auto) soilRemovalM3 = auto.qty; }
   if (excavationM3 <= 0) excavationM3 = soilRemovalM3;
+  // a blank blinding row follows the crew sheet's build-up (slab / edge beams / internal beams)
+  if (blindingIn && blindingM3 <= 0) { const bu = autoBlindingConcrete(item, rates); if (bu) { blindingM3 += bu.qty; concreteM3 += bu.qty; } }
   // the pour row's m³: the blinding has its own crew row when the sheet carries one
   const hasBlindingRow = (item.tasks || []).some((t) => BLINDING_TASK_MATCH.test(t.name || ""));
   const pourM3 = round2(Math.max(0, concreteM3 - (hasBlindingRow ? blindingM3 : 0)));
