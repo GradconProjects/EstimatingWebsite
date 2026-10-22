@@ -1,4 +1,4 @@
-import { Loader2, Check, AlertTriangle, ArrowUp, ArrowDown } from "lucide-react";
+import { Loader2, Check, AlertTriangle, ArrowUp, ArrowDown, X } from "lucide-react";
 import { defaultSortDir } from "../lib/projectSort.js";
 
 const STATUS_MAP = {
@@ -38,6 +38,23 @@ export function NumInput({ value, onChange, placeholder = "—", className = "",
 /** Shown by the summary pages when some project rows could not be read from
  * the cloud. Nothing is changed by a failed load: the last-known copy stays
  * on screen where one exists, and Retry re-reads only what is stale. */
+/** The ✕ on a clearable notice (lib/notices.js): hides the band until its content changes; "show again" restores it. */
+export function ClearNoticeButton({ onClick, className = "" }) {
+  if (!onClick) return null;
+  return (
+    <button
+      type="button"
+      onClick={(e) => { e.stopPropagation(); onClick(); }}
+      className={`flex-none -mr-1 -mt-0.5 w-6 h-6 rounded-md inline-flex items-center justify-center text-current opacity-55 hover:opacity-100 hover:bg-black/10 transition-colors ${className}`}
+      title="Clear this notice — it stays cleared until what it says changes; cleared notices can be shown again from the line below"
+      aria-label="Clear this notice"
+      data-testid="notice-clear"
+    >
+      <X size={14} />
+    </button>
+  );
+}
+
 export function SummaryLoadNotice({ failedCount, onRetry }) {
   if (!failedCount) return null;
   return (

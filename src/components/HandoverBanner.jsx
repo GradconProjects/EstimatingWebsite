@@ -1,3 +1,5 @@
+import { NOTICE_IDS, noticeSig, isNoticeCleared } from "../lib/notices.js";
+import { ClearNoticeButton } from "./atoms.jsx";
 import { useState } from "react";
 import { handoverIssues, handoverSummary, HANDOVER_STATUS, liveHandoverApplies } from "../lib/handover.js";
 import { isRatesLocked } from "../lib/rateFreeze.js";
@@ -14,7 +16,7 @@ import { isRatesLocked } from "../lib/rateFreeze.js";
 const fmtDay = (iso) => (iso ? new Date(iso).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" }) : "");
 const pct = (v) => `${Math.round((Number(v) || 0) * 100)}%`;
 
-export default function HandoverBanner({ quote, items, elementTypes, onPrefill, onUndo, onRenameItem, onSetOnCosts }) {
+export default function HandoverBanner({ quote, items, elementTypes, onPrefill, onUndo, onRenameItem, onSetOnCosts, cleared, onClear }) {
   const [undoArmed, setUndoArmed] = useState(false);
   const h = quote.handover;
   const applied = !!(h && !h.undoneAt);
@@ -22,6 +24,9 @@ export default function HandoverBanner({ quote, items, elementTypes, onPrefill, 
   // shown on a locked project, while the live prefill is on and there is something to fill, and after an Undo (so the live prefill can be turned back on)
   if (!applied && !isRatesLocked(quote.status) && !(live && (quote.items || []).length) && !(h && h.undoneAt)) return null;
   const issues = handoverIssues(items, elementTypes);
+  // cleared until the prefill moves, the status changes or an issue comes or goes (lib/notices.js)
+  const sig = noticeSig(quote.status, h && h.at, h && h.updatedAt, h && h.undoneAt, live ? "live" : "", issues.unpricedQuoteRows.length, issues.halfEnteredAdditional.length, issues.labelSuggestions.length);
+  if (isNoticeCleared(cleared, NOTICE_IDS.handover, sig)) return null;
   const oh = Number(quote.overheadPct) || 0, cont = Number(quote.contingencyPct) || 0;
   const presets = [[0, 0], [0, 0.1], [0.08, 0.05]].filter(([a, b]) => Math.abs(a - oh) > 1e-9 || Math.abs(b - cont) > 1e-9);
   return (
@@ -42,6 +47,7 @@ export default function HandoverBanner({ quote, items, elementTypes, onPrefill, 
           )}
         </div>
         <div className="flex items-center gap-2 flex-none">
+          <ClearNoticeButton onClick={onClear ? () => onClear(NOTICE_IDS.handover, sig) : null} className="order-last" />
           {applied && (
             <button
               type="button"

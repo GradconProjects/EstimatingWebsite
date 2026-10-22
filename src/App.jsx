@@ -15,6 +15,8 @@ import { needsAddressReview, requestProjectNames, autoApplies, applyNamePatch, k
 import { preferredProvider } from "./lib/tenderWording.js";
 import { resolveTheme, applyTheme } from "./lib/quoteTheme.js";
 import { progress as workProgress, whenLabel as workWhen, userKey as workUser } from "./lib/workTrail.js";
+import { NOTICE_IDS, noticeSig, isNoticeCleared, clearNotice, restoreNotices, clearedCount } from "./lib/notices.js";
+import { ClearNoticeButton } from "./components/atoms.jsx";
 import { signedInUser as portalUser } from "./lib/quoteVersions.js";
 import DriveFilesDrawer from "./components/DriveFilesDrawer.jsx";
 import { driveFiles } from "./lib/driveFiles.js";
@@ -631,6 +633,10 @@ function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, rate
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quote, quoteStatus]);
   const frozenDrift = useMemo(() => (locked ? frozenRateDrift(quote, liveRates) : []), [locked, quote, liveRates]);
+  // clearable notices (lib/notices.js): recorded on the quote, so a cleared band stays cleared on every device until what it says changes
+  const clearedNotices = quote.clearedNotices || {};
+  const clearNoticeOn = (id, sig) => setQuote((q) => ({ ...q, clearedNotices: clearNotice(q.clearedNotices, id, sig) }));
+  const pinnedSig = quote.ratesFrozen ? noticeSig(quote.ratesFrozen.at, quote.ratesFrozen.status, frozenDrift.length) : "";
   const [repriceArmed, setRepriceArmed] = useState(false);
   // Google Drive project files (lib/driveFiles.js): the Files drawer, and the
   // same drawer as a picker for an element card's markups — `pickDriveFile`
@@ -1114,8 +1120,8 @@ function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, rate
 
       <div className="print:hidden max-w-7xl mx-auto px-4 pb-16 grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-4 items-start">
         <div className="space-y-3">
-          <RateValidityBanner rates={liveRates} />
-          {items.length > 0 && (() => {
+          <RateValidityBanner rates={liveRates} cleared={clearedNotices} onClear={clearNoticeOn} />
+          {items.length > 0 && !isNoticeCleared(clearedNotices, NOTICE_IDS.trail, "trail") && (() => {
             // where you left off (lib/workTrail.js): done / total, the next element to work on, the last one touched
             const pr = workProgress(items); const me = workUser(portalUser());
             const jump = (id) => { // under the sticky header, with a short flash so the card is found at a glance
@@ -1133,6 +1139,7 @@ function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, rate
                   <span><span className="inline-block w-2.5 h-2.5 rounded-sm align-middle mr-1" style={{ background: "var(--t-entry-me, #047857)" }} />{me ? `typed by ${me}` : "typed by you"}</span>
                   <span><span className="inline-block w-2.5 h-2.5 rounded-sm align-middle mr-1" style={{ background: "var(--t-entry-other, #7c3aed)" }} />typed by others</span>
                 </span>
+                <ClearNoticeButton onClick={() => clearNoticeOn(NOTICE_IDS.trail, "trail")} />
               </div>
             );
           })()}
@@ -1140,6 +1147,8 @@ function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, rate
             changes={pendingChanges}
             quote={quote}
             liveRates={liveRates}
+            cleared={clearedNotices}
+            onClear={clearNoticeOn}
             onDecide={(changes, apply) => {
               setQuote((q) => ({ ...q, ...decideRateChangesPatch(q, liveRates, changes, apply) }));
               const kept = changes.length - apply.length;
@@ -1147,11 +1156,11 @@ function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, rate
             }}
           />
           {!locked && (
-            <KeptRatesBanner quote={quote} liveRates={liveRates} onRelease={(keys) => { setQuote((q) => ({ ...q, ...releaseKeptRatesPatch(q, keys) })); note(keys ? "That rate now follows the Rates Library" : "Every rate now follows the Rates Library"); }} />
+            <KeptRatesBanner quote={quote} liveRates={liveRates} cleared={clearedNotices} onClear={clearNoticeOn} onRelease={(keys) => { setQuote((q) => ({ ...q, ...releaseKeptRatesPatch(q, keys) })); note(keys ? "That rate now follows the Rates Library" : "Every rate now follows the Rates Library"); }} />
           )}
-          {locked && (
+          {locked && !isNoticeCleared(clearedNotices, NOTICE_IDS.ratesPinned, pinnedSig) && (
             <div className="border border-blue-200 bg-blue-50 rounded-lg px-3 py-2 text-[12px] text-blue-950 flex items-start justify-between gap-3" role="status" data-testid="rates-pinned-banner">
-              <div>
+              <div className="flex-1">
                 <b>Rates pinned</b> on {new Date(quote.ratesFrozen.at).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" })} when this project was marked <b>{quote.ratesFrozen.status}</b>.
                 {" "}Changes in the Rates Library do not touch this quote; a rate edited here changes this quote only.
                 {frozenDrift.length > 0 && (
@@ -1174,6 +1183,7 @@ function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, rate
                   {repriceArmed ? "Confirm — re-price this quote" : "Re-price with current rates"}
                 </button>
               )}
+              <ClearNoticeButton onClick={() => clearNoticeOn(NOTICE_IDS.ratesPinned, pinnedSig)} />
             </div>
           )}
           <ImportFlagsBanner
@@ -1188,7 +1198,15 @@ function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, rate
             onUndo={() => { setQuote((q) => undoHandover(q)); note("Handover prefill undone and switched off — cells you changed were kept"); }}
             onRenameItem={(id, label) => setItems((its) => its.map((it) => (it.id === id ? { ...it, label } : it)))}
             onSetOnCosts={(overheadPct, contingencyPct) => setQuote((q) => ({ ...q, overheadPct, contingencyPct }))}
+            cleared={clearedNotices}
+            onClear={clearNoticeOn}
           />
+          {clearedCount(clearedNotices) > 0 && (
+            <div className="text-[11px] text-neutral-500 px-1 flex items-center gap-2" data-testid="notices-cleared">
+              <span>{clearedCount(clearedNotices)} notice{clearedCount(clearedNotices) === 1 ? "" : "s"} cleared on this project (a cleared notice returns on its own when what it says changes).</span>
+              <button type="button" className="underline hover:text-neutral-800" onClick={() => setQuote((q) => ({ ...q, clearedNotices: restoreNotices(q.clearedNotices) }))} data-testid="notices-show-again">Show again</button>
+            </div>
+          )}
           <AddElementBar onAdd={addElement} elementTypes={elementTypes} categoryOrder={categoryOrder} />
           <ProjectGeometryPanel
             items={items}

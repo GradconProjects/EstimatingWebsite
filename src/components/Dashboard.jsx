@@ -8,6 +8,7 @@ import { dashboardDueLabel, formatDay, OPEN_STATUSES } from "../lib/planner.js";
 import { effectiveRates, statusChangePatch, completedDay } from "../lib/rateFreeze.js";
 import { PROJECT_SORTS, sortProjects, defaultSortDir, preferredSortKey } from "../lib/projectSort.js";
 import RateValidityBanner from "./RateValidityBanner.jsx";
+import { clearNotice, restoreNotices, clearedCount, readBrowserNotices, writeBrowserNotices } from "../lib/notices.js";
 import { pendingRateChanges } from "../lib/rateChanges.js";
 import { RenameProjectsModal } from "./AddressNaming.jsx";
 import { applyNamePatch, isConventionName } from "../lib/projectNaming.js";
@@ -208,6 +209,7 @@ export default function Dashboard({ projects, rates, rateChanges, onOpen, onCrea
   // the address convention, renamed through the AI provider's proposals —
   // the typed name is kept on the row as nameSource (lib/projectNaming.js).
   const [renaming, setRenaming] = useState(false);
+  const [clearedNotices, setClearedNotices] = useState(() => readBrowserNotices()); // cleared notices, per browser (lib/notices.js)
   const renameRows = useMemo(() => projects.map((p) => { const q = quotesByKey[p.storageKey] || {}; return { id: p.id, storageKey: p.storageKey, name: q.projectName || "", client: q.clientName || "" }; }).filter((r) => r.name), [projects, quotesByKey]);
   const unconventional = renameRows.filter((r) => !isConventionName(r.name)).length;
   const renameProject = (row, option) => {
@@ -313,7 +315,13 @@ export default function Dashboard({ projects, rates, rateChanges, onOpen, onCrea
       </div>
       {renaming && <RenameProjectsModal rows={renameRows} onRename={renameProject} onClose={() => setRenaming(false)} />}
       <SummaryLoadNotice failedCount={failedCount} onRetry={() => setReloadTick((t) => t + 1)} />
-      <RateValidityBanner rates={rates} />
+      <RateValidityBanner rates={rates} cleared={clearedNotices} onClear={(id, sig) => setClearedNotices(writeBrowserNotices(clearNotice(clearedNotices, id, sig)))} />
+      {clearedCount(clearedNotices) > 0 && (
+        <div className="text-[11px] text-neutral-500 px-1 flex items-center gap-2" data-testid="notices-cleared">
+          <span>{clearedCount(clearedNotices)} notice{clearedCount(clearedNotices) === 1 ? "" : "s"} cleared in this browser (it returns on its own when what it says changes).</span>
+          <button type="button" className="underline hover:text-neutral-800" onClick={() => setClearedNotices(writeBrowserNotices(restoreNotices(clearedNotices)))} data-testid="notices-show-again">Show again</button>
+        </div>
+      )}
       {/* Projects still to decide on Rates Library changes they were priced
           with (lib/rateChanges.js) — each opens on its prompt. */}
       {(() => {

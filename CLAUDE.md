@@ -569,7 +569,9 @@ from what he hasnt clicked done on. this should be applied to line items".
    his colour when he is signed in, and projects@ sees the same figures in
    the "other" colour. New chrome for an entry must read `entryTone`, never
    compare `entries[...].by` inline.
-3. **Done is a tick per element** (band top row, before Provisional,
+3. **Done is a tick per element** (beside the element NAME on the band's
+   second row, vertically centred at the name's right — Grady, 22 Oct 2026:
+   "centered vertically and horizontally to the rhs of the element name";
    `data-testid="element-done"`): `item.done = {by, at}` through
    `donePatch(checked, by)`; `isDone(item)` is the ONE test — the card's
    border turns emerald and the row reads "✓ Done" (hover: who and when),
@@ -588,6 +590,39 @@ from what he hasnt clicked done on. this should be applied to line items".
    1.6 s).
 `test-work-trail.mjs` proves the stamps, both colours on both accounts,
 the tick, the rail, the Dashboard count and the jump.
+
+## Clearable notices (every banner has a ✕)
+
+Grady, 22 Oct 2026: "i should be able to clear these and other notifications
+used and unused". `src/lib/notices.js` (pure, verify-covered). Every band at
+the top of a project — the supplier-rate alarm (`RateValidityBanner`), the
+where-you-left-off strip, the Rates Library prompt (`RateChangesPrompt`),
+"Previous rates kept" (`KeptRatesBanner`), "Rates pinned" and the handover
+prefill (`HandoverBanner`) — carries `ClearNoticeButton` (`atoms.jsx`,
+`data-testid="notice-clear"`). Rules:
+
+1. **A clear records WHAT the notice said, not just that it was closed.**
+   Each banner computes its `noticeSig(...)` — the rate keys with their
+   figures and dates, the pending changes with their new figures, the kept
+   figures beside the library's, the pin stamp with the drift count, the
+   handover stamps with the issue counts; the trail strip's is the constant
+   `"trail"` — and `isNoticeCleared(store, id, sig)` hides it ONLY while the
+   signature matches. A later expiry date, another library move, a new kept
+   rate or a new handover issue brings the band back on its own.
+2. **Clearing decides nothing.** A kept rate stays kept, a prompt still waits,
+   the pin stands; only the band is hidden. The decisions remain where they
+   were (the Dashboard's "rate-changes-waiting" list, the Rates modal).
+3. **The record lives on the quote** (`quote.clearedNotices[id] = {sig, at}`
+   through `clearNotice` / `restoreNotices`), so a cleared band stays cleared
+   on every device; the Dashboard's alarm, which has no project, keeps the
+   same record in this browser (`BROWSER_NOTICES_KEY` =
+   `gradcon-notices-cleared`, `readBrowserNotices` / `writeBrowserNotices`).
+4. **"N notices cleared … Show again"** (`data-testid="notices-cleared"` /
+   `notices-show-again`, under the banners in the editor and under the alarm
+   on the Dashboard) restores every cleared notice at once.
+`ImportFlagsBanner` keeps its own one-shot dismiss (the flags are deleted).
+`test-notices.mjs` proves the Dashboard alarm (clear, reload, a changed date,
+show again) and, in a project, the strip, the alarm and the pinned banner.
 
 ## The handover pass (Completed Estimating → Grady)
 

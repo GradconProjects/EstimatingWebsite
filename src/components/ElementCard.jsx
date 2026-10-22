@@ -343,10 +343,6 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
                 </span>
               )}
             </div>
-            <label className={`flex-none flex items-center gap-1 text-[10px] uppercase tracking-widest cursor-pointer ${isDone(item) ? "text-emerald-300" : "text-blue-400"}`} onClick={(e) => e.stopPropagation()} title={isDone(item) ? `Marked done by ${item.done.by || "someone"} ${whenLabel(item.done.at)} — untick to reopen` : "Tick when this element is finished — the project then shows where you left off"} data-testid="element-done">
-              <input type="checkbox" checked={isDone(item)} onChange={(e) => patch((it) => ({ ...it, ...donePatch(e.target.checked, me) }))} className="accent-emerald-500" aria-label="Element done" />
-              <span>{isDone(item) ? "✓ Done" : "Done"}</span>
-            </label>
             <label className={`flex-none flex items-center gap-1 text-[10px] uppercase tracking-widest cursor-pointer ${isProvisional(item) ? "text-amber-300" : "text-blue-400"}`} onClick={(e) => e.stopPropagation()} title="Provisional sum: priced and carried in the total, but listed as PROVISIONAL on the card, the summary, the print report, the exports and the tender's line item" data-testid="element-provisional">
               <input type="checkbox" checked={isProvisional(item)} onChange={(e) => patch((it) => ({ ...it, provisional: e.target.checked || undefined }))} className="accent-amber-400" aria-label="Provisional sum" />
               <span>Provisional</span>
@@ -368,7 +364,7 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
               buttons would squeeze it (flex-wrap: they drop to a line below,
               right-aligned); on a wide card they sit beside it. */}
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-          <div className="flex-1 min-w-[14rem] basis-72">
+          <div className="flex-1 min-w-[14rem] basis-72 flex items-center gap-3">
           <textarea
             ref={labelRef}
             rows={1}
@@ -377,8 +373,13 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
             onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); e.currentTarget.blur(); } }}
             title={item.label}
             aria-label="Element name"
-            className="block w-full resize-none overflow-hidden bg-transparent border-0 p-0 text-white font-semibold text-[15px] leading-snug focus:outline-none focus:underline decoration-orange-400"
+            className="block flex-1 min-w-0 resize-none overflow-hidden bg-transparent border-0 p-0 text-white font-semibold text-[15px] leading-snug focus:outline-none focus:underline decoration-orange-400"
           />
+          {/* Done: centred beside the name (Grady, 22 Oct 2026: "centered vertically and horizontally to the rhs of the element name") */}
+          <label className={`flex-none self-center flex items-center gap-1.5 text-[11px] uppercase tracking-widest cursor-pointer ${isDone(item) ? "text-emerald-300" : "text-blue-300"}`} onClick={(e) => e.stopPropagation()} title={isDone(item) ? `Marked done by ${item.done.by || "someone"} ${whenLabel(item.done.at)} — untick to reopen` : "Tick when this element is finished — the project then shows where you left off"} data-testid="element-done">
+            <input type="checkbox" checked={isDone(item)} onChange={(e) => patch((it) => ({ ...it, ...donePatch(e.target.checked, me) }))} className="accent-emerald-500 w-4 h-4" aria-label="Element done" />
+            <span>{isDone(item) ? "✓ Done" : "Done"}</span>
+          </label>
         </div>
         <div className="flex items-center gap-3 ml-auto flex-none">
         <div className="text-right flex-none">

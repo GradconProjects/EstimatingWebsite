@@ -1159,6 +1159,7 @@ const { isProvisional, computeProvisionalTotals } = await import("../src/lib/cos
 const DF = await import("../src/lib/driveFiles.js");
 const PN = await import("../src/lib/projectNaming.js");
 const WT = await import("../src/lib/workTrail.js");
+const NOTICES = await import("../src/lib/notices.js");
 const THEME = await import("../src/lib/quoteTheme.js");
 
 check("Rates Library rules: its price flows into Quotes over ANY stored value, including a typed one", () => {
@@ -1469,6 +1470,18 @@ check("Blinding is decided on the crew sheet: ticked (the default) it is charged
   // the Holcim fees follow the poured volume: 16 m³ = 4 loads exactly (no cartage) vs 11 m³ = 1 m³ short
   assert.equal(autoMinimumCartage(item, rates), null); assert.ok(autoMinimumCartage(offItem, rates) && autoMinimumCartage(offItem, rates).qty === 1);
   assert.equal(offItem.qtys[rateKey("CONCRETE", "Blinding concrete", "m3")], 5, "the typed figure is never touched");
+});
+check("clearable notices (22 Oct 2026): a notice cleared at its signature stays cleared, comes back when its content changes, restore one or all; the browser store survives a bad value", () => {
+  const N = NOTICES;
+  const sig = N.noticeSig("a@1", null, "", ["b@2", "c@3"]); assert.equal(sig, "a@1|b@2|c@3");
+  let st = N.clearNotice(undefined, N.NOTICE_IDS.keptRates, sig, "2026-10-22T05:00:00Z");
+  assert.ok(N.isNoticeCleared(st, "keptRates", sig)); assert.ok(!N.isNoticeCleared(st, "keptRates", "a@1|b@9"), "a changed figure brings the notice back");
+  assert.ok(!N.isNoticeCleared(st, "validity", sig)); assert.equal(st.keptRates.at, "2026-10-22T05:00:00Z");
+  st = N.clearNotice(st, "trail", "trail"); assert.equal(N.clearedCount(st), 2);
+  assert.equal(N.clearedCount(N.restoreNotices(st, "trail")), 1); assert.deepEqual(N.restoreNotices(st), {}); assert.equal(N.clearedCount(undefined), 0);
+  const mem = {}; const storage = { getItem: (k) => (k in mem ? mem[k] : null), setItem: (k, v) => { mem[k] = v; } };
+  assert.deepEqual(N.readBrowserNotices(storage), {}); N.writeBrowserNotices(st, storage); assert.deepEqual(N.readBrowserNotices(storage), st);
+  mem[N.BROWSER_NOTICES_KEY] = "not json"; assert.deepEqual(N.readBrowserNotices(storage), {}, "a bad value reads as nothing cleared");
 });
 check("work trail (Grady's colour-coded entries, 22 Oct 2026): an entry records who typed it and when, the tone is 'me' for the signed-in account and 'other' for anyone else, nothing is stamped with no account; Done per element; progress says done / total, the next element and the last one touched", () => {
   const W = WT;

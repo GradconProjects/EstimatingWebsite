@@ -1,3 +1,5 @@
+import { NOTICE_IDS, noticeSig, isNoticeCleared } from "../lib/notices.js";
+import { ClearNoticeButton } from "./atoms.jsx";
 import { useMemo, useState } from "react";
 import { money } from "../lib/costing.js";
 import { rateChangeImpact, keptRates, rateChangeElements } from "../lib/rateChanges.js";
@@ -16,7 +18,7 @@ const rate = (v) => "$" + Number(v).toLocaleString("en-AU", { minimumFractionDig
  * project was estimated with. Nothing is decided until the button is
  * pressed; the prompt returns on every open until then.
  */
-export default function RateChangesPrompt({ changes, quote, liveRates, onDecide }) {
+export default function RateChangesPrompt({ changes, quote, liveRates, onDecide, cleared, onClear }) {
   const [unticked, setUnticked] = useState(() => new Set());
   const [showAll, setShowAll] = useState(false);
   const list = changes || [];
@@ -24,6 +26,9 @@ export default function RateChangesPrompt({ changes, quote, liveRates, onDecide 
   const impact = useMemo(() => rateChangeImpact(quote, liveRates, list, apply), [quote, liveRates, list, apply]);
   const touched = useMemo(() => rateChangeElements(quote, liveRates, list), [quote, liveRates, list]);
   if (!list.length) return null;
+  // cleared until the library moves again (lib/notices.js); clearing decides nothing — the prompt waits
+  const sig = noticeSig(list.map((c) => `${c.key}@${c.to}`));
+  if (isNoticeCleared(cleared, NOTICE_IDS.rateChanges, sig)) return null;
   const signed = (v) => `${v >= 0 ? "+" : "−"}${money(Math.abs(v))}`;
   const delta = impact.after - impact.before;
   // the rates an element actually carries come first; the rest (the library
@@ -37,6 +42,7 @@ export default function RateChangesPrompt({ changes, quote, liveRates, onDecide 
   return (
     <div className="border border-orange-300 bg-orange-50 rounded-lg px-3 py-2.5 text-[12px] text-neutral-900" role="alert" data-testid="rate-changes-prompt">
       <div className="flex flex-wrap items-start justify-between gap-3">
+        <ClearNoticeButton onClick={onClear ? () => onClear(NOTICE_IDS.rateChanges, sig) : null} className="order-last" />
         <div className="min-w-[16rem] flex-1">
           <div className="font-semibold text-orange-900">
             The Rates Library changed {list.length} rate{list.length === 1 ? "" : "s"} this project was priced with
@@ -96,9 +102,12 @@ export default function RateChangesPrompt({ changes, quote, liveRates, onDecide 
  * figure, or all at once. Replaces the blue "Rates pinned" banner for an
  * OPEN project; a locked project shows its status pin instead.
  */
-export function KeptRatesBanner({ quote, liveRates, onRelease }) {
+export function KeptRatesBanner({ quote, liveRates, onRelease, cleared, onClear }) {
   const kept = keptRates(quote);
   if (!kept.length) return null;
+  // cleared until a kept figure or its library figure changes (lib/notices.js); the rates stay kept
+  const sig = noticeSig(kept.map((k) => `${k.key}@${k.unitCost}@${liveRates && liveRates[k.key] ? liveRates[k.key].unitCost : ""}`));
+  if (isNoticeCleared(cleared, NOTICE_IDS.keptRates, sig)) return null;
   return (
     <div className="border border-blue-200 bg-blue-50 rounded-lg px-3 py-2 text-[12px] text-blue-950" role="status" data-testid="kept-rates-banner">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -120,9 +129,12 @@ export function KeptRatesBanner({ quote, liveRates, onRelease }) {
             </tbody>
           </table>
         </div>
+        <div className="flex items-start gap-2 flex-none">
         <button type="button" onClick={() => onRelease()} className="flex-none px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-blue-900 hover:bg-blue-800 text-white" data-testid="kept-rates-release-all">
           Use the current library figures for all
         </button>
+        <ClearNoticeButton onClick={onClear ? () => onClear(NOTICE_IDS.keptRates, sig) : null} />
+        </div>
       </div>
     </div>
   );
