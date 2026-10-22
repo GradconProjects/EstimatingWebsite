@@ -390,6 +390,30 @@ safety net silently. Keep all cost arithmetic in `lib/costing.js`.
   plant cells. **Band titles are short**: a category's `label` is its name
   and any explanation is its `note` (the header's hover and a line inside
   the open band) — Grady, same day: "too much words".
+  **Finishing has a METHOD by element** (Grady, 22 Oct 2026: "finish
+  concrete should have a method to it and not just adding up all areas. for
+  slabs it should be the total area of slabs. slabs with beams should have
+  the slabs plus the area of formwork to the edge beams etc. do not add up
+  all faces of beams but only the exposed faces … if beams form part of a
+  complete system with the overlying slab, dont add beam faces"):
+  `finishBuildUp(item)` in `costing.js` is the ONE arithmetic behind the
+  crew sheet's "Finish concrete surfaces" Qty (`lq.finishM2`, still
+  editable) — a ground slab or raft = its plan area (Project Geometry m²,
+  else the BLINDING band's slab area, else the mesh area) PLUS the exposed
+  edge faces = the FORMWORK band's edgeform rows (the m² rows as they are,
+  the lineal-metre rows × the exposed edge depth typed on the Finish row,
+  `item.finish.edgeDepthMm`; blank → the metres are listed, not counted);
+  internal beams and inner beam faces are never counted; a suspended or roof
+  slab and stairs = the top only (Project Geometry m², else the soffit
+  formwork m²); a footing, ground beam, cap, kerb or base = its top surface
+  (Project Geometry m², else the BLINDING band's plan area or run × width); a
+  wall or column = its formed faces (the FORMWORK Walls m², else Project
+  Geometry m²). The Finish row prints the parts (`data-testid=
+  "finish-method"`, the method on hover) and, on a slab with lineal-metre
+  edgeform, the "edge depth … mm exposed" box (`finish-edge-depth`).
+  `verify.mjs` covers the raft, the blank depth, the mesh fallback, a strip,
+  a wall, a column and a suspended slab; `test-blinding-buildup.mjs` proves
+  the row and the depth box.
 
 - **Formwork is measured by FACE SIZE — under 400 mm by the lineal metre**
   (Grady, 22 Oct 2026: "all formwork less than 400mm high or wide should be

@@ -1,7 +1,7 @@
 import { ChevronDown, ChevronRight, Plus, Trash2 } from "lucide-react";
 import { RESOURCE_COLS } from "../data/catalog.js";
 import { STEEL_MODES } from "../lib/handover.js";
-import { money2, labourResourceRate, taskRowMeta, rateKey, blindingIncluded, TASK_MATCHERS } from "../lib/costing.js";
+import { money2, labourResourceRate, taskRowMeta, rateKey, blindingIncluded, TASK_MATCHERS, finishBuildUp } from "../lib/costing.js";
 import { NumInput } from "./atoms.jsx";
 
 /**
@@ -20,8 +20,10 @@ export default function LabourMatrix({
   item, rates, onTaskQtyChange, onTaskMetaChange, onAddTask, onRemoveTask, onRenameTask,
   resourceTotals, resourceCosts, labourTotal, excludedLabour = 0, labourOpen, toggleLabour,
   labourAuto, autoQtys, onToggleAuto, onResetAuto, labourQtyCtx, onLabourRateChange,
-  prefilled, steelMode = "auto", steelModeResolved, onSteelMode, onBlindingToggle, entryTone,
+  prefilled, steelMode = "auto", steelModeResolved, onSteelMode, onBlindingToggle, entryTone, onFinishField,
 }) {
+  const finish = finishBuildUp(item);
+  const finishEdgeLm = finish.parts.find((p) => p.key === "edgeLm");
   const blindingIn = blindingIncluded(item);
   const modeLabel = (m) => (STEEL_MODES.find((x) => x[0] === m) || [m, m])[1];
   return (
@@ -92,6 +94,7 @@ export default function LabourMatrix({
               const filled = RESOURCE_COLS.some((r) => Number(task.qtys[r.key]) > 0);
               const meta = taskRowMeta(task.name, labourQtyCtx);
               const isBlindingRow = TASK_MATCHERS.blinding.test(task.name || "");
+              const isFinishRow = TASK_MATCHERS.finish.test(task.name || "");
               const rowOut = isBlindingRow && !blindingIn;
               return (
               <tr key={task.id} className={`border-t border-neutral-100 ${rowOut ? "opacity-60" : filled ? "bg-orange-50/40" : ""}`} data-testid={isBlindingRow ? "blinding-row" : undefined} data-excluded={rowOut ? "1" : undefined}>
@@ -137,6 +140,11 @@ export default function LabourMatrix({
                   </div>
                 </td>
                 <td className="px-2 py-1">
+                  {isFinishRow && (
+                    <div className="text-[10px] text-neutral-500 mb-0.5" title={finish.method} data-testid="finish-method">
+                      {finish.parts.map((p) => `${p.label} ${p.m2} m²`).join(" + ")}
+                    </div>
+                  )}
                   {meta.unit ? (
                     <NumInput
                       step="0.01"
@@ -148,6 +156,13 @@ export default function LabourMatrix({
                       onChange={(v) => onTaskMetaChange(task.id, "qty", v)}
                     />
                   ) : <span className="block text-center text-neutral-300">—</span>}
+                  {isFinishRow && finishEdgeLm && onFinishField && (
+                    /* the exposed edge depth sits UNDER the Qty so the Qty stays the row's first number box */
+                    <label className="flex items-center gap-1 mt-0.5 text-[10px] text-neutral-500">edge depth
+                      <NumInput step="1" value={(item.finish && item.finish.edgeDepthMm) ?? ""} placeholder="mm" onChange={(v) => onFinishField("edgeDepthMm", v)} className="w-14 text-[10px]" data-testid="finish-edge-depth" />
+                      <span>mm exposed</span>
+                    </label>
+                  )}
                 </td>
                 <td className="px-1 py-1 text-neutral-500 text-xs">{meta.unit}</td>
                 {RESOURCE_COLS.map((r) => {

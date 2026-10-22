@@ -633,6 +633,7 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
             steelModeResolved={steelModeResolved}
             onSteelMode={setSteelMode}
             onBlindingToggle={(on) => patch((it) => ({ ...it, blindingIncluded: on ? undefined : false }))}
+            onFinishField={(field, v) => patch((it) => stamp({ ...it, finish: { ...(it.finish || {}), [field]: v } }, `finish:${field}`))}
             item={item}
             rates={rates}
             onTaskQtyChange={setTaskQty}

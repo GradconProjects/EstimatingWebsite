@@ -735,6 +735,83 @@ const BP = Object.fromEntries(BLINDING_PARTS.map((p) => [p.key, p]));
  * off the element type (ELEMENT_TYPES by typeId, else the category and
  * section an element carries, so a custom type follows its family).
  */
+/**
+ * Finishing has a METHOD by element (Grady, 22 Oct 2026: "finish concrete
+ * should have a method to it and not just adding up all areas. for slabs it
+ * should be the total area of slabs. slabs with beams should have the slabs
+ * plus the area of formwork to the edge beams etc. do not add up all faces of
+ * beams but only the exposed faces same with all other elements. if beams
+ * form part of a complete system with the overlying slab, dont add beam
+ * faces"). `finishBuildUp(item)` is the ONE arithmetic for the crew sheet's
+ * "Finish concrete surfaces" Qty (editable, as every prefill):
+ *   slab family — the slab's plan area (Project Geometry m², else the
+ *     BLINDING band's slab area, else the mesh area) PLUS the exposed edge
+ *     faces = the FORMWORK band's edgeform rows: the m² rows as they are,
+ *     the lineal-metre rows × the exposed edge depth typed on the Finish row
+ *     (`item.finish.edgeDepthMm`; blank → those metres are listed, not
+ *     counted). Internal beams and the beams' inner faces are part of the
+ *     slab system and never counted;
+ *   footings, ground beams, caps, kerbs — the top surface (Project Geometry
+ *     m², else the BLINDING band's plan area);
+ *   walls, columns, retention and civil walls — the formed faces (the
+ *     FORMWORK band's Walls / Walls Curved m² — the exposed faces after
+ *     stripping; else Project Geometry m²);
+ *   stairs, suspended and roof work — Project Geometry m², else the
+ *     suspended formwork m² (soffit) — no edge faces;
+ *   everything else — Project Geometry m², else the mesh area.
+ */
+const SLAB_FINISH = /slab|raft|driveway|paths|paving|hardstand|ramp/;
+const FOOTING_FINISH = /strip_footings|edge_beam|internal_beam|capping_beam|ground_beam|pile_cap|pad|stump|anchor_block|base_plate|kerb|hearth|plinth|irregular|culvert|manhole|pit/;
+const EDGE_M2_RE = /^edgeform >400mm deep$/i, EDGE_LM_RE = /^edgeform( \(suspended\))?$/i, WALL_FORM_RE = /^walls( curved)?$/i, SOFFIT_FORM_RE = /^(conventional|bondek)$/i;
+const qtyOf = (item, cat, p) => Number((item.qtys || {})[rateKey(cat.key, p.name, p.unit)]) || 0;
+export function finishBuildUp(item) {
+  if (!item) return { parts: [], m2: 0, method: "" };
+  const type = ELEMENT_TYPES.find((t) => t.id === item.typeId) || null;
+  const id = String(item.typeId || "");
+  const category = type ? type.category : item.category || "";
+  const labour = type ? type.labour : item.labour || "";
+  const geomM2 = Number(item.measureM2) || 0;
+  const form = FULL_CATALOG.find((c) => c.key === "FORMWORK"), mesh = FULL_CATALOG.find((c) => c.key === "SQUARE MESH");
+  const sum = (cat, re, unit) => (cat ? cat.products.filter((p) => re.test(p.name) && (!unit || p.unit === unit)).reduce((t, p) => t + qtyOf(item, cat, p), 0) : 0);
+  const meshM2 = mesh ? mesh.products.reduce((t, p) => t + qtyOf(item, mesh, p), 0) : 0;
+  const bu = blindingBuildUp(item);
+  const part = (key, label, m2, note) => ({ key, label, m2: round2(m2), note });
+  const parts = [];
+  let method;
+  const isSlab = labour === "slab_ground" || (labour === "slab_suspended" && /slab/.test(id)) || SLAB_FINISH.test(id);
+  if (isSlab && category !== "ROOF" && labour !== "slab_suspended") {
+    const slabBlind = bu.parts.find((p) => p.key === "slab");
+    const area = geomM2 > 0 ? geomM2 : slabBlind && Number(slabBlind.fields.areaM2) > 0 ? Number(slabBlind.fields.areaM2) : meshM2;
+    parts.push(part("slab", "Slab top surface", area, geomM2 > 0 ? "Project Geometry area" : slabBlind && Number(slabBlind.fields.areaM2) > 0 ? "the BLINDING band's slab area" : "the mesh area"));
+    const edgeM2 = sum(form, EDGE_M2_RE, "m2"), edgeLm = sum(form, EDGE_LM_RE, "m");
+    const depth = Number(item.finish && item.finish.edgeDepthMm) || 0;
+    if (edgeM2 > 0) parts.push(part("edgeM2", "Exposed edge faces (edgeform m²)", edgeM2, "the FORMWORK band's edgeform m² rows"));
+    if (edgeLm > 0) parts.push(part("edgeLm", `Exposed edge faces (${round2(edgeLm)} lm of edgeform${depth > 0 ? ` × ${depth} mm` : " — enter the exposed edge depth"})`, depth > 0 ? edgeLm * depth / 1000 : 0, depth > 0 ? "the FORMWORK band's edgeform metres × the exposed edge depth" : "the exposed edge depth is blank — those metres are not counted"));
+    method = "slab area + the exposed edge faces (edgeform); internal beams and inner beam faces are part of the slab system and are not counted";
+  } else if (isSlab || labour === "slab_suspended" || labour === "stairs" || category === "ROOF" || category === "SUSPENDED STRUCTURE") {
+    const soffit = sum(form, SOFFIT_FORM_RE, "m2");
+    parts.push(part("top", "Top surface", geomM2 > 0 ? geomM2 : soffit > 0 ? soffit : meshM2, geomM2 > 0 ? "Project Geometry area" : soffit > 0 ? "the suspended formwork (soffit) m²" : "the mesh area"));
+    method = "the top surface only — no edge or beam faces";
+  } else if (FOOTING_FINISH.test(id) || labour === "footing") {
+    let planM2 = 0, note = "";
+    const run = bu.parts.find((p) => p.key === "footing" || p.key === "kerb"), pad = bu.parts.find((p) => p.key === "pad" || p.key === "base");
+    if (geomM2 > 0) { planM2 = geomM2; note = "Project Geometry area"; }
+    else if (pad && Number(pad.fields.areaM2) > 0) { planM2 = Number(pad.fields.areaM2); note = "the BLINDING band's plan area"; }
+    else if (run && Number(run.fields.lengthM) > 0 && Number(run.fields.widthMm) > 0) { planM2 = Number(run.fields.lengthM) * Number(run.fields.widthMm) / 1000; note = "the BLINDING band's run × width"; }
+    parts.push(part("top", "Top surface", planM2, note || "enter the area in Project Geometry"));
+    method = "the top surface only — the sides are against the ground or formed and not finished";
+  } else if (labour === "wall" || /column/.test(id) || category === "VERTICAL STRUCTURE") {
+    const walls = sum(form, WALL_FORM_RE, "m2");
+    parts.push(part("faces", "Exposed formed faces", geomM2 > 0 ? geomM2 : walls, geomM2 > 0 ? "Project Geometry area" : "the FORMWORK band's Walls m² (the faces exposed after stripping)"));
+    method = "the formed faces — exposed after stripping";
+  } else {
+    parts.push(part("area", "Finished area", geomM2 > 0 ? geomM2 : meshM2, geomM2 > 0 ? "Project Geometry area" : "the mesh area"));
+    method = "the element's area";
+  }
+  const m2 = round2(parts.reduce((t, p) => t + p.m2, 0));
+  return { parts, m2, method };
+}
+
 export function blindingPartsFor(item) {
   if (!item) return [];
   const type = ELEMENT_TYPES.find((t) => t.id === item.typeId) || null;
@@ -799,7 +876,7 @@ export function labourQuantities(item, rates) {
       else if (cat.key === SPECIALIST_CONCRETE_KEY) { if (p.unit === "m3" && !SPECIALIST_FEE_MATCH(p.name, p.unit)) concreteM3 += qty; } // VicMix mix pours like any concrete
       else if (cat.key === "FORMWORK" && p.unit === "m2") formworkM2 += qty;
       else if (cat.key === "FORMWORK" && p.unit === "m") formworkLm += qty;
-      else if (cat.key === "SQUARE MESH") finishM2 += qty;
+      else if (cat.key === "SQUARE MESH") finishM2 += qty; // the mesh area — finishBuildUp below replaces it with the element's method
       else if (cat.key === "OTHER ALLOWANCES" && /^excavation$/i.test(p.name)) excavationM3 += qty;   // bank m³ dug → the Excavate row
       else if (cat.key === "OTHER ALLOWANCES" && /soil removal/i.test(p.name)) soilRemovalM3 += qty;   // loose m³ carted → the spoil row
     });
@@ -810,12 +887,15 @@ export function labourQuantities(item, rates) {
   // a Soil removal row left blank follows the Excavation line, bulked.
   if (soilRemovalM3 <= 0) { const auto = autoSoilRemoval(item, rates); if (auto) soilRemovalM3 = auto.qty; }
   if (excavationM3 <= 0) excavationM3 = soilRemovalM3;
+  // finishing by the element's method (slab area + exposed edge faces, a footing's top, a wall's formed faces)
+  finishM2 = finishBuildUp(item).m2;
   // a blank blinding row follows the crew sheet's build-up (slab / edge beams / internal beams)
   if (blindingIn && blindingM3 <= 0) { const bu = autoBlindingConcrete(item, rates); if (bu) { blindingM3 += bu.qty; concreteM3 += bu.qty; } }
   // the pour row's m³: the blinding has its own crew row when the sheet carries one
   const hasBlindingRow = (item.tasks || []).some((t) => BLINDING_TASK_MATCH.test(t.name || ""));
   const pourM3 = round2(Math.max(0, concreteM3 - (hasBlindingRow ? blindingM3 : 0)));
-  return { concreteM3, pourM3, blindingM3, formworkM2, formworkLm, formworkMeasure: round2(formworkM2 + formworkLm), finishM2, excavationM3, soilRemovalM3, reinfTonnes: computeElementReinforcementTonnes(item, rates) };
+  const fb = finishBuildUp(item);
+  return { concreteM3, pourM3, blindingM3, formworkM2, formworkLm, formworkMeasure: round2(formworkM2 + formworkLm), finishM2, finishMethod: `${fb.method}: ${fb.parts.map((p) => `${p.label} ${p.m2} m²`).join(" + ")}`, excavationM3, soilRemovalM3, reinfTonnes: computeElementReinforcementTonnes(item, rates) };
 }
 
 /**
@@ -913,7 +993,7 @@ export function taskRowMeta(taskName, lq) {
   if (BOXING_TASK_MATCH.test(taskName)) return { unit: "m²/lm", autoQty: lq ? lq.formworkMeasure : undefined, source: "everything entered on the FORMWORK band (m² + lineal metres)" };
   if (CONCRETE_POUR_TASK_MATCH.test(taskName)) return { unit: "m³", autoQty: lq ? (lq.pourM3 != null ? lq.pourM3 : lq.concreteM3) : undefined, source: "the poured concrete (less the blinding, which has its own row)" };
   if (STEEL_FIXING_TASK_MATCH.test(taskName)) return { unit: "t", autoQty: lq ? round2(lq.reinfTonnes) : undefined, source: "the reinforcement tonnage" };
-  if (FINISH_TASK_MATCH.test(taskName)) return { unit: "m²", autoQty: lq ? lq.finishM2 : undefined, source: "the mesh area" };
+  if (FINISH_TASK_MATCH.test(taskName)) return { unit: "m²", autoQty: lq ? lq.finishM2 : undefined, source: lq && lq.finishMethod ? lq.finishMethod : "the element's finished surfaces (finishBuildUp)" };
   if (EXCAVATE_TASK_MATCH.test(taskName)) return { unit: "m³", autoQty: lq ? lq.excavationM3 : undefined, source: "the Excavation line" };
   if (SPOIL_TASK_MATCH.test(taskName)) return { unit: "m³", autoQty: lq ? lq.soilRemovalM3 : undefined, source: "the Soil removal line" };
   if (STRIP_TASK_MATCH.test(taskName)) return { unit: "m²", autoQty: lq ? lq.formworkM2 : undefined, source: "the formed m²" };

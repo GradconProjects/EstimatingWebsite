@@ -1471,6 +1471,20 @@ check("Blinding is decided on the crew sheet: ticked (the default) it is charged
   assert.equal(autoMinimumCartage(item, rates), null); assert.ok(autoMinimumCartage(offItem, rates) && autoMinimumCartage(offItem, rates).qty === 1);
   assert.equal(offItem.qtys[rateKey("CONCRETE", "Blinding concrete", "m3")], 5, "the typed figure is never touched");
 });
+check("finish concrete has a method (22 Oct 2026): a slab = its area + the exposed edge faces (edgeform m², lm × the exposed depth), never internal beam faces; a footing = its top; a wall = its formed faces; the crew Finish row reads it", () => {
+  const C = costingAll; const rates = defaultRates();
+  const fk = (n, u) => rateKey("FORMWORK", n, u), mk = rateKey("SQUARE MESH", "SL82", "m2");
+  const raft = { id: "r", typeId: "raft_foundation", label: "Raft", measureM2: 200, qtys: { [fk("Edgeform >400mm deep", "m2")]: 12, [fk("Edgeform", "m")]: 40, [fk("Conventional", "m2")]: 99, [mk]: 230 }, tasks: [{ id: "f", name: "Finish concrete surfaces", qtys: {} }], additional: [], finish: { edgeDepthMm: 300 } };
+  const fb = C.finishBuildUp(raft);
+  assert.deepEqual(fb.parts.map((p) => [p.key, p.m2]), [["slab", 200], ["edgeM2", 12], ["edgeLm", 12]], "slab area + edge m² + 40 lm × 0.3; the Conventional m² and the mesh are not added");
+  assert.equal(fb.m2, 224); assert.equal(C.labourQuantities(raft, rates).finishM2, 224); assert.equal(C.taskRowMeta("Finish concrete surfaces", C.labourQuantities(raft, rates)).autoQty, 224);
+  const noDepth = C.finishBuildUp({ ...raft, finish: {} }); assert.equal(noDepth.m2, 212, "with no exposed depth the lineal metres are listed, not counted"); assert.ok(/enter the exposed edge depth/.test(noDepth.parts[2].label));
+  const meshOnly = C.finishBuildUp({ ...raft, measureM2: 0, qtys: { [mk]: 230 } }); assert.equal(meshOnly.m2, 230, "no geometry → the mesh area stands in for the slab");
+  const strip = C.finishBuildUp({ id: "s", typeId: "strip_footings", qtys: { [fk("Edgeform >400mm deep", "m2")]: 20 }, blinding: { footing: { lengthM: 30, widthMm: 600 } } }); assert.deepEqual(strip.parts.map((p) => [p.key, p.m2]), [["top", 18]], "a footing's top only — its formed sides are not finished");
+  const wall = C.finishBuildUp({ id: "w", typeId: "core_shear_wall", qtys: { [fk("Walls", "m2")]: 30, [fk("Edgeform", "m")]: 10 } }); assert.deepEqual(wall.parts.map((p) => [p.key, p.m2]), [["faces", 30]]);
+  const col = C.finishBuildUp({ id: "c", typeId: "rc_columns", measureM2: 8, qtys: {} }); assert.equal(col.m2, 8);
+  const susp = C.finishBuildUp({ id: "u", typeId: "suspended_slab", qtys: { [fk("Conventional", "m2")]: 50, [fk("Edgeform (suspended)", "m")]: 30 } }); assert.deepEqual(susp.parts.map((p) => [p.key, p.m2]), [["top", 50]], "a suspended slab: the top only — no edge faces");
+});
 check("Excavation is a quantity only (22 Oct 2026): a saved $50/m³ against its key still prices $0 on OTHER ALLOWANCES — the dig is costed on the crew sheet; Soil removal keeps its $/m³", () => {
   const C = costingAll; const excKey = rateKey("OTHER ALLOWANCES", "Excavation", "m3"), soilKey = rateKey("OTHER ALLOWANCES", "Soil removal", "m3");
   assert.ok(C.isQuantityOnlyKey(excKey) && !C.isQuantityOnlyKey(soilKey));
