@@ -204,12 +204,21 @@
   /* The welcome content sits centred on the page (Grady, 10 Oct 2026: "i want this aligned centre"):
      greeting, Coming up, the pick-up cards, the tiles and the footer line all centre; the cards and
      tiles keep left-aligned text inside their boxes. */
-  .dash-hero{ max-width:640px; margin:56px auto 40px; text-align:center; }
+  /* 23 Oct 2026, Grady: "format this well and rearrange these items as they are too scattered" — ONE centred
+     column (--welcome-col) holds the greeting, the chips, Coming up and the pick-up cards, so nothing drifts to
+     the page edge on a wide screen; the chips sit together on one row under the greeting. */
+  :root{ --welcome-col:880px; }
+  /* width:100% matters: #screen-dashboard is a flex column, and a flex item with auto side margins shrinks to
+     its content — without it the greeting and the card grid collapsed to a 300 px strip. */
+  .dash-hero{ width:100%; max-width:var(--welcome-col); margin:44px auto 28px; text-align:center; }
+  .dash-hero h1, .dash-hero p{ max-width:640px; margin-left:auto; margin-right:auto; }
   .dash-hero .eyebrow{ justify-content:center; }
   .dash-hero p{ margin:0 auto; }
   .welcome-upcoming, .welcome-recent{ text-align:center; }
-  .welcome-upcoming .upcoming-list{ margin:0 auto; text-align:left; }
-  .welcome-recent .recent-grid{ max-width:1760px; margin:0 auto; text-align:left; }
+  .welcome-upcoming, .welcome-recent{ width:100%; max-width:var(--welcome-col); margin-left:auto; margin-right:auto; }
+  .weather-chip:empty, .storage-badge:empty{ display:none; }
+  .welcome-upcoming .upcoming-list{ margin:0 auto; text-align:left; max-width:none; }
+  .welcome-recent .recent-grid{ margin:0 auto; text-align:left; }
   .panel-grid{ margin:0 auto; }
   .dash-foot{ text-align:center; }
   .dash-hero .eyebrow{ display:inline-flex; align-items:center; gap:7px; font-size:11.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--text); font-weight:700; margin-bottom:10px; }
@@ -300,10 +309,10 @@
   .app-frame-wrap{ flex:1; min-height:0; }
   .app-frame{ width:100%; height:100%; border:0; display:block; background:#f5f5f5; }
   /* Welcome panel: "pick up where you left off" cards under the greeting. */
-  .welcome-recent{ margin:0 0 36px; }
+  .welcome-recent{ margin:0 auto 36px; }
   .welcome-recent .eyebrow{ display:inline-flex; align-items:center; gap:7px; font-size:11.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--text); margin-bottom:12px; }
   .welcome-recent .eyebrow::before{ content:""; width:7px; height:7px; border-radius:2px; background:var(--accent); }
-  .recent-grid{ display:grid; grid-template-columns:repeat(auto-fill, minmax(230px, 1fr)); gap:12px; }
+  .recent-grid{ display:grid; grid-template-columns:repeat(auto-fit, minmax(230px, 1fr)); gap:12px; }
   .recent-card{ text-align:left; border:1px solid var(--line); border-radius:var(--radius); background:#fff; padding:14px 16px 13px; cursor:pointer; font:inherit; color:var(--text); display:flex; flex-direction:column; gap:4px; transition:border-color .15s, box-shadow .15s, transform .15s; }
   .recent-card:hover{ border-color:var(--accent); box-shadow:0 14px 30px -18px rgba(35,31,32,.45); transform:translateY(-1px); }
   .recent-card .kind{ font-size:10.5px; letter-spacing:.09em; text-transform:uppercase; color:var(--muted-2); display:flex; justify-content:space-between; gap:8px; }
@@ -311,14 +320,15 @@
   .recent-card h3{ font-size:15px; line-height:1.3; margin:2px 0 2px; }
   .recent-card .when{ font-size:12px; color:var(--muted); }
   /* "Coming up": the open quotes whose deadline is today, overdue or within 7 days, and the last project worked on. */
-  .welcome-upcoming{ margin:0 0 32px; }
+  .welcome-upcoming{ margin:0 auto 28px; }
   .storage-badge{ display:inline-flex; align-items:center; gap:8px; margin:4px 0 10px; padding:6px 12px; border-radius:999px; border:1px solid var(--line); background:#fff; font:inherit; font-size:12px; color:var(--text); cursor:pointer; }
   .storage-badge:hover{ border-color:var(--accent); }
   .storage-badge .dot{ width:8px; height:8px; border-radius:50%; background:#c9c9c9; }
   .storage-badge.on .dot{ background:#2f9e55; }
   .storage-badge.warn .dot{ background:#e0a200; }
   .storage-badge b{ font-weight:600; }
-  .welcome-badges{ display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
+  .welcome-badges{ display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:8px; margin:16px 0 0; }
+  .welcome-badges .weather-chip, .welcome-badges .storage-badge{ margin:0; }
   .theme-color-grid{ display:grid; grid-template-columns:repeat(auto-fill, minmax(230px, 1fr)); gap:6px 14px; }
   .theme-color-grid .tc-group{ grid-column:1 / -1; font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin-top:6px; }
   .theme-color-row{ display:flex; align-items:center; gap:8px; font-size:12.5px; }
@@ -342,7 +352,7 @@
   .upcoming-row .due.hot{ background:#fde8e8; color:#9b1c1c; }
   .upcoming-row .due.warm{ background:#fff3d6; color:#8a5a00; }
   .upcoming-empty{ font-size:13px; color:var(--muted); }
-  .upcoming-last{ margin-top:10px; font-size:13px; color:var(--muted); }
+  .upcoming-last{ margin-top:10px; font-size:13px; color:var(--muted); text-align:center; }
   .upcoming-last b{ color:var(--text); font-weight:700; }
   .upcoming-last button{ background:none; border:0; padding:0; font:inherit; font-weight:700; color:var(--accent-ink); cursor:pointer; text-decoration:underline; }
   .recent-card .open{ margin-top:6px; font-size:12px; font-weight:600; color:var(--accent-ink); background:var(--accent); border-radius:8px; padding:5px 10px; align-self:flex-start; }
@@ -447,12 +457,12 @@
 
   <div class="dash-hero">
     <div class="eyebrow" id="welcome-eyebrow">Dashboard</div>
+    <h1 id="welcome-greeting">What are you working on?</h1>
+    <p id="welcome-line">Four tools, one portal — keep every rate current in one place, plan and control job costs, price a job with the full material and labour catalog, or build a fresh takeoff straight from element geometry.</p>
     <div class="welcome-badges">
       <button type="button" class="weather-chip" id="welcome-weather" hidden title="Today's weather at the office — set the place under Settings → App behaviour"></button>
       <button type="button" class="storage-badge" id="welcome-storage" hidden title="Gradcon Storage — the office's project files, inside the app"></button>
     </div>
-    <h1 id="welcome-greeting">What are you working on?</h1>
-    <p id="welcome-line">Four tools, one portal — keep every rate current in one place, plan and control job costs, price a job with the full material and labour catalog, or build a fresh takeoff straight from element geometry.</p>
   </div>
 
   <div class="welcome-upcoming" id="welcome-upcoming" hidden>
@@ -1687,7 +1697,9 @@
       b.hidden = false; b.className = 'storage-badge';
       if(!d.configured || !d.connected){ b.innerHTML = '<span class="dot"></span>Gradcon Storage · <b>Google Drive not connected</b> · Settings'; return; }
       if(!d.drive){ b.classList.add('warn'); b.innerHTML = '<span class="dot"></span>Gradcon Storage · <b>Drive access to grant</b> · reconnect projects@ in Settings'; return; }
-      b.classList.add('on'); b.innerHTML = '<span class="dot"></span>Gradcon Storage · Google Drive · <b>' + escapeHtml((d.root && d.root.name) || 'Project files') + '</b> · ' + escapeHtml(d.email || 'projects@') + ' · Dropbox soon';
+      // short on the pill so it shares one row with the weather chip (23 Oct 2026); the account and Dropbox note ride on the hover
+      b.classList.add('on'); b.innerHTML = '<span class="dot"></span>Google Drive · <b>' + escapeHtml((d.root && d.root.name) || 'Project files') + '</b>';
+      b.title = 'Gradcon Storage — Google Drive connected as ' + (d.email || 'projects@') + ', reading under "' + ((d.root && d.root.name) || 'Project files') + '" · Dropbox soon · click for Settings';
     }).catch(function(){ b.hidden = true; });
   }
   document.getElementById('welcome-storage').addEventListener('click', function(){ document.getElementById('settings-btn').click(); });
@@ -1728,7 +1740,7 @@
     var sky = WMO[w.code] || ['🌡️', 'Weather'];
     var r = function(v){ return v == null ? '–' : Math.round(v); };
     b.hidden = false;
-    b.innerHTML = '<span class="icon">' + sky[0] + '</span><b>' + r(w.temp) + '°C</b><span>' + escapeHtml(sky[1]) + ' · ' + escapeHtml(w.place) + '</span><span class="muted">feels ' + r(w.feels) + '° · ' + r(w.min) + '–' + r(w.max) + '° today' + (w.rainChance != null ? ' · rain ' + r(w.rainChance) + '%' : '') + (w.wind != null ? ' · wind ' + r(w.wind) + ' km/h' : '') + '</span>';
+    b.innerHTML = '<span class="icon">' + sky[0] + '</span><b>' + r(w.temp) + '°C</b><span>' + escapeHtml(sky[1]) + ' · ' + escapeHtml(w.place) + '</span><span class="muted">feels ' + r(w.feels) + '° · ' + r(w.min) + '–' + r(w.max) + '°' + (w.rainChance != null ? ' · rain ' + r(w.rainChance) + '%' : '') + (w.wind != null ? ' · wind ' + r(w.wind) + ' km/h' : '') + '</span>';
     b.title = 'Weather at ' + w.place + ' (Open-Meteo) — change the place under Settings → App behaviour';
   }
   document.getElementById('welcome-weather').addEventListener('click', function(){ document.getElementById('settings-btn').click(); });

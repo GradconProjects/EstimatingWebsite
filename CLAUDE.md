@@ -1105,6 +1105,19 @@ item (a takeoff only for an account that sees them). `openFromWelcome` is
 the ONE click handler for cards, rows and that link (`data-kind` +
 `data-id`). `test-welcome.mjs` proves both accounts.
 
+**The welcome panel is ONE centred column** (Grady, 23 Oct 2026: "format
+this well and rearrange these items as they are too scattered"): `--welcome-col`
+= 880 px in the shell's CSS; the greeting block (`.dash-hero`), the chips row
+(`.welcome-badges`, now UNDER the greeting line: weather then storage, one
+row), "Coming up" and the pick-up cards (`.welcome-recent`, `auto-fit` columns)
+all take `width:100%; max-width:var(--welcome-col); margin:auto`. The
+`width:100%` is load-bearing — `#screen-dashboard` is a flex column and a flex
+item with auto side margins shrinks to its content (the cards once collapsed
+to a 300 px stack). The storage pill is short ("Google Drive · <folder>"; the
+account and "Dropbox soon" ride on its hover) and the weather chip drops the
+word "today" so both fit one row; an empty chip never paints (`:empty`).
+`test-welcome-layout.mjs` measures the column at 2000 px wide.
+
 **Weather at the top of the dashboard** (Grady, 22 Oct 2026: "show weather
 and temperature on the top of the dashboard upon loggin in"): `paintWeather`
 in the shell (run by `renderWelcome` and on every Settings save) reads
