@@ -21,6 +21,7 @@ const estimatesPath = path.join(root, "portal", "estimates-app.html");
 const costPlannerPath = path.join(root, "portal", "cost-planner.html");
 const ratesLibraryPath = path.join(root, "portal", "rates-library.html");
 const aiEnginePath = path.join(root, "portal", "ai-engine.html");
+const registerPath = path.join(root, "portal", "register.html");
 const outPath = path.join(distDir, "index.html");
 
 // --- Inline the built React app (Quotes) into one self-contained document ---
@@ -191,6 +192,17 @@ let costPlannerHtml = fs.readFileSync(costPlannerPath, "utf8");
 let ratesLibraryHtml = fs.readFileSync(ratesLibraryPath, "utf8");
 let aiEngineHtml = fs.readFileSync(aiEnginePath, "utf8").replaceAll("__BUILD_STAMP__", buildStamp() + (process.env.PORTAL_STAMP_SUFFIX || ""));
 if (!/const AI_TYPES = \[/.test(aiEngineHtml)) throw new Error("ai-engine.html has no AI_TYPES mirror — the AI Engine cannot propose element types");
+// The Register (tile 08) loads its built-in seed from portal/register-seed.js, inlined here the
+// way estimates-schema.js is, so the app runs from a blob: URL with nothing to fetch.
+let registerHtml = fs.readFileSync(registerPath, "utf8");
+{
+  const seedTag = /<script src="register-seed\.js"><\/script>/;
+  if (!seedTag.test(registerHtml)) throw new Error("register.html no longer loads register-seed.js — inline step out of date");
+  const seedSrc = fs.readFileSync(path.join(root, "portal", "register-seed.js"), "utf8").replace(/<\/script/gi, "<\\/script");
+  if (!/const REGISTER_SEED = /.test(seedSrc)) throw new Error("register-seed.js defines no REGISTER_SEED");
+  registerHtml = registerHtml.replace(seedTag, () => `<script>${seedSrc}</script>`);
+  console.log(`Inlined portal/register-seed.js (${(seedSrc.length / 1024).toFixed(0)} KB) into the Register app`);
+}
 if (OFFLINE) {
   // The vanilla apps carry their cloud constants inline. Blank them so the
   // offline copy never reaches out; each app already treats a failed fetch
@@ -208,7 +220,8 @@ if (OFFLINE) {
   costPlannerHtml = blank(costPlannerHtml, "cost-planner.html");
   ratesLibraryHtml = blank(ratesLibraryHtml, "rates-library.html");
   aiEngineHtml = blank(aiEngineHtml, "ai-engine.html");
-  for (const [name, html] of [["estimates", estimatesHtml], ["cost-planner", costPlannerHtml], ["rates-library", ratesLibraryHtml], ["ai-engine", aiEngineHtml]]) {
+  registerHtml = blank(registerHtml, "register.html");
+  for (const [name, html] of [["estimates", estimatesHtml], ["cost-planner", costPlannerHtml], ["rates-library", ratesLibraryHtml], ["ai-engine", aiEngineHtml], ["register", registerHtml]]) {
     if (PROJECT_URL && html.includes(PROJECT_URL)) throw new Error(`offline copy: ${name} still references the project's Supabase URL`);
   }
 }
@@ -218,6 +231,7 @@ const estimatesB64 = Buffer.from(estimatesHtml, "utf8").toString("base64");
 const costPlannerB64 = Buffer.from(costPlannerHtml, "utf8").toString("base64");
 const ratesLibraryB64 = Buffer.from(ratesLibraryHtml, "utf8").toString("base64");
 const aiEngineB64 = Buffer.from(aiEngineHtml, "utf8").toString("base64");
+const registerB64 = Buffer.from(registerHtml, "utf8").toString("base64");
 
 /* A visible build stamp. Without one, "am I on the latest version?" is
  * unanswerable from the browser — the portal is one 5 MB HTML file whose apps
@@ -238,6 +252,7 @@ shell = shell
   .replace("__COSTPLANNER_B64__", costPlannerB64)
   .replace("__RATESLIBRARY_B64__", ratesLibraryB64)
   .replace("__AIENGINE_B64__", aiEngineB64)
+  .replace("__REGISTER_B64__", registerB64)
   .replaceAll("__BUILD_STAMP__", stamp);
 
 fs.mkdirSync(path.dirname(outPathFinal), { recursive: true });

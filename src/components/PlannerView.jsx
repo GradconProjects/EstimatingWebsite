@@ -651,7 +651,7 @@ function RegisterTab({ storageKey, title, nounSingular, roleLabel, rolePlacehold
   return (
     <div className="rounded-xl border border-neutral-200 bg-white shadow-sm overflow-hidden">
       <div className="px-4 py-2.5 bg-neutral-50 border-b border-neutral-200 flex items-center justify-between gap-3">
-        <span className="font-semibold text-[14px] text-neutral-900">{title}</span>
+        <span className="font-semibold text-[14px] text-neutral-900">{title} <span className="font-normal text-xs text-neutral-500">— the full register, with last contact, capabilities and every detail, is under <b>Register</b> in the top menu</span></span>
         <div className="flex items-center gap-3">
           <button
             onClick={() => downloadCsv(

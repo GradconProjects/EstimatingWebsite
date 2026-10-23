@@ -1,0 +1,479 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Gradcon Register</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+/* Gradcon Register — contractors, suppliers, consultants and clients, one
+ * editable list shared through the cloud (estimator_kv row `gradcon-register`).
+ * Palette = the portal shell's (charcoal #231f20, lime #d5de5d, Inter). */
+:root{ --bg:#fafafa; --surface:#fff; --surface-2:#f3f3f1; --text:#231f20; --muted:#6b6b6b; --muted-2:#8d8d8d; --line:#e2e2e2; --line-soft:#ececec; --accent:#d5de5d; --accent-hover:#c6d045; --accent-ink:#1c1c1c; --accent-text:#6b7416; --ok:#1a7a3c; --ok-bg:#e6f4ea; --warn:#b26a00; --warn-bg:#fff4e0; --bad:#b42318; --bad-bg:#fdecea; --info:#1f5f9e; --info-bg:#e8f1fb; --radius:12px; }
+*{box-sizing:border-box;}
+html,body{margin:0;}
+body{font-family:Inter,"Segoe UI",system-ui,-apple-system,Arial,sans-serif;background:var(--bg);color:var(--text);font-size:13px;line-height:1.45;}
+header{background:var(--text);color:#fff;padding:14px 22px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;}
+header h1{margin:0;font-size:17px;font-weight:700;letter-spacing:.01em;}
+header h1 b{color:var(--accent);font-weight:800;}
+header .subtitle{font-size:11.5px;opacity:.78;max-width:720px;margin-top:2px;}
+header .meta{font-size:11px;opacity:.85;text-align:right;line-height:1.5;}
+header .meta .cloud.err{color:#ffb4a8;} header .meta .cloud.ok{color:#cfe8c9;}
+#tabnav{display:flex;gap:2px;background:#1a1718;padding:0 14px;overflow-x:auto;}
+.tab-btn{background:transparent;border:none;color:#bdb9ba;padding:11px 14px;cursor:pointer;font:inherit;font-size:12.5px;font-weight:600;border-bottom:3px solid transparent;white-space:nowrap;}
+.tab-btn:hover{color:#fff;} .tab-btn.active{color:#fff;border-bottom-color:var(--accent);}
+.tab-btn .n{display:inline-block;min-width:18px;padding:0 5px;margin-left:5px;border-radius:999px;background:#3a3536;font-size:10.5px;text-align:center;}
+#main{padding:16px 18px 60px;max-width:1900px;margin:0 auto;}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px;}
+.kpi{background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:10px;padding:10px 12px;cursor:pointer;}
+.kpi:hover{border-color:var(--text);} .kpi.on{outline:2px solid var(--text);}
+.kpi .l{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;} .kpi .v{font-size:20px;font-weight:800;margin-top:2px;} .kpi .s{font-size:11px;color:var(--muted);}
+.kpi.bad{border-left-color:var(--bad);} .kpi.warn{border-left-color:var(--warn);} .kpi.ok{border-left-color:var(--ok);}
+.toolbar{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:10px 12px;margin-bottom:12px;display:flex;flex-direction:column;gap:8px;}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+.row .grow{flex:1 1 220px;}
+.chips{display:flex;gap:6px;flex-wrap:wrap;align-items:center;} .chips .lbl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-right:2px;}
+.chip{background:var(--surface-2);border:1px solid var(--line);border-radius:999px;padding:4px 11px;font:inherit;font-size:12px;font-weight:600;color:var(--text);cursor:pointer;}
+.chip:hover{border-color:var(--text);} .chip.on{background:var(--text);border-color:var(--text);color:#fff;} .chip .n{opacity:.6;font-weight:500;margin-left:4px;}
+input[type=text],input[type=date],input[type=number],input[type=url],input[type=email],select,textarea{font:inherit;font-size:12.5px;border:1px solid var(--line);border-radius:7px;padding:6px 8px;background:#fff;color:var(--text);}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-offset:0;border-color:var(--accent-hover);}
+textarea{width:100%;min-height:54px;resize:vertical;}
+.btn{background:#fff;border:1px solid var(--line);border-radius:8px;padding:6px 12px;font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;color:var(--text);white-space:nowrap;}
+.btn:hover{border-color:var(--text);} .btn:disabled{opacity:.45;cursor:default;}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);} .btn.primary:hover{background:var(--accent-hover);}
+.btn.danger{color:var(--bad);border-color:#f1c4bd;} .btn.danger:hover{background:var(--bad-bg);}
+.btn.sm{padding:3px 8px;font-size:11.5px;border-radius:6px;}
+table.reg{width:100%;border-collapse:separate;border-spacing:0;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;}
+table.reg th{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);text-align:left;padding:9px 10px;background:var(--surface-2);border-bottom:1px solid var(--line);white-space:nowrap;cursor:pointer;user-select:none;}
+table.reg th.on{color:var(--text);} table.reg th.num,table.reg td.num{text-align:right;font-variant-numeric:tabular-nums;}
+table.reg td{padding:9px 10px;border-bottom:1px solid var(--line-soft);vertical-align:top;}
+table.reg tr.org{cursor:pointer;} table.reg tr.org:hover td{background:#fcfdf3;} table.reg tr.org.open td{background:#f7f8ea;border-bottom-color:transparent;}
+table.reg tr.detail td{background:#fbfbf7;padding:0 10px 14px;}
+.name{font-weight:700;font-size:13.5px;} .name .site{font-weight:500;color:var(--muted);font-size:11.5px;margin-left:6px;}
+.sub{font-size:11.5px;color:var(--muted);margin-top:2px;}
+.tier{display:inline-block;min-width:20px;text-align:center;font-weight:800;font-size:11px;border-radius:5px;padding:1px 5px;margin-right:6px;background:#eee;color:#555;}
+.tier.A{background:var(--ok-bg);color:var(--ok);} .tier.B{background:var(--info-bg);color:var(--info);} .tier.C{background:var(--warn-bg);color:var(--warn);} .tier.D{background:#f0f0f0;color:#777;}
+.stars{color:#c9a400;letter-spacing:1px;font-size:12px;} .stars .off{color:#d8d8d8;}
+.stars button{background:none;border:none;padding:0;font:inherit;cursor:pointer;color:inherit;font-size:16px;line-height:1;}
+.cat{display:inline-block;font-size:10.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;border-radius:5px;padding:2px 6px;background:var(--surface-2);color:var(--muted);border:1px solid var(--line);}
+.cat.subcontractor{background:#e8f1fb;color:#1f5f9e;border-color:#cfe0f3;} .cat.supplier{background:#eef7ea;color:#2b6a2f;border-color:#d3e8cf;} .cat.builder{background:#fdf1e3;color:#9a5b00;border-color:#f3dcb8;} .cat.client{background:#f6ecfa;color:#6b3fa0;border-color:#e4d2ee;} .cat.consultant{background:#eaf5f6;color:#116a74;border-color:#cbe5e8;} .cat.service{background:#f2f2f2;color:#555;}
+.cap{display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:600;border-radius:999px;padding:1px 8px;margin:2px 3px 0 0;border:1px solid var(--line);background:#fff;color:var(--muted);}
+.cap.yes{background:var(--ok-bg);color:var(--ok);border-color:#bfe0c7;} .cap.no{background:var(--bad-bg);color:var(--bad);border-color:#f1c4bd;text-decoration:line-through;text-decoration-color:rgba(180,35,24,.45);} .cap.unknown{background:#f6f6f6;color:#888;border-style:dashed;}
+.when{white-space:nowrap;font-variant-numeric:tabular-nums;} .when .ago{display:block;font-size:11px;} .when.fresh .ago{color:var(--ok);} .when.aging .ago{color:var(--warn);} .when.stale .ago{color:var(--bad);font-weight:700;}
+.ball{display:inline-block;font-size:10.5px;font-weight:700;border-radius:5px;padding:1px 6px;margin-top:3px;} .ball.them{background:var(--info-bg);color:var(--info);} .ball.gradcon{background:var(--warn-bg);color:var(--warn);}
+.score{font-weight:800;font-variant-numeric:tabular-nums;} .score small{font-weight:500;color:var(--muted);}
+.status{font-size:11px;font-weight:700;border-radius:5px;padding:2px 6px;} .status.Active{background:var(--ok-bg);color:var(--ok);} .status.Prospect{background:var(--info-bg);color:var(--info);} .status.Inactive{background:#efefef;color:#777;} .status.Do-not-use{background:var(--bad-bg);color:var(--bad);}
+.detail{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;padding-top:12px;}
+.card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 12px;}
+.card h4{margin:0 0 8px;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);display:flex;justify-content:space-between;align-items:center;gap:8px;}
+.card.wide{grid-column:1 / -1;}
+.fld{display:grid;grid-template-columns:118px 1fr;gap:6px 10px;align-items:center;margin-bottom:6px;} .fld label{font-size:11.5px;color:var(--muted);} .fld input,.fld select{width:100%;}
+.fld.col{grid-template-columns:1fr;} 
+table.inner{width:100%;border-collapse:collapse;font-size:12.5px;} table.inner th{font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);text-align:left;padding:4px 6px;border-bottom:1px solid var(--line);} table.inner td{padding:3px 6px;border-bottom:1px solid var(--line-soft);vertical-align:middle;} table.inner input,table.inner select{width:100%;padding:4px 6px;font-size:12px;}
+.capgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:6px 12px;} .capgrid .c{display:grid;grid-template-columns:1fr 110px;gap:6px;align-items:center;padding:4px 0;border-bottom:1px solid var(--line-soft);} .capgrid .c .l{font-size:12.5px;} .capgrid .c .e{grid-column:1 / -1;font-size:11px;color:var(--muted);font-style:italic;} .capgrid .g{grid-column:1 / -1;font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-top:6px;}
+.capgrid select.yes{background:var(--ok-bg);color:var(--ok);border-color:#bfe0c7;} .capgrid select.no{background:var(--bad-bg);color:var(--bad);border-color:#f1c4bd;}
+.threads li{margin:2px 0;font-size:12px;} .threads a{color:var(--info);text-decoration:none;} .threads a:hover{text-decoration:underline;} .threads .d{color:var(--muted);font-variant-numeric:tabular-nums;margin-right:6px;}
+.basis{font-size:11.5px;color:var(--muted);line-height:1.5;}
+.matrix{margin-bottom:12px;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:10px 12px;}
+.matrix h3{margin:0 0 4px;font-size:13.5px;} .matrix p{margin:0 0 8px;font-size:11.5px;color:var(--muted);}
+.matrix table{border-collapse:collapse;width:100%;} .matrix th{font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);text-align:center;padding:6px 8px;border-bottom:1px solid var(--line);} .matrix th:first-child,.matrix td:first-child{text-align:left;} .matrix td{padding:6px 8px;text-align:center;border-bottom:1px solid var(--line-soft);font-weight:700;}
+.matrix td.yes{color:var(--ok);background:var(--ok-bg);} .matrix td.no{color:var(--bad);background:var(--bad-bg);} .matrix td.unknown{color:#999;}
+.empty{padding:28px;text-align:center;color:var(--muted);background:var(--surface);border:1px dashed var(--line);border-radius:var(--radius);}
+.note{background:var(--info-bg);border:1px solid #cfe0f3;border-radius:10px;padding:10px 12px;font-size:12px;margin-bottom:12px;}
+.note.warn{background:var(--warn-bg);border-color:#f3dcb8;}
+.log li{font-size:12px;margin:2px 0;} .log .d{color:var(--muted);font-variant-numeric:tabular-nums;margin-right:6px;}
+.method h3{margin:14px 0 4px;font-size:14px;} .method p,.method li{font-size:12.5px;max-width:900px;} .method code{background:var(--surface-2);padding:1px 5px;border-radius:4px;}
+.flash{animation:flash 1.4s ease-out;} @keyframes flash{0%{box-shadow:0 0 0 4px var(--accent);}100%{box-shadow:0 0 0 0 transparent;}}
+.muted{color:var(--muted);} .small{font-size:11.5px;} .right{text-align:right;} .nowrap{white-space:nowrap;}
+.progress{font-size:11.5px;color:var(--muted);}
+@media (max-width:900px){ table.reg th.hide-sm,table.reg td.hide-sm{display:none;} .fld{grid-template-columns:1fr;} }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1><b>Gradcon</b> Register</h1>
+    <div class="subtitle">Contractors, suppliers, consultants and clients — who does what, who you last spoke to and when, and how the correspondence has gone. Every field is editable; the register is shared across every device through the cloud.</div>
+  </div>
+  <div class="meta"><div id="userLine"></div><div class="cloud" id="cloudLine">Loading…</div></div>
+</header>
+<nav id="tabnav">
+  <button class="tab-btn active" data-tab="supply">Supply chain <span class="n" id="n-supply"></span></button>
+  <button class="tab-btn" data-tab="client">Clients <span class="n" id="n-client"></span></button>
+  <button class="tab-btn" data-tab="all">Everyone <span class="n" id="n-all"></span></button>
+  <button class="tab-btn" data-tab="people">People <span class="n" id="n-people"></span></button>
+  <button class="tab-btn" data-tab="followups">Follow-ups <span class="n" id="n-follow"></span></button>
+  <button class="tab-btn" data-tab="method">How this register works</button>
+</nav>
+<main id="main"></main>
+
+<script src="register-seed.js"></script>
+<script>
+/* ============================ constants ============================ */
+const SUPABASE_URL = "https://xbmyhvrcuyapoarmchpv.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_Kr4dTFXhZsifAA28HmMAVQ_EDSR2DL0";
+const KEY = "gradcon-register";
+const API_BASE = /^https?:/.test(location.origin) ? location.origin : "";
+const MAILBOX = "projects@gradcon.com.au";
+const CATEGORIES = [
+  { key: "subcontractor", label: "Subcontractor", side: "supply", blurb: "trades that work for Gradcon — piling, formwork, pumping, finishing, PT, waterproofing" },
+  { key: "supplier", label: "Supplier", side: "supply", blurb: "concrete, reinforcement, foams, consumables, plant" },
+  { key: "consultant", label: "Consultant", side: "supply", blurb: "engineers, architects, detailers, geotech" },
+  { key: "service", label: "Service", side: "supply", blurb: "estimating services, software, platforms" },
+  { key: "builder", label: "Client · builder", side: "client", blurb: "head contractors and builders who send Gradcon tenders and packages" },
+  { key: "client", label: "Client · owner / developer", side: "client", blurb: "private clients, developers, owner-builders" },
+  { key: "other", label: "Unclassified", side: "other", blurb: "not yet placed — set the category" },
+];
+const CAT = Object.fromEntries(CATEGORIES.map((c) => [c.key, c]));
+const STATUSES = ["Active", "Prospect", "Inactive", "Do not use"];
+const PILING_KEYS = ["screw", "bored", "cfa", "retention", "shotcrete", "capping"];
+const CAPS = (typeof REGISTER_CAPABILITIES !== "undefined") ? REGISTER_CAPABILITIES : [];
+const TRADE_GROUPS = (typeof REGISTER_TRADE_GROUPS !== "undefined") ? REGISTER_TRADE_GROUPS : [];
+const TG = Object.fromEntries(TRADE_GROUPS.map((g) => [g.key, g.label]));
+const CAP = Object.fromEntries(CAPS.map((c) => [c.key, c]));
+
+/* ============================ helpers ============================ */
+const $ = (s, el) => (el || document).querySelector(s);
+const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const nowIso = () => new Date().toISOString();
+const today = () => { const d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); };
+const daysSince = (day) => { if (!day) return null; const t = Date.parse(day + "T00:00:00"); return Number.isFinite(t) ? Math.floor((Date.now() - t) / 864e5) : null; };
+const fmtDay = (day) => { if (!day) return "—"; const d = new Date(day + "T00:00:00"); return Number.isFinite(+d) ? d.toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" }) : day; };
+const agoLabel = (n) => n == null ? "" : n === 0 ? "today" : n === 1 ? "yesterday" : n < 30 ? n + " days ago" : n < 365 ? Math.round(n / 30) + " mo ago" : (n / 365).toFixed(1) + " yrs ago";
+const uid = () => "r" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const slug = (s) => String(s || "").toLowerCase().replace(/&/g, " and ").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48);
+function portalSignedInUser(){ try{ const s = JSON.parse(localStorage.getItem("gradcon-portal-session") || "null"); return s && typeof s.currentUser === "string" && s.currentUser ? s.currentUser : null; }catch(e){ return null; } }
+const userKey = () => { const u = portalSignedInUser(); return u ? u.split("@")[0].toLowerCase() : "unknown"; };
+const gmailLink = (id) => "https://mail.google.com/mail/u/?authuser=" + encodeURIComponent(MAILBOX) + "#all/" + encodeURIComponent(id);
+const gmailSearch = (q) => "https://mail.google.com/mail/u/?authuser=" + encodeURIComponent(MAILBOX) + "#search/" + encodeURIComponent(q);
+const GENERIC = /^(bigpond\.com|bigpond\.net\.au|gmail\.com|outlook\.com|outlook\.com\.au|hotmail\.com|icloud\.com|yahoo\.com|yahoo\.com\.au|live\.com\.au)$/i;
+const mailQueryFor = (o) => { const doms = [...new Set((o.emails || []).map((e) => e.split("@")[1]).filter((d) => d && !GENERIC.test(d)))]; const exact = (o.emails || []).filter((e) => GENERIC.test(e.split("@")[1] || "")); const parts = doms.map((d) => "@" + d).concat(exact); return parts.length ? "{" + parts.map((p) => "from:" + p + " to:" + p + " cc:" + p).join(" ") + "}" : ""; };
+const tierOf = (score) => score >= 80 ? "A" : score >= 60 ? "B" : score >= 40 ? "C" : "D";
+const sideOf = (o) => (CAT[o.category] || CAT.other).side;
+const csvCell = (v) => { const s = String(v == null ? "" : v); return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+function downloadCsv(name, header, rows){ const txt = [header, ...rows].map((r) => r.map(csvCell).join(",")).join("\r\n"); const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([txt], { type: "text/csv;charset=utf-8" })); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500); }
+
+/* ============================ state & cloud ============================ */
+let STATE = null;            // {version, orgs, tombstones, log, updatedAt, updatedBy}
+let RECONCILED = false;      // this tab has read the cloud row (or a positive "no row") — only then may it write
+let SYNCED_AT = null;        // updated_at of the cloud row this tab last agreed with
+let cloudState = "checking";
+const UI = { tab: "supply", q: "", cats: new Set(), trades: new Set(), cap: "", capState: "", tier: "", status: "", sort: "last-desc", open: new Set(), kpi: "", checking: null };
+
+function blankState(){ return { version: 1, orgs: [], tombstones: [], log: [], updatedAt: nowIso(), updatedBy: userKey() }; }
+function seedState(){ const s = blankState(); const seed = (typeof REGISTER_SEED !== "undefined" && REGISTER_SEED) ? REGISTER_SEED : { orgs: [] }; s.orgs = JSON.parse(JSON.stringify(seed.orgs || [])); s.log.push({ at: nowIso(), by: userKey(), text: "Register seeded with " + s.orgs.length + " organisations (projects@ mailbox, the 23 Oct 2026 workbook and the Project Management register)" }); return s; }
+function normalize(s){
+  if (!s || typeof s !== "object") return blankState();
+  s.version = 1; s.orgs = Array.isArray(s.orgs) ? s.orgs : []; s.tombstones = Array.isArray(s.tombstones) ? s.tombstones : []; s.log = Array.isArray(s.log) ? s.log : [];
+  for (const o of s.orgs) { o.contacts = Array.isArray(o.contacts) ? o.contacts : []; o.phones = Array.isArray(o.phones) ? o.phones : []; o.emails = Array.isArray(o.emails) ? o.emails : []; o.projects = Array.isArray(o.projects) ? o.projects : []; o.threads = Array.isArray(o.threads) ? o.threads : []; o.capabilities = o.capabilities && typeof o.capabilities === "object" ? o.capabilities : {}; o.compliance = o.compliance && typeof o.compliance === "object" ? o.compliance : {}; o.followUp = o.followUp && typeof o.followUp === "object" ? o.followUp : {}; if (!o.status) o.status = "Active"; if (!o.updatedAt) o.updatedAt = o.createdAt || nowIso(); o.score = Number(o.score) || 0; o.tier = tierOf(o.score); o.rating = Number(o.rating) || 0; }
+  return s;
+}
+// per-organisation merge: the newer copy of each org wins, a tombstone newer than the org removes it, the log is the union
+function mergeStates(a, b){
+  const out = blankState(); const orgs = new Map(); const tomb = new Map();
+  for (const s of [a, b]) for (const t of (s.tombstones || [])) if (!tomb.has(t.id) || t.at > tomb.get(t.id).at) tomb.set(t.id, t);
+  for (const s of [a, b]) for (const o of (s.orgs || [])) { const cur = orgs.get(o.id); if (!cur || (o.updatedAt || "") > (cur.updatedAt || "")) orgs.set(o.id, o); }
+  for (const [id, t] of tomb) { const o = orgs.get(id); if (o && (o.updatedAt || "") <= t.at) orgs.delete(id); }
+  out.orgs = [...orgs.values()]; out.tombstones = [...tomb.values()];
+  const seen = new Set(); out.log = [...(a.log || []), ...(b.log || [])].filter((l) => { const k = l.at + "|" + l.text; if (seen.has(k)) return false; seen.add(k); return true; }).sort((x, y) => x.at.localeCompare(y.at)).slice(-600);
+  out.updatedAt = (a.updatedAt || "") > (b.updatedAt || "") ? a.updatedAt : b.updatedAt; out.updatedBy = (a.updatedAt || "") > (b.updatedAt || "") ? a.updatedBy : b.updatedBy;
+  return out;
+}
+const fingerprint = (s) => JSON.stringify({ o: s.orgs.map((o) => [o.id, o.updatedAt]).sort(), t: s.tombstones.map((t) => [t.id, t.at]).sort(), l: s.log.length });
+const KV_FAILED = { failed: true };
+async function kvFetch(key){
+  if (!SUPABASE_URL) return null;
+  try { const res = await fetch(SUPABASE_URL + "/rest/v1/estimator_kv?key=eq." + encodeURIComponent(key) + "&select=value,updated_at", { headers: { apikey: SUPABASE_ANON_KEY, Authorization: "Bearer " + SUPABASE_ANON_KEY }, signal: AbortSignal.timeout(9000) }); if (!res.ok) return KV_FAILED; const rows = await res.json(); return rows[0] || null; } catch (e) { return KV_FAILED; }
+}
+async function kvStamp(key){
+  try { const res = await fetch(SUPABASE_URL + "/rest/v1/estimator_kv?key=eq." + encodeURIComponent(key) + "&select=updated_at", { headers: { apikey: SUPABASE_ANON_KEY, Authorization: "Bearer " + SUPABASE_ANON_KEY }, signal: AbortSignal.timeout(8000) }); if (!res.ok) return KV_FAILED; const rows = await res.json(); return rows[0] ? rows[0].updated_at : null; } catch (e) { return KV_FAILED; }
+}
+async function kvPush(key, value){
+  if (!SUPABASE_URL) return null;
+  try { const res = await fetch(SUPABASE_URL + "/rest/v1/estimator_kv", { method: "POST", headers: { apikey: SUPABASE_ANON_KEY, Authorization: "Bearer " + SUPABASE_ANON_KEY, "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=representation" }, body: JSON.stringify({ key, value, updated_at: nowIso() }), signal: AbortSignal.timeout(15000) }); if (!res.ok) return null; const rows = await res.json(); return rows[0] || null; } catch (e) { return null; }
+}
+function paintCloud(text, cls){ const el = $("#cloudLine"); el.textContent = text; el.className = "cloud " + (cls || ""); }
+function readLocal(){ try { const raw = localStorage.getItem(KEY); if (!raw) return null; const v = JSON.parse(raw); return v && typeof v === "object" && Array.isArray(v.orgs) ? normalize(v) : null; } catch (e) { return null; } }
+function writeLocal(){ try { localStorage.setItem(KEY, JSON.stringify(STATE)); } catch (e) {} }
+let saveTimer = null, pushing = false, pushAgain = false;
+function markSaved(text){ paintCloud(text, "ok"); }
+async function pushNow(){
+  if (!RECONCILED) { paintCloud("Cloud: not reached yet — kept in this browser, will upload once the cloud answers", "err"); return; }
+  if (pushing) { pushAgain = true; return; }
+  pushing = true;
+  try {
+    // never write blind over a newer copy: read first, merge, then write
+    const row = await kvFetch(KEY);
+    if (row === KV_FAILED) { paintCloud("Cloud: not reachable — kept in this browser, retrying", "err"); setTimeout(pushNow, 20000); return; }
+    if (row && row.updated_at !== SYNCED_AT) { STATE = normalize(mergeStates(STATE, normalize(row.value))); writeLocal(); render(); }
+    const pushed = await kvPush(KEY, STATE);
+    if (pushed) { SYNCED_AT = pushed.updated_at; markSaved("Cloud: saved " + new Date(pushed.updated_at).toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit" }) + " · " + STATE.orgs.length + " organisations"); }
+    else { paintCloud("Cloud: last save did not land — kept in this browser, retrying", "err"); setTimeout(pushNow, 20000); }
+  } finally { pushing = false; if (pushAgain) { pushAgain = false; pushNow(); } }
+}
+function save(){ STATE.updatedAt = nowIso(); STATE.updatedBy = userKey(); writeLocal(); paintCloud("Saving…"); clearTimeout(saveTimer); saveTimer = setTimeout(pushNow, 700); }
+async function load(){
+  const local = readLocal();
+  const row = await kvFetch(KEY);
+  if (row === KV_FAILED) { STATE = local || seedState(); cloudState = "offline"; paintCloud("Cloud: not reachable — showing " + (local ? "this browser's copy" : "the built-in seed") + "; nothing is written until the cloud answers", "err"); setTimeout(retryLoad, 15000); }
+  else if (row) { const cloud = normalize(row.value); STATE = local ? normalize(mergeStates(local, cloud)) : cloud; RECONCILED = true; SYNCED_AT = row.updated_at; cloudState = "ok"; if (fingerprint(STATE) !== fingerprint(cloud)) { writeLocal(); pushNow(); } else { writeLocal(); markSaved("Cloud: in sync · " + STATE.orgs.length + " organisations · last change by " + (STATE.updatedBy || "—")); } }
+  else { STATE = local || seedState(); RECONCILED = true; SYNCED_AT = null; cloudState = "ok"; writeLocal(); pushNow(); }
+  render();
+  setInterval(pollCloud, 20000);
+}
+async function retryLoad(){ if (RECONCILED) return; const row = await kvFetch(KEY); if (row === KV_FAILED) { setTimeout(retryLoad, 20000); return; } RECONCILED = true; if (row) { SYNCED_AT = row.updated_at; STATE = normalize(mergeStates(STATE, normalize(row.value))); } writeLocal(); pushNow(); render(); }
+async function pollCloud(){ if (!RECONCILED || pushing || document.hidden) return; const stamp = await kvStamp(KEY); if (stamp === KV_FAILED || !stamp || stamp === SYNCED_AT) return; const row = await kvFetch(KEY); if (!row || row === KV_FAILED) return; const merged = normalize(mergeStates(STATE, normalize(row.value))); const changed = fingerprint(merged) !== fingerprint(STATE); SYNCED_AT = row.updated_at; STATE = merged; writeLocal(); if (changed) { render(); markSaved("Cloud: updated from another device · " + STATE.orgs.length + " organisations"); } }
+
+/* ============================ edits ============================ */
+function orgById(id){ return STATE.orgs.find((o) => o.id === id); }
+function touch(o){ o.updatedAt = nowIso(); o.updatedBy = userKey(); }
+function log(o, text){ STATE.log.push({ at: nowIso(), by: userKey(), orgId: o ? o.id : null, org: o ? o.name : "", text }); if (STATE.log.length > 600) STATE.log = STATE.log.slice(-600); }
+function setPath(o, path, value){ const parts = path.split("."); let cur = o; for (let i = 0; i < parts.length - 1; i++) { if (!cur[parts[i]] || typeof cur[parts[i]] !== "object") cur[parts[i]] = {}; cur = cur[parts[i]]; } cur[parts[parts.length - 1]] = value; }
+function getPath(o, path){ return path.split(".").reduce((c, k) => (c == null ? undefined : c[k]), o); }
+const LOGGED_FIELDS = { category: "category", status: "status", rating: "rating", name: "name", trade: "trade", "followUp.date": "follow-up date", "compliance.publicLiability": "public liability", "compliance.workersComp": "workers comp", "compliance.abn": "ABN" };
+function addOrg(category){
+  const o = { id: "org-" + uid(), name: "", category: category || "subcontractor", tradeGroup: "", trade: "", website: "", abn: "", address: "", phones: [], emails: [], status: "Active", rating: 0, projects: [], threads: [], notes: "", evidence: "", risks: "", lastContact: "", lastContactDir: "", lastMailId: "", firstContact: "", inbound: 0, outbound: 0, threadCount: 0, medianReplyHrs: null, score: 0, tier: "D", scoreBasis: "Added by hand — no correspondence read yet", compliance: {}, capabilities: {}, contacts: [], followUp: {}, sources: ["added by " + userKey()], confidence: "", createdAt: nowIso(), updatedAt: nowIso(), updatedBy: userKey(), side: (CAT[category] || CAT.subcontractor).side };
+  // the new row is pinned to the top of the list (a blank last-contact date would otherwise sort it to the bottom) and is the only open row, so the form is unambiguous
+  STATE.orgs.unshift(o); log(o, "Added"); UI.open = new Set([o.id]); UI.pinTop = o.id; save(); render(); setTimeout(() => { const el = document.querySelector('[data-path="name"][data-org="' + o.id + '"]'); if (el) { el.focus(); el.scrollIntoView({ block: "center" }); } }, 30);
+}
+function removeOrg(id){ const o = orgById(id); if (!o) return; STATE.orgs = STATE.orgs.filter((x) => x.id !== id); STATE.tombstones.push({ id, at: nowIso(), name: o.name }); log(o, "Removed from the register"); UI.open.delete(id); save(); render(); }
+function addMissingFromSeed(){ const seed = (typeof REGISTER_SEED !== "undefined" && REGISTER_SEED) ? REGISTER_SEED.orgs : []; const have = new Set(STATE.orgs.map((o) => o.id)); const dead = new Set(STATE.tombstones.map((t) => t.id)); let n = 0; for (const o of seed) if (!have.has(o.id) && !dead.has(o.id)) { STATE.orgs.push(JSON.parse(JSON.stringify(o))); n++; } if (n) { log(null, "Added " + n + " organisation(s) from the built-in seed"); save(); render(); } alert(n ? n + " organisation(s) added from the built-in list." : "Every organisation in the built-in list is already here (or was deliberately removed)."); }
+
+/* ============================ mail check (read-only, on demand) ============================ */
+async function checkMail(o){
+  const q = mailQueryFor(o); if (!q) return { error: "no email address on file" };
+  try {
+    const res = await fetch(API_BASE + "/api/gmail", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "list", q, max: 8 }), signal: AbortSignal.timeout(30000) });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) return { error: d.error || ("HTTP " + res.status) };
+    const msgs = (d.messages || []).filter((m) => !(m.labels || []).includes("DRAFT"));
+    if (!msgs.length) return { none: true };
+    msgs.sort((a, b) => String(b.date).localeCompare(String(a.date)));
+    const newest = msgs[0]; const day = String(newest.date).slice(0, 10); const out = /@gradcon\.com\.au/i.test(newest.from || "");
+    let moved = false;
+    if (!o.lastContact || day > o.lastContact) { o.lastContact = day; o.lastContactDir = out ? "out" : "in"; o.lastMailId = newest.id; moved = true; }
+    for (const m of msgs) { const subj = String(m.subject || "").replace(/^((re|fw|fwd)\s*:\s*)+/i, "").trim(); if (subj && !o.threads.some((t) => t.threadId === m.threadId || t.subject.toLowerCase() === subj.toLowerCase())) o.threads.unshift({ subject: subj, day: String(m.date).slice(0, 10), threadId: m.threadId }); }
+    o.threads.sort((a, b) => b.day.localeCompare(a.day)); o.threads = o.threads.slice(0, 12);
+    o.mailCheckedAt = nowIso(); touch(o); if (moved) log(o, "Last contact moved to " + fmtDay(day) + " by a mailbox check"); save();
+    return { ok: true, moved, day, subject: newest.subject };
+  } catch (e) { return { error: e.message || "failed" }; }
+}
+async function checkAll(list){
+  if (UI.checking) { UI.checking.stop = true; return; }
+  UI.checking = { done: 0, total: list.length, stop: false, moved: 0, errors: 0 }; render();
+  for (const o of list) { if (UI.checking.stop) break; const r = await checkMail(o); UI.checking.done++; if (r.moved) UI.checking.moved++; if (r.error) UI.checking.errors++; const p = $("#checkProgress"); if (p) p.textContent = "Checking mail… " + UI.checking.done + " / " + UI.checking.total + (r.error ? " (" + o.name + ": " + r.error + ")" : ""); await new Promise((res) => setTimeout(res, 250)); }
+  const c = UI.checking; UI.checking = null; render(); alert("Mailbox check finished: " + c.done + " checked, " + c.moved + " last-contact date(s) moved" + (c.errors ? ", " + c.errors + " could not be read" : "") + ".");
+}
+
+/* ============================ filtering ============================ */
+function visibleOrgs(){
+  let list = STATE.orgs.slice();
+  if (UI.tab === "supply" || UI.tab === "client") list = list.filter((o) => sideOf(o) === UI.tab);
+  if (UI.cats.size) list = list.filter((o) => UI.cats.has(o.category));
+  if (UI.trades.size) list = list.filter((o) => UI.trades.has(o.tradeGroup || "other"));
+  if (UI.cap) list = list.filter((o) => { const c = o.capabilities[UI.cap]; const st = c ? c.status : "unknown"; return UI.capState ? st === UI.capState : true; });
+  if (UI.tier) list = list.filter((o) => o.tier === UI.tier);
+  if (UI.status) list = list.filter((o) => o.status === UI.status); else list = list.filter((o) => o.status !== "Inactive" && o.status !== "Do not use" || UI.kpi === "all");
+  if (UI.kpi === "them") list = list.filter((o) => o.lastContactDir === "out" && (daysSince(o.lastContact) || 0) >= 3);
+  if (UI.kpi === "gradcon") list = list.filter((o) => o.lastContactDir === "in" && (daysSince(o.lastContact) || 0) >= 3);
+  if (UI.kpi === "stale") list = list.filter((o) => (daysSince(o.lastContact) ?? 9999) > 90);
+  if (UI.kpi === "fresh") list = list.filter((o) => (daysSince(o.lastContact) ?? 9999) <= 30);
+  if (UI.kpi === "unclassified") list = list.filter((o) => o.category === "other" || o.confidence === "low");
+  if (UI.q) { const q = UI.q.toLowerCase(); list = list.filter((o) => [o.name, o.trade, o.notes, o.risks, o.evidence, o.address, o.abn, ...(o.emails || []), ...(o.phones || []), ...(o.projects || []), ...(o.contacts || []).flatMap((c) => [c.name, c.role, c.email, c.phone, c.mobile]), ...(o.threads || []).map((t) => t.subject)].join(" ").toLowerCase().includes(q)); }
+  const by = { "last-desc": (a, b) => (b.lastContact || "").localeCompare(a.lastContact || ""), "last-asc": (a, b) => (a.lastContact || "9").localeCompare(b.lastContact || "9"), score: (a, b) => b.score - a.score, name: (a, b) => a.name.localeCompare(b.name), reply: (a, b) => (a.medianReplyHrs ?? 1e9) - (b.medianReplyHrs ?? 1e9), rating: (a, b) => (b.rating - a.rating) || (b.score - a.score), follow: (a, b) => ((a.followUp && a.followUp.date) || "9").localeCompare((b.followUp && b.followUp.date) || "9") };
+  list.sort(by[UI.sort] || by["last-desc"]);
+  if (UI.pinTop) { const i = list.findIndex((o) => o.id === UI.pinTop); if (i > 0) list.unshift(list.splice(i, 1)[0]); }
+  return list;
+}
+
+/* ============================ rendering ============================ */
+function render(){
+  const main = $("#main"); if (!STATE) return;
+  $("#userLine").textContent = "Signed in as " + (portalSignedInUser() || "— (outside the portal)");
+  const n = { supply: 0, client: 0, other: 0, people: 0 }; for (const o of STATE.orgs) { n[sideOf(o)]++; n.people += o.contacts.length; }
+  $("#n-supply").textContent = n.supply; $("#n-client").textContent = n.client; $("#n-all").textContent = STATE.orgs.length; $("#n-people").textContent = n.people; $("#n-follow").textContent = STATE.orgs.filter((o) => o.followUp && o.followUp.date).length;
+  document.querySelectorAll("#tabnav .tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.tab === UI.tab));
+  if (UI.tab === "method") { main.innerHTML = renderMethod(); return; }
+  if (UI.tab === "people") { main.innerHTML = renderPeople(); return; }
+  if (UI.tab === "followups") { main.innerHTML = renderFollowUps(); return; }
+  const list = visibleOrgs();
+  main.innerHTML = renderKpis() + renderToolbar(list) + (UI.trades.has("piling") || UI.cap ? renderMatrix(list) : "") + renderTable(list);
+}
+function renderKpis(){
+  const pool = STATE.orgs.filter((o) => (UI.tab === "all" || sideOf(o) === UI.tab) && o.status !== "Inactive" && o.status !== "Do not use");
+  const them = pool.filter((o) => o.lastContactDir === "out" && (daysSince(o.lastContact) || 0) >= 3).length;
+  const us = pool.filter((o) => o.lastContactDir === "in" && (daysSince(o.lastContact) || 0) >= 3).length;
+  const stale = pool.filter((o) => (daysSince(o.lastContact) ?? 9999) > 90).length;
+  const fresh = pool.filter((o) => (daysSince(o.lastContact) ?? 9999) <= 30).length;
+  const uncl = pool.filter((o) => o.category === "other" || o.confidence === "low").length;
+  const k = (key, cls, l, v, s) => '<div class="kpi ' + cls + (UI.kpi === key ? " on" : "") + '" data-kpi="' + key + '"><div class="l">' + l + '</div><div class="v">' + v + '</div><div class="s">' + s + '</div></div>';
+  return '<div class="kpis">' + k("", "", "In this view", pool.length, "active organisations") + k("fresh", "ok", "Spoken to this month", fresh, "last contact ≤ 30 days") + k("gradcon", "warn", "Ball with Gradcon", us, "their email is the last one, 3+ days") + k("them", "", "Waiting on them", them, "Gradcon wrote last, 3+ days ago") + k("stale", "bad", "Going cold", stale, "no contact for 90+ days") + k("unclassified", "", "To classify", uncl, "unplaced or low-confidence") + "</div>";
+}
+function renderToolbar(list){
+  const catOpts = CATEGORIES.filter((c) => UI.tab === "all" ? true : c.side === UI.tab || c.side === "other");
+  const counts = {}; for (const o of STATE.orgs) if (UI.tab === "all" || sideOf(o) === UI.tab) counts[o.category] = (counts[o.category] || 0) + 1;
+  const tcounts = {}; for (const o of STATE.orgs) if (sideOf(o) === "supply") tcounts[o.tradeGroup || "other"] = (tcounts[o.tradeGroup || "other"] || 0) + 1;
+  const chips = '<div class="chips"><span class="lbl">Category</span>' + catOpts.map((c) => '<button class="chip' + (UI.cats.has(c.key) ? " on" : "") + '" data-cat="' + c.key + '" title="' + esc(c.blurb) + '">' + c.label + '<span class="n">' + (counts[c.key] || 0) + "</span></button>").join("") + "</div>";
+  const trades = UI.tab !== "client" ? '<div class="chips"><span class="lbl">Trade</span>' + TRADE_GROUPS.filter((g) => tcounts[g.key]).map((g) => '<button class="chip' + (UI.trades.has(g.key) ? " on" : "") + '" data-trade="' + g.key + '">' + esc(g.label) + '<span class="n">' + tcounts[g.key] + "</span></button>").join("") + "</div>" : "";
+  const capSel = '<select id="capSel" title="Filter by a capability — what the contractor does, does not do or has not said"><option value="">Capability…</option>' + CAPS.map((c) => '<option value="' + c.key + '"' + (UI.cap === c.key ? " selected" : "") + ">" + esc(c.label) + "</option>").join("") + '</select><select id="capState"' + (UI.cap ? "" : " disabled") + '><option value="">any</option><option value="yes"' + (UI.capState === "yes" ? " selected" : "") + '>does</option><option value="no"' + (UI.capState === "no" ? " selected" : "") + '>does NOT</option><option value="unknown"' + (UI.capState === "unknown" ? " selected" : "") + ">not stated</option></select>";
+  const checking = UI.checking ? '<span class="progress" id="checkProgress">Checking mail… ' + UI.checking.done + " / " + UI.checking.total + "</span>" : "";
+  return '<div class="toolbar"><div class="row"><input type="text" class="grow" id="q" placeholder="Search name, trade, contact, email, phone, project, subject…" value="' + esc(UI.q) + '">' + capSel +
+    '<select id="tierSel" title="Evidence tier"><option value="">Tier…</option>' + ["A", "B", "C", "D"].map((t) => '<option' + (UI.tier === t ? " selected" : "") + ">" + t + "</option>").join("") + "</select>" +
+    '<select id="statusSel"><option value="">Active &amp; prospects</option>' + STATUSES.map((s) => '<option' + (UI.status === s ? " selected" : "") + ">" + s + "</option>").join("") + "</select>" +
+    '<select id="sortSel">' + [["last-desc", "Last contact · newest"], ["last-asc", "Last contact · oldest"], ["score", "Evidence score"], ["rating", "Grady's rating"], ["reply", "Fastest to reply"], ["follow", "Next follow-up"], ["name", "Name"]].map(([k, l]) => '<option value="' + k + '"' + (UI.sort === k ? " selected" : "") + ">" + l + "</option>").join("") + "</select>" +
+    '<button class="btn primary" id="addBtn">+ Add organisation</button><button class="btn" id="checkAllBtn" title="Ask the projects@ mailbox for the newest email to or from each organisation shown (read-only) and move the last-contact dates">' + (UI.checking ? "Stop" : "Check mail for " + list.length + " shown") + "</button>" + checking + '<button class="btn" id="csvBtn">⬇ CSV</button><button class="btn" id="seedBtn" title="Add any organisation from the built-in list that is not here yet — never overwrites">Add missing from list</button></div>' + chips + trades + "</div>";
+}
+function capChip(o, key){ const c = o.capabilities[key]; const st = c ? c.status : "unknown"; const mark = st === "yes" ? "✓" : st === "no" ? "✗" : "?"; return '<span class="cap ' + st + '" title="' + esc((c && c.evidence) || "not stated — set it") + '">' + mark + " " + esc(CAP[key] ? CAP[key].label.replace(/ \(.*$/, "") : key) + "</span>"; }
+function renderMatrix(list){
+  const rows = list.filter((o) => o.tradeGroup === "piling" || PILING_KEYS.some((k) => o.capabilities[k]));
+  if (!rows.length) return "";
+  return '<div class="matrix"><h3>Piling &amp; foundation contractors — who does what</h3><p>✓ stated in their own correspondence or confirmed by Grady · ✗ they said they do not · ? not stated yet. Hover a cell for the evidence; open the row to change it.</p><table><tr><th>Contractor</th>' + PILING_KEYS.map((k) => "<th>" + esc(CAP[k] ? CAP[k].label : k) + "</th>").join("") + '<th>Last contact</th></tr>' +
+    rows.map((o) => "<tr><td>" + esc(o.name) + "</td>" + PILING_KEYS.map((k) => { const c = o.capabilities[k]; const st = c ? c.status : "unknown"; return '<td class="' + st + '" title="' + esc((c && c.evidence) || "not stated") + '">' + (st === "yes" ? "✓ does" : st === "no" ? "✗ does not" : "?") + "</td>"; }).join("") + "<td>" + fmtDay(o.lastContact) + "</td></tr>").join("") + "</table></div>";
+}
+function stars(o, editable){ let s = '<span class="stars" title="Grady\'s rating — your own judgement, never computed">'; for (let i = 1; i <= 5; i++) s += editable ? '<button data-rate="' + i + '" data-org="' + o.id + '" class="' + (i <= o.rating ? "" : "off") + '">★</button>' : '<span class="' + (i <= o.rating ? "" : "off") + '">★</span>'; return s + "</span>"; }
+function renderTable(list){
+  if (!list.length) return '<div class="empty">Nothing matches. Clear a filter, or add the organisation.</div>';
+  const th = (k, l, cls) => '<th class="' + (cls || "") + (UI.sort === k ? " on" : "") + '" data-sort="' + k + '">' + l + "</th>";
+  let h = '<table class="reg"><thead><tr>' + th("name", "Organisation") + "<th>Category · trade</th><th class=\"hide-sm\">Primary contact</th>" + th("last-desc", "Last contact") + th("score", "Evidence", "num") + th("reply", "Reply", "num hide-sm") + th("rating", "Rating") + "<th>Status</th>" + th("follow", "Follow-up") + "</tr></thead><tbody>";
+  for (const o of list) {
+    const open = UI.open.has(o.id); const d = daysSince(o.lastContact); const cls = d == null ? "" : d <= 30 ? "fresh" : d <= 90 ? "aging" : "stale";
+    const pc = o.contacts.find((c) => c.primary) || o.contacts[0];
+    const caps = o.tradeGroup === "piling" ? PILING_KEYS.slice(0, 4).map((k) => capChip(o, k)).join("") : Object.keys(o.capabilities).filter((k) => o.capabilities[k].status !== "unknown").slice(0, 4).map((k) => capChip(o, k)).join("");
+    const fu = o.followUp && o.followUp.date ? '<span class="' + ((daysSince(o.followUp.date) || 0) >= 0 ? "stale when" : "when") + '">' + fmtDay(o.followUp.date) + "</span>" + (o.followUp.note ? '<div class="sub">' + esc(o.followUp.note) + "</div>" : "") : '<span class="muted">—</span>';
+    h += '<tr class="org' + (open ? " open" : "") + '" data-open="' + o.id + '"><td><div class="name"><span class="tier ' + o.tier + '" title="Evidence tier ' + o.tier + ' — ' + esc(o.scoreBasis) + '">' + o.tier + "</span>" + esc(o.name || "(unnamed)") + (o.confidence === "low" ? ' <span class="cat" title="Placed from a single email — confirm the category">confirm</span>' : "") + "</div>" + (o.projects.length ? '<div class="sub">' + esc(o.projects.slice(0, 4).join(" · ")) + (o.projects.length > 4 ? " · +" + (o.projects.length - 4) : "") + "</div>" : "") + "</td>" +
+      '<td><span class="cat ' + o.category + '">' + esc((CAT[o.category] || CAT.other).label) + "</span>" + (o.tradeGroup && TG[o.tradeGroup] && o.tradeGroup !== "other" ? ' <span class="small muted">' + esc(TG[o.tradeGroup]) + "</span>" : "") + '<div class="sub">' + esc(o.trade) + "</div>" + (caps ? "<div>" + caps + "</div>" : "") + "</td>" +
+      '<td class="hide-sm">' + (pc ? "<div>" + esc(pc.name) + (pc.role ? ' <span class="muted small">' + esc(pc.role) + "</span>" : "") + '</div><div class="sub">' + esc(pc.mobile || pc.phone || o.phones[0] || "") + (pc.email ? (pc.mobile || pc.phone || o.phones[0] ? " · " : "") + esc(pc.email) : "") + "</div>" : '<span class="muted">—</span>') + "</td>" +
+      '<td><div class="when ' + cls + '">' + fmtDay(o.lastContact) + '<span class="ago">' + (d == null ? "no contact on record" : agoLabel(d)) + (o.lastContactDir ? (o.lastContactDir === "in" ? " · they wrote" : " · Gradcon wrote") : "") + "</span></div>" + (o.lastContactDir && d != null && d >= 3 ? '<span class="ball ' + (o.lastContactDir === "in" ? "gradcon" : "them") + '">' + (o.lastContactDir === "in" ? "ball with Gradcon" : "waiting on them") + "</span>" : "") + "</td>" +
+      '<td class="num"><span class="score">' + o.score + "<small>/100</small></span>" + '<div class="sub">' + (o.inbound + o.outbound ? o.inbound + " in · " + o.outbound + " out" : "no mail read") + "</div></td>" +
+      '<td class="num hide-sm">' + (o.medianReplyHrs == null ? '<span class="muted">—</span>' : o.medianReplyHrs < 48 ? o.medianReplyHrs + " h" : Math.round(o.medianReplyHrs / 24) + " d") + "</td>" +
+      "<td>" + stars(o, false) + "</td><td><span class=\"status " + o.status.replace(/ /g, "-") + '">' + esc(o.status) + "</span></td><td>" + fu + "</td></tr>";
+    if (open) h += '<tr class="detail"><td colspan="9">' + renderDetail(o) + "</td></tr>";
+  }
+  return h + "</tbody></table>";
+}
+function inp(o, path, type, extra){ const v = getPath(o, path); return '<input type="' + (type || "text") + '" data-path="' + path + '" data-org="' + o.id + '" value="' + esc(v == null ? "" : v) + '" ' + (extra || "") + ">"; }
+function sel(o, path, opts){ const v = getPath(o, path) || ""; return '<select data-path="' + path + '" data-org="' + o.id + '">' + opts.map(([k, l]) => '<option value="' + esc(k) + '"' + (String(k) === String(v) ? " selected" : "") + ">" + esc(l) + "</option>").join("") + "</select>"; }
+function renderDetail(o){
+  const capGroups = []; for (const c of CAPS) { let g = capGroups.find((x) => x.name === c.group); if (!g) capGroups.push(g = { name: c.group, items: [] }); g.items.push(c); }
+  const capHtml = capGroups.map((g) => '<div class="g">' + esc(g.name) + "</div>" + g.items.map((c) => { const cur = o.capabilities[c.key] || { status: "unknown", evidence: "" }; return '<div class="c"><span class="l">' + esc(c.label) + '</span><select class="' + cur.status + '" data-cap="' + c.key + '" data-org="' + o.id + '"><option value="unknown"' + (cur.status === "unknown" ? " selected" : "") + ">not stated</option><option value=\"yes\"" + (cur.status === "yes" ? " selected" : "") + ">does</option><option value=\"no\"" + (cur.status === "no" ? " selected" : "") + ">does NOT</option></select>" + (cur.evidence ? '<div class="e">' + esc(cur.evidence) + "</div>" : "") + "</div>"; }).join("")).join("");
+  const contacts = '<table class="inner"><tr><th>Primary</th><th>Name</th><th>Role</th><th>Email</th><th>Phone</th><th>Mobile</th><th>Last contact</th><th></th></tr>' + o.contacts.map((c, i) => "<tr>" +
+    '<td class="right"><input type="radio" name="primary-' + o.id + '" data-primary="' + i + '" data-org="' + o.id + '"' + (c.primary ? " checked" : "") + "></td>" +
+    ["name", "role", "email", "phone", "mobile"].map((f) => "<td>" + '<input type="text" data-contact="' + i + '" data-field="' + f + '" data-org="' + o.id + '" value="' + esc(c[f] || "") + '"></td>').join("") +
+    '<td class="nowrap small">' + (c.lastContact ? fmtDay(c.lastContact) : "—") + (c.inbound + c.outbound ? ' <span class="muted">(' + (c.inbound || 0) + " in · " + (c.outbound || 0) + " out)</span>" : "") + "</td>" +
+    '<td><button class="btn sm danger" data-delcontact="' + i + '" data-org="' + o.id + '" title="Remove this person">✕</button></td></tr>').join("") + "</table>" + '<button class="btn sm" data-addcontact="' + o.id + '" style="margin-top:6px">+ Add person</button>';
+  const threads = o.threads.length ? '<ul class="threads" style="margin:0;padding-left:16px">' + o.threads.map((t) => '<li><span class="d">' + fmtDay(t.day) + "</span>" + (t.threadId ? '<a href="' + gmailLink(t.threadId) + '" target="_blank" rel="noopener">' + esc(t.subject) + "</a>" : esc(t.subject)) + "</li>").join("") + "</ul>" : '<div class="muted small">No subjects on record yet.</div>';
+  const logs = STATE.log.filter((l) => l.orgId === o.id).slice(-8).reverse();
+  const mailQ = mailQueryFor(o);
+  return '<div class="detail">' +
+    '<div class="card"><h4>Organisation <span><button class="btn sm" data-checkmail="' + o.id + '" title="Ask the projects@ mailbox for the newest email to or from them (read-only)">Check mail now</button></span></h4>' +
+      '<div class="fld"><label>Name</label>' + inp(o, "name") + "</div>" +
+      '<div class="fld"><label>Category</label>' + sel(o, "category", CATEGORIES.map((c) => [c.key, c.label])) + "</div>" +
+      '<div class="fld"><label>Trade group</label>' + sel(o, "tradeGroup", [["", "—"], ...TRADE_GROUPS.map((g) => [g.key, g.label])]) + "</div>" +
+      '<div class="fld"><label>Trade / scope</label>' + inp(o, "trade") + "</div>" +
+      '<div class="fld"><label>Status</label>' + sel(o, "status", STATUSES.map((s) => [s, s])) + "</div>" +
+      '<div class="fld"><label>Grady\'s rating</label><div>' + stars(o, true) + ' <span class="small muted">your judgement of them — separate from the evidence score</span></div></div>' +
+      '<div class="fld"><label>Website</label>' + inp(o, "website", "url") + "</div>" +
+      '<div class="fld"><label>Phones</label>' + '<input type="text" data-list="phones" data-org="' + o.id + '" value="' + esc(o.phones.join("; ")) + '" placeholder="03 … ; 04 … (semicolon-separated)"></div>' +
+      '<div class="fld"><label>Emails</label>' + '<input type="text" data-list="emails" data-org="' + o.id + '" value="' + esc(o.emails.join("; ")) + '" placeholder="semicolon-separated — these also drive the mailbox check"></div>' +
+      '<div class="fld"><label>Address</label>' + inp(o, "address") + "</div>" +
+      '<div class="fld"><label>Projects</label>' + '<input type="text" data-list="projects" data-org="' + o.id + '" value="' + esc(o.projects.join("; ")) + '" placeholder="sites they were involved in (semicolon-separated)"></div>' +
+      '<div class="fld col"><label>Notes</label><textarea data-path="notes" data-org="' + o.id + '">' + esc(o.notes) + "</textarea></div>" +
+      '<div class="fld col"><label>Risks / follow-up</label><textarea data-path="risks" data-org="' + o.id + '">' + esc(o.risks) + "</textarea></div>" +
+    "</div>" +
+    '<div class="card"><h4>Compliance &amp; commercial <span class="small muted" style="text-transform:none;letter-spacing:0">verify before award</span></h4>' +
+      '<div class="fld"><label>ABN</label>' + inp(o, "abn") + "</div>" +
+      '<div class="fld"><label>ABN verified</label>' + sel(o, "compliance.abnVerified", [["", "not checked"], ["yes", "checked on ABR"], ["no", "problem"]]) + "</div>" +
+      '<div class="fld"><label>GST registered</label>' + sel(o, "compliance.gst", [["", "—"], ["yes", "yes"], ["no", "no"]]) + "</div>" +
+      '<div class="fld"><label>Public liability</label>' + inp(o, "compliance.publicLiability", "text", 'placeholder="insurer, cover, expiry"') + "</div>" +
+      '<div class="fld"><label>Workers comp</label>' + inp(o, "compliance.workersComp", "text", 'placeholder="policy / expiry"') + "</div>" +
+      '<div class="fld"><label>Insurance expiry</label>' + inp(o, "compliance.insuranceExpiry", "date") + "</div>" +
+      '<div class="fld"><label>Licences</label>' + inp(o, "compliance.licences", "text", 'placeholder="VBA registration, DB-U/CB-L, HR licence…"') + "</div>" +
+      '<div class="fld"><label>Payment terms</label>' + inp(o, "compliance.paymentTerms", "text", 'placeholder="e.g. 30 days EOM, deposit"') + "</div>" +
+      '<div class="fld"><label>Rates / last quote</label>' + inp(o, "compliance.lastRate", "text", 'placeholder="what they last priced, and when"') + "</div>" +
+      '<div class="fld"><label>Follow-up on</label>' + inp(o, "followUp.date", "date") + "</div>" +
+      '<div class="fld"><label>Follow-up note</label>' + inp(o, "followUp.note", "text", 'placeholder="what to chase"') + "</div>" +
+      '<h4 style="margin-top:10px">Correspondence evidence</h4><div class="basis"><b>' + o.score + "/100 · tier " + o.tier + "</b> — " + esc(o.scoreBasis || "") + (o.firstContact ? "<br>First seen " + fmtDay(o.firstContact) + ", last " + fmtDay(o.lastContact) + (o.lastContactDir ? (o.lastContactDir === "in" ? " (they wrote last)" : " (Gradcon wrote last)") : "") : "") + (o.medianReplyHrs != null ? "<br>Median time for them to answer a Gradcon email: <b>" + o.medianReplyHrs + " h</b> over " + (o.replyCount || 0) + " repl" + (o.replyCount === 1 ? "y" : "ies") : "") + (o.evidence ? "<br>Pattern: " + esc(o.evidence) : "") + (o.mailCheckedAt ? "<br>Mailbox last checked " + new Date(o.mailCheckedAt).toLocaleString("en-AU") : "") + '<br><span class="muted">Sources: ' + esc((o.sources || []).join(" · ")) + "</span>" + (o.lastMailId ? ' · <a href="' + gmailLink(o.lastMailId) + '" target="_blank" rel="noopener">open the last email</a>' : "") + (mailQ ? ' · <a href="' + gmailSearch(mailQ) + '" target="_blank" rel="noopener">all mail with them</a>' : "") + "</div>" +
+    "</div>" +
+    '<div class="card wide"><h4>What they do — capabilities <span class="small muted" style="text-transform:none;letter-spacing:0">read from their own emails; set any you know</span></h4><div class="capgrid">' + capHtml + "</div></div>" +
+    '<div class="card wide"><h4>People (' + o.contacts.length + ")</h4>" + contacts + "</div>" +
+    '<div class="card"><h4>Recent subjects</h4>' + threads + "</div>" +
+    '<div class="card"><h4>Changes to this entry</h4>' + (logs.length ? '<ul class="log" style="margin:0;padding-left:16px">' + logs.map((l) => '<li><span class="d">' + new Date(l.at).toLocaleDateString("en-AU", { day: "numeric", month: "short" }) + "</span>" + esc(l.text) + ' <span class="muted">— ' + esc(l.by) + "</span></li>").join("") + "</ul>" : '<div class="muted small">No changes recorded yet.</div>') + '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn sm danger" data-remove="' + o.id + '">Remove from register</button><span class="small muted">Added ' + fmtDay((o.createdAt || "").slice(0, 10)) + " · last edited " + (o.updatedAt ? new Date(o.updatedAt).toLocaleString("en-AU") : "—") + " by " + esc(o.updatedBy || "—") + "</span></div></div>" +
+  "</div>";
+}
+function renderPeople(){
+  const q = UI.q.toLowerCase();
+  const rows = []; for (const o of STATE.orgs) for (const c of o.contacts) rows.push({ o, c });
+  const shown = rows.filter(({ o, c }) => !q || [c.name, c.role, c.email, c.phone, c.mobile, o.name, o.trade].join(" ").toLowerCase().includes(q)).sort((a, b) => (b.c.lastContact || "").localeCompare(a.c.lastContact || "") || a.c.name.localeCompare(b.c.name));
+  return '<div class="toolbar"><div class="row"><input type="text" class="grow" id="q" placeholder="Search people…" value="' + esc(UI.q) + '"><button class="btn" id="peopleCsv">⬇ People CSV</button><span class="small muted">' + shown.length + " people across " + STATE.orgs.length + " organisations — edit a person inside their organisation (Everyone tab)</span></div></div>" +
+    '<table class="reg"><thead><tr><th>Name</th><th>Role</th><th>Organisation</th><th>Email</th><th>Phone</th><th>Mobile</th><th>Last contact</th></tr></thead><tbody>' + shown.map(({ o, c }) => '<tr class="org" data-jump="' + o.id + '"><td><b>' + esc(c.name) + "</b>" + (c.primary ? ' <span class="cat">primary</span>' : "") + "</td><td>" + esc(c.role) + "</td><td>" + esc(o.name) + ' <span class="cat ' + o.category + '">' + esc((CAT[o.category] || CAT.other).label) + "</span></td><td>" + esc(c.email) + "</td><td>" + esc(c.phone) + "</td><td>" + esc(c.mobile) + '</td><td class="nowrap">' + (c.lastContact ? fmtDay(c.lastContact) + ' <span class="muted small">' + agoLabel(daysSince(c.lastContact)) + "</span>" : "—") + "</td></tr>").join("") + "</tbody></table>";
+}
+function renderFollowUps(){
+  const t = today();
+  const due = STATE.orgs.filter((o) => o.followUp && o.followUp.date).sort((a, b) => a.followUp.date.localeCompare(b.followUp.date));
+  const them = STATE.orgs.filter((o) => o.status !== "Inactive" && o.status !== "Do not use" && o.lastContactDir === "out" && (daysSince(o.lastContact) || 0) >= 7).sort((a, b) => (a.lastContact || "").localeCompare(b.lastContact || ""));
+  const us = STATE.orgs.filter((o) => o.status !== "Inactive" && o.status !== "Do not use" && o.lastContactDir === "in" && (daysSince(o.lastContact) || 0) >= 3).sort((a, b) => (a.lastContact || "").localeCompare(b.lastContact || ""));
+  const block = (title, blurb, list, line) => '<div class="card" style="margin-bottom:12px"><h4>' + title + " (" + list.length + ')</h4><p class="small muted" style="margin:0 0 6px">' + blurb + "</p>" + (list.length ? '<table class="inner">' + list.map((o) => '<tr class="org" data-jump="' + o.id + '" style="cursor:pointer"><td><b>' + esc(o.name) + '</b> <span class="cat ' + o.category + '">' + esc((CAT[o.category] || CAT.other).label) + "</span></td><td>" + line(o) + "</td></tr>").join("") + "</table>" : '<div class="muted small">Nothing here.</div>') + "</div>";
+  return block("Dated follow-ups", "Dates you set on an organisation. Red when the day has come.", due, (o) => '<span class="' + (o.followUp.date <= t ? "stale when" : "when") + '">' + fmtDay(o.followUp.date) + "</span> " + esc(o.followUp.note || "")) +
+    block("Ball with Gradcon", "Their email is the last one in the thread and it has sat 3+ days — a quote received, a question asked, a tender issued.", us, (o) => "they wrote " + fmtDay(o.lastContact) + " · " + agoLabel(daysSince(o.lastContact)) + (o.threads[0] ? ' · <span class="muted">' + esc(o.threads[0].subject) + "</span>" : "")) +
+    block("Waiting on them", "Gradcon wrote last and nothing has come back for a week or more — an RFQ out, a quote chased.", them, (o) => "Gradcon wrote " + fmtDay(o.lastContact) + " · " + agoLabel(daysSince(o.lastContact)) + (o.threads[0] ? ' · <span class="muted">' + esc(o.threads[0].subject) + "</span>" : ""));
+}
+function renderMethod(){
+  const seedAt = (typeof REGISTER_SEED !== "undefined" && REGISTER_SEED.builtAt) || "";
+  return '<div class="method card">' +
+    "<h3>What this register is</h3><p>One shared list of every organisation Gradcon deals with — the <b>supply chain</b> (subcontractors, suppliers, consultants, services) kept apart from the <b>clients</b> (builders and head contractors who send Gradcon tenders, and private owners / developers). Every field is editable and saves to the cloud row <code>gradcon-register</code>, so Grady and projects@ see the same list on every device. Nothing here is written back to the mailbox.</p>" +
+    "<h3>Where the first version came from</h3><ul><li>The <b>projects@gradcon.com.au mailbox</b> — 818 messages read on " + esc(seedAt) + ", drafts and system mail left out. For every organisation: how many emails in and out, how many threads, the date and direction of the last one, the median time they took to answer a Gradcon email, the people on the emails with the phone numbers and job titles in their own signatures, and the subjects.</li><li>The <b>contractor / supplier workbook</b> of the same day (59 organisations, 97 people, 116 project associations) — its trade descriptions, websites, project lists and evidence notes were folded in where the mailbox read did not reach (e.g. Holcim, Bomax, Danterr).</li><li>The <b>Project Management register</b> seed rows (20 contractors and suppliers with phones) — carried over so nothing is lost.</li></ul>" +
+    "<h3>The evidence score (0–100) and tiers</h3><p>It measures <b>correspondence</b>, not performance: volume (6 × ln(1 + emails), max 30) + breadth (5 per thread, max 20) + two-way correspondence (15) + their reply time (≤ 24 h 15, ≤ 72 h 10, slower 5) + recency (≤ 30 days 20, ≤ 90 days 14, ≤ 180 days 8, older 2). Tier A ≥ 80, B ≥ 60, C ≥ 40, D below. A high score means Gradcon has a lot of recent, answered correspondence with them — it says nothing about their workmanship, safety or payment. <b>Grady's star rating</b> is the judgement; it is never computed.</p>" +
+    "<h3>Capabilities — what they do and do not do</h3><p>Read from the contractor's <em>own</em> sentences, never from what Gradcon asked them to price (an RFQ for bored piers sent to a screw-piler proves nothing). A ✓ carries the sentence and date it came from; a ✗ is an explicit statement (\"we do not install screw piles\") or a consistent pattern (pricing screw piles as the alternative whenever bored piers are specified); a ? means they have not said. The piling matrix at the top of the Supply chain list (filter the Piling trade, or pick a capability) puts the foundation contractors side by side. Change any of them inside the row — your setting stands until you change it again.</p>" +
+    "<h3>Keeping it current</h3><ul><li><b>Check mail now</b> on a row, or <b>Check mail for N shown</b>, asks the mailbox (read-only, through the portal's Google connection) for the newest email to or from that organisation's addresses and moves the last-contact date and direction. It runs only when you click it.</li><li><b>Ball with Gradcon</b> = their email is the last in the thread, 3+ days. <b>Waiting on them</b> = Gradcon wrote last, 3+ days (7+ on the Follow-ups tab). <b>Going cold</b> = nothing for 90 days.</li><li><b>Add missing from list</b> brings in any organisation from the built-in seed that is not here — it never overwrites an edit and never resurrects one you removed.</li><li>Edits from two devices merge organisation by organisation (the newer edit of each wins); removals are remembered so they do not come back.</li></ul>" +
+    "<h3>What to verify before relying on an entry</h3><p>ABN and GST on the ABR, the public liability and workers compensation certificates and their expiry, the VBA registration or licence class where the trade needs one, and the latest rate. The Compliance block holds those; the Verification note on the workbook said the same of every entry.</p>" +
+    '<h3>Change log</h3><ul class="log" style="padding-left:16px">' + STATE.log.slice(-40).reverse().map((l) => '<li><span class="d">' + new Date(l.at).toLocaleString("en-AU", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) + "</span>" + (l.org ? "<b>" + esc(l.org) + "</b> — " : "") + esc(l.text) + ' <span class="muted">— ' + esc(l.by) + "</span></li>").join("") + "</ul></div>";
+}
+
+/* ============================ events ============================ */
+document.getElementById("tabnav").addEventListener("click", (e) => { const b = e.target.closest(".tab-btn"); if (!b) return; UI.tab = b.dataset.tab; UI.cats.clear(); UI.trades.clear(); UI.kpi = ""; UI.pinTop = null; render(); });
+const main = document.getElementById("main");
+main.addEventListener("click", (e) => {
+  const t = e.target;
+  const kpi = t.closest("[data-kpi]"); if (kpi) { UI.kpi = UI.kpi === kpi.dataset.kpi ? "" : kpi.dataset.kpi; render(); return; }
+  const cat = t.closest("[data-cat]"); if (cat) { const k = cat.dataset.cat; UI.cats.has(k) ? UI.cats.delete(k) : UI.cats.add(k); render(); return; }
+  const tr = t.closest("[data-trade]"); if (tr) { const k = tr.dataset.trade; UI.trades.has(k) ? UI.trades.delete(k) : UI.trades.add(k); render(); return; }
+  const th = t.closest("th[data-sort]"); if (th) { UI.sort = th.dataset.sort; render(); return; }
+  if (t.id === "addBtn") { addOrg(UI.tab === "client" ? "builder" : UI.cats.size === 1 ? [...UI.cats][0] : "subcontractor"); return; }
+  if (t.id === "csvBtn") { const list = visibleOrgs(); downloadCsv("gradcon-register-" + today() + ".csv", ["Organisation", "Category", "Trade group", "Trade / scope", "Status", "Rating", "Evidence score", "Tier", "Last contact", "Last direction", "Median reply (h)", "Emails in", "Emails out", "Primary contact", "Role", "Mobile", "Phone", "Email", "All phones", "All emails", "Website", "ABN", "Projects", ...PILING_KEYS.map((k) => CAP[k] ? CAP[k].label : k), "Follow-up", "Follow-up note", "Notes", "Risks"], list.map((o) => { const pc = o.contacts.find((c) => c.primary) || o.contacts[0] || {}; return [o.name, (CAT[o.category] || CAT.other).label, TG[o.tradeGroup] || "", o.trade, o.status, o.rating, o.score, o.tier, o.lastContact, o.lastContactDir, o.medianReplyHrs ?? "", o.inbound, o.outbound, pc.name || "", pc.role || "", pc.mobile || "", pc.phone || "", pc.email || "", o.phones.join("; "), o.emails.join("; "), o.website, o.abn, o.projects.join("; "), ...PILING_KEYS.map((k) => (o.capabilities[k] || {}).status || ""), (o.followUp || {}).date || "", (o.followUp || {}).note || "", o.notes, o.risks]; })); return; }
+  if (t.id === "peopleCsv") { const rows = []; for (const o of STATE.orgs) for (const c of o.contacts) rows.push([c.name, c.role, o.name, (CAT[o.category] || CAT.other).label, c.email, c.phone, c.mobile, c.primary ? "yes" : "", c.lastContact]); downloadCsv("gradcon-register-people-" + today() + ".csv", ["Name", "Role", "Organisation", "Category", "Email", "Phone", "Mobile", "Primary", "Last contact"], rows); return; }
+  if (t.id === "seedBtn") { addMissingFromSeed(); return; }
+  if (t.id === "checkAllBtn") { checkAll(visibleOrgs()); return; }
+  const rate = t.closest("[data-rate]"); if (rate) { const o = orgById(rate.dataset.org); const v = Number(rate.dataset.rate); o.rating = o.rating === v ? 0 : v; touch(o); log(o, "Rating set to " + o.rating + " star" + (o.rating === 1 ? "" : "s")); save(); render(); return; }
+  const cm = t.closest("[data-checkmail]"); if (cm) { cm.disabled = true; cm.textContent = "Checking…"; checkMail(orgById(cm.dataset.checkmail)).then((r) => { render(); if (r.error) alert("Could not read the mailbox: " + r.error); else if (r.none) alert("No email found to or from those addresses."); }); return; }
+  const rm = t.closest("[data-remove]"); if (rm) { if (rm.dataset.armed) { removeOrg(rm.dataset.remove); } else { rm.dataset.armed = "1"; rm.textContent = "Click again to remove"; setTimeout(() => { if (rm.isConnected) { delete rm.dataset.armed; rm.textContent = "Remove from register"; } }, 3000); } return; }
+  const dc = t.closest("[data-delcontact]"); if (dc) { const o = orgById(dc.dataset.org); const c = o.contacts.splice(Number(dc.dataset.delcontact), 1)[0]; if (c && c.primary && o.contacts[0]) o.contacts[0].primary = true; touch(o); log(o, "Removed " + (c ? c.name || c.email : "a person")); save(); render(); return; }
+  const ac = t.closest("[data-addcontact]"); if (ac) { const o = orgById(ac.dataset.addcontact); o.contacts.push({ id: "c-" + uid(), name: "", role: "", email: "", phone: "", mobile: "", primary: !o.contacts.length, lastContact: "", inbound: 0, outbound: 0, source: "added by " + userKey() }); touch(o); save(); render(); return; }
+  const jump = t.closest("[data-jump]"); if (jump) { UI.tab = "all"; UI.q = ""; UI.kpi = ""; UI.status = ""; UI.cats.clear(); UI.trades.clear(); UI.open.add(jump.dataset.jump); render(); const row = document.querySelector('[data-open="' + jump.dataset.jump + '"]'); if (row) { row.scrollIntoView({ block: "start", behavior: "smooth" }); row.classList.add("flash"); } return; }
+  if (t.closest("input,select,textarea,button,a,label")) return;
+  const row = t.closest("tr.org[data-open]"); if (row) { const id = row.dataset.open; UI.open.has(id) ? UI.open.delete(id) : UI.open.add(id); render(); }
+});
+main.addEventListener("input", (e) => {
+  const t = e.target;
+  if (t.id === "q") { UI.q = t.value; clearTimeout(main._qt); main._qt = setTimeout(() => { const el = $("#q"); const pos = el ? el.selectionStart : 0; render(); const n = $("#q"); if (n) { n.focus(); n.setSelectionRange(pos, pos); } }, 220); return; }
+  const o = t.dataset.org && orgById(t.dataset.org); if (!o) return;
+  if (t.dataset.path) { setPath(o, t.dataset.path, t.type === "number" ? Number(t.value) : t.value); touch(o); save(); }
+  else if (t.dataset.list) { o[t.dataset.list] = t.value.split(/;\s*|,\s*(?=[^,]*@)|\n/).map((s) => s.trim()).filter(Boolean); touch(o); save(); }
+  else if (t.dataset.contact != null && t.dataset.field) { const c = o.contacts[Number(t.dataset.contact)]; if (c) { c[t.dataset.field] = t.value; touch(o); save(); } }
+});
+main.addEventListener("change", (e) => {
+  const t = e.target;
+  if (t.id === "capSel") { UI.cap = t.value; if (!UI.cap) UI.capState = ""; render(); return; }
+  if (t.id === "capState") { UI.capState = t.value; render(); return; }
+  if (t.id === "tierSel") { UI.tier = t.value; render(); return; }
+  if (t.id === "statusSel") { UI.status = t.value; render(); return; }
+  if (t.id === "sortSel") { UI.sort = t.value; render(); return; }
+  const o = t.dataset.org && orgById(t.dataset.org); if (!o) return;
+  if (t.dataset.cap) { const key = t.dataset.cap; const prev = o.capabilities[key] || {}; o.capabilities[key] = { status: t.value, evidence: (prev.by === "mail" && prev.evidence ? prev.evidence + " · " : "") + "set by " + userKey() + " on " + fmtDay(today()), by: userKey() }; if (t.value === "unknown" && prev.by !== "mail") delete o.capabilities[key]; touch(o); log(o, (CAP[key] ? CAP[key].label : key) + ": " + (t.value === "yes" ? "does" : t.value === "no" ? "does NOT" : "not stated")); save(); render(); return; }
+  if (t.dataset.primary != null) { o.contacts.forEach((c, i) => { c.primary = i === Number(t.dataset.primary); }); touch(o); save(); render(); return; }
+  if (t.dataset.path) { if (t.dataset.path === "category") { o.side = (CAT[o.category] || CAT.other).side; o.confidence = ""; } if (t.dataset.path in LOGGED_FIELDS) log(o, LOGGED_FIELDS[t.dataset.path] + " → " + (t.value || "—")); if (t.tagName === "SELECT" || t.type === "date") { save(); render(); } else render(); return; }
+  if (t.dataset.list || t.dataset.contact != null) { render(); }
+});
+document.addEventListener("visibilitychange", () => { if (!document.hidden) pollCloud(); });
+load();
+</script>
+</body>
+</html>

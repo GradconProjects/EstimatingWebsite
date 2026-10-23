@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import fs from "node:fs";
+import { runInNewContext } from "node:vm";
 /**
  * Sanity-checks the costing engine without needing a browser.
  * Run with: npm run verify
@@ -3349,6 +3350,50 @@ check("Project Geometry carries a COUNT: $/no. leads the benchmark rates, sums a
     assert.equal(vercel.functions["api/industry-news.js"].maxDuration, 30);
   });
 }
+
+check("Register (tile 08): the seed, its categories and sides, the piling capability facts (BCS no screw piles, Allstate screw not bored, DMAC bored/CFA/retention with screw unstated), no personal addresses, and the shell / assembler wiring", () => {
+  const sandbox = { module: { exports: {} } };
+  runInNewContext(fs.readFileSync(new URL("../portal/register-seed.js", import.meta.url), "utf8"), sandbox, { filename: "register-seed.js" });
+  const { REGISTER_SEED, REGISTER_CAPABILITIES, REGISTER_TRADE_GROUPS } = sandbox.module.exports;
+  assert.ok(REGISTER_SEED && Array.isArray(REGISTER_SEED.orgs) && REGISTER_SEED.orgs.length >= 80, "80+ organisations");
+  const CATS = { subcontractor: "supply", supplier: "supply", consultant: "supply", service: "supply", builder: "client", client: "client", other: "other" };
+  const ids = new Set();
+  for (const o of REGISTER_SEED.orgs) {
+    assert.ok(o.id && o.name && !ids.has(o.id), `id and name on ${o.id}`); ids.add(o.id);
+    assert.ok(o.category in CATS, `${o.name}: category ${o.category}`); assert.equal(o.side, CATS[o.category], `${o.name}: side follows the category`);
+    assert.ok(Array.isArray(o.contacts) && Array.isArray(o.emails) && o.capabilities && typeof o.capabilities === "object", `${o.name}: shape`);
+    assert.ok(["A", "B", "C", "D"].includes(o.tier) && o.score >= 0 && o.score <= 100 && o.scoreBasis, `${o.name}: score and basis`);
+    for (const c of o.contacts) assert.ok(!c.phone || /\d{6}/.test(c.phone), `${o.name}: a phone is a number, not a shifted column (${c.phone})`);
+  }
+  const blob = JSON.stringify(REGISTER_SEED);
+  assert.ok(!/fyneboma|alandjoce|ongroundpm/i.test(blob), "the estimators' own addresses and the draft outreach never enter the register");
+  const by = (re) => REGISTER_SEED.orgs.find((o) => re.test(o.name));
+  const bcs = by(/BCS/), allstate = by(/Allstate/), dmac = by(/DMAC/);
+  assert.equal(bcs.capabilities.screw.status, "no"); assert.ok(/do not install/.test(bcs.capabilities.screw.evidence)); assert.equal(bcs.capabilities.bored.status, "yes");
+  assert.equal(allstate.capabilities.screw.status, "yes"); assert.equal(allstate.capabilities.bored.status, "no");
+  assert.deepEqual([dmac.capabilities.bored.status, dmac.capabilities.cfa.status, dmac.capabilities.retention.status, dmac.capabilities.shotcrete.status, dmac.capabilities.screw.status], ["yes", "yes", "yes", "yes", "unknown"]);
+  assert.ok([bcs, allstate, dmac].every((o) => o.tradeGroup === "piling" && o.category === "subcontractor"));
+  assert.ok(REGISTER_CAPABILITIES.map((c) => c.key).includes("screw") && REGISTER_TRADE_GROUPS.some((g) => g.key === "piling"));
+  // the clients are kept apart from the supply chain
+  assert.ok(by(/Long Contracting/).side === "client" && by(/TSW Group/).category === "builder" && by(/Holcim/).category === "supplier" && by(/Philip Kulpa/).category === "client");
+  // the page, the shell and the assembler
+  const page = fs.readFileSync(new URL("../portal/register.html", import.meta.url), "utf8");
+  assert.ok(/<script src="register-seed\.js"><\/script>/.test(page) && /const KEY = "gradcon-register"/.test(page) && /function mergeStates/.test(page) && /action: "list"/.test(page), "the page loads the seed, keys the cloud row and merges per organisation");
+  assert.ok(!/action: "(send|reply|trash|delete)"/.test(page), "the page never writes to the mailbox");
+  const shell = fs.readFileSync(new URL("../portal/portal-shell.html", import.meta.url), "utf8");
+  assert.ok(/id="register-app-b64"/.test(shell) && /data-target="register"/.test(shell) && /data-menu="register"/.test(shell) && /register:\s*\{ target:'register'/.test(shell) && /<option value="register">Register<\/option>/.test(shell) && /key=eq\.gradcon-register/.test(shell), "payload, tile, menu, route, Settings option and chat read");
+  const asm = fs.readFileSync(new URL("./assemble-portal.mjs", import.meta.url), "utf8");
+  assert.ok(/__REGISTER_B64__/.test(asm) && /register-seed\.js/.test(asm), "the assembler inlines the seed and the payload");
+  // the per-organisation merge, run from the page's own source
+  const fn = /function blankState\(\)[\s\S]*?\nfunction mergeStates[\s\S]*?\n\}\n/.exec(page); assert.ok(fn, "mergeStates found in register.html");
+  const sb = { userKey: () => "t", nowIso: () => "2026-10-23T00:00:00.000Z" };
+  runInNewContext(fn[0].replace(/function seedState[\s\S]*?\n(?=function normalize)/, "").replace(/function normalize[\s\S]*?\n\}\n/, "") + "\nglobalThis.mergeStates = mergeStates;", sb);
+  const a = { orgs: [{ id: "x", name: "X old", updatedAt: "2026-10-01" }, { id: "y", name: "Y", updatedAt: "2026-10-02" }], tombstones: [], log: [{ at: "1", text: "a" }], updatedAt: "2026-10-02" };
+  const b = { orgs: [{ id: "x", name: "X new", updatedAt: "2026-10-05" }, { id: "z", name: "Z", updatedAt: "2026-10-03" }], tombstones: [{ id: "y", at: "2026-10-04" }], log: [{ at: "1", text: "a" }, { at: "2", text: "b" }], updatedAt: "2026-10-05" };
+  const m = sb.mergeStates(a, b);
+  assert.equal(JSON.stringify(Array.from(m.orgs, (o) => o.id + ":" + o.name).sort()), JSON.stringify(["x:X new", "z:Z"]), "newer copy of each organisation wins; a newer tombstone removes (compared as JSON — the array comes from another realm)");
+  assert.equal(m.log.length, 2, "the log is the union");
+});
 
 console.log(`\n${passed} check(s) passed.`);
 // ---------------------------------------------------------------------------

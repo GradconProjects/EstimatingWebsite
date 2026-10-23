@@ -270,11 +270,12 @@
   .dash-hero-art{ margin:0 0 40px; border-radius:var(--radius); overflow:hidden; box-shadow:0 30px 60px -30px rgba(35,31,32,.4); border:1px solid var(--line-soft); }
   .dash-hero-art img{ display:block; width:100%; height:clamp(160px,26vw,300px); object-fit:cover; }
 
-  /* Tool tiles by device: wide desktop all 7 on one row; laptop / tablet landscape 4 (then 3);
-     tablet portrait and large phones 2; phones 1 (2 Oct 2026; 7 across since the AI Engine tile,
-     10 Oct 2026). minmax(0,1fr) stops a long word widening a column. */
-  .panel-grid{ display:grid; grid-template-columns:repeat(7, minmax(0,1fr)); gap:12px; max-width:1760px; }
-  @media (max-width:1279px){ .panel-grid{ grid-template-columns:repeat(4, minmax(0,1fr)); gap:16px; } }
+  /* Tool tiles by device: wide desktop all 8 on one row (two rows of 4 on a laptop); tablet
+     landscape 4; tablet portrait and large phones 2; phones 1 (2 Oct 2026; 7 across since the AI
+     Engine tile, 10 Oct 2026; 8 since the Register, 23 Oct 2026). minmax(0,1fr) stops a long word
+     widening a column. */
+  .panel-grid{ display:grid; grid-template-columns:repeat(8, minmax(0,1fr)); gap:12px; max-width:1760px; }
+  @media (max-width:1599px){ .panel-grid{ grid-template-columns:repeat(4, minmax(0,1fr)); gap:16px; } }
   @media (max-width:899px){ .panel-grid{ grid-template-columns:repeat(2, minmax(0,1fr)); } }
   @media (max-width:559px){ .panel-grid{ grid-template-columns:minmax(0,1fr); } }
 
@@ -637,7 +638,7 @@
         </svg>
       </span>
       <h2>Project Management</h2>
-      <p>Planner, variations, and the contractor &amp; supplier registers — deadlines, priorities and who's doing the work. Lives inside Quotes.</p>
+      <p>Planner, variations, RFIs, claims and defects — deadlines, priorities and who's doing the work. Lives inside Quotes.</p>
       <span class="cta">Open Project Management <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
     </button>
 
@@ -677,6 +678,26 @@
       <h2>AI Engine</h2>
       <p>AI takeoff from drawing sets, specification &amp; compliance reader, quality checks — every result a draft for review, exported to Estimates only when you say so.</p>
       <span class="cta">Open AI Engine <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
+    </button>
+
+    <button class="panel-btn" data-target="register">
+      <span class="tag">08</span>
+      <span class="glyph" style="background:#eef5ea;">
+        <svg viewBox="0 0 48 48" aria-hidden="true">
+          <rect x="6" y="7" width="30" height="34" rx="3" fill="#fff" stroke="#d5dbdb" stroke-width="1.4"/>
+          <rect x="6" y="7" width="30" height="7" rx="3" fill="#231f20"/>
+          <rect x="6" y="11" width="30" height="3" fill="#231f20"/>
+          <circle cx="13" cy="21.5" r="3" fill="#d5de5d" stroke="#231f20" stroke-width="1.4"/>
+          <path d="M19 20h12M19 23h8" stroke="#aab7c4" stroke-width="2" stroke-linecap="round"/>
+          <circle cx="13" cy="30.5" r="3" fill="#2ecc71" stroke="#231f20" stroke-width="1.4"/>
+          <path d="M19 29h12M19 32h8" stroke="#aab7c4" stroke-width="2" stroke-linecap="round"/>
+          <circle cx="38" cy="36" r="8" fill="#d5de5d"/>
+          <path d="M34.5 36l2.5 2.5 4.5-5" stroke="#231f20" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </span>
+      <h2>Register</h2>
+      <p>Contractors, suppliers, consultants and clients — who does what (screw piles, bored piers…), who you last spoke to and when, with every detail editable and shared.</p>
+      <span class="cta">Open Register <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
     </button>
   </div>
 
@@ -748,6 +769,7 @@
         <option value="quotes">Quotes</option>
         <option value="estimates">Estimates</option>
         <option value="planner">Project Management</option>
+        <option value="register">Register</option>
         <option value="folder">Gradcon Vault</option>
       </select>
     </div>
@@ -995,6 +1017,7 @@
       <button data-menu="rateslibrary">Rates Library</button>
       <button data-menu="costplanner">Cost Planner</button>
       <button data-menu="planner">Project Mgmt</button>
+      <button data-menu="register" title="Contractors, suppliers, consultants and clients — who does what, last contact, every detail editable">Register</button>
       <button data-menu="folder">Cloud Storage</button>
       <button data-menu="drive" title="The office's Google Drive project files, inside the app">Google Drive</button>
       <button data-menu="aiengine">AI Engine</button>
@@ -1026,6 +1049,7 @@
 <script id="costplanner-app-b64" type="text/plain">__COSTPLANNER_B64__</script>
 <script id="rateslibrary-app-b64" type="text/plain">__RATESLIBRARY_B64__</script>
 <script id="aiengine-app-b64" type="text/plain">__AIENGINE_B64__</script>
+<script id="register-app-b64" type="text/plain">__REGISTER_B64__</script>
 
 <script>
 (function(){
@@ -1492,6 +1516,7 @@
     costplanner: '<b>GRADCON Cost Planner</b> — cost planning dashboard',
     rateslibrary: '<b>Rates Library</b> — established rates, one source of truth',
     aiengine: '<b>AI Engine</b> — AI takeoff, specification reader, quality checks (drafts for review)',
+    register: '<b>Register</b> — contractors, suppliers, consultants &amp; clients: who does what, last contact',
   };
   function openApp(target, forceReload){
     var frame = document.getElementById('app-frame');
@@ -1515,6 +1540,7 @@
     rateslibrary: { target:'rateslibrary', view:null },
     costplanner:  { target:'costplanner',  view:null },
     aiengine:     { target:'aiengine',     view:null },
+    register:     { target:'register',     view:null },
     planner:      { target:'quotes',       view:'planner' },
     folder:       { target:'quotes',       view:'folder' },
     drive:        { target:'quotes',       view:'drive' }
@@ -2042,7 +2068,8 @@
       cloudGet('/rest/v1/estimator_kv?select=key,updated_at&key=like.gradcon-quote-*&order=updated_at.desc&limit=200'),
       cloudGet('/rest/v1/estimator_kv?select=value&key=eq.gradcon-estimate-projects-index'),
       cloudGet('/rest/v1/estimator_kv?select=value&key=eq.gradcon-rates'),
-      cloudGet('/rest/v1/estimator_kv?select=value&key=eq.gradcon-ai-jobs')
+      cloudGet('/rest/v1/estimator_kv?select=value&key=eq.gradcon-ai-jobs'),
+      cloudGet('/rest/v1/estimator_kv?select=value&key=eq.gradcon-register')
     ]).then(function(res){
       var idx = res[0] && res[0][0] && Array.isArray(res[0][0].value) ? res[0][0].value : [];
       var stamps = {}; (Array.isArray(res[1]) ? res[1] : []).forEach(function(r){ stamps[r.key] = r.updated_at; });
@@ -2053,7 +2080,8 @@
         return { index: idx, stamps: stamps, summaries: summaries,
                  takeoffs: res[2] && res[2][0] && Array.isArray(res[2][0].value) ? res[2][0].value : null,
                  rates: res[3] && res[3][0] && res[3][0].value && typeof res[3][0].value === 'object' ? res[3][0].value : null,
-                 aiJobs: res[4] && res[4][0] && Array.isArray(res[4][0].value) ? res[4][0].value : null };
+                 aiJobs: res[4] && res[4][0] && Array.isArray(res[4][0].value) ? res[4][0].value : null,
+                 register: res[5] && res[5][0] && res[5][0].value && Array.isArray(res[5][0].value.orgs) ? res[5][0].value : null };
       });
     }).catch(function(){ return null; }).then(function(d){ CHAT_CLOUD.pending = null; if(d){ CHAT_CLOUD.data = d; CHAT_CLOUD.at = Date.now(); } return d; });
     CHAT_CLOUD.pending = p; return p;
@@ -2067,6 +2095,7 @@
   function assistantContext(){
     return chatCloudData().then(function(cloud){ return assistantContextWith(cloud); });
   }
+  window.gradconAssistantContext = assistantContext; // test seam — what the chat is given, read-only
   function assistantContextWith(cloud){
     var now = new Date(); var today = localDay(now); cloud = cloud || {};
     var seen = {};
@@ -2095,9 +2124,19 @@
     var lib = readJSON('gradcon-rates-library') || {}; var global = lib.global || {};
     var aiJobs = (readJSON('gradcon-ai-jobs') || cloud.aiJobs || []).filter(function(j){ return j && !j.deleted; }).map(function(j){ return { id: j.id, name: j.name, kind: j.kind, status: j.status, files: j.files, exported: j.exported, updatedAt: j.updatedAt }; });
     var planner = readJSON('gradcon-costplanner-state'); var plannerProjects = planner && Array.isArray(planner.projects) ? planner.projects.slice(0, 30).map(function(p){ return { name: p.name || p.title || null, status: p.status || null }; }) : null;
-    var ctx = { today: today, user: currentUser, userFirstName: firstName(currentUser), openApp: (loadSession() || {}).activeApp || 'dashboard', quotes: quotes, takeoffs: takeoffs, ratesCount: Object.keys(rates).length, rateValidity: validity, ratesLibraryGlobal: global, aiJobs: aiJobs, costPlannerProjects: plannerProjects, cloudRead: !!(cloud && cloud.index) };
+    // The Register (tile 08): every organisation with its category, trade, what it does and does
+    // not do, last contact and the primary contact — so "who installs screw piles?" and "when did
+    // we last hear from BCS?" are answerable. Read-only, like everything else here.
+    var regBlob = readJSON('gradcon-register') || cloud.register || null;
+    var register = regBlob && Array.isArray(regBlob.orgs) ? regBlob.orgs.map(function(o){
+      var caps = {}; Object.keys(o.capabilities || {}).forEach(function(k){ if(o.capabilities[k] && o.capabilities[k].status !== 'unknown') caps[k] = o.capabilities[k].status; });
+      var pc = (o.contacts || []).filter(function(c){ return c.primary; })[0] || (o.contacts || [])[0] || null;
+      return { name: o.name, category: o.category, tradeGroup: o.tradeGroup || '', trade: o.trade, status: o.status, rating: o.rating || 0, score: o.score, tier: o.tier, lastContact: o.lastContact, lastDirection: o.lastContactDir, medianReplyHrs: o.medianReplyHrs, does: caps, contact: pc ? { name: pc.name, role: pc.role, email: pc.email, phone: pc.mobile || pc.phone } : null, projects: (o.projects || []).slice(0, 6), followUp: o.followUp && o.followUp.date ? o.followUp : null };
+    }) : null;
+    var ctx = { today: today, user: currentUser, userFirstName: firstName(currentUser), openApp: (loadSession() || {}).activeApp || 'dashboard', register: register, quotes: quotes, takeoffs: takeoffs, ratesCount: Object.keys(rates).length, rateValidity: validity, ratesLibraryGlobal: global, aiJobs: aiJobs, costPlannerProjects: plannerProjects, cloudRead: !!(cloud && cloud.index) };
     var json = JSON.stringify(ctx);
     if(json.length > 60000){ ctx.quotes.forEach(function(q){ delete q.elementList; }); ctx.takeoffs.forEach(function(t){ delete t.elementList; }); json = JSON.stringify(ctx); }
+    if(json.length > 60000 && ctx.register){ ctx.register.forEach(function(o){ delete o.projects; delete o.contact; }); json = JSON.stringify(ctx); }
     if(json.length > 60000){ ctx.quotes = ctx.quotes.slice(0, 40); ctx.takeoffs = ctx.takeoffs.slice(0, 20); ctx.truncated = true; }
     return ctx;
   }

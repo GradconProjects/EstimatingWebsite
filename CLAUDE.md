@@ -1280,6 +1280,89 @@ quote helpers; `test-drive-files.mjs` proves the drawer, the card picker, the
 Settings panel, the badge and the AI Engine picker against a mocked
 `/api/drive`.
 
+## The Register (tile 08): contractors, suppliers, consultants and clients
+
+Grady, 23 Oct 2026: "i want the register included in the gradcon app. same
+level as the quotes, estimating, etc. … fully editable and well categorised";
+then "the foundation contractors, make sure you highlight the ones that dont
+do screw piles and vice versa or both. so you understand the level of details
+that i seek". `portal/register.html` is its own vanilla app (payload
+`__REGISTER_B64__`, menu key `register`, tile 08, Settings "open after
+sign-in" option), inlined by `scripts/assemble-portal.mjs` with its seed
+`portal/register-seed.js` (the way `estimates-schema.js` is). Rules:
+
+1. **One cloud row, merged per organisation.** `gradcon-register` in
+   `estimator_kv` = `{version, orgs, tombstones, log, updatedAt, updatedBy}`
+   with a localStorage mirror under the same key. `mergeStates(a, b)` is the
+   ONE merge: the newer `updatedAt` copy of each organisation wins, a
+   tombstone newer than the organisation removes it (so a removal never
+   comes back from another device), the change log is the union. The tab
+   never writes before it has read the cloud row (or a positive "no row");
+   `pushNow` re-reads and merges before every write (never a blind
+   overwrite); a 20 s stamp poll pulls another device's edits. A failed
+   fetch is never "no row". `readLocal()` answers null when nothing is
+   stored — on 23 Oct 2026 a blank-normalised local copy once hid the seed.
+2. **The seed is a starting point, read once.** `register-seed.js`
+   (`REGISTER_SEED`, `REGISTER_CAPABILITIES`, `REGISTER_TRADE_GROUPS`) was
+   built by a one-off script from three READ-ONLY sources: the projects@
+   mailbox (818 messages, drafts and system mail excluded, the estimators'
+   own personal addresses excluded — `verify.mjs` checks), the 23 Oct 2026
+   contractor/supplier workbook (trades, websites, projects, people where the
+   mailbox read did not reach) and the Project Management register's seed
+   rows (the two `RegisterTab`s in `PlannerView.jsx` stay, with a note
+   pointing at the Register). It is used only on an install with no row;
+   "Add missing from list" adds seed organisations that are absent and not
+   tombstoned, never overwriting. Regenerate the file from the script, never
+   hand-edit it.
+3. **Supply chain and clients are kept apart.** `category` ∈ subcontractor /
+   supplier / consultant / service (side `supply`) · builder / client (side
+   `client`) · other. The tabs are Supply chain · Clients · Everyone · People
+   (every contact across organisations) · Follow-ups · How this register
+   works. Supply-side organisations also carry a `tradeGroup` (piling,
+   formwork, concreting, pumping, pt, screed, waterproofing, earthworks, reo,
+   premix, foam, consumables, plant, estimating, other).
+4. **Capabilities are what THEY said, never what Gradcon asked for.**
+   `org.capabilities[key] = {status: "yes" | "no" | "unknown", evidence, by}`
+   over the sixteen `REGISTER_CAPABILITIES` (screw piles, bored piers, CFA,
+   retention piling, shotcrete, capping beams, anchors, formwork, pumping,
+   placement, PT, waterproofing, screed, reo, premix, excavation). The seed
+   reads a contractor's own sentences (the part before any quoted reply) and
+   quotes the sentence with its date; stated facts are pinned by hand
+   (`CAPABILITY_FACTS` in the build script): BCS "It does have 15 screw piles
+   which we do not install" → screw `no`; Allstate quotes screw piles as the
+   alternative wherever bored piers are specified → screw `yes`, bored `no`;
+   DMAC bored / CFA / retention / shotcrete / capping `yes`, screw `unknown`
+   (no screw-pile correspondence). A piling-group organisation always carries
+   the four piling keys, `unknown` when unstated. The list row shows ✓ / ✗
+   (struck through) / ? chips; the **piling matrix** (shown when the Piling
+   trade or a capability filter is on) puts the foundation contractors side
+   by side; the capability filter answers "who does screw piles / who does
+   NOT / who hasn't said"; a change in the row's grid is stamped with the
+   account and logged.
+5. **The evidence score is correspondence, never performance.** 0–100 =
+   volume (6·ln(1+emails), ≤30) + threads (5 each, ≤20) + two-way (15) +
+   their median reply time (≤24 h 15 / ≤72 h 10 / else 5) + recency (≤30 d
+   20 / ≤90 d 14 / ≤180 d 8 / else 2); tiers A ≥80, B ≥60, C ≥40, D. The
+   basis is printed on every row (`scoreBasis`). **Grady's star rating** is
+   separate and never computed. "Ball with Gradcon" = their email is the last
+   in the thread, 3+ days; "Waiting on them" = Gradcon wrote last, 3+ days
+   (7+ on Follow-ups); "Going cold" = 90+ days. Compliance (ABN, GST,
+   insurances, licences, payment terms, last rate) is Grady's to fill —
+   the register states it is unverified until then.
+6. **Mail is read only when asked, and never written.** "Check mail now" on a
+   row and "Check mail for N shown" POST `/api/gmail` `{action: "list", q:
+   "{from:@domain to:@domain cc:@domain …}", max: 8}` through the portal's
+   Google connection (read-only), move `lastContact` / `lastContactDir` /
+   `lastMailId` to the newest message, add its subject to `threads` and log
+   the move. Nothing runs on a timer. Gmail links open the mailbox
+   (`#all/<id>`, `#search/<q>`). The Gradcon AI chat context carries the
+   register (`register` in `assistantContextWith`: category, trade, does /
+   does not, last contact, primary contact) — read-only.
+`test-register.mjs` proves the tile, the matrix facts, the filter, the edit
+trail, the mailbox check, the three tabs and the cloud round trip on a mock
+cloud; `verify.mjs` pins the seed facts, the shapes, the wiring and the
+merge.
+
 ## AI Engine (tile 07) and the Gradcon AI chat
 
 Grady, 10 Oct 2026: "dont touch the existing app. rather create another
