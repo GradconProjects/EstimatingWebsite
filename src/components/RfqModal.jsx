@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { X, Send, Check, ChevronLeft, Paperclip, Loader2, AlertTriangle, Mail } from "lucide-react";
-import { RFQ_PACKAGES, packageByKey, packageLabel, suggestPackages, contractorsFor, rfqContact, rfqDrafts, rfqText, rfqSubject, elementScope, dayPlus, fmtDay, rfqRecord, attachmentOptions, driveFolderOptions, missingAttachClasses, ATTACH_CLASSES } from "../lib/rfq.js";
+import { RFQ_PACKAGES, packageByKey, packageLabel, suggestPackages, contractorsFor, rfqContact, rfqDrafts, rfqText, rfqSubject, elementScope, dayPlus, rfqRecord, attachmentOptions, driveFolderOptions, missingAttachClasses } from "../lib/rfq.js";
 import { readRegister, registerOrgs } from "../lib/registerStore.js";
 import { readTakeoffForProject } from "../lib/estimatesRead.js";
 import { driveApi } from "../lib/driveFiles.js";
@@ -30,11 +30,10 @@ export default function RfqModal({ quote, items, rates, projectScope, elementTyp
   const [takeoff, setTakeoff] = useState(null);
   const [mail, setMail] = useState(null); // /api/google-auth status
   const [selected, setSelected] = useState(() => new Set(initialItemIds || items.map((i) => i.id)));
-  const [pkgKey, setPkgKey] = useState("");
+  const [pkgKeys, setPkgKeys] = useState(() => new Set()); // several packages at once; each with its own contractors
   const [pkgCustom, setPkgCustom] = useState("");
-  const [orgIds, setOrgIds] = useState(() => new Set());
-  const [showNot, setShowNot] = useState(false);
-  const [search, setSearch] = useState("");
+  const [picks, setPicks] = useState(() => ({})); // pkgKey → Set of orgIds
+  const [showNot, setShowNot] = useState("");
   const [due, setDue] = useState(() => dayPlus(7));
   const [sender, setSender] = useState(() => defaultSender());
   const [extraNotes, setExtraNotes] = useState("");
@@ -51,22 +50,28 @@ export default function RfqModal({ quote, items, rates, projectScope, elementTyp
   const typeName = (item) => { const t = elementTypes.find((x) => x.id === item.typeId); return t ? t.name : ""; };
   const chosenItems = useMemo(() => items.filter((i) => selected.has(i.id)), [items, selected]);
   const suggested = useMemo(() => suggestPackages(chosenItems, typeName), [chosenItems]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { if (!pkgKey && suggested.length) setPkgKey(suggested[0]); }, [suggested, pkgKey]);
-  const pkg = packageByKey(pkgKey || "other");
-  const pkgLabelNow = packageLabel(pkgKey || "other", pkgCustom);
+  useEffect(() => { if (!pkgKeys.size && suggested.length) setPkgKeys(new Set([suggested[0]])); }, [suggested, pkgKeys.size]);
+  const pkgs = useMemo(() => RFQ_PACKAGES.filter((p) => pkgKeys.has(p.key)), [pkgKeys]);
+  const pkgKeyList = useMemo(() => pkgs.map((p) => p.key), [pkgs]);
+  const labelOf = (p) => packageLabel(p.key, pkgCustom);
+  const pkgLabelNow = pkgs.map(labelOf).join(", ") || "—";
   const orgs = registerOrgs(register);
-  const groups = useMemo(() => contractorsFor(orgs, pkg), [orgs, pkg]);
-  const searchHits = useMemo(() => { const q = search.trim().toLowerCase(); if (!q) return []; return orgs.filter((o) => !orgIds.has(o.id) && [o.name, o.trade, ...(o.emails || [])].join(" ").toLowerCase().includes(q)).slice(0, 8); }, [search, orgs, orgIds]);
+  const groupsFor = useMemo(() => Object.fromEntries(pkgs.map((p) => [p.key, contractorsFor(orgs, p)])), [orgs, pkgs]);
+  const picked = (key) => picks[key] || new Set();
+  const togglePick = (key, id) => setPicks((cur) => { const n = new Set(cur[key] || []); n.has(id) ? n.delete(id) : n.add(id); return { ...cur, [key]: n }; });
+  const [searches, setSearches] = useState({});
+  const hitsFor = (key) => { const q = String(searches[key] || "").trim().toLowerCase(); if (!q) return []; return orgs.filter((o) => !picked(key).has(o.id) && [o.name, o.trade, ...(o.emails || [])].join(" ").toLowerCase().includes(q)).slice(0, 8); };
+  const totalPicks = pkgs.reduce((n, p) => n + picked(p.key).size, 0);
   const options = useMemo(() => {
     const base = attachmentOptions(quote, chosenItems, (m) => markupSrc(m));
     const seen = new Set(base.map((o) => o.fileId).filter(Boolean));
-    const folder = driveFolderOptions((driveFolder && driveFolder.files) || [], pkg.key).filter((o) => !seen.has(o.fileId));
+    const folder = driveFolderOptions((driveFolder && driveFolder.files) || [], pkgKeyList).filter((o) => !seen.has(o.fileId));
     // the project's already-attached Drive files are tagged the same way
-    return [...base.map((o) => (o.kind === "drive" ? { ...o, tags: classifyTags(o.name, pkg.key), auto: classifyTags(o.name, pkg.key).length > 0 } : o)), ...folder];
-  }, [quote, chosenItems, driveFolder, pkg.key]);
+    return [...base.map((o) => (o.kind === "drive" ? { ...o, tags: classifyTags(o.name, pkgKeyList), auto: classifyTags(o.name, pkgKeyList).length > 0 } : o)), ...folder];
+  }, [quote, chosenItems, driveFolder, pkgKeyList]);
   // the relevant files are ticked on their own once the folder has been read (and again when the package changes)
   useEffect(() => { if (!driveFolder || autoDone) return; setAttach(new Set(options.filter((o) => o.auto || o.kind === "markup").map((o) => o.id))); setAutoDone(true); }, [driveFolder, options, autoDone]);
-  useEffect(() => { setAutoDone(false); }, [pkg.key]);
+  useEffect(() => { setAutoDone(false); }, [pkgKeyList.join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
   const missing = useMemo(() => missingAttachClasses(options, attach), [options, attach]);
 
   useEffect(() => {
@@ -95,7 +100,6 @@ export default function RfqModal({ quote, items, rates, projectScope, elementTyp
 
   const toggle = (set, id, setter) => { const n = new Set(set); n.has(id) ? n.delete(id) : n.add(id); setter(n); };
   const canSend = !!(mail && mail.configured && mail.connected && mail.send);
-  const pickedOrgs = orgs.filter((o) => orgIds.has(o.id));
 
   async function buildDrafts() {
     setError(""); setBuilding(true);
@@ -108,13 +112,19 @@ export default function RfqModal({ quote, items, rates, projectScope, elementTyp
       setResolvedFiles(files);
       try { localStorage.setItem(SENDER_KEY, JSON.stringify(sender)); } catch { /* ignore */ }
       const scopes = chosenItems.map((item) => elementScope(item, rates, projectScope, typeName(item), takeoff ? takeoff.instances : null));
-      setDrafts(rfqDrafts({ orgs: pickedOrgs, projectName: quote.projectName || "Untitled project", siteAddress: quote.siteAddress || "", clientName: quote.clientName || "", pkgLabel: pkgLabelNow, scopes, due, sender, attachments: files, extraNotes }));
+      // one draft per (package, contractor): a contractor ticked under two packages gets two RFQs, each about its own package
+      const all = [];
+      for (const p of pkgs) {
+        const pickedOrgs = orgs.filter((o) => picked(p.key).has(o.id));
+        for (const d of rfqDrafts({ orgs: pickedOrgs, projectName: quote.projectName || "Untitled project", siteAddress: quote.siteAddress || "", clientName: quote.clientName || "", pkgLabel: labelOf(p), scopes, due, sender, attachments: files, extraNotes })) all.push({ ...d, id: `d-${p.key}-${d.orgId}`, pkgKey: p.key, pkgLabel: labelOf(p) });
+      }
+      setDrafts(all);
       setCurrent(0); setStep("drafts");
     } catch (e) { setError(e.needsReconnect ? "The Google connection needs a reconnect for Drive (Settings → Google mail & Drive) before a Drive file can be attached." : e.message || "could not build the drafts"); }
     finally { setBuilding(false); }
   }
   const patchDraft = (i, patch) => setDrafts((ds) => ds.map((d, j) => (j === i ? { ...d, ...patch } : d)));
-  const redraft = (i) => { const d = drafts[i]; const org = orgs.find((o) => o.id === d.orgId); if (!org) return; const scopes = chosenItems.map((item) => elementScope(item, rates, projectScope, typeName(item), takeoff ? takeoff.instances : null)); patchDraft(i, { subject: rfqSubject({ pkgLabel: pkgLabelNow, projectName: quote.projectName || "Untitled project" }), text: rfqText({ projectName: quote.projectName || "Untitled project", siteAddress: quote.siteAddress || "", clientName: quote.clientName || "", pkgLabel: pkgLabelNow, org, contact: rfqContact(org), scopes, due, sender, attachments: resolvedFiles, extraNotes }), approved: false }); };
+  const redraft = (i) => { const d = drafts[i]; const org = orgs.find((o) => o.id === d.orgId); if (!org) return; const scopes = chosenItems.map((item) => elementScope(item, rates, projectScope, typeName(item), takeoff ? takeoff.instances : null)); patchDraft(i, { subject: rfqSubject({ pkgLabel: d.pkgLabel, projectName: quote.projectName || "Untitled project" }), text: rfqText({ projectName: quote.projectName || "Untitled project", siteAddress: quote.siteAddress || "", clientName: quote.clientName || "", pkgLabel: d.pkgLabel, org, contact: rfqContact(org), scopes, due, sender, attachments: resolvedFiles, extraNotes }), approved: false }); };
 
   async function sendApproved() {
     const todo = drafts.map((d, i) => ({ d, i })).filter(({ d }) => d.approved && d.status !== "sent");
@@ -133,13 +143,15 @@ export default function RfqModal({ quote, items, rates, projectScope, elementTyp
     }
     setSending(false);
     const ok = results.filter((r) => r.status === "sent");
-    if (ok.length && onSent) onSent(rfqRecord({ pkgKey: pkg.key, pkgLabel: pkgLabelNow, elementIds: chosenItems.map((i) => i.id), due, by: user, sent: ok, attachments: resolvedFiles }), ok);
+    // one record per package on the project
+    const records = pkgs.map((p) => ({ p, sent: ok.filter((r) => r.pkgKey === p.key) })).filter((x) => x.sent.length).map(({ p, sent }) => rfqRecord({ pkgKey: p.key, pkgLabel: labelOf(p), elementIds: chosenItems.map((i) => i.id), due, by: user, sent, attachments: resolvedFiles }));
+    if (ok.length && onSent) onSent(records, ok);
     setStep("done");
   }
 
-  const OrgRow = ({ o, tag }) => { const c = rfqContact(o); return (
-    <label className={`flex items-start gap-2 px-2 py-1.5 rounded border ${orgIds.has(o.id) ? "border-orange-400 bg-orange-50" : "border-neutral-200 bg-white"} ${c.email ? "cursor-pointer" : "opacity-60"}`} data-testid={`rfq-org-${o.id}`}>
-      <input type="checkbox" className="mt-1" checked={orgIds.has(o.id)} disabled={!c.email} onChange={() => toggle(orgIds, o.id, setOrgIds)} />
+  const OrgRow = ({ o, tag, pkgKey }) => { const c = rfqContact(o); const on = picked(pkgKey).has(o.id); return (
+    <label className={`flex items-start gap-2 px-2 py-1.5 rounded border ${on ? "border-orange-400 bg-orange-50" : "border-neutral-200 bg-white"} ${c.email ? "cursor-pointer" : "opacity-60"}`} data-testid={`rfq-org-${pkgKey}-${o.id}`}>
+      <input type="checkbox" className="mt-1" checked={on} disabled={!c.email} onChange={() => togglePick(pkgKey, o.id)} />
       <span className="min-w-0 flex-1 text-[12.5px]">
         <span className="font-semibold">{o.name}</span>{tag && <span className={`ml-1.5 text-[10px] font-bold uppercase tracking-wider px-1.5 rounded ${tag === "does" ? "bg-emerald-100 text-emerald-800" : tag === "not" ? "bg-red-100 text-red-700" : "bg-neutral-100 text-neutral-500"}`}>{tag === "does" ? "does this" : tag === "not" ? "says they don't" : "not stated"}</span>}
         <span className="block text-neutral-500">{o.trade}</span>
@@ -182,12 +194,13 @@ export default function RfqModal({ quote, items, rates, projectScope, elementTyp
                 </div>
               </div>
               <div>
-                <div className="text-[11px] uppercase tracking-wider text-neutral-500 font-semibold mb-1">Package</div>
-                <select value={pkgKey || "other"} onChange={(e) => setPkgKey(e.target.value)} className="w-full border border-neutral-300 rounded px-2 py-1.5 text-[13px]" data-testid="rfq-package">
-                  {suggested.length > 0 && <optgroup label="Suggested from these elements">{suggested.map((k) => <option key={k} value={k}>{packageByKey(k).label}</option>)}</optgroup>}
-                  <optgroup label="Every package">{RFQ_PACKAGES.filter((p) => !suggested.includes(p.key)).map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}</optgroup>
-                </select>
-                {pkgKey === "other" && <input value={pkgCustom} onChange={(e) => setPkgCustom(e.target.value)} placeholder="Name the package, e.g. Precast Panels" className="mt-1 w-full border border-neutral-300 rounded px-2 py-1.5 text-[13px]" data-testid="rfq-package-name" />}
+                <div className="text-[11px] uppercase tracking-wider text-neutral-500 font-semibold mb-1">Packages <span className="normal-case tracking-normal font-normal text-neutral-400">— tick every package to ask for; each gets its own contractors and its own RFQ</span></div>
+                <div className="flex flex-wrap gap-1" data-testid="rfq-packages">
+                  {[...suggested.map((k) => packageByKey(k)), ...RFQ_PACKAGES.filter((p) => !suggested.includes(p.key))].map((p) => (
+                    <button key={p.key} type="button" onClick={() => toggle(pkgKeys, p.key, setPkgKeys)} className={`text-[12px] px-2 py-1 rounded-full border ${pkgKeys.has(p.key) ? "bg-neutral-900 border-neutral-900 text-white" : "bg-white border-neutral-300 text-neutral-700 hover:border-neutral-800"}`} data-testid={`rfq-package-${p.key}`} data-on={pkgKeys.has(p.key) ? "1" : "0"} title={suggested.includes(p.key) ? "Suggested from the chosen elements" : ""}>{p.label}{suggested.includes(p.key) ? " ★" : ""}</button>
+                  ))}
+                </div>
+                {pkgKeys.has("other") && <input value={pkgCustom} onChange={(e) => setPkgCustom(e.target.value)} placeholder="Name the package, e.g. Precast Panels" className="mt-1 w-full border border-neutral-300 rounded px-2 py-1.5 text-[13px]" data-testid="rfq-package-name" />}
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <label className="text-[12px] text-neutral-600">Quotes required by<input type="date" value={due} onChange={(e) => setDue(e.target.value)} className="mt-0.5 w-full border border-neutral-300 rounded px-2 py-1.5 text-[13px]" data-testid="rfq-due" /></label>
@@ -213,24 +226,27 @@ export default function RfqModal({ quote, items, rates, projectScope, elementTyp
                 {driveFolder && driveFolder.id && missing.length > 0 && <div className="text-[12px] text-amber-800 mt-1" data-testid="rfq-attach-missing">Not found in the folder, not attached: {missing.map((c) => c.label).join(", ")} — add it to Drive, or say so in the notes.</div>}
               </div>
             </div>
-            <div className="space-y-2">
-              <div className="text-[11px] uppercase tracking-wider text-neutral-500 font-semibold">Contractors for {pkgLabelNow}{register ? "" : " — reading the Register…"}</div>
-              {register && groups.does.length + groups.unknown.length + groups.not.length === 0 && <div className="text-[12px] text-neutral-500">The Register has nobody in this trade yet — search for one below, or add them in the Register first.</div>}
-              <div className="space-y-1 max-h-[22rem] overflow-y-auto pr-1">
-                {groups.does.map((o) => <OrgRow key={o.id} o={o} tag={pkg.cap ? "does" : ""} />)}
-                {groups.unknown.map((o) => <OrgRow key={o.id} o={o} tag="unknown" />)}
-                {groups.not.length > 0 && (
-                  <button onClick={() => setShowNot((v) => !v)} className="text-[11.5px] text-neutral-500 underline">{showNot ? "Hide" : "Show"} {groups.not.length} who said they do not do this</button>
-                )}
-                {showNot && groups.not.map((o) => <OrgRow key={o.id} o={o} tag="not" />)}
+            <div className="space-y-3">
+              {!register && <div className="text-[12px] text-neutral-500">Reading the Register…</div>}
+              {register && pkgs.length === 0 && <div className="text-[12px] text-neutral-500">Tick a package to see its contractors.</div>}
+              <div className="space-y-3 max-h-[30rem] overflow-y-auto pr-1">
+                {pkgs.map((p) => { const g = groupsFor[p.key]; const notOpen = showNot === p.key; return (
+                  <div key={p.key} className="rounded-lg border border-neutral-200 p-2 space-y-1" data-testid={`rfq-contractors-${p.key}`}>
+                    <div className="text-[11px] uppercase tracking-wider text-neutral-500 font-semibold">Contractors for {labelOf(p)} <span className="normal-case tracking-normal font-normal text-neutral-400">· {picked(p.key).size} ticked</span></div>
+                    {register && g.does.length + g.unknown.length + g.not.length === 0 && <div className="text-[12px] text-neutral-500">The Register has nobody in this trade yet — search below, or add them in the Register first.</div>}
+                    {g.does.map((o) => <OrgRow key={o.id} o={o} tag={p.cap ? "does" : ""} pkgKey={p.key} />)}
+                    {g.unknown.map((o) => <OrgRow key={o.id} o={o} tag="unknown" pkgKey={p.key} />)}
+                    {g.not.length > 0 && <button onClick={() => setShowNot(notOpen ? "" : p.key)} className="text-[11.5px] text-neutral-500 underline">{notOpen ? "Hide" : "Show"} {g.not.length} who said they do not do this</button>}
+                    {notOpen && g.not.map((o) => <OrgRow key={o.id} o={o} tag="not" pkgKey={p.key} />)}
+                    <input value={searches[p.key] || ""} onChange={(e) => setSearches({ ...searches, [p.key]: e.target.value })} placeholder={`Add any organisation for ${labelOf(p)}…`} className="w-full border border-neutral-300 rounded px-2 py-1 text-[12px]" data-testid={`rfq-search-${p.key}`} />
+                    {hitsFor(p.key).map((o) => <OrgRow key={o.id} o={o} tag="" pkgKey={p.key} />)}
+                  </div>
+                ); })}
               </div>
-              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Add any organisation from the Register…" className="w-full border border-neutral-300 rounded px-2 py-1.5 text-[12.5px]" data-testid="rfq-search" />
-              {searchHits.length > 0 && <div className="space-y-1">{searchHits.map((o) => <OrgRow key={o.id} o={o} tag="" />)}</div>}
-              {pickedOrgs.length > 0 && groups.does.concat(groups.unknown, groups.not).every((o) => !orgIds.has(o.id)) === false && null}
-              <div className="pt-2 flex items-center justify-between gap-2">
-                <span className="text-[12px] text-neutral-500">{pickedOrgs.length} contractor{pickedOrgs.length === 1 ? "" : "s"} · {chosenItems.length} element{chosenItems.length === 1 ? "" : "s"}{takeoff ? " · Estimates takeoff found" : ""}</span>
-                <button onClick={buildDrafts} disabled={building || !pickedOrgs.length || !chosenItems.length} className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-orange-600 hover:bg-orange-700 text-white text-sm font-medium disabled:opacity-40" data-testid="rfq-build">
-                  {building ? <Loader2 size={14} className="animate-spin" /> : <Mail size={14} />} Build {pickedOrgs.length || ""} draft{pickedOrgs.length === 1 ? "" : "s"}
+              <div className="pt-1 flex items-center justify-between gap-2">
+                <span className="text-[12px] text-neutral-500">{totalPicks} RFQ{totalPicks === 1 ? "" : "s"} across {pkgs.length} package{pkgs.length === 1 ? "" : "s"} · {chosenItems.length} element{chosenItems.length === 1 ? "" : "s"}{takeoff ? " · Estimates takeoff found" : ""}</span>
+                <button onClick={buildDrafts} disabled={building || !totalPicks || !chosenItems.length} className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-orange-600 hover:bg-orange-700 text-white text-sm font-medium disabled:opacity-40" data-testid="rfq-build">
+                  {building ? <Loader2 size={14} className="animate-spin" /> : <Mail size={14} />} Build {totalPicks || ""} draft{totalPicks === 1 ? "" : "s"}
                 </button>
               </div>
             </div>
@@ -241,8 +257,9 @@ export default function RfqModal({ quote, items, rates, projectScope, elementTyp
           <div className="grid md:grid-cols-[16rem_1fr] gap-4 p-5">
             <div className="space-y-1">
               {drafts.map((d, i) => (
-                <button key={d.id} onClick={() => setCurrent(i)} className={`w-full text-left px-2 py-1.5 rounded border text-[12.5px] ${i === current ? "border-orange-400 bg-orange-50" : "border-neutral-200 bg-white"}`} data-testid={`rfq-draft-${d.orgId}`} data-approved={d.approved ? "1" : "0"} data-status={d.status}>
+                <button key={d.id} onClick={() => setCurrent(i)} className={`w-full text-left px-2 py-1.5 rounded border text-[12.5px] ${i === current ? "border-orange-400 bg-orange-50" : "border-neutral-200 bg-white"}`} data-testid={`rfq-draft-${d.orgId}`} data-pkg={d.pkgKey} data-approved={d.approved ? "1" : "0"} data-status={d.status}>
                   <span className="flex items-center gap-1.5"><span className={`w-4 h-4 rounded border flex items-center justify-center ${d.approved ? "bg-emerald-500 border-emerald-500 text-white" : "border-neutral-300"}`}>{d.approved && <Check size={11} />}</span><span className="font-semibold truncate">{d.orgName}</span></span>
+                  {pkgs.length > 1 && <span className="block text-[11px] text-blue-800 font-semibold">{d.pkgLabel}</span>}
                   <span className="block text-neutral-500 truncate">{d.contactName ? d.contactName + " · " : ""}{d.email}</span>
                   {d.status === "sent" && <span className="text-emerald-700 font-semibold">sent</span>}{d.status === "failed" && <span className="text-red-700 font-semibold">failed: {d.error}</span>}
                 </button>
@@ -254,7 +271,7 @@ export default function RfqModal({ quote, items, rates, projectScope, elementTyp
             </div>
             {(() => { const d = drafts[current]; if (!d) return null; return (
               <div className="space-y-2">
-                <div className="text-[12px] text-neutral-600">To: <b>{d.contactName || d.orgName}</b> &lt;{d.email}&gt; — {d.orgName}{d.trade ? ` · ${d.trade}` : ""}{resolvedFiles.length ? ` · ${resolvedFiles.length} attachment${resolvedFiles.length === 1 ? "" : "s"}` : ""}</div>
+                <div className="text-[12px] text-neutral-600"><b>{d.pkgLabel}</b> · To: <b>{d.contactName || d.orgName}</b> &lt;{d.email}&gt; — {d.orgName}{d.trade ? ` · ${d.trade}` : ""}{resolvedFiles.length ? ` · ${resolvedFiles.length} attachment${resolvedFiles.length === 1 ? "" : "s"}` : ""}</div>
                 <input value={d.subject} onChange={(e) => patchDraft(current, { subject: e.target.value, approved: false })} className="w-full border border-neutral-300 rounded px-2 py-1.5 text-[13px] font-semibold" data-testid="rfq-subject" />
                 <textarea value={d.text} onChange={(e) => patchDraft(current, { text: e.target.value, approved: false })} rows={22} className="w-full border border-neutral-300 rounded px-3 py-2 text-[12.5px] font-mono leading-snug" data-testid="rfq-text" />
                 <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -276,7 +293,7 @@ export default function RfqModal({ quote, items, rates, projectScope, elementTyp
           <div className="p-5 space-y-2" data-testid="rfq-done">
             <div className="font-semibold">{drafts.filter((d) => d.status === "sent").length} RFQ{drafts.filter((d) => d.status === "sent").length === 1 ? "" : "s"} sent for {pkgLabelNow}</div>
             <ul className="text-[12.5px] space-y-1">
-              {drafts.map((d) => <li key={d.id} className={d.status === "sent" ? "text-emerald-800" : d.status === "failed" ? "text-red-700" : "text-neutral-500"}>{d.status === "sent" ? "✓" : d.status === "failed" ? "✗" : "–"} {d.orgName} — {d.email}{d.status === "failed" ? ` — ${d.error}` : d.status !== "sent" ? " — not approved, not sent" : ""}</li>)}
+              {drafts.map((d) => <li key={d.id} className={d.status === "sent" ? "text-emerald-800" : d.status === "failed" ? "text-red-700" : "text-neutral-500"}>{d.status === "sent" ? "✓" : d.status === "failed" ? "✗" : "–"} {d.pkgLabel}: {d.orgName} — {d.email}{d.status === "failed" ? ` — ${d.error}` : d.status !== "sent" ? " — not approved, not sent" : ""}</li>)}
             </ul>
             <div className="text-[12px] text-neutral-500">Recorded on this project (checklist step 05 ticked) and on each contractor in the Register as their last contact.</div>
             <div className="flex gap-2 pt-1"><button onClick={() => setStep("drafts")} className="text-[12px] px-3 py-1.5 rounded border border-neutral-300">Back to the drafts</button><button onClick={onClose} className="text-[12px] px-3 py-1.5 rounded bg-neutral-900 text-white">Close</button></div>

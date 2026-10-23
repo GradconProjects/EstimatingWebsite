@@ -1450,7 +1450,12 @@ bare minimum should be archi, struct, soil report". Rules:
    chosen elements (`markupSrc`) are offered too.
 4. **`RfqModal.jsx`** (editor header "RFQ (n)" button `rfq-button`, every
    element card's mail button `element-rfq` opening on that element): step 1
-   elements, package (suggested first), due date (`dayPlus(7)`, business
+   elements, PACKAGES as chips — several at once (Grady, 23 Oct 2026: "i
+   should be able to select more than one package"; suggested ones first,
+   ★), each ticked package with its OWN contractor section and search
+   (`picks`: pkgKey → orgIds), so a contractor ticked under two packages
+   gets two RFQs each about its own package; one `quote.rfqs` record per
+   package; due date (`dayPlus(7)`, business
    day), signatory (default "Boma Ipalibo / Gradcon Concrete Constructions /
    projects@gradcon.com.au" — `DEFAULT_SIGNATORY`, Grady 23 Oct 2026; a
    retyped name is remembered per browser, `gradcon-rfq-sender`), notes for

@@ -1343,9 +1343,9 @@ function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, rate
           initialItemIds={rfq.itemIds}
           user={portalUser() || ""}
           onClose={() => setRfq(null)}
-          onSent={(record, sent) => {
+          onSent={(records, sent) => {
             const by = workUser(portalUser());
-            setQuote((q) => ({ ...q, ...rfqPatch(q, record), ...checklistPatch(q, "rfq", { done: true, note: [(q.checklist && q.checklist.rfq && q.checklist.rfq.note) || "", `${record.package}: ${sent.map((d) => d.orgName).join(", ")}`].filter(Boolean).join(" · ") }, by) }));
+            setQuote((q) => { let next = q; for (const record of records) next = { ...next, ...rfqPatch(next, record) }; const note = [(q.checklist && q.checklist.rfq && q.checklist.rfq.note) || "", ...records.map((r) => `${r.package}: ${r.recipients.map((d) => d.orgName).join(", ")}`)].filter(Boolean).join(" · "); return { ...next, ...checklistPatch(next, "rfq", { done: true, note }, by) }; });
             recordRegisterContacts(sent.map((d) => ({ orgId: d.orgId, subject: d.subject, threadId: d.threadId, messageId: d.messageId })), by).catch(() => {});
           }}
         />

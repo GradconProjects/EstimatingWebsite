@@ -181,7 +181,9 @@ export function classifyFile(name, folderName = "", pkgKey = "") {
   const hay = `${name || ""} ${folderName || ""}`;
   const tags = [];
   for (const c of ATTACH_CLASSES) { if (c.re && c.re.test(hay)) tags.push(c.key); }
-  const pw = PACKAGE_WORDS[pkgKey]; if (pw && pw.test(hay)) tags.push("pkg");
+  // one package or several (Grady, 23 Oct 2026: "i should be able to select more than one package")
+  const keys = Array.isArray(pkgKey) ? pkgKey : [pkgKey];
+  if (keys.some((k) => PACKAGE_WORDS[k] && PACKAGE_WORDS[k].test(hay))) tags.push("pkg");
   return tags;
 }
 const ATTACHABLE_KINDS = new Set(["pdf", "image", "doc", "sheet", "slides", "cad", "other"]);
