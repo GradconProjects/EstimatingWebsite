@@ -117,15 +117,20 @@ function takeoffLines(t) {
   return out;
 }
 /** The body of ONE RFQ: this contractor's name and contact, nobody else's. */
-export function rfqText({ projectName, siteAddress = "", clientName = "", pkgLabel, org, contact, scopes = [], due, sender = {}, attachments = [], extraNotes = "" }) {
+/* The lead time Gradcon asks for (Grady, 23 Oct 2026: "ask for min of 3 days from request for simple
+ * quotes and about 7 days for the complex one, i should be able to determine what is heavy or not"). */
+export const RFQ_LEAD = { simple: { days: 3, label: "Simple quote — 3 days" }, complex: { days: 7, label: "Complex quote — 7 days" } };
+const ATTACH_WORDS = { archi: "architectural drawings", struct: "structural drawings", soil: "soil / geotechnical report", pkg: "package drawings" };
+export const attachmentLabel = (a) => { const t = (a && a.tags ? a.tags : []).filter((k) => ATTACH_WORDS[k]).map((k) => ATTACH_WORDS[k]); return t.length ? `${a.name} (${t.join(", ")})` : a.name; };
+export function rfqText({ projectName, siteAddress = "", pkgLabel, org, contact, scopes = [], due, leadDays = 0, requestedOn = "", sender = {}, attachments = [], extraNotes = "" }) {
   const lines = [];
   lines.push(`Dear ${contact && contact.firstName ? contact.firstName : (org && org.name) || "Sir/Madam"},`, "");
   lines.push(`Gradcon Concrete Constructions invites ${org && org.name ? org.name : "you"} to submit a quotation for the ${pkgLabel} package on the project below.`, "");
   lines.push(`Project: ${projectName}`);
   if (siteAddress && siteAddress !== projectName) lines.push(`Site: ${siteAddress}`);
-  if (clientName) lines.push(`Builder / client: ${clientName}`);
   lines.push(`Package: ${pkgLabel}`);
-  if (due) lines.push(`Quotation required by: ${fmtDay(due)}, 5:00 pm`);
+  if (requestedOn) lines.push(`Request issued: ${fmtDay(requestedOn)}`);
+  if (due) { lines.push(`Quotation required by: ${fmtDay(due)}, 5:00 pm${leadDays ? ` (${leadDays} days from this request)` : ""}`); lines.push("If you can submit sooner, please do. If that date cannot be met, please reply with the date you can submit by."); }
   lines.push("", "SCOPE OF WORKS");
   if (!scopes.length) lines.push("  As per the attached documents.");
   for (const s of scopes) {
@@ -136,8 +141,8 @@ export function rfqText({ projectName, siteAddress = "", clientName = "", pkgLab
   }
   if (extraNotes && extraNotes.trim()) lines.push("", "NOTES", ...extraNotes.trim().split(/\r?\n/).map((l) => "  " + l));
   lines.push("", "DOCUMENTS");
-  if (attachments.length) { lines.push("  Attached to this email:"); for (const a of attachments) lines.push(`  - ${a.name}`); }
-  else lines.push("  Drawings and the geotechnical report are available on request.");
+  if (attachments.length) { lines.push("  Attached to this email:"); for (const a of attachments) lines.push(`  - ${attachmentLabel(a)}`); }
+  else lines.push("  No documents are attached to this email — they will follow separately.");
   lines.push("", "PLEASE INCLUDE IN YOUR QUOTATION",
     "  - Lump sum and unit rates, ex GST, with the basis of measurement",
     "  - Inclusions, exclusions and any assumptions or qualifications",
@@ -150,10 +155,10 @@ export function rfqText({ projectName, siteAddress = "", clientName = "", pkgLab
   return lines.join("\n");
 }
 /** One independent draft per organisation — built from the same facts, never shared text objects. */
-export function rfqDrafts({ orgs, projectName, siteAddress, clientName, pkgLabel, scopes, due, sender, attachments, extraNotes }) {
+export function rfqDrafts({ orgs, projectName, siteAddress, pkgLabel, scopes, due, leadDays, requestedOn, sender, attachments, extraNotes }) {
   return (orgs || []).map((org) => {
     const contact = rfqContact(org);
-    return { id: `d-${org.id}`, orgId: org.id, orgName: org.name, trade: org.trade || "", contactName: contact.name, contactId: contact.contactId, email: contact.email, subject: rfqSubject({ pkgLabel, projectName }), text: rfqText({ projectName, siteAddress, clientName, pkgLabel, org, contact, scopes, due, sender, attachments, extraNotes }), approved: false, status: "draft" };
+    return { id: `d-${org.id}`, orgId: org.id, orgName: org.name, trade: org.trade || "", contactName: contact.name, contactId: contact.contactId, email: contact.email, subject: rfqSubject({ pkgLabel, projectName }), text: rfqText({ projectName, siteAddress, pkgLabel, org, contact, scopes, due, leadDays, requestedOn, sender, attachments, extraNotes }), approved: false, status: "draft" };
   });
 }
 /** What a project remembers of an RFQ round, and the 05 checklist step it ticks. */

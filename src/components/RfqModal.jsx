@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { X, Send, Check, ChevronLeft, Paperclip, Loader2, AlertTriangle, Mail } from "lucide-react";
-import { RFQ_PACKAGES, packageByKey, packageLabel, suggestPackages, contractorsFor, rfqContact, rfqDrafts, rfqText, rfqSubject, elementScope, dayPlus, rfqRecord, attachmentOptions, driveFolderOptions, missingAttachClasses } from "../lib/rfq.js";
+import { RFQ_PACKAGES, RFQ_LEAD, packageByKey, packageLabel, suggestPackages, contractorsFor, rfqContact, rfqDrafts, rfqText, rfqSubject, elementScope, dayPlus, rfqRecord, attachmentOptions, driveFolderOptions, missingAttachClasses } from "../lib/rfq.js";
 import { readRegister, registerOrgs } from "../lib/registerStore.js";
 import { readTakeoffForProject } from "../lib/estimatesRead.js";
 import { driveApi } from "../lib/driveFiles.js";
@@ -34,7 +34,9 @@ export default function RfqModal({ quote, items, rates, projectScope, elementTyp
   const [pkgCustom, setPkgCustom] = useState("");
   const [picks, setPicks] = useState(() => ({})); // pkgKey → Set of orgIds
   const [showNot, setShowNot] = useState("");
-  const [due, setDue] = useState(() => dayPlus(7));
+  const [complexity, setComplexity] = useState("simple"); // simple = 3 days, complex = 7 — Grady decides what is heavy
+  const [due, setDue] = useState(() => dayPlus(RFQ_LEAD.simple.days));
+  const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
   const [sender, setSender] = useState(() => defaultSender());
   const [extraNotes, setExtraNotes] = useState("");
   const [attach, setAttach] = useState(() => new Set());
@@ -106,8 +108,8 @@ export default function RfqModal({ quote, items, rates, projectScope, elementTyp
     try {
       const files = [];
       for (const opt of options.filter((o) => attach.has(o.id))) {
-        if (opt.kind === "markup") files.push({ name: opt.name, url: opt.url });
-        else { const r = await driveApi({ action: "copy", id: opt.fileId, target: "preview" }); files.push({ name: opt.name, url: r.file.url }); }
+        if (opt.kind === "markup") files.push({ name: opt.name, url: opt.url, tags: ["pkg"] });
+        else { const r = await driveApi({ action: "copy", id: opt.fileId, target: "preview" }); files.push({ name: opt.name, url: r.file.url, tags: opt.tags || [] }); }
       }
       setResolvedFiles(files);
       try { localStorage.setItem(SENDER_KEY, JSON.stringify(sender)); } catch { /* ignore */ }
@@ -116,7 +118,7 @@ export default function RfqModal({ quote, items, rates, projectScope, elementTyp
       const all = [];
       for (const p of pkgs) {
         const pickedOrgs = orgs.filter((o) => picked(p.key).has(o.id));
-        for (const d of rfqDrafts({ orgs: pickedOrgs, projectName: quote.projectName || "Untitled project", siteAddress: quote.siteAddress || "", clientName: quote.clientName || "", pkgLabel: labelOf(p), scopes, due, sender, attachments: files, extraNotes })) all.push({ ...d, id: `d-${p.key}-${d.orgId}`, pkgKey: p.key, pkgLabel: labelOf(p) });
+        for (const d of rfqDrafts({ orgs: pickedOrgs, projectName: quote.projectName || "Untitled project", siteAddress: quote.siteAddress || "", pkgLabel: labelOf(p), scopes, due, leadDays: RFQ_LEAD[complexity].days, requestedOn: today(), sender, attachments: files, extraNotes })) all.push({ ...d, id: `d-${p.key}-${d.orgId}`, pkgKey: p.key, pkgLabel: labelOf(p) });
       }
       setDrafts(all);
       setCurrent(0); setStep("drafts");
@@ -124,7 +126,7 @@ export default function RfqModal({ quote, items, rates, projectScope, elementTyp
     finally { setBuilding(false); }
   }
   const patchDraft = (i, patch) => setDrafts((ds) => ds.map((d, j) => (j === i ? { ...d, ...patch } : d)));
-  const redraft = (i) => { const d = drafts[i]; const org = orgs.find((o) => o.id === d.orgId); if (!org) return; const scopes = chosenItems.map((item) => elementScope(item, rates, projectScope, typeName(item), takeoff ? takeoff.instances : null)); patchDraft(i, { subject: rfqSubject({ pkgLabel: d.pkgLabel, projectName: quote.projectName || "Untitled project" }), text: rfqText({ projectName: quote.projectName || "Untitled project", siteAddress: quote.siteAddress || "", clientName: quote.clientName || "", pkgLabel: d.pkgLabel, org, contact: rfqContact(org), scopes, due, sender, attachments: resolvedFiles, extraNotes }), approved: false }); };
+  const redraft = (i) => { const d = drafts[i]; const org = orgs.find((o) => o.id === d.orgId); if (!org) return; const scopes = chosenItems.map((item) => elementScope(item, rates, projectScope, typeName(item), takeoff ? takeoff.instances : null)); patchDraft(i, { subject: rfqSubject({ pkgLabel: d.pkgLabel, projectName: quote.projectName || "Untitled project" }), text: rfqText({ projectName: quote.projectName || "Untitled project", siteAddress: quote.siteAddress || "", pkgLabel: d.pkgLabel, org, contact: rfqContact(org), scopes, due, leadDays: RFQ_LEAD[complexity].days, requestedOn: today(), sender, attachments: resolvedFiles, extraNotes }), approved: false }); };
 
   async function sendApproved() {
     const todo = drafts.map((d, i) => ({ d, i })).filter(({ d }) => d.approved && d.status !== "sent");
@@ -202,8 +204,14 @@ export default function RfqModal({ quote, items, rates, projectScope, elementTyp
                 </div>
                 {pkgKeys.has("other") && <input value={pkgCustom} onChange={(e) => setPkgCustom(e.target.value)} placeholder="Name the package, e.g. Precast Panels" className="mt-1 w-full border border-neutral-300 rounded px-2 py-1.5 text-[13px]" data-testid="rfq-package-name" />}
               </div>
+              <div>
+                <div className="text-[11px] uppercase tracking-wider text-neutral-500 font-semibold mb-1">How heavy is this quote?</div>
+                <div className="flex gap-1" data-testid="rfq-complexity">
+                  {Object.entries(RFQ_LEAD).map(([k, v]) => <button key={k} type="button" onClick={() => { setComplexity(k); setDue(dayPlus(v.days)); }} className={`text-[12px] px-2 py-1 rounded-full border ${complexity === k ? "bg-neutral-900 border-neutral-900 text-white" : "bg-white border-neutral-300 hover:border-neutral-800"}`} data-testid={`rfq-complexity-${k}`}>{v.label}</button>)}
+                </div>
+              </div>
               <div className="grid grid-cols-2 gap-2">
-                <label className="text-[12px] text-neutral-600">Quotes required by<input type="date" value={due} onChange={(e) => setDue(e.target.value)} className="mt-0.5 w-full border border-neutral-300 rounded px-2 py-1.5 text-[13px]" data-testid="rfq-due" /></label>
+                <label className="text-[12px] text-neutral-600">Quotes required by <span className="text-neutral-400">({RFQ_LEAD[complexity].days} days; business day, editable)</span><input type="date" value={due} onChange={(e) => setDue(e.target.value)} className="mt-0.5 w-full border border-neutral-300 rounded px-2 py-1.5 text-[13px]" data-testid="rfq-due" /></label>
                 <label className="text-[12px] text-neutral-600">Signed<input value={sender.name} onChange={(e) => setSender({ ...sender, name: e.target.value })} className="mt-0.5 w-full border border-neutral-300 rounded px-2 py-1.5 text-[13px]" data-testid="rfq-sender" /></label>
               </div>
               <label className="block text-[12px] text-neutral-600">Notes for every contractor (optional)<textarea value={extraNotes} onChange={(e) => setExtraNotes(e.target.value)} rows={2} className="mt-0.5 w-full border border-neutral-300 rounded px-2 py-1.5 text-[12.5px]" placeholder="e.g. Site access from Esplanade only; geotech report attached; program start February" /></label>
@@ -224,6 +232,7 @@ export default function RfqModal({ quote, items, rates, projectScope, elementTyp
                   </div>
                 )}
                 {driveFolder && driveFolder.id && missing.length > 0 && <div className="text-[12px] text-amber-800 mt-1" data-testid="rfq-attach-missing">Not found in the folder, not attached: {missing.map((c) => c.label).join(", ")} — add it to Drive, or say so in the notes.</div>}
+                {driveFolder && attach.size === 0 && <div className="text-[12px] text-red-700 mt-1" data-testid="rfq-attach-none">Nothing is ticked — an RFQ goes out with its documents attached. Tick the architectural and structural drawings and the soil report (add them to the project's Drive folder if they are not there).</div>}
               </div>
             </div>
             <div className="space-y-3">

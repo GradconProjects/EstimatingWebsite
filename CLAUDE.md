@@ -1424,10 +1424,20 @@ bare minimum should be archi, struct, soil report". Rules:
    `takeoffElementSpec` (`tenderSpecContext.js`), the same-named Estimates
    takeoff element's fields and register lines ("As taken off (pier): depth
    6000, diameter 450 …", "Concrete: N32 — 9.54 m³"); `rfqText` lays out the
-   RFQ (project, site, builder / client, package, required-by date, SCOPE OF
-   WORKS, NOTES, DOCUMENTS listing the attachments, what to include — rates
-   ex GST, inclusions / exclusions, validity, lead time, site requirements,
-   insurances and ABN — and the signature); `rfqDrafts` builds ONE
+   RFQ (project, site, package — never the builder / client, Grady 23 Oct
+   2026 —, "Request issued", "Quotation required by … (N days from this
+   request)" + "If you can submit sooner, please do. If that date cannot be
+   met, please reply with the date you can submit by.", SCOPE OF WORKS,
+   NOTES, DOCUMENTS naming every attachment with what it is —
+   `attachmentLabel`: "(architectural drawings)", "(structural drawings)",
+   "(soil / geotechnical report)" — and, with nothing attached, "No documents
+   are attached to this email — they will follow separately" (never
+   "available on request": documents are always attached), what to include
+   — rates ex GST, inclusions / exclusions, validity, lead time, site
+   requirements, insurances and ABN — and the signature). `RFQ_LEAD` is the
+   lead time Grady picks per round ("How heavy is this quote?": simple 3
+   days, complex 7 — business days through `dayPlus`, the date still
+   editable); `rfqDrafts` builds ONE
    independent draft per organisation from the same facts, so no name,
    address or trade of one contractor can reach another (verify checks the
    DMAC draft holds no BCS and vice versa). `rfqRecord` / `rfqPatch` keep the
