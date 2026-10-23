@@ -384,7 +384,7 @@ function renderTable(list){
 function inp(o, path, type, extra){ const v = getPath(o, path); return '<input type="' + (type || "text") + '" data-path="' + path + '" data-org="' + o.id + '" value="' + esc(v == null ? "" : v) + '" ' + (extra || "") + ">"; }
 function sel(o, path, opts){ const v = getPath(o, path) || ""; return '<select data-path="' + path + '" data-org="' + o.id + '">' + opts.map(([k, l]) => '<option value="' + esc(k) + '"' + (String(k) === String(v) ? " selected" : "") + ">" + esc(l) + "</option>").join("") + "</select>"; }
 /* ---- a direct email to one organisation: drafted here, read, approved, then sent as its own message ---- */
-const senderName = () => { const u = portalSignedInUser() || ""; const k = u.split("@")[0].toLowerCase(); return k === "grady" ? "Grady Fink" : "Gradcon Estimating"; };
+const senderName = () => "Boma Ipalibo"; // the signature on every email from the app (Grady, 23 Oct 2026)
 function emailTemplate(o, c){
   const first = c && c.name && !/@/.test(c.name) && !/inbox|team|sales|accounts|admin|estimating|info|office/i.test(c.name) ? c.name.split(/\s+/)[0] : "";
   return { subject: "Gradcon Concrete Constructions – " + (o.trade ? o.trade.split(/[—–(]/)[0].trim() : "enquiry"), text: ["Dear " + (first || o.name) + ",", "", "I am writing from Gradcon Concrete Constructions regarding " + (o.trade ? "your " + o.trade.split(/[—–(]/)[0].trim().toLowerCase() + " services" : "upcoming work") + ".", "", "[What you need from them — a project, a date, a rate, a certificate.]", "", "Please reply to this email or call the office with any questions.", "", "Kind regards,", "", senderName(), "Gradcon Concrete Constructions", MAILBOX].join("\n") };

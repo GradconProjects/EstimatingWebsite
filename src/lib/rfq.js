@@ -145,7 +145,7 @@ export function rfqText({ projectName, siteAddress = "", clientName = "", pkgLab
     "  - Site requirements (access, crane, power, water, hardstand) and any items by others",
     "  - Current public liability and workers compensation certificates, and your ABN");
   lines.push("", "Please reply to this email with your quotation. Call or email with any questions on the documents.", "");
-  lines.push("Kind regards,", "", sender.name || "Gradcon Estimating", "Gradcon Concrete Constructions", sender.email || "projects@gradcon.com.au");
+  lines.push("Kind regards,", "", sender.name || "Boma Ipalibo", "Gradcon Concrete Constructions", sender.email || "projects@gradcon.com.au");
   if (sender.phone) lines.push(sender.phone);
   return lines.join("\n");
 }

@@ -1451,7 +1451,9 @@ bare minimum should be archi, struct, soil report". Rules:
 4. **`RfqModal.jsx`** (editor header "RFQ (n)" button `rfq-button`, every
    element card's mail button `element-rfq` opening on that element): step 1
    elements, package (suggested first), due date (`dayPlus(7)`, business
-   day), signatory (remembered per browser, `gradcon-rfq-sender`), notes for
+   day), signatory (default "Boma Ipalibo / Gradcon Concrete Constructions /
+   projects@gradcon.com.au" — `DEFAULT_SIGNATORY`, Grady 23 Oct 2026; a
+   retyped name is remembered per browser, `gradcon-rfq-sender`), notes for
    all, attachments, the contractors (search adds any Register organisation;
    one without an email cannot be ticked); step 2 one draft per contractor —
    subject and body editable (an edit clears its approval), Approve / Approve

@@ -10,10 +10,12 @@ import { classifyFile } from "../lib/rfq.js";
 const classifyTags = (name, pkgKey) => classifyFile(name, "", pkgKey);
 const apiBase = () => (typeof window !== "undefined" && window.location ? window.location.origin : "");
 const SENDER_KEY = "gradcon-rfq-sender";
-const defaultSender = (user) => {
-  try { const s = JSON.parse(localStorage.getItem(SENDER_KEY) || "null"); if (s && s.name) return s; } catch { /* ignore */ }
-  const key = String(user || "").split("@")[0].toLowerCase();
-  return { name: key === "grady" ? "Grady Fink" : "Gradcon Estimating", email: "projects@gradcon.com.au", phone: "" };
+// The signature every RFQ carries unless retyped (Grady, 23 Oct 2026: "default should be: Boma Ipalibo /
+// Gradcon Concrete Constructions / projects@gradcon.com.au"); a retyped name is remembered per browser.
+export const DEFAULT_SIGNATORY = { name: "Boma Ipalibo", email: "projects@gradcon.com.au", phone: "" };
+const defaultSender = () => {
+  try { const s = JSON.parse(localStorage.getItem(SENDER_KEY) || "null"); if (s && s.name) return { ...DEFAULT_SIGNATORY, ...s }; } catch { /* ignore */ }
+  return { ...DEFAULT_SIGNATORY };
 };
 
 /**
@@ -34,7 +36,7 @@ export default function RfqModal({ quote, items, rates, projectScope, elementTyp
   const [showNot, setShowNot] = useState(false);
   const [search, setSearch] = useState("");
   const [due, setDue] = useState(() => dayPlus(7));
-  const [sender, setSender] = useState(() => defaultSender(user));
+  const [sender, setSender] = useState(() => defaultSender());
   const [extraNotes, setExtraNotes] = useState("");
   const [attach, setAttach] = useState(() => new Set());
   const [drafts, setDrafts] = useState([]);
