@@ -485,7 +485,7 @@ export default function App() {
     return (
       <div className="min-h-screen bg-neutral-100 text-neutral-900 font-sans">
         <div className="sticky top-0 z-30 bg-blue-950 text-white shadow-md">
-          <div className="max-w-7xl mx-auto px-4 py-2.5 flex items-center justify-between">
+          <div className="max-w-[1900px] mx-auto px-4 py-2.5 flex items-center justify-between">
             <div className="text-[10px] uppercase tracking-widest text-blue-300 font-semibold">
               Gradcon Concrete Constructions
             </div>
@@ -506,7 +506,7 @@ export default function App() {
               </button>
             </div>
           </div>
-          <div className="max-w-7xl mx-auto px-4 py-2 flex items-center gap-2 border-t border-blue-900/60">
+          <div className="max-w-[1900px] mx-auto px-4 py-2 flex items-center gap-2 border-t border-blue-900/60">
             {[
               { key: "dashboard", label: "Dashboard", Icon: LayoutDashboard },
               { key: "planner", label: "Project Management", Icon: Radar },
@@ -928,7 +928,9 @@ function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, rate
   return (
     <div className="min-h-screen bg-neutral-100 print:bg-white text-neutral-900 font-sans">
       <div className="print:hidden sticky top-0 z-30 bg-blue-950 text-white shadow-md">
-        <div className="max-w-7xl mx-auto px-4 py-2.5 flex items-center gap-4">
+        {/* Full width (Grady, 23 Oct 2026: "app too limited to the middle/centre. expand and make responsive"): the
+            editor spans the window up to 1900 px and the header's button group wraps under the name when it must. */}
+        <div className="max-w-[1900px] mx-auto px-4 py-2.5 flex items-center gap-4 flex-wrap">
           <button
             onClick={onBack}
             className="flex items-center gap-1 px-2 py-2 rounded-lg hover:bg-blue-900 text-blue-200 hover:text-white text-sm flex-none transition-colors"
@@ -936,7 +938,7 @@ function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, rate
           >
             <ArrowLeft size={16} />
           </button>
-          <div className="flex-1 min-w-[18rem]">
+          <div className="flex-[1_1_32rem] min-w-[18rem]">
             <div className="text-[10px] uppercase tracking-widest text-blue-300 font-semibold">Gradcon Concrete Constructions</div>
             {/* The client/owner is NOT edited here — it lives beside the
                 project name on the Projects Dashboard (Dashboard.jsx), which
@@ -1063,7 +1065,7 @@ function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, rate
         </div>
       </div>
 
-      <div className="print:hidden max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
+      <div className="print:hidden max-w-[1900px] mx-auto px-4 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3 text-xs text-neutral-500">
           <span>Date:</span>
           <input
@@ -1116,7 +1118,7 @@ function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, rate
         </div>
       </div>
       {overallStatus === "error" && (
-        <div className="print:hidden max-w-7xl mx-auto px-4 pb-3">
+        <div className="print:hidden max-w-[1900px] mx-auto px-4 pb-3">
           <div className="flex items-start gap-2 rounded-lg border border-red-300 bg-red-50 text-red-800 text-sm px-4 py-3">
             <AlertTriangle size={18} className="flex-none mt-0.5" />
             <div>
@@ -1136,7 +1138,7 @@ function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, rate
         />
       )}
 
-      <div className="print:hidden max-w-7xl mx-auto px-4 pb-16 grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-4 items-start">
+      <div className="print:hidden max-w-[1900px] mx-auto px-4 pb-16 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_380px] gap-4 items-start">
         <div className="space-y-3">
           <RateValidityBanner rates={liveRates} cleared={clearedNotices} onClear={clearNoticeOn} />
           <TenderChecklist
