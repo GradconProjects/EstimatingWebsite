@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef, Fragment } from "react";
-import { ChevronDown, ChevronRight, Copy, Trash2, Paperclip, X, RotateCw, ZoomIn, ZoomOut, Maximize2, ArrowUp, ArrowDown, GripVertical } from "lucide-react";
+import { ChevronDown, ChevronRight, Copy, Trash2, Paperclip, X, RotateCw, ZoomIn, ZoomOut, Maximize2, ArrowUp, ArrowDown, GripVertical, Mail } from "lucide-react";
 import { FULL_CATALOG, LABOUR_TEMPLATES, QUOTE_SCOPES, CREW_TASKS_VER } from "../data/catalog.js";
 import { userKey, markEntry, entryTone, ENTRY_KEY, isDone, donePatch, whenLabel } from "../lib/workTrail.js";
 import { signedInUser } from "../lib/quoteVersions.js";
@@ -19,7 +19,7 @@ import AdditionalItems from "./AdditionalItems.jsx";
  * the quote's item order (the summary rail, the print report and the
  * export all follow it), the same order QuoteSummary's own drag edits.
  */
-export default function ElementCard({ item, rates, onChange, onRemove, onDuplicate, onLabourRateChange, onMaterialRateChange, onMoveUp, onMoveDown, onReorder, projectScope , handover, onPickFromDrive, rateChanges }) {
+export default function ElementCard({ item, rates, onChange, onRemove, onDuplicate, onLabourRateChange, onMaterialRateChange, onMoveUp, onMoveDown, onReorder, projectScope , handover, onPickFromDrive, rateChanges, onRfq }) {
   // who is typing (lib/workTrail.js): every figure entered records the
   // signed-in account, so Grady's own entries read in his colour
   const me = userKey(signedInUser());
@@ -396,6 +396,11 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
               <ArrowDown size={14} />
             </button>
           </div>
+        )}
+        {onRfq && (
+          <button onClick={onRfq} title="Request quotations for this element — choose contractors from the Register, approve one draft each, send separately" className="text-blue-300 hover:text-white transition-colors flex-none" data-testid="element-rfq">
+            <Mail size={16} />
+          </button>
         )}
         <button onClick={onDuplicate} title="Duplicate" className="text-blue-300 hover:text-white transition-colors flex-none">
           <Copy size={16} />

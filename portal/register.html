@@ -85,6 +85,7 @@ table.inner{width:100%;border-collapse:collapse;font-size:12.5px;} table.inner t
 .flash{animation:flash 1.4s ease-out;} @keyframes flash{0%{box-shadow:0 0 0 4px var(--accent);}100%{box-shadow:0 0 0 0 transparent;}}
 .muted{color:var(--muted);} .small{font-size:11.5px;} .right{text-align:right;} .nowrap{white-space:nowrap;}
 .progress{font-size:11.5px;color:var(--muted);}
+.compose{background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-top:8px;} .compose textarea{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;min-height:260px;font-size:12px;line-height:1.45;} .compose .subject{width:100%;font-weight:700;} .compose .to{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px;} .compose .ok{color:var(--ok);font-weight:700;} .compose .bad{color:var(--bad);font-weight:700;}
 @media (max-width:900px){ table.reg th.hide-sm,table.reg td.hide-sm{display:none;} .fld{grid-template-columns:1fr;} }
 </style>
 </head>
@@ -157,6 +158,8 @@ let STATE = null;            // {version, orgs, tombstones, log, updatedAt, upda
 let RECONCILED = false;      // this tab has read the cloud row (or a positive "no row") — only then may it write
 let SYNCED_AT = null;        // updated_at of the cloud row this tab last agreed with
 let cloudState = "checking";
+let MAIL = null; // /api/google-auth status: {configured, connected, send}
+const COMPOSE = {}; // orgId → {contactIdx, subject, text, approved, status, error}
 const UI = { tab: "supply", q: "", cats: new Set(), trades: new Set(), cap: "", capState: "yes", tier: "", status: "", sort: "last-desc", open: new Set(), more: new Set(), allCaps: new Set(), kpi: "", checking: null };
 const SEED_VERSION = (typeof REGISTER_SEED !== "undefined" && REGISTER_SEED && REGISTER_SEED.version) || 1;
 const SEED_BY_ID = Object.fromEntries(((typeof REGISTER_SEED !== "undefined" && REGISTER_SEED && REGISTER_SEED.orgs) || []).map((o) => [o.id, o]));
@@ -380,6 +383,43 @@ function renderTable(list){
 }
 function inp(o, path, type, extra){ const v = getPath(o, path); return '<input type="' + (type || "text") + '" data-path="' + path + '" data-org="' + o.id + '" value="' + esc(v == null ? "" : v) + '" ' + (extra || "") + ">"; }
 function sel(o, path, opts){ const v = getPath(o, path) || ""; return '<select data-path="' + path + '" data-org="' + o.id + '">' + opts.map(([k, l]) => '<option value="' + esc(k) + '"' + (String(k) === String(v) ? " selected" : "") + ">" + esc(l) + "</option>").join("") + "</select>"; }
+/* ---- a direct email to one organisation: drafted here, read, approved, then sent as its own message ---- */
+const senderName = () => { const u = portalSignedInUser() || ""; const k = u.split("@")[0].toLowerCase(); return k === "grady" ? "Grady Fink" : "Gradcon Estimating"; };
+function emailTemplate(o, c){
+  const first = c && c.name && !/@/.test(c.name) && !/inbox|team|sales|accounts|admin|estimating|info|office/i.test(c.name) ? c.name.split(/\s+/)[0] : "";
+  return { subject: "Gradcon Concrete Constructions – " + (o.trade ? o.trade.split(/[—–(]/)[0].trim() : "enquiry"), text: ["Dear " + (first || o.name) + ",", "", "I am writing from Gradcon Concrete Constructions regarding " + (o.trade ? "your " + o.trade.split(/[—–(]/)[0].trim().toLowerCase() + " services" : "upcoming work") + ".", "", "[What you need from them — a project, a date, a rate, a certificate.]", "", "Please reply to this email or call the office with any questions.", "", "Kind regards,", "", senderName(), "Gradcon Concrete Constructions", MAILBOX].join("\n") };
+}
+function renderCompose(o){
+  const st = COMPOSE[o.id]; if (!st) return "";
+  const contacts = o.contacts.filter((c) => c.email); const emails = contacts.length ? contacts.map((c) => c.email) : o.emails;
+  const to = contacts[st.contactIdx] ? contacts[st.contactIdx].email : emails[st.contactIdx] || "";
+  const toName = contacts[st.contactIdx] ? contacts[st.contactIdx].name : "";
+  const warn = !MAIL ? "" : !MAIL.configured ? "The Google connection is not configured here — the draft can be copied, not sent." : !MAIL.connected ? "The projects@ mailbox is not connected (Settings → Google mail & Drive)." : !MAIL.send ? "The mailbox connection is read-only — open Settings → Google mail & Drive and click “Reconnect for sending” once." : "";
+  return '<div class="compose card wide" data-testid="compose"><h4>Email ' + esc(o.name) + ' <span><button class="btn sm" data-compose-close="' + o.id + '">Close</button></span></h4>' +
+    (warn ? '<div class="note warn" style="margin-bottom:8px">' + esc(warn) + "</div>" : "") +
+    '<div class="to"><label class="small muted">To</label><select data-compose-to="' + o.id + '">' + (contacts.length ? contacts.map((c, i) => '<option value="' + i + '"' + (i === st.contactIdx ? " selected" : "") + ">" + esc((c.name ? c.name + " — " : "") + c.email) + "</option>").join("") : emails.map((e, i) => '<option value="' + i + '"' + (i === st.contactIdx ? " selected" : "") + ">" + esc(e) + "</option>").join("")) + '</select><span class="small muted">one message, to this address only · from ' + esc(MAILBOX) + " as " + esc(senderName()) + "</span></div>" +
+    '<input class="subject" type="text" data-compose-subject="' + o.id + '" value="' + esc(st.subject) + '" placeholder="Subject">' +
+    '<textarea data-compose-text="' + o.id + '" style="width:100%;margin-top:6px">' + esc(st.text) + "</textarea>" +
+    '<div class="row" style="margin-top:8px;justify-content:space-between"><div class="row"><button class="btn' + (st.approved ? " primary" : "") + '" data-compose-approve="' + o.id + '">' + (st.approved ? "✓ Approved" : "Approve this draft") + '</button><button class="btn sm" data-compose-redraft="' + o.id + '">Re-draft</button></div>' +
+    (st.status === "sent" ? '<span class="ok">Sent to ' + esc(to) + "</span>" : st.status === "failed" ? '<span class="bad">Not sent: ' + esc(st.error || "") + "</span>" : '<button class="btn primary" data-compose-send="' + o.id + '"' + (st.approved && to && MAIL && MAIL.send && st.status !== "sending" ? "" : " disabled") + ' title="Sends this one approved draft as its own email">' + (st.status === "sending" ? "Sending…" : "Send") + "</button>") + "</div></div>";
+}
+async function sendCompose(o){
+  const st = COMPOSE[o.id]; if (!st || !st.approved) return;
+  const contacts = o.contacts.filter((c) => c.email); const emails = contacts.length ? contacts.map((c) => c.email) : o.emails;
+  const to = contacts[st.contactIdx] ? contacts[st.contactIdx].email : emails[st.contactIdx] || ""; const toName = contacts[st.contactIdx] ? contacts[st.contactIdx].name : "";
+  st.status = "sending"; render();
+  try {
+    const res = await fetch(API_BASE + "/api/gmail", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "send", to, toName, fromName: senderName(), subject: st.subject, text: st.text }), signal: AbortSignal.timeout(60000) });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(d.error || ("HTTP " + res.status));
+    st.status = "sent"; st.messageId = d.sent && d.sent.id;
+    const day = today(); o.lastContact = day; o.lastContactDir = "out"; if (st.messageId) o.lastMailId = st.messageId;
+    const subj = st.subject.trim(); if (subj && !o.threads.some((t) => t.subject === subj)) o.threads.unshift({ subject: subj, day, threadId: (d.sent && d.sent.threadId) || "" }); o.threads = o.threads.slice(0, 12);
+    touch(o); log(o, "Email sent to " + to + ": " + subj); save();
+  } catch (e) { st.status = "failed"; st.error = e.message || "failed"; }
+  render();
+}
+function loadMailStatus(){ fetch(API_BASE + "/api/google-auth?action=status", { headers: { accept: "application/json" } }).then((r) => (r.ok ? r.json() : null)).then((d) => { MAIL = d || { configured: false }; }).catch(() => { MAIL = { configured: false }; }); }
 function renderDetail(o){
   const more = UI.more.has(o.id); const fam = familyOf(o); const showAll = UI.allCaps.has(o.id) || !fam.length;
   const capGroups = []; for (const c of CAPS) { if (!showAll && !fam.includes(c.group)) continue; let g = capGroups.find((x) => x.name === c.group); if (!g) capGroups.push(g = { name: c.group, items: [] }); g.items.push(c); }
@@ -393,7 +433,8 @@ function renderDetail(o){
   const logs = STATE.log.filter((l) => l.orgId === o.id).slice(-6).reverse();
   const mailQ = mailQueryFor(o);
   return '<div class="detail">' +
-    '<div class="card"><h4>Organisation <span><button class="btn sm" data-checkmail="' + o.id + '" title="Ask the projects@ mailbox for the newest email to or from them (read-only)">Check mail now</button></span></h4>' +
+    (COMPOSE[o.id] ? renderCompose(o) : "") +
+    '<div class="card"><h4>Organisation <span><button class="btn sm primary" data-compose-open="' + o.id + '" title="Draft an email to them here, read it, approve it, send it — one message to one address">✉ Email</button> <button class="btn sm" data-checkmail="' + o.id + '" title="Ask the projects@ mailbox for the newest email to or from them (read-only)">Check mail now</button></span></h4>' +
       '<div class="fld"><label>Name</label>' + inp(o, "name") + "</div>" +
       '<div class="fld"><label>Category</label>' + sel(o, "category", CATEGORIES.map((c) => [c.key, c.label])) + "</div>" +
       (sideOf(o) !== "client" ? '<div class="fld"><label>Trade group</label>' + sel(o, "tradeGroup", [["", "—"], ...TRADE_GROUPS.map((g) => [g.key, g.label])]) + "</div>" : "") +
@@ -473,6 +514,11 @@ main.addEventListener("click", (e) => {
   const cat = t.closest("[data-cat]"); if (cat) { const k = cat.dataset.cat; const was = UI.cats.has(k); UI.cats.clear(); if (!was) UI.cats.add(k); render(); return; }
   const tr = t.closest("[data-trade]"); if (tr) { const k = tr.dataset.trade; const was = UI.trades.has(k); UI.trades.clear(); if (!was) UI.trades.add(k); render(); return; }
   const cc = t.closest("[data-capchip]"); if (cc) { UI.cap = UI.cap === cc.dataset.capchip ? "" : cc.dataset.capchip; render(); return; }
+  const co = t.closest("[data-compose-open]"); if (co) { const o = orgById(co.dataset.composeOpen); const c = o.contacts.filter((x) => x.email); const idx = Math.max(0, c.findIndex((x) => x.primary)); const tpl = emailTemplate(o, c[idx] || null); COMPOSE[o.id] = { contactIdx: idx, subject: tpl.subject, text: tpl.text, approved: false, status: "draft" }; if (!MAIL) loadMailStatus(); render(); return; }
+  const cc2 = t.closest("[data-compose-close]"); if (cc2) { delete COMPOSE[cc2.dataset.composeClose]; render(); return; }
+  const ca = t.closest("[data-compose-approve]"); if (ca) { const st = COMPOSE[ca.dataset.composeApprove]; if (st) { st.approved = !st.approved; render(); } return; }
+  const cr = t.closest("[data-compose-redraft]"); if (cr) { const o = orgById(cr.dataset.composeRedraft); const st = COMPOSE[o.id]; const c = o.contacts.filter((x) => x.email); const tpl = emailTemplate(o, c[st.contactIdx] || null); Object.assign(st, { subject: tpl.subject, text: tpl.text, approved: false }); render(); return; }
+  const cs = t.closest("[data-compose-send]"); if (cs) { sendCompose(orgById(cs.dataset.composeSend)); return; }
   const mo = t.closest("[data-more]"); if (mo) { const id = mo.dataset.more; UI.more.has(id) ? UI.more.delete(id) : UI.more.add(id); render(); return; }
   const ac2 = t.closest("[data-allcaps]"); if (ac2) { const id = ac2.dataset.allcaps; UI.allCaps.has(id) ? UI.allCaps.delete(id) : UI.allCaps.add(id); render(); return; }
   const th = t.closest("th[data-sort]"); if (th) { UI.sort = th.dataset.sort; render(); return; }
@@ -492,6 +538,8 @@ main.addEventListener("click", (e) => {
 });
 main.addEventListener("input", (e) => {
   const t = e.target;
+  if (t.dataset.composeSubject) { const st = COMPOSE[t.dataset.composeSubject]; if (st) { st.subject = t.value; if (st.approved) { st.approved = false; const b = document.querySelector('[data-compose-approve="' + t.dataset.composeSubject + '"]'); if (b) { b.textContent = "Approve this draft"; b.classList.remove("primary"); } const sb = document.querySelector('[data-compose-send="' + t.dataset.composeSubject + '"]'); if (sb) sb.disabled = true; } } return; }
+  if (t.dataset.composeText) { const st = COMPOSE[t.dataset.composeText]; if (st) { st.text = t.value; if (st.approved) { st.approved = false; const b = document.querySelector('[data-compose-approve="' + t.dataset.composeText + '"]'); if (b) { b.textContent = "Approve this draft"; b.classList.remove("primary"); } const sb = document.querySelector('[data-compose-send="' + t.dataset.composeText + '"]'); if (sb) sb.disabled = true; } } return; }
   if (t.id === "q") { UI.q = t.value; clearTimeout(main._qt); main._qt = setTimeout(() => { const el = $("#q"); const pos = el ? el.selectionStart : 0; render(); const n = $("#q"); if (n) { n.focus(); n.setSelectionRange(pos, pos); } }, 220); return; }
   const o = t.dataset.org && orgById(t.dataset.org); if (!o) return;
   if (t.dataset.path) { setPath(o, t.dataset.path, t.type === "number" ? Number(t.value) : t.value); touch(o); save(); }
@@ -500,6 +548,7 @@ main.addEventListener("input", (e) => {
 });
 main.addEventListener("change", (e) => {
   const t = e.target;
+  if (t.dataset.composeTo) { const st = COMPOSE[t.dataset.composeTo]; if (st) { st.contactIdx = Number(t.value); st.approved = false; render(); } return; }
   if (t.id === "tierSel") { UI.tier = t.value; render(); return; }
   if (t.id === "statusSel") { UI.status = t.value; render(); return; }
   if (t.id === "sortSel") { UI.sort = t.value; render(); return; }

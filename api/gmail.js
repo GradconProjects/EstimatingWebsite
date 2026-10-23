@@ -6,7 +6,12 @@
  *                                               → copies a PDF attachment into the gradcon-files bucket under
  *                                                  ai-engine/mail/<messageId>/ and returns its public URL, so an
  *                                                  AI Engine job can read it like an uploaded file
- * Read-only against Gmail (gmail.readonly). Same-origin check as the other functions.
+ * POST {action:"send", to, toName?, subject, text, fromName?, attachments?: [{name, url}]}
+ *                                               → sends ONE plain-text message to ONE address from the connected
+ *                                                  mailbox (gmail.send — 409 needsReconnect until the connection
+ *                                                  carries it). The portal shows every draft for approval first;
+ *                                                  this function never composes anything itself.
+ * Reading is gmail.readonly; sending is the one write, and only on request. Same-origin check as the other functions.
  */
 import * as Gm from "./_google.js";
 
@@ -49,7 +54,19 @@ export async function runGmail(body, env = process.env, fetchImpl = fetch) {
       if (!up.ok) return { status: 502, body: { error: `could not store the attachment (${up.status})` } };
       return { status: 200, body: { file: { name, size: bytes.length, path, url: `${SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${path}`, uploadedAt: new Date().toISOString(), fromMail: { id: String(body.id), attachmentId: String(body.attachmentId) } } } };
     }
-    return { status: 400, body: { error: 'action must be "list", "read" or "attachment"' } };
+    if (action === "send") {
+      const conn = await Gm.readConnection(fetchImpl);
+      if (!Gm.hasSendScope(conn)) return { status: 409, body: { error: "The Google connection cannot send yet — reconnect it under Settings → Google mail & Drive to allow sending (gmail.send).", needsReconnect: true } };
+      const to = String(body.to || "").trim(); const subject = String(body.subject || "").trim(); const text = String(body.text || "");
+      if (!Gm.isOneAddress(to)) return { status: 400, body: { error: "to must be exactly one email address — every recipient gets their own message" } };
+      if (!subject || subject.length > 250) return { status: 400, body: { error: "subject required (up to 250 characters)" } };
+      if (!text.trim() || text.length > 40000) return { status: 400, body: { error: "text required (up to 40,000 characters)" } };
+      const attachments = (Array.isArray(body.attachments) ? body.attachments : []).map((a) => ({ name: String((a && a.name) || ""), url: String((a && a.url) || "") }));
+      if (attachments.length > Gm.ATTACH_MAX_FILES) return { status: 400, body: { error: `up to ${Gm.ATTACH_MAX_FILES} attachments per message` } };
+      const sent = await Gm.sendMessage({ to, toName: String(body.toName || "").slice(0, 120), fromName: String(body.fromName || "Gradcon Concrete Constructions").slice(0, 120), subject, text, replyTo: tok.email, attachments }, tok.token, tok.email, fetchImpl);
+      return { status: 200, body: { mailbox: tok.email, sent: { ...sent, to, subject, attachments: attachments.map((a) => a.name), at: new Date().toISOString() } } };
+    }
+    return { status: 400, body: { error: 'action must be "list", "read", "attachment" or "send"' } };
   } catch (e) {
     return { status: e.status || 502, body: { error: e.message } };
   }

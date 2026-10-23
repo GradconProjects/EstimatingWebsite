@@ -1380,6 +1380,102 @@ trail, the mailbox check, the three tabs and the cloud round trip on a mock
 cloud; `verify.mjs` pins the seed facts, the shapes, the wiring and the
 merge.
 
+## RFQs and emails sent from the app (one message per contractor, approved first)
+
+Grady, 23 Oct 2026: "when i am working on an estimate and require an RFQ to
+be sent, i want the app to draft this email and i should be able to select
+from the contractors for that particular item and the email draft will be
+made for my approval and sent each of the selected contractors without mixing
+up their details, their contact and their specific trades … industry standard
+formatting for the subject … a separate one should be sent to each rather
+than a bcc or cc"; "email should have the name of the project, and also use
+the details of what is available in the estimates sections as entered by the
+estimator … options to attach the drawings"; "for each email with the
+keywords, automatically attach the relevant files from the attached drive,
+bare minimum should be archi, struct, soil report". Rules:
+
+1. **Sending is the ONE write to Google, and only on approval.** `api/_google.js`
+   `GMAIL_SEND_SCOPE` (gmail.send) joins the consent; `connectionStatus.send`
+   says whether the stored connection carries it; a connection made before
+   this reconnects ONCE (Settings → Google mail & Drive → "Reconnect for
+   sending", `google-reconnect-send`) and until then `api/gmail.js` action
+   `send` answers 409 `needsReconnect`. `buildMime` writes ONE `To:` — never
+   Cc or Bcc — RFC 2047 headers (the en dash in "RFQ – …"), multipart/mixed
+   with attachments; `isOneAddress` refuses "a, b"; attachments are fetched
+   by the server from the portal's own bucket only (`ATTACH_URL_PREFIX`, ≤ 10
+   files, ≤ 20 MB — `fetchAttachments`), never an arbitrary URL. Reply-To is
+   the mailbox. Nothing is composed server-side; the function sends what the
+   browser shows after a person ticked "Approve" on THAT draft.
+2. **`src/lib/rfq.js` is pure and verify-covered.** `RFQ_PACKAGES` (Screw
+   Piling, Bored Pier Works, CFA Piling, Retention Piling & Shotcrete,
+   Formwork, Steel Fixing, Reinforcement Supply, Excavation & Earthworks,
+   Concrete Pumping, Post-Tensioning, Waterproofing, Screed & Toppings,
+   Premixed Concrete Supply, Concrete Works, Other) each name a Register
+   trade group and capability; `suggestPackages(items, typeNameOf)` reads the
+   elements' SUB CONTRACTORS rows and type names; `contractorsFor(orgs, pkg)`
+   → `{does, unknown, not}` from the Register (supply side, that trade, the
+   capability's yes / unstated / no — "says they don't" is folded away, never
+   hidden); `rfqContact(org)` = the primary contact with an email (a team
+   inbox is never greeted by first name); `rfqSubject` = `RFQ – <Package> –
+   <Project name>` (Gradcon's own form in the mailbox); `elementScope(item,
+   rates, scope, typeName, takeoffInstances)` = the element's measures (no. /
+   lm / m² / m³ through `computeElementCost`), its subcontract rows, the
+   estimator's description and, through `takeoffMatches` /
+   `takeoffElementSpec` (`tenderSpecContext.js`), the same-named Estimates
+   takeoff element's fields and register lines ("As taken off (pier): depth
+   6000, diameter 450 …", "Concrete: N32 — 9.54 m³"); `rfqText` lays out the
+   RFQ (project, site, builder / client, package, required-by date, SCOPE OF
+   WORKS, NOTES, DOCUMENTS listing the attachments, what to include — rates
+   ex GST, inclusions / exclusions, validity, lead time, site requirements,
+   insurances and ABN — and the signature); `rfqDrafts` builds ONE
+   independent draft per organisation from the same facts, so no name,
+   address or trade of one contractor can reach another (verify checks the
+   DMAC draft holds no BCS and vice versa). `rfqRecord` / `rfqPatch` keep the
+   round on `quote.rfqs[]` (package, elements, due, attachments, every
+   recipient with status, message and thread ids).
+3. **Auto-attach from the project's Drive folder.** `ATTACH_CLASSES` — archi
+   (architectural / A-101 / floor plan …), struct (structural / S01 /
+   engineer …), soil (geotech / soil / site investigation / Civil Test …) are
+   REQUIRED on every package, `PACKAGE_WORDS` add the package's own words
+   (pile / pier, formwork, reo, membrane …); `classifyFile(name, folderName,
+   pkgKey)` tags a file, `driveFolderOptions(files, pkgKey)` lists the
+   folder's attachable files with the tagged ones ticked (`auto`), and
+   `missingAttachClasses(options, ticked)` names a required class nothing
+   ticked covers — the composer prints "Not found in the folder, not
+   attached: …" rather than skipping it. `RfqModal` reads the folder
+   (`quote.storageFolders.drive`, else `match` by project name), one level of
+   subfolders and a search for the three words; a ticked Drive file is copied
+   into the bucket ONCE per build (`api/drive` copy, target preview) and the
+   same URLs ride on every message of the round; drawings dropped on the
+   chosen elements (`markupSrc`) are offered too.
+4. **`RfqModal.jsx`** (editor header "RFQ (n)" button `rfq-button`, every
+   element card's mail button `element-rfq` opening on that element): step 1
+   elements, package (suggested first), due date (`dayPlus(7)`, business
+   day), signatory (remembered per browser, `gradcon-rfq-sender`), notes for
+   all, attachments, the contractors (search adds any Register organisation;
+   one without an email cannot be ticked); step 2 one draft per contractor —
+   subject and body editable (an edit clears its approval), Approve / Approve
+   all, Re-draft, Copy, "Send N approved" (disabled with a read-only mailbox,
+   the warning `rfq-mail-warning` says to reconnect); each send is its own
+   POST, results per contractor; step 3 the summary. `onSent` in App records
+   the round (`rfqPatch`), ticks checklist step 05 with the package and
+   names (`checklistPatch`), and `recordRegisterContacts`
+   (`src/lib/registerStore.js`: the Register row read from the cloud, else
+   this browser's mirror; merged per organisation) moves each contractor's
+   last contact to today (Gradcon wrote), adds the subject and logs it.
+5. **The Register's own "✉ Email"** (`register.html`, `data-compose-open`): a
+   drafted message to one chosen contact (`emailTemplate` — subject from the
+   trade, a body with a bracketed prompt), editable, Approve, Send (one
+   message, `/api/gmail` send), recorded on the organisation the same way.
+   Nothing is sent without the approval tick; an edit after approval clears
+   it.
+`test-rfq.mjs` proves both buttons, the suggestion, the contractor groups,
+the auto-attach from a mocked Drive folder (match → list → subfolder; the
+missing-class note), the two independent drafts, the read-only block, the
+two separate sends with attachments, the record, the checklist tick, the
+Register's last contact and the Register's direct email; `verify.mjs` covers
+the library, the MIME, the scope, the 409 and the refusals.
+
 ## AI Engine (tile 07) and the Gradcon AI chat
 
 Grady, 10 Oct 2026: "dont touch the existing app. rather create another

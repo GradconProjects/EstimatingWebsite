@@ -3379,7 +3379,7 @@ check("Register (tile 08): the seed, its categories and sides, the piling capabi
   // the page, the shell and the assembler
   const page = fs.readFileSync(new URL("../portal/register.html", import.meta.url), "utf8");
   assert.ok(/<script src="register-seed\.js"><\/script>/.test(page) && /const KEY = "gradcon-register"/.test(page) && /function mergeStates/.test(page) && /action: "list"/.test(page), "the page loads the seed, keys the cloud row and merges per organisation");
-  assert.ok(!/action: "(send|reply|trash|delete)"/.test(page), "the page never writes to the mailbox");
+  assert.ok(!/action: "(reply|trash|delete|modify)"/.test(page) && /if \(!st \|\| !st\.approved\) return;/.test(page), "the page's one mailbox write is a send, and only of a draft the person approved");
   const shell = fs.readFileSync(new URL("../portal/portal-shell.html", import.meta.url), "utf8");
   assert.ok(/id="register-app-b64"/.test(shell) && /data-target="register"/.test(shell) && /data-menu="register"/.test(shell) && /register:\s*\{ target:'register'/.test(shell) && /<option value="register">Register<\/option>/.test(shell) && /key=eq\.gradcon-register/.test(shell), "payload, tile, menu, route, Settings option and chat read");
   const asm = fs.readFileSync(new URL("./assemble-portal.mjs", import.meta.url), "utf8");
@@ -3393,6 +3393,70 @@ check("Register (tile 08): the seed, its categories and sides, the piling capabi
   const m = sb.mergeStates(a, b);
   assert.equal(JSON.stringify(Array.from(m.orgs, (o) => o.id + ":" + o.name).sort()), JSON.stringify(["x:X new", "z:Z"]), "newer copy of each organisation wins; a newer tombstone removes (compared as JSON — the array comes from another realm)");
   assert.equal(m.log.length, 2, "the log is the union");
+});
+
+await checkAsync("RFQ (src/lib/rfq.js, api/gmail.js send): one draft per contractor with its own contact, the industry subject, the project and takeoff facts in the body, auto-attach classes, ONE recipient per message, the send scope and the 409 before a reconnect", async () => {
+  const R = await import("../src/lib/rfq.js");
+  const G = await import("../api/_google.js"); const GM = await import("../api/gmail.js");
+  const dmac = { id: "org-dmac", name: "DMAC Contracting", category: "subcontractor", tradeGroup: "piling", trade: "Bored piers, CFA", score: 95, capabilities: { bored: { status: "yes" }, screw: { status: "unknown" } }, contacts: [{ id: "c1", name: "Trevor Carr", email: "trevor@dmacpiling.com.au", primary: true }], emails: ["trevor@dmacpiling.com.au"] };
+  const bcs = { id: "org-bcs", name: "BCS Piling", category: "subcontractor", tradeGroup: "piling", trade: "Bored piers", score: 89, capabilities: { bored: { status: "yes" }, screw: { status: "no" } }, contacts: [{ id: "c2", name: "Will Bean", email: "will_bean@basementconstruction.com.au", primary: true }], emails: [] };
+  const allstate = { id: "org-all", name: "Allstate Screw Piling", category: "subcontractor", tradeGroup: "piling", trade: "Screw piles", score: 83, capabilities: { screw: { status: "yes" }, bored: { status: "no" } }, contacts: [{ id: "c3", name: "Dean Johnson", email: "estimating@allstatesp.com.au", primary: true }], emails: [] };
+  const holcim = { id: "org-h", name: "Holcim", category: "supplier", tradeGroup: "premix", trade: "Premixed concrete", score: 76, capabilities: {}, contacts: [], emails: ["frank@holcim.com"] };
+  const g = R.contractorsFor([dmac, bcs, allstate, holcim], "bored");
+  assert.deepEqual([g.does.map((o) => o.id), g.unknown.map((o) => o.id), g.not.map((o) => o.id)], [["org-dmac", "org-bcs"], [], ["org-all"]], "bored piers: DMAC and BCS do it (score order), Allstate said no, a concrete supplier is not in the trade");
+  assert.deepEqual(R.contractorsFor([dmac, bcs, allstate], "screw").does.map((o) => o.id), ["org-all"]);
+  const item = { ...newElementItem(ELEMENT_TYPES.find((t) => t.id === "piles_bored")), id: "e1", label: "Bored piers to boundary", qtys: { "SUB CONTRACTORS / TEMPORARY WORKS::Bored Piers (subcontract)::quote": 1 }, measureNo: 12, description: "450 dia, 6 m, socketed 1 m into rock" };
+  assert.deepEqual(R.suggestPackages([item], () => "Piles - Bored Piers"), ["bored"], "the row and the type name both say bored piers");
+  const takeoff = [{ label: "Bored piers to boundary", typeKey: "pier", data: { dia: 450, depth: 6000, qty: 12 }, results: { lines: [{ materialGroup: "Concrete", material: "N32", finalQty: 9.54, unit: "m³" }] } }];
+  const scope = R.elementScope(item, defaultRates(), "both", "Piles - Bored Piers", takeoff);
+  assert.ok(scope.measures.includes("12 no.") && scope.items[0] === "Bored Piers (subcontract)" && scope.takeoff.length === 1 && scope.takeoff[0].fields.dia === 450, JSON.stringify(scope));
+  const drafts = R.rfqDrafts({ orgs: [dmac, bcs], projectName: "11 Skelton Place, Sorrento VIC 3943", clientName: "Jakobi", pkgLabel: "Bored Pier Works", scopes: [scope], due: "2026-10-30", sender: { name: "Grady Fink" }, attachments: [{ name: "S-01.pdf" }] });
+  assert.equal(drafts.length, 2);
+  assert.equal(drafts[0].subject, "RFQ – Bored Pier Works – 11 Skelton Place, Sorrento VIC 3943", "industry subject form");
+  assert.ok(drafts[0].email === "trevor@dmacpiling.com.au" && drafts[0].text.startsWith("Dear Trevor,") && /invites DMAC Contracting/.test(drafts[0].text) && !/Will|BCS/.test(drafts[0].text), "DMAC's draft carries only DMAC");
+  assert.ok(drafts[1].email === "will_bean@basementconstruction.com.au" && drafts[1].text.startsWith("Dear Will,") && !/Trevor|DMAC/.test(drafts[1].text), "BCS's draft carries only BCS");
+  assert.ok(/Project: 11 Skelton Place, Sorrento VIC 3943/.test(drafts[0].text) && /Builder \/ client: Jakobi/.test(drafts[0].text) && /Bored piers to boundary \(Piles - Bored Piers\) — 12 no\./.test(drafts[0].text) && /As taken off \(pier\): depth 6000, diameter 450, number 12/.test(drafts[0].text) && /Concrete: N32 — 9\.54 m³/.test(drafts[0].text) && /450 dia, 6 m, socketed/.test(drafts[0].text) && /Friday 30 October 2026, 5:00 pm/.test(drafts[0].text) && /- S-01\.pdf/.test(drafts[0].text) && /ex GST/.test(drafts[0].text), drafts[0].text);
+  assert.ok(drafts[0].text !== drafts[1].text && drafts.every((d) => d.approved === false), "built unapproved, independent texts");
+  // the register's generic inboxes are never greeted by name
+  assert.equal(R.rfqContact({ contacts: [{ name: "Estimating Team", email: "est@x.com", primary: true }] }).firstName, "", "a team inbox gets no first name");
+  // auto-attach classes
+  const files = [{ id: "a", name: "A-101 Architectural Plans.pdf", kind: "pdf" }, { id: "s", name: "S01 Structural.pdf", kind: "pdf" }, { id: "g", name: "Geotechnical Site Investigation.pdf", kind: "pdf", folderName: "Reports" }, { id: "p", name: "Pile layout.pdf", kind: "pdf" }, { id: "x", name: "Energy rating.pdf", kind: "pdf" }, { id: "f", name: "Reports", kind: "folder" }];
+  const opts = R.driveFolderOptions(files, "bored");
+  assert.deepEqual(opts.map((o) => [o.name.split(" ")[0], o.auto, o.tags.join(",")]), [["A-101", true, "archi"], ["Geotechnical", true, "soil"], ["Pile", true, "pkg"], ["S01", true, "struct"], ["Energy", false, ""]], "archi / struct / soil always, the package's own words too, folders never");
+  assert.deepEqual(R.missingAttachClasses(opts, new Set(["drive:a", "drive:s"])).map((c) => c.key), ["soil"], "an unticked soil report is reported missing");
+  assert.deepEqual(R.ATTACH_CLASSES.filter((c) => c.required).map((c) => c.key), ["archi", "struct", "soil"]);
+  const rec = R.rfqRecord({ pkgKey: "bored", pkgLabel: "Bored Pier Works", elementIds: ["e1"], due: "2026-10-30", by: "grady", sent: [{ ...drafts[0], status: "sent", messageId: "m1", threadId: "t1" }], attachments: [{ name: "S-01.pdf" }] }, "2026-10-23T04:00:00.000Z");
+  assert.ok(rec.recipients.length === 1 && rec.recipients[0].email === "trevor@dmacpiling.com.au" && rec.attachments[0] === "S-01.pdf" && R.rfqPatch({ rfqs: [] }, rec).rfqs.length === 1);
+  // the send path
+  assert.ok(G.consentUrl("https://x/api/google-auth", { GOOGLE_CLIENT_ID: "id", GOOGLE_CLIENT_SECRET: "s" }).includes(encodeURIComponent(G.GMAIL_SEND_SCOPE)), "consent asks for gmail.send");
+  const genv = { GOOGLE_CLIENT_ID: "id", GOOGLE_CLIENT_SECRET: "secret", GOOGLE_TOKEN_SECRET: "k" };
+  assert.equal(G.connectionStatus({ refresh: "x", scope: G.GMAIL_SCOPE + " " + G.DRIVE_SCOPE }, genv).send, false);
+  assert.equal(G.connectionStatus({ refresh: "x", scope: G.GMAIL_SCOPE + " " + G.GMAIL_SEND_SCOPE }, genv).send, true);
+  const raw = G.buildMime({ to: "trevor@dmacpiling.com.au", toName: "Trevor Carr", from: "projects@gradcon.com.au", fromName: "Grady Fink", subject: "RFQ – Bored Pier Works – 11 Skelton Place", text: "Dear Trevor,\n\nHello.", attachments: [{ name: "S-01.pdf", mimeType: "application/pdf", bytes: Buffer.from("%PDF-1.4 x") }] });
+  const mime = Buffer.from(raw, "base64url").toString("utf8");
+  assert.ok(/^From: Grady Fink <projects@gradcon\.com\.au>\r\nTo: Trevor Carr <trevor@dmacpiling\.com\.au>/.test(mime) && !/^(Cc|Bcc):/m.test(mime) && /multipart\/mixed; boundary=/.test(mime) && /Content-Disposition: attachment; filename="S-01\.pdf"/.test(mime) && /=\?UTF-8\?B\?/.test(mime), "one To, no Cc/Bcc, the attachment part, the en-dash subject encoded");
+  assert.ok(G.isOneAddress("a@b.co") && !G.isOneAddress("a@b.co, c@d.co") && !G.isOneAddress("a@b.co; c@d.co"));
+  let posted = null;
+  const mk = (scope) => ({ email: "projects@gradcon.com.au", refresh: G.encryptText("1//r", genv), scope });
+  const fetchFor = (stored) => async (url, init) => { const u = String(url);
+    if (/estimator_kv\?key=eq\./.test(u)) return { ok: true, json: async () => [{ value: stored }] };
+    if (/oauth2\.googleapis\.com\/token/.test(u)) return { ok: true, json: async () => ({ access_token: "at", expires_in: 3600 }) };
+    if (/\/messages\/send/.test(u)) { posted = JSON.parse(init.body); return { ok: true, json: async () => ({ id: "m9", threadId: "t9", labelIds: ["SENT"] }) }; }
+    if (/gradcon-files\//.test(u)) return { ok: true, headers: { get: () => "application/pdf" }, arrayBuffer: async () => Buffer.from("%PDF-1.4 y") };
+    return { ok: false, status: 404, json: async () => ({}) }; };
+  G.resetTokenCache();
+  const noScope = await GM.runGmail({ action: "send", to: "trevor@dmacpiling.com.au", subject: "x", text: "y" }, genv, fetchFor(mk(G.GMAIL_SCOPE)));
+  assert.ok(noScope.status === 409 && noScope.body.needsReconnect === true && posted === null, "read-only connection: 409 needsReconnect, nothing sent");
+  G.resetTokenCache();
+  const two = await GM.runGmail({ action: "send", to: "a@b.co, c@d.co", subject: "x", text: "y" }, genv, fetchFor(mk(G.GMAIL_SCOPE + " " + G.GMAIL_SEND_SCOPE)));
+  assert.equal(two.status, 400, "two addresses are refused — one message per recipient");
+  G.resetTokenCache();
+  const bad = await GM.runGmail({ action: "send", to: "a@b.co", subject: "x", text: "y", attachments: [{ name: "evil", url: "https://example.com/x.pdf" }] }, genv, fetchFor(mk(G.GMAIL_SCOPE + " " + G.GMAIL_SEND_SCOPE)));
+  assert.equal(bad.status, 400, "an attachment outside the portal's own bucket is refused");
+  G.resetTokenCache();
+  const ok = await GM.runGmail({ action: "send", to: "trevor@dmacpiling.com.au", toName: "Trevor Carr", fromName: "Grady Fink", subject: "RFQ – x", text: "Dear Trevor,", attachments: [{ name: "S-01.pdf", url: G.ATTACH_URL_PREFIX + "drive/p1/v/S-01.pdf" }] }, genv, fetchFor(mk(G.GMAIL_SCOPE + " " + G.GMAIL_SEND_SCOPE)));
+  assert.ok(ok.status === 200 && ok.body.sent.id === "m9" && ok.body.sent.attachments[0] === "S-01.pdf" && posted && /To: Trevor Carr <trevor@dmacpiling\.com\.au>/.test(Buffer.from(posted.raw, "base64url").toString("utf8")), JSON.stringify(ok.body));
+  G.resetTokenCache();
 });
 
 console.log(`\n${passed} check(s) passed.`);

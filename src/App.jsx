@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from "react";
-import { Settings2, ArrowLeft, Printer, ListPlus, FileSpreadsheet, LayoutDashboard, Radar, FolderOpen, History, HardDriveDownload, AlertTriangle, MapPin, Loader2 } from "lucide-react";
+import { Settings2, ArrowLeft, Printer, ListPlus, FileSpreadsheet, LayoutDashboard, Radar, FolderOpen, History, HardDriveDownload, AlertTriangle, MapPin, Loader2, Mail } from "lucide-react";
 import { saveVersion, downloadQuoteFile, parseQuoteFile } from "./lib/quoteVersions.js";
 import { quoteStorageKey } from "./lib/projects.js";
 import VersionsModal from "./components/VersionsModal.jsx";
@@ -20,6 +20,9 @@ import { ClearNoticeButton } from "./components/atoms.jsx";
 import { signedInUser as portalUser } from "./lib/quoteVersions.js";
 import DriveFilesDrawer from "./components/DriveFilesDrawer.jsx";
 import TenderChecklist, { TenderChecklistButton } from "./components/TenderChecklist.jsx";
+import RfqModal from "./components/RfqModal.jsx";
+import { rfqPatch } from "./lib/rfq.js";
+import { recordRegisterContacts } from "./lib/registerStore.js";
 import { checklistPatch } from "./lib/tenderChecklist.js";
 import { driveFiles } from "./lib/driveFiles.js";
 import RateValidityBanner from "./components/RateValidityBanner.jsx";
@@ -645,6 +648,7 @@ function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, rate
   // same drawer as a picker for an element card's markups — `pickDriveFile`
   // resolves with the copied file once "Use" is pressed, null when closed.
   const [drive, setDrive] = useState(null);   // {mode, accept, resolve}
+  const [rfq, setRfq] = useState(null);       // {itemIds: [..] | null} — the RFQ composer, open on those elements
   const [checklistOpen, setChecklistOpen] = useState(false); // the tender workflow checklist — rolled up on every open (lib/tenderChecklist.js)
   // Rates Library changes this project still has to decide (lib/rateChanges.js), and
   // which element each one touches — the cards name theirs (Grady, 22 Oct 2026).
@@ -999,6 +1003,15 @@ function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, rate
           </button>
           <TenderChecklistButton quote={quote} open={checklistOpen} onToggle={() => setChecklistOpen((o) => !o)} />
           <button
+            onClick={() => setRfq({ itemIds: null })}
+            disabled={!(quote.items || []).length}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-900 hover:bg-blue-800 text-sm font-medium transition-colors flex-none disabled:opacity-40"
+            title="Request quotations: pick the elements and the package, choose contractors from the Register, approve one draft per contractor, send each separately"
+            data-testid="rfq-button"
+          >
+            <Mail size={16} /> RFQ{Array.isArray(quote.rfqs) && quote.rfqs.length > 0 && <span className="text-orange-300">({quote.rfqs.length})</span>}
+          </button>
+          <button
             onClick={() => setDrive({ mode: "attach" })}
             className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-900 hover:bg-blue-800 text-sm font-medium transition-colors flex-none"
             title="This project's files in the office's Google Drive folder — browse, search, preview, attach"
@@ -1237,6 +1250,7 @@ function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, rate
               onChange={(next) => updateItem(item.id, next)}
               onRemove={() => removeItem(item.id)}
               onDuplicate={() => duplicateItem(item.id)}
+              onRfq={() => setRfq({ itemIds: [item.id] })}
               onPickFromDrive={pickDriveFile}
               rateChanges={changesByElement[item.id]}
               onMoveUp={idx > 0 ? () => moveItem(item.id, -1) : null}
@@ -1317,6 +1331,23 @@ function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, rate
       )}
 
       {ratesOpen && <RatesModal rates={rates} setRates={setRates} lockedFor={locked && hasFrozenRates(quote) ? quote.ratesFrozen : null} onClose={() => setRatesOpen(false)} />}
+      {rfq && (
+        <RfqModal
+          quote={quote}
+          items={quote.items || []}
+          rates={rates}
+          projectScope={quote.scope}
+          elementTypes={elementTypes}
+          initialItemIds={rfq.itemIds}
+          user={portalUser() || ""}
+          onClose={() => setRfq(null)}
+          onSent={(record, sent) => {
+            const by = workUser(portalUser());
+            setQuote((q) => ({ ...q, ...rfqPatch(q, record), ...checklistPatch(q, "rfq", { done: true, note: [(q.checklist && q.checklist.rfq && q.checklist.rfq.note) || "", `${record.package}: ${sent.map((d) => d.orgName).join(", ")}`].filter(Boolean).join(" · ") }, by) }));
+            recordRegisterContacts(sent.map((d) => ({ orgId: d.orgId, subject: d.subject, threadId: d.threadId, messageId: d.messageId })), by).catch(() => {});
+          }}
+        />
+      )}
       {drive && (
         <DriveFilesDrawer
           quote={quote}

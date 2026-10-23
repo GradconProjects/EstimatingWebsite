@@ -27,6 +27,13 @@ export const GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
  * across everywhere"). The SAME connection carries both scopes; a mailbox
  * connected before this must reconnect once to grant Drive. */
 export const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.readonly";
+/* Sending (Grady, 23 Oct 2026: RFQs drafted in the app, approved one by one and sent to each
+ * contractor separately). gmail.send only — the app can send a message it composed, never read
+ * or change anything beyond what gmail.readonly allows. A connection made before this reconnects
+ * ONCE (Settings → Google mail & Drive → "Reconnect for sending"); until then api/gmail.js answers
+ * 409 needsReconnect to every send. Nothing is ever sent without a person approving that one
+ * draft in the portal. */
+export const GMAIL_SEND_SCOPE = "https://www.googleapis.com/auth/gmail.send";
 /** The office's project files folder in projects@'s Drive — the default root
  * the app may read under; Settings → Google Drive can point it elsewhere
  * (stored in STORAGE_ROW_KEY). A folder id is not a secret. */
@@ -88,7 +95,7 @@ export function redirectUri(req, env = process.env) {
 }
 export function consentUrl(redirect, env = process.env, now = Date.now()) {
   const p = new URLSearchParams({
-    client_id: env.GOOGLE_CLIENT_ID, redirect_uri: redirect, response_type: "code", scope: `${GMAIL_SCOPE} ${DRIVE_SCOPE} openid email`,
+    client_id: env.GOOGLE_CLIENT_ID, redirect_uri: redirect, response_type: "code", scope: `${GMAIL_SCOPE} ${DRIVE_SCOPE} ${GMAIL_SEND_SCOPE} openid email`,
     access_type: "offline", prompt: "consent", include_granted_scopes: "true", state: signState(env, now), login_hint: allowedMailbox(env),
   });
   return `https://accounts.google.com/o/oauth2/v2/auth?${p}`;
@@ -121,8 +128,9 @@ export async function deleteConnection(fetchImpl = fetch) {
 }
 /** Safe to show in the browser: connected or not, which address, when — never a token. */
 export const hasDriveScope = (conn) => !!(conn && typeof conn.scope === "string" && conn.scope.split(/\s+/).includes(DRIVE_SCOPE));
+export const hasSendScope = (conn) => !!(conn && typeof conn.scope === "string" && conn.scope.split(/\s+/).includes(GMAIL_SEND_SCOPE));
 export function connectionStatus(conn, env = process.env) {
-  return { configured: googleConfigured(env), connected: !!(conn && conn.refresh), drive: hasDriveScope(conn), email: conn ? conn.email || null : null, connectedAt: conn ? conn.connectedAt || null : null, mailbox: allowedMailbox(env), scope: GMAIL_SCOPE };
+  return { configured: googleConfigured(env), connected: !!(conn && conn.refresh), drive: hasDriveScope(conn), send: hasSendScope(conn), email: conn ? conn.email || null : null, connectedAt: conn ? conn.connectedAt || null : null, mailbox: allowedMailbox(env), scope: GMAIL_SCOPE };
 }
 
 /* ---------- tokens ---------- */
@@ -194,6 +202,64 @@ export async function listMessages({ q = "", max = 25, pageToken = "" } = {}, to
 }
 export async function readMessage(id, token, fetchImpl = fetch) {
   return parseMessage(await gmailGet(`/messages/${encodeURIComponent(id)}?format=full`, token, fetchImpl));
+}
+/* ---------- Gmail sending ---------- */
+const EMAIL_RE = /^[^\s@<>,;]+@[^\s@<>,;]+\.[^\s@<>,;]+$/;
+export const isOneAddress = (s) => EMAIL_RE.test(String(s || "").trim());
+// RFC 2047 for a header that may carry a non-ASCII name or subject (an en dash in "RFQ – …" is one)
+const encodeHeader = (s) => /^[\x20-\x7e]*$/.test(s) ? s : `=?UTF-8?B?${Buffer.from(s, "utf8").toString("base64")}?=`;
+const b64wrap = (buf) => buf.toString("base64").replace(/(.{76})/g, "$1\r\n");
+/** One plain-text message as an RFC 2822 document (multipart/mixed when it carries attachments), base64url for the Gmail API. ONE recipient — never cc, never bcc. */
+export function buildMime({ to, toName = "", from, fromName = "", subject, text, replyTo = "", attachments = [] }) {
+  const addr = (name, email) => (name ? `${encodeHeader(String(name).replace(/[\r\n"<>]/g, " ").trim())} <${email}>` : email);
+  const head = [
+    `From: ${addr(fromName, from)}`,
+    `To: ${addr(toName, to)}`,
+    replyTo ? `Reply-To: ${replyTo}` : null,
+    `Subject: ${encodeHeader(String(subject).replace(/[\r\n]+/g, " ").trim())}`,
+    "MIME-Version: 1.0",
+  ].filter((l) => l !== null);
+  const body = b64wrap(Buffer.from(String(text).replace(/\r?\n/g, "\r\n"), "utf8"));
+  let lines;
+  if (!attachments.length) lines = [...head, "Content-Type: text/plain; charset=UTF-8", "Content-Transfer-Encoding: base64", "", body];
+  else {
+    const boundary = "gradcon_" + Buffer.from(String(Date.now()) + subject).toString("base64url").slice(0, 24);
+    lines = [...head, `Content-Type: multipart/mixed; boundary="${boundary}"`, "", `--${boundary}`, "Content-Type: text/plain; charset=UTF-8", "Content-Transfer-Encoding: base64", "", body];
+    for (const a of attachments) {
+      const name = String(a.name || "attachment").replace(/[\r\n"]/g, " ").trim();
+      lines.push(`--${boundary}`, `Content-Type: ${a.mimeType || "application/octet-stream"}; name="${encodeHeader(name)}"`, "Content-Transfer-Encoding: base64", `Content-Disposition: attachment; filename="${encodeHeader(name)}"`, "", b64wrap(a.bytes));
+    }
+    lines.push(`--${boundary}--`);
+  }
+  return Buffer.from(lines.join("\r\n"), "utf8").toString("base64url");
+}
+/* Attachments are fetched by the server from the portal's own public bucket ONLY (Drive files land
+ * there through api/drive copy, element drawings live there as quote-markups/…) — never an arbitrary
+ * URL — and are capped so a message stays inside Gmail's limit. */
+export const ATTACH_URL_PREFIX = "https://xbmyhvrcuyapoarmchpv.supabase.co/storage/v1/object/public/gradcon-files/";
+export const ATTACH_MAX_FILES = 10;
+export const ATTACH_MAX_BYTES = 20 * 1024 * 1024;
+export async function fetchAttachments(list, fetchImpl = fetch) {
+  const out = []; let total = 0;
+  for (const a of (Array.isArray(list) ? list : []).slice(0, ATTACH_MAX_FILES)) {
+    const url = String((a && a.url) || "");
+    if (!url.startsWith(ATTACH_URL_PREFIX)) { const e = new Error(`attachment not in the portal's file store: ${url.slice(0, 80)}`); e.status = 400; throw e; }
+    const r = await fetchImpl(url, { signal: AbortSignal.timeout(60000) });
+    if (!r.ok) { const e = new Error(`could not fetch attachment ${a.name || url} (${r.status})`); e.status = 502; throw e; }
+    const bytes = Buffer.from(await r.arrayBuffer());
+    total += bytes.length;
+    if (total > ATTACH_MAX_BYTES) { const e = new Error("attachments over 20 MB in total — send fewer or smaller files"); e.status = 413; throw e; }
+    out.push({ name: String(a.name || url.split("/").pop() || "attachment").slice(0, 120), mimeType: r.headers && r.headers.get ? (r.headers.get("content-type") || "").split(";")[0] || a.mimeType || "application/octet-stream" : a.mimeType || "application/octet-stream", bytes });
+  }
+  return out;
+}
+export async function sendMessage({ to, toName, fromName, subject, text, replyTo, attachments = [] }, token, email, fetchImpl = fetch) {
+  const files = attachments.length ? await fetchAttachments(attachments, fetchImpl) : [];
+  const raw = buildMime({ to, toName, from: email, fromName, subject, text, replyTo, attachments: files });
+  const r = await fetchImpl(`${G}/messages/send`, { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify({ raw }), signal: AbortSignal.timeout(30000) });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) { const e = new Error(`Gmail ${r.status}${d.error && d.error.message ? ": " + d.error.message : ""}`); e.status = r.status === 401 ? 401 : r.status === 403 ? 403 : 502; throw e; }
+  return { id: d.id, threadId: d.threadId, labelIds: d.labelIds || [] };
 }
 export async function attachmentBytes(messageId, attachmentId, token, fetchImpl = fetch) {
   const d = await gmailGet(`/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentId)}`, token, fetchImpl);
