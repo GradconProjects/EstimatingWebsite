@@ -157,10 +157,32 @@ let STATE = null;            // {version, orgs, tombstones, log, updatedAt, upda
 let RECONCILED = false;      // this tab has read the cloud row (or a positive "no row") — only then may it write
 let SYNCED_AT = null;        // updated_at of the cloud row this tab last agreed with
 let cloudState = "checking";
-const UI = { tab: "supply", q: "", cats: new Set(), trades: new Set(), cap: "", capState: "", tier: "", status: "", sort: "last-desc", open: new Set(), kpi: "", checking: null };
+const UI = { tab: "supply", q: "", cats: new Set(), trades: new Set(), cap: "", capState: "yes", tier: "", status: "", sort: "last-desc", open: new Set(), more: new Set(), allCaps: new Set(), kpi: "", checking: null };
+const SEED_VERSION = (typeof REGISTER_SEED !== "undefined" && REGISTER_SEED && REGISTER_SEED.version) || 1;
+const SEED_BY_ID = Object.fromEntries(((typeof REGISTER_SEED !== "undefined" && REGISTER_SEED && REGISTER_SEED.orgs) || []).map((o) => [o.id, o]));
+const familyOf = (o) => { const g = TRADE_GROUPS.find((t) => t.key === (o.tradeGroup || "")); return g ? g.capGroups || [] : []; };
 
+// The mailbox-mined capabilities (by: "mail") and the unstated placeholders (by: "seed") follow the
+// seed's rules; a capability Grady set himself is never touched. Runs once per seed version
+// (v2, 23 Oct 2026: a foam supplier had been tagged "screed", a piler "reo" — mining is now
+// limited to the contractor's own trade family).
+function resyncSeedCapabilities(state){
+  if ((state.seedVersion || 1) >= SEED_VERSION) return false;
+  let n = 0;
+  for (const o of state.orgs) {
+    const seed = SEED_BY_ID[o.id]; if (!seed) continue;
+    const next = {};
+    for (const [k, v] of Object.entries(o.capabilities || {})) if (v && v.by !== "mail" && v.by !== "seed") next[k] = v;
+    for (const [k, v] of Object.entries(seed.capabilities || {})) if (!next[k]) next[k] = v;
+    if (JSON.stringify(next) !== JSON.stringify(o.capabilities || {})) { o.capabilities = next; o.updatedAt = nowIso(); o.updatedBy = "seed v" + SEED_VERSION; n++; }
+    if (!o.tradeGroup && seed.tradeGroup) o.tradeGroup = seed.tradeGroup;
+  }
+  state.seedVersion = SEED_VERSION;
+  state.log.push({ at: nowIso(), by: userKey(), text: "Capabilities re-read from the built-in seed v" + SEED_VERSION + " on " + n + " organisation(s) — only mailbox-read and unstated entries; hand-set ones kept" });
+  return true;
+}
 function blankState(){ return { version: 1, orgs: [], tombstones: [], log: [], updatedAt: nowIso(), updatedBy: userKey() }; }
-function seedState(){ const s = blankState(); const seed = (typeof REGISTER_SEED !== "undefined" && REGISTER_SEED) ? REGISTER_SEED : { orgs: [] }; s.orgs = JSON.parse(JSON.stringify(seed.orgs || [])); s.log.push({ at: nowIso(), by: userKey(), text: "Register seeded with " + s.orgs.length + " organisations (projects@ mailbox, the 23 Oct 2026 workbook and the Project Management register)" }); return s; }
+function seedState(){ const s = blankState(); s.seedVersion = SEED_VERSION; const seed = (typeof REGISTER_SEED !== "undefined" && REGISTER_SEED) ? REGISTER_SEED : { orgs: [] }; s.orgs = JSON.parse(JSON.stringify(seed.orgs || [])); s.log.push({ at: nowIso(), by: userKey(), text: "Register seeded with " + s.orgs.length + " organisations (projects@ mailbox, the 23 Oct 2026 workbook and the Project Management register)" }); return s; }
 function normalize(s){
   if (!s || typeof s !== "object") return blankState();
   s.version = 1; s.orgs = Array.isArray(s.orgs) ? s.orgs : []; s.tombstones = Array.isArray(s.tombstones) ? s.tombstones : []; s.log = Array.isArray(s.log) ? s.log : [];
@@ -176,6 +198,7 @@ function mergeStates(a, b){
   out.orgs = [...orgs.values()]; out.tombstones = [...tomb.values()];
   const seen = new Set(); out.log = [...(a.log || []), ...(b.log || [])].filter((l) => { const k = l.at + "|" + l.text; if (seen.has(k)) return false; seen.add(k); return true; }).sort((x, y) => x.at.localeCompare(y.at)).slice(-600);
   out.updatedAt = (a.updatedAt || "") > (b.updatedAt || "") ? a.updatedAt : b.updatedAt; out.updatedBy = (a.updatedAt || "") > (b.updatedAt || "") ? a.updatedBy : b.updatedBy;
+  out.seedVersion = Math.max(a.seedVersion || 0, b.seedVersion || 0) || undefined;
   return out;
 }
 const fingerprint = (s) => JSON.stringify({ o: s.orgs.map((o) => [o.id, o.updatedAt]).sort(), t: s.tombstones.map((t) => [t.id, t.at]).sort(), l: s.log.length });
@@ -215,8 +238,8 @@ async function load(){
   const local = readLocal();
   const row = await kvFetch(KEY);
   if (row === KV_FAILED) { STATE = local || seedState(); cloudState = "offline"; paintCloud("Cloud: not reachable — showing " + (local ? "this browser's copy" : "the built-in seed") + "; nothing is written until the cloud answers", "err"); setTimeout(retryLoad, 15000); }
-  else if (row) { const cloud = normalize(row.value); STATE = local ? normalize(mergeStates(local, cloud)) : cloud; RECONCILED = true; SYNCED_AT = row.updated_at; cloudState = "ok"; if (fingerprint(STATE) !== fingerprint(cloud)) { writeLocal(); pushNow(); } else { writeLocal(); markSaved("Cloud: in sync · " + STATE.orgs.length + " organisations · last change by " + (STATE.updatedBy || "—")); } }
-  else { STATE = local || seedState(); RECONCILED = true; SYNCED_AT = null; cloudState = "ok"; writeLocal(); pushNow(); }
+  else if (row) { const cloud = normalize(row.value); STATE = local ? normalize(mergeStates(local, cloud)) : cloud; if (!STATE.seedVersion && cloud.seedVersion) STATE.seedVersion = cloud.seedVersion; RECONCILED = true; SYNCED_AT = row.updated_at; cloudState = "ok"; const resynced = resyncSeedCapabilities(STATE); if (resynced || fingerprint(STATE) !== fingerprint(cloud)) { writeLocal(); pushNow(); } else { writeLocal(); markSaved("Cloud: in sync · " + STATE.orgs.length + " organisations · last change by " + (STATE.updatedBy || "—")); } }
+  else { STATE = local || seedState(); resyncSeedCapabilities(STATE); RECONCILED = true; SYNCED_AT = null; cloudState = "ok"; writeLocal(); pushNow(); }
   render();
   setInterval(pollCloud, 20000);
 }
@@ -270,7 +293,11 @@ function visibleOrgs(){
   if (UI.tab === "supply" || UI.tab === "client") list = list.filter((o) => sideOf(o) === UI.tab);
   if (UI.cats.size) list = list.filter((o) => UI.cats.has(o.category));
   if (UI.trades.size) list = list.filter((o) => UI.trades.has(o.tradeGroup || "other"));
-  if (UI.cap) list = list.filter((o) => { const c = o.capabilities[UI.cap]; const st = c ? c.status : "unknown"; return UI.capState ? st === UI.capState : true; });
+  // a chosen capability shows ONLY organisations with something recorded for it: "does" (default), "does NOT",
+  // "not stated" (a piling contractor who has not said), or "stated either way" — never the whole list
+  // one capability chip = ONLY the organisations recorded as DOING it (Grady, 23 Oct 2026: "if screw piles
+  // clicked, only screw piles contractors should appear and not this multi choice filtering")
+  if (UI.cap) list = list.filter((o) => o.capabilities[UI.cap] && o.capabilities[UI.cap].status === "yes");
   if (UI.tier) list = list.filter((o) => o.tier === UI.tier);
   if (UI.status) list = list.filter((o) => o.status === UI.status); else list = list.filter((o) => o.status !== "Inactive" && o.status !== "Do not use" || UI.kpi === "all");
   if (UI.kpi === "them") list = list.filter((o) => o.lastContactDir === "out" && (daysSince(o.lastContact) || 0) >= 3);
@@ -296,7 +323,7 @@ function render(){
   if (UI.tab === "people") { main.innerHTML = renderPeople(); return; }
   if (UI.tab === "followups") { main.innerHTML = renderFollowUps(); return; }
   const list = visibleOrgs();
-  main.innerHTML = renderKpis() + renderToolbar(list) + (UI.trades.has("piling") || UI.cap ? renderMatrix(list) : "") + renderTable(list);
+  main.innerHTML = renderKpis() + renderToolbar(list) + (UI.trades.has("piling") || PILING_KEYS.includes(UI.cap) ? renderMatrix(list) : "") + renderTable(list);
 }
 function renderKpis(){
   const pool = STATE.orgs.filter((o) => (UI.tab === "all" || sideOf(o) === UI.tab) && o.status !== "Inactive" && o.status !== "Do not use");
@@ -314,13 +341,14 @@ function renderToolbar(list){
   const tcounts = {}; for (const o of STATE.orgs) if (sideOf(o) === "supply") tcounts[o.tradeGroup || "other"] = (tcounts[o.tradeGroup || "other"] || 0) + 1;
   const chips = '<div class="chips"><span class="lbl">Category</span>' + catOpts.map((c) => '<button class="chip' + (UI.cats.has(c.key) ? " on" : "") + '" data-cat="' + c.key + '" title="' + esc(c.blurb) + '">' + c.label + '<span class="n">' + (counts[c.key] || 0) + "</span></button>").join("") + "</div>";
   const trades = UI.tab !== "client" ? '<div class="chips"><span class="lbl">Trade</span>' + TRADE_GROUPS.filter((g) => tcounts[g.key]).map((g) => '<button class="chip' + (UI.trades.has(g.key) ? " on" : "") + '" data-trade="' + g.key + '">' + esc(g.label) + '<span class="n">' + tcounts[g.key] + "</span></button>").join("") + "</div>" : "";
-  const capSel = '<select id="capSel" title="Filter by a capability — what the contractor does, does not do or has not said"><option value="">Capability…</option>' + CAPS.map((c) => '<option value="' + c.key + '"' + (UI.cap === c.key ? " selected" : "") + ">" + esc(c.label) + "</option>").join("") + '</select><select id="capState"' + (UI.cap ? "" : " disabled") + '><option value="">any</option><option value="yes"' + (UI.capState === "yes" ? " selected" : "") + '>does</option><option value="no"' + (UI.capState === "no" ? " selected" : "") + '>does NOT</option><option value="unknown"' + (UI.capState === "unknown" ? " selected" : "") + ">not stated</option></select>";
+  const ccounts = {}; for (const o of STATE.orgs) for (const [k, v] of Object.entries(o.capabilities)) if (v && v.status === "yes") ccounts[k] = (ccounts[k] || 0) + 1;
+  const capChips = UI.tab !== "client" ? '<div class="chips"><span class="lbl">Does</span>' + CAPS.filter((c) => ccounts[c.key] || UI.cap === c.key).map((c) => '<button class="chip' + (UI.cap === c.key ? " on" : "") + '" data-capchip="' + c.key + '" title="Only the contractors recorded as doing this (their own words, or set by hand)">' + esc(c.label.replace(/ \(.*$/, "")) + '<span class="n">' + (ccounts[c.key] || 0) + "</span></button>").join("") + "</div>" : "";
   const checking = UI.checking ? '<span class="progress" id="checkProgress">Checking mail… ' + UI.checking.done + " / " + UI.checking.total + "</span>" : "";
-  return '<div class="toolbar"><div class="row"><input type="text" class="grow" id="q" placeholder="Search name, trade, contact, email, phone, project, subject…" value="' + esc(UI.q) + '">' + capSel +
+  return '<div class="toolbar"><div class="row"><input type="text" class="grow" id="q" placeholder="Search name, trade, contact, email, phone, project, subject…" value="' + esc(UI.q) + '">' +
     '<select id="tierSel" title="Evidence tier"><option value="">Tier…</option>' + ["A", "B", "C", "D"].map((t) => '<option' + (UI.tier === t ? " selected" : "") + ">" + t + "</option>").join("") + "</select>" +
     '<select id="statusSel"><option value="">Active &amp; prospects</option>' + STATUSES.map((s) => '<option' + (UI.status === s ? " selected" : "") + ">" + s + "</option>").join("") + "</select>" +
     '<select id="sortSel">' + [["last-desc", "Last contact · newest"], ["last-asc", "Last contact · oldest"], ["score", "Evidence score"], ["rating", "Grady's rating"], ["reply", "Fastest to reply"], ["follow", "Next follow-up"], ["name", "Name"]].map(([k, l]) => '<option value="' + k + '"' + (UI.sort === k ? " selected" : "") + ">" + l + "</option>").join("") + "</select>" +
-    '<button class="btn primary" id="addBtn">+ Add organisation</button><button class="btn" id="checkAllBtn" title="Ask the projects@ mailbox for the newest email to or from each organisation shown (read-only) and move the last-contact dates">' + (UI.checking ? "Stop" : "Check mail for " + list.length + " shown") + "</button>" + checking + '<button class="btn" id="csvBtn">⬇ CSV</button><button class="btn" id="seedBtn" title="Add any organisation from the built-in list that is not here yet — never overwrites">Add missing from list</button></div>' + chips + trades + "</div>";
+    '<button class="btn primary" id="addBtn">+ Add organisation</button><button class="btn" id="checkAllBtn" title="Ask the projects@ mailbox for the newest email to or from each organisation shown (read-only) and move the last-contact dates">' + (UI.checking ? "Stop" : "Check mail for " + list.length + " shown") + "</button>" + checking + '<button class="btn" id="csvBtn">⬇ CSV</button><button class="btn" id="seedBtn" title="Add any organisation from the built-in list that is not here yet — never overwrites">Add missing from list</button></div>' + chips + trades + capChips + "</div>";
 }
 function capChip(o, key){ const c = o.capabilities[key]; const st = c ? c.status : "unknown"; const mark = st === "yes" ? "✓" : st === "no" ? "✗" : "?"; return '<span class="cap ' + st + '" title="' + esc((c && c.evidence) || "not stated — set it") + '">' + mark + " " + esc(CAP[key] ? CAP[key].label.replace(/ \(.*$/, "") : key) + "</span>"; }
 function renderMatrix(list){
@@ -353,32 +381,37 @@ function renderTable(list){
 function inp(o, path, type, extra){ const v = getPath(o, path); return '<input type="' + (type || "text") + '" data-path="' + path + '" data-org="' + o.id + '" value="' + esc(v == null ? "" : v) + '" ' + (extra || "") + ">"; }
 function sel(o, path, opts){ const v = getPath(o, path) || ""; return '<select data-path="' + path + '" data-org="' + o.id + '">' + opts.map(([k, l]) => '<option value="' + esc(k) + '"' + (String(k) === String(v) ? " selected" : "") + ">" + esc(l) + "</option>").join("") + "</select>"; }
 function renderDetail(o){
-  const capGroups = []; for (const c of CAPS) { let g = capGroups.find((x) => x.name === c.group); if (!g) capGroups.push(g = { name: c.group, items: [] }); g.items.push(c); }
-  const capHtml = capGroups.map((g) => '<div class="g">' + esc(g.name) + "</div>" + g.items.map((c) => { const cur = o.capabilities[c.key] || { status: "unknown", evidence: "" }; return '<div class="c"><span class="l">' + esc(c.label) + '</span><select class="' + cur.status + '" data-cap="' + c.key + '" data-org="' + o.id + '"><option value="unknown"' + (cur.status === "unknown" ? " selected" : "") + ">not stated</option><option value=\"yes\"" + (cur.status === "yes" ? " selected" : "") + ">does</option><option value=\"no\"" + (cur.status === "no" ? " selected" : "") + ">does NOT</option></select>" + (cur.evidence ? '<div class="e">' + esc(cur.evidence) + "</div>" : "") + "</div>"; }).join("")).join("");
+  const more = UI.more.has(o.id); const fam = familyOf(o); const showAll = UI.allCaps.has(o.id) || !fam.length;
+  const capGroups = []; for (const c of CAPS) { if (!showAll && !fam.includes(c.group)) continue; let g = capGroups.find((x) => x.name === c.group); if (!g) capGroups.push(g = { name: c.group, items: [] }); g.items.push(c); }
+  const capHtml = capGroups.map((g) => '<div class="g">' + esc(g.name) + "</div>" + g.items.map((c) => { const cur = o.capabilities[c.key] || { status: "unknown", evidence: "" }; return '<div class="c"><span class="l">' + esc(c.label) + '</span><select class="' + cur.status + '" data-cap="' + c.key + '" data-org="' + o.id + '"><option value="unknown"' + (cur.status === "unknown" ? " selected" : "") + '>not stated</option><option value="yes"' + (cur.status === "yes" ? " selected" : "") + '>does</option><option value="no"' + (cur.status === "no" ? " selected" : "") + ">does NOT</option></select>" + (cur.evidence ? '<div class="e">' + esc(cur.evidence) + "</div>" : "") + "</div>"; }).join("")).join("");
   const contacts = '<table class="inner"><tr><th>Primary</th><th>Name</th><th>Role</th><th>Email</th><th>Phone</th><th>Mobile</th><th>Last contact</th><th></th></tr>' + o.contacts.map((c, i) => "<tr>" +
     '<td class="right"><input type="radio" name="primary-' + o.id + '" data-primary="' + i + '" data-org="' + o.id + '"' + (c.primary ? " checked" : "") + "></td>" +
     ["name", "role", "email", "phone", "mobile"].map((f) => "<td>" + '<input type="text" data-contact="' + i + '" data-field="' + f + '" data-org="' + o.id + '" value="' + esc(c[f] || "") + '"></td>').join("") +
-    '<td class="nowrap small">' + (c.lastContact ? fmtDay(c.lastContact) : "—") + (c.inbound + c.outbound ? ' <span class="muted">(' + (c.inbound || 0) + " in · " + (c.outbound || 0) + " out)</span>" : "") + "</td>" +
+    '<td class="nowrap small">' + (c.lastContact ? fmtDay(c.lastContact) : "—") + "</td>" +
     '<td><button class="btn sm danger" data-delcontact="' + i + '" data-org="' + o.id + '" title="Remove this person">✕</button></td></tr>').join("") + "</table>" + '<button class="btn sm" data-addcontact="' + o.id + '" style="margin-top:6px">+ Add person</button>';
-  const threads = o.threads.length ? '<ul class="threads" style="margin:0;padding-left:16px">' + o.threads.map((t) => '<li><span class="d">' + fmtDay(t.day) + "</span>" + (t.threadId ? '<a href="' + gmailLink(t.threadId) + '" target="_blank" rel="noopener">' + esc(t.subject) + "</a>" : esc(t.subject)) + "</li>").join("") + "</ul>" : '<div class="muted small">No subjects on record yet.</div>';
-  const logs = STATE.log.filter((l) => l.orgId === o.id).slice(-8).reverse();
+  const threads = o.threads.length ? '<ul class="threads" style="margin:6px 0 0;padding-left:16px">' + o.threads.slice(0, 6).map((t) => '<li><span class="d">' + fmtDay(t.day) + "</span>" + (t.threadId ? '<a href="' + gmailLink(t.threadId) + '" target="_blank" rel="noopener">' + esc(t.subject) + "</a>" : esc(t.subject)) + "</li>").join("") + "</ul>" : '<div class="muted small">No subjects on record yet.</div>';
+  const logs = STATE.log.filter((l) => l.orgId === o.id).slice(-6).reverse();
   const mailQ = mailQueryFor(o);
   return '<div class="detail">' +
     '<div class="card"><h4>Organisation <span><button class="btn sm" data-checkmail="' + o.id + '" title="Ask the projects@ mailbox for the newest email to or from them (read-only)">Check mail now</button></span></h4>' +
       '<div class="fld"><label>Name</label>' + inp(o, "name") + "</div>" +
       '<div class="fld"><label>Category</label>' + sel(o, "category", CATEGORIES.map((c) => [c.key, c.label])) + "</div>" +
-      '<div class="fld"><label>Trade group</label>' + sel(o, "tradeGroup", [["", "—"], ...TRADE_GROUPS.map((g) => [g.key, g.label])]) + "</div>" +
+      (sideOf(o) !== "client" ? '<div class="fld"><label>Trade group</label>' + sel(o, "tradeGroup", [["", "—"], ...TRADE_GROUPS.map((g) => [g.key, g.label])]) + "</div>" : "") +
       '<div class="fld"><label>Trade / scope</label>' + inp(o, "trade") + "</div>" +
       '<div class="fld"><label>Status</label>' + sel(o, "status", STATUSES.map((s) => [s, s])) + "</div>" +
-      '<div class="fld"><label>Grady\'s rating</label><div>' + stars(o, true) + ' <span class="small muted">your judgement of them — separate from the evidence score</span></div></div>' +
+      "<div class=\"fld\"><label>Grady's rating</label><div>" + stars(o, true) + "</div></div>" +
+      '<div class="fld"><label>Phones</label>' + '<input type="text" data-list="phones" data-org="' + o.id + '" value="' + esc(o.phones.join("; ")) + '" placeholder="03 … ; 04 …"></div>' +
+      '<div class="fld"><label>Emails</label>' + '<input type="text" data-list="emails" data-org="' + o.id + '" value="' + esc(o.emails.join("; ")) + '" placeholder="semicolon-separated"></div>' +
       '<div class="fld"><label>Website</label>' + inp(o, "website", "url") + "</div>" +
-      '<div class="fld"><label>Phones</label>' + '<input type="text" data-list="phones" data-org="' + o.id + '" value="' + esc(o.phones.join("; ")) + '" placeholder="03 … ; 04 … (semicolon-separated)"></div>' +
-      '<div class="fld"><label>Emails</label>' + '<input type="text" data-list="emails" data-org="' + o.id + '" value="' + esc(o.emails.join("; ")) + '" placeholder="semicolon-separated — these also drive the mailbox check"></div>' +
-      '<div class="fld"><label>Address</label>' + inp(o, "address") + "</div>" +
-      '<div class="fld"><label>Projects</label>' + '<input type="text" data-list="projects" data-org="' + o.id + '" value="' + esc(o.projects.join("; ")) + '" placeholder="sites they were involved in (semicolon-separated)"></div>' +
+      '<div class="fld"><label>Follow-up on</label>' + inp(o, "followUp.date", "date") + "</div>" +
       '<div class="fld col"><label>Notes</label><textarea data-path="notes" data-org="' + o.id + '">' + esc(o.notes) + "</textarea></div>" +
-      '<div class="fld col"><label>Risks / follow-up</label><textarea data-path="risks" data-org="' + o.id + '">' + esc(o.risks) + "</textarea></div>" +
     "</div>" +
+    '<div class="card"><h4>People (' + o.contacts.length + ")</h4>" + contacts +
+      '<h4 style="margin-top:12px">Last contact</h4><div class="basis"><b>' + fmtDay(o.lastContact) + "</b>" + (o.lastContactDir ? (o.lastContactDir === "in" ? " — they wrote" : " — Gradcon wrote") : "") + (o.lastMailId ? ' · <a href="' + gmailLink(o.lastMailId) + '" target="_blank" rel="noopener">open the email</a>' : "") + (mailQ ? ' · <a href="' + gmailSearch(mailQ) + '" target="_blank" rel="noopener">all mail with them</a>' : "") + "</div>" + threads +
+    "</div>" +
+    (sideOf(o) !== "client" ? '<div class="card wide"><h4>What they do <span>' + (fam.length ? '<button class="btn sm" data-allcaps="' + o.id + '">' + (UI.allCaps.has(o.id) ? "Only their trade" : "Every capability") + "</button>" : "") + '</span></h4><div class="capgrid">' + (capHtml || '<div class="muted small">No trade group set — pick one above, or show every capability.</div>') + "</div></div>" : "") +
+    '<div class="card wide" style="padding:8px 12px"><button class="btn sm" data-more="' + o.id + '">' + (more ? "Less ▴" : "More — compliance, projects, evidence, changes ▾") + "</button></div>" +
+  (more ? (
     '<div class="card"><h4>Compliance &amp; commercial <span class="small muted" style="text-transform:none;letter-spacing:0">verify before award</span></h4>' +
       '<div class="fld"><label>ABN</label>' + inp(o, "abn") + "</div>" +
       '<div class="fld"><label>ABN verified</label>' + sel(o, "compliance.abnVerified", [["", "not checked"], ["yes", "checked on ABR"], ["no", "problem"]]) + "</div>" +
@@ -386,17 +419,19 @@ function renderDetail(o){
       '<div class="fld"><label>Public liability</label>' + inp(o, "compliance.publicLiability", "text", 'placeholder="insurer, cover, expiry"') + "</div>" +
       '<div class="fld"><label>Workers comp</label>' + inp(o, "compliance.workersComp", "text", 'placeholder="policy / expiry"') + "</div>" +
       '<div class="fld"><label>Insurance expiry</label>' + inp(o, "compliance.insuranceExpiry", "date") + "</div>" +
-      '<div class="fld"><label>Licences</label>' + inp(o, "compliance.licences", "text", 'placeholder="VBA registration, DB-U/CB-L, HR licence…"') + "</div>" +
+      '<div class="fld"><label>Licences</label>' + inp(o, "compliance.licences", "text", 'placeholder="VBA registration, licence class…"') + "</div>" +
       '<div class="fld"><label>Payment terms</label>' + inp(o, "compliance.paymentTerms", "text", 'placeholder="e.g. 30 days EOM, deposit"') + "</div>" +
       '<div class="fld"><label>Rates / last quote</label>' + inp(o, "compliance.lastRate", "text", 'placeholder="what they last priced, and when"') + "</div>" +
-      '<div class="fld"><label>Follow-up on</label>' + inp(o, "followUp.date", "date") + "</div>" +
       '<div class="fld"><label>Follow-up note</label>' + inp(o, "followUp.note", "text", 'placeholder="what to chase"') + "</div>" +
-      '<h4 style="margin-top:10px">Correspondence evidence</h4><div class="basis"><b>' + o.score + "/100 · tier " + o.tier + "</b> — " + esc(o.scoreBasis || "") + (o.firstContact ? "<br>First seen " + fmtDay(o.firstContact) + ", last " + fmtDay(o.lastContact) + (o.lastContactDir ? (o.lastContactDir === "in" ? " (they wrote last)" : " (Gradcon wrote last)") : "") : "") + (o.medianReplyHrs != null ? "<br>Median time for them to answer a Gradcon email: <b>" + o.medianReplyHrs + " h</b> over " + (o.replyCount || 0) + " repl" + (o.replyCount === 1 ? "y" : "ies") : "") + (o.evidence ? "<br>Pattern: " + esc(o.evidence) : "") + (o.mailCheckedAt ? "<br>Mailbox last checked " + new Date(o.mailCheckedAt).toLocaleString("en-AU") : "") + '<br><span class="muted">Sources: ' + esc((o.sources || []).join(" · ")) + "</span>" + (o.lastMailId ? ' · <a href="' + gmailLink(o.lastMailId) + '" target="_blank" rel="noopener">open the last email</a>' : "") + (mailQ ? ' · <a href="' + gmailSearch(mailQ) + '" target="_blank" rel="noopener">all mail with them</a>' : "") + "</div>" +
     "</div>" +
-    '<div class="card wide"><h4>What they do — capabilities <span class="small muted" style="text-transform:none;letter-spacing:0">read from their own emails; set any you know</span></h4><div class="capgrid">' + capHtml + "</div></div>" +
-    '<div class="card wide"><h4>People (' + o.contacts.length + ")</h4>" + contacts + "</div>" +
-    '<div class="card"><h4>Recent subjects</h4>' + threads + "</div>" +
-    '<div class="card"><h4>Changes to this entry</h4>' + (logs.length ? '<ul class="log" style="margin:0;padding-left:16px">' + logs.map((l) => '<li><span class="d">' + new Date(l.at).toLocaleDateString("en-AU", { day: "numeric", month: "short" }) + "</span>" + esc(l.text) + ' <span class="muted">— ' + esc(l.by) + "</span></li>").join("") + "</ul>" : '<div class="muted small">No changes recorded yet.</div>') + '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn sm danger" data-remove="' + o.id + '">Remove from register</button><span class="small muted">Added ' + fmtDay((o.createdAt || "").slice(0, 10)) + " · last edited " + (o.updatedAt ? new Date(o.updatedAt).toLocaleString("en-AU") : "—") + " by " + esc(o.updatedBy || "—") + "</span></div></div>" +
+    '<div class="card"><h4>Projects, address, risks</h4>' +
+      '<div class="fld"><label>Projects</label>' + '<input type="text" data-list="projects" data-org="' + o.id + '" value="' + esc(o.projects.join("; ")) + '" placeholder="sites (semicolon-separated)"></div>' +
+      '<div class="fld"><label>Address</label>' + inp(o, "address") + "</div>" +
+      '<div class="fld col"><label>Risks / follow-up</label><textarea data-path="risks" data-org="' + o.id + '">' + esc(o.risks) + "</textarea></div>" +
+    "</div>" +
+    '<div class="card"><h4>Correspondence evidence</h4><div class="basis"><b>' + o.score + "/100 · tier " + o.tier + "</b> — " + esc(o.scoreBasis || "") + (o.firstContact ? "<br>First seen " + fmtDay(o.firstContact) : "") + (o.medianReplyHrs != null ? "<br>Median time for them to answer a Gradcon email: <b>" + o.medianReplyHrs + " h</b> over " + (o.replyCount || 0) + " repl" + (o.replyCount === 1 ? "y" : "ies") : "") + (o.evidence ? "<br>Pattern: " + esc(o.evidence) : "") + (o.mailCheckedAt ? "<br>Mailbox last checked " + new Date(o.mailCheckedAt).toLocaleString("en-AU") : "") + '<br><span class="muted">Sources: ' + esc((o.sources || []).join(" · ")) + "</span></div></div>" +
+    '<div class="card"><h4>Changes to this entry</h4>' + (logs.length ? '<ul class="log" style="margin:0;padding-left:16px">' + logs.map((l) => '<li><span class="d">' + new Date(l.at).toLocaleDateString("en-AU", { day: "numeric", month: "short" }) + "</span>" + esc(l.text) + ' <span class="muted">— ' + esc(l.by) + "</span></li>").join("") + "</ul>" : '<div class="muted small">No changes recorded yet.</div>') + '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn sm danger" data-remove="' + o.id + '">Remove from register</button><span class="small muted">Added ' + fmtDay((o.createdAt || "").slice(0, 10)) + " · last edited " + (o.updatedAt ? new Date(o.updatedAt).toLocaleString("en-AU") : "—") + " by " + esc(o.updatedBy || "—") + "</span></div></div>"
+  ) : "") +
   "</div>";
 }
 function renderPeople(){
@@ -429,13 +464,17 @@ function renderMethod(){
 }
 
 /* ============================ events ============================ */
-document.getElementById("tabnav").addEventListener("click", (e) => { const b = e.target.closest(".tab-btn"); if (!b) return; UI.tab = b.dataset.tab; UI.cats.clear(); UI.trades.clear(); UI.kpi = ""; UI.pinTop = null; render(); });
+document.getElementById("tabnav").addEventListener("click", (e) => { const b = e.target.closest(".tab-btn"); if (!b) return; UI.tab = b.dataset.tab; UI.cats.clear(); UI.trades.clear(); UI.cap = ""; UI.kpi = ""; UI.pinTop = null; render(); });
 const main = document.getElementById("main");
 main.addEventListener("click", (e) => {
   const t = e.target;
   const kpi = t.closest("[data-kpi]"); if (kpi) { UI.kpi = UI.kpi === kpi.dataset.kpi ? "" : kpi.dataset.kpi; render(); return; }
-  const cat = t.closest("[data-cat]"); if (cat) { const k = cat.dataset.cat; UI.cats.has(k) ? UI.cats.delete(k) : UI.cats.add(k); render(); return; }
-  const tr = t.closest("[data-trade]"); if (tr) { const k = tr.dataset.trade; UI.trades.has(k) ? UI.trades.delete(k) : UI.trades.add(k); render(); return; }
+  // every chip row is ONE choice: click a chip to see only those, click it again to clear
+  const cat = t.closest("[data-cat]"); if (cat) { const k = cat.dataset.cat; const was = UI.cats.has(k); UI.cats.clear(); if (!was) UI.cats.add(k); render(); return; }
+  const tr = t.closest("[data-trade]"); if (tr) { const k = tr.dataset.trade; const was = UI.trades.has(k); UI.trades.clear(); if (!was) UI.trades.add(k); render(); return; }
+  const cc = t.closest("[data-capchip]"); if (cc) { UI.cap = UI.cap === cc.dataset.capchip ? "" : cc.dataset.capchip; render(); return; }
+  const mo = t.closest("[data-more]"); if (mo) { const id = mo.dataset.more; UI.more.has(id) ? UI.more.delete(id) : UI.more.add(id); render(); return; }
+  const ac2 = t.closest("[data-allcaps]"); if (ac2) { const id = ac2.dataset.allcaps; UI.allCaps.has(id) ? UI.allCaps.delete(id) : UI.allCaps.add(id); render(); return; }
   const th = t.closest("th[data-sort]"); if (th) { UI.sort = th.dataset.sort; render(); return; }
   if (t.id === "addBtn") { addOrg(UI.tab === "client" ? "builder" : UI.cats.size === 1 ? [...UI.cats][0] : "subcontractor"); return; }
   if (t.id === "csvBtn") { const list = visibleOrgs(); downloadCsv("gradcon-register-" + today() + ".csv", ["Organisation", "Category", "Trade group", "Trade / scope", "Status", "Rating", "Evidence score", "Tier", "Last contact", "Last direction", "Median reply (h)", "Emails in", "Emails out", "Primary contact", "Role", "Mobile", "Phone", "Email", "All phones", "All emails", "Website", "ABN", "Projects", ...PILING_KEYS.map((k) => CAP[k] ? CAP[k].label : k), "Follow-up", "Follow-up note", "Notes", "Risks"], list.map((o) => { const pc = o.contacts.find((c) => c.primary) || o.contacts[0] || {}; return [o.name, (CAT[o.category] || CAT.other).label, TG[o.tradeGroup] || "", o.trade, o.status, o.rating, o.score, o.tier, o.lastContact, o.lastContactDir, o.medianReplyHrs ?? "", o.inbound, o.outbound, pc.name || "", pc.role || "", pc.mobile || "", pc.phone || "", pc.email || "", o.phones.join("; "), o.emails.join("; "), o.website, o.abn, o.projects.join("; "), ...PILING_KEYS.map((k) => (o.capabilities[k] || {}).status || ""), (o.followUp || {}).date || "", (o.followUp || {}).note || "", o.notes, o.risks]; })); return; }
@@ -461,8 +500,6 @@ main.addEventListener("input", (e) => {
 });
 main.addEventListener("change", (e) => {
   const t = e.target;
-  if (t.id === "capSel") { UI.cap = t.value; if (!UI.cap) UI.capState = ""; render(); return; }
-  if (t.id === "capState") { UI.capState = t.value; render(); return; }
   if (t.id === "tierSel") { UI.tier = t.value; render(); return; }
   if (t.id === "statusSel") { UI.status = t.value; render(); return; }
   if (t.id === "sortSel") { UI.sort = t.value; render(); return; }

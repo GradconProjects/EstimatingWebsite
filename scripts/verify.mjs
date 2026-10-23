@@ -3363,7 +3363,7 @@ check("Register (tile 08): the seed, its categories and sides, the piling capabi
     assert.ok(o.category in CATS, `${o.name}: category ${o.category}`); assert.equal(o.side, CATS[o.category], `${o.name}: side follows the category`);
     assert.ok(Array.isArray(o.contacts) && Array.isArray(o.emails) && o.capabilities && typeof o.capabilities === "object", `${o.name}: shape`);
     assert.ok(["A", "B", "C", "D"].includes(o.tier) && o.score >= 0 && o.score <= 100 && o.scoreBasis, `${o.name}: score and basis`);
-    for (const c of o.contacts) assert.ok(!c.phone || /\d{6}/.test(c.phone), `${o.name}: a phone is a number, not a shifted column (${c.phone})`);
+    for (const c of o.contacts) assert.ok(!c.phone || c.phone.replace(/\D/g, "").length >= 8, `${o.name}: a phone is a number, not a shifted column (${c.phone})`);
   }
   const blob = JSON.stringify(REGISTER_SEED);
   assert.ok(!/fyneboma|alandjoce|ongroundpm/i.test(blob), "the estimators' own addresses and the draft outreach never enter the register");

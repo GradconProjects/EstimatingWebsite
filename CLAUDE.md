@@ -1332,13 +1332,30 @@ sign-in" option), inlined by `scripts/assemble-portal.mjs` with its seed
    which we do not install" → screw `no`; Allstate quotes screw piles as the
    alternative wherever bored piers are specified → screw `yes`, bored `no`;
    DMAC bored / CFA / retention / shotcrete / capping `yes`, screw `unknown`
-   (no screw-pile correspondence). A piling-group organisation always carries
-   the four piling keys, `unknown` when unstated. The list row shows ✓ / ✗
-   (struck through) / ? chips; the **piling matrix** (shown when the Piling
-   trade or a capability filter is on) puts the foundation contractors side
-   by side; the capability filter answers "who does screw piles / who does
-   NOT / who hasn't said"; a change in the row's grid is stamped with the
-   account and logged.
+   (no screw-pile correspondence). **Mining is limited to the contractor's
+   own trade family** (`CAP_FAMILY` in the build script → each
+   `REGISTER_TRADE_GROUPS` entry's `capGroups`; 23 Oct 2026: a foam supplier
+   had been tagged "screed", a piler "reo"). A piling-group organisation
+   always carries the four piling keys, `unknown` when unstated. The seed
+   carries `version`; `resyncSeedCapabilities` runs ONCE per version on a
+   stored register (`state.seedVersion`): mailbox-read (`by: "mail"`) and
+   placeholder (`by: "seed"`) entries follow the new seed, a capability set
+   by hand is never touched, and the move is logged. The list row shows
+   ✓ / ✗ (struck through) / ? chips; the **piling matrix** (shown when the
+   Piling trade chip or a piling capability chip is on) puts the foundation
+   contractors side by side; a change in the row's grid is stamped with the
+   account and logged. **Filtering is one click** (Grady, same day: "if
+   screw piles clicked, only screw piles contractors should appear and not
+   this multi choice filtering"): every chip row — Category, Trade, Does —
+   is a single choice (click to see only those, click again to clear), and a
+   capability chip shows ONLY the organisations recorded as DOING it; who
+   does NOT is read off the matrix and the row chips, never a sub-filter.
+   **The expanded row is compact** ("reduce details given under the dropdown
+   when each item clicked"): the organisation's own fields, its people with
+   the last contact and subjects, and the capabilities of its own trade
+   family ("Every capability" shows all 16); compliance, projects / address /
+   risks, the evidence basis and the change log sit behind "More ▾"
+   (`UI.more`, `UI.allCaps`, session-only).
 5. **The evidence score is correspondence, never performance.** 0–100 =
    volume (6·ln(1+emails), ≤30) + threads (5 each, ≤20) + two-way (15) +
    their median reply time (≤24 h 15 / ≤72 h 10 / else 5) + recency (≤30 d
