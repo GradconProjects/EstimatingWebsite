@@ -2347,11 +2347,16 @@ element families waits on the owner's approval of the pad footing.
   The `dupBeam` click action is next to `addRow` / `delRow`.
   `test-beam-dup.mjs` proves both tabs, the pricing once a run is typed and
   the independence of the copied bar sets.
-- **Slab beam grades** (`slabBeamGrade(d, g)`): edge beams, internal beams
-  / raft ribs, edge and wall thickenings take `beamGrade` (Concrete tab,
-  blank = slab `grade`) and each extra beam group can carry its own `grade`;
-  the slab line and blinding keep the slab grade, so the pour schedule
-  separates the products.
+- **Slab beam grades** (`slabBeamGrade(d, g, part)` is the ONE reading —
+  26 Oct 2026, Grady: "raft beams concrete grade could be different from the
+  slab grade"): an extra beam group's own `grade`, else the primary beam's
+  own box on ITS tab (`edgeBeamGrade` on Edge Beams, `beamStripsGrade` on
+  Internal Beams — `part` "edge" / "strips"; the box's label says what blank
+  means), else the shared `beamGrade` on the Concrete tab (edge and wall
+  thickenings read this one), else the slab `grade`; the slab line and the
+  blinding keep their own grades, so the pour schedule separates the
+  products. `test-raft-blinding.mjs` proves the three boxes and the
+  fall-through.
 - **Additional Reinforcement / Elements rows** (`addlRowQty` / `addlRowEach`,
   on every element): the COUNT multiplies whichever "each" value the unit
   reads — length each (m), area each (m², m³), else qty each (no., kg, item).
