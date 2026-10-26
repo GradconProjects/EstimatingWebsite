@@ -2481,7 +2481,17 @@ element families waits on the owner's approval of the pad footing.
   `precastCalc` — elsewhere a manual-area slab forces the sections table):
   the only Method is "By area covered × layers" and `areaBarGeom` reads a
   blank area as the whole panel area; sections, by-rate, by-area, mesh,
-  additional rows, starters and connections all work as on a slab. The
+  additional rows, starters and connections all work as on a slab. **Sheets
+  and trenches** (same day, Grady: "bar type should allow for sheets and
+  trenches … for the precast panels"): the Mesh block is the sheets; the
+  panel's Reinforcement tab also carries "Trench mesh / strips / stock bars
+  along the panels" (`panelTrenchOn`, `panelTrenchType` through the shared
+  `trenchMeshTypeSel`, `panelTrenchRunM` blank = the panels' edge length,
+  `panelTrenchLayers`, `panelTrenchLap`) — one `part: "extra"` line per
+  product (trench / strip lm through `trenchReoMassPerM` at the panel
+  thickness, stock bars through `stockBarLayerLine`), kept under every
+  reinforcement method. Whole-sheet counts carry a 1e-9 epsilon
+  (100.8 ÷ 14.4 once rounded up to 8 sheets). The
   generic spacing sanity check skips `jointSpacing` (metres) — before this
   every slab and kerb carried "Unusually tight spacing of 6 mm". The library's
   `EST_WASTE_TYPES` and `DEFAULT_COVERS.slab["Precast Panel"]` = 30 carry the
@@ -2714,7 +2724,16 @@ element families waits on the owner's approval of the pad footing.
   the formula says so and the area becomes `_autoAreaM2` for Project
   Geometry), or a typed volume (`manualVolume` wins over a typed area). Every
   generic kind — excavation, alteration, temporary, the precast allowance,
-  civil — has both boxes. `test-generic-area.mjs` proves the three bases.
+  civil — has both boxes. **Its reinforcement is one of three products**
+  (same day, Grady: "bar type should allow for sheets and trenches"):
+  `reoType` "bar" (straight bar by total length, as before), "mesh" (sheet
+  mesh by area × layers in whole 6.0 × 2.4 m sheets — `reoMeshType`,
+  `reoArea` blank = the element's own area, `reoLayers`) or "trench" (the
+  shared `trenchMeshTypeSel` — an L-series mesh, a square-mesh strip or
+  straight stock bars — by `reoLength` metres of run × layers, priced as the
+  footing's trench layer is: `trenchReoMassPerM`, or `stockBarLayerLine` for
+  bars). `test-generic-area.mjs` proves the three bases and the three
+  products.
 - `docs/ESTIMATES_COVERAGE.md` is the coverage audit (brief §11.3): map a
   new real-world item to an existing calculator + modifier first; the
   generic calculator (`kind` excavation / alteration / temporary / precast /

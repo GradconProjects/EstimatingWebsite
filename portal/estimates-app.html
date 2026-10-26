@@ -5247,7 +5247,11 @@ function renderSlab(inst,def){
   // 2026: "i want the re entrant bar option available too whether slab is
   // calculated by stock, volume or area. all other options available to
   // slabs should be available too").
-  let reoMat = meshBlock + barBlock("botX","Bottom X bars")+barBlock("botY","Bottom Y bars")+barBlock("topX","Top X bars")+barBlock("topY","Top Y bars");
+  // Precast panels take trench mesh / mesh strips / stock bars along runs too (26 Oct 2026, Grady: "bar type should allow for sheets and trenches … for the precast panels") — the sheets are the Mesh block, the trenches this one
+  const panelTrenchBlock = d.category==="Precast Panel" ? `<div class="sechead">Trench mesh / strips / stock bars along the panels</div><div class="grid cols4">${chk("panelTrenchOn",d.panelTrenchOn,"Trench reinforcement on","panelTrenchOn")}</div>
+  <div class="subsec ${d.panelTrenchOn?'':'hidden'}" data-show-if="panelTrenchOn"><div class="grid cols4">${F("Product",trenchMeshTypeSel("panelTrenchType",d.panelTrenchType||"4 Bar-L12TM"))}${F("Total run (m, blank = the panels' edge length)",inpNum("panelTrenchRunM",d.panelTrenchRunM))}${F("Layers",inpNum("panelTrenchLayers",d.panelTrenchLayers===undefined?1:d.panelTrenchLayers))}${chk("panelTrenchLap",d.panelTrenchLap,"Include lap allowance (%)")}</div>
+  <p class="small">An L-series trench mesh, a square mesh cut as strips, or straight stock bars (count × size) by the metre of run × layers — edge strips, lifting-zone trimmers, door-head bars. The run defaults to the total edge length of all panels.</p></div>` : "";
+  let reoMat = meshBlock + panelTrenchBlock + barBlock("botX","Bottom X bars")+barBlock("botY","Bottom Y bars")+barBlock("topX","Top X bars")+barBlock("topY","Top Y bars");
   let reoExtras = `<div class="subsec"><div class="sechead">Edge Return / Turn-down Bars</div>
    ${chk("returnBars",d.returnBars,"Return bars at slab edges (U-bar turn-down)","returnBars")}
    <div class="subsec ${d.returnBars?'':'hidden'}" data-show-if="returnBars"><div class="grid cols4">
@@ -5592,9 +5596,17 @@ function computeSlab(inst,def){
     layerTypeCounts(d,"meshLayers","meshType","meshLayerTypes").forEach((n,type)=>{
       let layeredArea=netArea*n;
       let wastedArea=withWasteLap(layeredArea,REO_WASTE_PCT,meshLapPct);
-      let sheets=Math.ceil(wastedArea/MESH_SHEET_AREA_M2);
+      let sheets=Math.ceil(wastedArea/MESH_SHEET_AREA_M2-1e-9);
       lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:type,spec:`Mesh sheets ×${n} layer(s)`,qty:layeredArea,unit:"m²",waste:REO_WASTE_PCT,lap:meshLapPct,finalQty:wastedArea,sheets,formula:`net area × ${n} layer(s) (+${REO_WASTE_PCT}% waste${meshLapPct?`, +${meshLapPct}% lap`:''}) → ceil(/${MESH_SHEET_AREA_M2}m²) = ${sheets} sheets`,notes:`${sheets} sheets (6.0×2.4m nominal)`}));
     });
+  }
+  if(d.category==="Precast Panel" && d.panelTrenchOn){
+    const type=d.panelTrenchType||"4 Bar-L12TM", layers=Math.max(1,Math.round(num(d.panelTrenchLayers,1))), runM=num(d.panelTrenchRunM)>0? num(d.panelTrenchRunM) : perim, lp=layerProduct(type);
+    if(runM>0){
+      if(lp.kind==="bars"){ const l=stockBarLayerLine(inst,def,lp,layers,runM,"Panel run",d.panelTrenchLap); l.part="extra"; lines.push(l); }
+      else { const mpm=trenchReoMassPerM(type,num(d.thickness)); const totLen=runM*layers; const wt=totLen*mpm; const lapPct=d.panelTrenchLap?MESH_LAP_PCT:0;
+        lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",part:"extra",material:type,spec:`Trench mesh along the panels${layers>1?` × ${layers} layers`:""}`,qty:totLen,unit:"lm",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,lapPct),massPerUnit:mpm,formula:`${num(d.panelTrenchRunM)>0?"typed run":"panel edge length"} ${fmt(runM,2)} m × ${layers} layer(s)`,notes:`${fmt(wt,1)} kg`})); }
+    } else warnings.push({text:"Trench reinforcement is on but no run is known — type the total run (or the panels' edge length) on Geometry.",section:"reo",level:"completeness"});
   }
   if(d.returnBars){
     let girthMm=num(d.retTurndown)*2+num(d.retLeg);
@@ -6657,7 +6669,7 @@ function diagComposite(inst){ const d=inst.data; const slabs=(d.slabs||[]).filte
 }
 function genericDefaults(kind){ return {
   kind:kind, qty:1, length:10000, width:1000, depth:300, manualVolume:false, volumeOverride:0, manualArea:false, areaOverride:0,   // area × depth is the second manual basis (26 Oct 2026, Grady: "it should also have option to input area manually not just volume")
-  formworkOn:false, formworkArea:0, reoOn:false, reoDia:"N12", reoLength:0, reoQty:0, reoLap:false, notes:""
+  formworkOn:false, formworkArea:0, reoOn:false, reoType:"bar", reoDia:"N12", reoLength:0, reoQty:0, reoLap:false, reoMeshType:"SL82", reoArea:0, reoLayers:1, reoTrenchType:"4 Bar-L12TM", notes:""   // reoType bar | mesh | trench (26 Oct 2026, Grady: "bar type should allow for sheets and trenches")
 };}
 function renderGeneric(inst){
   let d=inst.data;
@@ -6666,9 +6678,14 @@ function renderGeneric(inst){
   <div class="subsec ${d.manualArea?'':'hidden'}" data-show-if="manualArea"><div class="grid cols3">${F("Area (m², total — × the depth above)",inpNum("areaOverride",d.areaOverride))}</div></div>
   <div class="subsec ${d.manualVolume?'':'hidden'}" data-show-if="manualVolume">${F("Volume (m³)",inpNum("volumeOverride",d.volumeOverride))}</div>
   <p class="small">Three ways to measure: quantity × L × W × depth; a typed total area × the depth; or a typed volume. A typed volume wins over a typed area.</p>`;
+  const rt=d.reoType||"bar";
   let reo=`${chk("reoOn",d.reoOn,"Reinforcement required","reoOn")}
-  <div class="subsec ${d.reoOn?'':'hidden'}" data-show-if="reoOn"><div class="grid cols3">${F("Dia",barSizeSel("reoDia",d.reoDia))}${F("Total length (m)",inpNum("reoLength",d.reoLength))}${F("Qty (if bar count basis)",inpNum("reoQty",d.reoQty))}</div>
-  <div class="grid cols3">${chk("reoLap",d.reoLap,"Include lap allowance (%)","reoLap")}</div></div>`;
+  <div class="subsec ${d.reoOn?'':'hidden'}" data-show-if="reoOn"><div class="grid cols3">${F("Reinforcement type",selOpts("reoType",rt,[["bar","Straight bar (by total length)"],["mesh","Sheet mesh (by area, whole sheets)"],["trench","Trench mesh / mesh strips / stock bars (by run)"]],true))}</div>
+  ${rt==="mesh"? `<div class="grid cols3">${F("Mesh type",selOpts("reoMeshType",d.reoMeshType||"SL82",Object.keys(MESHTYPES).map(m=>[m,m])))}${F("Area covered (m², blank = the element's area)",inpNum("reoArea",d.reoArea))}${F("Layers",inpNum("reoLayers",d.reoLayers===undefined?1:d.reoLayers))}</div>`
+  : rt==="trench"? `<div class="grid cols3">${F("Trench mesh / strip / bars",trenchMeshTypeSel("reoTrenchType",d.reoTrenchType||"4 Bar-L12TM"))}${F("Total run (m)",inpNum("reoLength",d.reoLength))}${F("Layers",inpNum("reoLayers",d.reoLayers===undefined?1:d.reoLayers))}</div>`
+  : `<div class="grid cols3">${F("Dia",barSizeSel("reoDia",d.reoDia))}${F("Total length (m)",inpNum("reoLength",d.reoLength))}${F("Qty (if bar count basis)",inpNum("reoQty",d.reoQty))}</div>`}
+  <div class="grid cols3">${chk("reoLap",d.reoLap,"Include lap allowance (%)","reoLap")}</div>
+  <p class="small">${rt==="mesh"? "Sheet mesh over the area × layers, bought in whole 6.0 × 2.4 m sheets — the area defaults to the element's own typed area (manual area, or L × W × qty)." : rt==="trench"? "An L-series trench mesh, a square mesh cut as strips, or straight stock bars (count × size) by the metre of run × layers — the same products the footing and raft beams use." : "Straight bar by the total cut length (the bar count is informational)."} More bars, mesh or items of other sizes go on the Additional Reinforcement rows below.</p></div>`;
   let form=`${chk("formworkOn",d.formworkOn,"Formwork required","formworkOn")}
   <div class="subsec ${d.formworkOn?'':'hidden'}" data-show-if="formworkOn">${F("Area (m²)",inpNum("formworkArea",d.formworkArea))}</div>
   <div class="subsec">${F("Notes",inpText("notes",d.notes))}</div>`;
@@ -6683,9 +6700,27 @@ function computeGeneric(inst,def){
   lines.push(baseLine(inst,def,{materialGroup:group,material:def.label,spec:d.notes||"",qty:vol,unit:"m³",waste:group=="Concrete"?concWastePct(d):0,finalQty:group=="Concrete"?withWaste(vol,concWastePct(d)):vol,formula:d.manualVolume?"manual entry":d.manualArea?`manual area ${fmt(num(d.areaOverride),2)} m² × depth ${num(d.depth)} mm`:"qty×L×W×D"}));
   if(d.formworkOn && num(d.formworkArea)>0) lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:def.label,spec:"",qty:num(d.formworkArea),unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(num(d.formworkArea),PROJECT.formworkWaste),formula:"manual entry"}));
   if(d.reoOn){
-    let dia=barDiaOf(d.reoDia); let len=num(d.reoLength); let wt=len*massPerM(dia);
-    let lapPct=d.reoLap?PROJECT.lapPct:0;
-    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.reoDia,spec:"",qty:len,unit:"m",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(len,PROJECT.reoWaste,lapPct),formula:"manual entry",notes:`${fmt(wt,1)} kg`}));
+    const rt=d.reoType||"bar", layers=Math.max(1,Math.round(num(d.reoLayers,1)));
+    if(rt==="mesh"){
+      // sheet mesh over an area × layers — the element's own area when none is typed (the manual area, else qty × L × W)
+      const ownArea = d.manualArea? num(d.areaOverride) : num(d.qty,1)*(num(d.length)/1000)*(num(d.width)/1000);
+      const area = num(d.reoArea)>0? num(d.reoArea) : ownArea;
+      const type = MESHTYPES[d.reoMeshType]!==undefined? d.reoMeshType : "SL82";
+      const meshLapPct=d.reoLap?MESH_LAP_PCT:0;
+      const layeredArea=area*layers, wastedArea=withWasteLap(layeredArea,REO_WASTE_PCT,meshLapPct), sheets=Math.ceil(wastedArea/MESH_SHEET_AREA_M2-1e-9);
+      if(area>0) lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:type,spec:`Mesh sheets ×${layers} layer(s)`,qty:layeredArea,unit:"m²",waste:REO_WASTE_PCT,lap:meshLapPct,finalQty:wastedArea,sheets,formula:`${num(d.reoArea)>0?"typed area":"element area"} ${fmt(area,2)} m² × ${layers} layer(s) (+${REO_WASTE_PCT}% waste${meshLapPct?`, +${meshLapPct}% lap`:''}) → ceil(/${MESH_SHEET_AREA_M2}m²) = ${sheets} sheets`,notes:`${sheets} sheets (6.0×2.4m nominal)`}));
+    } else if(rt==="trench"){
+      const type=d.reoTrenchType||"4 Bar-L12TM", runM=num(d.reoLength), lp=layerProduct(type);
+      if(runM>0){
+        if(lp.kind==="bars") lines.push(stockBarLayerLine(inst,def,lp,layers,runM,"Run",d.reoLap));
+        else { const mpm=trenchReoMassPerM(type,num(d.width)); const totLen=runM*layers; const wt=totLen*mpm; const lapPct=d.reoLap?MESH_LAP_PCT:0;
+          lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:type,spec:`Trench mesh${layers>1?` × ${layers} layers`:""}`,qty:totLen,unit:"lm",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,lapPct),massPerUnit:mpm,formula:`run ${fmt(runM,2)} m × ${layers} layer(s)`,notes:`${fmt(wt,1)} kg`})); }
+      }
+    } else {
+      let dia=barDiaOf(d.reoDia); let len=num(d.reoLength); let wt=len*massPerM(dia);
+      let lapPct=d.reoLap?PROJECT.lapPct:0;
+      lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d.reoDia,spec:"",qty:len,unit:"m",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(len,PROJECT.reoWaste,lapPct),formula:"manual entry",notes:`${fmt(wt,1)} kg`}));
+    }
   }
   return {lines,warnings:[]};
 }
