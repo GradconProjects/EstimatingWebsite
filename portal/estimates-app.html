@@ -1881,7 +1881,7 @@ const DEFAULT_COVERS = {
   pier:65, pilecap:50, stripfooting:50, padfooting:50, retwall:50, kerb:45, shotwall:40,
   beam:{Ground:50, Suspended:30, Roof:30},
   slab:{"Slab on Ground":30,"Raft Slab":50,"Waffle Slab":30,"Industrial Slab":40,"Suspended Slab":25,"RC Roof Slab":40,
-        "Cantilevered Roof Slab":40,"Plant Deck":40,"Lift Overrun Slab":40,
+        "Cantilevered Roof Slab":40,"Plant Deck":40,"Lift Overrun Slab":40,"Precast Panel":30,
         "Driveway":45,"Path":40,"Hardstand":45,"Ramp":40,"Basement Slab":40},
   column:40, wall:35, stairs:30, generic:40,
   tankbox:{"Swimming Pool":40,"Water Tank":40,"Sump Pit":40,"Planter":30,"Lift Pit":40},
@@ -2184,6 +2184,7 @@ const LIBRARY = [
  ]},
   {group:"Precast / Tilt-up", items:[
       {id:"precastpanel",label:"Precast / Tilt-up Panel (supply-and-fix allowance)",calc:"generic",kind:"precast"},
+      {id:"precastpanelmeasured",label:"Precast / Tilt-up Panel (measured — total area, mesh, bars, edge forms)",calc:"slab",slabCategory:"Precast Panel",suspended:true,precast:true},
       {id:"precaststitch",label:"Precast Stitch / Grout / Embeds",calc:"generic",kind:"precast"}
   ]},
   {group:"Civil / Bridge", items:[
@@ -5027,16 +5028,17 @@ function computeBeam(inst,def){
 }
 
 /* ---- SLAB (ground / suspended / raft / driveway / roof etc.) ---- */
-function slabDefaults(cat,suspended){ return {
-  category:cat, suspended:!!suspended, manualArea:false, areaOverride:0, length:25,  width:12,  // metres for slabs (large plan dims)
+function slabDefaults(cat,suspended){ const precast=cat==="Precast Panel"; return {
+  category:cat, suspended:!!suspended, manualArea:precast, areaOverride:0, length:25,  width:12,  // metres for slabs (large plan dims)
+  qty:precast?1:undefined,  // precast: the number of panels (count only — the area typed is the TOTAL of all panels)
   thickness:150, perimeterAuto:true, perimeterOverride:0, outlineOn:false, outlinePts:[{x:0,y:0},{x:25,y:0},{x:25,y:12},{x:0,y:12}], baseThickness:100, baseMaterialState:"compacted", vapourMembrane:!suspended, meshOn:true, meshType:"SL82", meshLayers:1, meshLap:false,
-  edgeForms:true, soffit:!!suspended, openings:[], drops:false, setdowns:false, upstands:false, cjStopEnds:false,
-  botX:true,botXDia:"N12",botXMethod:"spacing",botXSpacing:200,botXQty:0,botXBars:[],botXLap:false, botY:true,botYDia:"N12",botYMethod:"spacing",botYSpacing:200,botYQty:0,botYBars:[],botYLap:false,
-  topX:!!suspended,topXDia:"N12",topXMethod:"spacing",topXSpacing:200,topXQty:0,topXBars:[],topXLap:false, topY:!!suspended,topYDia:"N12",topYMethod:"spacing",topYSpacing:200,topYQty:0,topYBars:[],topYLap:false,
+  edgeForms:true, soffit:!!suspended && !precast, openings:[], drops:false, setdowns:false, upstands:false, cjStopEnds:false,
+  botX:true,botXDia:"N12",botXMethod:precast?"area":"spacing",botXSpacing:200,botXQty:0,botXBars:[],botXLap:false, botY:true,botYDia:"N12",botYMethod:precast?"area":"spacing",botYSpacing:200,botYQty:0,botYBars:[],botYLap:false,
+  topX:!!suspended && !precast,topXDia:"N12",topXMethod:precast?"area":"spacing",topXSpacing:200,topXQty:0,topXBars:[],topXLap:false, topY:!!suspended && !precast,topYDia:"N12",topYMethod:precast?"area":"spacing",topYSpacing:200,topYQty:0,topYBars:[],topYLap:false,
   cover:PROJECT.cover, grade:PROJECT.grade,
   returnBars:false, retDia:"N12", retSpacing:200, retTurndown:150, retLeg:300, retEdges:"perimeter", retLap:false,
   reentrantOn:false, reentrantQty:"", reentrantMode:"bars", reentrantDia:"N12", reentrantPer:2, reentrantLen:1200, reentrantStripType:"4 Bar-L12TM", reentrantStripW:300, reentrantSheetType:"SL82", reentrantSheetW:600, reentrantLap:false,
-  joints:true, jointSpacing:6, dowels:false, dowelDia:"N16", dowelSpacing:300, dowelLength:500,
+  joints:!precast, jointSpacing:6, dowels:false,   // a precast panel has stitches, not control joints dowelDia:"N16", dowelSpacing:300, dowelLength:500,
   starters:false, connTarget:"", connQty:0, connDia:"N12", connEmbed:400, connProj:400,
   stepdown:false, sdLength:6, sdDepth:150, sdDia:"N12", sdSpacing:300, sdProj1:300, sdProj2:300,
   edgeThicken:false, edgeThickenWidth:300, edgeThickenExtraDepth:150, edgeThickenLenOverride:"", etShape:"tri", etSides:"one", etBaseW:0,
@@ -5069,14 +5071,15 @@ function renderSlab(inst,def){
   if(!d.edgeBeamLigZones) d.edgeBeamLigZones=[{zone:"General",length:0,dia:d.edgeBeamLigDia||"N10",spacing:num(d.edgeBeamLigSpacing,300)}];
   if(!d.beamStripsRows) d.beamStripsRows=[{position:"Bottom continuous",qty:num(d.beamStripsBars,4),dia:d.beamStripsDia||"N16",layers:Math.max(1,Math.round(num(d.beamStripsLayers,1))),startA:"straight",endA:"straight",lap:!!d.beamStripsLap}];
   if(!d.beamStripsLigZones) d.beamStripsLigZones=[{zone:"General",length:0,dia:d.beamStripsLigDia||"N10",spacing:num(d.beamStripsLigSpacing,300)}];
-  let geom=`<div class="grid cols3">${chk("manualArea",d.manualArea,"Enter area manually (irregular slab)","manualArea",true)}</div>
-  <div class="subsec ${d.manualArea?'':'hidden'}" data-show-if="manualArea"><div class="grid cols3">${F("Area (m²)",inpNum("areaOverride",d.areaOverride))}</div></div>
+  const precast=!!(def&&def.precast) || d.category==="Precast Panel";
+  let geom=`${precast?`<div class="tip" data-testid="precast-note"><span class="ico">🧱</span><div><b>Precast / tilt-up panels are measured like a slab, by TOTAL area.</b> Type the number of panels and the total area of all of them (from the panel schedule), the thickness, then the mesh and bars on the Reinforcement tab exactly as for a slab — sheet mesh, bar mats by spacing / count / area, by rate, additional bars, starters and connections all apply. Edge forms are measured by the metre around every panel: type the total edge length as the perimeter override (blank = square panels assumed, flagged). Panels are cast on a bed, so no soffit formwork, excavation or blinding is taken.</div></div><div class="grid cols3">${F("Number of panels (no.)",inpNum("qty",d.qty===undefined?1:d.qty))}</div>`:""}<div class="grid cols3">${chk("manualArea",d.manualArea,precast?"Enter the total panel area manually (recommended)":"Enter area manually (irregular slab)","manualArea",true)}</div>
+  <div class="subsec ${d.manualArea?'':'hidden'}" data-show-if="manualArea"><div class="grid cols3">${F(precast?"Total panel area (m²) — all panels together":"Area (m²)",inpNum("areaOverride",d.areaOverride))}</div></div>
   <div class="subsec ${d.manualArea?'hidden':''}" data-show-if="manualArea_off"><div class="grid cols3">${F("Length (m)",inpNum("length",d.length))}${F("Width (m)",inpNum("width",d.width))}</div></div>
   <div class="grid cols4">
    ${F("Thickness (mm)",inpNum("thickness",d.thickness))}${coverField(inst)}
-   ${chk("perimeterAuto",d.perimeterAuto,"Perimeter auto (2×(L+W))","perimeterAuto")}
+   ${chk("perimeterAuto",d.perimeterAuto,precast?"Edge length auto (square panels assumed — untick and type the total edge length)":"Perimeter auto (2×(L+W))","perimeterAuto")}
   </div>
-  <div class="subsec ${d.perimeterAuto?'hidden':''}" data-show-if="perimeterAuto_off">${F("Perimeter override (m)",inpNum("perimeterOverride",d.perimeterOverride))}</div>
+  <div class="subsec ${d.perimeterAuto?'hidden':''}" data-show-if="perimeterAuto_off">${F(precast?"Total edge length of all panels (m) — for the edge forms":"Perimeter override (m)",inpNum("perimeterOverride",d.perimeterOverride))}</div>
   ${slabBeamLengthPrompt(d)}
   <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
    ${chk("outlineOn",d.outlineOn,"Draw slab outline (area & perimeter measured, not guessed)",undefined,true)}
@@ -5120,7 +5123,8 @@ function renderSlab(inst,def){
   </div></div>
   ${slabBeamFormworkSection(inst,d)}`;
   function barBlock(prefix,label){
-    let manual = d.manualArea;
+    const precastBlk = d.category==="Precast Panel";
+    let manual = d.manualArea && !precastBlk;   // a precast panel set is ALWAYS a manual total area, yet its bars are taken by area covered (blank = the whole panel area) or as sections
     // Schedule mode is available on EVERY slab, not just irregular/manual-area
     // ones: tick "Enter as bar sections" to specify multiple bar sets — each
     // with its own bar type, spacing, the span the bars are spaced across,
@@ -5131,9 +5135,9 @@ function renderSlab(inst,def){
      ${chk(prefix,d[prefix],label+" on",prefix)}
      ${manual? "" : chk(prefix+"Sched",d[prefix+"Sched"],"Enter as bar sections (multiple sets)",undefined,true)}
      ${useSched? "" : F("Dia",barSizeSel(prefix+"Dia",d[prefix+"Dia"]))}
-     ${useSched? "" : F("Method",selOpts(prefix+"Method",d[prefix+"Method"]||"spacing",[["spacing","By spacing (over the slab dimension)"],["count","By bar count"],["area","By area covered × layers"]],true))}
+     ${useSched? "" : F("Method",selOpts(prefix+"Method",precastBlk? "area" : (d[prefix+"Method"]||"spacing"),precastBlk? [["area","By area covered × layers (blank area = all panels)"]] : [["spacing","By spacing (over the slab dimension)"],["count","By bar count"],["area","By area covered × layers"]],true))}
      ${useSched? "" : (mode==="count"? F("Bar count",inpNum(prefix+"Qty",d[prefix+"Qty"])) : F("Spacing (mm)",inpNum(prefix+"Spacing",d[prefix+"Spacing"])))}
-     ${(useSched||mode!=="area")? "" : F("Area covered (m²)",inpNum(prefix+"Area",d[prefix+"Area"]))}
+     ${(useSched||mode!=="area")? "" : F(precastBlk? "Area covered (m², blank = the total panel area)" : "Area covered (m²)",inpNum(prefix+"Area",d[prefix+"Area"]))}
      ${(useSched||mode!=="area")? "" : F("Layers",inpNum(prefix+"Layers",d[prefix+"Layers"]===undefined?1:d[prefix+"Layers"]))}
     </div>
     ${(useSched||mode!=="area"||!d[prefix])? "" : `<p class="small">Where the slab has no proper bars designed: the bars are taken per 1 m block — 1 m ÷ spacing bars, each 1 m long, plus the end bar on the X blocks only (1 ÷ 0.2 = 5 + 1 on X, 5 on Y) — × the area covered × layers (one direction per block — use the X and Y blocks for a mat each way). Waste and lap apply as usual.</p>`}
@@ -5347,7 +5351,8 @@ function barMode(d,prefix){ let m=d[prefix+"Method"]; return (m==="count"||m==="
  * one-way layer. */
 function areaBarsPerM(spMm, extra){ return spMm>0? 1000/spMm + (extra?1:0) : 0; }
 function areaBarGeom(d,prefix){
-  let area=num(d[prefix+"Area"]), spacing=Math.max(1,num(d[prefix+"Spacing"],200)), layers=Math.max(1,Math.round(num(d[prefix+"Layers"],1)));
+  // a precast panel set's bar block with no area typed covers the whole panel area (the manual total)
+  let area=num(d[prefix+"Area"]) || (d.category==="Precast Panel" && d.manualArea? num(d.areaOverride) : 0), spacing=Math.max(1,num(d[prefix+"Spacing"],200)), layers=Math.max(1,Math.round(num(d[prefix+"Layers"],1)));
   let extra=/X$/.test(prefix);                       // X blocks carry the end bar, Y blocks do not — one side only
   let perM2=areaBarsPerM(spacing,extra);             // bars per 1 m block × 1 m each = metres per m²
   let totLen = area>0? perM2*area*layers : 0;
@@ -5358,8 +5363,14 @@ function areaBarGeom(d,prefix){
  * sketched outline's perimeter, else 2 × (L + W). */
 function slabPerimM(d){
   let outline = slabOutlinePts(d);
-  return !d.perimeterAuto? num(d.perimeterOverride) : (outline? polyPerim(outline) : 2*(num(d.length)+num(d.width)));
+  if(!d.perimeterAuto) return num(d.perimeterOverride);
+  if(outline) return polyPerim(outline);
+  // A precast panel set measured by TOTAL area has no L×W: until the total edge length is typed
+  // the edge forms assume n equal SQUARE panels (4·√(A/n)·n) and computeSlab flags it (26 Oct 2026).
+  if(d.category==="Precast Panel" && d.manualArea){ const n=Math.max(1,num(d.qty,1)), A=num(d.areaOverride); return A>0? 4*Math.sqrt(A/n)*n : 0; }
+  return 2*(num(d.length)+num(d.width));
 }
+const precastPerimAssumed=(d)=>d.category==="Precast Panel" && d.manualArea && d.perimeterAuto && !slabOutlinePts(d);
 function computeSlab(inst,def){
   let d=inst.data, lines=[], warnings=[];
   let outline = slabOutlinePts(d);
@@ -5372,6 +5383,7 @@ function computeSlab(inst,def){
   let vol=netArea*t;
   lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:`${d.category} ${d.thickness}mm`,qty:vol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(vol,concWastePct(d)),formula:`(${d.manualArea?'manual area':'L×W'} ${fmt(area,1)} − openings ${fmt(openArea,1)})×${fmt(t,3)}`}));
   let perim = slabPerimM(d);
+  if(precastPerimAssumed(d) && area>0) warnings.push({text:`Precast: the edge forms assume ${Math.max(1,num(d.qty,1))} equal square panel${num(d.qty,1)===1?"":"s"} (${fmt(perim,1)} m of edge) — untick "Edge length auto" on Geometry and type the total edge length of all panels from the schedule.`, section:"geom", level:"completeness"});
   d._autoInsPerim = perim; // strip insulation (per-m products) defaults to the perimeter
   if(!d.suspended){
     let baseVol=netArea*(num(d.baseThickness)/1000);
@@ -5529,9 +5541,10 @@ function computeSlab(inst,def){
       });
     });
   });
+  const precastCalc = d.category==="Precast Panel";
   function barCalc(prefix,label,perpDim){
     if(!d[prefix]) return;
-    if(d.manualArea || d[prefix+"Sched"]){
+    if((d.manualArea && !precastCalc) || d[prefix+"Sched"]){
       // Irregular slab: no single rectangular formula fits, so it's broken into sections. For each
       // section the estimator gives the span the bars are spaced across and the spacing — the bar
       // count for that section is calculated (span/spacing + 1) — plus the actual cut length.
@@ -5547,7 +5560,7 @@ function computeSlab(inst,def){
     }
     let dia=barDiaOf(d[prefix+"Dia"]);
     let lapPct=d[prefix+"Lap"]?PROJECT.lapPct:0;
-    if(barMode(d,prefix)==="area"){
+    if(barMode(d,prefix)==="area" || precastCalc){
       // Area covered × layers (6 Oct 2026, Grady: "some slabs dont have proper
       // bars designed … lets use the area covered and include also layer"):
       // the bars in ONE direction are taken per 1 m block (1 m ÷ spacing, + the
@@ -8390,7 +8403,7 @@ function validateInstance(inst, def, out){
     Object.keys(obj).forEach(k=>{
       let v=obj[k], pth=path? path+"."+k : k;
       if(v && typeof v==="object"){ walk(v, pth, depth+1); return; }
-      if(/spacing/i.test(k) && v!=="" && v!==undefined && v!==null){
+      if(/spacing/i.test(k) && !/^jointSpacing$/.test(k) && v!=="" && v!==undefined && v!==null){   // jointSpacing is in METRES (slab / kerb joints), never a bar spacing
         let n=parseFloat(v);
         if(!isNaN(n) && n<=0) push(`Spacing must be greater than 0 (${pth})`, "reo", "completeness");
         else if(!isNaN(n) && n>0 && n<50) push(`Unusually tight spacing of ${n} mm (${pth}) — confirm it is not a typo`, "reo");

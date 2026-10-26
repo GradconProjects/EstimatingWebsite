@@ -2459,6 +2459,34 @@ element families waits on the owner's approval of the pad footing.
   (`bulkApply("waste")`) put chosen elements back on Auto, optionally clear
   typed % overrides, and can move a flat-basis project onto the work-type
   basis; nothing else on the element changes.
+- **Precast / tilt-up panels are measured like a SLAB** (26 Oct 2026,
+  Grady: "for precast panels, i want to be able to enter areas manually and
+  also allow sheet materials and all types of reinforcements etc, more like
+  the slab entries"): `precastpanelmeasured` ("Precast / Tilt-up Panel
+  (measured — total area, mesh, bars, edge forms)", group Precast / Tilt-up,
+  `calc: "slab"`, `slabCategory: "Precast Panel"`, `suspended: true`,
+  `precast: true`) sits beside the old supply-and-fix allowance, which is
+  unchanged. `slabDefaults("Precast Panel")`: `manualArea` on (the area typed
+  is the TOTAL of all panels), `qty` = the number of panels (Project
+  Geometry's count), no soffit formwork (cast on a bed), no joints, every bar
+  block on the "area covered × layers" method, no top mat by default; being
+  suspended it never blinds, lays base or membrane, and its group is not a
+  ground group, so it never digs. The Geometry tab carries the precast note
+  (`precast-note`), the panel count and the relabelled area / edge-length
+  boxes. **Edge forms**: `slabPerimM` with no typed edge length on a manual-
+  area panel set assumes n equal SQUARE panels (4·√(A/n)·n) and
+  `computeSlab` flags it (`precastPerimAssumed` — completeness) until the
+  total edge length is typed as the perimeter override. **Bars**: the bar
+  blocks stay usable under manual area on a panel (`precastBlk` /
+  `precastCalc` — elsewhere a manual-area slab forces the sections table):
+  the only Method is "By area covered × layers" and `areaBarGeom` reads a
+  blank area as the whole panel area; sections, by-rate, by-area, mesh,
+  additional rows, starters and connections all work as on a slab. The
+  generic spacing sanity check skips `jointSpacing` (metres) — before this
+  every slab and kerb carried "Unusually tight spacing of 6 mm". The library's
+  `EST_WASTE_TYPES` and `DEFAULT_COVERS.slab["Precast Panel"]` = 30 carry the
+  type; `test-precast-panel.mjs` proves the defaults, the concrete / mesh /
+  bars, the assumed edge, the typed edge and the by-area method.
 - **Screed (standalone)** (`Floor Finishes` library group, calc `screed`:
   `screedDefaults` / `screedGeom` / `renderScreed` / `computeScreed` /
   `diagScreed` — 2 Oct 2026, Grady: "the screed is standalone. add it as its
