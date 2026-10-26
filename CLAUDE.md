@@ -2708,6 +2708,13 @@ element families waits on the owner's approval of the pad footing.
 
 ## Estimates standards profile, allowances and review gate (Phase 4)
 
+- **The generic calculator measures three ways** (26 Oct 2026, Grady: "it
+  should also have option to input area manually not just volume"): qty × L ×
+  W × depth, a typed TOTAL area × the depth (`manualArea` / `areaOverride`,
+  the formula says so and the area becomes `_autoAreaM2` for Project
+  Geometry), or a typed volume (`manualVolume` wins over a typed area). Every
+  generic kind — excavation, alteration, temporary, the precast allowance,
+  civil — has both boxes. `test-generic-area.mjs` proves the three bases.
 - `docs/ESTIMATES_COVERAGE.md` is the coverage audit (brief §11.3): map a
   new real-world item to an existing calculator + modifier first; the
   generic calculator (`kind` excavation / alteration / temporary / precast /

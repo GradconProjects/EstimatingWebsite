@@ -6656,14 +6656,16 @@ function diagComposite(inst){ const d=inst.data; const slabs=(d.slabs||[]).filte
   return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:440px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;"><text x="${W/2}" y="14" font-size="10" font-weight="700" text-anchor="middle" fill="var(--text)">Section — ${slabs.length} slab${slabs.length===1?"":"s"}, ${walls.length} wall${walls.length===1?"":"s"}${runs?`, ${runs} starter run${runs===1?"":"s"}`:""}</text>${out}</svg>`;
 }
 function genericDefaults(kind){ return {
-  kind:kind, qty:1, length:10000, width:1000, depth:300, manualVolume:false, volumeOverride:0,
+  kind:kind, qty:1, length:10000, width:1000, depth:300, manualVolume:false, volumeOverride:0, manualArea:false, areaOverride:0,   // area × depth is the second manual basis (26 Oct 2026, Grady: "it should also have option to input area manually not just volume")
   formworkOn:false, formworkArea:0, reoOn:false, reoDia:"N12", reoLength:0, reoQty:0, reoLap:false, notes:""
 };}
 function renderGeneric(inst){
   let d=inst.data;
   let geom=`<div class="grid cols4">${F("Quantity",inpNum("qty",d.qty))}${LF("Length (mm)","length",d.length)}${LF("Width (mm)","width",d.width)}${F("Depth (mm)",inpNum("depth",d.depth))}</div>
-  <div class="grid cols3">${chk("manualVolume",d.manualVolume,"Enter volume manually","manualVolume")}</div>
-  <div class="subsec ${d.manualVolume?'':'hidden'}" data-show-if="manualVolume">${F("Volume (m³)",inpNum("volumeOverride",d.volumeOverride))}</div>`;
+  <div class="grid cols3">${chk("manualArea",d.manualArea,"Enter area manually (area × depth)","manualArea")}${chk("manualVolume",d.manualVolume,"Enter volume manually","manualVolume")}</div>
+  <div class="subsec ${d.manualArea?'':'hidden'}" data-show-if="manualArea"><div class="grid cols3">${F("Area (m², total — × the depth above)",inpNum("areaOverride",d.areaOverride))}</div></div>
+  <div class="subsec ${d.manualVolume?'':'hidden'}" data-show-if="manualVolume">${F("Volume (m³)",inpNum("volumeOverride",d.volumeOverride))}</div>
+  <p class="small">Three ways to measure: quantity × L × W × depth; a typed total area × the depth; or a typed volume. A typed volume wins over a typed area.</p>`;
   let reo=`${chk("reoOn",d.reoOn,"Reinforcement required","reoOn")}
   <div class="subsec ${d.reoOn?'':'hidden'}" data-show-if="reoOn"><div class="grid cols3">${F("Dia",barSizeSel("reoDia",d.reoDia))}${F("Total length (m)",inpNum("reoLength",d.reoLength))}${F("Qty (if bar count basis)",inpNum("reoQty",d.reoQty))}</div>
   <div class="grid cols3">${chk("reoLap",d.reoLap,"Include lap allowance (%)","reoLap")}</div></div>`;
@@ -6674,9 +6676,11 @@ function renderGeneric(inst){
 }
 function computeGeneric(inst,def){
   let d=inst.data, lines=[];
-  let vol = d.manualVolume? num(d.volumeOverride) : num(d.qty,1)*(num(d.length)/1000)*(num(d.width)/1000)*(num(d.depth)/1000);
+  // a typed volume wins, then a typed total area × the depth, else qty × L × W × D
+  let vol = d.manualVolume? num(d.volumeOverride) : d.manualArea? num(d.areaOverride)*(num(d.depth)/1000) : num(d.qty,1)*(num(d.length)/1000)*(num(d.width)/1000)*(num(d.depth)/1000);
+  if(d.manualArea && !d.manualVolume) d._autoAreaM2 = num(d.areaOverride);   // the typed area is the element's own measure for Project Geometry / $ per m²
   let group = (def.kind=="excavation")? "Excavation" : (def.kind=="alteration")? "Alterations" : (def.kind=="temporary")? "Temporary Works" : (def.kind=="precast")? "Precast" : "Concrete";
-  lines.push(baseLine(inst,def,{materialGroup:group,material:def.label,spec:d.notes||"",qty:vol,unit:"m³",waste:group=="Concrete"?concWastePct(d):0,finalQty:group=="Concrete"?withWaste(vol,concWastePct(d)):vol,formula:d.manualVolume?"manual entry":"qty×L×W×D"}));
+  lines.push(baseLine(inst,def,{materialGroup:group,material:def.label,spec:d.notes||"",qty:vol,unit:"m³",waste:group=="Concrete"?concWastePct(d):0,finalQty:group=="Concrete"?withWaste(vol,concWastePct(d)):vol,formula:d.manualVolume?"manual entry":d.manualArea?`manual area ${fmt(num(d.areaOverride),2)} m² × depth ${num(d.depth)} mm`:"qty×L×W×D"}));
   if(d.formworkOn && num(d.formworkArea)>0) lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:def.label,spec:"",qty:num(d.formworkArea),unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(num(d.formworkArea),PROJECT.formworkWaste),formula:"manual entry"}));
   if(d.reoOn){
     let dia=barDiaOf(d.reoDia); let len=num(d.reoLength); let wt=len*massPerM(dia);
