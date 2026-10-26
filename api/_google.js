@@ -250,15 +250,20 @@ export const ATTACH_MAX_BYTES = 18 * 1024 * 1024;
 export const ATTACH_PLAN_BYTES = 17 * 1024 * 1024;
 export async function fetchAttachments(list, fetchImpl = fetch) {
   const out = []; let total = 0;
-  for (const a of (Array.isArray(list) ? list : []).slice(0, ATTACH_MAX_FILES)) {
-    const url = String((a && a.url) || "");
-    if (!url.startsWith(ATTACH_URL_PREFIX)) { const e = new Error(`attachment not in the portal's file store: ${url.slice(0, 80)}`); e.status = 400; throw e; }
+  const items = (Array.isArray(list) ? list : []).slice(0, ATTACH_MAX_FILES);
+  for (const a of items) { const url = String((a && a.url) || ""); if (!url.startsWith(ATTACH_URL_PREFIX)) { const e = new Error(`attachment not in the portal's file store: ${url.slice(0, 80)}`); e.status = 400; throw e; } }
+  // every attachment is fetched at once (26 Oct 2026, Grady: "attaching documents to the RFQ email seems too slow") — they are independent reads of the bucket
+  const fetched = await Promise.all(items.map(async (a) => {
+    const url = String(a.url);
     const r = await fetchImpl(url, { signal: AbortSignal.timeout(60000) });
     if (!r.ok) { const e = new Error(`could not fetch attachment ${a.name || url} (${r.status})`); e.status = 502; throw e; }
     const bytes = Buffer.from(await r.arrayBuffer());
-    total += bytes.length;
+    return { name: String(a.name || url.split("/").pop() || "attachment").slice(0, 120), mimeType: r.headers && r.headers.get ? (r.headers.get("content-type") || "").split(";")[0] || a.mimeType || "application/octet-stream" : a.mimeType || "application/octet-stream", bytes };
+  }));
+  for (const f of fetched) {
+    total += f.bytes.length;
     if (total > ATTACH_MAX_BYTES) { const e = new Error("attachments over 18 MB in total — Gmail's limit; untick the largest file (it is offered as a download link instead) and send again"); e.status = 413; throw e; }
-    out.push({ name: String(a.name || url.split("/").pop() || "attachment").slice(0, 120), mimeType: r.headers && r.headers.get ? (r.headers.get("content-type") || "").split(";")[0] || a.mimeType || "application/octet-stream" : a.mimeType || "application/octet-stream", bytes });
+    out.push(f);
   }
   return out;
 }
@@ -364,6 +369,8 @@ export async function driveSearch({ text, within, max = 40 }, token, fetchImpl =
 }
 /** The bytes of a file — a Google Doc / Sheet / Slides exported as PDF, anything else as stored. Capped. */
 export const DRIVE_COPY_MAX_BYTES = 30 * 1024 * 1024;
+/** The name a Drive file is stored under in the bucket (a Doc / Sheet / Slides exports as PDF). */
+export function driveCopyName(meta) { return meta.native && !/\.pdf$/i.test(meta.name) ? `${meta.name}.pdf` : meta.name; }
 export async function driveDownload(id, token, fetchImpl = fetch) {
   const meta = await driveFile(id, token, fetchImpl);
   if (meta.kind === "folder") { const e = new Error("that is a folder"); e.status = 400; throw e; }
@@ -374,7 +381,7 @@ export async function driveDownload(id, token, fetchImpl = fetch) {
   const bytes = Buffer.from(await r.arrayBuffer());
   if (bytes.length > DRIVE_COPY_MAX_BYTES) { const e = new Error(`file over ${Math.round(DRIVE_COPY_MAX_BYTES / 1048576)} MB`); e.status = 413; throw e; }
   const mimeType = meta.native ? "application/pdf" : (r.headers && r.headers.get && r.headers.get("content-type")) || meta.mimeType || "application/octet-stream";
-  const name = meta.native && !/\.pdf$/i.test(meta.name) ? `${meta.name}.pdf` : meta.name;
+  const name = driveCopyName(meta);
   return { bytes, mimeType, name, meta };
 }
 /* ---------- matching a project to its folder (pure) ---------- */

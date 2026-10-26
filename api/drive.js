@@ -112,6 +112,26 @@ export async function runDrive(body, env = process.env, fetchImpl = fetch) {
       await guard(id);
       const target = body.target === "job" ? "job" : body.target === "markup" ? "markup" : "preview";
       if (target === "job" && !safeId(body.jobId)) return { status: 400, body: { error: "jobId required for a job copy" } };
+      // A preview / markup copy is CACHED BY CONTENT: its bucket path carries the file's md5 (or modified stamp), so when
+      // the bucket already holds this version it is answered from the metadata alone — no Drive download, no upload
+      // (26 Oct 2026, Grady: "attaching documents to the RFQ email seems too slow" — every build re-copied every drawing).
+      if (target !== "job") {
+        const meta = await Gm.driveFile(id, token, fetchImpl);
+        if (meta && meta.kind !== "folder") {
+          const name0 = safeName(Gm.driveCopyName(meta));
+          const stamp0 = safeId(meta.md5 || (meta.modifiedTime || "").replace(/[^0-9]/g, "")) || "v";
+          const path0 = `drive/${id}/${stamp0}/${name0}`;
+          const url0 = `${SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${path0}`;
+          try {
+            const head = await fetchImpl(url0, { method: "HEAD", signal: AbortSignal.timeout(8000) });
+            if (head && head.ok) {
+              const size = Number(head.headers && head.headers.get ? head.headers.get("content-length") : 0) || Number(meta.size) || 0;
+              const mimeType = (head.headers && head.headers.get && (head.headers.get("content-type") || "").split(";")[0]) || (meta.native ? "application/pdf" : meta.mimeType) || "application/octet-stream";
+              return { status: 200, body: { file: { name: name0, size, mimeType, kind: Gm.fileKind(mimeType, name0), path: path0, url: url0, cached: true, fromDrive: { id: meta.id, name: meta.name, webViewLink: meta.webViewLink, modifiedTime: meta.modifiedTime } } } };
+            }
+          } catch { /* a failed look is no answer — copy as before */ }
+        }
+      }
       const dl = await Gm.driveDownload(id, token, fetchImpl);
       const name = safeName(dl.name);
       const stamp = safeId(dl.meta.md5 || (dl.meta.modifiedTime || "").replace(/[^0-9]/g, "")) || "v";

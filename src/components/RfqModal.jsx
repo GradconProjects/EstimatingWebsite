@@ -5,6 +5,8 @@ import { readRegister, registerOrgs } from "../lib/registerStore.js";
 import { readTakeoffForProject } from "../lib/estimatesRead.js";
 import { driveApi } from "../lib/driveFiles.js";
 import { markupSrc } from "../lib/markupStore.js";
+/** Run async jobs at most `n` at a time, in order of start; resolves when all have settled (a throw rejects at once). */
+async function runPool(jobs, n) { let next = 0; const workers = Array.from({ length: Math.min(n, jobs.length) }, async () => { while (next < jobs.length) { const j = jobs[next++]; await j(); } }); await Promise.all(workers); }
 
 import { classifyFile } from "../lib/rfq.js";
 const classifyTags = (name, pkgKey) => classifyFile(name, "", pkgKey);
@@ -48,6 +50,7 @@ export default function RfqModal({ quote, items, rates, projectScope, elementTyp
   const textOf = (d) => joinDraft(d.head, bodies[d.pkgKey] != null ? bodies[d.pkgKey] : d.body);
   const issuesOf = (d) => draftNameIssues({ ...d, body: bodies[d.pkgKey] != null ? bodies[d.pkgKey] : d.body }, drafts);
   const [building, setBuilding] = useState(false);
+  const [copyNote, setCopyNote] = useState("");   // "Copying 2 of 5 — S-01 plan.pdf" while the Drive files are brought into the bucket
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const [resolvedFiles, setResolvedFiles] = useState([]);
@@ -101,8 +104,13 @@ export default function RfqModal({ quote, items, rates, projectScope, elementTyp
         const top = await driveApi({ action: "list", folderId: folder.id, max: 200 });
         for (const f of top.files || []) add(f, "");
         const subs = (top.files || []).filter((f) => f.kind === "folder").slice(0, 8);
-        for (const sf of subs) { try { const r = await driveApi({ action: "list", folderId: sf.id, max: 200 }); for (const f of r.files || []) add(f, sf.name); } catch { /* one subfolder failing never hides the rest */ } }
-        for (const word of ["architectural", "structural", "geotech", "soil"]) { try { const r = await driveApi({ action: "search", text: word, within: folder.id, max: 40 }); for (const f of r.files || []) add(f, ""); } catch { /* ignore */ } }
+        // the subfolders and the keyword searches are read AT ONCE (26 Oct 2026: thirteen round trips in a row made the composer slow to open)
+        const [subRes, wordRes] = await Promise.all([
+          Promise.all(subs.map((sf) => driveApi({ action: "list", folderId: sf.id, max: 200 }).then((r) => ({ sf, files: r.files || [] })).catch(() => ({ sf, files: [] })))),   /* one subfolder failing never hides the rest */
+          Promise.all(["architectural", "structural", "geotech", "soil"].map((word) => driveApi({ action: "search", text: word, within: folder.id, max: 40 }).then((r) => r.files || []).catch(() => []))),
+        ]);
+        for (const { sf, files } of subRes) for (const f of files) add(f, sf.name);
+        for (const files of wordRes) for (const f of files) add(f, "");
         if (alive) setDriveFolder({ id: folder.id, name: folder.name, files: [...byId.values()], note: "" });
       } catch (e) { if (alive) setDriveFolder({ id: null, name: "", files: [], note: e.needsReconnect ? "The Google connection has no Drive access yet (Settings → Google mail & Drive → Reconnect) — attach files by hand." : "The project's Drive folder could not be read" + (e.message ? ": " + e.message : "") + "." }); }
     })();
@@ -115,11 +123,20 @@ export default function RfqModal({ quote, items, rates, projectScope, elementTyp
   async function buildDrafts() {
     setError(""); setBuilding(true);
     try {
-      const files = [];
-      for (const opt of options.filter((o) => attach.has(o.id))) {
-        if (opt.kind === "markup") files.push({ name: opt.name, url: opt.url, tags: ["pkg"], size: Number(opt.size) || 0 });
-        else { const r = await driveApi({ action: "copy", id: opt.fileId, target: "preview" }); files.push({ name: opt.name, url: r.file.url, tags: opt.tags || [], size: Number(opt.size) || Number(r.file && r.file.size) || 0 }); }
-      }
+      // the ticked Drive files are copied into the bucket FOUR AT A TIME, in the ticked order, with progress on the button
+      // (26 Oct 2026, Grady: "attaching documents to the RFQ email seems too slow" — one 10 MB drawing after another, each a
+      // Drive download and a bucket upload inside one function call; the server now answers a file it already holds at once)
+      const ticked = options.filter((o) => attach.has(o.id));
+      const files = new Array(ticked.length); let done = 0;
+      await runPool(ticked.map((opt, i) => async () => {
+        if (opt.kind === "markup") { files[i] = { name: opt.name, url: opt.url, tags: ["pkg"], size: Number(opt.size) || 0 }; }
+        else {
+          setCopyNote(`Copying ${Math.min(done + 1, ticked.length)} of ${ticked.length} — ${opt.name}`);
+          const r = await driveApi({ action: "copy", id: opt.fileId, target: "preview" });
+          files[i] = { name: opt.name, url: r.file.url, tags: opt.tags || [], size: Number(opt.size) || Number(r.file && r.file.size) || 0 };
+        }
+        done++; setCopyNote(done < ticked.length ? `Copied ${done} of ${ticked.length}` : "");
+      }), 4);
       // what fits goes as attachments, the rest as download links — never a failed send
       const planned = planAttachments(files);
       setResolvedFiles(planned.attach); setResolvedLinks(planned.link);
@@ -136,7 +153,7 @@ export default function RfqModal({ quote, items, rates, projectScope, elementTyp
       setBodies(nextBodies); setDrafts(all);
       setCurrent(0); setStep("drafts");
     } catch (e) { setError(e.needsReconnect ? "The Google connection needs a reconnect for Drive (Settings → Google mail & Drive) before a Drive file can be attached." : e.message || "could not build the drafts"); }
-    finally { setBuilding(false); }
+    finally { setCopyNote(""); setBuilding(false); }
   }
   const patchDraft = (i, patch) => setDrafts((ds) => ds.map((d, j) => (j === i ? { ...d, ...patch } : d)));
   // Re-draft rebuilds the package's shared body (every draft of the package follows, approvals cleared) and this draft's head
@@ -147,11 +164,12 @@ export default function RfqModal({ quote, items, rates, projectScope, elementTyp
     const todo = drafts.map((d, i) => ({ d, i })).filter(({ d }) => d.approved && d.status !== "sent");
     if (!todo.length) return;
     setSending(true); setError("");
-    const results = [];
-    for (const { d, i } of todo) {
+    // the approved drafts go THREE AT A TIME — each send is its own POST and its own result, in the drafts' order
+    const results = new Array(todo.length);
+    await runPool(todo.map(({ d, i }, k) => async () => {
       // the name guard runs again at the moment of sending — a draft naming another contractor never leaves
       const issues = issuesOf(d);
-      if (issues.length) { const msg = `not sent — the text names ${issues.map((x) => x.orgName).join(", ")} (another contractor in this round)`; patchDraft(i, { status: "failed", error: msg, approved: false }); results.push({ ...d, status: "failed", error: msg }); continue; }
+      if (issues.length) { const msg = `not sent — the text names ${issues.map((x) => x.orgName).join(", ")} (another contractor in this round)`; patchDraft(i, { status: "failed", error: msg, approved: false }); results[k] = { ...d, status: "failed", error: msg }; return; }
       const text = textOf(d);
       patchDraft(i, { status: "sending", text });
       try {
@@ -159,9 +177,9 @@ export default function RfqModal({ quote, items, rates, projectScope, elementTyp
         const body = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(body.error || `HTTP ${r.status}`);
         const sent = { ...d, text, status: "sent", messageId: body.sent && body.sent.id, threadId: body.sent && body.sent.threadId };
-        patchDraft(i, sent); results.push(sent);
-      } catch (e) { patchDraft(i, { status: "failed", error: e.message }); results.push({ ...d, status: "failed", error: e.message }); }
-    }
+        patchDraft(i, sent); results[k] = sent;
+      } catch (e) { patchDraft(i, { status: "failed", error: e.message }); results[k] = { ...d, status: "failed", error: e.message }; }
+    }), 3);
     setSending(false);
     const ok = results.filter((r) => r.status === "sent");
     // one record per package on the project
@@ -277,7 +295,7 @@ export default function RfqModal({ quote, items, rates, projectScope, elementTyp
               <div className="pt-1 flex items-center justify-between gap-2">
                 <span className="text-[12px] text-neutral-500">{totalPicks} RFQ{totalPicks === 1 ? "" : "s"} across {pkgs.length} package{pkgs.length === 1 ? "" : "s"} · {chosenItems.length} element{chosenItems.length === 1 ? "" : "s"}{takeoff ? " · Estimates takeoff found" : ""}</span>
                 <button onClick={buildDrafts} disabled={building || !totalPicks || !chosenItems.length} className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-orange-600 hover:bg-orange-700 text-white text-sm font-medium disabled:opacity-40" data-testid="rfq-build">
-                  {building ? <Loader2 size={14} className="animate-spin" /> : <Mail size={14} />} Build {totalPicks || ""} draft{totalPicks === 1 ? "" : "s"}
+                  {building ? <Loader2 size={14} className="animate-spin" /> : <Mail size={14} />} {building && copyNote ? copyNote : `Build ${totalPicks || ""} draft${totalPicks === 1 ? "" : "s"}`}
                 </button>
               </div>
             </div>

@@ -1394,6 +1394,14 @@ await checkAsync("Drive function: unconfigured → 503; no connection → 409; a
   assert.equal((await DR.runDrive({ action: "list", folderId: "other" }, genv, f)).status, 403);
   const cp = await DR.runDrive({ action: "copy", id: "p1", target: "preview" }, genv, f);
   assert.equal(cp.status, 200); assert.ok(/^drive\/p1\/abc\/plan\.pdf$/.test(cp.body.file.path), cp.body.file.path); assert.ok(/storage\/v1\/object\/public\/gradcon-files\/drive\/p1\/abc\/plan\.pdf$/.test(cp.body.file.url)); assert.equal(cp.body.file.fromDrive.id, "p1");
+  // a copy the bucket already holds (same md5 → same path) is answered from the metadata: no Drive download, no upload (26 Oct 2026)
+  { const held = new Set(uploads.map((u) => u.path)); const seen = []; const f2 = async (url, opts = {}) => { const u = String(url); seen.push((opts.method || "GET") + " " + u); if (opts.method === "HEAD" && u.includes("/storage/v1/object/public/gradcon-files/")) { const path = u.split("/gradcon-files/")[1]; return held.has(path) ? { ok: true, status: 200, headers: { get: (k) => (k === "content-length" ? "1234" : k === "content-type" ? "application/pdf" : null) } } : { ok: false, status: 400, headers: { get: () => null } }; } return f(url, opts); };
+    const before = uploads.length;
+    const again = await DR.runDrive({ action: "copy", id: "p1", target: "preview" }, genv, f2);
+    assert.equal(again.status, 200); assert.ok(again.body.file.cached, "answered from the bucket"); assert.equal(again.body.file.path, cp.body.file.path); assert.equal(again.body.file.size, 1234);
+    assert.equal(uploads.length, before, "nothing re-uploaded"); assert.ok(!seen.some((x) => /alt=media/.test(x)), "nothing re-downloaded from Drive: " + seen.join(" | "));
+    const fresh = await DR.runDrive({ action: "copy", id: "d1", target: "preview" }, genv, f2);
+    assert.ok(!fresh.body.file.cached && uploads.length === before + 1, "a file the bucket lacks is still copied"); }
   const cj = await DR.runDrive({ action: "copy", id: "d1", target: "job", jobId: "job7" }, genv, f);
   assert.equal(cj.body.file.path, "ai-engine/job7/spec.pdf", "a Google Doc copies as PDF under the job"); assert.equal(cj.body.file.mimeType, "application/pdf");
   assert.equal((await DR.runDrive({ action: "copy", id: "p1", target: "job" }, genv, f)).status, 400, "a job copy needs the job id");

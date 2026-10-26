@@ -1522,6 +1522,23 @@ bare minimum should be archi, struct, soil report". Rules:
    (`src/lib/registerStore.js`: the Register row read from the cloud, else
    this browser's mirror; merged per organisation) moves each contractor's
    last contact to today (Gradcon wrote), adds the subject and logs it.
+   **Attaching is fast by construction** (26 Oct 2026, Grady: "attaching
+   documents to the RFQ email seems too slow" — every Build re-copied every
+   drawing, one after another, through a Drive download and a bucket upload
+   each): `api/drive.js` `copy` (preview / markup targets) reads the file's
+   metadata first and, when the bucket already holds that version (the path
+   carries the md5 / modified stamp — `Gm.driveCopyName(meta)` is the ONE
+   name rule, shared with `driveDownload`), answers it from a HEAD of the
+   public URL with `cached: true` — no download, no upload; a job copy is
+   always fresh. In `RfqModal` the folder read fans the subfolder lists and
+   the keyword searches out at once (`Promise.all`), the copies run FOUR at a
+   time through `runPool` with "Copying N of M — <file>" on the Build button
+   (`copyNote`), and the approved sends go THREE at a time (results kept in
+   the drafts' order, each still its own POST and its own result);
+   `fetchAttachments` in `api/_google.js` fetches every attachment at once
+   and checks the 18 MB total afterwards. `verify.mjs` proves the cached
+   copy (no re-download, no re-upload) and that a file the bucket lacks is
+   still copied.
 5. **The Register's own "✉ Email"** (`register.html`, `data-compose-open`): a
    drafted message to one chosen contact (`emailTemplate` — subject from the
    trade, a body with a bracketed prompt), editable, Approve, Send (one
