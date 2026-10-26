@@ -2354,6 +2354,27 @@ element families waits on the owner's approval of the pad footing.
   `test-dowel-products.mjs` proves the three products on the joints (the
   typed section too), the step-down of a slab, a beam ×2 and a stepped
   footing; `verify.mjs` the bridge.
+  **Mesh dowel pieces are also a DISTINCT table on every element's
+  Connections / Dowels tab** (Grady, same day, after looking there for them:
+  "still not there, just make a distinct different line for it"):
+  `renderMeshDowelRows(inst)` (appended to `parts.conns` in `buildCard`, after
+  the Additional Connections; `data-testid="mesh-dowels"`) — one row per
+  joint or step: a name, a product (`meshDowelProductSel`: sheet mesh and
+  trench mesh ONLY, no bars), run (m) and spacing (mm), or a typed number
+  (which wins — `meshDowelCount(r)` is the ONE count, `meshDowelSetOut(r)` the
+  words), piece length and, for sheet mesh, piece width (blank = 600 × 300;
+  a trench row's width cell reads "mesh width"), and the live piece count.
+  `computeMeshDowels` in `computeInstance` emits ONE Connections line per row
+  through `dowelPieceLineAt` (the core `dowelPieceLine` now wraps:
+  `(inst, def, group, product, count, Lmm, Wmm, spec, formula)`), spec "Mesh
+  dowel pieces — <name> — N × <product> …"; a row with no pieces is a
+  completeness warning and no line. `inst.data.meshDowels[]` = `{name, type,
+  runM, spacing, count, pieceL, pieceW}` (the `addRow` / `delRow` template
+  rule, saved with the takeoff). Independent of the calculators' own joint
+  and step-down dowel products above — a joint priced on one must not also be
+  listed on the other. `test-mesh-dowel-rows.mjs` proves the table on seven
+  element types, both products, the typed number, the warning, the delete and
+  the save.
 - **Retaining walls** also carry a plan shape (`planShape`: straight, curved —
   `planRadius` × `planAngle` gives the developed length, or irregular —
   the developed length is typed), a battered stem (`stemBatter`: mean of

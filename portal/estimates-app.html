@@ -2026,15 +2026,66 @@ function dowelProductFields(d, field, spacingField, spacingLabel, prefix){
   if(p.kind==="sheet") html+=F(`Piece width (mm, along the joint — blank = ${DOWEL_PIECE_W_MM})`, inpNum(prefix+"PieceW", d[prefix+"PieceW"]));
   return html;
 }
-/** `count` pieces of the product, each the typed section. */
+/** `count` pieces of the product, each the typed section (read off the element's <prefix>PieceL / PieceW). */
 function dowelPieceLine(inst,def,group,p,count,d,prefix,spec,formula){
-  const Lmm=dowelPieceLmm(d,prefix);
+  return dowelPieceLineAt(inst,def,group,p,count,dowelPieceLmm(d,prefix),dowelPieceWmm(d,prefix),spec,formula);
+}
+/** The ONE piece arithmetic: `count` pieces of a trench mesh (lm of the product) or a sheet mesh (m², whole sheets), each Lmm × Wmm. */
+function dowelPieceLineAt(inst,def,group,p,count,Lmm,Wmm,spec,formula){
   if(p.kind==="sheet"){
-    const Wmm=dowelPieceWmm(d,prefix), area=count*(Lmm/1000)*(Wmm/1000), kgm2=MESHTYPES[p.type]||0, wasted=withWaste(area,PROJECT.reoWaste), sheets=area>0? Math.ceil(wasted/MESH_SHEET_AREA_M2-1e-9) : 0;
+    const area=count*(Lmm/1000)*(Wmm/1000), kgm2=MESHTYPES[p.type]||0, wasted=withWaste(area,PROJECT.reoWaste), sheets=area>0? Math.ceil(wasted/MESH_SHEET_AREA_M2-1e-9) : 0;
     return baseLine(inst,def,{materialGroup:group,material:p.type,spec:`${spec} — ${count} × ${p.type} sheet-mesh pieces ${Lmm} × ${Wmm} mm`,qty:area,unit:"m²",waste:PROJECT.reoWaste,finalQty:wasted,sheets,massPerUnit:kgm2,formula:`${formula} × ${Lmm} × ${Wmm} mm`,notes:`${fmt(area*kgm2,1)} kg, ${sheets} sheet(s)`});
   }
   const lm=count*(Lmm/1000), mpm=trenchReoMassPerM(p.type);
   return baseLine(inst,def,{materialGroup:group,material:p.type,spec:`${spec} — ${count} × ${p.type} trench-mesh pieces ${Lmm} mm long`,qty:lm,unit:"lm",waste:PROJECT.reoWaste,finalQty:withWaste(lm,PROJECT.reoWaste),massPerUnit:mpm,formula:`${formula} × ${Lmm} mm`,notes:`${fmt(lm*mpm,1)} kg`});
+}
+/* ---- Mesh dowel pieces: a DISTINCT table on every element's Connections /
+   Dowels tab (26 Oct 2026, Grady: "just make a distinct different line for
+   it"). Each row is ONE register line — a sheet mesh or trench mesh cut to
+   a typed length × width at every dowel position along a run (run ÷
+   spacing + 1), or a typed number of pieces. `inst.data.meshDowels[]` =
+   {name, type, runM, spacing, count, pieceL, pieceW}; a row with no pieces
+   prices nothing. Independent of the calculators' own joint / step-down
+   dowels above. */
+function meshDowelProductSel(field,val){
+  const v=String(val||"SL82");
+  const tm=TRENCH_MESH_TYPES.map(t=>`<option value="${t[0]}" ${v===t[0]?'selected':''}>${t[0]} trench mesh</option>`).join('');
+  const sq=Object.keys(MESHTYPES).map(m=>`<option value="${m}" ${v===m?'selected':''}>${m} sheet mesh</option>`).join('');
+  return `<select data-field="${field}" data-rerender="true"><optgroup label="Sheet mesh — cut to length × width">${sq}</optgroup><optgroup label="Trench mesh — cut to length">${tm}</optgroup></select>`;
+}
+function meshDowelProduct(r){ const p=dowelProduct(r&&r.type); return p.kind==="bar"? dowelProduct("SL82") : p; }
+function meshDowelCount(r){
+  const n=num(r.count); if(n>0) return Math.round(n);
+  const run=num(r.runM), sp=num(r.spacing);
+  return (run>0 && sp>0)? Math.floor(run*1000/sp)+1 : 0;
+}
+function meshDowelSetOut(r){ const n=num(r.count); if(n>0) return `${Math.round(n)} pieces typed`; const run=num(r.runM), sp=num(r.spacing); return (run>0&&sp>0)? `${fmt(run,2)} m / ${sp} mm + 1 = ${meshDowelCount(r)}` : "no run or count"; }
+function renderMeshDowelRows(inst){
+  const rows=inst.data.meshDowels || (inst.data.meshDowels=[]);
+  const body=rows.map((r,i)=>{ const p=meshDowelProduct(r); return `<tr data-row="meshDowels.${i}">
+   <td style="min-width:140px">${inpText(`meshDowels.${i}.name`,r.name||"")}</td>
+   <td>${meshDowelProductSel(`meshDowels.${i}.type`,r.type)}</td>
+   <td style="width:76px;min-width:76px">${inpNumR(`meshDowels.${i}.runM`,r.runM)}</td>
+   <td style="width:76px;min-width:76px">${inpNumR(`meshDowels.${i}.spacing`,r.spacing)}</td>
+   <td style="width:76px;min-width:76px">${inpNumR(`meshDowels.${i}.count`,r.count)}</td>
+   <td style="width:84px;min-width:84px">${inpNumR(`meshDowels.${i}.pieceL`,r.pieceL)}</td>
+   <td style="width:84px;min-width:84px">${p.kind==="sheet"? inpNumR(`meshDowels.${i}.pieceW`,r.pieceW) : `<span class="small">mesh width</span>`}</td>
+   <td class="small" style="white-space:nowrap"><b data-meshdowel-count="${i}">${meshDowelCount(r)}</b> pieces</td>
+   <td><button type="button" class="btn small danger" data-action="delRow" data-target="meshDowels" data-idx="${i}" title="Remove this row">✕</button></td>
+  </tr>`; }).join('');
+  return `<div class="subsec" data-testid="mesh-dowels"><div class="sechead">Mesh dowel pieces — sheet or trench mesh cut to size</div>
+  <p class="small">A <b>separate line per row</b>: a piece of sheet mesh or trench mesh cut to the <b>length × width</b> you type, placed at every dowel position. Set the pieces out along a <b>run at a spacing</b> (run m ÷ spacing mm + 1), or type the <b>number</b> of pieces (a typed number wins). Sheet mesh prices in m² and whole sheets; trench mesh in lineal metres of the product (its own width). Blank section = ${DOWEL_PIECE_L_MM} × ${DOWEL_PIECE_W_MM} mm.</p>
+  <div style="overflow-x:auto"><table class="rows mesh-dowels"><thead><tr><th>Where (joint / step)</th><th>Product</th><th>Run (m)</th><th>@ (mm)</th><th>Number</th><th>Piece length (mm)</th><th>Piece width (mm)</th><th>Pieces</th><th></th></tr></thead>
+  <tbody>${body||`<tr><td colspan="9" class="small">No mesh dowel pieces yet.</td></tr>`}</tbody></table></div>
+  <button class="btn small primary" data-action="addRow" data-target="meshDowels" type="button">+ Add mesh dowel pieces</button></div>`;
+}
+function computeMeshDowels(inst,def,out){
+  (inst.data.meshDowels||[]).forEach(r=>{
+    const n=meshDowelCount(r); if(!(n>0)) return;
+    const p=meshDowelProduct(r), L=num(r.pieceL)>0? num(r.pieceL) : DOWEL_PIECE_L_MM, W=num(r.pieceW)>0? num(r.pieceW) : DOWEL_PIECE_W_MM;
+    out.lines.push(dowelPieceLineAt(inst,def,"Connections",p,n,L,W,`Mesh dowel pieces${r.name?" — "+r.name:""}`,meshDowelSetOut(r)));
+  });
+  return out;
 }
 function sdBarShapeIf(d, legacyMm){ return dowelProduct(d.sdDia).kind==="bar"? sdBarShapeUI(d, legacyMm) : ""; }
 /* ---- Per-layer reinforcement materials ----
@@ -8598,6 +8649,7 @@ function validateInstance(inst, def, out){
   if(conc>0.05 && reoKg>0){ const r=reoKg/conc; if(r>checks.reoMaxKgM3) push(`Reinforcement ratio ${fmt(r,0)} kg/m³ is above the review prompt (${checks.reoMaxKgM3}) — check bar sizes, spacing and count`, "reo"); else if(r<checks.reoMinKgM3) push(`Reinforcement ratio ${fmt(r,0)} kg/m³ is below the review prompt (${checks.reoMinKgM3}) — check nothing is missing`, "reo"); }
   if(conc>0.05 && formM2/conc>checks.formMaxM2M3) push(`Formwork ${fmt(formM2/conc,1)} m² per m³ of concrete is above the review prompt (${checks.formMaxM2M3}) — check faces and dimensions`, "form");
   // sanity: duplicate linked connection
+  if(Array.isArray(d.meshDowels)) d.meshDowels.forEach(r=>{ if(!(meshDowelCount(r)>0)) push(`A mesh dowel pieces row${r.name?" ("+r.name+")":""} has no run and spacing and no number — it prices nothing`, "conns"); });
   if(Array.isArray(d.extraConn)){ const seen={}; d.extraConn.forEach(r=>{ const name=extraConnTargetLabel(r); const k=(r.target===MANUAL_TARGET?"name:"+name.toLowerCase():(r.target||""))+"|"+(r.role||""); if(r.target && r.target!==MANUAL_TARGET && seen[k]) push(`Two connection rows point at the same element (${name||r.target}) — the bars may be counted twice`, "conns"); if(r.target===MANUAL_TARGET && !name) push("An additional connection has a typed target with no name — type the element it connects to", "conns"); if(r.target && extraConnBySpacing(r) && !(num(r.runM)>0)) push(`An additional connection (${name||"unlinked"}) is set out at a spacing but has no run length — type the run in metres`, "conns"); seen[k]=true; }); }
   // verify: values that depend on design/exposure/geotech — from defaults, never auto-approved
   const defaults=defaultDataFor(inst.typeKey);
@@ -9033,7 +9085,7 @@ function buildCard(inst){
   // & dowels, step-downs) sits OUTSIDE the method-gated block, so it shows
   // and prices under every reinforcement method.
   if(parts.reo!==undefined) parts.reo = reoMethodSection(inst) + `<div class="subsec ${reoMethodOf(inst.data)!=="detailed"?'hidden':''}" data-show-if="reoMethod_detailed">${parts.reo}</div>` + (parts.reoAlways||"");
-  parts.conns = (parts.conns||"") + (usesSharedStarters(def)? startersSection(inst) : "") + renderExtraConnRows(inst);
+  parts.conns = (parts.conns||"") + (usesSharedStarters(def)? startersSection(inst) : "") + renderExtraConnRows(inst) + renderMeshDowelRows(inst);
   // Central additions available on EVERY element with the matching tab:
   // the formwork system/type choice heads every Formwork tab, and the
   // insulation section joins every Blinding / Insulation tab — no per-
@@ -9548,6 +9600,7 @@ function attachCardEvents(card,inst){
        : leaf==="reoAreaRows"? {area:"", dia:"N12", spacing:200, ways:"each"}
        : /Rows$/.test(leaf)? {position:"Additional",qty:2,dia:"N16",layers:1,startA:"straight",endA:"straight"}
        : leaf==="extraConn"? {target:"",role:"Dowel",mode:"count",qty:4,runM:"",spacing:400,rows:1,dia:"N16",embed:400,proj:400,hook:"straight"}
+       : leaf==="meshDowels"? {name:"", type:"SL82", runM:"", spacing:400, count:"", pieceL:DOWEL_PIECE_L_MM, pieceW:DOWEL_PIECE_W_MM}
        : leaf==="starterRuns"? newStarterRun()
        : leaf==="slabs"? {label:`Slab ${arr.length+1}`, L:1.0, W:1.0, t:150, area:"", grade:"", reo:"mesh", meshType:"SL82", meshLayers:1, barDia:"N12", barSp:200, barLayers:1, edgeForm:true, edgeLm:"", soffitForm:false, blindOn:false, blindT:50}
        : leaf==="walls"? {label:`Wall ${arr.length+1}`, L:1000, H:600, T:150, grade:"", vertDia:"N12", vertSp:400, horDia:"N12", horSp:400, faces:2, formFaces:2, formEnds:true}
@@ -9663,6 +9716,7 @@ function computeInstance(inst){
   if(reoMethodOf(inst.data)==="rate") applyReoRate(inst,def,out);   // …so a rate follows it; before connections are added, so they are never replaced
   else if(reoMethodOf(inst.data)==="area") applyReoArea(inst,def,out);
   computeExtraConnections(inst,def,out);
+  computeMeshDowels(inst,def,out);
   let d=inst.data;
   // Starter / dowel bars for the calculators that don't detail their own (see
   // CALCS_WITH_OWN_STARTERS — the gate matters, because a column's dowels and
