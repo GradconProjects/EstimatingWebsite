@@ -3578,6 +3578,61 @@ console.log(`\n${passed} check(s) passed.`);
   });
 }
 
+// ---- Summaries in batches (26 Oct 2026: 25 keys in one summaries call ran
+// 2.95 s against the anon role's 3 s statement timeout; the dashboard fell
+// back to ~37 MB of full-row reads and showed only the projects the browser
+// had seen before — "projects are missing") ----
+{
+  const SB = await import("../src/lib/summaryBatches.js");
+  check("summaryBatches: consecutive batches of at most N keys (7 keys → 3 + 3 + 1); a size under 1 is one key per batch; the default is 3 keys, 4 calls in flight", () => {
+    const b = SB.summaryBatches(["a", "b", "c", "d", "e", "f", "g"], 3);
+    assertTrue(JSON.stringify(b) === JSON.stringify([["a", "b", "c"], ["d", "e", "f"], ["g"]]), JSON.stringify(b));
+    assertTrue(SB.summaryBatches(["a", "b"], 0).length === 2 && SB.summaryBatches([], 3).length === 0);
+    assertTrue(SB.SUMMARIES_BATCH === 3 && SB.SUMMARIES_IN_FLIGHT === 4);
+  });
+  await checkAsync("collectSummaries: a failed batch is retried one key at a time, a key the function never returns goes to the bounded row read, one that still fails is `failed` (never missing), every landing is handed to onPartial exactly once, and no more than `inFlight` calls run at a time", async () => {
+    const calls = []; let running = 0, peak = 0;
+    const rpc = async (ask) => {
+      calls.push(ask.slice()); running++; peak = Math.max(peak, running);
+      await new Promise((r) => setTimeout(r, 3)); running--;
+      if (ask.length > 1 && ask.includes("big")) return null;            // the call that times out
+      return ask.filter((k) => k !== "dead" && k !== "gone").map((k) => ({ key: k, value: { name: k }, updated_at: "t-" + k }));
+    };
+    const reads = [];
+    const readRow = async (k) => { reads.push(k); return k === "dead" ? { key: k, value: { name: k, fromRow: true }, updated_at: "t-dead" } : null; };
+    const partials = [];
+    const res = await SB.collectSummaries(["a", "b", "big", "c", "dead", "gone", "f", "a"], { rpc, readRow, batch: 3, inFlight: 2, onPartial: (m) => partials.push(m) });
+    assertTrue(Object.keys(res.map).sort().join() === "a,b,big,c,dead,f", Object.keys(res.map).join());
+    assertTrue(JSON.stringify(res.failed) === JSON.stringify(["gone"]), JSON.stringify(res.failed));
+    assertTrue(res.map.big.value.name === "big" && res.map.dead.value.fromRow === true && res.map.a.updated_at === "t-a");
+    const singles = calls.filter((c) => c.length === 1).map((c) => c[0]).sort().join();
+    assertTrue(singles === "a,b,big,f" && calls.length === 6, "single-key calls: " + singles + " of " + calls.length); // the failed batch's three keys retried one by one, plus the natural one-key last batch; the good batch is never re-asked
+    assertTrue(JSON.stringify(reads) === JSON.stringify(["dead", "gone"]), JSON.stringify(reads));
+    const landed = partials.flatMap((m) => Object.keys(m)).sort().join();
+    assertTrue(landed === "a,b,big,c,dead,f", "onPartial keys: " + landed);
+    assertTrue(partials.every((m) => Object.keys(m).every((k) => m[k] === res.map[k].value)));
+    assertTrue(peak <= 2 && peak >= 1, "peak in flight " + peak);
+  });
+  await checkAsync("collectSummaries: with no function (rpc null) every key goes straight to the row read; a throwing rpc or readRow is a failure, never an exception", async () => {
+    const reads = [];
+    const res = await SB.collectSummaries(["a", "b"], { rpc: null, readRow: async (k) => { reads.push(k); return { key: k, value: {}, updated_at: "t" }; } });
+    assertTrue(Object.keys(res.map).length === 2 && res.failed.length === 0 && reads.join() === "a,b");
+    const res2 = await SB.collectSummaries(["x"], { rpc: async () => { throw new Error("boom"); }, readRow: async () => { throw new Error("boom"); } });
+    assertTrue(Object.keys(res2.map).length === 0 && res2.failed.join() === "x");
+  });
+  check("every summaries caller goes through the batches: projects.js reads through collectSummaries and hands the dashboard onPartial, the portal shell and the AI Engine define summariesInBatches and no longer post the whole key list at once", () => {
+    const pj = fs.readFileSync(new URL("../src/lib/projects.js", import.meta.url), "utf8");
+    const dash = fs.readFileSync(new URL("../src/components/Dashboard.jsx", import.meta.url), "utf8");
+    const shell = fs.readFileSync(new URL("../portal/portal-shell.html", import.meta.url), "utf8");
+    const ai = fs.readFileSync(new URL("../portal/ai-engine.html", import.meta.url), "utf8");
+    assertTrue(/import \{ collectSummaries \} from "\.\/summaryBatches\.js"/.test(pj) && /collectSummaries\(storageKeys, \{ rpc, readRow, onPartial \}\)/.test(pj) && !/p_keys: storageKeys/.test(pj));
+    assertTrue(/readQuoteSummariesDetailed\(storageKeys, \{ onPartial \} = \{\}\)/.test(pj));
+    assertTrue(/readQuoteSummariesDetailed\(projects\.map\(\(p\) => p\.storageKey\), \{ onPartial \}\)/.test(dash));
+    assertTrue(/function summariesInBatches\(keys\)/.test(shell) && !/p_keys: missing/.test(shell) && !/p_keys: unnamed/.test(shell) && (shell.match(/summariesInBatches\(/g) || []).length >= 3);
+    assertTrue(/async function summariesInBatches\(keys\)/.test(ai) && !/p_keys: missing/.test(ai) && /await summariesInBatches\(missing\)/.test(ai));
+  });
+}
+
 if (process.exitCode) {
   console.error("\nSome checks FAILED — see above.");
 } else {

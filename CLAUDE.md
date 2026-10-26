@@ -1915,7 +1915,27 @@ Three layers, each with a rule that was learned the hard way:
   the fallback is ONE full row per request through `readFullRowBounded()`
   (one in flight for the whole app, shared per key) — never a single select
   of every row: the 16 rows are ~30 MB and that select trips the database
-  statement timeout (57014, measured 17 Sep 2026). Those copies are stripped
+  statement timeout (57014, measured 17 Sep 2026). **The function is asked a
+  FEW keys per call** (`src/lib/summaryBatches.js`, pure, verify-covered —
+  26 Oct 2026, Grady: "projects are missing on this deployment": a browser
+  with no summary mirrors asked for all 25 projects in ONE call, the function
+  ran 2.95 s against the anon role's 3 s statement timeout, PostgREST answered
+  500, and the dashboard fell back to ~37 MB of one-by-one full-row reads,
+  showing only the projects that browser had seen before until they
+  finished): `collectSummaries(keys, {rpc, readRow, onPartial})` —
+  `SUMMARIES_BATCH` = 3 keys per call (the 7 MB rows cost ~0.6 s each inside
+  the function), `SUMMARIES_IN_FLIGHT` = 4 calls at once, a failed call
+  retried one key at a time, a key the function still cannot give read
+  through `readFullRowBounded`, a key that still fails in `failed` (never
+  missing), and `onPartial({key: value})` after every landing — the Dashboard
+  passes it through `readQuoteSummariesDetailed(keys, {onPartial})` and
+  paints rows as they arrive. The portal shell's welcome panel / chat
+  context and the AI Engine mirror call the same function through their own
+  `summariesInBatches(keys)` (three keys, four in flight, per-key retry).
+  Never post the whole key list to the function in one call again.
+  `test-summaries-batches.mjs` runs the CLOUD build against a mocked
+  PostgREST that refuses more than three keys with 500 / 57014 and proves the
+  25 rows, the nine calls, no full-row read and the progressive paint. Those copies are stripped
   of drawing data, so they are never written back whole: field edits from
   those pages go through `patchQuoteFields()` (the `estimator_kv_merge`
   database function when installed, see

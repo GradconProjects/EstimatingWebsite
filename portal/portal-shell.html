@@ -1680,6 +1680,26 @@
     return fetch(CLOUD.url + path, { method:'POST', headers:{ apikey: CLOUD.key, Authorization: 'Bearer ' + CLOUD.key, 'Content-Type':'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(8000) })
       .then(function(r){ return r.ok ? r.json() : null; }).catch(function(){ return null; });
   }
+  // The summaries function rebuilds every row it is given inside ONE statement
+  // and the anon role's statement timeout is 3 s: 25 keys in one call ran
+  // 2.95 s and failed on 26 Oct 2026 (src/lib/summaryBatches.js). Three keys
+  // per call, four calls at a time; a failed call is retried one key at a
+  // time; a key that still fails is left out, never invented.
+  function summariesInBatches(keys){
+    var batches = []; for(var i = 0; i < keys.length; i += 3) batches.push(keys.slice(i, i + 3));
+    var out = [], next = 0;
+    function post(b){ return cloudPost('/rest/v1/rpc/estimator_kv_quote_summaries', { p_keys: b }); }
+    function one(b){
+      return post(b).then(function(rows){
+        if(Array.isArray(rows)){ rows.forEach(function(r){ out.push(r); }); return; }
+        if(b.length < 2) return;
+        return b.reduce(function(p, k){ return p.then(function(){ return post([k]).then(function(r){ if(Array.isArray(r)) r.forEach(function(x){ out.push(x); }); }); }); }, Promise.resolve());
+      });
+    }
+    function worker(){ if(next >= batches.length) return Promise.resolve(); return one(batches[next++]).then(worker); }
+    var ws = []; for(var w = 0; w < Math.min(4, batches.length); w++) ws.push(worker());
+    return Promise.all(ws).then(function(){ return out; });
+  }
   var EXCITED = [
     function(f){ return f.dueToday.length ? f.dueToday[0] + ' is due today — the pressure is on, and that is when you do your best work.' : null; },
     function(f){ return f.dueToday.length > 1 ? f.dueToday.length + ' quotes due today. Big day — let\'s land every one of them.' : null; },
@@ -1906,7 +1926,7 @@
       }
       items.forEach(function(i){ if(byKey[i.key]) i.updatedAt = byKey[i.key]; });
       var unnamed = items.filter(function(i){ return i.kind==='quote' && !i.named && i.updatedAt; }).sort(function(a,b){ return a.updatedAt < b.updatedAt ? 1 : -1; }).slice(0,3);
-      var fill = unnamed.length ? cloudPost('/rest/v1/rpc/estimator_kv_quote_summaries', { p_keys: unnamed.map(function(i){ return i.key; }) }) : Promise.resolve(null);
+      var fill = unnamed.length ? summariesInBatches(unnamed.map(function(i){ return i.key; })) : Promise.resolve(null);
       return fill.then(function(sum){
         if(run !== welcomeRun) return;
         if(Array.isArray(sum)) sum.forEach(function(row){ var it = items.find(function(i){ return i.key === row.key; }); var q = row.value || {}; if(it){ it.name = q.projectName || it.name; it.status = q.status || it.status; it.deadline = (q.planner && q.planner.deadline) || it.deadline; it.elements = Array.isArray(q.items) ? q.items.length : it.elements; it.named = !!it.name; } });
@@ -2074,7 +2094,7 @@
       var idx = res[0] && res[0][0] && Array.isArray(res[0][0].value) ? res[0][0].value : [];
       var stamps = {}; (Array.isArray(res[1]) ? res[1] : []).forEach(function(r){ stamps[r.key] = r.updated_at; });
       var missing = idx.filter(function(e){ return e && e.storageKey && !localKeys[e.storageKey]; }).map(function(e){ return e.storageKey; }).slice(0, 60);
-      var fill = missing.length ? cloudPost('/rest/v1/rpc/estimator_kv_quote_summaries', { p_keys: missing }) : Promise.resolve([]);
+      var fill = missing.length ? summariesInBatches(missing) : Promise.resolve([]);
       return fill.then(function(sum){
         var summaries = {}; (Array.isArray(sum) ? sum : []).forEach(function(row){ summaries[row.key] = row.value || {}; });
         return { index: idx, stamps: stamps, summaries: summaries,

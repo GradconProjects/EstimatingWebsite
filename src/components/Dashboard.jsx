@@ -117,7 +117,10 @@ export default function Dashboard({ projects, rates, rateChanges, onOpen, onCrea
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    readQuoteSummariesDetailed(projects.map((p) => p.storageKey)).then(({ map, missing, failed }) => {
+    // Rows are painted as each batch lands (summaryBatches.js) — a fresh
+    // browser no longer waits for every project before showing any.
+    const onPartial = (landed) => { if (!cancelled) setQuotesByKey((prev) => ({ ...prev, ...landed })); };
+    readQuoteSummariesDetailed(projects.map((p) => p.storageKey), { onPartial }).then(({ map, missing, failed }) => {
       if (cancelled) return;
       setQuotesByKey(map);
       setLoading(false);

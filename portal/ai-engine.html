@@ -422,6 +422,16 @@ async function kvPost(path, body){
   if(!SUPABASE_URL) return null;
   try{ const res = await fetch(`${SUPABASE_URL}${path}`, { method:"POST", headers:{ apikey:SUPABASE_ANON_KEY, Authorization:`Bearer ${SUPABASE_ANON_KEY}`, "Content-Type":"application/json" }, body:JSON.stringify(body), signal:AbortSignal.timeout(10000) }); return res.ok ? await res.json() : null; }catch(e){ return null; }
 }
+// A few keys per summaries call (the function runs every row it is given in one statement against a 3 s timeout — src/lib/summaryBatches.js); a failed call is retried key by key.
+async function summariesInBatches(keys){
+  const batches=[]; for(let i=0;i<keys.length;i+=3) batches.push(keys.slice(i,i+3));
+  const out=[]; let next=0;
+  const post=(b)=>kvPost("/rest/v1/rpc/estimator_kv_quote_summaries", { p_keys:b });
+  const one=async(b)=>{ const rows=await post(b); if(Array.isArray(rows)){ out.push(...rows); return; } if(b.length<2) return; for(const k of b){ const r=await post([k]); if(Array.isArray(r)) out.push(...r); } };
+  const worker=async()=>{ while(next<batches.length) await one(batches[next++]); };
+  await Promise.all(Array.from({length:Math.min(4,batches.length)},worker));
+  return out;
+}
 async function kvGetRows(query){
   if(!SUPABASE_URL) return null;
   try{ const res = await fetch(`${SUPABASE_URL}/rest/v1/estimator_kv?${query}`, { headers:{ apikey:SUPABASE_ANON_KEY, Authorization:`Bearer ${SUPABASE_ANON_KEY}` }, signal:AbortSignal.timeout(8000) }); return res.ok ? await res.json() : null; }catch(e){ return null; }
@@ -440,7 +450,7 @@ async function loadMirror(force){
     const stampsRows = await kvGetRows("select=key,updated_at&key=like.gradcon-quote-*&order=updated_at.desc&limit=200");
     const stamps = {}; (stampsRows||[]).forEach(r=>{ stamps[r.key]=r.updated_at; });
     const missing = cloudIdx.filter(p=>p&&p.storageKey&&!byKey[p.storageKey]).map(p=>p.storageKey).slice(0,60);
-    const sums = missing.length ? await kvPost("/rest/v1/rpc/estimator_kv_quote_summaries", { p_keys: missing }) : [];
+    const sums = missing.length ? await summariesInBatches(missing) : [];
     (Array.isArray(sums)?sums:[]).forEach(row=>{ const p=cloudIdx.find(x=>x.storageKey===row.key); if(p && row.value) byKey[row.key]={ id:p.id, key:row.key, v:row.value, updatedAt:stamps[row.key]||null }; });
     Object.keys(byKey).forEach(k=>{ if(stamps[k]) byKey[k].updatedAt = stamps[k]; });
     const quotes = Object.values(byKey).map(q=>({ id:q.id, key:q.key, name:q.v.projectName||"", client:q.v.clientName||"", status:q.v.status||"", deadline:(q.v.planner&&q.v.planner.deadline)||null, elements:Array.isArray(q.v.items)?q.v.items.length:null, updatedAt:q.updatedAt }))

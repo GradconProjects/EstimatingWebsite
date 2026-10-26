@@ -10,6 +10,7 @@ import { uid, rateKey, categoryAppliesTo } from "./costing.js";
 import { supabase, supabaseEnabled } from "./supabaseClient.js";
 import { FULL_CATALOG } from "../data/catalog.js";
 import { readMirror, writeMirror, clearMirror } from "./localMirror.js";
+import { collectSummaries } from "./summaryBatches.js";
 
 const TABLE = "estimator_kv";
 
@@ -49,10 +50,6 @@ const stripForSummary = (quote) => {
     ),
   };
 };
-function mirrorSummaries(map, stamps) {
-  Object.keys(map).forEach((k) => writeMirror(summaryMirrorKey(k), stripForSummary(map[k]), (stamps && stamps[k]) || null));
-}
-
 /* ---- Download only what changed, and never the drawings ------------------
  * Every project row carries its markup drawings as image data — the 16 rows
  * measured 30 MB on 17 Sep 2026, and one select of them all now trips the
@@ -97,40 +94,41 @@ const isMissingFunction = (error) =>
   !!error && (error.code === "PGRST202" || error.code === "42883" || /could not find the function|does not exist/i.test(error.message || ""));
 /** Drawing-stripped values for `storageKeys` → `{ map, failed }`. Keys in
  * `failed` could not be read; they are NOT missing rows. Every row that
- * arrives is mirrored with its stamp. */
-async function fetchSummaries(storageKeys, stamps) {
+ * arrives is mirrored with its stamp. The function is asked a FEW keys per
+ * call, several calls at once (summaryBatches.js says why: 25 keys in one
+ * call ran into the anon role's 3 s statement timeout on 26 Oct 2026); a
+ * failed call is retried one key at a time, then the bounded full-row read;
+ * `onPartial({key: value})` fires as each landing arrives so the dashboard
+ * can paint rows before the whole set is in. */
+async function fetchSummaries(storageKeys, stamps, onPartial) {
   const map = {};
-  const failed = [];
-  if (storageKeys.length === 0) return { map, failed };
-  if (!summariesFnMissing) {
+  if (storageKeys.length === 0) return { map, failed: [] };
+  const rpc = async (keys) => {
+    if (summariesFnMissing) return null;
     try {
-      const { data, error } = await supabase.rpc(SUMMARIES_FN, { p_keys: storageKeys });
-      if (!error && Array.isArray(data)) {
-        data.forEach((row) => {
-          if (!row || typeof row.key !== "string" || !storageKeys.includes(row.key)) return;
-          map[row.key] = row.value;
-          if (stamps) stamps[row.key] = row.updated_at;
-        });
-        storageKeys.forEach((k) => { if (!(k in map)) failed.push(k); }); // listed by the stamp query a moment ago, so unavailable, not gone
-        mirrorSummaries(map, stamps);
-        return { map, failed };
-      }
+      const { data, error } = await supabase.rpc(SUMMARIES_FN, { p_keys: keys });
+      if (!error && Array.isArray(data)) return data;
       if (isMissingFunction(error)) summariesFnMissing = true;
+      return null;
     } catch {
-      /* network failure — fall through to the bounded per-row reads */
+      return null; // network failure — this batch goes key by key, then to the bounded per-row reads
     }
-  }
-  // Fallback: ONE full row per request, in sequence — never the whole set in
-  // one select (that is the query that times out). A row that fails is
-  // skipped, not treated as absent; the others still arrive.
-  for (const k of storageKeys) {
+  };
+  // Fallback: ONE full row per request — never the whole set in one select
+  // (that is the query that times out). A row that fails is skipped, not
+  // treated as absent; the others still arrive.
+  const readRow = async (k) => {
     const row = await readFullRowBounded(k);
-    if (!row) { failed.push(k); continue; }
-    map[k] = stripForSummary(row.value);
+    return row ? { key: k, value: stripForSummary(row.value), updated_at: row.updated_at } : null;
+  };
+  const res = await collectSummaries(storageKeys, { rpc, readRow, onPartial });
+  Object.keys(res.map).forEach((k) => {
+    const row = res.map[k];
+    map[k] = row.value;
     if (stamps) stamps[k] = row.updated_at;
-    writeMirror(summaryMirrorKey(k), map[k], row.updated_at);
-  }
-  return { map, failed };
+    writeMirror(summaryMirrorKey(k), row.value, row.updated_at || null);
+  });
+  return { map, failed: res.failed };
 }
 /* Full-row reads are the expensive request (a row with drawings is up to
  * 6 MB), so ALL of them — summary fallback and readQuotes() — go through one
@@ -156,7 +154,7 @@ function readFullRowBounded(storageKey) {
   return read;
 }
 /** Mirror hits for stamped keys, then only the stale ones from the database. */
-async function summariesFromStamps(storageKeys, stamps) {
+async function summariesFromStamps(storageKeys, stamps, onPartial) {
   const map = {};
   const missing = [];
   const stale = [];
@@ -166,7 +164,7 @@ async function summariesFromStamps(storageKeys, stamps) {
     if (hit && hit.value && hit.updatedAt && hit.updatedAt === stamps[k]) map[k] = hit.value;
     else stale.push(k);
   });
-  const fresh = await fetchSummaries(stale, stamps);
+  const fresh = await fetchSummaries(stale, stamps, onPartial);
   Object.assign(map, fresh.map);
   // a row that could not be refreshed keeps its last-known copy on screen
   fresh.failed.forEach((k) => {
@@ -189,7 +187,7 @@ function summariesUnavailable(storageKeys, why) {
  *             to be pruned, written or defaulted;
  *   error   — null, or a short reason when something in `failed` remains.
  */
-export async function readQuoteSummariesDetailed(storageKeys) {
+export async function readQuoteSummariesDetailed(storageKeys, { onPartial } = {}) {
   if (storageKeys.length === 0) return { map: {}, missing: [], failed: [], error: null };
   if (!supabaseEnabled) {
     const map = await readQuotes(storageKeys);
@@ -207,7 +205,7 @@ export async function readQuoteSummariesDetailed(storageKeys) {
     }
     if (!stamps) stamps = await readQuoteStamps(storageKeys);
     if (!stamps) return summariesUnavailable(storageKeys, "stamps");
-    return await summariesFromStamps(storageKeys, stamps);
+    return await summariesFromStamps(storageKeys, stamps, onPartial);
   } catch {
     return summariesUnavailable(storageKeys, "network");
   }
