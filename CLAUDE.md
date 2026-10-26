@@ -2324,28 +2324,35 @@ element families waits on the owner's approval of the pad footing.
   Selects and checkboxes still rebuild on the event. The Additional
   Connections set-out shows "= N bars" live through `refreshExtraConnCount`.
   `test-slab-starters.mjs` proves all three, the typed decimal and the fit.
-- **A dowel can be a bar, a trench mesh or a sheet-mesh strip** (26 Oct 2026,
-  Grady: "i want dowels to have option of sheet and trench reinforcement"):
-  the slab's Joint dowels (`dowelDia`) and every step-down dowel (`sdDia` on
-  the slab, beam, wall and stepped strip footing) are chosen through
-  `dowelProductSel` — a bar size (the spacing and, on a step, the bar-shape
-  sketch as before), an L-series trench mesh, or a square-mesh sheet cut as a
-  strip. `dowelProduct(v)` is the ONE reading of the stored value; a trench
-  mesh or strip runs CONTINUOUSLY along the joint (every joint × the slab
-  width) or the step run (× risers × legs × the beam / wall count), with no
-  spacing and no bar length — `dowelRunLine` emits ONE lm line with
-  `massPerUnit` from `trenchReoMassPerM` (a strip's width is asked,
-  `dowelStripMm` / `sdStripMm`, blank = 300 mm), so the kg totals, the orders
-  schedule (6 m lengths, strips from sheets) and the Quotes bridge treat it
-  as a footing's trench layer; `dowelProductFields` renders the fields that
-  go with the product and `sdBarShapeIf` the sketch only for a bar. The
-  kerb's joint dowels stay bars (a kerb joint is a profile wide). **The
-  bridge prices an L-series line by NAME** (`estimateImport.js`): a
-  Reinforcement / Connections / Joints line in lineal metres whose material
-  is a TRENCH MESH catalog product ("4 Bar-L12TM") lands on that product in
-  whole `TRENCH_STOCK_M` = 6 m lengths (ceil); only an SL/RL sheet code on a
-  trench line stays flagged. `test-dowel-products.mjs` proves the three
-  products on the joints, the step-down of a slab, a beam ×2 and a stepped
+- **A dowel can be a bar, or a PIECE of trench mesh or sheet mesh cut to a
+  typed section** (26 Oct 2026, Grady: "i want dowels to have option of sheet
+  and trench reinforcement", then "i want an extra where i can specify the
+  length and width of section where the sheets or trench meshes can be
+  entered and used as dowels"): the slab's Joint dowels (`dowelDia`) and every
+  step-down dowel (`sdDia` on the slab, beam, wall and stepped strip footing)
+  are chosen through `dowelProductSel` — a bar size (spacing, bar length and,
+  on a step, the bar-shape sketch as before), an L-series trench mesh, or a
+  square-mesh sheet. `dowelProduct(v)` is the ONE reading of the stored value.
+  A mesh product is a PIECE at every dowel position (the same positions a bar
+  would take: joint width ÷ spacing + 1 per joint, step run ÷ spacing + 1 per
+  step × the beam / wall count): `dowelProductFields` asks the piece length
+  across the joint (`<prefix>PieceL`, blank = `DOWEL_PIECE_L_MM` 600) and, for
+  a sheet, the piece width along it (`<prefix>PieceW`, blank =
+  `DOWEL_PIECE_W_MM` 300; a trench mesh is its own width). `dowelPieceLine` is
+  the ONE line: trench pieces = count × length in lm with `massPerUnit` from
+  `trenchReoMassPerM` (so the kg totals, the orders schedule in 6 m lengths
+  and the Quotes bridge treat it as a footing's trench layer); sheet pieces =
+  count × length × width in m² with `sheets` (whole sheets after waste) and
+  the mesh kg/m². `sdBarShapeIf` draws the sketch only for a bar. The kerb's
+  joint dowels stay bars (a kerb joint is a profile wide). **The bridge
+  prices an L-series line by NAME** (`estimateImport.js`): a Reinforcement /
+  Connections / Joints line in lineal metres whose material is a TRENCH MESH
+  catalog product ("4 Bar-L12TM") lands on that product in whole
+  `TRENCH_STOCK_M` = 6 m lengths (ceil), and a Joints / Connections m² line
+  whose material is a sheet mesh lands on SQUARE MESH like a Reinforcement
+  one; only an SL/RL sheet code on a trench line stays flagged.
+  `test-dowel-products.mjs` proves the three products on the joints (the
+  typed section too), the step-down of a slab, a beam ×2 and a stepped
   footing; `verify.mjs` the bridge.
 - **Retaining walls** also carry a plan shape (`planShape`: straight, curved —
   `planRadius` × `planAngle` gives the developed length, or irregular —

@@ -410,8 +410,9 @@ export function buildImportFromEstimate(estimateExport) {
         `catalog is priced by bar-count/length code (e.g. "4 Bar-L12TM"), not by SL/RL sheet type — pick the right product manually.`
       );
     });
+    // (a Joints / Connections m² mesh line — sheet-mesh dowel pieces, 26 Oct 2026 — is the same product)
     group.filter((l) =>
-      l.materialGroup === "Reinforcement" && (l.unit === "m²" || l.unit === "m2") && !handled.has(l)
+      ["Reinforcement", "Connections", "Joints"].includes(l.materialGroup) && (l.unit === "m²" || l.unit === "m2") && !handled.has(l)
     ).forEach((l) => {
       const product = findMeshProduct(l.material);
       if (!product) return; // not a mesh line at all (e.g. a bar-based reo area) — the sweep below flags it
