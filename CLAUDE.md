@@ -2357,8 +2357,12 @@ element families waits on the owner's approval of the pad footing.
   **Mesh dowel pieces are also a DISTINCT table on every element's
   Connections / Dowels tab** (Grady, same day, after looking there for them:
   "still not there, just make a distinct different line for it"):
-  `renderMeshDowelRows(inst)` (appended to `parts.conns` in `buildCard`, after
-  the Additional Connections; `data-testid="mesh-dowels"`) — one row per
+  `renderMeshDowelRows(inst, where)` (`data-testid="mesh-dowels"`,
+  `data-where`), rendered TWICE over the ONE `meshDowels` array — on the
+  Additional / Allowances tab right under Additional Reinforcement (Grady,
+  same day: "still missing" — the two places he named were "additional
+  reinforcement or dowels") and on the Connections / Dowels tab after the
+  Additional Connections, with a note that they are the same rows — one row per
   joint or step: a name, a product (`meshDowelProductSel`: sheet mesh and
   trench mesh ONLY, no bars), run (m) and spacing (mm), or a typed number
   (which wins — `meshDowelCount(r)` is the ONE count, `meshDowelSetOut(r)` the
@@ -2374,7 +2378,17 @@ element families waits on the owner's approval of the pad footing.
   and step-down dowel products above — a joint priced on one must not also be
   listed on the other. `test-mesh-dowel-rows.mjs` proves the table on seven
   element types, both products, the typed number, the warning, the delete and
-  the save.
+  the save. **An Additional Reinforcement / Elements row can itself be mesh
+  pieces**: its "Bar / mesh" select is `addlProductSel` (= `dowelProductSel`:
+  bars, trench mesh, sheet mesh) and the table carries a "Width each (mm)"
+  column (`widthMm`, shown for a sheet mesh, "mesh width" on a trench row,
+  "—" on a bar). `addlMeshProduct(r)` is the ONE reading (a Reinforcement /
+  Connections row whose product is not a bar); such a row is `count` pieces
+  of `lengthMm` (× `widthMm`, blank = 600 × 300) through `dowelPieceLineAt`
+  (sheet → m² + whole sheets; trench → lm), or — with a typed "Area each" on a
+  sheet row in m², or typed metres on a trench row in m — that figure × the
+  count; `addlRowEach` reads the piece section so the Total cell agrees. Bar
+  rows are unchanged.
 - **Retaining walls** also carry a plan shape (`planShape`: straight, curved —
   `planRadius` × `planAngle` gives the developed length, or irregular —
   the developed length is typed), a battered stem (`stemBatter`: mean of

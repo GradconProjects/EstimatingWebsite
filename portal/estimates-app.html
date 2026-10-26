@@ -2060,8 +2060,9 @@ function meshDowelCount(r){
   return (run>0 && sp>0)? Math.floor(run*1000/sp)+1 : 0;
 }
 function meshDowelSetOut(r){ const n=num(r.count); if(n>0) return `${Math.round(n)} pieces typed`; const run=num(r.runM), sp=num(r.spacing); return (run>0&&sp>0)? `${fmt(run,2)} m / ${sp} mm + 1 = ${meshDowelCount(r)}` : "no run or count"; }
-function renderMeshDowelRows(inst){
+function renderMeshDowelRows(inst, where){
   const rows=inst.data.meshDowels || (inst.data.meshDowels=[]);
+  const note = where==="conns"? `<p class="small">The same rows are listed under <b>Additional / Allowances → Mesh dowel pieces</b>; a row typed on either tab is one row.</p>` : "";
   const body=rows.map((r,i)=>{ const p=meshDowelProduct(r); return `<tr data-row="meshDowels.${i}">
    <td style="min-width:140px">${inpText(`meshDowels.${i}.name`,r.name||"")}</td>
    <td>${meshDowelProductSel(`meshDowels.${i}.type`,r.type)}</td>
@@ -2073,7 +2074,7 @@ function renderMeshDowelRows(inst){
    <td class="small" style="white-space:nowrap"><b data-meshdowel-count="${i}">${meshDowelCount(r)}</b> pieces</td>
    <td><button type="button" class="btn small danger" data-action="delRow" data-target="meshDowels" data-idx="${i}" title="Remove this row">✕</button></td>
   </tr>`; }).join('');
-  return `<div class="subsec" data-testid="mesh-dowels"><div class="sechead">Mesh dowel pieces — sheet or trench mesh cut to size</div>
+  return `<div class="subsec" data-testid="mesh-dowels" data-where="${where||""}"><div class="sechead">Mesh dowel pieces — sheet or trench mesh cut to size</div>${note}
   <p class="small">A <b>separate line per row</b>: a piece of sheet mesh or trench mesh cut to the <b>length × width</b> you type, placed at every dowel position. Set the pieces out along a <b>run at a spacing</b> (run m ÷ spacing mm + 1), or type the <b>number</b> of pieces (a typed number wins). Sheet mesh prices in m² and whole sheets; trench mesh in lineal metres of the product (its own width). Blank section = ${DOWEL_PIECE_L_MM} × ${DOWEL_PIECE_W_MM} mm.</p>
   <div style="overflow-x:auto"><table class="rows mesh-dowels"><thead><tr><th>Where (joint / step)</th><th>Product</th><th>Run (m)</th><th>@ (mm)</th><th>Number</th><th>Piece length (mm)</th><th>Piece width (mm)</th><th>Pieces</th><th></th></tr></thead>
   <tbody>${body||`<tr><td colspan="9" class="small">No mesh dowel pieces yet.</td></tr>`}</tbody></table></div>
@@ -2374,6 +2375,8 @@ function faceRow(fields,data){
   return `<div class="grid cols4">${boxes}</div><div style="margin-top:4px;margin-bottom:8px;"><button class="btn small" data-action="facesAll" data-fields="${keys}" type="button">Select all sides</button> <button class="btn small ghost" data-action="facesNone" data-fields="${keys}" type="button">None (cast against ground)</button></div>`;
 }
 function barSizeSel(field,val){ return selOpts(field,val,BARSIZES.map(b=>[b,b])); }
+/** Additional Reinforcement / Elements rows: a bar size, or a trench / sheet mesh cut to pieces (26 Oct 2026, Grady: "i cant find these under additional reinforcement or dowels"). */
+function addlProductSel(field,val){ return dowelProductSel(field,val); }
 /* A by-area reinforcement LAYER is one of five products (26 Oct 2026, Grady, on the precast
  * walls' by-area table: "i need the sheets and trench mesh here and it is not visible"):
  * a bar size, a SHEET mesh (the mesh name — the area in whole sheets, spacing and layout
@@ -8731,8 +8734,12 @@ function addlRowCount(r){
   let n=num(r.count), so=addlRowSetOut(r);
   return so>0? so*(n>0? n:1) : n;
 }
+function addlMeshProduct(r){ const g=r.kind===undefined? "Reinforcement" : r.kind; if(g!=="Reinforcement" && g!=="Connections") return null; const p=dowelProduct(r.dia||"N12"); return p.kind==="bar"? null : p; }
 function addlRowEach(r){
   let L=num(r.lengthMm), a=num(r.area), q=num(r.qty);
+  const mp=addlMeshProduct(r);
+  if(mp && mp.kind==="sheet" && !(a>0) && (r.unit==="m²"||r.unit==="no.") && L>0) return L*(num(r.widthMm)>0? num(r.widthMm) : DOWEL_PIECE_W_MM)/1e6;
+  if(mp && mp.kind==="trench" && (r.unit==="m"||r.unit==="no.") && L>0) return L/1000;
   if(r.unit==="m" && L>0) return L/1000;
   if((r.unit==="m²"||r.unit==="m³") && a>0) return a;
   if(q>0) return q;
@@ -8749,11 +8756,12 @@ function additionalItemsSection(inst){
   let body=rows.map((r,i)=>`<tr>
     <td style="min-width:150px">${inpText(`addlRows.${i}.desc`,r.desc||"")}</td>
     <td>${selOpts(`addlRows.${i}.kind`,r.kind===undefined?"Reinforcement":r.kind,ADDL_KINDS)}</td>
-    <td>${barSizeSel(`addlRows.${i}.dia`,r.dia||"N12")}</td>
+    <td>${addlProductSel(`addlRows.${i}.dia`,r.dia||"N12")}</td>
     <td style="width:72px;min-width:72px">${inpNum(`addlRows.${i}.count`,r.count)}</td>
     <td style="width:72px;min-width:72px">${inpNum(`addlRows.${i}.runM`,r.runM)}</td>
     <td style="width:72px;min-width:72px">${inpNum(`addlRows.${i}.spacing`,r.spacing)}</td>
     <td style="width:96px;min-width:96px">${inpNum(`addlRows.${i}.lengthMm`,r.lengthMm)}</td>
+    <td style="width:84px;min-width:84px">${dowelProduct(r.dia||"N12").kind==="sheet"? inpNum(`addlRows.${i}.widthMm`,r.widthMm) : `<span class="small">${dowelProduct(r.dia||"N12").kind==="trench"? "mesh width" : "—"}</span>`}</td>
     <td style="width:84px;min-width:84px">${inpNum(`addlRows.${i}.area`,r.area)}</td>
     <td style="width:84px;min-width:84px">${inpNum(`addlRows.${i}.qty`,r.qty)}</td>
     <td>${selOpts(`addlRows.${i}.unit`,r.unit||"m",ADDL_UNITS)}</td>
@@ -8762,10 +8770,10 @@ function additionalItemsSection(inst){
     <td><button class="btn small danger" data-action="addlDel" data-i="${i}" type="button">✕</button></td>
    </tr>`).join('');
   return `<div class="subsec"><div class="sechead">Additional Reinforcement / Elements</div>
-   <p class="small">Anything with no obvious home on the other tabs — a trimmer bar round a penetration, an extra pour, a one-off item. The <b>count</b> multiplies the row: <b>count × length each</b> for bars (m), <b>count × area</b> for sheet or volume items (m², m³), <b>count × qty each</b> for anything else (no., kg, item). Leave the count blank for a single quantity. <b>Run (m)</b> and <b>@ (mm)</b> set the pieces out along a run instead — run ÷ spacing + 1 end bar (12 m @ 400 = 31), × the count when more than one such run — so a line of starter or trimmer bars is taken off the drawing, not counted by hand. A row needs a description and a quantity before it reaches the takeoff. Rows sized in metres against a bar diameter also report their mass.</p>
+   <p class="small">Anything with no obvious home on the other tabs — a trimmer bar round a penetration, an extra pour, a one-off item. <b>Bar / mesh</b> can be a bar size, a <b>trench mesh</b> or a <b>sheet mesh</b>: a mesh row is PIECES cut to the <b>length each</b> (and, for sheet mesh, the <b>width each</b>) — e.g. 26 × SL82 pieces 600 × 300 mm as dowels — priced in lm of the trench product or m² of sheets with their kg. The <b>count</b> multiplies the row: <b>count × length each</b> for bars (m), <b>count × area</b> for sheet or volume items (m², m³), <b>count × qty each</b> for anything else (no., kg, item). Leave the count blank for a single quantity. <b>Run (m)</b> and <b>@ (mm)</b> set the pieces out along a run instead — run ÷ spacing + 1 end bar (12 m @ 400 = 31), × the count when more than one such run — so a line of starter or trimmer bars is taken off the drawing, not counted by hand. A row needs a description and a quantity before it reaches the takeoff. Rows sized in metres against a bar diameter also report their mass.</p>
    <div style="overflow-x:auto"><table class="rows"><thead><tr>
-     <th>Description</th><th>Goes under</th><th>Bar size</th><th>Count</th><th title="Set out along a run: run m ÷ spacing mm + 1 end bar, × the count (blank = one run)">Run (m)</th><th title="Spacing along the run (mm)">@ (mm)</th><th>Length each (mm)</th><th>Area each (m²)</th><th>Qty each</th><th>Unit</th><th>Waste %</th><th>Total</th><th></th>
-   </tr></thead><tbody>${body||`<tr><td colspan="13" class="small">No additional items yet.</td></tr>`}</tbody></table></div>
+     <th>Description</th><th>Goes under</th><th title="A bar size, or a piece of trench mesh / sheet mesh cut to the length (and width) each">Bar / mesh</th><th>Count</th><th title="Set out along a run: run m ÷ spacing mm + 1 end bar, × the count (blank = one run)">Run (m)</th><th title="Spacing along the run (mm)">@ (mm)</th><th>Length each (mm)</th><th title="Sheet-mesh pieces only: the width of each piece (blank = 300 mm)">Width each (mm)</th><th>Area each (m²)</th><th>Qty each</th><th>Unit</th><th>Waste %</th><th>Total</th><th></th>
+   </tr></thead><tbody>${body||`<tr><td colspan="14" class="small">No additional items yet.</td></tr>`}</tbody></table></div>
    <div class="toolbar" style="margin-top:8px;"><button class="btn small primary" data-action="addlAdd" type="button">+ Add row</button></div>
   </div>`;
 }
@@ -9085,7 +9093,7 @@ function buildCard(inst){
   // & dowels, step-downs) sits OUTSIDE the method-gated block, so it shows
   // and prices under every reinforcement method.
   if(parts.reo!==undefined) parts.reo = reoMethodSection(inst) + `<div class="subsec ${reoMethodOf(inst.data)!=="detailed"?'hidden':''}" data-show-if="reoMethod_detailed">${parts.reo}</div>` + (parts.reoAlways||"");
-  parts.conns = (parts.conns||"") + (usesSharedStarters(def)? startersSection(inst) : "") + renderExtraConnRows(inst) + renderMeshDowelRows(inst);
+  parts.conns = (parts.conns||"") + (usesSharedStarters(def)? startersSection(inst) : "") + renderExtraConnRows(inst) + renderMeshDowelRows(inst, "conns");
   // Central additions available on EVERY element with the matching tab:
   // the formwork system/type choice heads every Formwork tab, and the
   // insulation section joins every Blinding / Insulation tab — no per-
@@ -9121,6 +9129,7 @@ function buildCard(inst){
   if(isGroundElement(def)) parts.exc = excavationOptionSection(inst,def) + (parts.exc||"");
   // EVERY element gets the additional reinforcement / elements catch-all.
   if(parts.addl===undefined) parts.addl = additionalItemsSection(inst);
+  parts.addl += renderMeshDowelRows(inst, "addl");   // 26 Oct 2026, Grady: "still missing" — under Additional Reinforcement, on EVERY element (the generic Drill & Dowel has no Connections tab)
   parts.addl += siteAllowancesSection(inst);   // Phase 4: scoped allowances on every element
   // Phase 2B: the assembly checklist + 3D view, pad footings first, blueprint layout only.
   if(SHELL_MODE==="blueprint" && hasAssembly(inst)) parts.assembly = assemblySection(inst);
@@ -9788,6 +9797,17 @@ function computeInstance(inst){
     let unit=r.unit||"m";
     let waste=r.waste===undefined||r.waste===""? 0 : num(r.waste);
     let group=r.kind===undefined? "Reinforcement" : r.kind;
+    const meshP=addlMeshProduct(r);
+    if(meshP){
+      // a mesh row is PIECES of the product (sheet: L × W each in m² and whole sheets; trench: L each in lm), or a typed area / metres
+      const n=Math.max(1,addlRowCount(r)||1), L=num(r.lengthMm)>0? num(r.lengthMm) : DOWEL_PIECE_L_MM, W=num(r.widthMm)>0? num(r.widthMm) : DOWEL_PIECE_W_MM;
+      const so=addlRowSetOut(r)>0? `(${num(r.runM)}m/${num(r.spacing)}+1)${num(r.count)>1?`×${num(r.count)}`:""}=${n}` : String(n);
+      let line;
+      if(meshP.kind==="sheet" && num(r.area)>0 && unit==="m²"){ const area=n*num(r.area), kgm2=MESHTYPES[meshP.type]||0, wasted=withWaste(area,waste); line={materialGroup:group,material:meshP.type,spec:`${desc} — ${n} × ${meshP.type} sheet-mesh pieces of ${num(r.area)} m²`,qty:area,unit:"m²",waste,finalQty:wasted,sheets:Math.ceil(wasted/MESH_SHEET_AREA_M2-1e-9),massPerUnit:kgm2,formula:`${so} × ${num(r.area)} m²`,notes:`${fmt(area*kgm2,1)} kg`,source:"addl"}; }
+      else if(meshP.kind==="trench" && unit==="m" && !(num(r.lengthMm)>0) && num(r.qty)>0){ const lm=n*num(r.qty), mpm=trenchReoMassPerM(meshP.type); line={materialGroup:group,material:meshP.type,spec:`${desc} — ${meshP.type} trench mesh`,qty:lm,unit:"lm",waste,finalQty:withWaste(lm,waste),massPerUnit:mpm,formula:`${so} × ${num(r.qty)} m`,notes:`${fmt(lm*mpm,1)} kg`,source:"addl"}; }
+      else { const pl=dowelPieceLineAt(inst,def,group,meshP,n,L,W,desc,so); pl.waste=waste; pl.finalQty=withWaste(pl.qty,waste); if(pl.unit==="m²") pl.sheets=Math.ceil(pl.finalQty/MESH_SHEET_AREA_M2-1e-9); pl.source="addl"; out.lines.push(pl); return; }
+      out.lines.push(baseLine(inst,def,line)); return;
+    }
     let steel = (group==="Reinforcement" || group==="Connections") && r.dia;
     let isBar = steel && unit==="m";
     // A steel row counted in PIECES with a length each (20 × 1200 mm trimmer
