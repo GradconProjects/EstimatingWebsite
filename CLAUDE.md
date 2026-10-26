@@ -1756,13 +1756,26 @@ cloud and the tool loop through `runChat`.
 
 ## Dashboard opens on the open work only
 
-`OPEN_STATUSES` (`lib/planner.js`, used by `Dashboard.jsx`) = Queued, Estimating: the status filter
-starts on the "Open — Queued & Estimating" tile, so a quote that has gone out
+`OPEN_STATUSES` (`lib/planner.js`, used by `Dashboard.jsx`) = Queued, Measuring, Estimating: the status filter
+starts on the "Open — Queued, Measuring & Estimating" tile, so a quote that has gone out
 (or is finished, quoting, on hold, won or lost) leaves the main screen and
 sits under its own status tile and under "All projects" — never deleted,
 never hidden from the tiles' counts. Clicking the active tile again toggles
 between Open and All. Session-local; every fresh load starts on Open.
-Grady, 1 Oct 2026.
+Grady, 1 Oct 2026. **"Measuring" splits the old Estimating step in two**
+(Grady, 26 Oct 2026: "i want to split the status estimating to measuring and
+estimating"): `QUOTE_STATUSES` = Queued → Measuring (the take-off from the
+drawings, orange) → Estimating (the pricing, red) → Completed Estimating …
+Both are OPEN work and alike everywhere a status is read: `OPEN_STATUSES`,
+`LIVE_HANDOVER_STATUSES` (the live crew prefill runs), the Rates Library
+prompts (not status-pinned), the shell's `OPEN_WORK` (welcome cards and
+"Coming up"), its "New project status" setting and a welcome line
+(`nMeasuring`), the AI Engine's Quality-checks "Open work" group; neither
+enters `RATES_LOCKED_STATUSES`. A project saved as "Estimating" before this
+keeps that status — nothing is renamed. `verify.mjs` pins the order, the
+style, the sets and the shell / AI Engine source; `test-measuring-status.mjs`
+proves the Settings select, the editor select (orange, no pin), the Dashboard
+tile and row.
 
 ## Deadlines stop at submission
 

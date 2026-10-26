@@ -598,7 +598,7 @@ function renderQaProjects(){
   renderQaTakeoffPickers();
   const sel=document.getElementById("qaProject"); if(!sel) return;
   const cur = sel.value;
-  const groups = [["Completed Estimating & quoting", q=>QA_FIRST.includes(q.status)], ["Open work", q=>["Queued","Estimating"].includes(q.status)], ["Closed", q=>!QA_FIRST.includes(q.status) && !["Queued","Estimating"].includes(q.status)]];
+  const groups = [["Completed Estimating & quoting", q=>QA_FIRST.includes(q.status)], ["Open work", q=>["Queued","Measuring","Estimating"].includes(q.status)], ["Closed", q=>!QA_FIRST.includes(q.status) && !["Queued","Measuring","Estimating"].includes(q.status)]];
   sel.innerHTML = `<option value="">— pick a project —</option>` + groups.map(([label, test])=>{ const rows = MIRROR.quotes.filter(test); return rows.length? `<optgroup label="${esc(label)}">${rows.map(q=>`<option value="${esc(q.key)}" ${q.key===cur?'selected':''}>${esc(q.name||"Untitled")}${q.client?" — "+esc(q.client):""} (${esc(q.status)})</option>`).join("")}</optgroup>` : ""; }).join("");
   updateQaRun();
 }

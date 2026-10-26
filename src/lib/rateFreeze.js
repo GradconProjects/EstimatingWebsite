@@ -9,7 +9,8 @@
  * quietly re-cost itself when the next surcharge lands.
  *
  * So the moment a project's status moves into a "finished" state (Completed
- * Estimating onwards — see RATES_LOCKED_STATUSES) a full copy of the live
+ * Estimating onwards — see RATES_LOCKED_STATUSES; Queued, Measuring,
+ * Estimating and On Hold stay open) a full copy of the live
  * rates is written onto the quote as `quote.ratesFrozen = { at, status,
  * rates }`, and from then on every costing call for that project reads the
  * copy (`effectiveRates`). Moving back to an open status drops the copy and

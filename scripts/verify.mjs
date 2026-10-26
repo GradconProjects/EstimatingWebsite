@@ -433,6 +433,24 @@ check("Quote statuses: 'Completed Estimating' sits between Estimating and Quotin
   assert.ok(i > QUOTE_STATUSES.indexOf("Estimating") && i < QUOTE_STATUSES.indexOf("Quoting"), "pipeline order");
   QUOTE_STATUSES.forEach((s) => assert.ok(QUOTE_STATUS_STYLES[s], `every status needs a style entry (missing: ${s})`));
 });
+await checkAsync("Measuring splits the old Estimating step (26 Oct 2026): it sits between Queued and Estimating, is open work everywhere — the dashboard's opening tile, the live crew prefill, the shell's OPEN_WORK and status select, the AI Engine's open-work group — and never pins rates", async () => {
+  const { QUOTE_STATUSES, QUOTE_STATUS_STYLES } = catalogAll;
+  const { RATES_LOCKED_STATUSES } = await import("../src/lib/rateFreeze.js");
+  const { LIVE_HANDOVER_STATUSES } = await import("../src/lib/handover.js");
+  const { OPEN_STATUSES } = await import("../src/lib/planner.js");
+  assert.deepEqual(OPEN_STATUSES, ["Queued", "Measuring", "Estimating"], "the dashboard opens on it");
+  const i = QUOTE_STATUSES.indexOf("Measuring");
+  assert.ok(i === QUOTE_STATUSES.indexOf("Queued") + 1 && i === QUOTE_STATUSES.indexOf("Estimating") - 1, "Queued → Measuring → Estimating");
+  assert.ok(/orange/.test(QUOTE_STATUS_STYLES.Measuring.bar), "its own orange");
+  assert.ok(!RATES_LOCKED_STATUSES.includes("Measuring"), "open, never pinned");
+  assert.ok(LIVE_HANDOVER_STATUSES.has("Measuring"), "the live prefill runs on it");
+  const shell = fs.readFileSync(new URL("../portal/portal-shell.html", import.meta.url), "utf8");
+  assert.ok(/OPEN_WORK = \{ 'Queued':1, 'Measuring':1, 'Estimating':1, 'Quoting':1 \}/.test(shell), "the welcome panel's open work");
+  assert.ok(/<option value="Measuring">Measuring<\/option>/.test(shell), "the default-status select");
+  assert.ok(/nMeasuring/.test(shell), "a welcome line for it");
+  const ai = fs.readFileSync(new URL("../portal/ai-engine.html", import.meta.url), "utf8");
+  assert.ok(/\["Queued","Measuring","Estimating"\]\.includes\(q\.status\)/.test(ai), "the Quality checks picker's open-work group");
+});
 
 check("Formwork rates match the Rates Library: Conventional $150/m², Edgeform $50/lm", () => {
   // These two seeded $60 and $8 while the Rates Library — Gradcon's actual
@@ -2775,7 +2793,7 @@ check("A subcontract 'quote' amount belongs to the ELEMENT (item.rateOverrides),
 check("Finished statuses pin the rates: Completed Estimating onwards, never On Hold / Queued / Estimating", () => {
   assert.deepEqual(RATES_LOCKED_STATUSES, ["Completed Estimating", "Quoting", "Submitted", "Tendered", "Successful", "Unsuccessful", "Deadline Missed"]);
   RATES_LOCKED_STATUSES.forEach((st) => assert.ok(catalogAll.QUOTE_STATUSES.includes(st), `${st} is a real status`));
-  ["Queued", "Estimating", "On Hold"].forEach((st) => assert.equal(isRatesLocked(st), false, st));
+  ["Queued", "Measuring", "Estimating", "On Hold"].forEach((st) => assert.equal(isRatesLocked(st), false, st));
   assert.equal(isRatesLocked(undefined), false);
 });
 
@@ -2898,7 +2916,7 @@ const planner = await import("../src/lib/planner.js");
 const { SUBMITTED_STATUSES, isSubmittedStatus, submittedLabel, daysLabel, dashboardDueLabel, isUrgent, isOverdue, OPEN_STATUSES } = planner;
 
 check("Dashboard opens on Queued + Estimating only; submitted work lives under its tile / All projects", () => {
-  assert.deepEqual(OPEN_STATUSES, ["Queued", "Estimating"]);
+  assert.deepEqual(OPEN_STATUSES, ["Queued", "Measuring", "Estimating"]);
   OPEN_STATUSES.forEach((st) => assert.ok(catalogAll.QUOTE_STATUSES.includes(st), st));
   SUBMITTED_STATUSES.forEach((st) => assert.ok(!OPEN_STATUSES.includes(st), `${st} is never on the opening screen`));
 });

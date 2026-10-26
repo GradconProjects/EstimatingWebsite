@@ -166,7 +166,7 @@ export default function Dashboard({ projects, rates, rateChanges, onOpen, onCrea
 
   // Filter row: status tiles + free-text name search, applied on top of the
   // chosen sort. Session-local. A fresh load shows ONLY the open work —
-  // Queued and Estimating — so a quote that has gone out leaves the main
+  // Queued, Measuring and Estimating — so a quote that has gone out leaves the main
   // screen and lives under its own status tile (or "All projects"); Grady,
   // 1 Oct 2026: "submitted quotes should leave the main screen and remain
   // under the submitted button so only queued and estimating projects are
@@ -355,7 +355,7 @@ export default function Dashboard({ projects, rates, rateChanges, onOpen, onCrea
           marked by a dark ring and shadow rather than by a colour change —
           colour is spoken for by the status itself. */}
       <div className="flex flex-wrap gap-2">
-        {[[OPEN_FILTER, "Open — Queued & Estimating"], ["", "All projects"], ...QUOTE_STATUSES.map((s2) => [s2, s2])].map(([value, label]) => {
+        {[[OPEN_FILTER, "Open — Queued, Measuring & Estimating"], ["", "All projects"], ...QUOTE_STATUSES.map((s2) => [s2, s2])].map(([value, label]) => {
           const active = statusFilter === value;
           // "All projects" and the Open tile have no catalog status colour —
           // the app's own navy (All) and the Estimating orange's darker
@@ -554,7 +554,7 @@ export default function Dashboard({ projects, rates, rateChanges, onOpen, onCrea
               <tr className="border-t-2 border-neutral-200 bg-neutral-50 font-semibold">
                 <td className="px-4 py-2.5" colSpan={7}>
                   {statusFilter === OPEN_FILTER && !search.trim()
-                    ? `Open projects — Queued & Estimating (${visibleSummaries.length} of ${summaries.length}; the rest are under their status tiles or All projects)`
+                    ? `Open projects — Queued, Measuring & Estimating (${visibleSummaries.length} of ${summaries.length}; the rest are under their status tiles or All projects)`
                     : filtering ? `Filtered projects (${visibleSummaries.length} of ${summaries.length})` : "All projects"}
                 </td>
                 <td className="px-3 py-2.5 text-right font-mono tabular-nums">{ft.elementCount}</td>

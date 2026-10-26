@@ -16,7 +16,7 @@ export const SUBMITTED_STATUSES = ["Submitted", "Tendered", "Successful", "Unsuc
 /** The dashboard's opening view: the work still in hand. Everything else —
  * a finished estimate, a quote that has gone out, the won and the lost —
  * sits under its own status tile and under "All projects" (Dashboard.jsx). */
-export const OPEN_STATUSES = ["Queued", "Estimating"];
+export const OPEN_STATUSES = ["Queued", "Measuring", "Estimating"];
 export const isSubmittedStatus = (status) => SUBMITTED_STATUSES.includes(status);
 
 /** The tender date passed and nothing went out (Grady, 9 Oct 2026). Its

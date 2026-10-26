@@ -1005,9 +1005,17 @@ export const SECTION_ORDER = [...new Set(ELEMENT_TYPES.map((t) => t.section))];
  * quote that predates this field (see Dashboard.jsx) — never rendered as
  * blank/unknown.
  */
-export const QUOTE_STATUSES = ["Queued", "Estimating", "Completed Estimating", "Quoting", "Submitted", "Tendered", "Successful", "Unsuccessful", "Deadline Missed", "On Hold"];
+// "Measuring" splits the old Estimating step in two (Grady, 26 Oct 2026: "i
+// want to split the status estimating to measuring and estimating"): the
+// take-off from the drawings first, then the pricing. Both are OPEN work —
+// the dashboard's opening tile, the live crew prefill and the Rates Library
+// prompts treat them alike; neither pins rates. A project saved as
+// "Estimating" before this keeps that status.
+export const QUOTE_STATUSES = ["Queued", "Measuring", "Estimating", "Completed Estimating", "Quoting", "Submitted", "Tendered", "Successful", "Unsuccessful", "Deadline Missed", "On Hold"];
 export const QUOTE_STATUS_STYLES = {
   Queued: { bar: "bg-violet-400", dot: "bg-violet-400", text: "text-violet-600", bg: "bg-violet-50" },
+  // Measuring the drawings — orange, between Queued (violet) and Estimating (red).
+  Measuring: { bar: "bg-orange-500", dot: "bg-orange-500", text: "text-orange-700", bg: "bg-orange-50" },
   Estimating: { bar: "bg-red-500", dot: "bg-red-500", text: "text-red-600", bg: "bg-red-50" },
   // Estimate finished, quote not yet drafted — sits between Estimating (red) and Quoting (blue).
   "Completed Estimating": { bar: "bg-teal-500", dot: "bg-teal-500", text: "text-teal-700", bg: "bg-teal-50" },
