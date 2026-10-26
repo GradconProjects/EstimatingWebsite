@@ -1942,7 +1942,7 @@ const MESHTYPES = {"SL52":1.46,"SL62":2.29,"SL72":2.85,"SL81":7.29,"SL82":3.61,"
 // by this same figure so a sheet count is never quietly wrong in one place and
 // right in another.
 const MESH_SHEET_AREA_M2 = 14.4;
-function barDiaOf(sz){ let m=sz.match(/(\d+)/); return m? parseInt(m[1]):12; }
+function barDiaOf(sz){ let m=String(sz||"").match(/(\d+)/); return m? parseInt(m[1]):12; }
 function massPerM(dia){ return (dia*dia/162); }
 // Real named trench mesh products (bar count + L-type wire size), same names
 // and per-length steel mass as Quotes' own TRENCH MESH catalog (data/catalog.js)
@@ -5139,7 +5139,7 @@ function slabDefaults(cat,suspended){ const precast=cat==="Precast Panel"; retur
   cover:PROJECT.cover, grade:PROJECT.grade,
   returnBars:false, retDia:"N12", retSpacing:200, retTurndown:150, retLeg:300, retEdges:"perimeter", retLap:false,
   reentrantOn:false, reentrantQty:"", reentrantMode:"bars", reentrantDia:"N12", reentrantPer:2, reentrantLen:1200, reentrantStripType:"4 Bar-L12TM", reentrantStripW:300, reentrantSheetType:"SL82", reentrantSheetW:600, reentrantLap:false,
-  joints:!precast, jointSpacing:6, dowels:false,   // a precast panel has stitches, not control joints dowelDia:"N16", dowelSpacing:300, dowelLength:500,
+  joints:!precast, jointSpacing:6, dowels:false, dowelDia:"N16", dowelSpacing:300, dowelLength:500,   // a precast panel has stitches, not control joints
   starters:false, connTarget:"", connQty:0, connDia:"N12", connEmbed:400, connProj:400,
   stepdown:false, sdLength:6, sdDepth:150, sdDia:"N12", sdSpacing:300, sdProj1:300, sdProj2:300,
   edgeThicken:false, edgeThickenWidth:300, edgeThickenExtraDepth:150, edgeThickenLenOverride:"", etShape:"tri", etSides:"one", etBaseW:0,
