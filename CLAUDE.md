@@ -2096,6 +2096,35 @@ and the first tab pulled it back within six seconds):
    "could not be loaded … writes nothing until it has loaded" instead of an
    editable blank quote that the next keystroke would save as the whole
    project. `test-quote-load-fail.mjs` proves it.
+5. **A blank workspace never replaces a takeoff with elements — with or
+   without a sync stamp** (26 Oct 2026, Rye Fire Station: a tab held
+   `<key>__syncedAt` = 08:55:19 but NO local copy; `syncFromCloud`'s "already
+   current" shortcut trusted the stamp, lifted the placeholder hold, and the
+   next save pushed the blank through the CONDITIONAL path, whose only check
+   was the stamp — the 6-element takeoff became an 892-byte placeholder and
+   "the last project is missing" from Estimates; recovered from the
+   `before-sync` version). Four guards, all in `estimates-app.html`:
+   `blankSnapshot(snap)` / `hasElements(v)` are the ONE readings;
+   `pushTakeoffOnce` LOOKS FIRST whenever the snapshot is blank (not only
+   when it has no stamp) and keeps the cloud copy as `cloud-kept` instead of
+   writing, on the conflict path too (never the unconditional upsert with a
+   blank); `syncFromCloud`'s stamp shortcut applies only when the tab holds
+   the content (`!awaitingCloudLoad`, and never a blank workspace against a
+   cloud row with elements) — otherwise the cloud copy is applied as for a
+   fresh browser; `dropOrphanSyncStamp(key, loadedLocally)` deletes a stamp
+   that has no local copy behind it, on boot and on `switchToTakeoff`.
+   `test-blank-guard.mjs` proves all four on a mocked PostgREST holding the
+   recovered takeoff.
+6. **Derived `_` fields inside `data` are not content.** `takeoffContent`
+   strips `_`-prefixed keys inside each instance's `data` (`_autoAreaM2`,
+   `_concWasteAuto`, `_autoBlindArea`, `_autoInsArea`…) through
+   `enteredData`, as it already stripped `results` and top-level `_` flags:
+   the calculators write them on every compute and different builds write
+   different values, so on 26 Oct 2026 a tab on the morning build and a tab
+   on the afternoon build re-pushed the same takeoff at each other every
+   second for half an hour (the `before-sync` cap held it to one version a
+   minute). Every deploy day has two builds open somewhere; content must
+   compare equal across them.
 
 ## Estimates provenance and status (Phase 2)
 

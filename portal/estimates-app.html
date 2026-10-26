@@ -960,6 +960,7 @@ function switchToTakeoff(id){
   // No local blob (fresh browser / other device): the workspace on screen is a
   // placeholder until the cloud copy arrives — block autosave from writing it.
   awaitingCloudLoad = !loadedLocally;
+  dropOrphanSyncStamp(entry.key, loadedLocally);
   rerenderAllPages();
   syncFromCloud();
 }
@@ -1366,10 +1367,20 @@ function canonJSON(v){
   if(v && typeof v==="object"){ return "{"+Object.keys(v).sort().map(k=>JSON.stringify(k)+":"+canonJSON(v[k])).join(",")+"}"; }
   return JSON.stringify(v===undefined? null : v);
 }
+// A `_`-prefixed key INSIDE `data` (`_autoAreaM2`, `_concWasteAuto`, `_autoBlindArea`…) is
+// derived by the calculators on every compute and differs between builds, exactly as
+// `results` does — 26 Oct 2026: a tab on the morning's build and a tab on the
+// afternoon's re-pushed the Rye Fire Station takeoff at each other every second for
+// half an hour because they disagreed on `data._autoAreaM2`. Only what was ENTERED is
+// content.
+function enteredData(d){ if(!d || typeof d!=="object" || Array.isArray(d)) return d; const o={}; Object.keys(d).forEach(k=>{ if(k.charAt(0)==="_") return; o[k]=d[k]; }); return o; }
 function takeoffContent(v){
-  const insts = ((v&&v.instances)||[]).map(i=>{ if(!i || typeof i!=="object") return i; const o={}; Object.keys(i).forEach(k=>{ if(k==="results" || k.charAt(0)==="_") return; o[k]=i[k]; }); return o; });
+  const insts = ((v&&v.instances)||[]).map(i=>{ if(!i || typeof i!=="object") return i; const o={}; Object.keys(i).forEach(k=>{ if(k==="results" || k.charAt(0)==="_") return; o[k] = k==="data" ? enteredData(i[k]) : i[k]; }); return o; });
   return { project:(v&&v.project)||{}, selectedTypes:(v&&v.selectedTypes)||{}, instances:insts, idCounter:(v&&v.idCounter)||0 };
 }
+/** A snapshot with no element and no project name: a placeholder, never content. */
+function blankSnapshot(snap){ return !(snap && Array.isArray(snap.instances) && snap.instances.length) && !(((snap&&snap.project)||{}).name||"").trim(); }
+function hasElements(v){ return !!(v && Array.isArray(v.instances) && v.instances.length); }
 function contentString(v){ return canonJSON(takeoffContent(v)); }
 function sameTakeoff(a, b){ return contentString(a) === contentString(b); }
 // One push in flight per key, later snapshots coalesced behind it: two
@@ -1393,14 +1404,18 @@ async function pushTakeoffOnce(key, snapshot){
   const h = snapshotHash(snapshot);
   if(LAST_CLOUD_HASH[key] === h) return null;   // identical to the cloud copy already: no echo write, no cross-tab ping-pong
   let since = null; try{ since = localStorage.getItem(key+"__syncedAt"); }catch(e){}
-  if(!since){
-    // This tab has never synced this key, so the write below would be an
-    // unconditional upsert. Look first: a blank workspace must never replace
-    // a takeoff this tab has not seen, and nothing is written while the
-    // cloud cannot be asked at all.
+  const blank = blankSnapshot(snapshot);
+  if(!since || blank){
+    // This tab has never synced this key (the write below would be an
+    // unconditional upsert), OR what it wants to write is a BLANK workspace.
+    // Look first: a blank must never replace a takeoff with elements — with
+    // or without a sync stamp (26 Oct 2026: a tab holding a stamp but no local
+    // copy wrote its placeholder over the Rye Fire Station takeoff through the
+    // conditional path, which only checked the stamp) — and nothing is
+    // written while the cloud cannot be asked at all.
     const existing = await kvFetch(key);
     if(kvFetchFailed(existing)) return null;
-    if(existing && existing.value && (existing.value.instances||[]).length && !(snapshot.instances||[]).length){
+    if(existing && existing.value && hasElements(existing.value) && blank){
       await keepEstimateVersion(key, existing.value, "cloud-kept");
       try{ console.warn("Estimates: not writing an empty takeoff over the cloud copy of", key, "— kept it as a version"); }catch(e){}
       return null;
@@ -1410,6 +1425,12 @@ async function pushTakeoffOnce(key, snapshot){
   if(row === PUSH_CONFLICT){
     const theirs = await kvFetch(key);
     if(kvFetchFailed(theirs)) return null;   // cannot see what is there: never write blind; the next save tries again
+    if(theirs && theirs.value && hasElements(theirs.value) && blank){
+      // the same rule on the conflict path: the unconditional write below must never carry a placeholder over content
+      await keepEstimateVersion(key, theirs.value, "cloud-kept");
+      try{ console.warn("Estimates: not writing an empty takeoff over the newer cloud copy of", key); }catch(e){}
+      return null;
+    }
     if(theirs && theirs.value && !sameTakeoff(theirs.value, snapshot)){
       await keepEstimateVersion(key, theirs.value, "other-device");
       notifySyncConflict(theirs.updated_at);
@@ -1700,6 +1721,14 @@ function applyLoadedEstimateState(parsed, opts){
   }
   if(parsed.idCounter) ID_COUNTER = parsed.idCounter;
 }
+// A sync stamp (`<key>__syncedAt`) says "this browser holds the cloud copy of that
+// moment". With NO local copy behind it (never written, failed on quota, cleared) it
+// is a lie that lets a placeholder pass as current — so it is dropped the moment a
+// load finds the copy missing; the cloud copy is then pulled like a fresh browser's.
+function dropOrphanSyncStamp(key, loadedLocally){
+  if(loadedLocally || inRecovery(key)) return;
+  try{ if(localStorage.getItem(key+"__syncedAt")){ localStorage.removeItem(key+"__syncedAt"); console.warn("Estimates: dropped a sync stamp with no local copy behind it for", key); } }catch(e){}
+}
 function loadEstimateState(){
   let raw;
   try{ raw = localStorage.getItem(CURRENT_PROJECT_KEY); }catch(err){ return false; }
@@ -1746,7 +1775,11 @@ async function syncFromCloud(){
       return;
     }
     const localSyncedAt = localStorage.getItem(keyAtStart+"__syncedAt");
-    if(localSyncedAt && row.updated_at <= localSyncedAt){
+    // "Already current" is only true when this tab actually HOLDS that content: a
+    // stamp with nothing loaded behind it (no local copy, a placeholder on
+    // screen) must not lift the hold — the cloud copy is applied below instead.
+    const localBlank = blankSnapshot(estimateStateSnapshot());
+    if(localSyncedAt && row.updated_at <= localSyncedAt && !awaitingCloudLoad && !(localBlank && hasElements(row.value))){
       if(CURRENT_PROJECT_KEY === keyAtStart) awaitingCloudLoad = false;
       if(LAST_CLOUD_HASH[keyAtStart]===undefined && row.value) LAST_CLOUD_HASH[keyAtStart] = snapshotHash(row.value);
       markReconciled(keyAtStart);
@@ -11412,6 +11445,7 @@ document.getElementById("saveBtn").addEventListener("click", ()=>saveEstimateSta
 const PRE_MIGRATION = ensurePreMigrationBackup(localStorage, { build: ESTIMATES_BUILD, origin: location.origin });
 initTakeoffRegistry();
 let restoredFromSave = loadEstimateState();
+dropOrphanSyncStamp(CURRENT_PROJECT_KEY, restoredFromSave);
 renderRecoveryBanner(); renderBackupStatus();
 // Nothing local for this takeoff yet (fresh browser): hold autosave until the
 // cloud copy has been checked, so a placeholder never overwrites a real save.
