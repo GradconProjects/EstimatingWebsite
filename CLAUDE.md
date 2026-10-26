@@ -2246,6 +2246,22 @@ element families waits on the owner's approval of the pad footing.
   and "(reference only)" pointers untouched). It runs BEFORE `applyReoRate`,
   so a rate follows the entered volume. Formwork keeps its own override on
   the Formwork tab.
+- **A slab's plan can be CIRCULAR** (26 Oct 2026, Grady: "slab area is
+  currently rectangular assumed, allow for circular shapes also"): the slab
+  Geometry tab's "Plan shape" select (`planShape`: `"rect"` = L × W, the
+  default and every older takeoff; `"circular"` = `diameterM`, the Diameter
+  box replacing L and W, `data-testid="circular-note"`; hidden on a precast
+  panel set). `slabIsCircular(d)` is the ONE test — a sketched outline or a
+  typed area wins over the select — and `slabChordM(d)` = π·Ø/4 the mean
+  chord. Area = π·Ø²/4 (the concrete formula names it), `slabPerimM` = π·Ø
+  (edge forms, the "Perimeter auto (π×Ø)" tick), a bar mat by spacing = Ø ÷
+  spacing + 1 bars each the mean chord long (so its metres = area ÷ spacing,
+  as on a rectangle; spec "(round slab — mean chord)"), joints across the
+  diameter with dowels along the mean chord; the sketch draws a circle
+  dimensioned "Ø N m". No diameter is a completeness warning, never a silent
+  zero. `DIM_FIELDS` carries both fields. `test-circular-slab.mjs` proves the
+  rectangle unchanged, the fields, the sketch, the area, edge forms, bars,
+  joints, the warning and the mesh.
 - **Strip footing footprint** (`footShape`: `"run"` = length × width, the
   default and every older takeoff; `"area"` = the plan area typed off the
   drawing, `footPlanArea` m² per footing — 30 Sep 2026). `stripGeom(d)` is

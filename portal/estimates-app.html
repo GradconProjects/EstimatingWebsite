@@ -5189,6 +5189,7 @@ function computeBeam(inst,def){
 /* ---- SLAB (ground / suspended / raft / driveway / roof etc.) ---- */
 function slabDefaults(cat,suspended){ const precast=cat==="Precast Panel"; return {
   category:cat, suspended:!!suspended, manualArea:precast, areaOverride:0, length:25,  width:12,  // metres for slabs (large plan dims)
+  planShape:"rect", diameterM:10,   // "circular" prices a round slab off its diameter (26 Oct 2026, Grady: "slab area is currently rectangular assumed, allow for circular shapes also")
   qty:precast?1:undefined,  // precast: the number of panels (count only — the area typed is the TOTAL of all panels)
   thickness:150, perimeterAuto:true, perimeterOverride:0, outlineOn:false, outlinePts:[{x:0,y:0},{x:25,y:0},{x:25,y:12},{x:0,y:12}], baseThickness:100, baseMaterialState:"compacted", vapourMembrane:!suspended, meshOn:true, meshType:"SL82", meshLayers:1, meshLap:false,
   edgeForms:true, soffit:!!suspended && !precast, openings:[], drops:false, setdowns:false, upstands:false, cjStopEnds:false,
@@ -5233,10 +5234,10 @@ function renderSlab(inst,def){
   const precast=!!(def&&def.precast) || d.category==="Precast Panel";
   let geom=`${precast?`<div class="tip" data-testid="precast-note"><span class="ico">🧱</span><div><b>Precast / tilt-up panels are measured like a slab, by TOTAL area.</b> Type the number of panels and the total area of all of them (from the panel schedule), the thickness, then the mesh and bars on the Reinforcement tab exactly as for a slab — sheet mesh, bar mats by spacing / count / area, by rate, additional bars, starters and connections all apply. Edge forms are measured by the metre around every panel: type the total edge length as the perimeter override (blank = square panels assumed, flagged). Panels are cast on a bed, so no soffit formwork, excavation or blinding is taken.</div></div><div class="grid cols3">${F("Number of panels (no.)",inpNum("qty",d.qty===undefined?1:d.qty))}</div>`:""}<div class="grid cols3">${chk("manualArea",d.manualArea,precast?"Enter the total panel area manually (recommended)":"Enter area manually (irregular slab)","manualArea",true)}</div>
   <div class="subsec ${d.manualArea?'':'hidden'}" data-show-if="manualArea"><div class="grid cols3">${F(precast?"Total panel area (m²) — all panels together":"Area (m²)",inpNum("areaOverride",d.areaOverride))}</div></div>
-  <div class="subsec ${d.manualArea?'hidden':''}" data-show-if="manualArea_off"><div class="grid cols3">${F("Length (m)",inpNum("length",d.length))}${F("Width (m)",inpNum("width",d.width))}</div></div>
+  <div class="subsec ${d.manualArea?'hidden':''}" data-show-if="manualArea_off"><div class="grid cols3">${precast?"":F("Plan shape",selOpts("planShape",d.planShape||"rect",[["rect","Rectangular (L × W)"],["circular","Circular (diameter)"]],true))}${(d.planShape==="circular"&&!precast)? F("Diameter (m)",inpNum("diameterM",d.diameterM)) : F("Length (m)",inpNum("length",d.length))+F("Width (m)",inpNum("width",d.width))}</div>${(d.planShape==="circular"&&!precast)?`<p class="small" data-testid="circular-note">Round slab: area = π·Ø²/4, edge forms = π·Ø, a bar mat at a spacing = Ø ÷ spacing + 1 bars each the mean chord π·Ø/4 long (so its metres = area ÷ spacing); a sketched outline or a typed area overrides the shape.</p>`:""}</div>
   <div class="grid cols4">
    ${F("Thickness (mm)",inpNum("thickness",d.thickness))}${coverField(inst)}
-   ${chk("perimeterAuto",d.perimeterAuto,precast?"Edge length auto (square panels assumed — untick and type the total edge length)":"Perimeter auto (2×(L+W))","perimeterAuto")}
+   ${chk("perimeterAuto",d.perimeterAuto,precast?"Edge length auto (square panels assumed — untick and type the total edge length)":(d.planShape==="circular"?"Perimeter auto (π×Ø)":"Perimeter auto (2×(L+W))"),"perimeterAuto")}
   </div>
   <div class="subsec ${d.perimeterAuto?'hidden':''}" data-show-if="perimeterAuto_off">${F(precast?"Total edge length of all panels (m) — for the edge forms":"Perimeter override (m)",inpNum("perimeterOverride",d.perimeterOverride))}</div>
   ${slabBeamLengthPrompt(d)}
@@ -5524,10 +5525,21 @@ function areaBarGeom(d,prefix){
 /** The slab's perimeter — the ONE reading the edgeform, the starter runs'
  * default run and the strip insulation share: the typed override, else the
  * sketched outline's perimeter, else 2 × (L + W). */
+/* A slab's plan is a rectangle (L × W), a sketched outline, a typed area, or —
+   26 Oct 2026, Grady: "slab area is currently rectangular assumed, allow for
+   circular shapes also" — a CIRCLE of diameter D (`planShape: "circular"`,
+   `diameterM`). `slabIsCircular(d)` is the ONE test (a sketched outline or a
+   typed area wins over the select) and `slabChordM(d)` the mean chord
+   (π·D/4): a bar mat laid at a spacing across a round slab is D ÷ spacing + 1
+   bars, each on average π·D/4 long, so the mat's metres = area ÷ spacing,
+   exactly as on a rectangle. */
+function slabIsCircular(d){ return !d.manualArea && !slabOutlinePts(d) && d.planShape==="circular"; }
+function slabChordM(d){ return Math.PI*num(d.diameterM)/4; }
 function slabPerimM(d){
   let outline = slabOutlinePts(d);
   if(!d.perimeterAuto) return num(d.perimeterOverride);
   if(outline) return polyPerim(outline);
+  if(slabIsCircular(d)) return Math.PI*num(d.diameterM);
   // A precast panel set measured by TOTAL area has no L×W: until the total edge length is typed
   // the edge forms assume n equal SQUARE panels (4·√(A/n)·n) and computeSlab flags it (26 Oct 2026).
   if(d.category==="Precast Panel" && d.manualArea){ const n=Math.max(1,num(d.qty,1)), A=num(d.areaOverride); return A>0? 4*Math.sqrt(A/n)*n : 0; }
@@ -5537,14 +5549,16 @@ const precastPerimAssumed=(d)=>d.category==="Precast Panel" && d.manualArea && d
 function computeSlab(inst,def){
   let d=inst.data, lines=[], warnings=[];
   let outline = slabOutlinePts(d);
-  let area = d.manualArea? num(d.areaOverride) : (outline? polyArea(outline) : num(d.length)*num(d.width));
+  const circular = slabIsCircular(d);
+  let area = d.manualArea? num(d.areaOverride) : (outline? polyArea(outline) : circular? Math.PI*Math.pow(num(d.diameterM),2)/4 : num(d.length)*num(d.width));
+  if(circular && !(num(d.diameterM)>0)) warnings.push({text:"Circular slab with no diameter — type the diameter in metres (nothing is taken off until it is)",section:"geom",level:"completeness"});
   let openArea=0;
   (d.openings||[]).forEach(o=>{ openArea += (num(o.w)/1000)*(num(o.h)/1000)*num(o.qty,1); });
   let netArea=Math.max(0,area-openArea);
   d._autoInsArea = netArea; // insulation line (computeInstance) defaults to the slab's own plan area
   let t=num(d.thickness)/1000;
   let vol=netArea*t;
-  lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:`${d.category} ${d.thickness}mm`,qty:vol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(vol,concWastePct(d)),formula:`(${d.manualArea?'manual area':'L×W'} ${fmt(area,1)} − openings ${fmt(openArea,1)})×${fmt(t,3)}`}));
+  lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:`${d.category} ${d.thickness}mm`,qty:vol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(vol,concWastePct(d)),formula:`(${d.manualArea?'manual area':outline?'sketched outline':circular?'π·Ø²/4':'L×W'} ${fmt(area,1)} − openings ${fmt(openArea,1)})×${fmt(t,3)}`}));
   let perim = slabPerimM(d);
   if(precastPerimAssumed(d) && area>0) warnings.push({text:`Precast: the edge forms assume ${Math.max(1,num(d.qty,1))} equal square panel${num(d.qty,1)===1?"":"s"} (${fmt(perim,1)} m of edge) — untick "Edge length auto" on Geometry and type the total edge length of all panels from the schedule.`, section:"geom", level:"completeness"});
   d._autoInsPerim = perim; // strip insulation (per-m products) defaults to the perimeter
@@ -5736,14 +5750,15 @@ function computeSlab(inst,def){
     }
     let count = d[prefix+"Method"]=="count"? num(d[prefix+"Qty"]) : Math.floor(perpDim*1000/num(d[prefix+"Spacing"]))+1;
     let otherDim = (prefix.includes("X"))? num(d.width) : num(d.length);
-    let barLen = otherDim;
+    let barLen = circular? slabChordM(d) : otherDim;   // a round slab: D ÷ spacing + 1 bars, each the mean chord π·D/4
     let totLen=count*barLen; let wt=totLen*massPerM(dia);
-    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d[prefix+"Dia"],spec:label,qty:totLen,unit:"m",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,lapPct),formula:`count(${count})×len(${fmt(barLen,1)}m)`,notes:`${fmt(wt,1)} kg`}));
+    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:d[prefix+"Dia"],spec:label+(circular?" (round slab — mean chord)":""),qty:totLen,unit:"m",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,lapPct),formula:circular?`count(${count}=Ø${fmt(num(d.diameterM),2)}m/${num(d[prefix+"Spacing"])}mm+1)×mean chord(π·Ø/4=${fmt(barLen,2)}m)`:`count(${count})×len(${fmt(barLen,1)}m)`,notes:`${fmt(wt,1)} kg`}));
   }
-  barCalc("botX","Bottom X bars",num(d.width)); barCalc("botY","Bottom Y bars",num(d.length));
+  const spanX = circular? num(d.diameterM) : num(d.width), spanY = circular? num(d.diameterM) : num(d.length);
+  barCalc("botX","Bottom X bars",spanX); barCalc("botY","Bottom Y bars",spanY);
   // Top bars are offered on EVERY slab (off by default on ground-bearing
   // ones) — raft top mats over internal beams, cantilever top steel etc.
-  barCalc("topX","Top X bars",num(d.width)); barCalc("topY","Top Y bars",num(d.length));
+  barCalc("topX","Top X bars",spanX); barCalc("topY","Top Y bars",spanY);
   if(d.meshOn){
     // qty/finalQty here is what actually gets costed (in Estimates' own CSV/PDF export
     // AND when bridged into Quotes' area-based Square Mesh costing) — the layer count
@@ -5821,16 +5836,17 @@ function computeSlab(inst,def){
     }
   }
   if(d.joints){
-    let numJoints=Math.max(0,Math.floor(num(d.length)/num(d.jointSpacing))-1);
+    const jointRunM = circular? num(d.diameterM) : num(d.length), jointLenM = circular? slabChordM(d) : num(d.width);   // a round slab: joints across the diameter, each the mean chord long
+    let numJoints=Math.max(0,Math.floor(jointRunM/num(d.jointSpacing))-1);
     lines.push(baseLine(inst,def,{materialGroup:"Joints",material:"Control/construction joints",spec:`@${d.jointSpacing}m`,qty:numJoints,unit:"no.",waste:0,finalQty:numJoints,formula:"length/spacing − 1"}));
     const jp=dowelProduct(d.dowelDia);
     if(d.dowels && jp.kind!=="bar"){
       // a piece of trench mesh / sheet mesh at every dowel position of every joint
-      const perJoint=Math.floor(num(d.width)*1000/Math.max(1,num(d.dowelSpacing,400)))+1, count=numJoints*perJoint;
+      const perJoint=Math.floor(jointLenM*1000/Math.max(1,num(d.dowelSpacing,400)))+1, count=numJoints*perJoint;
       if(count>0) lines.push(dowelPieceLine(inst,def,"Joints",jp,count,d,"dowel","Joint dowels",`${numJoints} joints × ${perJoint} positions`));
     } else if(d.dowels){
       let dia=barDiaOf(d.dowelDia);
-      let dowelsPerJoint=Math.floor(num(d.width)*1000/num(d.dowelSpacing))+1;
+      let dowelsPerJoint=Math.floor(jointLenM*1000/num(d.dowelSpacing))+1;
       let totLen=numJoints*dowelsPerJoint*(num(d.dowelLength)/1000); let wt=totLen*massPerM(dia);
       lines.push(baseLine(inst,def,{materialGroup:"Joints",material:d.dowelDia,spec:"Joint dowels",qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`joints × dowels/joint × ${d.dowelLength}mm`,notes:`${fmt(wt,1)} kg`}));
     }
@@ -7242,7 +7258,8 @@ function diagBeam(inst){ let d=inst.data;
 
 function diagSlab(inst){ let d=inst.data;
   const manual=!!d.manualArea, T=Math.max(50,N_(d.thickness,150)), cov=coverOf(d);
-  const Lm=manual?Math.sqrt(N_(d.areaOverride,1)||1):N_(d.length,25), Wm=manual?Math.sqrt(N_(d.areaOverride,1)||1):N_(d.width,12);
+  const circ=!manual && d.planShape==="circular" && !(d.outlineOn&&Array.isArray(d.outlinePts)&&d.outlinePts.length>=3);
+  const Lm=manual?Math.sqrt(N_(d.areaOverride,1)||1):circ?N_(d.diameterM,10):N_(d.length,25), Wm=manual?Math.sqrt(N_(d.areaOverride,1)||1):circ?N_(d.diameterM,10):N_(d.width,12);
   const L=Math.max(0.5,Lm)*1000, W=Math.max(0.5,Wm)*1000;
   const et=!!d.edgeThicken, etW=N_(d.edgeThickenWidth,300), etD=N_(d.edgeThickenExtraDepth,150);
   const eb=!!d.edgeBeamOn, ebW=N_(d.edgeBeamWidth,300), ebD=N_(d.edgeBeamExtraDepth,300);
@@ -7257,7 +7274,8 @@ function diagSlab(inst){ let d=inst.data;
     const xs=pts.map(p=>num(p.x)), ys=pts.map(p=>num(p.y)); const minX=Math.min(...xs), minY=Math.min(...ys), maxX=Math.max(...xs), maxY=Math.max(...ys);
     const os=DG.fit((maxX-minX)*1000||1,(maxY-minY)*1000||1,124,92); w=(maxX-minX)*1000*os; h=(maxY-minY)*1000*os;
     outline=`<polygon points="${pts.map(p=>`${px+(num(p.x)-minX)*1000*os},${py+(num(p.y)-minY)*1000*os}`).join(' ')}" fill="rgba(232,163,61,0.10)" stroke="${DWG.ink}" stroke-width="1.6"/>`;
-  } else outline=DG.rect(px,py,w,h);
+  } else if(circ) outline=`<circle cx="${px+w/2}" cy="${py+h/2}" r="${Math.min(w,h)/2}" fill="rgba(232,163,61,0.10)" stroke="${DWG.ink}" stroke-width="1.6"/>`;
+  else outline=DG.rect(px,py,w,h);
   const meshSp=d.meshOn?200:N_(d.botXSpacing,200);
   const opens=(Array.isArray(d.openings)?d.openings:[]).filter(o=>N_(o.w,0)>0&&N_(o.h,0)>0).slice(0,4);
   let plan=`${DG.title(px,py-16,"PLAN")}
@@ -7268,8 +7286,8 @@ function diagSlab(inst){ let d=inst.data;
    ${d.beamStrips&&!pts?[0.33,0.66].map(p=>`<line x1="${px+w*p}" y1="${py+2}" x2="${px+w*p}" y2="${py+h-2}" stroke="${DWG.ink}" stroke-width="1" stroke-dasharray="4 2"/>`).join(''):''}
    ${opens.map((o,i)=>{const ow=Math.min(w*0.3,N_(o.w,600)*s), oh=Math.min(h*0.3,N_(o.h,600)*s); const ox=px+w*(0.2+0.6*(i/Math.max(1,opens.length)))-ow/2, oy=py+h*0.5-oh/2; return `<rect x="${ox}" y="${oy}" width="${ow}" height="${oh}" fill="#faf5e9" stroke="${DWG.muted}" stroke-width="0.9"/><line x1="${ox}" y1="${oy}" x2="${ox+ow}" y2="${oy+oh}" stroke="${DWG.muted}" stroke-width="0.6"/><line x1="${ox+ow}" y1="${oy}" x2="${ox}" y2="${oy+oh}" stroke="${DWG.muted}" stroke-width="0.6"/>`;}).join('')}
    ${d.stepdown?`<line x1="${px+w*0.7}" y1="${py}" x2="${px+w*0.7}" y2="${py+h}" stroke="${DWG.gl}" stroke-width="1" stroke-dasharray="2 2"/>`:''}
-   ${dimH(px,px+w,py-6,manual?`${fmt(N_(d.areaOverride),1)} m² (manual)`:(pts?`${fmt(Math.max(...pts.map(p=>num(p.x)))-Math.min(...pts.map(p=>num(p.x))),2)} m`:`${fmt(Lm,2)} m`))}
-   ${!manual?dimV(py,py+h,px+w+12,pts?`${fmt(Math.max(...pts.map(p=>num(p.y)))-Math.min(...pts.map(p=>num(p.y))),2)} m`:`${fmt(Wm,2)} m`):''}
+   ${dimH(px,px+w,py-6,manual?`${fmt(N_(d.areaOverride),1)} m² (manual)`:(pts?`${fmt(Math.max(...pts.map(p=>num(p.x)))-Math.min(...pts.map(p=>num(p.x))),2)} m`:circ?`Ø ${fmt(Lm,2)} m`:`${fmt(Lm,2)} m`))}
+   ${!manual&&!circ?dimV(py,py+h,px+w+12,pts?`${fmt(Math.max(...pts.map(p=>num(p.y)))-Math.min(...pts.map(p=>num(p.y))),2)} m`:`${fmt(Wm,2)} m`):''}
    ${specLine(px,py+h+14,`${d.meshOn?`MESH ${d.meshType||'SL82'}${N_(d.meshLayers,1)>1?' ×'+d.meshLayers:''}`:`${d.botXDia||'N12'}@${N_(d.botXSpacing,200)} EW`}${opens.length?` · ${opens.length} OPENING${opens.length>1?'S':''}`:''}`)}`;
   /* section at the edge (right) */
   const sx=178, sy=60, secW=110, s2=DG.fit(Math.max(1200,dropW*3+600), T+dropD+base+40, secW, 80);
@@ -7998,7 +8016,7 @@ function updateUndoButtons(){ const u=document.getElementById("undoBtn"), r=docu
 /* ---- 3. Templates + copy from element + duplicate choices ---- */
 const TEMPLATES_KEY="gradcon-estimate-templates";
 let TEMPLATES=[]; try{ TEMPLATES=JSON.parse(localStorage.getItem(TEMPLATES_KEY))||[]; }catch(e){ TEMPLATES=[]; }
-const DIM_FIELDS=new Set(["qty","length","width","depth","height","dia","diameter","thickness","areaOverride","manualArea","outlinePts","outlineOn","outlineDirs","outlineSideLens","elevOn","elevDirs","elevLens","elevAreaM2","perimeterOverride","L","W","D","stemH","footL","risers","excDepth","pedW","pedD","pedH"]);
+const DIM_FIELDS=new Set(["qty","length","width","depth","height","dia","diameter","thickness","areaOverride","manualArea","planShape","diameterM","outlinePts","outlineOn","outlineDirs","outlineSideLens","elevOn","elevDirs","elevLens","elevAreaM2","perimeterOverride","L","W","D","stemH","footL","risers","excDepth","pedW","pedD","pedH"]);
 function templateDataFrom(inst){ const d=JSON.parse(JSON.stringify(inst.data||{})); delete d.manualOverrides; delete d.__csvImport; delete d.__aiImport; delete d.__csvMeasurement; Object.keys(d).forEach(k=>{ if(/^_/.test(k)) delete d[k]; }); return d; }
 function saveTemplates(){ try{ localStorage.setItem(TEMPLATES_KEY, JSON.stringify(TEMPLATES)); }catch(e){} if(SUPABASE_URL) kvPush(TEMPLATES_KEY, TEMPLATES); }
 async function syncTemplatesFromCloud(){ if(!SUPABASE_URL) return; const row=await kvFetch(TEMPLATES_KEY); if(row && Array.isArray(row.value)){ const byId={}; TEMPLATES.forEach(t=>byId[t.id]=t); row.value.forEach(t=>{ if(!byId[t.id] || (t.updatedAt||"")>(byId[t.id].updatedAt||"")) byId[t.id]=t; }); TEMPLATES=Object.values(byId).sort((a,b)=>(a.name||"").localeCompare(b.name||"")); try{ localStorage.setItem(TEMPLATES_KEY, JSON.stringify(TEMPLATES)); }catch(e){} renderAddToolbar(); } }
