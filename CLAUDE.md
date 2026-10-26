@@ -2743,8 +2743,21 @@ element families waits on the owner's approval of the pad footing.
   shared `trenchMeshTypeSel` — an L-series mesh, a square-mesh strip or
   straight stock bars — by `reoLength` metres of run × layers, priced as the
   footing's trench layer is: `trenchReoMassPerM`, or `stockBarLayerLine` for
-  bars). `test-generic-area.mjs` proves the three bases and the three
-  products.
+  bars). **Its m³ IS concrete on a precast or civil item** (26 Oct 2026,
+  Grady, on a Precast Walls allowance with 128 m² typed: "concrete is not
+  calculated, check all other calculations are correct"): the volume line
+  goes under the `Concrete` group as "N<grade> concrete" (the Concrete tab's
+  grade, seeded `PROJECT.grade`; the type's name rides in the spec), with the
+  concrete waste class, so the element head, the by-rate / by-area steel
+  hints and the kg/m³ check, the pour schedule and the Quotes bridge all
+  count it — before this the precast kinds sat under a "Precast" group and
+  the civil kinds carried the type's label as their material, so no grade
+  could be read. Excavation, alteration and temporary-works allowances keep
+  their own groups (an allowance, not a pour; the Concrete tab's note says
+  which). A typed bar COUNT multiplies the bar length (the "Qty" box was
+  shown and never read). `test-generic-area.mjs` proves the three bases, the
+  three products, the concrete on a precast and a civil item, the excavation
+  staying out and the bar count.
 - `docs/ESTIMATES_COVERAGE.md` is the coverage audit (brief §11.3): map a
   new real-world item to an existing calculator + modifier first; the
   generic calculator (`kind` excavation / alteration / temporary / precast /
