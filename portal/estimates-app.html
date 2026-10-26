@@ -2551,8 +2551,10 @@ function lineWeightKg(materialGroup,material,unit,finalQty){
     if(!m) return 0;
     return finalQty*massPerM(parseInt(m[1]));
   }
-  // Mesh is bought and priced by the sheet, not by weight (see MESH_SHEET_AREA_M2 conversion
-  // on each mesh line) — a mesh line never contributes a kg figure, only bar lines do.
+  // Mesh is bought by the sheet, but it is still steel on the truck and in the pour: an m²
+  // mesh line weighs its final m² × the product's kg/m² (26 Oct 2026, Grady's pad footing
+  // with two layers of SL92 read "0kg reo"). The sheet count stays the ORDER figure.
+  if((unit==="m²"||unit==="m2") && MESHTYPES[material]!==undefined) return finalQty*MESHTYPES[material];
   return 0;
 }
 function baseLine(inst,def,over){
@@ -4449,7 +4451,7 @@ function renderPadFooting(inst){
    ${F("Diameter (mm)",inpNum("diameter",d.diameter===undefined?1200:d.diameter))}
   </div></div>
   <div class="grid cols4">
-   ${F("Excavation oversize (mm)",inpNum("oversize",d.oversize))}${F("Excavation depth (mm)",inpNum("excDepth",d.excDepth))}
+   ${F("Excavation oversize (mm, each side of the footing)",inpNum("oversize",d.oversize))}${F("Excavation depth (mm, ground to the bottom of the dig)",inpNum("excDepth",d.excDepth))}
    
   </div>
   <div class="grid cols2">${chk("pedestal",d.pedestal,"Pedestal above footing","pedestal")}${chk("sloping",d.sloping,"Sloping faces")}</div>
@@ -4512,8 +4514,10 @@ function computePadFooting(inst,def){
   let exc = round
     ? N*(Math.PI*Math.pow(diaM+2*os,2)/4)*(num(d.excDepth)/1000)
     : N*(L+2*os)*(W+2*os)*(num(d.excDepth)/1000);
-  lines.push(baseLine(inst,def,{materialGroup:"Excavation",material:"Bulk excavation",spec:"",qty:exc,unit:"m³",waste:0,finalQty:exc,formula:round?"π(Ø+2os)²/4×excD":"(L+2os)×(W+2os)×excD"}));
+  lines.push(baseLine(inst,def,{materialGroup:"Excavation",material:"Bulk excavation",spec:`oversize ${fmt(os*1000,0)} mm each side × ${num(d.excDepth)} mm deep`,qty:exc,unit:"m³",waste:0,finalQty:exc,formula:round?`${N}×π(Ø${fmt(diaM,2)}+2×${fmt(os,2)})²/4×${fmt(num(d.excDepth)/1000,2)}`:`${N}×(${fmt(L,2)}+2×${fmt(os,2)})×(${fmt(W,2)}+2×${fmt(os,2)})×${fmt(num(d.excDepth)/1000,2)}`}));
   lines.push(spoilLine(inst,def,exc));
+  // an oversize wider than the footing itself (26 Oct 2026: 1200 mm each side on a 1200 × 700 pad dug 11 m³ per footing) is almost always a total-width figure typed as a per-side one
+  if(os*1000>Math.min(round? diaM*1000 : Math.min(L,W)*1000, 600)) warnings.push({text:`Excavation oversize ${fmt(os*1000,0)} mm EACH SIDE makes the pit ${round?`Ø${fmt((diaM+2*os)*1000,0)}`:`${fmt((L+2*os)*1000,0)} × ${fmt((W+2*os)*1000,0)}`} mm around a ${round?`Ø${fmt(diaM*1000,0)}`:`${fmt(L*1000,0)} × ${fmt(W*1000,0)}`} footing — typical working room is 150–300 mm a side; confirm it is not the overall pit width`, section:"exc", level:"sanity"});
   let excPlanArea = round? N*(Math.PI*Math.pow(diaM+2*os,2)/4) : N*(L+2*os)*(W+2*os);
   lines.push(...blindingAndVapourLines(inst,def,d,N*planArea,excPlanArea,"foot"));
   function mat(flag,dia,sp,dim1,dim2,label,lapFlag){
@@ -9885,8 +9889,8 @@ function summarizeReinforcement(lines){
       // steel entered by weight (an Additional "50 kg of N20" row) — kg only, no metres
       bar(l, 0);
     } else if(l.unit==="m²"){
-      let e=mesh[l.material]||(mesh[l.material]={area:0,sheets:0});
-      e.area+=l.finalQty; e.sheets+=(l.sheets!==undefined? l.sheets : Math.ceil(l.finalQty/MESH_SHEET_AREA_M2));
+      let e=mesh[l.material]||(mesh[l.material]={area:0,sheets:0,kg:0});
+      e.area+=l.finalQty; e.sheets+=(l.sheets!==undefined? l.sheets : Math.ceil(l.finalQty/MESH_SHEET_AREA_M2)); e.kg+=num(l.weightKg);
     } else if(l.unit==="lm"){
       // trench mesh / square-mesh-as-trench-strips — ordered by the metre
       let e=strips[l.material]||(strips[l.material]={lm:0,kg:0});

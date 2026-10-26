@@ -2805,6 +2805,23 @@ element families waits on the owner's approval of the pad footing.
   joints & dowels, step-downs) as `parts.reoAlways`, which `buildCard`
   appends AFTER the method-gated block so it is visible and editable under
   "By rate" and "By area" too. `test-reo-extras-kept.mjs` proves it.
+- **A sheet-mesh line WEIGHS** (26 Oct 2026, Grady's pad footing PF1-3 with
+  two layers of SL92 read "0kg reo"): `lineWeightKg` returns final m² ×
+  `MESHTYPES[material]` (kg/m²) for an m² Reinforcement line, so the element
+  head, the Results kg column, `steelKg`, the kg/m³ check, the Materials
+  Summary strip and the orders `reoKg` all count mesh; `summarizeReinforcement`'s
+  `mesh[type]` carries `kg` beside `sheets`. The SHEET count stays the order
+  figure — a mesh is bought by the sheet, but it is steel on the truck and in
+  the pour. **A pad footing's excavation oversize is PER SIDE** (same day:
+  1200 mm typed on a 1200 × 700 pad dug 44.64 m³ for four footings — the
+  arithmetic 4 × (1.2 + 2 × 1.2) × (0.7 + 2 × 1.2) × 1.0 was right, the
+  figure was not): the field reads "(mm, each side of the footing)", the
+  excavation line's spec and formula print the figures, and `computePadFooting`
+  carries a SANITY warning when the oversize exceeds the footing's smaller
+  dimension or 600 mm ("… EACH SIDE makes the pit 3,600 × 3,100 mm around a
+  1,200 × 700 footing — typical working room is 150–300 mm a side").
+  `test-pad-exc.mjs` proves both and cross-checks the concrete, spoil,
+  blinding and membrane lines.
 - **A bar size's total counts its steel from EVERY group** (8 Oct 2026, Grady:
   filtering N12 "the total should total the reinforcement, connections, etc"):
   `isBarSteelLine(l)` in `estimates-app.html` is the ONE test — every
