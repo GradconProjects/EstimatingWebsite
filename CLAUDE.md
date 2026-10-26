@@ -1399,11 +1399,33 @@ bare minimum should be archi, struct, soil report". Rules:
    says whether the stored connection carries it; a connection made before
    this reconnects ONCE (Settings → Google mail & Drive → "Reconnect for
    sending", `google-reconnect-send`) and until then `api/gmail.js` action
-   `send` answers 409 `needsReconnect`. `buildMime` writes ONE `To:` — never
-   Cc or Bcc — RFC 2047 headers (the en dash in "RFQ – …"), multipart/mixed
-   with attachments; `isOneAddress` refuses "a, b"; attachments are fetched
-   by the server from the portal's own bucket only (`ATTACH_URL_PREFIX`, ≤ 10
-   files, ≤ 20 MB — `fetchAttachments`), never an arbitrary URL. Reply-To is
+   `send` answers 409 `needsReconnect`. `buildMime` writes ONE `To:` (one
+   contractor per message — never Bcc, never another contractor) and, since
+   26 Oct 2026 (Grady: "add a cc copy to grady@gradcon.com.au and allow me
+   to add other ccs"), a `Cc:` of GRADCON'S OWN copies — `DEFAULT_CC` =
+   grady@gradcon.com.au, the composer's "Cc on every email" box (`rfq-cc`,
+   remembered per browser `gradcon-rfq-cc`, `parseCc` splits commas /
+   semicolons / spaces, lower-cases and dedupes) and the Register composer's
+   Cc box; `api/gmail.js` takes `cc: [address…]` (≤ 6, each `isOneAddress`),
+   `buildMime` drops a cc equal to the recipient — RFC 2047 headers (the en
+   dash in "RFQ – …"), multipart/mixed with attachments; `isOneAddress`
+   refuses "a, b"; attachments are fetched by the server from the portal's
+   own bucket only (`ATTACH_URL_PREFIX`, ≤ 10 files, `ATTACH_MAX_BYTES` =
+   18 MB raw — Gmail refuses 25 MB ENCODED, base64 adds a third —
+   `fetchAttachments`), never an arbitrary URL. **Attachments are PLANNED
+   before anything is built** (26 Oct 2026: a real round failed on both
+   contractors with "attachments over 20 MB in total"): `planAttachments(
+   files, ATTACH_PLAN_BYTES = 17 MB)` in `rfq.js` takes the ticked files in
+   order while they fit and puts the rest in `link` — those go in the body
+   under DOCUMENTS as "Too large to attach — download from these links"
+   (the bucket copy's URL, with its size), the composer shows every file's
+   size (`rfq-attach-bytes`, "as a link" on the oversize ones) and the
+   running total against the cap (`rfq-attach-size`), and the draft header
+   counts "N as download links". A send therefore never fails on size; the
+   server cap is the hard stop behind it. The done screen claims the
+   record ("Recorded on this project … checklist step 05 ticked …") ONLY
+   when at least one RFQ went; with none it reads "Nothing was sent …" in
+   red and "Nothing was recorded" (`onSent` was never called). Reply-To is
    the mailbox. Nothing is composed server-side; the function sends what the
    browser shows after a person ticked "Approve" on THAT draft.
 2. **`src/lib/rfq.js` is pure and verify-covered.** `RFQ_PACKAGES` (Screw

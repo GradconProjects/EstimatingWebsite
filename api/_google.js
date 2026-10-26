@@ -210,11 +210,16 @@ export const isOneAddress = (s) => EMAIL_RE.test(String(s || "").trim());
 const encodeHeader = (s) => /^[\x20-\x7e]*$/.test(s) ? s : `=?UTF-8?B?${Buffer.from(s, "utf8").toString("base64")}?=`;
 const b64wrap = (buf) => buf.toString("base64").replace(/(.{76})/g, "$1\r\n");
 /** One plain-text message as an RFC 2822 document (multipart/mixed when it carries attachments), base64url for the Gmail API. ONE recipient — never cc, never bcc. */
-export function buildMime({ to, toName = "", from, fromName = "", subject, text, replyTo = "", attachments = [] }) {
+/* ONE contractor per message — the To line. `cc` is Gradcon's own copy (grady@ by default, more
+ * addable — Grady, 26 Oct 2026), never another contractor: the composer builds a separate message per
+ * recipient and the server only ever carries the cc list it is handed. Bcc is never written. */
+export function buildMime({ to, toName = "", from, fromName = "", subject, text, replyTo = "", attachments = [], cc = [] }) {
   const addr = (name, email) => (name ? `${encodeHeader(String(name).replace(/[\r\n"<>]/g, " ").trim())} <${email}>` : email);
+  const ccList = (Array.isArray(cc) ? cc : []).map((c) => String(c || "").trim()).filter((c) => isOneAddress(c) && c.toLowerCase() !== String(to).toLowerCase());
   const head = [
     `From: ${addr(fromName, from)}`,
     `To: ${addr(toName, to)}`,
+    ccList.length ? `Cc: ${[...new Set(ccList.map((c) => c.toLowerCase()))].join(", ")}` : null,
     replyTo ? `Reply-To: ${replyTo}` : null,
     `Subject: ${encodeHeader(String(subject).replace(/[\r\n]+/g, " ").trim())}`,
     "MIME-Version: 1.0",
@@ -238,7 +243,11 @@ export function buildMime({ to, toName = "", from, fromName = "", subject, text,
  * URL — and are capped so a message stays inside Gmail's limit. */
 export const ATTACH_URL_PREFIX = "https://xbmyhvrcuyapoarmchpv.supabase.co/storage/v1/object/public/gradcon-files/";
 export const ATTACH_MAX_FILES = 10;
-export const ATTACH_MAX_BYTES = 20 * 1024 * 1024;
+/* Gmail refuses a message over 25 MB ENCODED; base64 adds a third, so the raw files must stay under
+ * ~18 MB. The composer plans against ATTACH_PLAN_BYTES (a little lower) and sends the rest as
+ * download links; the server cap is the hard stop. */
+export const ATTACH_MAX_BYTES = 18 * 1024 * 1024;
+export const ATTACH_PLAN_BYTES = 17 * 1024 * 1024;
 export async function fetchAttachments(list, fetchImpl = fetch) {
   const out = []; let total = 0;
   for (const a of (Array.isArray(list) ? list : []).slice(0, ATTACH_MAX_FILES)) {
@@ -248,14 +257,14 @@ export async function fetchAttachments(list, fetchImpl = fetch) {
     if (!r.ok) { const e = new Error(`could not fetch attachment ${a.name || url} (${r.status})`); e.status = 502; throw e; }
     const bytes = Buffer.from(await r.arrayBuffer());
     total += bytes.length;
-    if (total > ATTACH_MAX_BYTES) { const e = new Error("attachments over 20 MB in total — send fewer or smaller files"); e.status = 413; throw e; }
+    if (total > ATTACH_MAX_BYTES) { const e = new Error("attachments over 18 MB in total — Gmail's limit; untick the largest file (it is offered as a download link instead) and send again"); e.status = 413; throw e; }
     out.push({ name: String(a.name || url.split("/").pop() || "attachment").slice(0, 120), mimeType: r.headers && r.headers.get ? (r.headers.get("content-type") || "").split(";")[0] || a.mimeType || "application/octet-stream" : a.mimeType || "application/octet-stream", bytes });
   }
   return out;
 }
-export async function sendMessage({ to, toName, fromName, subject, text, replyTo, attachments = [] }, token, email, fetchImpl = fetch) {
+export async function sendMessage({ to, toName, fromName, subject, text, replyTo, attachments = [], cc = [] }, token, email, fetchImpl = fetch) {
   const files = attachments.length ? await fetchAttachments(attachments, fetchImpl) : [];
-  const raw = buildMime({ to, toName, from: email, fromName, subject, text, replyTo, attachments: files });
+  const raw = buildMime({ to, toName, from: email, fromName, subject, text, replyTo, attachments: files, cc });
   const r = await fetchImpl(`${G}/messages/send`, { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify({ raw }), signal: AbortSignal.timeout(30000) });
   const d = await r.json().catch(() => ({}));
   if (!r.ok) { const e = new Error(`Gmail ${r.status}${d.error && d.error.message ? ": " + d.error.message : ""}`); e.status = r.status === 401 ? 401 : r.status === 403 ? 403 : 502; throw e; }

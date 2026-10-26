@@ -6,7 +6,7 @@
  *                                               → copies a PDF attachment into the gradcon-files bucket under
  *                                                  ai-engine/mail/<messageId>/ and returns its public URL, so an
  *                                                  AI Engine job can read it like an uploaded file
- * POST {action:"send", to, toName?, subject, text, fromName?, attachments?: [{name, url}]}
+ * POST {action:"send", to, toName?, subject, text, fromName?, attachments?: [{name, url}], cc?: [address…]}
  *                                               → sends ONE plain-text message to ONE address from the connected
  *                                                  mailbox (gmail.send — 409 needsReconnect until the connection
  *                                                  carries it). The portal shows every draft for approval first;
@@ -62,9 +62,11 @@ export async function runGmail(body, env = process.env, fetchImpl = fetch) {
       if (!subject || subject.length > 250) return { status: 400, body: { error: "subject required (up to 250 characters)" } };
       if (!text.trim() || text.length > 40000) return { status: 400, body: { error: "text required (up to 40,000 characters)" } };
       const attachments = (Array.isArray(body.attachments) ? body.attachments : []).map((a) => ({ name: String((a && a.name) || ""), url: String((a && a.url) || "") }));
+      const cc = (Array.isArray(body.cc) ? body.cc : []).map((c) => String(c || "").trim()).filter(Boolean).slice(0, 6);
+      if (cc.some((c) => !Gm.isOneAddress(c))) return { status: 400, body: { error: "every cc must be one email address" } };
       if (attachments.length > Gm.ATTACH_MAX_FILES) return { status: 400, body: { error: `up to ${Gm.ATTACH_MAX_FILES} attachments per message` } };
-      const sent = await Gm.sendMessage({ to, toName: String(body.toName || "").slice(0, 120), fromName: String(body.fromName || "Gradcon Concrete Constructions").slice(0, 120), subject, text, replyTo: tok.email, attachments }, tok.token, tok.email, fetchImpl);
-      return { status: 200, body: { mailbox: tok.email, sent: { ...sent, to, subject, attachments: attachments.map((a) => a.name), at: new Date().toISOString() } } };
+      const sent = await Gm.sendMessage({ to, toName: String(body.toName || "").slice(0, 120), fromName: String(body.fromName || "Gradcon Concrete Constructions").slice(0, 120), subject, text, replyTo: tok.email, attachments, cc }, tok.token, tok.email, fetchImpl);
+      return { status: 200, body: { mailbox: tok.email, sent: { ...sent, to, cc, subject, attachments: attachments.map((a) => a.name), at: new Date().toISOString() } } };
     }
     return { status: 400, body: { error: 'action must be "list", "read", "attachment" or "send"' } };
   } catch (e) {

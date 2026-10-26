@@ -159,7 +159,9 @@ let RECONCILED = false;      // this tab has read the cloud row (or a positive "
 let SYNCED_AT = null;        // updated_at of the cloud row this tab last agreed with
 let cloudState = "checking";
 let MAIL = null; // /api/google-auth status: {configured, connected, send}
-const COMPOSE = {}; // orgId → {contactIdx, subject, text, approved, status, error}
+const COMPOSE = {}; // orgId → {contactIdx, subject, text, cc, approved, status, error}
+const DEFAULT_CC = "grady@gradcon.com.au";
+const parseCc = (s) => [...new Set(String(s || "").split(/[,;\s]+/).map((x) => x.trim().toLowerCase()).filter((x) => /^[^\s@<>,;]+@[^\s@<>,;]+\.[^\s@<>,;]+$/.test(x)))];
 const UI = { tab: "supply", q: "", cats: new Set(), trades: new Set(), cap: "", capState: "yes", tier: "", status: "", sort: "last-desc", open: new Set(), more: new Set(), allCaps: new Set(), kpi: "", checking: null };
 const SEED_VERSION = (typeof REGISTER_SEED !== "undefined" && REGISTER_SEED && REGISTER_SEED.version) || 1;
 const SEED_BY_ID = Object.fromEntries(((typeof REGISTER_SEED !== "undefined" && REGISTER_SEED && REGISTER_SEED.orgs) || []).map((o) => [o.id, o]));
@@ -398,6 +400,7 @@ function renderCompose(o){
   return '<div class="compose card wide" data-testid="compose"><h4>Email ' + esc(o.name) + ' <span><button class="btn sm" data-compose-close="' + o.id + '">Close</button></span></h4>' +
     (warn ? '<div class="note warn" style="margin-bottom:8px">' + esc(warn) + "</div>" : "") +
     '<div class="to"><label class="small muted">To</label><select data-compose-to="' + o.id + '">' + (contacts.length ? contacts.map((c, i) => '<option value="' + i + '"' + (i === st.contactIdx ? " selected" : "") + ">" + esc((c.name ? c.name + " — " : "") + c.email) + "</option>").join("") : emails.map((e, i) => '<option value="' + i + '"' + (i === st.contactIdx ? " selected" : "") + ">" + esc(e) + "</option>").join("")) + '</select><span class="small muted">one message, to this address only · from ' + esc(MAILBOX) + " as " + esc(senderName()) + "</span></div>" +
+    '<div class="to" style="margin-top:6px"><label class="small muted">Cc</label><input type="text" data-compose-cc="' + o.id + '" value="' + esc(st.cc == null ? DEFAULT_CC : st.cc) + '" placeholder="grady@gradcon.com.au, …" style="flex:1 1 260px"></div>' +
     '<input class="subject" type="text" data-compose-subject="' + o.id + '" value="' + esc(st.subject) + '" placeholder="Subject">' +
     '<textarea data-compose-text="' + o.id + '" style="width:100%;margin-top:6px">' + esc(st.text) + "</textarea>" +
     '<div class="row" style="margin-top:8px;justify-content:space-between"><div class="row"><button class="btn' + (st.approved ? " primary" : "") + '" data-compose-approve="' + o.id + '">' + (st.approved ? "✓ Approved" : "Approve this draft") + '</button><button class="btn sm" data-compose-redraft="' + o.id + '">Re-draft</button></div>' +
@@ -409,7 +412,7 @@ async function sendCompose(o){
   const to = contacts[st.contactIdx] ? contacts[st.contactIdx].email : emails[st.contactIdx] || ""; const toName = contacts[st.contactIdx] ? contacts[st.contactIdx].name : "";
   st.status = "sending"; render();
   try {
-    const res = await fetch(API_BASE + "/api/gmail", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "send", to, toName, fromName: senderName(), subject: st.subject, text: st.text }), signal: AbortSignal.timeout(60000) });
+    const res = await fetch(API_BASE + "/api/gmail", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "send", to, toName, fromName: senderName(), subject: st.subject, text: st.text, cc: parseCc(st.cc == null ? DEFAULT_CC : st.cc) }), signal: AbortSignal.timeout(60000) });
     const d = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(d.error || ("HTTP " + res.status));
     st.status = "sent"; st.messageId = d.sent && d.sent.id;
@@ -539,6 +542,7 @@ main.addEventListener("click", (e) => {
 main.addEventListener("input", (e) => {
   const t = e.target;
   if (t.dataset.composeSubject) { const st = COMPOSE[t.dataset.composeSubject]; if (st) { st.subject = t.value; if (st.approved) { st.approved = false; const b = document.querySelector('[data-compose-approve="' + t.dataset.composeSubject + '"]'); if (b) { b.textContent = "Approve this draft"; b.classList.remove("primary"); } const sb = document.querySelector('[data-compose-send="' + t.dataset.composeSubject + '"]'); if (sb) sb.disabled = true; } } return; }
+  if (t.dataset.composeCc) { const st = COMPOSE[t.dataset.composeCc]; if (st) st.cc = t.value; return; }
   if (t.dataset.composeText) { const st = COMPOSE[t.dataset.composeText]; if (st) { st.text = t.value; if (st.approved) { st.approved = false; const b = document.querySelector('[data-compose-approve="' + t.dataset.composeText + '"]'); if (b) { b.textContent = "Approve this draft"; b.classList.remove("primary"); } const sb = document.querySelector('[data-compose-send="' + t.dataset.composeText + '"]'); if (sb) sb.disabled = true; } } return; }
   if (t.id === "q") { UI.q = t.value; clearTimeout(main._qt); main._qt = setTimeout(() => { const el = $("#q"); const pos = el ? el.selectionStart : 0; render(); const n = $("#q"); if (n) { n.focus(); n.setSelectionRange(pos, pos); } }, 220); return; }
   const o = t.dataset.org && orgById(t.dataset.org); if (!o) return;

@@ -121,8 +121,27 @@ function takeoffLines(t) {
  * quotes and about 7 days for the complex one, i should be able to determine what is heavy or not"). */
 export const RFQ_LEAD = { simple: { days: 3, label: "Simple quote — 3 days" }, complex: { days: 7, label: "Complex quote — 7 days" } };
 const ATTACH_WORDS = { archi: "architectural drawings", struct: "structural drawings", soil: "soil / geotechnical report", pkg: "package drawings" };
+/* Attachments are planned against Gmail's limit before anything is built: the files are taken in
+ * order (the required classes first) while they fit under ATTACH_PLAN_BYTES; any file that would
+ * push the message over goes as a DOWNLOAD LINK in the body instead (the bucket's URL, as the
+ * portal serves its own files) — never a failed send (Grady, 26 Oct 2026: "attachments over
+ * 20 MB in total — send fewer or smaller files" on every contractor). A file of unknown size counts
+ * as ATTACH_UNKNOWN_BYTES. */
+export const ATTACH_PLAN_BYTES = 17 * 1024 * 1024;
+export const ATTACH_UNKNOWN_BYTES = 2 * 1024 * 1024;
+export function planAttachments(files, cap = ATTACH_PLAN_BYTES) {
+  const attach = [], link = []; let total = 0;
+  for (const f of files || []) {
+    const size = Number(f.size) > 0 ? Number(f.size) : ATTACH_UNKNOWN_BYTES;
+    if (total + size <= cap) { attach.push(f); total += size; } else link.push(f);
+  }
+  return { attach, link, total };
+}
+export const fmtBytes = (n) => (n >= 1024 * 1024 ? (n / 1024 / 1024).toFixed(1) + " MB" : Math.max(1, Math.round(n / 1024)) + " KB");
+export const DEFAULT_CC = ["grady@gradcon.com.au"];
+export const parseCc = (s) => [...new Set(String(s || "").split(/[,;\s]+/).map((x) => x.trim().toLowerCase()).filter((x) => /^[^\s@<>,;]+@[^\s@<>,;]+\.[^\s@<>,;]+$/.test(x)))];
 export const attachmentLabel = (a) => { const t = (a && a.tags ? a.tags : []).filter((k) => ATTACH_WORDS[k]).map((k) => ATTACH_WORDS[k]); return t.length ? `${a.name} (${t.join(", ")})` : a.name; };
-export function rfqText({ projectName, siteAddress = "", pkgLabel, org, contact, scopes = [], due, leadDays = 0, requestedOn = "", sender = {}, attachments = [], extraNotes = "" }) {
+export function rfqText({ projectName, siteAddress = "", pkgLabel, org, contact, scopes = [], due, leadDays = 0, requestedOn = "", sender = {}, attachments = [], links = [], extraNotes = "" }) {
   const lines = [];
   lines.push(`Dear ${contact && contact.firstName ? contact.firstName : (org && org.name) || "Sir/Madam"},`, "");
   lines.push(`Gradcon Concrete Constructions invites ${org && org.name ? org.name : "you"} to submit a quotation for the ${pkgLabel} package on the project below.`, "");
@@ -142,7 +161,8 @@ export function rfqText({ projectName, siteAddress = "", pkgLabel, org, contact,
   if (extraNotes && extraNotes.trim()) lines.push("", "NOTES", ...extraNotes.trim().split(/\r?\n/).map((l) => "  " + l));
   lines.push("", "DOCUMENTS");
   if (attachments.length) { lines.push("  Attached to this email:"); for (const a of attachments) lines.push(`  - ${attachmentLabel(a)}`); }
-  else lines.push("  No documents are attached to this email — they will follow separately.");
+  if (links.length) { lines.push(attachments.length ? "  Too large to attach — download from these links:" : "  Download from these links (too large to attach):"); for (const a of links) lines.push(`  - ${attachmentLabel(a)}${a.size ? ` (${fmtBytes(a.size)})` : ""}: ${a.url}`); }
+  if (!attachments.length && !links.length) lines.push("  No documents are attached to this email — they will follow separately.");
   lines.push("", "PLEASE INCLUDE IN YOUR QUOTATION",
     "  - Lump sum and unit rates, ex GST, with the basis of measurement",
     "  - Inclusions, exclusions and any assumptions or qualifications",
@@ -155,10 +175,10 @@ export function rfqText({ projectName, siteAddress = "", pkgLabel, org, contact,
   return lines.join("\n");
 }
 /** One independent draft per organisation — built from the same facts, never shared text objects. */
-export function rfqDrafts({ orgs, projectName, siteAddress, pkgLabel, scopes, due, leadDays, requestedOn, sender, attachments, extraNotes }) {
+export function rfqDrafts({ orgs, projectName, siteAddress, pkgLabel, scopes, due, leadDays, requestedOn, sender, attachments, links = [], extraNotes }) {
   return (orgs || []).map((org) => {
     const contact = rfqContact(org);
-    return { id: `d-${org.id}`, orgId: org.id, orgName: org.name, trade: org.trade || "", contactName: contact.name, contactId: contact.contactId, email: contact.email, subject: rfqSubject({ pkgLabel, projectName }), text: rfqText({ projectName, siteAddress, pkgLabel, org, contact, scopes, due, leadDays, requestedOn, sender, attachments, extraNotes }), approved: false, status: "draft" };
+    return { id: `d-${org.id}`, orgId: org.id, orgName: org.name, trade: org.trade || "", contactName: contact.name, contactId: contact.contactId, email: contact.email, subject: rfqSubject({ pkgLabel, projectName }), text: rfqText({ projectName, siteAddress, pkgLabel, org, contact, scopes, due, leadDays, requestedOn, sender, attachments, links, extraNotes }), approved: false, status: "draft" };
   });
 }
 /** What a project remembers of an RFQ round, and the 05 checklist step it ticks. */

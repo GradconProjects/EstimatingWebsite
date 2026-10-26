@@ -3437,6 +3437,19 @@ await checkAsync("RFQ (src/lib/rfq.js, api/gmail.js send): one draft per contrac
   const raw = G.buildMime({ to: "trevor@dmacpiling.com.au", toName: "Trevor Carr", from: "projects@gradcon.com.au", fromName: "Grady Fink", subject: "RFQ – Bored Pier Works – 11 Skelton Place", text: "Dear Trevor,\n\nHello.", attachments: [{ name: "S-01.pdf", mimeType: "application/pdf", bytes: Buffer.from("%PDF-1.4 x") }] });
   const mime = Buffer.from(raw, "base64url").toString("utf8");
   assert.ok(/^From: Grady Fink <projects@gradcon\.com\.au>\r\nTo: Trevor Carr <trevor@dmacpiling\.com\.au>/.test(mime) && !/^(Cc|Bcc):/m.test(mime) && /multipart\/mixed; boundary=/.test(mime) && /Content-Disposition: attachment; filename="S-01\.pdf"/.test(mime) && /=\?UTF-8\?B\?/.test(mime), "one To, no Cc/Bcc, the attachment part, the en-dash subject encoded");
+  // Gradcon's own cc (grady@ by default, more addable — 26 Oct 2026): one Cc header, deduplicated, never the recipient, never Bcc
+  const ccMime = Buffer.from(G.buildMime({ to: "trevor@dmacpiling.com.au", from: "projects@gradcon.com.au", subject: "x", text: "y", cc: ["grady@gradcon.com.au", "Grady@gradcon.com.au", "boma@gradcon.com.au", "trevor@dmacpiling.com.au", "not an address"] }), "base64url").toString("utf8");
+  assert.ok(/^Cc: grady@gradcon\.com\.au, boma@gradcon\.com\.au\r\n/m.test(ccMime) && !/^Bcc:/m.test(ccMime) && (ccMime.match(/^Cc:/gm) || []).length === 1, "Cc: the internal copies once each, the contractor never copied to himself, no Bcc");
+  assert.deepEqual(R.DEFAULT_CC, ["grady@gradcon.com.au"]);
+  assert.deepEqual(R.parseCc("grady@gradcon.com.au, Boma@Gradcon.com.au; junk  grady@gradcon.com.au"), ["grady@gradcon.com.au", "boma@gradcon.com.au"], "parseCc: commas, semicolons or spaces, lower-cased, deduplicated, junk dropped");
+  // attachments are planned against Gmail's limit BEFORE the send: what fits attaches, the rest goes as download links
+  const MB = 1024 * 1024;
+  const pl = R.planAttachments([{ name: "A.pdf", size: 9 * MB }, { name: "S.pdf", size: 7 * MB }, { name: "G.pdf", size: 12 * MB }, { name: "T.pdf", size: 0.5 * MB }, { name: "U.pdf" }]);
+  assert.deepEqual([pl.attach.map((f) => f.name), pl.link.map((f) => f.name), pl.total], [["A.pdf", "S.pdf", "T.pdf"], ["G.pdf", "U.pdf"], 16.5 * MB], "16.5 MB attached under the 17 MB plan; the 12 MB geotech and the unsized file go as links");
+  assert.ok(R.ATTACH_PLAN_BYTES < G.ATTACH_MAX_BYTES && G.ATTACH_MAX_BYTES * 4 / 3 < 25 * MB, "plan cap under the server cap, server cap under Gmail's 25 MB encoded limit");
+  const linked = R.rfqText({ projectName: "P", pkgLabel: "Bored Pier Works", org: { name: "DMAC" }, contact: { name: "Trevor" }, scopes: [], due: "2026-11-02", leadDays: 7, requestedOn: "2026-10-26", sender: { name: "Boma Ipalibo" }, attachments: [{ name: "A-101 Architectural.pdf", tags: ["archi"] }], links: [{ name: "Geotechnical report.pdf", tags: ["soil"], size: 12 * MB, url: G.ATTACH_URL_PREFIX + "drive/g/v/Geotechnical%20report.pdf" }] });
+  assert.ok(/Attached to this email:\n  - A-101 Architectural\.pdf \(architectural drawings\)/.test(linked) && /Too large to attach — download from these links:\n  - Geotechnical report\.pdf \(soil \/ geotechnical report\) \(12\.0 MB\): https:\/\//.test(linked) && !/follow separately/.test(linked), "the body names the attached files and gives a download link for the oversize one");
+  assert.equal(R.fmtBytes(2.4 * MB), "2.4 MB");
   assert.ok(G.isOneAddress("a@b.co") && !G.isOneAddress("a@b.co, c@d.co") && !G.isOneAddress("a@b.co; c@d.co"));
   let posted = null;
   const mk = (scope) => ({ email: "projects@gradcon.com.au", refresh: G.encryptText("1//r", genv), scope });
@@ -3458,6 +3471,12 @@ await checkAsync("RFQ (src/lib/rfq.js, api/gmail.js send): one draft per contrac
   G.resetTokenCache();
   const ok = await GM.runGmail({ action: "send", to: "trevor@dmacpiling.com.au", toName: "Trevor Carr", fromName: "Grady Fink", subject: "RFQ – x", text: "Dear Trevor,", attachments: [{ name: "S-01.pdf", url: G.ATTACH_URL_PREFIX + "drive/p1/v/S-01.pdf" }] }, genv, fetchFor(mk(G.GMAIL_SCOPE + " " + G.GMAIL_SEND_SCOPE)));
   assert.ok(ok.status === 200 && ok.body.sent.id === "m9" && ok.body.sent.attachments[0] === "S-01.pdf" && posted && /To: Trevor Carr <trevor@dmacpiling\.com\.au>/.test(Buffer.from(posted.raw, "base64url").toString("utf8")), JSON.stringify(ok.body));
+  G.resetTokenCache();
+  const badCc = await GM.runGmail({ action: "send", to: "a@b.co", subject: "x", text: "y", cc: ["grady@gradcon.com.au", "x@y.co, z@w.co"] }, genv, fetchFor(mk(G.GMAIL_SCOPE + " " + G.GMAIL_SEND_SCOPE)));
+  assert.equal(badCc.status, 400, "a cc entry holding two addresses is refused");
+  G.resetTokenCache();
+  const withCc = await GM.runGmail({ action: "send", to: "trevor@dmacpiling.com.au", subject: "RFQ – x", text: "Dear Trevor,", cc: ["grady@gradcon.com.au"] }, genv, fetchFor(mk(G.GMAIL_SCOPE + " " + G.GMAIL_SEND_SCOPE)));
+  assert.ok(withCc.status === 200 && withCc.body.sent.cc[0] === "grady@gradcon.com.au" && /^Cc: grady@gradcon\.com\.au\r\n/m.test(Buffer.from(posted.raw, "base64url").toString("utf8")), "the cc rides on the message and is reported back");
   G.resetTokenCache();
 });
 
