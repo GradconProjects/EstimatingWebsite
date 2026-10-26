@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { X, Send, Check, ChevronLeft, Paperclip, Loader2, AlertTriangle, Mail } from "lucide-react";
-import { RFQ_PACKAGES, RFQ_LEAD, packageByKey, packageLabel, suggestPackages, contractorsFor, rfqContact, rfqDrafts, rfqText, rfqSubject, elementScope, dayPlus, rfqRecord, attachmentOptions, driveFolderOptions, missingAttachClasses, planAttachments, fmtBytes, ATTACH_PLAN_BYTES, DEFAULT_CC, parseCc } from "../lib/rfq.js";
+import { RFQ_PACKAGES, RFQ_LEAD, packageByKey, packageLabel, suggestPackages, contractorsFor, rfqContact, rfqDrafts, rfqSubject, elementScope, dayPlus, rfqRecord, attachmentOptions, driveFolderOptions, missingAttachClasses, planAttachments, fmtBytes, ATTACH_PLAN_BYTES, DEFAULT_CC, parseCc, rfqHead, rfqBody, joinDraft, draftNameIssues } from "../lib/rfq.js";
 import { readRegister, registerOrgs } from "../lib/registerStore.js";
 import { readTakeoffForProject } from "../lib/estimatesRead.js";
 import { driveApi } from "../lib/driveFiles.js";
@@ -41,7 +41,12 @@ export default function RfqModal({ quote, items, rates, projectScope, elementTyp
   const [extraNotes, setExtraNotes] = useState("");
   const [attach, setAttach] = useState(() => new Set());
   const [drafts, setDrafts] = useState([]);
+  // ONE body per package, shared by every contractor's draft of that package; a draft's own text is its
+  // locked head + that body (see rfqHead in rfq.js — the greeting is never typed, so it can never be pasted wrong)
+  const [bodies, setBodies] = useState({});
   const [current, setCurrent] = useState(0);
+  const textOf = (d) => joinDraft(d.head, bodies[d.pkgKey] != null ? bodies[d.pkgKey] : d.body);
+  const issuesOf = (d) => draftNameIssues({ ...d, body: bodies[d.pkgKey] != null ? bodies[d.pkgKey] : d.body }, drafts);
   const [building, setBuilding] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
@@ -127,13 +132,16 @@ export default function RfqModal({ quote, items, rates, projectScope, elementTyp
         const pickedOrgs = orgs.filter((o) => picked(p.key).has(o.id));
         for (const d of rfqDrafts({ orgs: pickedOrgs, projectName: quote.projectName || "Untitled project", siteAddress: quote.siteAddress || "", pkgLabel: labelOf(p), scopes, due, leadDays: RFQ_LEAD[complexity].days, requestedOn: today(), sender, attachments: planned.attach, links: planned.link, extraNotes })) all.push({ ...d, id: `d-${p.key}-${d.orgId}`, pkgKey: p.key, pkgLabel: labelOf(p) });
       }
-      setDrafts(all);
+      const nextBodies = {}; for (const d of all) if (nextBodies[d.pkgKey] == null) nextBodies[d.pkgKey] = d.body;
+      setBodies(nextBodies); setDrafts(all);
       setCurrent(0); setStep("drafts");
     } catch (e) { setError(e.needsReconnect ? "The Google connection needs a reconnect for Drive (Settings → Google mail & Drive) before a Drive file can be attached." : e.message || "could not build the drafts"); }
     finally { setBuilding(false); }
   }
   const patchDraft = (i, patch) => setDrafts((ds) => ds.map((d, j) => (j === i ? { ...d, ...patch } : d)));
-  const redraft = (i) => { const d = drafts[i]; const org = orgs.find((o) => o.id === d.orgId); if (!org) return; const scopes = chosenItems.map((item) => elementScope(item, rates, projectScope, typeName(item), takeoff ? takeoff.instances : null)); patchDraft(i, { subject: rfqSubject({ pkgLabel: d.pkgLabel, projectName: quote.projectName || "Untitled project" }), text: rfqText({ projectName: quote.projectName || "Untitled project", siteAddress: quote.siteAddress || "", pkgLabel: d.pkgLabel, org, contact: rfqContact(org), scopes, due, leadDays: RFQ_LEAD[complexity].days, requestedOn: today(), sender, attachments: resolvedFiles, links: resolvedLinks, extraNotes }), approved: false }); };
+  // Re-draft rebuilds the package's shared body (every draft of the package follows, approvals cleared) and this draft's head
+  const redraft = (i) => { const d = drafts[i]; const org = orgs.find((o) => o.id === d.orgId); if (!org) return; const scopes = chosenItems.map((item) => elementScope(item, rates, projectScope, typeName(item), takeoff ? takeoff.instances : null)); const body = rfqBody({ projectName: quote.projectName || "Untitled project", siteAddress: quote.siteAddress || "", pkgLabel: d.pkgLabel, scopes, due, leadDays: RFQ_LEAD[complexity].days, requestedOn: today(), sender, attachments: resolvedFiles, links: resolvedLinks, extraNotes }); setBodies((b) => ({ ...b, [d.pkgKey]: body })); setDrafts((ds) => ds.map((x) => (x.pkgKey === d.pkgKey ? { ...x, body, subject: rfqSubject({ pkgLabel: x.pkgLabel, projectName: quote.projectName || "Untitled project" }), approved: false, ...(x.id === d.id ? { head: rfqHead({ pkgLabel: d.pkgLabel, org, contact: rfqContact(org) }) } : {}) } : x))); };
+  const editBody = (pkgKey, body) => { setBodies((b) => ({ ...b, [pkgKey]: body })); setDrafts((ds) => ds.map((x) => (x.pkgKey === pkgKey && x.status !== "sent" ? { ...x, approved: false } : x))); };
 
   async function sendApproved() {
     const todo = drafts.map((d, i) => ({ d, i })).filter(({ d }) => d.approved && d.status !== "sent");
@@ -141,12 +149,16 @@ export default function RfqModal({ quote, items, rates, projectScope, elementTyp
     setSending(true); setError("");
     const results = [];
     for (const { d, i } of todo) {
-      patchDraft(i, { status: "sending" });
+      // the name guard runs again at the moment of sending — a draft naming another contractor never leaves
+      const issues = issuesOf(d);
+      if (issues.length) { const msg = `not sent — the text names ${issues.map((x) => x.orgName).join(", ")} (another contractor in this round)`; patchDraft(i, { status: "failed", error: msg, approved: false }); results.push({ ...d, status: "failed", error: msg }); continue; }
+      const text = textOf(d);
+      patchDraft(i, { status: "sending", text });
       try {
-        const r = await fetch(`${apiBase()}/api/gmail`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "send", to: d.email, toName: d.contactName, fromName: sender.name, subject: d.subject, text: d.text, attachments: resolvedFiles.map((f) => ({ name: f.name, url: f.url })), cc: ccList }), signal: AbortSignal.timeout(120000) });
+        const r = await fetch(`${apiBase()}/api/gmail`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "send", to: d.email, toName: d.contactName, fromName: sender.name, subject: d.subject, text, attachments: resolvedFiles.map((f) => ({ name: f.name, url: f.url })), cc: ccList }), signal: AbortSignal.timeout(120000) });
         const body = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(body.error || `HTTP ${r.status}`);
-        const sent = { ...d, status: "sent", messageId: body.sent && body.sent.id, threadId: body.sent && body.sent.threadId };
+        const sent = { ...d, text, status: "sent", messageId: body.sent && body.sent.id, threadId: body.sent && body.sent.threadId };
         patchDraft(i, sent); results.push(sent);
       } catch (e) { patchDraft(i, { status: "failed", error: e.message }); results.push({ ...d, status: "failed", error: e.message }); }
     }
@@ -284,22 +296,25 @@ export default function RfqModal({ quote, items, rates, projectScope, elementTyp
                 </button>
               ))}
               <div className="pt-2 space-y-1">
-                <button onClick={() => setDrafts((ds) => ds.map((d) => ({ ...d, approved: d.status === "sent" ? d.approved : true })))} className="w-full text-[12px] px-2 py-1 rounded border border-neutral-300 hover:border-neutral-800">Approve all</button>
+                <button onClick={() => setDrafts((ds) => ds.map((d) => ({ ...d, approved: d.status === "sent" ? d.approved : issuesOf(d).length === 0 })))} className="w-full text-[12px] px-2 py-1 rounded border border-neutral-300 hover:border-neutral-800">Approve all</button>
                 <button onClick={() => setStep("setup")} className="w-full text-[12px] px-2 py-1 rounded border border-neutral-300 hover:border-neutral-800 flex items-center justify-center gap-1"><ChevronLeft size={12} /> Back</button>
               </div>
             </div>
-            {(() => { const d = drafts[current]; if (!d) return null; return (
+            {(() => { const d = drafts[current]; if (!d) return null; const issues = issuesOf(d); const sharers = drafts.filter((x) => x.pkgKey === d.pkgKey).length; return (
               <div className="space-y-2">
                 <div className="text-[12px] text-neutral-600" data-testid="rfq-head"><b>{d.pkgLabel}</b> · To: <b>{d.contactName || d.orgName}</b> &lt;{d.email}&gt; — {d.orgName}{d.trade ? ` · ${d.trade}` : ""}{ccList.length ? ` · Cc: ${ccList.join(", ")}` : ""}{resolvedFiles.length ? ` · ${resolvedFiles.length} attachment${resolvedFiles.length === 1 ? "" : "s"}` : ""}{resolvedLinks.length ? ` · ${resolvedLinks.length} as download link${resolvedLinks.length === 1 ? "" : "s"}` : ""}</div>
                 <input value={d.subject} onChange={(e) => patchDraft(current, { subject: e.target.value, approved: false })} className="w-full border border-neutral-300 rounded px-2 py-1.5 text-[13px] font-semibold" data-testid="rfq-subject" />
-                <textarea value={d.text} onChange={(e) => patchDraft(current, { text: e.target.value, approved: false })} rows={22} className="w-full border border-neutral-300 rounded px-3 py-2 text-[12.5px] font-mono leading-snug" data-testid="rfq-text" />
+                <pre className="m-0 whitespace-pre-wrap border border-neutral-200 bg-neutral-50 rounded px-3 py-2 text-[12.5px] font-mono leading-snug text-neutral-800" title="Written for this contractor from the Register — not editable, so it can never be pasted into another contractor's email" data-testid="rfq-head-lines">{d.head}</pre>
+                <div className="text-[11px] text-neutral-500 -mt-1">↑ greeting written for <b>{d.orgName}</b> (locked) · ↓ the wording below goes to {sharers === 1 ? "this contractor" : `all ${sharers} ${d.pkgLabel} contractors`} — edit it once{sharers > 1 ? ", never copy it between drafts" : ""}</div>
+                <textarea value={bodies[d.pkgKey] != null ? bodies[d.pkgKey] : d.body} onChange={(e) => editBody(d.pkgKey, e.target.value)} rows={20} className={`w-full border rounded px-3 py-2 text-[12.5px] font-mono leading-snug ${issues.length ? "border-red-400 bg-red-50" : "border-neutral-300"}`} data-testid="rfq-text" />
+                {issues.length > 0 && <div className="text-[12px] text-red-700 font-medium" data-testid="rfq-name-issue">✗ This email to {d.orgName} names {issues.map((x) => `${x.orgName} ("${x.found}")`).join(", ")} — another contractor in this round. Remove it (or Re-draft) before it can be approved or sent.</div>}
                 <div className="flex items-center justify-between gap-2 flex-wrap">
                   <div className="flex items-center gap-2">
-                    <button onClick={() => patchDraft(current, { approved: !d.approved })} disabled={d.status === "sent"} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border ${d.approved ? "bg-emerald-600 border-emerald-600 text-white" : "border-neutral-300 hover:border-neutral-800"}`} data-testid="rfq-approve">{d.approved ? <><Check size={14} /> Approved</> : "Approve this draft"}</button>
+                    <button onClick={() => patchDraft(current, { approved: issues.length ? false : !d.approved })} disabled={d.status === "sent" || issues.length > 0} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border ${d.approved ? "bg-emerald-600 border-emerald-600 text-white" : "border-neutral-300 hover:border-neutral-800"}`} data-testid="rfq-approve">{d.approved ? <><Check size={14} /> Approved</> : "Approve this draft"}</button>
                     <button onClick={() => redraft(current)} className="text-[12px] text-neutral-500 underline">Re-draft</button>
-                    <button onClick={() => { try { navigator.clipboard.writeText(`Subject: ${d.subject}\n\n${d.text}`); } catch { /* ignore */ } }} className="text-[12px] text-neutral-500 underline">Copy</button>
+                    <button onClick={() => { try { navigator.clipboard.writeText(`Subject: ${d.subject}\n\n${textOf(d)}`); } catch { /* ignore */ } }} className="text-[12px] text-neutral-500 underline">Copy</button>
                   </div>
-                  <button onClick={sendApproved} disabled={sending || !canSend || !drafts.some((x) => x.approved && x.status !== "sent")} className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-orange-600 hover:bg-orange-700 text-white text-sm font-medium disabled:opacity-40" title={canSend ? "Each approved draft is sent as its own email" : "Sending needs the mailbox reconnected for sending (Settings)"} data-testid="rfq-send">
+                  <button onClick={sendApproved} disabled={sending || !canSend || !drafts.some((x) => x.approved && x.status !== "sent" && !issuesOf(x).length)} className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-orange-600 hover:bg-orange-700 text-white text-sm font-medium disabled:opacity-40" title={canSend ? "Each approved draft is sent as its own email" : "Sending needs the mailbox reconnected for sending (Settings)"} data-testid="rfq-send">
                     {sending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} Send {drafts.filter((x) => x.approved && x.status !== "sent").length} approved
                   </button>
                 </div>

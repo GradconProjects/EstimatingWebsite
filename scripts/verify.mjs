@@ -3419,6 +3419,15 @@ await checkAsync("RFQ (src/lib/rfq.js, api/gmail.js send): one draft per contrac
   assert.ok(/No documents are attached to this email — they will follow separately\./.test(R.rfqText({ projectName: "x", pkgLabel: "Formwork", org: dmac, contact: R.rfqContact(dmac) })), "no attachments is said plainly, never 'available on request'");
   assert.deepEqual([R.RFQ_LEAD.simple.days, R.RFQ_LEAD.complex.days], [3, 7]);
   assert.ok(drafts[0].text !== drafts[1].text && drafts.every((d) => d.approved === false), "built unapproved, independent texts");
+  // 26 Oct 2026 — the name mix-up: the greeting + invitation HEAD is per contractor and the BODY is common; a draft naming another contractor is caught
+  assert.ok(drafts[0].head.startsWith("Dear Trevor,") && /invites DMAC Contracting/.test(drafts[0].head) && !/Project:/.test(drafts[0].head) && drafts[0].body.startsWith("Project: ") && drafts[0].body === drafts[1].body && drafts[0].text === R.joinDraft(drafts[0].head, drafts[0].body), "head = greeting + invitation (per contractor); body = the rest, identical across the round");
+  const mixed = { ...drafts[0], body: drafts[1].body, text: R.joinDraft(drafts[0].head, drafts[1].body) };
+  assert.deepEqual(R.draftNameIssues(mixed, drafts), [], "the common body itself names nobody — swapping bodies is harmless");
+  const pasted = { ...drafts[0], body: "Gradcon Concrete Constructions invites BCS Piling / Basement Construction to submit a quotation.\n" + drafts[0].body };
+  const hit = R.draftNameIssues(pasted, drafts);
+  assert.ok(hit.length === 1 && hit[0].orgId === drafts[1].orgId && /bcs piling/.test(hit[0].found), "Trevor's draft carrying 'invites BCS Piling' is flagged against BCS: " + JSON.stringify(hit));
+  assert.ok(R.draftNameIssues({ ...drafts[1], body: "Please copy will_bean@basementconstruction.com.au — as discussed with Will Bean" }, drafts).length === 0, "a draft's OWN contractor is never a hit");
+  assert.ok(R.draftNameIssues({ ...drafts[1], subject: "RFQ – as per trevor@dmacpiling.com.au" }, drafts).length === 1 && R.draftNameIssues({ ...drafts[1], body: "dmacpiling.com.au" }, drafts).length === 1 && R.draftNameIssues({ ...drafts[1], body: "Trevor Carr said" }, drafts).length === 1, "subject, email, domain and contact name are all searched");
   // the register's generic inboxes are never greeted by name
   assert.equal(R.rfqContact({ contacts: [{ name: "Estimating Team", email: "est@x.com", primary: true }] }).firstName, "", "a team inbox gets no first name");
   // auto-attach classes

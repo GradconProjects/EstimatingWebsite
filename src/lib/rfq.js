@@ -141,10 +141,18 @@ export const fmtBytes = (n) => (n >= 1024 * 1024 ? (n / 1024 / 1024).toFixed(1) 
 export const DEFAULT_CC = ["grady@gradcon.com.au"];
 export const parseCc = (s) => [...new Set(String(s || "").split(/[,;\s]+/).map((x) => x.trim().toLowerCase()).filter((x) => /^[^\s@<>,;]+@[^\s@<>,;]+\.[^\s@<>,;]+$/.test(x)))];
 export const attachmentLabel = (a) => { const t = (a && a.tags ? a.tags : []).filter((k) => ATTACH_WORDS[k]).map((k) => ATTACH_WORDS[k]); return t.length ? `${a.name} (${t.join(", ")})` : a.name; };
-export function rfqText({ projectName, siteAddress = "", pkgLabel, org, contact, scopes = [], due, leadDays = 0, requestedOn = "", sender = {}, attachments = [], links = [], extraNotes = "" }) {
+/* The HEAD of an RFQ — the greeting and the invitation line — is the ONLY part that names the
+ * contractor. It is written per contractor and is never editable in the composer; the BODY below it
+ * is common to every contractor of the package and is edited ONCE for all of them (26 Oct 2026: a
+ * body edited by hand on BCS's draft reached Trevor at DMAC with "invites BCS Piling" still in it —
+ * Grady: "there is a name mix up and i dont want this happening again"). */
+export function rfqHead({ pkgLabel, org, contact }) {
+  return [`Dear ${contact && contact.firstName ? contact.firstName : (org && org.name) || "Sir/Madam"},`, "", `Gradcon Concrete Constructions invites ${org && org.name ? org.name : "you"} to submit a quotation for the ${pkgLabel} package on the project below.`].join("\n");
+}
+export const joinDraft = (head, body) => `${head}\n\n${body}`;
+export function rfqText(args) { return joinDraft(rfqHead(args), rfqBody(args)); }
+export function rfqBody({ projectName, siteAddress = "", pkgLabel, scopes = [], due, leadDays = 0, requestedOn = "", sender = {}, attachments = [], links = [], extraNotes = "" }) {
   const lines = [];
-  lines.push(`Dear ${contact && contact.firstName ? contact.firstName : (org && org.name) || "Sir/Madam"},`, "");
-  lines.push(`Gradcon Concrete Constructions invites ${org && org.name ? org.name : "you"} to submit a quotation for the ${pkgLabel} package on the project below.`, "");
   lines.push(`Project: ${projectName}`);
   if (siteAddress && siteAddress !== projectName) lines.push(`Site: ${siteAddress}`);
   lines.push(`Package: ${pkgLabel}`);
@@ -178,8 +186,35 @@ export function rfqText({ projectName, siteAddress = "", pkgLabel, org, contact,
 export function rfqDrafts({ orgs, projectName, siteAddress, pkgLabel, scopes, due, leadDays, requestedOn, sender, attachments, links = [], extraNotes }) {
   return (orgs || []).map((org) => {
     const contact = rfqContact(org);
-    return { id: `d-${org.id}`, orgId: org.id, orgName: org.name, trade: org.trade || "", contactName: contact.name, contactId: contact.contactId, email: contact.email, subject: rfqSubject({ pkgLabel, projectName }), text: rfqText({ projectName, siteAddress, pkgLabel, org, contact, scopes, due, leadDays, requestedOn, sender, attachments, links, extraNotes }), approved: false, status: "draft" };
+    const head = rfqHead({ pkgLabel, org, contact });
+    const body = rfqBody({ projectName, siteAddress, pkgLabel, scopes, due, leadDays, requestedOn, sender, attachments, links, extraNotes });
+    return { id: `d-${org.id}`, orgId: org.id, orgName: org.name, trade: org.trade || "", contactName: contact.name, contactId: contact.contactId, email: contact.email, subject: rfqSubject({ pkgLabel, projectName }), head, body, text: joinDraft(head, body), approved: false, status: "draft" };
   });
+}
+/* The name guard: everything a draft would carry (subject, head, body) is searched for ANOTHER
+ * contractor of the round — their organisation name (and each part of a "A / B" name), their contact's
+ * name, their email and its domain. A hit names what was found; the composer refuses to approve or
+ * send that draft until it is gone. A word that also belongs to the draft's own contractor is never a hit. */
+const nameTokens = (d) => {
+  const out = new Set();
+  const add = (s) => { s = String(s || "").trim(); if (s.length >= 4) out.add(s.toLowerCase()); };
+  add(d.orgName); for (const part of String(d.orgName || "").split(/\s*\/\s*|\s+-\s+|\s*\(|\)\s*/)) add(part);
+  add(d.contactName); add(d.email);
+  const dom = String(d.email || "").split("@")[1]; if (dom && !/^(gmail|outlook|hotmail|bigpond|yahoo|live|icloud)\./i.test(dom)) add(dom);
+  return out;
+};
+export function draftNameIssues(draft, allDrafts) {
+  const own = nameTokens(draft);
+  const hay = `${draft.subject || ""}\n${draft.head || ""}\n${draft.body != null ? draft.body : draft.text || ""}`.toLowerCase();
+  const hits = [];
+  for (const other of allDrafts || []) {
+    if (!other || other.orgId === draft.orgId) continue;
+    for (const tok of nameTokens(other)) {
+      if (own.has(tok)) continue;
+      if (hay.includes(tok)) { hits.push({ orgId: other.orgId, orgName: other.orgName, found: tok }); break; }
+    }
+  }
+  return hits;
 }
 /** What a project remembers of an RFQ round, and the 05 checklist step it ticks. */
 export function rfqRecord({ pkgKey, pkgLabel, elementIds, due, by, sent, attachments = [] }, at = new Date().toISOString()) {

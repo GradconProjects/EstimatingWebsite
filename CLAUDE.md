@@ -1462,7 +1462,27 @@ bare minimum should be archi, struct, soil report". Rules:
    editable); `rfqDrafts` builds ONE
    independent draft per organisation from the same facts, so no name,
    address or trade of one contractor can reach another (verify checks the
-   DMAC draft holds no BCS and vice versa). `rfqRecord` / `rfqPatch` keep the
+   DMAC draft holds no BCS and vice versa). **The greeting is locked and the
+   body is shared** (26 Oct 2026: a body edited by hand on BCS's draft was
+   carried into Trevor's at DMAC with "invites BCS Piling" still in it —
+   Grady: "there is a name mix up and i dont want this happening again"):
+   `rfqHead({pkgLabel, org, contact})` = "Dear <first name>," + the
+   invitation line — the ONLY lines that name the contractor — is written
+   per draft (`d.head`) and shown READ-ONLY above the textarea
+   (`rfq-head-lines`); `rfqBody(...)` (`d.body`, from "Project:" down) is
+   ONE text per PACKAGE (`bodies[pkgKey]` in `RfqModal`), edited once for
+   every contractor of that package (an edit clears their approvals; Re-draft
+   rebuilds the package's body and this draft's head); `rfqText` =
+   `joinDraft(head, body)` and the send posts `textOf(d)`. **The name guard
+   `draftNameIssues(draft, allDrafts)`** searches a draft's subject, head and
+   body for ANOTHER contractor of the round — organisation name and each
+   part of an "A / B" name, contact name, email, email domain (free-mail
+   domains excepted); a word that belongs to the draft's own contractor is
+   never a hit — and the composer shows the hit in red (`rfq-name-issue`),
+   disables Approve, skips the draft on Approve all and refuses it at the
+   moment of sending ("not sent — the text names …"). Verify-covered;
+   `test-rfq.mjs` pastes BCS's name into the shared body and proves DMAC's
+   draft is held while BCS's goes. `rfqRecord` / `rfqPatch` keep the
    round on `quote.rfqs[]` (package, elements, due, attachments, every
    recipient with status, message and thread ids).
 3. **Auto-attach from the project's Drive folder.** `ATTACH_CLASSES` — archi
