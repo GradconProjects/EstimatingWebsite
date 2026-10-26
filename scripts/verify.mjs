@@ -3633,6 +3633,18 @@ console.log(`\n${passed} check(s) passed.`);
   });
 }
 
+// ---- Dowels as trench mesh / sheet strips (26 Oct 2026) — the bridge prices an L-series line by NAME ----
+check("bridge: an L-series trench-mesh line in lineal metres (a joint dowel strip, a footing layer) lands on the TRENCH MESH product of the same name in whole 6 m lengths; an SL/RL strip on a Joints line stays flagged", () => {
+  const br = buildImportFromEstimate({ project: { name: "Dowels" }, lines: [
+    { elementId: "S", element: "Raft Slab A", category: "Raft Slab", materialGroup: "Joints", material: "4 Bar-L12TM", spec: "Joint dowels — 4 Bar-L12TM trench mesh laid along the run", qty: 30, finalQty: 31.5, unit: "lm", massPerUnit: 21.8 / 6 },
+    { elementId: "S", element: "Raft Slab A", category: "Raft Slab", materialGroup: "Connections", material: "SL82", spec: "Step-down connecting dowels — SL82 mesh strip laid along the run (300 mm wide)", qty: 8, finalQty: 8.4, unit: "lm", massPerUnit: 1.2 },
+  ], elementGeometry: {} });
+  const it = br.quote.items[0];
+  assertTrue(it.qtys[rateKey("TRENCH MESH", "4 Bar-L12TM", "length")] === 6, "31.5 lm ÷ 6 = 5.25 → 6 lengths: " + JSON.stringify(it.qtys));
+  assertTrue(br.flags.some((f) => /SL82/.test(f)) && !br.flags.some((f) => /L12TM/.test(f)), br.flags.join(" | "));
+  assertTrue(importAll.TRENCH_STOCK_M === 6);
+});
+
 if (process.exitCode) {
   console.error("\nSome checks FAILED — see above.");
 } else {

@@ -92,6 +92,9 @@ const QUOTES_TYPE_BY_ID = {};
 ELEMENT_TYPES.forEach((t) => { QUOTES_TYPE_BY_ID[t.id] = t; });
 
 const CONCRETE_CAT = FULL_CATALOG.find((c) => c.key === "CONCRETE");
+const TRENCH_CAT = FULL_CATALOG.find((c) => c.key === "TRENCH MESH");
+/** Quotes prices trench mesh per stock LENGTH; Estimates measures it in lineal metres. */
+export const TRENCH_STOCK_M = 6;
 const SCREEDS_CAT = FULL_CATALOG.find((c) => c.key === "SCREEDS");
 const SCREED_LABEL = "Screed (standalone)";
 
@@ -391,7 +394,17 @@ export function buildImportFromEstimate(estimateExport) {
     // Quotes Trench Mesh product is a completely different, bar-count-coded
     // SKU ("4 Bar-L12TM") — an SL/RL code there does NOT identify a real
     // Square Mesh sheet, so it's flagged instead of mapped.
-    group.filter((l) => l.materialGroup === "Reinforcement" && l.spec === "Trench mesh").forEach((l) => {
+    // --- Trench mesh by its catalog NAME (26 Oct 2026): an L-series product
+    // ("4 Bar-L12TM") measured in lineal metres — a footing's trench layer, a
+    // pad's strips, a joint or step-down dowel laid as trench mesh — is the
+    // same SKU in Quotes' TRENCH MESH catalog, priced per 6 m stock length:
+    // lm ÷ 6, whole lengths. Only an SL/RL sheet code on a trench line stays
+    // flagged (next block) — that code is not a Trench Mesh product.
+    group.filter((l) => ["Reinforcement", "Connections", "Joints"].includes(l.materialGroup) && (l.unit === "lm" || l.unit === "m") && !handled.has(l) && TRENCH_CAT && TRENCH_CAT.products.some((p) => p.name === l.material)).forEach((l) => {
+      const product = TRENCH_CAT.products.find((p) => p.name === l.material);
+      map(l, rateKey("TRENCH MESH", product.name, product.unit), Math.ceil((Number(l.finalQty) || 0) / TRENCH_STOCK_M - 1e-9));
+    });
+    group.filter((l) => l.materialGroup === "Reinforcement" && l.spec === "Trench mesh" && !handled.has(l)).forEach((l) => {
       flag(l,
         `${elementLabel}: ${(Number(l.finalQty) || 0).toFixed(2)} m² of ${l.material} trench mesh — Quotes' Trench Mesh ` +
         `catalog is priced by bar-count/length code (e.g. "4 Bar-L12TM"), not by SL/RL sheet type — pick the right product manually.`

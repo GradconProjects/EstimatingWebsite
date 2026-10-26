@@ -1987,6 +1987,45 @@ function trenchMeshTypeSel(field,val,rerender){
   let bars=STOCK_BAR_LAYER_DIAS.map(dia=>[2,3,4,5,6,7,8].map(c=>{ const v=`${c} Bar-${dia}`; return `<option value="${v}" ${String(val)===v?'selected':''}>${c} × ${dia} straight bars</option>`; }).join('')).join('');
   return `<select data-field="${field}" ${rerender?'data-rerender="true"':''}><optgroup label="Trench mesh (L-series)">${tm}</optgroup><optgroup label="Square mesh laid as trench strips">${sq}</optgroup><optgroup label="Straight stock bars (count × size per layer)">${bars}</optgroup></select>`;
 }
+/* ---- Dowels: a bar, a trench mesh or a sheet-mesh strip (26 Oct 2026, Grady:
+ * "i want dowels to have option of sheet and trench reinforcement") ----
+ * A joint dowel or a step-down dowel is by default a bar at a spacing with a
+ * length each. The product select also offers an L-series trench mesh or a
+ * square-mesh sheet cut as a strip: those run CONTINUOUSLY along the joint or
+ * the step (lineal metres of the product, no spacing, no bar length), with
+ * the strip's width asked (blank = 300 mm, the convention everywhere else).
+ * `dowelProduct(v)` is the ONE reading of the stored value, `dowelRunLine`
+ * the ONE line for the continuous products (lm with massPerUnit, so the kg
+ * totals, the orders schedule — 6 m lengths / strips from sheets — and the
+ * Quotes bridge treat it as the footing's trench mesh is treated). */
+function dowelProduct(v){
+  const s=String(v||"N12");
+  if(BARSIZES.includes(s)) return {kind:"bar", type:s, label:s};
+  if(MESHTYPES[s]!==undefined) return {kind:"strip", type:s, label:`${s} mesh strip`};
+  if(TRENCH_MESH_TYPES.some(t=>t[0]===s)) return {kind:"trench", type:s, label:`${s} trench mesh`};
+  return {kind:"bar", type:"N12", label:"N12"};
+}
+function dowelProductSel(field,val){
+  const v=String(val||"N12");
+  const bars=BARSIZES.map(b=>`<option value="${b}" ${v===b?'selected':''}>${b} bar</option>`).join('');
+  const tm=TRENCH_MESH_TYPES.map(t=>`<option value="${t[0]}" ${v===t[0]?'selected':''}>${t[0]}</option>`).join('');
+  const sq=Object.keys(MESHTYPES).map(m=>`<option value="${m}" ${v===m?'selected':''}>${m} (sheet mesh cut as a strip)</option>`).join('');
+  return `<select data-field="${field}" data-rerender="true"><optgroup label="Bar (at a spacing)">${bars}</optgroup><optgroup label="Trench mesh (L-series) along the joint / step">${tm}</optgroup><optgroup label="Sheet mesh laid as a strip along the joint / step">${sq}</optgroup></select>`;
+}
+/** The fields beside the product: a bar needs its spacing; a strip its width; a trench mesh nothing. */
+function dowelProductFields(d, field, spacingField, spacingLabel, stripField){
+  const p=dowelProduct(d[field]);
+  if(p.kind==="bar") return F(spacingLabel||"Spacing (mm)", inpNum(spacingField, d[spacingField]));
+  if(p.kind==="strip") return F("Strip width (mm, blank = 300)", inpNum(stripField, d[stripField]));
+  return `<div class="small" style="align-self:end;">Laid continuously along the run — no spacing, no bar length.</div>`;
+}
+function dowelStripMm(d, field){ const w=num(d[field]); return w>0? w : 300; }
+/** One continuous trench-mesh / strip line along `lm` metres of joint or step. */
+function dowelRunLine(inst,def,group,p,lm,spec,stripMm,formula){
+  const mpm=trenchReoMassPerM(p.type, stripMm); const wt=lm*mpm;
+  return baseLine(inst,def,{materialGroup:group,material:p.type,spec:`${spec} — ${p.label} laid along the run${p.kind==="strip"?` (${stripMm} mm wide)`:""}`,qty:lm,unit:"lm",waste:PROJECT.reoWaste,finalQty:withWaste(lm,PROJECT.reoWaste),massPerUnit:mpm,formula,notes:`${fmt(wt,1)} kg`});
+}
+function sdBarShapeIf(d, legacyMm){ return dowelProduct(d.sdDia).kind==="bar"? sdBarShapeUI(d, legacyMm) : ""; }
 /* ---- Per-layer reinforcement materials ----
    A multi-layer mesh / trench-mesh setup can use a DIFFERENT product per
    layer (e.g. SL92 top, SL82 bottom) instead of one type applied to every
@@ -4172,8 +4211,8 @@ function renderStripFooting(inst){
   let steps=`<div class="sechead">Stepped Footing (step-downs on sloping ground)</div>
   ${chk("stepdown",d.stepdown,"Footing steps down along its run","stepdown")}
   <div class="subsec ${d.stepdown?'':'hidden'}" data-show-if="stepdown"><div class="grid cols4">
-   ${F("Total step-down length (m)",inpNum("sdLength",d.sdLength))}${F("Step depth (mm)",inpNum("sdDepth",d.sdDepth))}${F("Dowel size",barSizeSel("sdDia",d.sdDia))}${F("Spacing (mm)",inpNum("sdSpacing",d.sdSpacing))}
-  </div>${sdBarShapeUI(d,num(d.sdProj1,500)+num(d.sdProj2,500))}${sdSetupFields(d)}<div class="tip"><span class="ico">🏗️</span><div>Enter the TOTAL length of stepped footing (sum of every step run along the trench). Dowels are spaced over that length and the vertical step faces get their own formwork line — both the items a stepped strip footing adds over a level one.</div></div></div>`;
+   ${F("Total step-down length (m)",inpNum("sdLength",d.sdLength))}${F("Step depth (mm)",inpNum("sdDepth",d.sdDepth))}${F("Dowel / step reinforcement",dowelProductSel("sdDia",d.sdDia))}${dowelProductFields(d,"sdDia","sdSpacing","Spacing (mm)","sdStripMm")}
+  </div>${sdBarShapeIf(d,num(d.sdProj1,500)+num(d.sdProj2,500))}${sdSetupFields(d)}<div class="tip"><span class="ico">🏗️</span><div>Enter the TOTAL length of stepped footing (sum of every step run along the trench). Dowels are spaced over that length and the vertical step faces get their own formwork line — both the items a stepped strip footing adds over a level one.</div></div></div>`;
   // `conns` was built above but never returned — the strip footing's starter
   // bars had no UI at all, even though computeStripFooting has always costed
   // d.starters. Returning it makes the section reachable; the default stays
@@ -4259,7 +4298,7 @@ function computeStripFooting(inst,def){
       let count=(Math.floor(sdRunM*1000/Math.max(1,num(d.sdSpacing,300)))+1)*sdf.risers*sdf.legs;
       let len=sdBarLenMm(d, num(d.sdProj1,500)+num(d.sdProj2,500))/1000;
       let totLen=count*len; let wt=totLen*massPerM(bd);
-      lines.push(baseLine(inst,def,{materialGroup:"Connections",material:d.sdDia,spec:"Stepped footing — step dowels",qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`count(${count}=${fmt(sdRunM,1)}m/${d.sdSpacing}mm+1 ×${sdf.risers} riser(s) ×${sdf.legs} leg(s))×(proj1+proj2)/1000`,notes:`${count} dowels, ${fmt(wt,1)} kg`}));
+      if(dowelProduct(d.sdDia).kind!=="bar") lines.push(dowelRunLine(inst,def,"Connections",dowelProduct(d.sdDia),sdRunM*sdf.risers*sdf.legs*1,"Stepped footing — step dowels",dowelStripMm(d,"sdStripMm"),`${fmt(sdRunM,1)} m × ${sdf.risers} riser(s) × ${sdf.legs} leg(s)`+(1>1?` × 1`:""))); else lines.push(baseLine(inst,def,{materialGroup:"Connections",material:d.sdDia,spec:"Stepped footing — step dowels",qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`count(${count}=${fmt(sdRunM,1)}m/${d.sdSpacing}mm+1 ×${sdf.risers} riser(s) ×${sdf.legs} leg(s))×(proj1+proj2)/1000`,notes:`${count} dowels, ${fmt(wt,1)} kg`}));
       sdExtraBarLines(inst,def,lines,d,sdRunM,1);
       let fLm=sdRunM*sdf.risers;
       lines.push(...formworkLines(inst,def,{material:"Step-down face formwork",spec:`${d.sdDepth}mm deep steps ×${sdf.risers} riser(s)`,faces:[{name:"step faces",runM:fLm,faceMm:num(d.sdDepth)>0? num(d.sdDepth) : 1}],formula:`step length ${fmt(sdRunM,1)}m ×${sdf.risers}`}));
@@ -4567,8 +4606,8 @@ function renderBeam(inst,def){
   let steps=`<div class="sechead">Step-down / Construction-joint Connecting Bars</div>
   ${chk("stepdown",d.stepdown,"This beam steps down / has a level change requiring connecting dowels","stepdown")}
   <div class="subsec ${d.stepdown?'':'hidden'}" data-show-if="stepdown"><div class="grid cols4">
-   ${F("Total step-down length (m)",inpNum("sdLength",d.sdLength))}${F("Step depth (mm)",inpNum("sdDepth",d.sdDepth))}${F("Dowel size",barSizeSel("sdDia",d.sdDia))}${F("Spacing (mm)",inpNum("sdSpacing",d.sdSpacing))}
-  </div>${sdBarShapeUI(d,num(d.sdProj1)+num(d.sdProj2))}${sdSetupFields(d)}<div class="tip"><span class="ico">🏗️</span><div>Any change in soffit or top level along a beam is a cold joint waiting to slip in shear unless it's dowelled. Treat it like a mini footing-to-column connection: embedment into the pour already cast, projection into the pour still to come. Don't fold this into the general waste factor — it's a real, countable item that a site engineer will ask for on the RFI.</div></div></div>`;
+   ${F("Total step-down length (m)",inpNum("sdLength",d.sdLength))}${F("Step depth (mm)",inpNum("sdDepth",d.sdDepth))}${F("Dowel / step reinforcement",dowelProductSel("sdDia",d.sdDia))}${dowelProductFields(d,"sdDia","sdSpacing","Spacing (mm)","sdStripMm")}
+  </div>${sdBarShapeIf(d,num(d.sdProj1)+num(d.sdProj2))}${sdSetupFields(d)}<div class="tip"><span class="ico">🏗️</span><div>Any change in soffit or top level along a beam is a cold joint waiting to slip in shear unless it's dowelled. Treat it like a mini footing-to-column connection: embedment into the pour already cast, projection into the pour still to come. Don't fold this into the general waste factor — it's a real, countable item that a site engineer will ask for on the RFI.</div></div></div>`;
   return {geom,conc:concSection(d,"<p class='small'>Concrete = L × W × effective depth (downstand uses drop below slab only)</p>"),reo:reo+steps,form,conns};
 }
 function reoRowHtml(id,r,i,arr){
@@ -5072,7 +5111,7 @@ function computeBeam(inst,def){
     }
     let len=sdBarLenMm(d, num(d.sdProj1)+num(d.sdProj2))/1000;
     let totLen=N*count*len; let wt=totLen*massPerM(bd);
-    lines.push(baseLine(inst,def,{materialGroup:"Connections",material:d.sdDia,spec:"Step-down connecting dowels",qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`count(${count})×(proj1 ${d.sdProj1}+proj2 ${d.sdProj2})/1000×${N}`,notes:`${count} dowels over ${fmt((d.sdLength!==undefined?num(d.sdLength):num(d.length)/1000),1)}m, ${fmt(wt,1)} kg`}));
+    if(dowelProduct(d.sdDia).kind!=="bar") lines.push(dowelRunLine(inst,def,"Connections",dowelProduct(d.sdDia),sdRunM*sdf.risers*sdf.legs*N,"Step-down connecting dowels",dowelStripMm(d,"sdStripMm"),`${fmt(sdRunM,1)} m × ${sdf.risers} riser(s) × ${sdf.legs} leg(s)`+(N>1?` × N`:""))); else lines.push(baseLine(inst,def,{materialGroup:"Connections",material:d.sdDia,spec:"Step-down connecting dowels",qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`count(${count})×(proj1 ${d.sdProj1}+proj2 ${d.sdProj2})/1000×${N}`,notes:`${count} dowels over ${fmt((d.sdLength!==undefined?num(d.sdLength):num(d.length)/1000),1)}m, ${fmt(wt,1)} kg`}));
     sdExtraBarLines(inst,def,lines,d,sdRunM,N);
   }
   return {lines,warnings:[]};
@@ -5332,7 +5371,7 @@ function renderSlab(inst,def){
     ${chk("joints",d.joints,"Construction/control joints")}${F("Joint spacing (m)",inpNum("jointSpacing",d.jointSpacing))}
     ${chk("dowels",d.dowels,"Joint dowels","dowels")}
    </div>
-   <div class="subsec ${d.dowels?'':'hidden'}" data-show-if="dowels"><div class="grid cols3">${F("Dowel size",barSizeSel("dowelDia",d.dowelDia))}${F("Spacing (mm)",inpNum("dowelSpacing",d.dowelSpacing))}${F("Total dowel length (mm, both sides of joint)",inpNum("dowelLength",d.dowelLength))}</div></div></div>`;
+   <div class="subsec ${d.dowels?'':'hidden'}" data-show-if="dowels"><div class="grid cols3">${F("Joint reinforcement",dowelProductSel("dowelDia",d.dowelDia))}${dowelProductFields(d,"dowelDia","dowelSpacing","Spacing (mm)","dowelStripMm")}${dowelProduct(d.dowelDia).kind==="bar"? F("Total dowel length (mm, both sides of joint)",inpNum("dowelLength",d.dowelLength)) : ""}</div></div></div>`;
   // Starter bars out of the slab (into the walls and columns above) are set
   // out as RUNS — bar, spacing, run length, rows — through the shared
   // starter-runs section the footings and beams use (18 Oct 2026, Grady: "i
@@ -5345,8 +5384,8 @@ function renderSlab(inst,def){
   let steps = `<div class="sechead">Step-down / Level Change</div>
   ${chk("stepdown",d.stepdown,"Slab has a step-down / level change requiring connecting dowels","stepdown")}
   <div class="subsec ${d.stepdown?'':'hidden'}" data-show-if="stepdown"><div class="grid cols4">
-   ${F("Total step-down length (m)",inpNum("sdLength",d.sdLength))}${F("Step depth (mm)",inpNum("sdDepth",d.sdDepth))}${F("Dowel size",barSizeSel("sdDia",d.sdDia))}${F("Spacing (mm)",inpNum("sdSpacing",d.sdSpacing))}
-  </div>${sdBarShapeUI(d,num(d.sdProj1)+num(d.sdProj2))}${sdSetupFields(d)}<div class="tip"><span class="ico">🏗️</span><div>Split-level slabs (a sunken wet area, a stepped car park deck) need dowels across the step or the two pours act independently under load. Size and space dowels the same way you'd detail a construction joint — this is the item estimators most often forget because it's buried in a section detail, not called up on the reinforcement schedule.</div></div></div>`;
+   ${F("Total step-down length (m)",inpNum("sdLength",d.sdLength))}${F("Step depth (mm)",inpNum("sdDepth",d.sdDepth))}${F("Dowel / step reinforcement",dowelProductSel("sdDia",d.sdDia))}${dowelProductFields(d,"sdDia","sdSpacing","Spacing (mm)","sdStripMm")}
+  </div>${sdBarShapeIf(d,num(d.sdProj1)+num(d.sdProj2))}${sdSetupFields(d)}<div class="tip"><span class="ico">🏗️</span><div>Split-level slabs (a sunken wet area, a stepped car park deck) need dowels across the step or the two pours act independently under load. Size and space dowels the same way you'd detail a construction joint — this is the item estimators most often forget because it's buried in a section detail, not called up on the reinforcement schedule.</div></div></div>`;
   let concExtras = `<div class="subsec"><div class="sechead">Pour Details</div><div class="grid cols4">${chk("drops",d.drops,"Drops")}${chk("setdowns",d.setdowns,"Setdowns / recesses")}${chk("upstands",d.upstands,"Upstands")}</div></div>`;
   return {geom: geom + edgeThickenGeom + wallThickenGeom, reoAlways:reoExtras+steps, conc:concSection(d,"<p class='small'>Concrete = area × thickness (area = L×W unless manually entered)</p>")+`<div class="grid cols3">${F("Beam / thickening concrete grade (N/MPa, blank = slab grade)",inpNum("beamGrade",d.beamGrade))}</div><p class="small">Edge beams, internal beams / raft ribs, edge and wall thickenings are often poured at a different grade to the slab — enter it here and every beam line carries it as its own concrete product. The Edge Beams and Internal Beams tabs each carry their own grade box too, as does every extra beam group — a grade typed there wins for that beam. Blank keeps the slab grade.</p>`+concExtras,reo:reoMat,
    edgebeams: edgeBeamGeom + edgeBeamReoBlock + extraBeamGroupsSection(inst,d,"edgeBeamGroups"),
@@ -5715,7 +5754,12 @@ function computeSlab(inst,def){
   if(d.joints){
     let numJoints=Math.max(0,Math.floor(num(d.length)/num(d.jointSpacing))-1);
     lines.push(baseLine(inst,def,{materialGroup:"Joints",material:"Control/construction joints",spec:`@${d.jointSpacing}m`,qty:numJoints,unit:"no.",waste:0,finalQty:numJoints,formula:"length/spacing − 1"}));
-    if(d.dowels){
+    const jp=dowelProduct(d.dowelDia);
+    if(d.dowels && jp.kind!=="bar"){
+      // a trench mesh / strip runs the full width of every joint
+      const lm=numJoints*num(d.width);
+      if(lm>0) lines.push(dowelRunLine(inst,def,"Joints",jp,lm,"Joint dowels",dowelStripMm(d,"dowelStripMm"),`${numJoints} joints × ${fmt(num(d.width),2)} m`));
+    } else if(d.dowels){
       let dia=barDiaOf(d.dowelDia);
       let dowelsPerJoint=Math.floor(num(d.width)*1000/num(d.dowelSpacing))+1;
       let totLen=numJoints*dowelsPerJoint*(num(d.dowelLength)/1000); let wt=totLen*massPerM(dia);
@@ -5734,7 +5778,7 @@ function computeSlab(inst,def){
     }
     let len=sdBarLenMm(d, num(d.sdProj1)+num(d.sdProj2))/1000;
     let totLen=count*len; let wt=totLen*massPerM(dia);
-    lines.push(baseLine(inst,def,{materialGroup:"Connections",material:d.sdDia,spec:"Step-down connecting dowels",qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`count(${count})×(proj1+proj2)/1000`,notes:`${count} dowels, ${fmt(wt,1)} kg`}));
+    if(dowelProduct(d.sdDia).kind!=="bar") lines.push(dowelRunLine(inst,def,"Connections",dowelProduct(d.sdDia),sdRunM*sdf.risers*sdf.legs*1,"Step-down connecting dowels",dowelStripMm(d,"sdStripMm"),`${fmt(sdRunM,1)} m × ${sdf.risers} riser(s) × ${sdf.legs} leg(s)`+(1>1?` × 1`:""))); else lines.push(baseLine(inst,def,{materialGroup:"Connections",material:d.sdDia,spec:"Step-down connecting dowels",qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`count(${count})×(proj1+proj2)/1000`,notes:`${count} dowels, ${fmt(wt,1)} kg`}));
     sdExtraBarLines(inst,def,lines,d,sdRunM,1);
   }
   return {lines,warnings};
@@ -5847,7 +5891,7 @@ function renderWall(inst){
   `;
   let steps=`<div class="sechead">Step-down / Construction-joint Connecting Bars</div>
   ${chk("stepdown",d.stepdown,"Wall steps down / has level change requiring connecting dowels","stepdown")}
-  <div class="subsec ${d.stepdown?'':'hidden'}" data-show-if="stepdown"><div class="grid cols4">${F("Total step-down length (m)",inpNum("sdLength",d.sdLength))}${F("Step depth (mm)",inpNum("sdDepth",d.sdDepth))}${F("Dowel size",barSizeSel("sdDia",d.sdDia))}${F("Spacing (mm)",inpNum("sdSpacing",d.sdSpacing))}</div>${sdBarShapeUI(d,2*num(d.sdProj1))}${sdSetupFields(d)}<div class="tip"><span class="ico">🏗️</span><div>A stepped wall footing or a change in wall thickness up the height both need continuity dowels across the joint — treat each step exactly like a mini construction joint.</div></div></div>`;
+  <div class="subsec ${d.stepdown?'':'hidden'}" data-show-if="stepdown"><div class="grid cols4">${F("Total step-down length (m)",inpNum("sdLength",d.sdLength))}${F("Step depth (mm)",inpNum("sdDepth",d.sdDepth))}${F("Dowel / step reinforcement",dowelProductSel("sdDia",d.sdDia))}${dowelProductFields(d,"sdDia","sdSpacing","Spacing (mm)","sdStripMm")}</div>${sdBarShapeIf(d,2*num(d.sdProj1))}${sdSetupFields(d)}<div class="tip"><span class="ico">🏗️</span><div>A stepped wall footing or a change in wall thickness up the height both need continuity dowels across the joint — treat each step exactly like a mini construction joint.</div></div></div>`;
   return {geom,conc:concSection(d,"<p class='small'>Concrete = (L×H − openings) × thickness</p>"),reo:reo+steps,form,conns};
 }
 function computeWall(inst,def){
@@ -5914,7 +5958,7 @@ function computeWall(inst,def){
     }
     let len=sdBarLenMm(d, 2*num(d.sdProj1))/1000;
     let totLen=N*count*len; let wt=totLen*massPerM(dia);
-    lines.push(baseLine(inst,def,{materialGroup:"Connections",material:d.sdDia,spec:"Step-down connecting dowels",qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`count(${count})×2×proj/1000×${N}`,notes:`${count} dowels, ${fmt(wt,1)} kg`}));
+    if(dowelProduct(d.sdDia).kind!=="bar") lines.push(dowelRunLine(inst,def,"Connections",dowelProduct(d.sdDia),sdRunM*sdf.risers*sdf.legs*N,"Step-down connecting dowels",dowelStripMm(d,"sdStripMm"),`${fmt(sdRunM,1)} m × ${sdf.risers} riser(s) × ${sdf.legs} leg(s)`+(N>1?` × N`:""))); else lines.push(baseLine(inst,def,{materialGroup:"Connections",material:d.sdDia,spec:"Step-down connecting dowels",qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`count(${count})×2×proj/1000×${N}`,notes:`${count} dowels, ${fmt(wt,1)} kg`}));
     sdExtraBarLines(inst,def,lines,d,sdRunM,N);
   }
   return {lines,warnings:[]};
