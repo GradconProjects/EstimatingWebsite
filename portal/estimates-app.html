@@ -2240,6 +2240,24 @@ function faceRow(fields,data){
   return `<div class="grid cols4">${boxes}</div><div style="margin-top:4px;margin-bottom:8px;"><button class="btn small" data-action="facesAll" data-fields="${keys}" type="button">Select all sides</button> <button class="btn small ghost" data-action="facesNone" data-fields="${keys}" type="button">None (cast against ground)</button></div>`;
 }
 function barSizeSel(field,val){ return selOpts(field,val,BARSIZES.map(b=>[b,b])); }
+/* A by-area reinforcement LAYER is one of five products (26 Oct 2026, Grady, on the precast
+ * walls' by-area table: "i need the sheets and trench mesh here and it is not visible"):
+ * a bar size, a SHEET mesh (the mesh name — the area in whole sheets, spacing and layout
+ * ignored), an L-series trench mesh or a square mesh cut as strips (`strip:<mesh>`) laid
+ * at the spacing as a bar is, or straight stock bars (`<n> Bar-N<d>`, n bars per position).
+ * `reoAreaProduct(v)` is the ONE reading; `reoAreaProductSel` the ONE select. */
+function reoAreaProduct(v){
+  v=String(v||"N12");
+  const strip=/^strip:(.+)$/.exec(v); if(strip && MESHTYPES[strip[1]]!==undefined) return {kind:"strip", type:strip[1], label:`${strip[1]} strips`};
+  if(MESHTYPES[v]!==undefined) return {kind:"sheet", type:v, label:`${v} sheets`};
+  if(TRENCH_MESH_TYPES.some(t=>t[0]===v)) return {kind:"trench", type:v, label:v};
+  const bars=/^(\d+) Bar-(N\d+)$/.exec(v); if(bars) return {kind:"bars", type:v, count:+bars[1], dia:bars[2], label:`${bars[1]} × ${bars[2]}`};
+  return {kind:"bar", type:v, dia:v, label:v};
+}
+function reoAreaProductSel(field,val){
+  const o=(v,l)=>`<option value="${v}" ${String(val)===v?'selected':''}>${l}</option>`;
+  return `<select data-field="${field}"><optgroup label="Bar">${BARSIZES.map(b=>o(b,b)).join('')}</optgroup><optgroup label="Sheet mesh (whole sheets over the area)">${Object.keys(MESHTYPES).map(m=>o(m,m+" sheet")).join('')}</optgroup><optgroup label="Trench mesh at the spacing (L-series)">${TRENCH_MESH_TYPES.map(t=>o(t[0],t[0])).join('')}</optgroup><optgroup label="Mesh strips at the spacing (300 mm wide)">${Object.keys(MESHTYPES).map(m=>o("strip:"+m,m+" strip")).join('')}</optgroup><optgroup label="Stock bars at the spacing (count × size per position)">${STOCK_BAR_LAYER_DIAS.map(dia=>[2,3,4].map(c=>o(`${c} Bar-${dia}`,`${c} × ${dia} bars`)).join('')).join('')}</optgroup></select>`;
+}
 function anchorSel(field,val){ return selOpts(field,val,ANCHOR_OPTS); }
 function sub(showIf,title,inner){ return `<div class="subsec" data-show-if="${showIf}"><div class="sechead">${title}</div>${inner}</div>`; }
 function coverField(inst){
@@ -8813,18 +8831,18 @@ function reoMethodSection(inst){
   <div class="subsec ${method==="area"?'':'hidden'}" data-show-if="reoMethod_area">
   ${(()=>{ if(method==="area" && !Array.isArray(d.reoAreaRows)) d.reoAreaRows=reoAreaLayerRows(d);   // the first open of the table keeps whatever the single fields held
     const rows=reoAreaLayerRows(d);
-    return `<table class="rows"><thead><tr><th>Layer</th><th>Area (m²${planArea>0?`, blank = ${fmt(planArea,2)}`:""})</th><th>Bar type</th><th>Spacing (mm)</th><th>Layout</th><th>Bar metres</th><th></th></tr></thead>
+    return `<table class="rows"><thead><tr><th>Layer</th><th>Area (m²${planArea>0?`, blank = ${fmt(planArea,2)}`:""})</th><th>Product</th><th>Spacing (mm)</th><th>Layout</th><th>Metres / m²</th><th></th></tr></thead>
     <tbody>${rows.map((r,i)=>{ const m=reoAreaRowMetres(r,planArea); return `<tr data-row="reoAreaRows.${i}"><td class="small">${i+1}</td>
      <td style="width:120px"><input type="text" inputmode="decimal" data-num="1" data-field="reoAreaRows.${i}.area" value="${r.area===undefined||r.area===null?'':r.area}" placeholder="${planArea>0?fmt(planArea,2):''}"></td>
-     <td style="width:110px">${barSizeSel(`reoAreaRows.${i}.dia`,r.dia||"N12")}</td>
+     <td style="width:150px">${reoAreaProductSel(`reoAreaRows.${i}.dia`,r.dia||"N12")}</td>
      <td style="width:100px">${inpNum(`reoAreaRows.${i}.spacing`,r.spacing===undefined?200:r.spacing)}</td>
      <td>${selOpts(`reoAreaRows.${i}.ways`,r.ways||"each",[["each","Each way"],["one","One way"]])}</td>
-     <td style="width:90px" class="small" data-reo-row-m="${i}">${fmt(m.metres,1)}</td>
+     <td style="width:90px" class="small" data-reo-row-m="${i}">${reoAreaRowCell(m)}</td>
      <td><button class="btn small danger" data-action="delRow" data-target="reoAreaRows" data-idx="${i}">✕</button></td></tr>`; }).join('')}</tbody></table>
     <button class="btn small" data-action="addRow" data-target="reoAreaRows">+ Add layer</button>`; })()}
   <div class="grid cols3">${chk("reoAreaLap",d.reoAreaLap,"Include lap allowance (%)","reoAreaLap")}</div>
   <p class="small reoRateHint">${reoRateHintText(inst.results&&inst.results.reoRate)}</p>
-  <p class="small">One row per layer, each with its own area, bar type, spacing and layout — a bottom mat of N12 @200 each way and a top mat of N16 @300 one way are two rows. Bar metres are taken per 1 m block and multiplied by the area: one direction 1 m ÷ spacing + 1 bars, the other 1 m ÷ spacing (the end bar is counted on one side only — 1 ÷ 0.2 = 5 + 1 and 5, 11 m per m² each way; one way takes the 5 + 1 alone). Leave an area blank to use the element's own plan area. One register line per layer replaces the slab's detailed mat lines (mesh and the four bar blocks) only; beam bars and ligatures (edge beams, internal strips, extra groups), edge return / turn-down bars, re-entrant corner bars, joints &amp; dowels, step-downs, starters and connections to other elements stay available below and are always counted.</p></div>
+  <p class="small">One row per layer, each with its own area, product, spacing and layout. A SHEET mesh covers the area in whole 6.0 × 2.4 m sheets (spacing and layout do not apply); a trench mesh, a mesh strip or a stock-bar set is laid at the spacing exactly as a bar is, in lineal metres of the product. — a bottom mat of N12 @200 each way and a top mat of N16 @300 one way are two rows. Bar metres are taken per 1 m block and multiplied by the area: one direction 1 m ÷ spacing + 1 bars, the other 1 m ÷ spacing (the end bar is counted on one side only — 1 ÷ 0.2 = 5 + 1 and 5, 11 m per m² each way; one way takes the 5 + 1 alone). Leave an area blank to use the element's own plan area. One register line per layer replaces the slab's detailed mat lines (mesh and the four bar blocks) only; beam bars and ligatures (edge beams, internal strips, extra groups), edge return / turn-down bars, re-entrant corner bars, joints &amp; dowels, step-downs, starters and connections to other elements stay available below and are always counted.</p></div>
   <div class="subsec ${method==="rate"?'':'hidden'}" data-show-if="reoMethod_rate"><div class="grid cols4">
    ${F("Rate (kg of steel per m³ of concrete)",inpNum("reoRateKgM3",d.reoRateKgM3===undefined?100:d.reoRateKgM3))}
    ${F("Equivalent bar size",barSizeSel("reoRateDia",d.reoRateDia||"N16"))}
@@ -8836,7 +8854,7 @@ function reoMethodSection(inst){
 function reoRateHintText(rr){
   if(!rr) return "";
   const both=`${rr.kgPerM3>0?`${fmt(rr.kgPerM3,1)} kg/m³ of concrete`:"no concrete volume"} · ${rr.kgPerM2>0?`${fmt(rr.kgPerM2,1)} kg/m² of plan area`:"no plan area on this element"}`;
-  const lead=rr.basis==="area"? `${rr.layers} layer${rr.layers===1?"":"s"} — ${fmt(rr.metres,1)} m (${(rr.rows||[]).map((m,i)=>`${m.dia} ${fmt(m.metres,1)} m`).join(" · ")}) = ${fmt(rr.kg,1)} kg` : `${fmt(rr.kg,1)} kg of steel`;
+  const lead=rr.basis==="area"? `${rr.layers} layer${rr.layers===1?"":"s"} — ${(rr.rows||[]).map((m)=>m.kind==="sheet"? `${m.type} ${fmt(m.m2,1)} m² (${m.sheets||0} sheets)` : `${m.label||m.dia} ${fmt(m.metres,1)} ${m.unit||"m"}`).join(" · ")} = ${fmt(rr.kg,1)} kg` : `${fmt(rr.kg,1)} kg of steel`;
   return `This element: ${lead} = ${both} (${fmt(rr.conc,2)} m³, ${rr.area>0?fmt(rr.area,2)+" m²":"area —"}).`;
 }
 /** The MAT a rate / area method replaces: a Reinforcement line that is neither beam steel (`part:"beam"`) nor a slab extra (`part:"extra"` — edge return, re-entrant corner bars). */
@@ -8854,26 +8872,43 @@ function reoAreaLayerRows(d){
   const n=Math.max(1,Math.round(num(d.reoAreaLayers,1)));
   return Array.from({length:n},()=>({area:(d.reoAreaM2===undefined||d.reoAreaM2===null)?"":d.reoAreaM2, dia:d.reoAreaDia||"N12", spacing:d.reoAreaSpacing===undefined?200:d.reoAreaSpacing, ways:d.reoAreaWays||"each"}));
 }
+function reoAreaRowCell(m){ return m.kind==="sheet"? `${fmt(m.m2,1)} m² (${m.sheets} sh)` : fmt(m.metres,1); }
 function reoAreaRowMetres(r,planArea){
-  const area=num(r.area)>0? num(r.area) : planArea, sp=num(r.spacing,200), ways=(r.ways||"each")==="one"? 1 : 2, dia=r.dia||"N12", kgm=massPerM(barDiaOf(dia));
+  const area=num(r.area)>0? num(r.area) : planArea, sp=num(r.spacing,200), ways=(r.ways||"each")==="one"? 1 : 2, dia=r.dia||"N12", p=reoAreaProduct(dia);
+  if(p.kind==="sheet"){
+    // a sheet mesh covers the area once per layer, bought in whole sheets; spacing and layout do not apply
+    const m2=area>0? area : 0, kgm2=MESHTYPES[p.type]||0, wasted=withWaste(m2,REO_WASTE_PCT), sheets=m2>0? Math.ceil(wasted/MESH_SHEET_AREA_M2-1e-9) : 0;
+    return {area, sp, ways, dia, kind:"sheet", type:p.type, label:p.label, metres:0, m2, sheets, kg:m2*kgm2, perM2:0, formula:m2>0? `${fmt(m2,2)} m² (+${REO_WASTE_PCT}% waste) → ceil(/${MESH_SHEET_AREA_M2} m²) = ${sheets} sheets` : ""};
+  }
   // Per 1 m block (areaBarsPerM): the first direction carries the end bar
   // (1 m ÷ spacing + 1), the second does not (1 m ÷ spacing); summed, × area.
   const dirs=(area>0 && sp>0)? (ways===2? [areaBarsPerM(sp,true), areaBarsPerM(sp,false)] : [areaBarsPerM(sp,true)]) : [];
-  const perM2=dirs.reduce((s,v)=>s+v,0), metres=perM2*area;
-  const formula=dirs.length? `per m²: ${dirs.map((v,i)=>`(1 m ÷ ${fmt(sp,0)}${i===0?" + 1":""} = ${fmt(v,2)})`).join(" + ")} = ${fmt(perM2,2)} m/m² × ${fmt(area,2)} m²` : "";
-  return {area, sp, ways, dia, metres, kg:metres*kgm, perM2, formula};
+  const perM2=dirs.reduce((s,v)=>s+v,0), runM=perM2*area;
+  const perPos=p.kind==="bars"? p.count : 1;              // stock bars: n bars at every position
+  const metres=runM*perPos;
+  const kgm = p.kind==="bar"? massPerM(barDiaOf(dia)) : p.kind==="bars"? massPerM(barDiaOf(p.dia)) : trenchReoMassPerM(p.type, p.kind==="strip"? 300 : undefined);
+  const formula=dirs.length? `per m²: ${dirs.map((v,i)=>`(1 m ÷ ${fmt(sp,0)}${i===0?" + 1":""} = ${fmt(v,2)})`).join(" + ")} = ${fmt(perM2,2)} m/m² × ${fmt(area,2)} m²${perPos>1?` × ${perPos} bars`:""}` : "";
+  return {area, sp, ways, dia, kind:p.kind, type:p.type, label:p.label, material:p.kind==="bars"? p.dia : p.kind==="bar"? dia : p.type, unit:(p.kind==="trench"||p.kind==="strip")? "lm" : "m", massPerUnit:kgm, metres, kg:metres*kgm, perM2, formula};
 }
 function applyReoArea(inst,def,out){
   let d=inst.data, lines=out.lines||[];
   let conc=reoRateConcrete(lines), planArea=reoRateArea(d), lapPct=d.reoAreaLap?PROJECT.lapPct:0;
   let rows=reoAreaLayerRows(d).map(r=>reoAreaRowMetres(r,planArea));
   out.lines=lines.filter(l=>!isMatLine(l));   // the mat goes; beam bars, ligatures and the slab's extras always count
-  rows.forEach((m,i)=>{ if(!(m.metres>0)) return;
-    out.lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:m.dia,spec:`Reinforcement by area — layer ${i+1}: ${m.dia} @${fmt(m.sp,0)} ${m.ways===1?"one way":"each way"} over ${fmt(m.area,2)} m²`,qty:m.metres,unit:"m",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(m.metres,PROJECT.reoWaste,lapPct),formula:m.formula,notes:`${fmt(m.kg,1)} kg · ${fmt(m.perM2,2)} m per m²`}));
+  rows.forEach((m,i)=>{
+    if(m.kind==="sheet"){
+      if(!(m.m2>0)) return;
+      const meshLap=d.reoAreaLap?MESH_LAP_PCT:0, wasted=withWasteLap(m.m2,REO_WASTE_PCT,meshLap), sheets=Math.ceil(wasted/MESH_SHEET_AREA_M2-1e-9); m.sheets=sheets;
+      out.lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:m.type,spec:`Reinforcement by area — layer ${i+1}: ${m.type} sheet mesh over ${fmt(m.area,2)} m²`,qty:m.m2,unit:"m²",waste:REO_WASTE_PCT,lap:meshLap,finalQty:wasted,sheets,formula:m.formula,notes:`${sheets} sheets (6.0×2.4m nominal) · ${fmt(m.kg,1)} kg`}));
+      return;
+    }
+    if(!(m.metres>0)) return;
+    const lap = (m.kind==="trench"||m.kind==="strip")? (lapPct? MESH_LAP_PCT : 0) : lapPct;
+    out.lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:m.material,spec:`Reinforcement by area — layer ${i+1}: ${m.label} @${fmt(m.sp,0)} ${m.ways===1?"one way":"each way"} over ${fmt(m.area,2)} m²`,qty:m.metres,unit:m.unit,waste:PROJECT.reoWaste,lap,finalQty:withWasteLap(m.metres,PROJECT.reoWaste,lap),massPerUnit:m.unit==="lm"? m.massPerUnit : undefined,formula:m.formula,notes:`${fmt(m.kg,1)} kg · ${fmt(m.perM2,2)} ${m.unit} per m²`}));
   });
   const metres=rows.reduce((s,m)=>s+m.metres,0), kg=rows.reduce((s,m)=>s+m.kg,0);
   const area=planArea>0? planArea : Math.max(0,...rows.map(m=>m.area||0));
-  out.reoRate={basis:"area",rate:area>0?kg/area:0,conc,area,kg,metres,layers:rows.length,rows,dia:[...new Set(rows.map(m=>m.dia))].join("/"),kgPerM3:conc>0?kg/conc:0,kgPerM2:area>0?kg/area:0};
+  out.reoRate={basis:"area",rate:area>0?kg/area:0,conc,area,kg,metres,layers:rows.length,rows,dia:[...new Set(rows.map(m=>m.label||m.dia))].join("/"),kgPerM3:conc>0?kg/conc:0,kgPerM2:area>0?kg/area:0};
 }
 function applyReoRate(inst,def,out){
   let d=inst.data, lines=out.lines||[];
@@ -9816,7 +9851,7 @@ function refreshCardResults(card,inst){
   let headStats=card.querySelector('.headStats');
   const planArea=reoRateArea(inst.data), reoRateStr=totR>0? ` (${totC>0?`${fmt(totR/totC,0)} kg/m³`:''}${totC>0&&planArea>0?' · ':''}${planArea>0?`${fmt(totR/planArea,1)} kg/m²`:''})` : '';
   const hint=card.querySelector('.reoRateHint'); if(hint) hint.textContent=reoRateHintText(out.reoRate);
-  if(out.reoRate && out.reoRate.rows) card.querySelectorAll('[data-reo-row-m]').forEach(td=>{ const m=out.reoRate.rows[+td.dataset.reoRowM]; if(m) td.textContent=fmt(m.metres,1); });
+  if(out.reoRate && out.reoRate.rows) card.querySelectorAll('[data-reo-row-m]').forEach(td=>{ const m=out.reoRate.rows[+td.dataset.reoRowM]; if(m) td.textContent=reoAreaRowCell(m); });
   if(headStats) headStats.innerHTML = ` · ${fmt(totC,2)}m³ concrete${concreteGradeStr(out.lines)?` (${concreteGradeStr(out.lines)})`:''} · ${fmt(totR,1)}kg reo${reoRateStr} · ${formworkStr(ft)}${bv.blind?` · ${fmt(bv.blind,2)}m³ blinding/base`:''}${bv.vap?` · ${fmt(bv.vap,2)}m² vapour barrier`:''}`;
   refreshSectionRail(card,inst,out);
   if(SHELL_MODE==="blueprint" && hasAssembly(inst)){

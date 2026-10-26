@@ -2652,8 +2652,19 @@ element families waits on the owner's approval of the pad footing.
   the area (typed, or the element's plan area when blank). The row carries
   `perM2` and the `formula` the register line prints; N12 @200 each way
   over 50 m² is 550 m (until 8 Oct 2026 it was area ÷ spacing × 2 = 500 m). `applyReoArea` emits
-  ONE bar line PER LAYER, replacing the detailed lines like the rate does; the
-  table's metres cells refresh live. **Beam steel always counts**: every line
+  ONE line PER LAYER, replacing the detailed lines like the rate does; the
+  table's metres cells refresh live. **A layer is one of five PRODUCTS**
+  (26 Oct 2026, Grady, on the precast walls' table: "i need the sheets and
+  trench mesh here and it is not visible"): `reoAreaProduct(v)` is the ONE
+  reading of the row's `dia` and `reoAreaProductSel` the ONE select — a bar
+  size (as before); a SHEET mesh (the mesh name: the area once per layer in
+  whole sheets, `unit: "m²"`, `sheets`, spacing and layout ignored; the cell
+  reads "128.0 m² (10 sh)"); an L-series trench mesh or a square mesh cut as
+  strips (`strip:<mesh>`, 300 mm wide) laid at the spacing exactly as a bar
+  is, in lm with `massPerUnit` from `trenchReoMassPerM`; or stock bars
+  (`<n> Bar-N<d>`, n bars at every position, priced as plain bar). The
+  register line, the hint and `out.reoRate.rows` carry `kind`, `label`,
+  `unit` and (for sheets) `m2` / `sheets`. **Beam steel always counts**: every line
   a slab's beam group emits (`raftBeamGroupLines` wrapper tags `part:
   "beam"`; the edge beam / internal strips / thickening concrete lines carry
   the same tag) survives both methods — the mat is replaced, the beams' bars
