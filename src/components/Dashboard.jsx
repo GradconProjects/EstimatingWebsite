@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Plus, Trash2, ArrowRight, LayoutDashboard, Loader2, FolderOpen, ArrowUp, ArrowDown, ArrowUpDown, MapPin } from "lucide-react";
-import { QUOTE_STATUSES, QUOTE_STATUS_STYLES } from "../data/catalog.js";
+import { QUOTE_STATUSES, QUOTE_STATUS_STYLES, normalizeStatus } from "../data/catalog.js";
 import { computeGrandTotal, computeMarginLadder, money, getDefaultMargin, getMarginSteps, scopeLabel } from "../lib/costing.js";
 import { checklistProgress } from "../lib/tenderChecklist.js";
 import { readQuoteSummariesDetailed, readQuotesCached, patchQuoteFields } from "../lib/projects.js";
@@ -61,8 +61,10 @@ function summarizeQuote(quote, liveRates) {
     date: quote.projectDate,
     // Only a status the style table knows: the rows below index
     // QUOTE_STATUS_STYLES by this value, and one stale/renamed status in any
-    // single quote would otherwise take the whole dashboard down.
-    status: QUOTE_STATUSES.includes(quote.status) ? quote.status : QUOTE_STATUSES[0],
+    // single quote would otherwise take the whole dashboard down. A status
+    // the app has RENAMED reads as its current name (normalizeStatus —
+    // "Measuring" → "Taking Off"), not as Queued.
+    status: QUOTE_STATUSES.includes(normalizeStatus(quote.status)) ? normalizeStatus(quote.status) : QUOTE_STATUSES[0],
     deadline: quote.planner?.deadline || null,
     submittedAt: quote.submittedAt || null,
     completedAt: completedDay(quote),
@@ -166,7 +168,7 @@ export default function Dashboard({ projects, rates, rateChanges, onOpen, onCrea
 
   // Filter row: status tiles + free-text name search, applied on top of the
   // chosen sort. Session-local. A fresh load shows ONLY the open work —
-  // Queued, Measuring and Estimating — so a quote that has gone out leaves the main
+  // Queued, Taking Off and Estimating — so a quote that has gone out leaves the main
   // screen and lives under its own status tile (or "All projects"); Grady,
   // 1 Oct 2026: "submitted quotes should leave the main screen and remain
   // under the submitted button so only queued and estimating projects are
@@ -355,7 +357,7 @@ export default function Dashboard({ projects, rates, rateChanges, onOpen, onCrea
           marked by a dark ring and shadow rather than by a colour change —
           colour is spoken for by the status itself. */}
       <div className="flex flex-wrap gap-2">
-        {[[OPEN_FILTER, "Open — Queued, Measuring & Estimating"], ["", "All projects"], ...QUOTE_STATUSES.map((s2) => [s2, s2])].map(([value, label]) => {
+        {[[OPEN_FILTER, "Open — Queued, Taking Off & Estimating"], ["", "All projects"], ...QUOTE_STATUSES.map((s2) => [s2, s2])].map(([value, label]) => {
           const active = statusFilter === value;
           // "All projects" and the Open tile have no catalog status colour —
           // the app's own navy (All) and the Estimating orange's darker
@@ -554,7 +556,7 @@ export default function Dashboard({ projects, rates, rateChanges, onOpen, onCrea
               <tr className="border-t-2 border-neutral-200 bg-neutral-50 font-semibold">
                 <td className="px-4 py-2.5" colSpan={7}>
                   {statusFilter === OPEN_FILTER && !search.trim()
-                    ? `Open projects — Queued, Measuring & Estimating (${visibleSummaries.length} of ${summaries.length}; the rest are under their status tiles or All projects)`
+                    ? `Open projects — Queued, Taking Off & Estimating (${visibleSummaries.length} of ${summaries.length}; the rest are under their status tiles or All projects)`
                     : filtering ? `Filtered projects (${visibleSummaries.length} of ${summaries.length})` : "All projects"}
                 </td>
                 <td className="px-3 py-2.5 text-right font-mono tabular-nums">{ft.elementCount}</td>

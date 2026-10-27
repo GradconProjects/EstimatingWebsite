@@ -8,7 +8,7 @@
  */
 import { uid, rateKey, categoryAppliesTo } from "./costing.js";
 import { supabase, supabaseEnabled } from "./supabaseClient.js";
-import { FULL_CATALOG } from "../data/catalog.js";
+import { FULL_CATALOG, normalizeStatus } from "../data/catalog.js";
 import { readMirror, writeMirror, clearMirror } from "./localMirror.js";
 import { collectSummaries } from "./summaryBatches.js";
 
@@ -448,7 +448,7 @@ export async function publishQuoteToCostPlanner(projectId, quote) {
     project: {
       name: quote.projectName,
       gfa: Number(quote.gfa) || 0,
-      status: quote.status || null,
+      status: normalizeStatus(quote.status) || null,
       deadline: quote.planner?.deadline || null,
       priority: quote.planner?.priority || null,
     },

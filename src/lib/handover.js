@@ -232,7 +232,7 @@ export function applyHandover(quote, rates, at) {
 /** The statuses a project is worked in: the live prefill runs on these only
  * (a quote that has gone out, won, lost, missed or on hold never re-prices
  * itself). */
-export const LIVE_HANDOVER_STATUSES = new Set(["Queued", "Measuring", "Estimating", "Completed Estimating", "Quoting"]);
+export const LIVE_HANDOVER_STATUSES = new Set(["Queued", "Taking Off", "Estimating", "Completed Estimating", "Quoting"]);
 /** Whether the live prefill runs on this project right now: not switched off
  * (Undo switches it off), a working status, and — on a finished status — a
  * project completed on or after HANDOVER_SINCE (one Grady worked through by

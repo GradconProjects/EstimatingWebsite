@@ -842,7 +842,7 @@
         <label for="settings-status">New project status</label>
         <select id="settings-status">
           <option value="Queued">Queued (default)</option>
-          <option value="Measuring">Measuring</option>
+          <option value="Taking Off">Taking Off</option>
           <option value="Estimating">Estimating</option>
           <option value="Completed Estimating">Completed Estimating</option>
           <option value="Quoting">Quoting</option>
@@ -1614,7 +1614,7 @@
   // Open work only (Grady, 10 Oct 2026: "completed and deadline missed should
   // not be here"): Completed Estimating, Deadline Missed and every other closed
   // status leave the welcome panel — Coming up, the cards and the facts alike.
-  var OPEN_WORK = { 'Queued':1, 'Measuring':1, 'Estimating':1, 'Quoting':1 };
+  var OPEN_WORK = { 'Queued':1, 'Taking Off':1, 'Estimating':1, 'Quoting':1 };
   // Grady works on Quotes only (10 Oct 2026): his welcome never lists Estimates
   // takeoffs; the projects@ account sees both.
   var QUOTES_ONLY_USERS = { 'grady@gradcon.com.au': 1 };
@@ -1706,7 +1706,7 @@
     function(f){ return f.dueToday.length > 1 ? f.dueToday.length + ' quotes due today. Big day — let\'s land every one of them.' : null; },
     function(f){ return f.dueWeek.length ? f.dueWeek.length + ' due this week: ' + f.dueWeek.slice(0,3).join(', ') + '. Let\'s get them out the door.' : null; },
     function(f){ return f.nEstimating ? f.nEstimating + ' quote' + (f.nEstimating===1?'':'s') + ' in estimating and the catalog is warmed up. Pick one and make it sing.' : null; },
-    function(f){ return f.nMeasuring ? f.nMeasuring + ' job' + (f.nMeasuring===1?'':'s') + ' on the drawings being measured. Every metre counted now is a dollar found later.' : null; },
+    function(f){ return f.nTakingOff ? f.nTakingOff + ' job' + (f.nTakingOff===1?'':'s') + ' being taken off the drawings. Every metre counted now is a dollar found later.' : null; },
     function(f){ return f.nQueued ? f.nQueued + ' job' + (f.nQueued===1?'':'s') + ' queued and waiting for your eye. First measure wins.' : null; },
     function(f){ return f.recent ? 'You left ' + f.recent.name + ' ' + f.recent.when + '. It is right where you left it — jump back in.' : null; },
     function(f){ return f.recent && f.recent.elements ? f.recent.name + ' is ' + f.recent.elements + ' element' + (f.recent.elements===1?'':'s') + ' strong. Keep building.' : null; },
@@ -1795,7 +1795,7 @@
       day: now.toLocaleDateString('en-AU', { weekday:'long' }),
       dueToday: dueToday, dueWeek: dueWeek,
       nEstimating: quotes.filter(function(q){ return q.status === 'Estimating'; }).length,
-      nMeasuring: quotes.filter(function(q){ return q.status === 'Measuring'; }).length,
+      nTakingOff: quotes.filter(function(q){ return q.status === 'Taking Off'; }).length,
       nQueued: quotes.filter(function(q){ return q.status === 'Queued'; }).length,
       recent: recent ? { name: recent.name, when: whenLabel(recent.updatedAt, now), elements: recent.elements } : null
     };

@@ -1005,17 +1005,20 @@ export const SECTION_ORDER = [...new Set(ELEMENT_TYPES.map((t) => t.section))];
  * quote that predates this field (see Dashboard.jsx) — never rendered as
  * blank/unknown.
  */
-// "Measuring" splits the old Estimating step in two (Grady, 26 Oct 2026: "i
-// want to split the status estimating to measuring and estimating"): the
-// take-off from the drawings first, then the pricing. Both are OPEN work —
-// the dashboard's opening tile, the live crew prefill and the Rates Library
-// prompts treat them alike; neither pins rates. A project saved as
-// "Estimating" before this keeps that status.
-export const QUOTE_STATUSES = ["Queued", "Measuring", "Estimating", "Completed Estimating", "Quoting", "Submitted", "Tendered", "Successful", "Unsuccessful", "Deadline Missed", "On Hold"];
+// "Taking Off" splits the old Estimating step in two (Grady, 26 Oct 2026: "i
+// want to split the status estimating to measuring and estimating"; 27 Oct
+// 2026: "i want to change measuring to taking off"): the take-off from the
+// drawings first, then the pricing. Both are OPEN work — the dashboard's
+// opening tile, the live crew prefill and the Rates Library prompts treat
+// them alike; neither pins rates. A project saved as "Estimating" before this
+// keeps that status. The status was called "Measuring" for one day:
+// `normalizeStatus` reads that stored value as "Taking Off" and App.jsx
+// rewrites it on the quote the first time it is opened.
+export const QUOTE_STATUSES = ["Queued", "Taking Off", "Estimating", "Completed Estimating", "Quoting", "Submitted", "Tendered", "Successful", "Unsuccessful", "Deadline Missed", "On Hold"];
 export const QUOTE_STATUS_STYLES = {
   Queued: { bar: "bg-violet-400", dot: "bg-violet-400", text: "text-violet-600", bg: "bg-violet-50" },
-  // Measuring the drawings — orange, between Queued (violet) and Estimating (red).
-  Measuring: { bar: "bg-orange-500", dot: "bg-orange-500", text: "text-orange-700", bg: "bg-orange-50" },
+  // Taking off the drawings — orange, between Queued (violet) and Estimating (red).
+  "Taking Off": { bar: "bg-orange-500", dot: "bg-orange-500", text: "text-orange-700", bg: "bg-orange-50" },
   Estimating: { bar: "bg-red-500", dot: "bg-red-500", text: "text-red-600", bg: "bg-red-50" },
   // Estimate finished, quote not yet drafted — sits between Estimating (red) and Quoting (blue).
   "Completed Estimating": { bar: "bg-teal-500", dot: "bg-teal-500", text: "text-teal-700", bg: "bg-teal-50" },
@@ -1032,6 +1035,11 @@ export const QUOTE_STATUS_STYLES = {
   "Deadline Missed": { bar: "bg-rose-700", dot: "bg-rose-700", text: "text-rose-800", bg: "bg-rose-50" },
   "On Hold": { bar: "bg-neutral-300", dot: "bg-neutral-300", text: "text-neutral-500", bg: "bg-neutral-100" },
 };
+/** A status name this app no longer uses, read as the one it uses now. The
+ * ONE alias table: "Measuring" (26 Oct 2026) became "Taking Off" the next day. */
+export const LEGACY_STATUS_NAMES = { Measuring: "Taking Off" };
+/** The status to show and test for, whatever the quote row holds. */
+export const normalizeStatus = (status) => (status && LEGACY_STATUS_NAMES[status]) || status;
 
 /* ---------- Planner priority (Planner tab — see components/PlannerView.jsx) ---------- */
 export const PLANNER_PRIORITIES = ["Urgent", "High", "Medium", "Low"];

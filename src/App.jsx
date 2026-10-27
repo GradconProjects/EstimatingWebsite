@@ -3,7 +3,7 @@ import { Settings2, ArrowLeft, Printer, ListPlus, FileSpreadsheet, LayoutDashboa
 import { saveVersion, downloadQuoteFile, parseQuoteFile } from "./lib/quoteVersions.js";
 import { quoteStorageKey } from "./lib/projects.js";
 import VersionsModal from "./components/VersionsModal.jsx";
-import { ELEMENT_TYPES, QUOTE_STATUSES, QUOTE_STATUS_STYLES, QUOTE_SCOPES } from "./data/catalog.js";
+import { ELEMENT_TYPES, QUOTE_STATUSES, QUOTE_STATUS_STYLES, QUOTE_SCOPES, normalizeStatus } from "./data/catalog.js";
 import { defaultRates, newElementItem, computeGrandTotal, uid, money, rateKey, isManualQuoteKey, SCOPE_KEYS, scopeLabel } from "./lib/costing.js";
 import { pendingRateUpdates, readLibraryState, readLastSynced, writeLastSynced, RATES_LIBRARY_KEY } from "./lib/ratesLibrarySync.js";
 import { effectiveRates, statusChangePatch, needsFreeze, freezeRates, frozenRateDrift, hasFrozenRates, isRatesLocked } from "./lib/rateFreeze.js";
@@ -591,6 +591,14 @@ function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, rate
   // A project finished before pins existed gets its pin the first time it is
   // opened — once its row AND the live rates have both settled, so the copy
   // is the reconciled figure set, never the cache-first placeholder.
+  // A status name the app has since renamed ("Measuring" → "Taking Off",
+  // 27 Oct 2026) is rewritten on the quote once it has loaded, so every
+  // status test (open work, live prefill, rates pin) reads the current name.
+  useEffect(() => {
+    if (quoteStatus === "loading") return;
+    if (quote.status && normalizeStatus(quote.status) !== quote.status) setQuote((q) => (normalizeStatus(q.status) !== q.status ? { ...q, status: normalizeStatus(q.status) } : q));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quoteStatus, quote.status]);
   useEffect(() => {
     if (quoteStatus === "loading" || ratesStatus === "loading" || ratesStatus === "syncing") return;
     if (needsFreeze(quote)) setQuote((q) => (needsFreeze(q) ? { ...q, ratesFrozen: freezeRates(effectiveRates(q, liveRates), q.status) } : q));
@@ -1076,10 +1084,10 @@ function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, rate
           />
           <span>Status:</span>
           <select
-            value={quote.status || QUOTE_STATUSES[0]}
+            value={normalizeStatus(quote.status) || QUOTE_STATUSES[0]}
             onChange={(e) => { const status = e.target.value; setQuote((q) => ({ ...q, ...statusChangePatch(q, status, liveRates) })); }}
             title="Completed Estimating and every status after it pin this project's rates: the Rates Library stops changing its figures until it is re-priced or moved back to an open status"
-            className={`border border-neutral-200 rounded px-2 py-1 text-xs font-semibold ${QUOTE_STATUS_STYLES[quote.status || QUOTE_STATUSES[0]].text} ${QUOTE_STATUS_STYLES[quote.status || QUOTE_STATUSES[0]].bg}`}
+            className={`border border-neutral-200 rounded px-2 py-1 text-xs font-semibold ${QUOTE_STATUS_STYLES[normalizeStatus(quote.status) || QUOTE_STATUSES[0]].text} ${QUOTE_STATUS_STYLES[normalizeStatus(quote.status) || QUOTE_STATUSES[0]].bg}`}
           >
             {QUOTE_STATUSES.map((s) => (
               <option key={s} value={s}>{s}</option>
