@@ -394,6 +394,10 @@
   .upcoming-row .due{ font-size:12px; font-weight:700; white-space:nowrap; padding:3px 9px; border-radius:999px; background:#eef1f6; color:var(--muted); }
   .upcoming-row .due.hot{ background:#fde8e8; color:#9b1c1c; }
   .upcoming-row .due.warm{ background:#fff3d6; color:#8a5a00; }
+  .welcome-inbox .eyebrow::before{ background:#0ea5e9; }
+  .inbox-row .name small{ font-weight:500; color:var(--muted); }
+  #welcome-inbox-foot button{ margin-left:10px; font:inherit; font-size:12px; padding:3px 10px; border:1px solid var(--line); border-radius:999px; background:#fff; cursor:pointer; }
+  #welcome-inbox-foot button:hover{ border-color:var(--accent); }
   .upcoming-empty{ font-size:13px; color:var(--muted); }
   .upcoming-last{ margin-top:10px; font-size:13px; color:var(--muted); text-align:center; }
   .upcoming-last b{ color:var(--text); font-weight:700; }
@@ -514,6 +518,12 @@
     <div class="eyebrow">Coming up</div>
     <div class="upcoming-list" id="welcome-upcoming-list"></div>
     <div class="upcoming-last" id="welcome-last"></div>
+  </div>
+
+  <div class="welcome-upcoming welcome-inbox" id="welcome-inbox" hidden data-testid="welcome-inbox">
+    <div class="eyebrow">New from the inbox</div>
+    <div class="upcoming-list" id="welcome-inbox-list"></div>
+    <div class="upcoming-last" id="welcome-inbox-foot"></div>
   </div>
 
   <div class="welcome-recent" id="welcome-recent" hidden>
@@ -783,6 +793,8 @@
     <div id="settings-google" class="field"><span class="ai-result">Checking…</span></div>
     <p class="sub" style="margin-top:4px;">The same connection reads the office's <b>project files folder in Google Drive</b> (read-only) so every project's files are in the app — the Files button on a quote, "From Drive" on element cards and in the AI Engine. A mailbox connected before Drive was added needs one reconnect to grant it.</p>
     <div id="settings-drive" class="field"><span class="ai-result">Checking…</span></div>
+    <p class="sub" style="margin-top:8px;"><b>Tender inbox scan</b> — once a day (7 am Melbourne) the app reads this mailbox for requests for tender or quote and makes each one a <b>Queued</b> project in Quotes: name and client from the email, deadline from the email or 14 days from receipt, the email's drawings and documents copied under the project's Files. The same email, thread or address never makes a second project. A tender sent to grady@ is picked up when it is forwarded or copied to projects@ (the original sender becomes the client). Read-only — nothing is labelled, moved or sent.</p>
+    <div id="settings-inbox" class="field"><span class="ai-result">Checking…</span></div>
 
     <div class="settings-section">Quotes — pricing</div>
     <div class="settings-grid">
@@ -1806,7 +1818,7 @@
     document.getElementById('welcome-eyebrow').textContent = now.toLocaleDateString('en-AU', { weekday:'long', day:'numeric', month:'long' });
     document.getElementById('welcome-greeting').textContent = timeOfDay(now) + ', ' + firstName(currentUser) + '.';
     WELCOME_FACTS = facts; paintWelcomeLine(now); scheduleWelcomeRotation();
-    window.gradconWelcome = { excitedLine: excitedLine, paintWelcomeLine: paintWelcomeLine, facts: function(){ return WELCOME_FACTS; }, paintIndustryNews: paintIndustryNews, renderIndustryNews: renderIndustryNews }; // test seam
+    window.gradconWelcome = { excitedLine: excitedLine, paintWelcomeLine: paintWelcomeLine, facts: function(){ return WELCOME_FACTS; }, paintIndustryNews: paintIndustryNews, renderIndustryNews: renderIndustryNews, paintInboxBand: paintInboxBand }; // test seam
     var recent = items.filter(function(i){ return i.name && i.updatedAt && (i.kind !== 'quote' || OPEN_WORK[i.status]); }).sort(function(a,b){ return a.updatedAt < b.updatedAt ? 1 : -1; }).slice(0, 6);
     // Coming up: every open quote that is overdue, due today or due within 7 days, soonest first
     var upcoming = items.filter(function(i){ return i.kind === 'quote' && OPEN_WORK[i.status] && i.deadline; })
@@ -1906,11 +1918,67 @@
   }
   document.getElementById('welcome-weather').addEventListener('click', function(){ document.getElementById('settings-btn').click(); });
   window.addEventListener('gradcon:storage-changed', paintStorageBadge);
+  // ===================== NEW FROM THE INBOX =====================
+  // The daily tender-inbox scan (api/tender-inbox.js; Grady, 28 Oct 2026:
+  // "notify each time one logs in with the details of the created project"):
+  // every project the scan created since THIS account last dismissed the band
+  // on this device, with its client, deadline, sender and received time.
+  var INBOX_SEEN_PREFIX = 'gradcon-inbox-seen:';
+  function inboxSeenKey(){ return INBOX_SEEN_PREFIX + String(currentUser || '').split('@')[0].toLowerCase(); }
+  function inboxSeen(){ try{ return localStorage.getItem(inboxSeenKey()) || ''; }catch(err){ return ''; } }
+  function dismissInbox(){ try{ localStorage.setItem(inboxSeenKey(), new Date().toISOString()); }catch(err){} var host = document.getElementById('welcome-inbox'); if(host) host.hidden = true; }
+  var INBOX_RECORD = null;
+  function paintInboxBand(record){
+    var host = document.getElementById('welcome-inbox'); if(!host) return;
+    if(record){ INBOX_RECORD = record; }
+    if(!INBOX_RECORD){
+      fetch('/api/tender-inbox', { headers:{ accept:'application/json' } }).then(function(r){ return r.ok ? r.json() : null; }).then(function(d){ if(d && d.record) paintInboxBand(d.record); }).catch(function(){});
+      return;
+    }
+    var rec = INBOX_RECORD; var seen = inboxSeen(); var now = new Date();
+    var fresh = (rec.created || []).filter(function(c){ return c && (!seen || String(c.at) > seen); });
+    if(!fresh.length){ host.hidden = true; return; }
+    host.hidden = false;
+    document.getElementById('welcome-inbox-list').innerHTML = fresh.map(function(c){
+      var due = c.deadline ? dueLabel(c.deadline, now) : null;
+      return '<button type="button" class="upcoming-row inbox-row" data-kind="quote" data-id="' + escapeHtml(c.projectId) + '" title="Open ' + escapeHtml(c.name || 'project') + '">' +
+        '<span class="name">' + escapeHtml(c.name || 'Untitled project') + (c.client ? ' <small>· ' + escapeHtml(c.client) + '</small>' : '') + '</span>' +
+        '<span class="status">from ' + escapeHtml(String(c.from || '').replace(/<[^>]*>/, '').trim() || c.from || '') + (c.via ? ' via ' + escapeHtml(c.via.split('@')[0]) : '') + ' · ' + escapeHtml(whenLabel(c.receivedAt || c.at, now)) + (c.attachments ? ' · ' + c.attachments + ' file' + (c.attachments===1?'':'s') : '') + '</span>' +
+        (due ? '<span class="due ' + due.cls + '" title="' + (c.deadlineSource === 'default' ? 'No closing date in the email — set 14 days from receipt' : 'Closing date from the email') + '">' + escapeHtml(due.text) + (c.deadlineSource === 'default' ? ' *' : '') + '</span>' : '') + '</button>';
+    }).join('');
+    document.getElementById('welcome-inbox-foot').innerHTML = fresh.length + ' project' + (fresh.length===1?'':'s') + ' created from the inbox' + (rec.lastScanAt ? ' · last scan ' + escapeHtml(whenLabel(rec.lastScanAt, now)) : '') + ' · * deadline set to 14 days (none stated) <button type="button" id="welcome-inbox-dismiss" data-testid="welcome-inbox-dismiss">Dismiss</button>';
+  }
+  document.getElementById('welcome-inbox').addEventListener('click', function(e){ if(e.target.closest('#welcome-inbox-dismiss')){ dismissInbox(); return; } openFromWelcome(e); });
+  // Settings → the scan's status and "Scan now"
+  function loadInboxScan(){
+    var host = document.getElementById('settings-inbox'); if(!host) return;
+    host.innerHTML = '<span class="ai-result">Checking…</span>';
+    fetch('/api/tender-inbox', { headers:{ accept:'application/json' } }).then(function(r){ return r.ok ? r.json() : Promise.reject(new Error(String(r.status))); }).then(function(d){ paintInboxScan(d); }).catch(function(){ host.innerHTML = '<span class="ai-result">Not available in this build — the scan runs on the Vercel deployment (api/tender-inbox).</span>'; });
+  }
+  function paintInboxScan(d){
+    var host = document.getElementById('settings-inbox'); if(!host) return;
+    var rec = (d && d.record) || {}; var now = new Date(); var last = rec.lastResult || null;
+    INBOX_RECORD = d && d.record ? d.record : INBOX_RECORD;
+    var line = rec.lastScanAt ? 'Last scan ' + whenLabel(rec.lastScanAt, now) + (rec.lastScanBy ? ' (' + escapeHtml(rec.lastScanBy) + ')' : '') + (last ? ' — ' + last.scanned + ' emails read, ' + last.created + ' project' + (last.created===1?'':'s') + ' created, ' + last.duplicates + ' duplicate' + (last.duplicates===1?'':'s') + ' skipped' : '') : 'Not scanned yet — the first scan reads the last 14 days.';
+    var errs = (rec.errors || []).slice(0, 5).map(function(e){ return '<div class="ai-result" style="color:#9b1c1c">' + escapeHtml(e) + '</div>'; }).join('');
+    var created = (rec.created || []).slice(0, 8).map(function(c){ return '<div class="ai-result">' + escapeHtml(whenLabel(c.at, now)) + ' — <b>' + escapeHtml(c.name) + '</b>' + (c.client ? ' · ' + escapeHtml(c.client) : '') + ' · due ' + escapeHtml(c.deadline || '—') + (c.deadlineSource === 'default' ? ' (14 days, none stated)' : '') + '</div>'; }).join('');
+    host.innerHTML = '<div class="ai-row"><div class="name">Daily at 7 am<small>' + line + '</small></div><button type="button" id="inbox-scan-now" data-testid="inbox-scan-now"' + (d && d.configured === false ? ' disabled' : '') + '>Scan now</button><span class="ai-result" id="inbox-scan-result"></span></div>' + errs + (created ? '<div style="margin-top:6px">' + created + '</div>' : '');
+  }
+  document.getElementById('settings-inbox').addEventListener('click', function(e){
+    var b = e.target.closest('#inbox-scan-now'); if(!b) return;
+    b.disabled = true; var out = document.getElementById('inbox-scan-result'); if(out) out.textContent = 'Scanning the mailbox…';
+    fetch('/api/tender-inbox', { method:'POST', headers:{ 'content-type':'application/json', accept:'application/json' }, body: JSON.stringify({ action:'scan', by: String(currentUser || 'manual').split('@')[0] }) })
+      .then(function(r){ return r.json().then(function(d){ return { ok:r.ok, d:d }; }); })
+      .then(function(x){ if(!x.ok){ if(out) out.textContent = (x.d && x.d.error) || 'The scan failed.'; b.disabled = false; return; } paintInboxScan({ record: x.d.record, configured: true }); paintInboxBand(x.d.record); var o2 = document.getElementById('inbox-scan-result'); if(o2) o2.textContent = 'Done — ' + (x.d.summary ? x.d.summary.created + ' created, ' + x.d.summary.duplicates + ' duplicates, ' + x.d.summary.scanned + ' read' : 'scanned'); })
+      .catch(function(){ if(out) out.textContent = 'The scan could not be reached.'; b.disabled = false; });
+  });
+
   function renderWelcome(){
     var run = ++welcomeRun; var now = new Date();
     paintStorageBadge();
     paintWeather();
     paintIndustryNews(false);
+    paintInboxBand();
     var takeoffs = seesTakeoffs(currentUser);
     var items = takeoffs ? localQuotes().concat(localTakeoffs()) : localQuotes();
     paintWelcome(items, now);
@@ -1997,6 +2065,7 @@
   });
   function loadGoogleMail(){
     loadGoogleDrive();
+    loadInboxScan();
     var host = document.getElementById('settings-google');
     host.innerHTML = '<span class="ai-result">Checking…</span>';
     fetch('/api/google-auth?action=status', { headers:{ accept:'application/json' } }).then(function(r){ return r.ok ? r.json() : Promise.reject(new Error(String(r.status))); }).then(function(d){

@@ -39,6 +39,9 @@ export function setProjectDriveFolderPatch(quote, folder, at = new Date().toISOS
 }
 export const projectFiles = (quote) => (quote && Array.isArray(quote.files) ? quote.files : []);
 export const driveFiles = (quote) => projectFiles(quote).filter((f) => f && f.provider === "drive");
+/** The files the tender-inbox scan copied from the email (provider "mail", public bucket URLs) — src/lib/tenderInbox.js. */
+export { mailFiles } from "./tenderInbox.js";
+export const allProjectFiles = (quote) => projectFiles(quote).filter((f) => f && (f.provider === "drive" || f.provider === "mail"));
 export const isAttached = (quote, fileId) => driveFiles(quote).some((f) => f.fileId === fileId);
 /** Attach a Drive file as a link (idempotent by Drive id). */
 export function attachFilePatch(quote, file, at = new Date().toISOString()) {

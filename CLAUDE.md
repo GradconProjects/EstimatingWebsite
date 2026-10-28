@@ -1552,6 +1552,118 @@ two separate sends with attachments, the record, the checklist tick, the
 Register's last contact and the Register's direct email; `verify.mjs` covers
 the library, the MIME, the scope, the 409 and the refusals.
 
+## The tender inbox: a daily scan that makes projects from requests for quote
+
+Grady, 28 Oct 2026: "automatically crawl my inbox and if an email for request
+for tender or quote is observed, create a project in the quotes section with
+a deadline of 2 weeks if none was given in the email and notify each time one
+logs in with the details of the created project … it should only be for
+projects@ and should also pick up tender requests from grady's email. i want
+a daily scheduled scan and yes create the project straight away making sure
+no duplicate projects are present and yes copy email attachments". Rules:
+
+1. **`src/lib/tenderInbox.js` is pure and verify-covered; `api/tender-inbox.js`
+   runs it.** `vercel.json` `crons` fires `GET /api/tender-inbox` daily at
+   20:00 UTC (7 am Melbourne in daylight time); `isCronCall` accepts the
+   `CRON_SECRET` bearer when that variable is set (set it in Vercel — then
+   nothing else can start a scan from outside), else Vercel's `vercel-cron/`
+   user agent. The portal's own origin may `POST {action:"scan"}` ("Scan now"
+   in Settings → Google mail & Drive, `inbox-scan-now`) and `GET` the record
+   (`{record, configured}`). `maxDuration` 300.
+2. **The ONE mailbox is projects@** (`allowedMailbox`, unchanged — no second
+   Google connection). A tender that reached grady@ is caught when it is
+   forwarded or copied to projects@: `forwardedFrom` / `effectiveSender` read
+   the forwarded header block ("From: … / Subject: …" after the "Forwarded
+   message" marker or an "Fwd:" subject) and the ORIGINAL sender becomes the
+   client, `source.via` = grady@. A message from an own domain that is not a
+   forward is never a request ("Gradcon's own message"); "Re: RFQ – …" is a
+   contractor's reply to Gradcon's own RFQ and is skipped. To cover grady@
+   automatically, a Gmail filter in grady@ forwarding tender mail to projects@
+   is the office's setting; the app reads nothing but projects@.
+3. **`classifyMessage(msg)` is the ONE test** of a request: STRONG phrases
+   (RFQ / RFT / ITT / EOI, "request for quote / tender", "invitation to
+   tender", "please provide a quote", "quotation required", "tender closes",
+   "would like you to quote" — 3 each, two counted), WEAK words (tender,
+   quote, drawings attached, concrete scope — 1 each), +1 when the subject
+   carries a strong phrase, +2 for drawing / document attachments, −3 per
+   NOISE phrase (unsubscribe, invoice, remittance, purchase order, "your
+   quote was accepted", "thank you for your quote"), −1 for a reply or an
+   automated sender; a candidate needs a strong hit and a score ≥ 3. The
+   server reads headers since the watermark (first time: 14 days; afterwards
+   an hour before the newest message seen), reads IN FULL only the messages
+   whose subject + snippet already score ≥ 2 and were not handled before (40
+   per run), then `candidateFromMessage`.
+4. **Name, client, deadline, files.** `projectNameFrom`: the site address
+   (`addressIn` — "<number> <Street> <Type>[, <Suburb>[ VIC][ <postcode>]]",
+   the subject's, or the body's fuller spelling of the same street —
+   `streetKey`) with the rest of the cleaned subject after " — ", else the
+   subject stripped of Fwd / Re / RFQ furniture; `orgFromSender` = the
+   company domain's label, else the display name. `extractDeadline`: a date
+   (`datesIn`: d/m/yyyy, "14 November 2026", "Nov 14", "6th November" with
+   the next year, "3/11", ISO, "within 2 weeks") within 90 characters after a
+   closing / due / submit-by / no-later-than word, then a bare "by" / "before"
+   as last resort, on or after receipt and within a year → `source: "email"`;
+   else receipt + `DEFAULT_TENDER_DAYS` = 14 → `"default"`. `tenderQuoteFrom`
+   → a **Queued** project (status, items [], `projectDate` today,
+   `planner.deadline`, `siteAddress`, `source = {kind: "mail", messageId,
+   threadId, from, via, subject, receivedAt, deadlineSource, deadlineText,
+   snippet, reasons}`) with the email's PDF / DWG / DXF / Word / Excel / CSV /
+   ZIP / image attachments (≤ 12, ≤ 25 MB each) copied by `copyAttachments`
+   into the bucket under `quote-files/<projectId>/<name>` as `quote.files[]`
+   entries with `provider: "mail"` (`mailFiles(quote)`; `allProjectFiles`
+   counts them on the Files button; the Files drawer lists them under "From
+   the tender email", `mail-files`).
+5. **No duplicates, ever.** `findDuplicate(cand, existing)` against EVERY
+   project (`existingProjects`: name, client, status and `source` selected
+   from each quote row — never the items): the same message or thread already
+   on a project's `source`, the same street address in any spelling (suburb
+   must agree when both state one), or the same normalised name; also within
+   the batch. A duplicate is recorded, never created. The record row
+   `gradcon-tender-inbox` (`INBOX_ROW_KEY`, `applyScan`) keeps `handled`
+   per message (outcome created / duplicate / skipped / failed, the thread),
+   the `created` list (project, name, client, deadline + source, sender, via,
+   subject, received, files, `at`), the watermark and `lastResult`;
+   `wasHandled` skips a handled message or a thread that already created a
+   project, so a re-scan (or the hour's overlap) can never make a second
+   project. The index is appended through `appendProjectEntry`: a PATCH
+   conditioned on the row's `updated_at`, re-read and retried, never a blind
+   overwrite of another browser's write.
+6. **The AI second opinion refines, the rules decide.** With a provider
+   configured, ONE `callText` per batch (`tenderReviewPrompt`: tender yes /
+   no with confidence, an address-convention name, the client, a STATED
+   closing date only; "never invent an address, a street number, a date or a
+   company"); `parseTenderReview` keeps known ids and valid dates;
+   `applyReview` drops a candidate only on a confident "not a tender", takes
+   the AI's client and an address-form name, and takes its deadline only when
+   the rules found none (`deadlineSource: "ai"`). A provider error is logged
+   and the rule-based candidates stand.
+7. **Everyone is told at sign-in.** The portal dashboard's "New from the
+   inbox" band (`#welcome-inbox`, `paintInboxBand`, painted by
+   `renderWelcome` from `GET /api/tender-inbox`) lists every project the scan
+   created since THIS account last pressed Dismiss on this device
+   (`gradcon-inbox-seen:<account>`, `INBOX_SEEN_PREFIX`): name, client,
+   sender (and "via grady" on a forward), received, file count and the
+   deadline chip (`*` = the 14-day default); a row opens the project
+   (`openFromWelcome`). In the editor the quote shows "Created from the inbox"
+   (`inbox-source`: sender, subject, received, how the deadline was set —
+   `DEADLINE_SOURCE_LABEL` —, attachments, "Open the email"), clearable
+   (`NOTICE_IDS.inbox`, signature = the message id); the Dashboard row carries
+   an "✉ inbox" chip (`dashboard-inbox`, the sender on hover). Settings →
+   Google mail & Drive → "Tender inbox scan" (`settings-inbox`) shows the last
+   scan's counts, errors and created projects and the "Scan now" button.
+8. **Read-only on Google.** Nothing is labelled, moved, replied to or sent;
+   the attachment copies are the app's own (the same bucket as a mail
+   attachment the AI Engine reads). A project the scan got wrong is deleted
+   like any other; its message stays `handled`, so it is not recreated.
+`verify.mjs` covers the classifier (requests, forwards, Gradcon's own RFQ,
+the reply, a newsletter, an invoice), the name / client / deadline / files,
+the duplicate test, the quote shape, the record, the AI review, the whole
+scan on a fake mailbox and store (three projects, the files, the conditional
+index append, every outcome, a second scan creating nothing, the review
+dropping one), the cron check and the lost-race append;
+`test-tender-inbox.mjs` proves the band, Settings and Scan now, the editor
+band, the Files drawer, the Dashboard chip and Dismiss across a reload.
+
 ## AI Engine (tile 07) and the Gradcon AI chat
 
 Grady, 10 Oct 2026: "dont touch the existing app. rather create another

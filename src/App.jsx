@@ -24,7 +24,8 @@ import RfqModal from "./components/RfqModal.jsx";
 import { rfqPatch } from "./lib/rfq.js";
 import { recordRegisterContacts } from "./lib/registerStore.js";
 import { checklistPatch } from "./lib/tenderChecklist.js";
-import { driveFiles } from "./lib/driveFiles.js";
+import { driveFiles, allProjectFiles } from "./lib/driveFiles.js";
+import { DEADLINE_SOURCE_LABEL, mailFiles } from "./lib/tenderInbox.js";
 import RateValidityBanner from "./components/RateValidityBanner.jsx";
 import { buildQuoteExcelHtml, quoteExcelFilename, buildQuoteCsv } from "./lib/exportQuote.js";
 import { useStoredState } from "./lib/storage.js";
@@ -1027,7 +1028,7 @@ function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, rate
             title="This project's files in the office's Google Drive folder — browse, search, preview, attach"
             data-testid="drive-files-button"
           >
-            <FolderOpen size={16} /> Files{driveFiles(quote).length > 0 && <span className="text-orange-300">({driveFiles(quote).length})</span>}
+            <FolderOpen size={16} /> Files{allProjectFiles(quote).length > 0 && <span className="text-orange-300">({allProjectFiles(quote).length})</span>}
           </button>
           <button
             onClick={() => {
@@ -1149,6 +1150,29 @@ function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, rate
       <div className="print:hidden max-w-[1900px] mx-auto px-4 pb-16 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_380px] gap-4 items-start">
         <div className="space-y-3">
           <RateValidityBanner rates={liveRates} cleared={clearedNotices} onClear={clearNoticeOn} />
+          {quote.source && quote.source.kind === "mail" && !isNoticeCleared(clearedNotices, NOTICE_IDS.inbox, quote.source.messageId) && (() => {
+            // Created by the daily inbox scan (api/tender-inbox.js; Grady, 28 Oct 2026): say
+            // who asked, when, how the deadline was set and where the email's files are.
+            const src = quote.source; const n = mailFiles(quote).length;
+            const when = src.receivedAt ? new Date(src.receivedAt).toLocaleString("en-AU", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : "";
+            return (
+              <div className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-[12px] text-sky-950 flex items-start gap-2" data-testid="inbox-source">
+                <div className="flex-1 min-w-0">
+                  <span className="font-semibold">Created from the inbox</span>
+                  {" — "}<span>{src.from}{src.via ? ` (forwarded by ${src.via})` : ""}{when ? `, ${when}` : ""}</span>
+                  {src.subject && <span className="text-sky-800">{" · "}“{src.subject}”</span>}
+                  <div className="text-[11.5px] text-sky-900 mt-0.5">
+                    Deadline {quote.planner && quote.planner.deadline ? new Date(`${quote.planner.deadline}T00:00:00`).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" }) : "—"}
+                    {" — "}{DEADLINE_SOURCE_LABEL[src.deadlineSource] || src.deadlineSource}{src.deadlineText ? ` (“${src.deadlineText}”)` : ""}.
+                    {" "}{n > 0 ? `${n} attachment${n === 1 ? "" : "s"} copied from the email — under Files.` : "The email carried no drawings or documents."}
+                    {" "}Check the name, client and deadline before pricing.
+                    {src.messageId && <>{" "}<a className="underline" href={`https://mail.google.com/mail/u/0/#all/${encodeURIComponent(src.messageId)}`} target="_blank" rel="noopener">Open the email</a></>}
+                  </div>
+                </div>
+                <ClearNoticeButton onClick={() => clearNoticeOn(NOTICE_IDS.inbox, src.messageId)} />
+              </div>
+            );
+          })()}
           <TenderChecklist
             quote={quote}
             open={checklistOpen}

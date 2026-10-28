@@ -1,5 +1,11 @@
 {
+  "crons": [
+    { "path": "/api/tender-inbox", "schedule": "0 20 * * *" }
+  ],
   "functions": {
+    "api/tender-inbox.js": {
+      "maxDuration": 300
+    },
     "api/ai-engine.js": {
       "maxDuration": 300
     },

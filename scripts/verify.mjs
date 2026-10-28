@@ -3220,6 +3220,120 @@ check("Project Geometry carries a COUNT: $/no. leads the benchmark rates, sums a
       && at.status === 200 && /ai-engine\/mail\/m1\/S-01\.pdf$/.test(at.body.file.url) && at.body.file.size === 10 && calls.some((c) => /storage\/v1\/object\/gradcon-files\/ai-engine\/mail\/m1\/S-01\.pdf/.test(c))
       && notPdf.status === 400 && calls.filter((c) => /oauth2\.googleapis\.com\/token/.test(c)).length === 1);
   });
+
+  // ---- the tender inbox scan (src/lib/tenderInbox.js + api/tender-inbox.js; Grady, 28 Oct 2026)
+  {
+    const T = await import("../src/lib/tenderInbox.js");
+    const TI = await import("../api/tender-inbox.js");
+    const now = new Date("2026-10-28T03:00:00Z");
+    const rfq = { id: "m1", threadId: "t1", from: "Fred Nguyen <fred@buildco.com.au>", subject: "Request for Quote – 12 Beach Road, Rye – Concrete works", date: "2026-10-27T22:10:00Z", body: "Please find attached the tender documents for 12 Beach Road, Rye VIC 3941. Quotes are due by COB Friday 14 November 2026.", attachments: [{ attachmentId: "a1", filename: "S-01 Structural.pdf", mimeType: "application/pdf", size: 1200 }, { attachmentId: "a2", filename: "A101 Floor plan.dwg", size: 500 }, { attachmentId: "a3", filename: "logo.gif", size: 10 }] };
+    const fwd = { id: "m2", threadId: "t2", from: "Grady <grady@gradcon.com.au>", subject: "Fwd: Invitation to tender - Myer Shed, Dandenong", date: "2026-10-27T01:00:00Z", body: "FYI\n\n---------- Forwarded message ---------\nFrom: Sam Lee <sam@hansenyuncken.com.au>\nDate: Mon, 27 Oct 2026\nSubject: Invitation to tender - Myer Shed, Dandenong\nTo: grady@gradcon.com.au\n\nGradcon is invited to tender for the concrete package at 45 Frankston Dandenong Road, Dandenong South. Tender closes 2pm 10/11/2026.", attachments: [] };
+    const ownRfq = { id: "m3", threadId: "t3", from: "projects@gradcon.com.au", subject: "RFQ – Screw Piling – 19 Paringa Road, Portsea VIC 3944", date: "2026-10-27T01:00:00Z", body: "Dear Trevor, Gradcon invites DMAC to quote", attachments: [] };
+    const reply = { id: "m4", threadId: "t4", from: "Trevor <trevor@dmacpiling.com.au>", subject: "Re: RFQ – Screw Piling – 19 Paringa Road", date: "2026-10-27T01:00:00Z", body: "Please find our quote attached", attachments: [{ attachmentId: "q", filename: "Quote.pdf" }] };
+    const news = { id: "m5", threadId: "t5", from: "news@holcim.com.au", subject: "October newsletter: new quote tool", date: "2026-10-27T01:00:00Z", body: "Unsubscribe here. Request a quote online today!", attachments: [] };
+    const plain = { id: "m6", threadId: "t6", from: "Jo <jo@archfirm.com>", subject: "Pricing please - new carport slab", date: "2026-10-27T01:00:00Z", body: "Could you provide a quote for a 100mm slab at 7 Ocean St, Sorrento. No rush.", attachments: [] };
+    const invoice = { id: "m7", threadId: "t7", from: "accounts@supplier.com.au", subject: "Tax invoice 4471 — quote 88 accepted", date: "2026-10-27T01:00:00Z", body: "Please find attached your tax invoice for the quote accepted last week.", attachments: [{ attachmentId: "i", filename: "invoice.pdf" }] };
+    check("Tender inbox: a request for quote with drawings, a forwarded invitation and a plain 'could you provide a quote' are candidates; Gradcon's own RFQ, a contractor's reply to it, a newsletter and an invoice are not", () => {
+      assertTrue(T.classifyMessage(rfq).candidate && T.classifyMessage(fwd).candidate && T.classifyMessage(plain).candidate);
+      assertTrue(T.classifyMessage(ownRfq).excluded === "Gradcon's own message" && T.classifyMessage(reply).excluded === "a reply to Gradcon's own RFQ" && !T.classifyMessage(news).candidate && !T.classifyMessage(invoice).candidate);
+    });
+    const c1 = T.candidateFromMessage(rfq, { now }), c2 = T.candidateFromMessage(fwd, { now }), c6 = T.candidateFromMessage(plain, { now });
+    check("Tender inbox: the project is named by the site address (the body's fuller form), the client is the sender's organisation, the closing date is read from 'due by COB Friday 14 November 2026', only drawing / document attachments are kept", () =>
+      assertTrue(c1.projectName === "12 Beach Road, Rye VIC 3941 — Concrete works" && c1.client === "Buildco" && c1.deadline === "2026-11-14" && c1.deadlineSource === "email" && /due by COB/.test(c1.deadlineText) && c1.attachments.length === 2 && c1.attachments[1].kind === "cad" && c1.siteAddress === "12 Beach Road, Rye VIC 3941"));
+    check("Tender inbox: a tender forwarded from grady@ reads the ORIGINAL sender as the client (via grady@), its address from the forwarded body and 'closes 2pm 10/11/2026' as the deadline", () =>
+      assertTrue(c2.from === "Sam Lee <sam@hansenyuncken.com.au>" && c2.via === "grady@gradcon.com.au" && c2.forwarded && c2.client === "Hansenyuncken" && /^45 Frankston Dandenong Road, Dandenong South/.test(c2.projectName) && c2.deadline === "2026-11-10"));
+    check("Tender inbox: no closing date in the email → 14 days from receipt, marked default; 'by 3/11' and 'within 2 weeks' near a due word are read; a stale date is ignored", () => {
+      assertTrue(c6.deadline === "2026-11-10" && c6.deadlineSource === "default");
+      assertTrue(T.extractDeadline("send your price through by 3/11 please", "2026-10-28").date === "2026-11-03");
+      assertTrue(T.extractDeadline("quotes to be submitted within 2 weeks", "2026-10-28").date === "2026-11-11" && T.extractDeadline("quotes to be submitted within 2 weeks", "2026-10-28").source === "email");
+      assertTrue(T.extractDeadline("Tender closes at 2:00pm on Thursday 6th November", "2026-10-28").date === "2026-11-06");
+      assertTrue(T.extractDeadline("ref 01/02/2020 — tender closes 01/02/2020", "2026-10-28").source === "default");
+    });
+    check("Tender inbox: the duplicate test catches the same thread, the same street address in another spelling and the same name — and nothing else", () => {
+      assertTrue(T.findDuplicate(c1, [{ name: "12 Beach Rd, Rye — carport", source: null }]).why === "a project at the same address exists");
+      assertTrue(T.findDuplicate(c1, [{ name: "Other", source: { kind: "mail", threadId: "t1" } }]).why === "the same email thread already made this project");
+      assertTrue(T.findDuplicate({ projectName: "Myer Shed - Dandenong", siteAddress: "", messageId: "x", threadId: "y" }, [{ name: "Myer shed Dandenong", source: null }]).why === "a project with the same name exists");
+      assertTrue(T.findDuplicate(c1, [{ name: "12 Beach Road, Mentone VIC 3194", source: null }]) === null && T.findDuplicate(c1, [{ name: "14 Beach Road, Rye", source: null }]) === null);
+    });
+    check("Tender inbox: the quote a candidate becomes is Queued, dated today, deadline on the planner, source on the quote (message, thread, sender, how the deadline was set) and the copied files under provider 'mail'", () => {
+      const q = T.tenderQuoteFrom(c1, { today: "2026-10-28", files: [{ name: "S-01 Structural.pdf", kind: "pdf", mimeType: "application/pdf", size: 1200, url: "https://x/quote-files/p1/S-01_Structural.pdf", path: "quote-files/p1/S-01_Structural.pdf", attachmentId: "a1" }] });
+      assertTrue(q.status === "Queued" && q.projectDate === "2026-10-28" && q.planner.deadline === "2026-11-14" && q.items.length === 0 && q.clientName === "Buildco" && q.source.kind === "mail" && q.source.messageId === "m1" && q.source.threadId === "t1" && q.source.deadlineSource === "email" && q.files.length === 1 && q.files[0].provider === "mail" && T.mailFiles(q).length === 1 && q.siteAddress === "12 Beach Road, Rye VIC 3941");
+    });
+    check("Tender inbox: the scan record — the first query looks back 14 days, a later one from the watermark less an hour; applyScan keeps handled messages, the created list and the watermark; wasHandled covers a created thread; newSince filters by the dismissal stamp", () => {
+      assertTrue(/^after:\d+ -in:spam -in:trash -in:sent -in:drafts/.test(T.scanQuery(T.emptyRecord(), now)) && Number(T.scanQuery(T.emptyRecord(), now).split(" ")[0].slice(6)) === Math.floor((now.getTime() - 14 * 86400000) / 1000));
+      const r1 = T.applyScan(T.emptyRecord(), { at: "2026-10-28T03:00:00Z", seenMaxMs: Date.parse("2026-10-27T22:10:00Z"), created: [{ projectId: "p1", name: "A", messageId: "m1", threadId: "t1" }], handled: [{ messageId: "m1", threadId: "t1", outcome: "created", projectId: "p1" }, { messageId: "m5", outcome: "skipped", reason: "newsletter" }], summary: { scanned: 5, created: 1 } });
+      assertTrue(r1.watermarkMs === Date.parse("2026-10-27T22:10:00Z") && r1.created.length === 1 && r1.created[0].at === "2026-10-28T03:00:00Z" && r1.handled.m1.outcome === "created" && r1.lastResult.scanned === 5);
+      assertTrue(Number(T.scanQuery(r1, now).split(" ")[0].slice(6)) === Math.floor((r1.watermarkMs - 3600000) / 1000));
+      assertTrue(T.wasHandled(r1, { id: "m1" }) && T.wasHandled(r1, { id: "m9", threadId: "t1" }) && !T.wasHandled(r1, { id: "m9", threadId: "t9" }));
+      assertTrue(T.newSince(r1, "2026-10-28T02:00:00Z").length === 1 && T.newSince(r1, "2026-10-28T04:00:00Z").length === 0 && T.newSince(r1, "").length === 1);
+    });
+    check("Tender inbox: the AI review prompt forbids inventing an address or a date; parseTenderReview keeps known ids and valid dates only; applyReview drops a confident 'not a tender', refines a client and fills a default deadline, never overrides a stated one", () => {
+      const prompt = T.tenderReviewPrompt([c1, c6], { today: "2026-10-28" });
+      assertTrue(/Never invent an address/.test(prompt) && /"id":"m1"/.test(prompt.replace(/\s+/g, "")));
+      const rv = T.parseTenderReview('```json\n{"reviews":[{"id":"m1","tender":true,"confidence":"high","projectName":"12 Beach Road, Rye VIC 3941","client":"BuildCo Pty Ltd","deadline":"2026-11-20"},{"id":"m6","tender":true,"confidence":"medium","client":"Arch Firm","deadline":"2026-11-05"},{"id":"zz","tender":false},{"id":"m9","tender":false,"deadline":"next week"}]}\n```', [c1, c6]);
+      assertTrue(Object.keys(rv).length === 2 && rv.m1.client === "BuildCo Pty Ltd" && rv.m6.deadline === "2026-11-05");
+      const a1 = T.applyReview(c1, rv.m1); const a6 = T.applyReview(c6, rv.m6);
+      assertTrue(!a1.drop && a1.cand.deadline === "2026-11-14" && a1.cand.client === "BuildCo Pty Ltd" && !a6.drop && a6.cand.deadline === "2026-11-05" && a6.cand.deadlineSource === "ai" && a6.cand.client === "Arch Firm");
+      assertTrue(T.applyReview(c6, { tender: false, confidence: "high", reason: "a supplier" }).drop && !T.applyReview(c6, { tender: false, confidence: "low" }).drop);
+    });
+    await checkAsync("Tender inbox function: a scan lists the mailbox since the watermark, reads the likely messages in full, creates ONE Queued project per request (row written, index appended with a conditional update, the PDF and DWG copied under quote-files/<id>/), skips Gradcon's own RFQ, the reply, the newsletter and a duplicate of an existing project, records every outcome — and a second scan creates nothing", async () => {
+      const stored = { email: "projects@gradcon.com.au", refresh: G.encryptText("1//r", genv) };
+      const gm = (m) => ({ id: m.id, threadId: m.threadId, internalDate: String(Date.parse(m.date)), snippet: m.body.slice(0, 80), labelIds: [], payload: { headers: [{ name: "From", value: m.from }, { name: "Subject", value: m.subject }, { name: "Date", value: m.date }], parts: [{ mimeType: "text/plain", body: { data: Buffer.from(m.body).toString("base64url") } }, ...m.attachments.map((a) => ({ mimeType: a.mimeType || "application/octet-stream", filename: a.filename, body: { attachmentId: a.attachmentId, size: a.size || 10 } }))] } });
+      const mail = { m1: gm(rfq), m2: gm(fwd), m3: gm(ownRfq), m4: gm(reply), m5: gm(news), m6: gm(plain), m8: gm({ id: "m8", threadId: "t8", from: "Kim <kim@builder.com.au>", subject: "RFT – 19 Paringa Road, Portsea – tennis pavilion", date: "2026-10-27T05:00:00Z", body: "Request for tender attached, closing 12 November 2026.", attachments: [] }) };
+      const kv = { "gradcon-google-mail": { value: stored, updated_at: "2026-10-01T00:00:00Z" }, "gradcon-projects": { value: [{ id: "old1", storageKey: "gradcon-quote-old1", createdAt: "2026-10-01T00:00:00Z" }], updated_at: "2026-10-20T00:00:00Z" }, "gradcon-quote-old1": { value: { projectName: "19 Paringa Road, Portsea VIC 3944 — Tennis Pavilion", clientName: "X", status: "Estimating" }, updated_at: "2026-10-20T00:00:00Z" } };
+      const calls = [];
+      const fetchMock = async (url, init = {}) => { const u = String(url); const method = (init.method || "GET").toUpperCase(); calls.push(`${method} ${u}`);
+        if (/oauth2\.googleapis\.com\/token/.test(u)) return { ok: true, json: async () => ({ access_token: "at", expires_in: 3600 }) };
+        if (/estimator_kv\?key=like\.gradcon-quote-/.test(u)) return { ok: true, json: async () => Object.keys(kv).filter((k) => /^gradcon-quote-/.test(k)).map((k) => ({ key: k, updated_at: kv[k].updated_at, name: kv[k].value.projectName, client: kv[k].value.clientName, status: kv[k].value.status, source: kv[k].value.source || null })) };
+        let m = /estimator_kv\?key=eq\.([^&]+)(?:&updated_at=eq\.([^&]+))?/.exec(u);
+        if (m && method === "GET") { const k = decodeURIComponent(m[1]); return { ok: true, json: async () => (kv[k] ? [kv[k]] : []) }; }
+        if (m && method === "PATCH") { const k = decodeURIComponent(m[1]); const stamp = decodeURIComponent(m[2] || ""); if (!kv[k] || kv[k].updated_at !== stamp) return { ok: true, json: async () => [] }; const b = JSON.parse(init.body); kv[k] = { value: b.value, updated_at: b.updated_at }; return { ok: true, json: async () => [{ key: k }] }; }
+        if (/\/rest\/v1\/estimator_kv$/.test(u) && method === "POST") { const b = JSON.parse(init.body); kv[b.key] = { value: b.value, updated_at: b.updated_at }; return { ok: true, json: async () => ({}) }; }
+        if (/\/messages\?/.test(u)) { const q = decodeURIComponent(u.split("q=")[1] || ""); return { ok: true, json: async () => ({ messages: /after:/.test(q) ? Object.keys(mail).map((id) => ({ id })) : [] }) }; }
+        m = /\/messages\/([^/?]+)\/attachments\/([^/?]+)/.exec(u); if (m) return { ok: true, json: async () => ({ data: Buffer.from(`%PDF-${m[2]}`).toString("base64url") }) };
+        m = /\/messages\/([^/?]+)\?format=(metadata|full)/.exec(u); if (m) { const msg = mail[m[1]]; if (!msg) return { ok: false, status: 404, json: async () => ({}) }; if (m[2] === "metadata") { const { payload, ...rest } = msg; return { ok: true, json: async () => ({ ...rest, payload: { headers: payload.headers } }) }; } return { ok: true, json: async () => msg }; }
+        if (/storage\/v1\/object\/gradcon-files\//.test(u) && method === "POST") return { ok: true, json: async () => ({}) };
+        return { ok: false, status: 404, json: async () => ({}) }; };
+      G.resetTokenCache();
+      const first = await TI.runTenderInbox({ action: "scan", by: "test" }, genv, fetchMock, { now: () => now, review: null });
+      assertTrue(first.status === 200, `status ${first.status} ${JSON.stringify(first.body).slice(0, 200)}`);
+      const names = first.body.created.map((c) => c.name).sort();
+      assertTrue(first.body.created.length === 3, `created ${JSON.stringify(names)}; errors ${JSON.stringify(first.body.errors)}`);
+      assertTrue(names[0] === "12 Beach Road, Rye VIC 3941 — Concrete works" && /^45 Frankston Dandenong Road/.test(names[1]) && /^7 Ocean St, Sorrento/.test(names[2]));
+      const idx = kv["gradcon-projects"].value; assertTrue(idx.length === 4 && idx[0].id === "old1" && idx.slice(1).every((e) => /^gradcon-quote-/.test(e.storageKey)), "the index keeps the old entry and gains three");
+      const beach = kv[first.body.created[0].storageKey].value;
+      assertTrue(beach.status === "Queued" && beach.planner.deadline === "2026-11-14" && beach.source.messageId === "m1" && beach.files.length === 2 && beach.files.every((f) => f.provider === "mail" && new RegExp(`quote-files/${first.body.created[0].projectId}/`).test(f.url)) && beach.files[0].size === 7, JSON.stringify(beach.files));
+      assertTrue(calls.some((c) => /POST .*storage\/v1\/object\/gradcon-files\/quote-files\/[^/]+\/S-01_Structural\.pdf/.test(c)) && calls.some((c) => /A101_Floor_plan\.dwg/.test(c)) && !calls.some((c) => /logo\.gif/.test(c)), "the PDF and DWG are copied, the gif is not");
+      assertTrue(calls.some((c) => /PATCH .*key=eq\.gradcon-projects&updated_at=eq\./.test(c)), "the index is appended with a conditional PATCH");
+      const rec = kv["gradcon-tender-inbox"].value;
+      assertTrue(rec.handled.m3.outcome === "skipped" && rec.handled.m4.outcome === "skipped" && rec.handled.m8.outcome === "duplicate" && /same address/.test(rec.handled.m8.reason) && rec.handled.m1.outcome === "created" && rec.created.length === 3 && rec.watermarkMs === Date.parse("2026-10-27T22:10:00Z") && rec.lastResult.created === 3, JSON.stringify(rec.handled));
+      assertTrue(!rec.handled.m5 || rec.handled.m5.outcome === "skipped", "the newsletter never becomes a project");
+      const nCalls = calls.length;
+      const second = await TI.runTenderInbox({ action: "scan", by: "test" }, genv, fetchMock, { now: () => new Date("2026-10-29T03:00:00Z"), review: null });
+      assertTrue(second.status === 200 && second.body.created.length === 0 && kv["gradcon-projects"].value.length === 4 && !calls.slice(nCalls).some((c) => /format=full/.test(c)), `a second scan reads nothing twice and creates nothing: ${JSON.stringify({ created: second.body.created.length, full: calls.slice(nCalls).filter((c) => /format=full/.test(c)), handled: Object.keys(rec.handled) })}`);
+      assertTrue(/after:/.test(decodeURIComponent(calls.slice(nCalls).find((c) => /\/messages\?/.test(c)) || "")) && Number(/after:(\d+)/.exec(decodeURIComponent(calls.slice(nCalls).find((c) => /\/messages\?/.test(c))))[1]) === Math.floor((rec.watermarkMs - 3600000) / 1000), "the second scan starts an hour before the watermark");
+      // the AI review: a confident "not a tender" drops one, a stated deadline fills a default
+      const kv2 = JSON.parse(JSON.stringify({ "gradcon-google-mail": kv["gradcon-google-mail"], "gradcon-projects": { value: [], updated_at: "2026-10-20T00:00:00Z" } }));
+      Object.keys(kv).forEach((k) => { if (!kv2[k] && k !== "gradcon-tender-inbox" && !/^gradcon-quote-/.test(k)) kv2[k] = kv[k]; });
+      Object.keys(kv).forEach((k) => delete kv[k]); Object.assign(kv, kv2);
+      G.resetTokenCache();
+      const third = await TI.runTenderInbox({ action: "scan", by: "test" }, genv, fetchMock, { now: () => now, review: async (list) => { const out = {}; list.forEach((c) => { out[c.messageId] = c.messageId === "m6" ? { tender: false, confidence: "high", reason: "an architect asking for a budget" } : { tender: true, confidence: "high", projectName: "", client: "", deadline: null }; }); return out; } });
+      assertTrue(third.status === 200 && third.body.created.length === 3 && !third.body.created.some((c) => /Ocean St/.test(c.name)) && kv["gradcon-tender-inbox"].value.handled.m6.outcome === "skipped" && /AI review/.test(kv["gradcon-tender-inbox"].value.handled.m6.reason), JSON.stringify(third.body.created.map((c) => c.name)));
+      const st = await TI.runTenderInbox({ action: "status" }, genv, fetchMock);
+      assertTrue(st.status === 200 && st.body.record.created.length === 3 && st.body.configured === true);
+      assertTrue((await TI.runTenderInbox({ action: "scan" }, {}, fetchMock)).status === 503, "unconfigured → 503");
+      G.resetTokenCache();
+    });
+    check("Tender inbox function: the cron call is the shared secret when one is set, else Vercel's cron user agent; the index append retries on a changed stamp and never overwrites", async () => {
+      assertTrue(TI.isCronCall({ headers: { authorization: "Bearer s3" } }, { CRON_SECRET: "s3" }) && !TI.isCronCall({ headers: { authorization: "Bearer nope" } }, { CRON_SECRET: "s3" }) && !TI.isCronCall({ headers: { "user-agent": "vercel-cron/1.0" } }, { CRON_SECRET: "s3" }) && TI.isCronCall({ headers: { "user-agent": "vercel-cron/1.0" } }, {}) && !TI.isCronCall({ headers: { "user-agent": "Mozilla" } }, {}));
+    });
+    await checkAsync("Tender inbox function: appendProjectEntry re-reads after a lost race and gives up, never a blind overwrite", async () => {
+      let reads = 0; const calls = [];
+      const racy = async (url, init = {}) => { const method = (init.method || "GET").toUpperCase(); calls.push(method); if (method === "GET") { reads += 1; return { ok: true, json: async () => [{ value: [{ id: "a" }], updated_at: `2026-10-28T00:00:0${reads}Z` }] }; } if (method === "PATCH") return { ok: true, json: async () => [] }; return { ok: false, status: 500, json: async () => ({}) }; };
+      const r = await TI.appendProjectEntry({ id: "new", storageKey: "gradcon-quote-new", createdAt: "x" }, racy, { attempts: 3 });
+      assertTrue(!r.ok && reads === 3 && calls.filter((c) => c === "PATCH").length === 3 && !calls.includes("POST"));
+    });
+  }
   await checkAsync("AI chat: recent mail joins the context when Google is configured, a mail failure never fails the chat, and no Google means no mail key", async () => {
     const got = await C.mailForContext(genv, { mail: async () => ({ mailbox: "projects@gradcon.com.au", messages: [{ subject: "Tender" }] }) });
     const failed = await C.mailForContext(genv, { mail: async () => { throw new Error("offline"); } });

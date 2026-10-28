@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { X, Search, ExternalLink, Paperclip, Eye, FolderOpen, ChevronRight, Loader2, Trash2, Check } from "lucide-react";
-import { driveApi, projectDriveFolder, setProjectDriveFolderPatch, driveFiles, isAttached, attachFilePatch, detachFilePatch, projectAddress, fileIcon, fmtBytes, fmtWhen, PREVIEWABLE } from "../lib/driveFiles.js";
+import { driveApi, projectDriveFolder, setProjectDriveFolderPatch, driveFiles, mailFiles, isAttached, attachFilePatch, detachFilePatch, projectAddress, fileIcon, fmtBytes, fmtWhen, PREVIEWABLE } from "../lib/driveFiles.js";
 
 /**
  * The project's Google Drive files — one drawer for two jobs:
@@ -139,6 +139,22 @@ export default function DriveFilesDrawer({ quote, patchQuote, mode = "attach", a
                   {PREVIEWABLE.has(a.kind) && <button type="button" onClick={() => openPreview({ id: a.fileId, name: a.name, kind: a.kind, webViewLink: a.webViewLink })} className="p-1 rounded hover:bg-neutral-200 text-neutral-600" title="Preview"><Eye size={13} /></button>}
                   <a href={a.webViewLink} target="_blank" rel="noopener" className="p-1 rounded hover:bg-neutral-200 text-neutral-600" title="Open in Google Drive"><ExternalLink size={13} /></a>
                   <button type="button" onClick={() => patchQuote(detachFilePatch(quote, a.id))} className="p-1 rounded hover:bg-red-100 text-neutral-400 hover:text-red-700" title="Remove from this project (the file stays in Drive)" aria-label={`Remove ${a.name}`}><Trash2 size={13} /></button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {mode === "attach" && mailFiles(quote).length > 0 && (
+          <div className="px-4 pt-3" data-testid="mail-files">
+            <div className="text-[10.5px] font-semibold uppercase tracking-wide text-neutral-500 mb-1">From the tender email ({mailFiles(quote).length})</div>
+            <div className="space-y-0.5">
+              {mailFiles(quote).map((a) => (
+                <div key={a.id} className="flex items-center gap-2 text-[12px]" data-testid="mail-file-row">
+                  <span>{fileIcon(a.kind)}</span>
+                  <a href={a.url} target="_blank" rel="noopener" className="flex-1 min-w-0 truncate underline decoration-neutral-300 hover:decoration-neutral-700" title="Open the copy">{a.name}</a>
+                  <span className="text-neutral-400 font-mono tabular-nums">{fmtBytes(a.size)}</span>
+                  <button type="button" onClick={() => patchQuote(detachFilePatch(quote, a.id))} className="p-1 rounded hover:bg-red-100 text-neutral-400 hover:text-red-700" title="Remove from this project (the copy stays in the bucket)"><Trash2 size={13} /></button>
                 </div>
               ))}
             </div>

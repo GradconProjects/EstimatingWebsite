@@ -73,6 +73,7 @@ function summarizeQuote(quote, liveRates) {
     elementCount: items.length,
     doneCount: items.filter((it) => it && it.done && it.done.at).length,
     checklist: checklistProgress(quote), // the tender workflow steps ticked (lib/tenderChecklist.js)
+    source: quote.source && quote.source.kind === "mail" ? { kind: "mail", from: quote.source.from || "", receivedAt: quote.source.receivedAt || "" } : null, // created by the inbox scan (api/tender-inbox.js)
     directCost,
     subtotal,
     sellExGst: defaultRow?.sellExGst || 0,
@@ -438,7 +439,7 @@ export default function Dashboard({ projects, rates, rateChanges, onOpen, onCrea
                     title={s.status}
                   />
                 </td>
-                <td className="px-4 py-3 font-semibold text-[15px] text-neutral-900 min-w-[18rem] max-w-[26rem] whitespace-normal break-words">{s.name}{s.scope !== "both" && <span className="ml-2 align-middle text-[10px] font-medium px-1.5 py-0.5 rounded bg-orange-100 text-orange-800" title="Quote scope">{scopeLabel(s.scope)}</span>}{s.checklist && s.checklist.done > 0 && <span className={`ml-2 align-middle text-[10px] font-mono tabular-nums font-medium px-1.5 py-0.5 rounded ${s.checklist.complete ? "bg-emerald-100 text-emerald-800" : "bg-blue-100 text-blue-900"}`} title={`Tender workflow: ${s.checklist.done} of ${s.checklist.total} steps done${s.checklist.next ? ` — next: ${s.checklist.next.n} ${s.checklist.next.title}` : ""}`} data-testid="dashboard-checklist">☑ {s.checklist.done}/{s.checklist.total}</span>}</td>
+                <td className="px-4 py-3 font-semibold text-[15px] text-neutral-900 min-w-[18rem] max-w-[26rem] whitespace-normal break-words">{s.name}{s.scope !== "both" && <span className="ml-2 align-middle text-[10px] font-medium px-1.5 py-0.5 rounded bg-orange-100 text-orange-800" title="Quote scope">{scopeLabel(s.scope)}</span>}{s.source && s.source.kind === "mail" && <span className="ml-2 align-middle text-[10px] font-medium px-1.5 py-0.5 rounded bg-sky-100 text-sky-900" data-testid="dashboard-inbox" title={`Created from the inbox — ${s.source.from}`}>✉ inbox</span>}{s.checklist && s.checklist.done > 0 && <span className={`ml-2 align-middle text-[10px] font-mono tabular-nums font-medium px-1.5 py-0.5 rounded ${s.checklist.complete ? "bg-emerald-100 text-emerald-800" : "bg-blue-100 text-blue-900"}`} title={`Tender workflow: ${s.checklist.done} of ${s.checklist.total} steps done${s.checklist.next ? ` — next: ${s.checklist.next.n} ${s.checklist.next.title}` : ""}`} data-testid="dashboard-checklist">☑ {s.checklist.done}/{s.checklist.total}</span>}</td>
                 <td className="px-3 py-2.5">
                   <input
                     value={s.client}
