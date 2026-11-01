@@ -22,7 +22,7 @@ export function SaveBadge({ status }) {
 
 /** A margin cell: shows a whole / half PERCENT, stores a FRACTION (0.25) or undefined for blank —
  * the one place the "type 25 for 25%" conversion lives (CLAUDE.md costing rule 3). */
-export function PctInput({ value, onChange, placeholder = "—", className = "", ...rest }) {
+export function PctInput({ value, onChange, placeholder = "—", className = "", max = 95, ...rest }) {
   const shown = value === undefined || value === null || value === "" ? "" : Math.round(Number(value) * 1000) / 10;
   return (
     <input
@@ -30,10 +30,10 @@ export function PctInput({ value, onChange, placeholder = "—", className = "",
       type="number"
       step="0.5"
       min="0"
-      max="95"
+      max={max}
       inputMode="decimal"
       value={shown}
-      onChange={(e) => { const v = e.target.value; if (v === "") return onChange(undefined); const n = Number(v); onChange(Number.isFinite(n) ? Math.max(0, Math.min(95, n)) / 100 : undefined); }}
+      onChange={(e) => { const v = e.target.value; if (v === "") return onChange(undefined); const n = Number(v); onChange(Number.isFinite(n) ? Math.max(0, Math.min(max, n)) / 100 : undefined); }}
       placeholder={placeholder}
       className={`bg-amber-50 border border-amber-200 rounded px-1.5 py-1 text-right font-mono text-[13px] tabular-nums
                   focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-orange-400 ${className}`}

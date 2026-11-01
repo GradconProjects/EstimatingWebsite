@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { CATEGORY_ORDER, SECTION_ORDER } from "../data/catalog.js";
 import { isDone } from "../lib/workTrail.js";
-import { computeElementCost, computeGrandTotal, computeExcludedTotals, computeProvisionalTotals, isProvisional, computeMarginLadder, money, money2, getDefaultMargin, scopeLabel, computeMarginRegister, projectMargin, pinnedMargin, marginStepsAround, elementMargin } from "../lib/costing.js";
+import { computeElementCost, computeGrandTotal, computeExcludedTotals, computeProvisionalTotals, isProvisional, computeMarginLadder, money, money2, getDefaultMargin, scopeLabel, computeMarginRegister, projectMargin, pinnedMargin, marginStepsAround, elementMargin, markupFromMargin, marginFromMarkup } from "../lib/costing.js";
 import { NumInput, PctInput } from "./atoms.jsx";
 
 const pctLabel = (f) => `${Math.round((Number(f) || 0) * 1000) / 10}%`;
@@ -185,7 +185,9 @@ export default function QuoteSummary({
                     ) : pctLabel(row.margin)}
                   </td>
                   <td className="px-2 py-1 text-right font-mono tabular-nums text-neutral-500">
-                    {(row.markupOnCost * 100).toFixed(1)}%
+                    {isProject && setProjectMargin ? (
+                      <PctInput value={markupFromMargin(pm)} max={900} onChange={(v) => setProjectMargin(v === undefined ? undefined : marginFromMarkup(v))} className="!w-16 !py-0.5" title="Markup on COST — typing here sets the margin on the left (margin = markup ÷ (1 + markup))" data-testid="project-markup" />
+                    ) : `${(row.markupOnCost * 100).toFixed(1)}%`}
                   </td>
                   <td className="px-2 py-1 text-right font-mono tabular-nums">{money(row.sellExGst)}</td>
                   <td className="px-2 py-1 text-right font-mono tabular-nums">{money(row.sellIncGst)}</td>

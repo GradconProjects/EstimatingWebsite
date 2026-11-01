@@ -9,7 +9,7 @@
  * margin. Priced through computeMarginRegister — never its own arithmetic.
  */
 import { useMemo } from "react";
-import { computeMarginRegister, projectMargin, pinnedMargin, getDefaultMargin, money, money2 } from "../lib/costing.js";
+import { computeMarginRegister, projectMargin, pinnedMargin, getDefaultMargin, money, money2, markupFromMargin, marginFromMarkup } from "../lib/costing.js";
 import { PctInput } from "./atoms.jsx";
 
 const pctLabel = (f) => `${Math.round((Number(f) || 0) * 1000) / 10}%`;
@@ -33,6 +33,8 @@ export default function MarginRegister({ items, rates, quote, scope, setProjectM
             <label className="flex items-center gap-2">
               <span className="font-semibold text-neutral-700">Overall rate</span>
               <PctInput value={pm} onChange={(v) => setProjectMargin(v)} className="!w-16" title="The project margin — every line not pinned follows it" data-testid="margin-register-overall" />
+              <span className="text-neutral-400">= markup</span>
+              <PctInput value={markupFromMargin(pm)} max={900} onChange={(v) => setProjectMargin(v === undefined ? undefined : marginFromMarkup(v))} className="!w-16" title="The same figure as a markup on cost — typing here sets the margin" data-testid="margin-register-overall-markup" />
               {pinnedMargin(quote && quote.marginPct) != null && (
                 <button type="button" className="text-neutral-400 hover:text-neutral-700" title={`Back to the Settings default ${pctLabel(getDefaultMargin())}`} onClick={() => setProjectMargin(undefined)}>↺ default</button>
               )}
@@ -47,7 +49,8 @@ export default function MarginRegister({ items, rates, quote, scope, setProjectM
                   <th className="text-left px-2 py-1.5 font-medium">Line</th>
                   <th className="text-right px-2 py-1.5 font-medium" title="Direct cost">Cost</th>
                   <th className="text-right px-2 py-1.5 font-medium" title="Direct cost with the project's overheads and contingency on it">Loaded</th>
-                  <th className="text-right px-2 py-1.5 font-medium">Margin</th>
+                  <th className="text-right px-2 py-1.5 font-medium" title="Margin on the sell price">Margin</th>
+                  <th className="text-right px-2 py-1.5 font-medium" title="The same rate as a markup on cost — type either; the other follows">= Markup</th>
                   <th className="text-left px-2 py-1.5 font-medium">Source</th>
                   <th className="text-right px-2 py-1.5 font-medium">Sell ex GST</th>
                   <th className="text-right px-2 py-1.5 font-medium">Sell inc GST</th>
@@ -73,13 +76,17 @@ export default function MarginRegister({ items, rates, quote, scope, setProjectM
                         <PctInput value={pinned ?? undefined} placeholder={pctLabel(inherit)} className="!w-16 !py-0.5" title={pinned != null ? "Pinned — clear to inherit" : `Inherits ${pctLabel(inherit)} — type a rate to pin this line`}
                           onChange={(v) => (l.kind === "sub" ? setRowMargin(l.elementId, l.key, v) : setElementMargin(l.elementId, v))} />
                       </td>
+                      <td className="px-2 py-1 text-right">
+                        <PctInput value={pinned != null ? markupFromMargin(pinned) : undefined} max={900} placeholder={pctLabel(markupFromMargin(inherit))} className="!w-16 !py-0.5" title="Markup on cost — typing here pins the line at the matching margin; clear to inherit" data-testid="margin-register-markup"
+                          onChange={(v) => { const m = v === undefined ? undefined : marginFromMarkup(v); l.kind === "sub" ? setRowMargin(l.elementId, l.key, m) : setElementMargin(l.elementId, m); }} />
+                      </td>
                       <td className="px-2 py-1 text-neutral-500">{SOURCE_LABEL[l.source] || l.source}</td>
                       <td className="px-2 py-1 text-right font-mono tabular-nums">{money2(l.sell)}</td>
                       <td className="px-2 py-1 text-right font-mono tabular-nums text-neutral-500">{money2(l.sell * (t.sellIncGst / (t.sell || 1)))}</td>
                     </tr>
                   );
                 })}
-                {reg.lines.length === 0 && <tr><td colSpan={7} className="px-2 py-3 text-center text-neutral-400">Nothing priced yet.</td></tr>}
+                {reg.lines.length === 0 && <tr><td colSpan={8} className="px-2 py-3 text-center text-neutral-400">Nothing priced yet.</td></tr>}
               </tbody>
               <tfoot>
                 <tr className="border-t-2 border-neutral-800 font-semibold">
@@ -87,6 +94,7 @@ export default function MarginRegister({ items, rates, quote, scope, setProjectM
                   <td className="px-2 py-1.5 text-right font-mono tabular-nums">{money2(t.cost)}</td>
                   <td className="px-2 py-1.5 text-right font-mono tabular-nums">{money2(t.loaded)}</td>
                   <td className="px-2 py-1.5 text-right font-mono tabular-nums" data-testid="margin-register-blended-cell">{pctLabel(t.blended)}</td>
+                  <td className="px-2 py-1.5 text-right font-mono tabular-nums text-neutral-500">{pctLabel(markupFromMargin(t.blended))}</td>
                   <td className="px-2 py-1.5 text-neutral-500 font-normal">blended</td>
                   <td className="px-2 py-1.5 text-right font-mono tabular-nums" data-testid="margin-register-sell">{money2(t.sell)}</td>
                   <td className="px-2 py-1.5 text-right font-mono tabular-nums">{money2(t.sellIncGst)}</td>
@@ -94,7 +102,7 @@ export default function MarginRegister({ items, rates, quote, scope, setProjectM
               </tfoot>
             </table>
           </div>
-          <div className="text-[11px] text-neutral-500">Loaded = direct cost + overheads + contingency, as the ladder's subtotal. Margin is on the sell price (sell = loaded ÷ (1 − margin)). A rate typed here is written onto that element or quote row and shows in the Quote Summary; clear it to inherit again.</div>
+          <div className="text-[11px] text-neutral-500">Loaded = direct cost + overheads + contingency, as the ladder's subtotal. Margin is on the sell price (sell = loaded ÷ (1 − margin)); the Markup column is the same rate on cost (a 33.3% markup is a 25% margin) — type either and the other follows. A rate typed here is written onto that element or quote row and shows in the Quote Summary; clear it to inherit again.</div>
         </div>
       )}
     </div>

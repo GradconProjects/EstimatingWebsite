@@ -669,7 +669,14 @@ other margins should be entered in a new row under the element rows". Rules:
    the typed rung to the Settings steps; the highlighted rung holds the
    input and a ↺ back to the default) and the strip under it states the sell
    at the per-line margins with the blended rate and the pinned count
-   (`margin-blended`).
+   (`margin-blended`). **The markup is typed too** (Grady, 1 Nov 2026: "i want
+   the markup editable too"): the project rung's "= markup on cost" cell
+   (`project-markup`), the register's overall markup box and every register
+   line's "= Markup" cell (`margin-register-markup`) take a markup ON COST and
+   store the matching MARGIN through `marginFromMarkup(k)` = k ÷ (1 + k)
+   (`markupFromMargin` the other way; a 100% markup is a 50% margin, so
+   `PctInput` takes `max={900}` there). Nothing stores a markup — the margin
+   is the one figure, the markup a second way of typing it.
 5. **The AI suggestion is ADVICE** (`src/lib/marginAdvice.js`, pure;
    `api/ai-engine.js` action `margin`): `marginContext(quote, items, rates,
    {pastProjects})` carries the quote's OWN figures — loaded cost, element

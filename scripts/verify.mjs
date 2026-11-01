@@ -799,6 +799,10 @@ check("margins: project → element → subcontract quote row, each a fraction, 
   assert.equal("rowMargins" in M.rowMarginPatch(rp, "k", ""), false, "an empty pin map is dropped");
   assert.equal(M.projectMarginPatch({ marginPct: 0.2 }, undefined).marginPct, undefined);
   assert.deepEqual(M.marginStepsAround(0.22, [0.1, 0.25]), [0.1, 0.22, 0.25], "the ladder gains the project rung");
+  // markup on cost ↔ margin on sell: typed either way, stored as the margin
+  assert.ok(Math.abs(M.markupFromMargin(0.25) - 1 / 3) < 1e-12); assert.ok(Math.abs(M.marginFromMarkup(1 / 3) - 0.25) < 1e-12);
+  assert.equal(M.marginFromMarkup(1), 0.5, "a 100% markup is a 50% margin"); assert.equal(M.marginFromMarkup(0), 0); assert.equal(M.marginFromMarkup("x"), null);
+  assert.ok(Math.abs(M.marginFromMarkup(M.markupFromMargin(0.08)) - 0.08) < 1e-12);
   assert.deepEqual(M.marginStepsAround(0.25, [0.1, 0.25]), [0.1, 0.25]);
 });
 check("margins: computeElementSell splits an element into its own work and its subcontract quote rows, each at its resolved rate", () => {

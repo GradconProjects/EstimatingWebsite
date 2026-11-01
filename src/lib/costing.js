@@ -1329,6 +1329,9 @@ export function computeMarginRegister(items, rates, quote, projectScope) {
   };
 }
 /** The ladder's rungs with the project margin among them (so a typed 22% has its own highlighted row). */
+/** Markup on COST ↔ margin on SELL (rule 4): a 33.3% markup is a 25% margin. Typed either way, stored as the margin. */
+export function markupFromMargin(margin) { const m = Number(margin) || 0; return m < 1 ? m / (1 - m) : 0; }
+export function marginFromMarkup(markup) { const k = Number(markup); return Number.isFinite(k) && k >= 0 ? k / (1 + k) : null; }
 export function marginStepsAround(project, steps) {
   const base = (steps || getMarginSteps()).slice();
   if (!base.some((s) => Math.abs(s - project) < 1e-9)) base.push(project);
