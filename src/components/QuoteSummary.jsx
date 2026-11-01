@@ -229,19 +229,22 @@ function MarginAdvice({ requestAdvice, current, onUse }) {
       <div className="flex items-center justify-between gap-2">
         <span className="text-[10px] font-semibold uppercase tracking-wide text-neutral-500">AI suggestion, from what was entered</span>
         <button type="button" onClick={ask} disabled={state.busy} className="px-2 py-0.5 rounded bg-orange-600 text-white text-[11px] font-medium hover:bg-orange-700 disabled:opacity-50" data-testid="margin-suggest">
-          {state.busy ? "Reading the quote…" : a ? "Ask again" : "Suggest a margin"}
+          {state.busy ? "Reading the quote…" : "Click here to suggest margin"}
         </button>
       </div>
       {state.error && <div className="text-red-700" data-testid="margin-advice-error">{state.error}</div>}
       {a && (
         <div className="space-y-1">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span>Suggested project margin <b className="font-mono text-[13px]" data-testid="margin-advice-pct">{pctLabel(a.margin)}</b> <span className="text-neutral-400">({a.confidence} confidence)</span></span>
-            {Math.abs(a.margin - current) > 1e-9 && (
-              <button type="button" onClick={() => onUse(a.margin)} className="px-2 py-0.5 rounded bg-emerald-600 text-white text-[11px] font-medium hover:bg-emerald-700" data-testid="margin-use">Use {pctLabel(a.margin)}</button>
-            )}
-            <button type="button" onClick={() => setState({ busy: false, advice: null, error: null })} className="px-2 py-0.5 rounded border border-neutral-300 text-[11px] text-neutral-600 hover:bg-white">Dismiss</button>
-          </div>
+          {[["high", a.high, "High confidence", "the margin the quote's facts firmly support"], ["low", a.low, "Low confidence", "a higher margin that could still win, with less certainty"]].map(([k, m, label, why]) => (
+            <div key={k} className="flex items-center gap-2 flex-wrap" data-testid={`margin-advice-${k}`}>
+              <span className={`inline-block w-[6.5rem] text-[10px] font-semibold uppercase tracking-wide ${k === "high" ? "text-emerald-700" : "text-amber-700"}`} title={why}>{label}</span>
+              <b className="font-mono text-[13px]" data-testid={`margin-advice-${k}-pct`}>{pctLabel(m)}</b>
+              {Math.abs(m - current) > 1e-9
+                ? <button type="button" onClick={() => onUse(m)} className={`px-2 py-0.5 rounded text-white text-[11px] font-medium ${k === "high" ? "bg-emerald-600 hover:bg-emerald-700" : "bg-amber-600 hover:bg-amber-700"}`} data-testid={`margin-use-${k}`}>Use {pctLabel(m)}</button>
+                : <span className="text-[10px] text-neutral-400">in use</span>}
+            </div>
+          ))}
+          <div><button type="button" onClick={() => setState({ busy: false, advice: null, error: null })} className="px-2 py-0.5 rounded border border-neutral-300 text-[11px] text-neutral-600 hover:bg-white">Dismiss</button></div>
           {a.reasons && a.reasons.length > 0 && (
             <ul className="list-disc pl-4 text-neutral-600 space-y-0.5">{a.reasons.map((r, i) => <li key={i}>{r}</li>)}</ul>
           )}

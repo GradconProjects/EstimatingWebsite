@@ -685,11 +685,18 @@ other margins should be entered in a new row under the element rows". Rules:
    summaries)` the margins RECORDED on other projects (only a project whose
    margin was typed says anything; App reads the drawing-free summaries on
    demand); `marginAdvicePrompt` forbids inventing a past project, a
-   competitor or a market figure and asks for `{margin_pct, confidence,
-   reasons}`; `parseMarginAdvice` keeps a fraction between 1% and 60% or
-   nothing. The "Suggest a margin" button under the ladder (`margin-suggest`)
-   shows the figure with its reasons; ONLY "Use N%" (`margin-use`) writes the
-   project margin. No provider → 503, never a made-up figure. Benchmark
+   competitor or a market figure and asks for TWO figures every time
+   (`{high_confidence_pct, low_confidence_pct, reasons}` — Grady, 1 Nov 2026:
+   "always show low confidence and high confidence": HIGH = the margin the
+   facts firmly support, LOW = the higher one that could still win with less
+   certainty, never below the high); `parseMarginAdvice` → `{margin (= high),
+   high, low, reasons}`, fractions between 1% and 60% or nothing, swapped
+   figures put in order, a single-figure reply read as both. The button under
+   the ladder always reads "Click here to suggest margin" (`margin-suggest`,
+   same words after an answer — Grady: "change ask or ask again to: click here
+   to suggest margin"); the answer shows both rows (`margin-advice-high` /
+   `-low`, each with its reasons underneath) and ONLY a "Use N%"
+   (`margin-use-high` / `margin-use-low`) writes the project margin. No provider → 503, never a made-up figure. Benchmark
    figures never come from memory.
 `verify.mjs` covers the resolution and patches, the element split, the
 register totals and class subtotals, the tie to the external / tender lines,

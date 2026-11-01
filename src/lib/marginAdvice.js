@@ -80,25 +80,29 @@ ${lines.map((l) => `- ${l}`).join("\n")}
 RULES
 - Reason from what is here: the subcontract share (a pass-through earns less than self-performed work), job size, element count, provisional sums, the deadline, the scope and any recorded past margins.
 - Stay between 5 and 45. A figure outside that needs a reason the facts support.
+- Give TWO figures every time: HIGH confidence = the margin these facts firmly support (the rate you would defend as both winnable and worth doing); LOW confidence = the higher margin that could still win but with less certainty. The low-confidence figure is never below the high-confidence one.
 - Give at most 4 reasons, each one short sentence citing a fact above.
 
-Reply with ONE JSON object and nothing else: {"margin_pct": <number, whole or half percent>, "confidence": "high" | "medium" | "low", "reasons": ["…", "…"]}`;
+Reply with ONE JSON object and nothing else: {"high_confidence_pct": <number, whole or half percent>, "low_confidence_pct": <number>, "reasons": ["…", "…"]}`;
 }
 
-/** Reads the reply: `{margin (fraction), confidence, reasons}` or null when nothing usable came back. */
+/** Reads the reply: `{margin, high, low (fractions), reasons}` — `high` the firmly supported rate, `low` the
+ * less certain higher one (Grady, 1 Nov 2026: "always show low confidence and high confidence"); `margin`
+ * = `high` for any caller that wants one figure. A single-figure reply reads as both. Null when nothing usable. */
 export function parseMarginAdvice(text) {
   const raw = String(text || "");
   const m = raw.match(/\{[\s\S]*\}/);
   if (!m) return null;
   let o;
   try { o = JSON.parse(m[0]); } catch { return null; }
-  const pct = Number(o && (o.margin_pct ?? o.marginPct ?? o.margin));
-  if (!Number.isFinite(pct)) return null;
-  const frac = pct > 1 ? pct / 100 : pct; // "22" and "0.22" both read as 22%
-  if (!(frac >= 0.01 && frac <= 0.6)) return null;
+  const frac = (v) => { const n = Number(v); if (!Number.isFinite(n)) return null; const f = n > 1 ? n / 100 : n; return f >= 0.01 && f <= 0.6 ? Math.round(f * 1000) / 1000 : null; };
+  const single = frac(o && (o.margin_pct ?? o.marginPct ?? o.margin));
+  let high = frac(o && (o.high_confidence_pct ?? o.high_pct ?? o.high)) ?? single;
+  let low = frac(o && (o.low_confidence_pct ?? o.low_pct ?? o.low)) ?? high;
+  if (high == null) return null;
+  if (low < high) [low, high] = [high, low]; // the less certain figure is the higher one
   const reasons = Array.isArray(o.reasons) ? o.reasons.map(clean).filter(Boolean).slice(0, 4) : [];
-  const confidence = ["high", "medium", "low"].includes(o.confidence) ? o.confidence : "medium";
-  return { margin: Math.round(frac * 1000) / 1000, confidence, reasons };
+  return { margin: high, high, low, reasons };
 }
 
 /** Posts the context to the AI function; resolves `{advice, provider, model}`. */

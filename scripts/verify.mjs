@@ -892,14 +892,17 @@ checkAsync("margins: the AI advice is context from the quote's own figures, a pr
   assert.ok(Math.abs(ctx.subcontractShare - 2500 / 5700) < 0.01, String(ctx.subcontractShare));
   assert.equal(ctx.subcontractLines[0].margin, 0.08); assert.equal(ctx.past[0].margin, 0.2);
   const prompt = MA.marginAdvicePrompt(ctx);
-  assert.ok(/never invent a past project/.test(prompt) && /SELL price/.test(prompt) && /Old Job/.test(prompt) && /Screw Piling/.test(prompt) && /margin_pct/.test(prompt), prompt.slice(0, 200));
-  assert.deepEqual(MA.parseMarginAdvice('Sure: ```json\n{"margin_pct": 22, "confidence": "high", "reasons": ["38% of the cost is a subcontract quote at 8%", "small job"]}\n```'), { margin: 0.22, confidence: "high", reasons: ["38% of the cost is a subcontract quote at 8%", "small job"] });
+  assert.ok(/never invent a past project/.test(prompt) && /SELL price/.test(prompt) && /Old Job/.test(prompt) && /Screw Piling/.test(prompt) && /confidence_pct/.test(prompt), prompt.slice(0, 200));
+  assert.deepEqual(MA.parseMarginAdvice('Sure: ```json\n{"high_confidence_pct": 22, "low_confidence_pct": 27, "reasons": ["38% of the cost is a subcontract quote at 8%", "small job"]}\n```'), { margin: 0.22, high: 0.22, low: 0.27, reasons: ["38% of the cost is a subcontract quote at 8%", "small job"] }, "two figures every time: high = firmly supported, low = the less certain higher one");
+  assert.deepEqual(MA.parseMarginAdvice('{"high_confidence_pct": 27, "low_confidence_pct": 22}').high, 0.22, "swapped figures are put in order");
   assert.equal(MA.parseMarginAdvice('{"margin_pct": 0.18}').margin, 0.18, "a fraction reads as a fraction");
-  assert.equal(MA.parseMarginAdvice('{"margin_pct": 95}'), null, "an absurd rate is refused");
+  assert.deepEqual([MA.parseMarginAdvice('{"margin_pct": 18}').high, MA.parseMarginAdvice('{"margin_pct": 18}').low], [0.18, 0.18], "a single-figure reply reads as both");
+  assert.ok(/HIGH confidence/.test(prompt) && /LOW confidence/.test(prompt) && /high_confidence_pct/.test(prompt));
+  assert.equal(MA.parseMarginAdvice('{"high_confidence_pct": 95}'), null, "an absurd rate is refused");
   assert.equal(MA.parseMarginAdvice("no json here"), null);
   // the browser request posts action "margin" with the context and the provider; a bad answer throws
   let posted = null;
-  const ok = await MA.requestMarginAdvice(ctx, { provider: "openai", base: "https://portal.test", fetchImpl: async (url, init) => { posted = { url, body: JSON.parse(init.body) }; return { ok: true, status: 200, json: async () => ({ advice: { margin: 0.22, confidence: "high", reasons: [] }, provider: "openai" }) }; } });
+  const ok = await MA.requestMarginAdvice(ctx, { provider: "openai", base: "https://portal.test", fetchImpl: async (url, init) => { posted = { url, body: JSON.parse(init.body) }; return { ok: true, status: 200, json: async () => ({ advice: { margin: 0.22, high: 0.22, low: 0.27, reasons: [] }, provider: "openai" }) }; } });
   assert.equal(posted.url, "https://portal.test/api/ai-engine"); assert.equal(posted.body.action, "margin"); assert.equal(posted.body.provider, "openai"); assert.equal(posted.body.context.elements, 2); assert.equal(ok.advice.margin, 0.22);
   await assert.rejects(() => MA.requestMarginAdvice(ctx, { base: "https://portal.test", fetchImpl: async () => ({ ok: false, status: 503, json: async () => ({ error: "No AI provider is configured" }) }) }), /No AI provider/);
   // the server action: no context → 400; with no provider configured → 503 (never a made-up figure)
