@@ -2338,6 +2338,29 @@ element families waits on the owner's approval of the pad footing.
   into one step; `applyLoadedEstimateState` resets the history on any real
   load/sync/restore so undo never crosses another device's save. Undo runs
   through the normal save path, so the autosaved copy and the cloud follow.
+  **Ctrl+Z inside ANY control is the browser's, never the app's** (1 Nov
+  2026, 425 Meakins Road: Ctrl+Z pressed with the focus on a checkbox ran the
+  whole-takeoff undo once per KEY REPEAT, stepped back past Raft Slab B's
+  creation and the element vanished with no warning; the same tab kept
+  pushing the row, so no `before-sync` copy was kept — it was put back from
+  the 05:45 autosave by merging that element into the live row, with
+  `before-restore` and `restore` versions kept): the document keydown
+  handler ignores the key when the target is an INPUT, TEXTAREA, SELECT,
+  BUTTON or contenteditable, undoes ONE step per press on the page itself
+  (`e.repeat` does nothing more), and `undo()` / `redo()` — the key and the
+  ↶ Undo button alike — run `confirmUndoRemoval`: a step whose snapshot
+  lacks an element the takeoff holds (`undoWouldRemove`) asks first, naming
+  the element(s), and keeps a `before-undo` version when confirmed; Cancel
+  leaves the stack as it is. **The removal net**: `noteRemovedElements(key,
+  snapshot)` runs on EVERY `saveEstimateState` — the first save that lacks an
+  element the previous save or the loaded state held (`LAST_SAVED_SNAP`,
+  baselined in `applyLoadedEstimateState`; `removedElementsBetween`) keeps
+  that previous state as a `before-remove` cloud version and logs it
+  (`REMOVAL_LOG`, the test seam), whatever removed the element — undo, the
+  delete button, a bulk delete, a bug — so a copy seconds old always exists,
+  never only the 10-minute autosave. `test-undo-guard.mjs` proves the
+  checkbox / select / button cases, the held key, the question, Cancel and
+  OK, and the net on an undo and on a delete.
 - **Templates** (`gradcon-estimate-templates`, local + cloud row) copy
   configuration only (`templateDataFrom`: no overrides, import flags,
   derived `_` fields); adding one gives a new ID and no results/history.

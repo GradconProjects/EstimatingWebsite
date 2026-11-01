@@ -1635,6 +1635,7 @@ function saveEstimateState(skipHistory){
   const placeholder = awaitingCloudLoad && INSTANCES.length===0 && !(PROJECT.name||"").trim();
   if(placeholder && skipHistory) return;
   const snapshot = estimateStateSnapshot();
+  noteRemovedElements(keyAtSave, snapshot);   // an element leaving → the previous state is kept as a before-remove version first
   awaitingCloudLoad = false; // an explicit save (or real content) commits the in-memory state
   registerDraftIfNeeded();   // a draft with content earns its saved-list entry now
   try{
@@ -1720,6 +1721,26 @@ function applyLoadedEstimateState(parsed, opts){
     }
   }
   if(parsed.idCounter) ID_COUNTER = parsed.idCounter;
+  try{ LAST_SAVED_SNAP[CURRENT_PROJECT_KEY] = estimateStateSnapshot(); }catch(e){}   // the removal net's baseline for this takeoff
+}
+/* ---- The removal net (1 Nov 2026, after Raft Slab B vanished through a held Ctrl+Z) ----
+ * Whatever removes an element — the undo, the delete button, a bulk delete, a bug —
+ * the FIRST save that lacks an element the previous save (or the loaded state) held
+ * keeps the previous state as a `before-remove` cloud version, so there is always a
+ * copy seconds old to put it back from, never only the 10-minute autosave. The
+ * autosave's content cap does not apply: a removal is never "the same content". */
+const LAST_SAVED_SNAP = {};     // key → the snapshot this tab last saved or loaded under it
+const REMOVAL_LOG = [];         // {key, gone, at} — what left and when (test seam, console)
+function removedElementsBetween(prev, next){ const keep=new Set(((next&&next.instances)||[]).map(i=>i&&i.id)); return ((prev&&prev.instances)||[]).filter(i=>i && !keep.has(i.id)).map(i=>i.label||i.id); }
+function noteRemovedElements(key, snapshot){
+  const prev=LAST_SAVED_SNAP[key]; const gone=prev? removedElementsBetween(prev, snapshot) : [];
+  LAST_SAVED_SNAP[key]=snapshot;
+  if(gone.length){
+    REMOVAL_LOG.push({ key, gone, at:new Date().toISOString() });
+    try{ keepEstimateVersion(key, prev, "before-remove"); }catch(e){}
+    try{ console.warn("Estimates: element(s) left the takeoff — a before-remove version holds them: "+gone.join(", ")); }catch(e){}
+  }
+  return gone;
 }
 // A sync stamp (`<key>__syncedAt`) says "this browser holds the cloud copy of that
 // moment". With NO local copy behind it (never written, failed on quota, cleared) it
@@ -8009,8 +8030,20 @@ function applyUndoState(json){
   } finally { UNDO.applying=false; }
   updateUndoButtons();
 }
-function undo(){ if(!UNDO.stack.length) return false; const cur=UNDO.last; const prev=UNDO.stack.pop(); UNDO.redo.push(cur); applyUndoState(prev); return true; }
-function redo(){ if(!UNDO.redo.length) return false; const cur=UNDO.last; const next=UNDO.redo.pop(); UNDO.stack.push(cur); applyUndoState(next); return true; }
+/* An undo / redo step that would REMOVE an element asks first and keeps a version
+ * (1 Nov 2026, 425 Meakins Road: Ctrl+Z pressed with the focus on a checkbox ran this
+ * whole-takeoff undo once per key repeat, stepped back past Raft Slab B's creation and the
+ * element vanished with no warning; it was put back from the 05:45 autosave). */
+function undoWouldRemove(json){ try{ const parsed=JSON.parse(json); const keep=new Set((parsed.instances||[]).map(i=>i&&i.id)); return (INSTANCES||[]).filter(i=>i && !keep.has(i.id)).map(i=>i.label||i.id); }catch(e){ return []; } }
+function confirmUndoRemoval(json, what){
+  const gone=undoWouldRemove(json); if(!gone.length) return true;
+  const names=gone.map(n=>`"${n}"`).join(", ");
+  if(!confirm(`${what} will REMOVE ${gone.length===1?"the element":gone.length+" elements"} ${names} from this takeoff — it steps back to before ${gone.length===1?"it was":"they were"} added. Continue?`)) return false;
+  try{ if(typeof keepEstimateVersion==="function" && typeof CURRENT_PROJECT_KEY!=="undefined") keepEstimateVersion(CURRENT_PROJECT_KEY, estimateStateSnapshot(), "before-undo"); }catch(e){}
+  return true;
+}
+function undo(){ if(!UNDO.stack.length) return false; const prev=UNDO.stack[UNDO.stack.length-1]; if(!confirmUndoRemoval(prev,"Undo")) return false; const cur=UNDO.last; UNDO.stack.pop(); UNDO.redo.push(cur); applyUndoState(prev); return true; }
+function redo(){ if(!UNDO.redo.length) return false; const next=UNDO.redo[UNDO.redo.length-1]; if(!confirmUndoRemoval(next,"Redo")) return false; const cur=UNDO.last; UNDO.redo.pop(); UNDO.stack.push(cur); applyUndoState(next); return true; }
 function updateUndoButtons(){ const u=document.getElementById("undoBtn"), r=document.getElementById("redoBtn"); if(u){ u.disabled=!UNDO.stack.length; u.textContent=`↶ Undo${UNDO.stack.length?` (${UNDO.stack.length})`:''}`; } if(r){ r.disabled=!UNDO.redo.length; r.textContent=`↷ Redo${UNDO.redo.length?` (${UNDO.redo.length})`:''}`; } }
 
 /* ---- 3. Templates + copy from element + duplicate choices ---- */
@@ -11564,12 +11597,15 @@ document.getElementById("shellToggle").addEventListener("click", ()=>applyShellM
 // Phase 2 keyboard: Alt+↑/↓ previous/next element, Alt+1…9 section, Alt+N next incomplete, Esc closes the drawing/help.
 document.addEventListener("keydown", e=>{
   if((e.ctrlKey||e.metaKey) && !e.altKey && (e.key==="z"||e.key==="Z"||e.key==="y"||e.key==="Y")){
-    const t=e.target; const editing = t && /^(INPUT|TEXTAREA)$/.test(t.tagName) && t.type!=="checkbox";
-    // inside a field the browser's own text undo runs first; once the field's
-    // text matches what is stored, the app-level undo takes over
-    if(editing && t.dataset && t.dataset.field!==undefined) return;   // the browser's own text undo inside a field already flows through the input handler
+    // Inside ANY control — a text field, a select, a checkbox, a button that still holds the
+    // focus after a click — the key is the browser's own and the app's undo never runs
+    // (1 Nov 2026: with the focus on a checkbox every key repeat undid one whole-takeoff
+    // step and Raft Slab B vanished). On the page itself the app undoes ONE step per press;
+    // a held key (e.repeat) does nothing more. The ↶ Undo button is the other way.
+    const t=e.target; const inControl = t && (/^(INPUT|TEXTAREA|SELECT|BUTTON)$/.test(t.tagName) || t.isContentEditable);
+    if(inControl) return;
     e.preventDefault();
-    if(t && t.blur) t.blur();
+    if(e.repeat) return;
     if((e.key==="y"||e.key==="Y") || e.shiftKey) redo(); else undo();
     return;
   }
