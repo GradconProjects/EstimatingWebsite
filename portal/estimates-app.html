@@ -120,6 +120,25 @@ table.rows.extra-conn input[type=text]:not([data-num]){min-width:64px;width:78px
 table.rows.extra-conn input[data-num]{min-width:0;width:56px;}
 table.rows.extra-conn td{white-space:nowrap;padding-left:4px;padding-right:4px;}
 table.rows.extra-conn .extra-conn-setout{display:flex;align-items:center;gap:3px;margin-top:3px;}
+/* Additional / Allowances: every column in one view, no sideways scroll (1 Nov 2026, Grady: "i dont want to scroll
+   sideways but see all entries in one view") — the pane stacks the sketch UNDER the table so the fields take the
+   whole card width, and the table's cells are sized to the figures they hold. */
+.pane[data-pane="addl"] > .pane-body{flex-direction:column;}
+.pane[data-pane="addl"] > .pane-body > .pane-fields{flex:none !important;width:100%;}   /* the inline "flex:2 1 280px" basis would be a HEIGHT in a column and clip the rows */
+.pane[data-pane="addl"] > .pane-body > .diag-host{flex:none !important;max-width:520px;}
+table.rows.addl{font-size:11.5px;}
+table.rows.addl th{padding:3px 3px;font-size:9.5px;letter-spacing:.03em;white-space:nowrap;}
+table.rows.addl td{padding:2px 2px;white-space:nowrap;}
+table.rows.addl input,table.rows.addl select{padding:3px 4px;font-size:11.5px;}
+table.rows.addl td.desc{width:100%;min-width:110px;}
+table.rows.addl td.desc input[type=text]{width:100%;min-width:100px;box-sizing:border-box;}
+table.rows.addl select{max-width:118px;}
+table.rows.addl select.unit{max-width:92px;}
+table.rows.addl input[data-num]{min-width:0;width:52px;box-sizing:border-box;}
+table.rows.addl input[data-num].w6{width:62px;}
+table.rows.addl input[data-num].w4{width:42px;}
+table.rows.addl td.tot{font-weight:600;}
+table.rows.addl .btn.small{padding:2px 5px;}
 table.rows.extra-conn .extra-conn-setout input[data-num]{width:72px;}
 table.rows.extra-conn .extra-conn-setout select{max-width:76px;}
 table.results{width:100%;border-collapse:collapse;font-size:12px;}
@@ -8846,27 +8865,29 @@ function addlRowQty(r){
 }
 function additionalItemsSection(inst){
   let d=inst.data, rows=Array.isArray(d.addlRows)? d.addlRows : [];
+  // compact cells: every column fits the card's width in one view (the pane stacks the sketch under this table)
+  const wide=(h)=>h.replace('<input ','<input class="w6" '), narrow=(h)=>h.replace('<input ','<input class="w4" ');
   let body=rows.map((r,i)=>`<tr>
-    <td style="min-width:150px">${inpText(`addlRows.${i}.desc`,r.desc||"")}</td>
+    <td class="desc">${inpText(`addlRows.${i}.desc`,r.desc||"")}</td>
     <td>${selOpts(`addlRows.${i}.kind`,r.kind===undefined?"Reinforcement":r.kind,ADDL_KINDS)}</td>
     <td>${addlProductSel(`addlRows.${i}.dia`,r.dia||"N12")}</td>
-    <td style="width:72px;min-width:72px">${inpNum(`addlRows.${i}.count`,r.count)}</td>
-    <td style="width:72px;min-width:72px">${inpNum(`addlRows.${i}.runM`,r.runM)}</td>
-    <td style="width:72px;min-width:72px">${inpNum(`addlRows.${i}.spacing`,r.spacing)}</td>
-    <td style="width:96px;min-width:96px">${inpNum(`addlRows.${i}.lengthMm`,r.lengthMm)}</td>
-    <td style="width:84px;min-width:84px">${dowelProduct(r.dia||"N12").kind==="sheet"? inpNum(`addlRows.${i}.widthMm`,r.widthMm) : `<span class="small">${dowelProduct(r.dia||"N12").kind==="trench"? "mesh width" : "—"}</span>`}</td>
-    <td style="width:84px;min-width:84px">${inpNum(`addlRows.${i}.area`,r.area)}</td>
-    <td style="width:84px;min-width:84px">${inpNum(`addlRows.${i}.qty`,r.qty)}</td>
-    <td>${selOpts(`addlRows.${i}.unit`,r.unit||"m",ADDL_UNITS)}</td>
-    <td style="width:64px;min-width:64px">${inpNum(`addlRows.${i}.waste`,r.waste)}</td>
-    <td style="width:64px;min-width:64px" title="Multiplier — the whole row × this number (blank = 1)">${inpNum(`addlRows.${i}.mult`,r.mult)}</td>
-    <td class="small" style="white-space:nowrap" data-addl-total="${i}">${fmt(addlRowQty(r),2)}</td>
-    <td style="white-space:nowrap"><button class="btn small" data-action="addlDup" data-i="${i}" type="button" title="Duplicate this row (the copy goes right under it)">⧉</button> <button class="btn small danger" data-action="addlDel" data-i="${i}" type="button" title="Remove this row">✕</button></td>
+    <td>${inpNum(`addlRows.${i}.count`,r.count)}</td>
+    <td>${inpNum(`addlRows.${i}.runM`,r.runM)}</td>
+    <td>${inpNum(`addlRows.${i}.spacing`,r.spacing)}</td>
+    <td>${wide(inpNum(`addlRows.${i}.lengthMm`,r.lengthMm))}</td>
+    <td>${dowelProduct(r.dia||"N12").kind==="sheet"? inpNum(`addlRows.${i}.widthMm`,r.widthMm) : `<span class="small" title="${dowelProduct(r.dia||"N12").kind==="trench"? "a trench mesh is its own width" : "bars have no width"}">${dowelProduct(r.dia||"N12").kind==="trench"? "mesh" : "—"}</span>`}</td>
+    <td>${inpNum(`addlRows.${i}.area`,r.area)}</td>
+    <td>${inpNum(`addlRows.${i}.qty`,r.qty)}</td>
+    <td>${selOpts(`addlRows.${i}.unit`,r.unit||"m",ADDL_UNITS).replace('<select ','<select class="unit" ')}</td>
+    <td>${narrow(inpNum(`addlRows.${i}.waste`,r.waste))}</td>
+    <td title="Multiplier — the whole row × this number (blank = 1)">${narrow(inpNum(`addlRows.${i}.mult`,r.mult))}</td>
+    <td class="tot" data-addl-total="${i}">${fmt(addlRowQty(r),2)}</td>
+    <td><button class="btn small" data-action="addlDup" data-i="${i}" type="button" title="Duplicate this row (the copy goes right under it)">⧉</button><button class="btn small danger" data-action="addlDel" data-i="${i}" type="button" title="Remove this row">✕</button></td>
    </tr>`).join('');
   return `<div class="subsec"><div class="sechead">Additional Reinforcement / Elements</div>
    <p class="small">Anything with no obvious home on the other tabs — a trimmer bar round a penetration, an extra pour, a one-off item. <b>Bar / mesh</b> can be a bar size, a <b>trench mesh</b> or a <b>sheet mesh</b>: a mesh row is PIECES cut to the <b>length each</b> (and, for sheet mesh, the <b>width each</b>) — e.g. 26 × SL82 pieces 600 × 300 mm as dowels — priced in lm of the trench product or m² of sheets with their kg. The <b>count</b> multiplies the row: <b>count × length each</b> for bars (m), <b>count × area</b> for sheet or volume items (m², m³), <b>count × qty each</b> for anything else (no., kg, item). Leave the count blank for a single quantity. <b>Run (m)</b> and <b>@ (mm)</b> set the pieces out along a run instead — run ÷ spacing + 1 end bar (12 m @ 400 = 31), × the count when more than one such run — so a line of starter or trimmer bars is taken off the drawing, not counted by hand. A row needs a description and a quantity before it reaches the takeoff. Rows sized in metres against a bar diameter also report their mass.</p>
-   <div style="overflow-x:auto"><table class="rows"><thead><tr>
-     <th>Description</th><th>Goes under</th><th title="A bar size, or a piece of trench mesh / sheet mesh cut to the length (and width) each">Bar / mesh</th><th>Count</th><th title="Set out along a run: run m ÷ spacing mm + 1 end bar, × the count (blank = one run)">Run (m)</th><th title="Spacing along the run (mm)">@ (mm)</th><th>Length each (mm)</th><th title="Sheet-mesh pieces only: the width of each piece (blank = 300 mm)">Width each (mm)</th><th>Area each (m²)</th><th>Qty each</th><th>Unit</th><th>Waste %</th><th title="Multiplier — the whole row × this number (blank = 1): the same set on three identical penetrations, the same allowance on four pads">×</th><th>Total</th><th></th>
+   <div style="overflow-x:auto"><table class="rows addl"><thead><tr>
+     <th>Description</th><th>Goes under</th><th title="A bar size, or a piece of trench mesh / sheet mesh cut to the length (and width) each">Bar / mesh</th><th>Count</th><th title="Set out along a run: run m ÷ spacing mm + 1 end bar, × the count (blank = one run)">Run (m)</th><th title="Spacing along the run (mm)">@ (mm)</th><th title="Length each (mm)">Len each (mm)</th><th title="Sheet-mesh pieces only: the width of each piece (blank = 300 mm)"><span title="Width each (mm) — sheet-mesh pieces only">Wid each</span></th><th title="Area each (m²)">Area ea (m²)</th><th title="Qty each">Qty ea</th><th>Unit</th><th title="Waste %">W %</th><th title="Multiplier — the whole row × this number (blank = 1): the same set on three identical penetrations, the same allowance on four pads">× mult</th><th>Total</th><th></th>
    </tr></thead><tbody>${body||`<tr><td colspan="15" class="small">No additional items yet.</td></tr>`}</tbody></table></div>
    <div class="toolbar" style="margin-top:8px;"><button class="btn small primary" data-action="addlAdd" type="button">+ Add row</button></div>
   </div>`;
@@ -9252,7 +9273,7 @@ function buildCard(inst){
      <div class="card-tabs">${availTabs.map((t,i)=>`<button data-tab="${t[0]}" class="${t[0]===activeTab?'active':''}" title="Alt+${i+1}">${bp?`<span class="rail-ico">○</span><span>${t[1]}</span><span class="rail-meta"></span>`:t[1]}</button>`).join('')}</div>
      <div class="card-panes">
        ${TABS.map((t)=>parts[t[0]]!==undefined?`<div class="pane ${t[0]===activeTab?'active':''}" data-pane="${t[0]}">
-          <div style="display:flex;gap:16px;flex-wrap:wrap;"><div class="pane-fields" style="flex:2 1 280px;min-width:0;overflow-x:auto;">${parts[t[0]]}</div><div class="diag-host" style="flex:1;min-width:220px;">${calc.diagram(inst)}</div></div>
+          <div class="pane-body" style="display:flex;gap:16px;flex-wrap:wrap;"><div class="pane-fields" style="flex:2 1 280px;min-width:0;overflow-x:auto;">${parts[t[0]]}</div><div class="diag-host" style="flex:1;min-width:220px;">${calc.diagram(inst)}</div></div>
         </div>`:'').join('')}
        <div class="pane ${activeTab==="results"?'active':''}" data-pane="results"><div class="resultsHost"></div></div>
      </div>

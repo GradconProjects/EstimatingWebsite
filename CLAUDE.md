@@ -2717,7 +2717,16 @@ element families waits on the owner's approval of the pad footing.
   the undo step, the head stats, Project Geometry and the save are still
   immediate. `test-addl-rows.mjs` proves the live Total, the stale flag and
   the single rebuild on opening the register, the multiplier on a bar and a
-  mesh row, the duplicate and the save.
+  mesh row, the duplicate and the save. **The table is in ONE view, never a
+  sideways scroll** (same day, Grady: "i dont want to scroll sideways but see
+  all entries in one view"): on the Additional / Allowances pane the sketch
+  stacks UNDER the fields (`.pane[data-pane="addl"] > .pane-body` is a column;
+  the fields pane's inline `flex:2 1 280px` basis is overridden with
+  `!important`, or in a column it becomes a 280 px HEIGHT and clips the rows)
+  so the table takes the card's whole width, and `table.rows.addl` sizes each
+  cell to its figure (52 px numbers, 62 px lengths, 42 px waste / ×, selects
+  capped at 118 px, the description cell takes the rest). `test-addl-fit.mjs`
+  measures no overflow and every row on the page at 1280 and 1366 px.
 - **Excavation is the estimator's decision on every ground element**
   (`isGroundElement` = library group Foundations / Retention Walls / Ground
   Structure / Ramps / External Works / Special Items, never the generic
