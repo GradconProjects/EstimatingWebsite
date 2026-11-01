@@ -13,7 +13,7 @@
  * came across from the Estimates tab). Reseeding never runs over a tender
  * the estimator has already edited unless they ask for it.
  */
-import { uid, computeElementCost, labourQuantities, computeExternalScopeLines, getDefaultMargin } from "./costing.js";
+import { uid, computeElementCost, labourQuantities, computeExternalScopeLines, getDefaultMargin, projectMargin } from "./costing.js";
 import { ELEMENT_TYPES } from "../data/catalog.js";
 
 export const TENDER_INCLUSIONS = [
@@ -257,7 +257,7 @@ export const itemPriceLabel = (item) => (itemHasRowPrices(item) ? fmtTenderPrice
  * (the AI placement or the row's select, recorded) else `defaultStageFor`.
  * Every field is editable afterwards. */
 export function seedTenderItems(quote, items, rates) {
-  const { lines } = computeExternalScopeLines(items, rates, quote.overheadPct, quote.contingencyPct, getDefaultMargin(), quote.scope);
+  const { lines } = computeExternalScopeLines(items, rates, quote.overheadPct, quote.contingencyPct, projectMargin(quote), quote.scope);
   const sellById = {};
   lines.forEach((l) => { sellById[l.id] = l.sellExGst; });
   const fmt = (n, dp = 2) => Number(n).toLocaleString("en-AU", { maximumFractionDigits: dp });

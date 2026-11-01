@@ -1,10 +1,10 @@
 import { useState, useMemo, useEffect, useRef } from "react";
-import { Settings2, ArrowLeft, Printer, ListPlus, FileSpreadsheet, LayoutDashboard, Radar, FolderOpen, History, HardDriveDownload, AlertTriangle, MapPin, Loader2, Mail } from "lucide-react";
+import { Settings2, ArrowLeft, Printer, ListPlus, FileSpreadsheet, LayoutDashboard, Radar, FolderOpen, History, HardDriveDownload, AlertTriangle, MapPin, Loader2, Mail , Percent } from "lucide-react";
 import { saveVersion, downloadQuoteFile, parseQuoteFile } from "./lib/quoteVersions.js";
 import { quoteStorageKey } from "./lib/projects.js";
 import VersionsModal from "./components/VersionsModal.jsx";
 import { ELEMENT_TYPES, QUOTE_STATUSES, QUOTE_STATUS_STYLES, QUOTE_SCOPES, normalizeStatus } from "./data/catalog.js";
-import { defaultRates, newElementItem, computeGrandTotal, uid, money, rateKey, isManualQuoteKey, SCOPE_KEYS, scopeLabel } from "./lib/costing.js";
+import { defaultRates, newElementItem, computeGrandTotal, uid, money, rateKey, isManualQuoteKey, SCOPE_KEYS, scopeLabel, elementMarginPatch, rowMarginPatch, projectMarginPatch } from "./lib/costing.js";
 import { pendingRateUpdates, readLibraryState, readLastSynced, writeLastSynced, RATES_LIBRARY_KEY } from "./lib/ratesLibrarySync.js";
 import { effectiveRates, statusChangePatch, needsFreeze, freezeRates, frozenRateDrift, hasFrozenRates, isRatesLocked } from "./lib/rateFreeze.js";
 import { RATE_CHANGES_KEY, recordRateChanges, pendingRateChanges, elementRateChanges, decideRateChangesPatch, releaseKeptRatesPatch } from "./lib/rateChanges.js";
@@ -13,6 +13,8 @@ import CloudStorageView from "./components/CloudStorageView.jsx";
 import { AddressOptions } from "./components/AddressNaming.jsx";
 import { needsAddressReview, requestProjectNames, autoApplies, applyNamePatch, keepNamePatch } from "./lib/projectNaming.js";
 import { preferredProvider } from "./lib/tenderWording.js";
+import { marginContext, requestMarginAdvice, pastMarginsFrom } from "./lib/marginAdvice.js";
+import MarginRegister from "./components/MarginRegister.jsx";
 import { resolveTheme, applyTheme } from "./lib/quoteTheme.js";
 import { progress as workProgress, whenLabel as workWhen, userKey as workUser } from "./lib/workTrail.js";
 import { NOTICE_IDS, noticeSig, isNoticeCleared, clearNotice, restoreNotices, clearedCount } from "./lib/notices.js";
@@ -549,6 +551,7 @@ export default function App() {
       rateChanges={rateChanges}
       key={activeProject.id}
       project={activeProject}
+      allProjects={projects}
       rates={rates}
       setRates={setRates}
       ratesStatus={ratesStatus}
@@ -565,7 +568,7 @@ export default function App() {
   );
 }
 
-function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, ratesStatus, rateChanges, saveProjectsNow, onBack, isDraft, onPromote, elementTypes, categoryOrder, sectionOrder, customTypes, setCustomTypes }) {
+function ProjectEditor({ project, allProjects, rates: liveRates, setRates: setLiveRates, ratesStatus, rateChanges, saveProjectsNow, onBack, isDraft, onPromote, elementTypes, categoryOrder, sectionOrder, customTypes, setCustomTypes }) {
   const [quote, setQuote, quoteStatus, saveQuoteNow, quoteLoaded] = useStoredState(project.storageKey, blankQuote());
 
   /* ---- Pinned rates on a finished project (see lib/rateFreeze.js) ----
@@ -841,6 +844,23 @@ function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, rate
     setItems((its) => [...its, newElementItem(type)]);
   };
   const updateItem = (id, next) => setItems((its) => its.map((it) => (it.id === id ? next : it)));
+  // Variable margins (1 Nov 2026, lib/costing.js): the project margin on the
+  // ladder, an element's own rate, a subcontract quote row's own rate — all
+  // on the quote, fractions, blank = inherit. The AI suggestion reads this
+  // quote's figures and the margins recorded on the other projects.
+  const [marginsOpen, setMarginsOpen] = useState(false);
+  const setProjectMargin = (v) => setQuote((q) => projectMarginPatch(q, v));
+  const setElementMargin = (id, v) => setItems((its) => its.map((it) => (it.id === id ? elementMarginPatch(it, v) : it)));
+  const setRowMargin = (id, key, v) => setItems((its) => its.map((it) => (it.id === id ? rowMarginPatch(it, key, v) : it)));
+  const requestAdvice = async () => {
+    let past = [];
+    try {
+      const keys = (allProjects || []).map((p) => p.storageKey).filter((k) => k && k !== project.storageKey);
+      if (keys.length) { const { map } = await readQuoteSummariesDetailed(keys); past = pastMarginsFrom(map, quote.projectName); }
+    } catch { past = []; }
+    const ctx = marginContext(quote, items, rates, { pastProjects: past });
+    return requestMarginAdvice(ctx, { provider: preferredProvider() });
+  };
   const removeItem = (id) => setItems((its) => its.filter((it) => it.id !== id));
   const reorderItems = (draggedId, targetId) =>
     setItems((its) => {
@@ -1029,6 +1049,15 @@ function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, rate
             data-testid="drive-files-button"
           >
             <FolderOpen size={16} /> Files{allProjectFiles(quote).length > 0 && <span className="text-orange-300">({allProjectFiles(quote).length})</span>}
+          </button>
+          <button
+            onClick={() => { setMarginsOpen((o) => !o); setTimeout(() => { const el = document.getElementById("margin-register"); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); }, 50); }}
+            disabled={!(quote.items || []).length}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-900 hover:bg-blue-800 text-sm font-medium transition-colors flex-none disabled:opacity-40"
+            title="The margin register: every priced line with its rate, the subcontract quotes at their own, the overall rate"
+            data-testid="margins-button"
+          >
+            <Percent size={16} /> Margins
           </button>
           <button
             onClick={() => {
@@ -1296,6 +1325,13 @@ function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, rate
               handover={quote.handover}
             />
           ))}
+          {items.length > 0 && (
+            <MarginRegister
+              items={items} rates={rates} quote={quote} scope={quote.scope}
+              setProjectMargin={setProjectMargin} setElementMargin={setElementMargin} setRowMargin={setRowMargin}
+              open={marginsOpen} onToggle={() => setMarginsOpen((o) => !o)}
+            />
+          )}
           {items.length === 0 && (
             <div className="text-center py-16 text-neutral-400 border-2 border-dashed border-neutral-200 rounded-xl">
               Pick an element above to add it — every applicable material, reo, formwork and labour line for that
@@ -1318,6 +1354,11 @@ function ProjectEditor({ project, rates: liveRates, setRates: setLiveRates, rate
             setOverheadPct={(v) => setQuote((q) => ({ ...q, overheadPct: v }))}
             contingencyPct={quote.contingencyPct}
             setContingencyPct={(v) => setQuote((q) => ({ ...q, contingencyPct: v }))}
+            quote={quote}
+            setProjectMargin={setProjectMargin}
+            setElementMargin={setElementMargin}
+            setRowMargin={setRowMargin}
+            requestAdvice={requestAdvice}
           />
         </div>
       </div>

@@ -29,6 +29,7 @@
 import { callDocuments, callText, callWebSearch, resolveProviderId, parseJsonLoose, salvageArrays, providerStatus } from "./_providers.js";
 import { tenderWordingPrompt, parseTenderWording, tenderItemsPrompt, parseTenderItems, parseTenderExtras, parseTenderPlacement } from "../src/lib/tenderWording.js";
 import { addressPrompt, parseAddressReply } from "../src/lib/projectNaming.js";
+import { marginAdvicePrompt, parseMarginAdvice } from "../src/lib/marginAdvice.js";
 
 export const config = { maxDuration: 300 };
 
@@ -179,6 +180,22 @@ export async function runAiJob(body, env = process.env) {
       return { status: e.status && e.status >= 400 && e.status < 600 ? e.status : 502, body: { error: e.message, detail: e.detail || null, provider: id } };
     }
   }
+  if (action === "margin") {
+    // The margin suggestion under the ladder (src/lib/marginAdvice.js;
+    // Grady, 1 Nov 2026). Advice with reasons; a person presses Use.
+    const context = body.context && typeof body.context === "object" ? body.context : null;
+    if (!context || JSON.stringify(context).length > 12000) return { status: 400, body: { error: "margin needs context: {…} (under 12 kB)" } };
+    const id = resolveProviderId(provider, env);
+    if (!id) return { status: 503, body: { error: "No AI provider is configured — set ANTHROPIC_API_KEY or OPENAI_API_KEY in the Vercel project's Environment Variables." } };
+    try {
+      const r = await callText(id, { system: "You are the commercial manager of Gradcon Concrete Constructions, Melbourne — a concrete subcontractor pricing footings, slabs, walls and suspended work for builders. You advise the margin on a tender from the facts given and nothing else. Reply with ONE JSON object and nothing else.", prompt: marginAdvicePrompt(context), maxTokens: 600 });
+      const advice = parseMarginAdvice(r.text);
+      if (!advice) return { status: 502, body: { error: "The AI gave no usable margin.", provider: id } };
+      return { status: 200, body: { advice, provider: r.provider, model: r.model, latencyMs: r.latencyMs } };
+    } catch (e) {
+      return { status: e.status && e.status >= 400 && e.status < 600 ? e.status : 502, body: { error: e.message, detail: e.detail || null, provider: id } };
+    }
+  }
   if (action === "address") {
     // Project names in the address convention (src/lib/projectNaming.js;
     // Grady, 22 Oct 2026). The model proposes, a person applies or chooses.
@@ -254,7 +271,7 @@ export async function runAiJob(body, env = process.env) {
     }
   }
   const DOC_ACTIONS = { takeoff: null, spec: specPrompt, geotech: geotechPrompt, contract: contractPrompt };
-  if (!(action in DOC_ACTIONS)) return { status: 400, body: { error: 'Body must carry action "takeoff", "spec", "geotech", "contract", "qa", "benchmarks" or "tender-wording"' } };
+  if (!(action in DOC_ACTIONS)) return { status: 400, body: { error: 'Body must carry action "takeoff", "spec", "geotech", "contract", "qa", "benchmarks", "margin" or "tender-wording"' } };
   const bad = validFiles(files);
   if (bad) return { status: 400, body: { error: bad } };
   if (action === "takeoff" && (!Array.isArray(types) || types.length === 0 || types.length > MAX_TYPES)) return { status: 400, body: { error: "takeoff needs the element type list (types: [{id, label, group}])" } };

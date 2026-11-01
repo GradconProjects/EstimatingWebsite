@@ -1200,17 +1200,157 @@ export function computeMarginLadder(directCost, overheadPct, contingencyPct, gfa
  * cost's share of the whole quote's direct cost.
  */
 export function computeExternalScopeLines(items, rates, overheadPct, contingencyPct, marginPct, projectScope) {
-  if (marginPct === undefined) marginPct = getDefaultMargin();
-  const costed = items
-    .map((item) => ({ id: item.id, label: item.label, directCost: computeElementCost(item, rates, projectScope).total }))
-    .filter((l) => l.directCost > 0);
-  const directTotal = costed.reduce((s, l) => s + l.directCost, 0);
-  const { rows } = computeMarginLadder(directTotal, overheadPct, contingencyPct, 0, [marginPct]);
-  const totalExGst = rows[0]?.sellExGst || 0;
-  const lines = costed.map((l) => ({
-    id: l.id,
-    label: l.label,
-    sellExGst: directTotal > 0 ? (l.directCost / directTotal) * totalExGst : 0,
-  }));
+  // Since 1 Nov 2026 each element sells at ITS OWN resolved margin
+  // (computeElementSell — the element's pinned rate, a subcontract quote
+  // row's pinned rate, else `marginPct`, the project margin). With nothing
+  // pinned this is exactly the old proportional share of one ladder sell.
+  const q = { overheadPct, contingencyPct, marginPct };
+  const costed = items.map((item) => computeElementSell(item, rates, q, projectScope)).filter((e) => e.cost > 0);
+  const totalExGst = costed.reduce((s, e) => s + e.sell, 0);
+  const lines = costed.map((e) => ({ id: e.id, label: e.label, sellExGst: e.sell }));
   return { lines, totalExGst };
+}
+
+/* ===================== VARIABLE MARGINS =====================
+ * Grady, 1 Nov 2026: "variable application of margins especially for
+ * contractor quote items and also the final quote margin register so we can
+ * adjust and determine what rate to apply per line and also the possibility
+ * of changing the overall rate". Three levels, each a FRACTION (0.25 = 25%,
+ * rule 3), each blank = inherit the one above:
+ *   quote.marginPct            — the project margin, typed on the ladder
+ *                                (blank = the Settings default, getDefaultMargin)
+ *   item.marginPct             — an element pinned at its own rate
+ *   item.rowMargins[rateKey]   — a SUB CONTRACTORS quote row pinned at its own
+ *                                rate (the piler passed through at 8% while the
+ *                                element's own work stays at 25%)
+ * `rowMargin` / `elementMargin` / `projectMargin` are the ONE resolution;
+ * `computeElementSell` the ONE pricing of an element (its own work at the
+ * element's rate + each subcontract quote row at its rate, every line loaded
+ * with the project's overheads and contingency first, sell = loaded ÷ (1 −
+ * margin) — margin on the SELL price, as computeMarginLadder); the Tender
+ * Quote, the External Quote, the Quote Summary, the print, the exports, the
+ * Dashboard and the Margin Register all price through it. Margins are
+ * commercial figures: they live on the quote, never in the rates pin or the
+ * Rates Library. */
+export const SUBCONTRACT_CATEGORY_KEY = "SUB CONTRACTORS / TEMPORARY WORKS";
+/** A typed margin, or null for "inherit" — blank / undefined / anything that is not a fraction in [0, 1). */
+export function pinnedMargin(v) {
+  if (v === "" || v === null || v === undefined) return null;
+  const m = Number(v);
+  return Number.isFinite(m) && m >= 0 && m < 1 ? m : null;
+}
+export function projectMargin(quote) {
+  const p = pinnedMargin(quote && quote.marginPct);
+  return p == null ? getDefaultMargin() : p;
+}
+export function elementMargin(item, project) {
+  const p = pinnedMargin(item && item.marginPct);
+  return p == null ? project : p;
+}
+export function rowMargin(item, key, project) {
+  const p = pinnedMargin(item && item.rowMargins && item.rowMargins[key]);
+  return p == null ? elementMargin(item, project) : p;
+}
+/** Where a line's rate comes from: "row" (a pinned quote row), "element" (a pinned element) or "project". */
+export function marginSource(item, key) {
+  if (key && pinnedMargin(item && item.rowMargins && item.rowMargins[key]) != null) return "row";
+  if (pinnedMargin(item && item.marginPct) != null) return "element";
+  return "project";
+}
+/** Direct cost with the project's overheads and contingency on it — the ladder's "subtotal", per line. */
+export function loadCost(cost, overheadPct, contingencyPct) {
+  return (Number(cost) || 0) * (1 + (Number(overheadPct) || 0) + (Number(contingencyPct) || 0));
+}
+export function sellAtMargin(loaded, margin) {
+  const m = Number(margin) || 0;
+  return m < 1 ? loaded / (1 - m) : loaded;
+}
+/** The element's SUB CONTRACTORS quote rows that carry money under the scope: `[{key, name, cost}]`. */
+export function subcontractQuoteLines(item, rates, projectScope) {
+  const cat = FULL_CATALOG.find((c) => c.key === SUBCONTRACT_CATEGORY_KEY);
+  if (!cat || !item || !categoryAppliesTo(cat, item)) return [];
+  if (!categoryChargedUnder(cat, elementScope(item, projectScope))) return [];
+  const ctx = rowContext(item);
+  const out = [];
+  cat.products.forEach((p) => {
+    if (p.unit !== "quote") return;
+    const key = rateKey(cat.key, p.name, p.unit);
+    const qty = Number(item.qtys && item.qtys[key]) || 0;
+    if (!(qty > 0)) return;
+    const cost = computeRowTotal(cat, rowRate(item, rates, key, { unitCost: p.unitCost ?? 0 }), qty, ctx);
+    if (cost > 0) out.push({ key, name: productLabel(p), cost });
+  });
+  return out;
+}
+/** One element priced at its resolved margins: `{id, label, cost, loaded, sell, margin (blended), elementMargin, lines: [{kind: "own" | "sub", key, name, cost, loaded, margin, source, sell}]}`. */
+export function computeElementSell(item, rates, quote, projectScope) {
+  const q = quote || {};
+  const pm = projectMargin(q);
+  const oh = q.overheadPct, ct = q.contingencyPct;
+  const cost = computeElementCost(item, rates, projectScope).total;
+  const subs = subcontractQuoteLines(item, rates, projectScope);
+  const subCost = subs.reduce((s, l) => s + l.cost, 0);
+  const own = Math.max(0, cost - subCost);
+  const em = elementMargin(item, pm);
+  const lines = [];
+  if (own > 0 || !subs.length) {
+    const loaded = loadCost(own, oh, ct);
+    lines.push({ kind: "own", key: null, name: item.label, cost: own, loaded, margin: em, source: marginSource(item, null), sell: sellAtMargin(loaded, em) });
+  }
+  subs.forEach((l) => {
+    const m = rowMargin(item, l.key, pm);
+    const loaded = loadCost(l.cost, oh, ct);
+    lines.push({ kind: "sub", key: l.key, name: l.name, cost: l.cost, loaded, margin: m, source: marginSource(item, l.key), sell: sellAtMargin(loaded, m) });
+  });
+  const loaded = lines.reduce((s, l) => s + l.loaded, 0);
+  const sell = lines.reduce((s, l) => s + l.sell, 0);
+  return { id: item.id, label: item.label, cost, loaded, sell, margin: sell > 0 ? 1 - loaded / sell : em, elementMargin: em, lines };
+}
+/** The Margin Register: every priced line with its rate and source, the per-class subtotals and the blended whole. */
+export function computeMarginRegister(items, rates, quote, projectScope) {
+  const q = quote || {};
+  const pm = projectMargin(q);
+  const elements = (items || []).map((it) => computeElementSell(it, rates, q, projectScope)).filter((e) => e.cost > 0);
+  const lines = elements.flatMap((e) => e.lines.filter((l) => l.cost > 0).map((l) => ({ ...l, elementId: e.id, element: e.label })));
+  const sum = (arr, k) => arr.reduce((s, l) => s + (l[k] || 0), 0);
+  const cls = (kind) => {
+    const ls = lines.filter((l) => l.kind === kind);
+    const loaded = sum(ls, "loaded"), sell = sum(ls, "sell");
+    return { count: ls.length, cost: sum(ls, "cost"), loaded, sell, margin: sell > 0 ? 1 - loaded / sell : null };
+  };
+  const cost = sum(elements, "cost"), loaded = sum(elements, "loaded"), sell = sum(elements, "sell");
+  return {
+    projectMargin: pm,
+    elements,
+    lines,
+    pinned: lines.filter((l) => l.source !== "project").length,
+    byClass: { own: cls("own"), sub: cls("sub") },
+    totals: { cost, loaded, sell, sellIncGst: sell * (1 + getGstRate()), blended: sell > 0 ? 1 - loaded / sell : pm },
+  };
+}
+/** The ladder's rungs with the project margin among them (so a typed 22% has its own highlighted row). */
+export function marginStepsAround(project, steps) {
+  const base = (steps || getMarginSteps()).slice();
+  if (!base.some((s) => Math.abs(s - project) < 1e-9)) base.push(project);
+  return base.sort((a, b) => a - b);
+}
+export function elementMarginPatch(item, pct) {
+  const p = pinnedMargin(pct);
+  const next = { ...item };
+  if (p == null) delete next.marginPct; else next.marginPct = p;
+  return next;
+}
+export function rowMarginPatch(item, key, pct) {
+  const p = pinnedMargin(pct);
+  const rm = { ...((item && item.rowMargins) || {}) };
+  if (p == null) delete rm[key]; else rm[key] = p;
+  const next = { ...item };
+  if (Object.keys(rm).length) next.rowMargins = rm; else delete next.rowMargins;
+  return next;
+}
+export function projectMarginPatch(quote, pct) {
+  const p = pinnedMargin(pct);
+  const next = { ...quote };
+  if (p == null) delete next.marginPct; else next.marginPct = p;
+  return next;
 }

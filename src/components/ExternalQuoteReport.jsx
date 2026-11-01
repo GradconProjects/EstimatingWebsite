@@ -1,5 +1,5 @@
 import { useRef } from "react";
-import { computeExternalScopeLines, money2, getDefaultMargin } from "../lib/costing.js";
+import { computeExternalScopeLines, money2, projectMargin } from "../lib/costing.js";
 import { GRADCON_LOGO_FULL_DATA_URI } from "../lib/logo.js";
 import { newExternalQuote } from "../lib/externalQuoteDefaults.js";
 import { tenderNoteLines } from "../lib/tenderNotes.js";
@@ -177,7 +177,7 @@ function Bullets({ text }) {
 }
 
 function ReportContent({ quote, items, rates, eq }) {
-  const { lines, totalExGst } = computeExternalScopeLines(items, rates, quote.overheadPct, quote.contingencyPct, getDefaultMargin(), quote.scope);
+  const { lines, totalExGst } = computeExternalScopeLines(items, rates, quote.overheadPct, quote.contingencyPct, projectMargin(quote), quote.scope);
 
   return (
     <>

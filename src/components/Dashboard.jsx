@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Plus, Trash2, ArrowRight, LayoutDashboard, Loader2, FolderOpen, ArrowUp, ArrowDown, ArrowUpDown, MapPin } from "lucide-react";
 import { QUOTE_STATUSES, QUOTE_STATUS_STYLES, normalizeStatus } from "../data/catalog.js";
-import { computeGrandTotal, computeMarginLadder, money, getDefaultMargin, getMarginSteps, scopeLabel } from "../lib/costing.js";
+import { computeGrandTotal, computeMarginLadder, computeMarginRegister, money, getDefaultMargin, getMarginSteps, scopeLabel } from "../lib/costing.js";
 import { checklistProgress } from "../lib/tenderChecklist.js";
 import { readQuoteSummariesDetailed, readQuotesCached, patchQuoteFields } from "../lib/projects.js";
 import { SummaryLoadNotice } from "./atoms.jsx";
@@ -54,7 +54,9 @@ function summarizeQuote(quote, liveRates) {
     quote.gfa,
     getMarginSteps()
   );
-  const defaultRow = rows.find((r) => Math.abs(r.margin - getDefaultMargin()) < 1e-9) || rows[0];
+  // the quote's OWN margins (the project margin typed on its ladder, the pinned elements and quote rows — lib/costing.js, 1 Nov 2026)
+  const reg = computeMarginRegister(items, rates, quote, quote.scope);
+  const sell = reg.totals.sell;
   return {
     name: quote.projectName || "Untitled project",
     client: quote.clientName || "",
@@ -76,8 +78,9 @@ function summarizeQuote(quote, liveRates) {
     source: quote.source && quote.source.kind === "mail" ? { kind: "mail", from: quote.source.from || "", receivedAt: quote.source.receivedAt || "" } : null, // created by the inbox scan (api/tender-inbox.js)
     directCost,
     subtotal,
-    sellExGst: defaultRow?.sellExGst || 0,
-    perM2: defaultRow?.perM2 || 0,
+    sellExGst: sell || 0,
+    perM2: Number(quote.gfa) > 0 ? (sell || 0) / Number(quote.gfa) : 0,
+    marginPct: reg.totals.blended,
   };
 }
 
@@ -402,7 +405,7 @@ export default function Dashboard({ projects, rates, rateChanges, onOpen, onCrea
         <StatTile label="Projects" value={summaries.length} />
         <StatTile label="Total direct cost" value={money(totals.directCost)} />
         <StatTile
-          label={`Total sell (${Math.round(getDefaultMargin() * 100)}% margin, ex GST)`}
+          label="Total sell (each quote's own margins, ex GST)"
           value={money(totals.sellExGst)}
           highlight
         />
@@ -422,7 +425,7 @@ export default function Dashboard({ projects, rates, rateChanges, onOpen, onCrea
               <SortTh sortKey="status" label="Status" sort={sort} onSort={chooseSort} />
               <SortTh sortKey="elements" label="Elements" align="right" sort={sort} onSort={chooseSort} />
               <SortTh sortKey="cost" label="Direct cost" align="right" sort={sort} onSort={chooseSort} />
-              <SortTh sortKey="value" label={`Sell (${Math.round(getDefaultMargin() * 100)}%, ex GST)`} align="right" sort={sort} onSort={chooseSort} />
+              <SortTh sortKey="value" label="Sell (quote margins, ex GST)" align="right" sort={sort} onSort={chooseSort} />
               <th className="px-3 py-2" />
             </tr>
           </thead>

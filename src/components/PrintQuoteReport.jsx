@@ -3,7 +3,7 @@ import {
 } from "../data/catalog.js";
 import { markupSrc } from "../lib/markupStore.js";
 import {
-  computeElementCost, computeGrandTotal, computeMarginLadder, rateKey, rowRate, computeRowTotal, rowContext, money, money2, getDefaultMargin, getMarginSteps, autoSoilRemoval, autoBlindingConcrete, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, additionalRowsFor, additionalRowTotal, autoSpecialistFees, categoryAppliesTo, computeExcludedTotals, categoryChargedUnder, scopeLabel, isProvisional, computeProvisionalTotals, isBlindingProduct, blindingIncluded } from "../lib/costing.js";
+  computeElementCost, computeGrandTotal, computeMarginLadder, computeMarginRegister, projectMargin, marginStepsAround, rateKey, rowRate, computeRowTotal, rowContext, money, money2, getDefaultMargin, getMarginSteps, autoSoilRemoval, autoBlindingConcrete, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, additionalRowsFor, additionalRowTotal, autoSpecialistFees, categoryAppliesTo, computeExcludedTotals, categoryChargedUnder, scopeLabel, isProvisional, computeProvisionalTotals, isBlindingProduct, blindingIncluded } from "../lib/costing.js";
 import { GRADCON_LOGO_DATA_URI } from "../lib/logo.js";
 
 /**
@@ -81,9 +81,12 @@ function ReportContent({ quote, items, rates, categoryOrder, sectionOrder }) {
   const grandTotal = computeGrandTotal(items, rates, quote.scope);
   const provisional = computeProvisionalTotals(items, rates, quote.scope);
   const excluded = computeExcludedTotals(items, rates, quote.scope);
+  const pm = projectMargin(quote);
   const { subtotal, rows } = computeMarginLadder(
-    grandTotal, quote.overheadPct, quote.contingencyPct, quote.gfa, getMarginSteps()
+    grandTotal, quote.overheadPct, quote.contingencyPct, quote.gfa, marginStepsAround(pm)
   );
+  const reg = computeMarginRegister(items, rates, quote, quote.scope);
+  const pct = (f) => `${Math.round((Number(f) || 0) * 1000) / 10}%`;
 
   return (
     <>
@@ -178,9 +181,9 @@ function ReportContent({ quote, items, rates, categoryOrder, sectionOrder }) {
             {rows.map((row) => (
               <tr
                 key={row.margin}
-                className={`border-b border-neutral-200 ${Math.abs(row.margin - getDefaultMargin()) < 1e-9 ? "font-bold" : ""}`}
+                className={`border-b border-neutral-200 ${Math.abs(row.margin - pm) < 1e-9 ? "font-bold" : ""}`}
               >
-                <td className="py-0.5">{Math.round(row.margin * 100)}%</td>
+                <td className="py-0.5">{pct(row.margin)}{Math.abs(row.margin - pm) < 1e-9 ? " (project margin)" : ""}</td>
                 <td className="py-0.5 text-right">{(row.markupOnCost * 100).toFixed(1)}%</td>
                 <td className="py-0.5 text-right">{money(row.sellExGst)}</td>
                 <td className="py-0.5 text-right">{money(row.sellIncGst)}</td>
@@ -190,6 +193,44 @@ function ReportContent({ quote, items, rates, categoryOrder, sectionOrder }) {
           </tbody>
         </table>
       </div>
+
+      {reg.lines.length > 0 && (
+        <div className="mt-4 break-inside-avoid" data-testid="print-margin-register">
+          <div className="font-bold text-[13px] mb-1">Margin register — overall {pct(pm)}, blended {pct(reg.totals.blended)}{reg.pinned > 0 ? `, ${reg.pinned} line${reg.pinned === 1 ? "" : "s"} pinned` : ""}</div>
+          <table className="w-full text-[11px]">
+            <thead>
+              <tr className="text-left bg-blue-50 text-blue-900">
+                <th className="py-1 px-1">Line</th>
+                <th className="py-1 px-1 text-right">Cost</th>
+                <th className="py-1 px-1 text-right">Loaded</th>
+                <th className="py-1 px-1 text-right">Margin</th>
+                <th className="py-1 px-1">Source</th>
+                <th className="py-1 px-1 text-right">Sell (ex GST)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {reg.lines.map((l) => (
+                <tr key={`${l.elementId}:${l.key || "own"}`} className="border-b border-neutral-200">
+                  <td className="py-0.5 px-1">{l.kind === "sub" ? `${l.name} — subcontract quote (${l.element})` : l.element}</td>
+                  <td className="py-0.5 px-1 text-right">{money2(l.cost)}</td>
+                  <td className="py-0.5 px-1 text-right">{money2(l.loaded)}</td>
+                  <td className="py-0.5 px-1 text-right">{pct(l.margin)}</td>
+                  <td className="py-0.5 px-1">{l.source === "project" ? "project" : `${l.source} · pinned`}</td>
+                  <td className="py-0.5 px-1 text-right">{money2(l.sell)}</td>
+                </tr>
+              ))}
+              <tr className="font-bold">
+                <td className="py-0.5 px-1">Whole quote</td>
+                <td className="py-0.5 px-1 text-right">{money2(reg.totals.cost)}</td>
+                <td className="py-0.5 px-1 text-right">{money2(reg.totals.loaded)}</td>
+                <td className="py-0.5 px-1 text-right">{pct(reg.totals.blended)}</td>
+                <td className="py-0.5 px-1">blended</td>
+                <td className="py-0.5 px-1 text-right">{money2(reg.totals.sell)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
     </>
   );
 }

@@ -19,7 +19,7 @@
  *   can't accept the HTML clipboard format still gets usable text).
  */
 import { FULL_CATALOG, RESOURCE_COLS, CATEGORY_ORDER, SECTION_ORDER } from "../data/catalog.js";
-import { computeElementCost, computeGrandTotal, computeMarginLadder, rateKey, rowRate, computeRowTotal, rowContext, getDefaultMargin, getMarginSteps, additionalRowsFor, additionalRowTotal, autoSoilRemoval, autoBlindingConcrete, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, autoSpecialistFees, categoryAppliesTo, elementScope, categoryChargedUnder, scopeLabel, isBlindingProduct, blindingIncluded } from "./costing.js";
+import { computeElementCost, computeGrandTotal, computeMarginLadder, computeMarginRegister, projectMargin, marginStepsAround, rateKey, rowRate, computeRowTotal, rowContext, getDefaultMargin, getMarginSteps, additionalRowsFor, additionalRowTotal, autoSoilRemoval, autoBlindingConcrete, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, autoSpecialistFees, categoryAppliesTo, elementScope, categoryChargedUnder, scopeLabel, isBlindingProduct, blindingIncluded } from "./costing.js";
 import { GRADCON_LOGO_DATA_URI } from "./logo.js";
 
 /** Rate ($/unit) backed out from the line's own total ÷ qty — always exactly
@@ -162,9 +162,12 @@ ${rows.map(([label, value]) => tr(
 export function buildQuoteExcelHtml(quote, items, rates, categoryOrder = CATEGORY_ORDER, sectionOrder = SECTION_ORDER) {
   const groups = groupItems(items, rates, categoryOrder, sectionOrder, quote.scope);
   const grandTotal = computeGrandTotal(items, rates, quote.scope);
+  const pm = projectMargin(quote);
   const { subtotal, rows: marginRows } = computeMarginLadder(
-    grandTotal, quote.overheadPct, quote.contingencyPct, quote.gfa, getMarginSteps()
+    grandTotal, quote.overheadPct, quote.contingencyPct, quote.gfa, marginStepsAround(pm)
   );
+  const reg = computeMarginRegister(items, rates, quote, quote.scope);
+  const pctStr = (f) => `${Math.round((Number(f) || 0) * 1000) / 10}%`;
 
   let itemNo = 0;
   const rowsHtml = [];
@@ -259,15 +262,37 @@ ${summaryRows.join("\n")}
     + td("$/m² GFA", { bold: true, bg: COLORS.navy, color: COLORS.navyText, align: "right" })
   ));
   marginRows.forEach((r) => {
-    const isDefault = Math.abs(r.margin - getDefaultMargin()) < 1e-9;
+    const isDefault = Math.abs(r.margin - pm) < 1e-9;
     const bg = isDefault ? COLORS.defaultMargin : undefined;
     marginRowsHtml.push(tr(
-      td(`${Math.round(r.margin * 100)}%`, { bold: isDefault, bg })
+      td(`${pctStr(r.margin)}${isDefault ? " (project margin)" : ""}`, { bold: isDefault, bg })
       + td(r.sellExGst.toFixed(2), { align: "right", bg, numeric: true })
       + td(r.sellIncGst.toFixed(2), { align: "right", bg, numeric: true })
       + td(r.perM2 > 0 ? r.perM2.toFixed(2) : "", { align: "right", bg, numeric: r.perM2 > 0 })
     ));
   });
+  // the margin register: every line at its own rate (lib/costing.js computeMarginRegister)
+  if (reg.lines.length) {
+    marginRowsHtml.push(tr(td("", {}) + td("", {}) + td("", {}) + td("", {})));
+    marginRowsHtml.push(tr(
+      td(`Margin register — overall ${pctStr(pm)}, blended ${pctStr(reg.totals.blended)}`, { bold: true, bg: COLORS.navy, color: COLORS.navyText })
+      + td("Loaded cost", { bold: true, bg: COLORS.navy, color: COLORS.navyText, align: "right" })
+      + td("Margin (source)", { bold: true, bg: COLORS.navy, color: COLORS.navyText, align: "right" })
+      + td("Sell (ex GST)", { bold: true, bg: COLORS.navy, color: COLORS.navyText, align: "right" })
+    ));
+    reg.lines.forEach((l) => {
+      marginRowsHtml.push(tr(
+        td(l.kind === "sub" ? `${l.name} — subcontract quote (${l.element})` : l.element, {})
+        + td(l.loaded.toFixed(2), { align: "right", numeric: true })
+        + td(`${pctStr(l.margin)} (${l.source === "project" ? "project" : l.source + " · pinned"})`, { align: "right" })
+        + td(l.sell.toFixed(2), { align: "right", numeric: true })
+      ));
+    });
+    marginRowsHtml.push(tr(
+      td("Whole quote (blended)", { bold: true }) + td(reg.totals.loaded.toFixed(2), { align: "right", numeric: true, bold: true })
+      + td(pctStr(reg.totals.blended), { align: "right", bold: true }) + td(reg.totals.sell.toFixed(2), { align: "right", numeric: true, bold: true })
+    ));
+  }
   const marginTableHtml = `<table class="margin"><colgroup><col class="g0"><col class="g1"><col class="g2"><col class="g3"></colgroup>
 ${marginRowsHtml.join("\n")}
 </table>`;
@@ -356,8 +381,9 @@ export function buildQuoteCsv(quote, items, rates, categoryOrder = CATEGORY_ORDE
   lines.push("");
   lines.push(csvRow("", "", "", "GRAND TOTAL (EX GST)", "", "", "", grandTotal.toFixed(2)));
 
+  const pm = projectMargin(quote);
   const { subtotal, rows } = computeMarginLadder(
-    grandTotal, quote.overheadPct, quote.contingencyPct, quote.gfa, getMarginSteps()
+    grandTotal, quote.overheadPct, quote.contingencyPct, quote.gfa, marginStepsAround(pm)
   );
   lines.push(csvRow("", "", "", "Subtotal (+ Overheads + Contingency)", "", "", "", subtotal.toFixed(2)));
 
@@ -365,8 +391,16 @@ export function buildQuoteCsv(quote, items, rates, categoryOrder = CATEGORY_ORDE
   lines.push(csvRow("MARGIN LADDER"));
   lines.push(csvRow("Margin", "Sell (ex GST)", "Sell (inc GST)", "$/m² GFA"));
   rows.forEach((r) => {
-    lines.push(csvRow(`${Math.round(r.margin * 100)}%`, r.sellExGst.toFixed(2), r.sellIncGst.toFixed(2), r.perM2 > 0 ? r.perM2.toFixed(2) : ""));
+    lines.push(csvRow(`${Math.round(r.margin * 1000) / 10}%${Math.abs(r.margin - pm) < 1e-9 ? " (project margin)" : ""}`, r.sellExGst.toFixed(2), r.sellIncGst.toFixed(2), r.perM2 > 0 ? r.perM2.toFixed(2) : ""));
   });
+  const reg = computeMarginRegister(items, rates, quote, quote.scope);
+  if (reg.lines.length) {
+    lines.push("");
+    lines.push(csvRow("MARGIN REGISTER", `overall ${Math.round(pm * 1000) / 10}%`, `blended ${Math.round(reg.totals.blended * 1000) / 10}%`, `${reg.pinned} pinned`));
+    lines.push(csvRow("Line", "Kind", "Element", "Cost", "Loaded", "Margin", "Source", "Sell (ex GST)"));
+    reg.lines.forEach((l) => lines.push(csvRow(l.kind === "sub" ? l.name : l.element, l.kind === "sub" ? "subcontract quote" : "own work", l.element, l.cost.toFixed(2), l.loaded.toFixed(2), `${Math.round(l.margin * 1000) / 10}%`, l.source === "project" ? "project" : `${l.source} (pinned)`, l.sell.toFixed(2))));
+    lines.push(csvRow("Whole quote", "", "", reg.totals.cost.toFixed(2), reg.totals.loaded.toFixed(2), `${Math.round(reg.totals.blended * 1000) / 10}%`, "blended", reg.totals.sell.toFixed(2)));
+  }
 
   return lines.join("\r\n");
 }

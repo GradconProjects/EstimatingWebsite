@@ -616,6 +616,82 @@ lived in the one shared rate that two other projects also carried):
    only way a pinned project re-prices is its "Re-price with current rates"
    button (two clicks; a `before-reprice` version is kept first).
 
+## Variable margins and the Margin Register (read before touching a sell price)
+
+Grady, 1 Nov 2026: "variable application of margins especially for contractor
+quote items and also the final quote margin register so we can adjust and
+determine what rate to apply per line and also the possibility of changing the
+overall rate"; "the overall margin in the ladder should be editable and
+underneath, let the AI suggest best margin based on what was entered. the
+other margins should be entered in a new row under the element rows". Rules:
+
+1. **Three levels, every one a FRACTION, blank = inherit the one above**
+   (`lib/costing.js`, verify-covered): `quote.marginPct` — the PROJECT margin,
+   typed on the ladder's highlighted rung (`PctInput` in `atoms.jsx` is the
+   ONE "type 25 for 25%" conversion; blank = the Settings default,
+   `getDefaultMargin()`, so nothing saved before this re-prices);
+   `item.marginPct` — an element pinned at its own rate (the "Margin" row
+   under the element in the Quote Summary, `element-margin`);
+   `item.rowMargins[rateKey]` — a SUB CONTRACTORS quote row pinned at its own
+   rate (the "sub quote" row under that, `row-margin`): the piler passes
+   through at 8% while the element's own work stays at 25%. `projectMargin` /
+   `elementMargin` / `rowMargin` / `marginSource` are the ONE resolution;
+   `pinnedMargin(v)` the ONE reading of a typed value (0 is a real pin — cost
+   pass-through — never blank); `projectMarginPatch` / `elementMarginPatch` /
+   `rowMarginPatch` the writes (a cleared pin removes the key). Margins are
+   commercial figures: they live on the quote, never in the rates pin, the
+   Rates modal or the Rates Library.
+2. **`computeElementSell(item, rates, quote, scope)` is the ONE pricing of an
+   element**: its own work (direct cost less the subcontract quote rows) at
+   the element's rate plus each `subcontractQuoteLines` row at its rate,
+   every line loaded with the project's overheads and contingency first
+   (`loadCost`) and sold at `sellAtMargin` = loaded ÷ (1 − margin) — margin on
+   the SELL price, as `computeMarginLadder` (rule 4), never a markup.
+   `computeExternalScopeLines` prices each element through it (the 5th
+   argument is the PROJECT margin — callers pass `projectMargin(quote)`), so
+   the Tender Quote's per-element prices, the External Quote, the print
+   report, the .xls / .csv exports and the Dashboard's "Sell (quote margins)"
+   column are all the same figures. With nothing pinned it is exactly the old
+   proportional share of one ladder sell (the verify check on that still
+   holds).
+3. **The Margin Register** (`computeMarginRegister(items, rates, quote,
+   scope)` → `{projectMargin, elements, lines, pinned, byClass: {own, sub},
+   totals: {cost, loaded, sell, sellIncGst, blended}}`; `MarginRegister.jsx`,
+   at the foot of the editor's element column, the header's **Margins**
+   button opens it, `margin-register*` test ids): every priced line with its
+   cost, loaded cost, rate (editable in place — it writes onto the element or
+   the quote row, never kept twice), source (project / element · pinned / row
+   · pinned), sell ex and inc GST, the own-work and subcontract subtotals,
+   the blended rate and the **overall rate** box, which IS the ladder's
+   project margin. The print report carries the same table
+   (`print-margin-register`) and both exports append it after the ladder.
+4. **The ladder centres on the project margin** (`marginStepsAround(pm)` adds
+   the typed rung to the Settings steps; the highlighted rung holds the
+   input and a ↺ back to the default) and the strip under it states the sell
+   at the per-line margins with the blended rate and the pinned count
+   (`margin-blended`).
+5. **The AI suggestion is ADVICE** (`src/lib/marginAdvice.js`, pure;
+   `api/ai-engine.js` action `margin`): `marginContext(quote, items, rates,
+   {pastProjects})` carries the quote's OWN figures — loaded cost, element
+   names, scope, days to the deadline, the subcontract share and each quote
+   row's rate, provisional share, pinned count — and `pastMarginsFrom(
+   summaries)` the margins RECORDED on other projects (only a project whose
+   margin was typed says anything; App reads the drawing-free summaries on
+   demand); `marginAdvicePrompt` forbids inventing a past project, a
+   competitor or a market figure and asks for `{margin_pct, confidence,
+   reasons}`; `parseMarginAdvice` keeps a fraction between 1% and 60% or
+   nothing. The "Suggest a margin" button under the ladder (`margin-suggest`)
+   shows the figure with its reasons; ONLY "Use N%" (`margin-use`) writes the
+   project margin. No provider → 503, never a made-up figure. Benchmark
+   figures never come from memory.
+`verify.mjs` covers the resolution and patches, the element split, the
+register totals and class subtotals, the tie to the external / tender lines,
+the overall-rate move, the default behaviour of an untyped quote, the advice
+context / prompt / parser / request and the server's 400 / 503;
+`test-margins.mjs` proves the ladder input, the inherit / pin rows, the sub
+quote row, the register (open from the header, edit, clear, overall rate),
+the mocked AI suggestion and Use, the saved fractions and the print.
+
 ## Quote scope: labour + materials, labour only, materials only
 
 Grady, 2 Oct 2026: "labour only options … some elements labour only and

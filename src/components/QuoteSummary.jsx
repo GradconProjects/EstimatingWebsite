@@ -1,13 +1,22 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { CATEGORY_ORDER, SECTION_ORDER } from "../data/catalog.js";
 import { isDone } from "../lib/workTrail.js";
-import { computeElementCost, computeGrandTotal, computeExcludedTotals, computeProvisionalTotals, isProvisional, computeMarginLadder, money, money2, getDefaultMargin, getMarginSteps, scopeLabel } from "../lib/costing.js";
-import { NumInput } from "./atoms.jsx";
+import { computeElementCost, computeGrandTotal, computeExcludedTotals, computeProvisionalTotals, isProvisional, computeMarginLadder, money, money2, getDefaultMargin, scopeLabel, computeMarginRegister, projectMargin, pinnedMargin, marginStepsAround, elementMargin } from "../lib/costing.js";
+import { NumInput, PctInput } from "./atoms.jsx";
+
+const pctLabel = (f) => `${Math.round((Number(f) || 0) * 1000) / 10}%`;
 
 export default function QuoteSummary({
   items, onReorder, rates, categoryOrder = CATEGORY_ORDER, sectionOrder = SECTION_ORDER,
   gfa, setGfa, overheadPct, setOverheadPct, contingencyPct, setContingencyPct, scope,
+  quote, setProjectMargin, setElementMargin, setRowMargin, requestAdvice,
 }) {
+  // Variable margins (1 Nov 2026): the project margin is typed on the ladder,
+  // every element and every subcontract quote row can pin its own under the
+  // element's row, and the register prices the lot (lib/costing.js).
+  const pm = projectMargin(quote || {});
+  const reg = useMemo(() => computeMarginRegister(items, rates, quote || {}, scope), [items, rates, quote, scope]);
+  const sellById = useMemo(() => { const m = {}; reg.elements.forEach((e) => { m[e.id] = e; }); return m; }, [reg]);
   // Folded two levels deep — category (Foundations, Suspended Structure...)
   // then section within it — matching the Add-Element dropdown's grouping.
   const byCategory = useMemo(() => {
@@ -27,8 +36,8 @@ export default function QuoteSummary({
   const excluded = useMemo(() => computeExcludedTotals(items, rates, scope), [items, rates, scope]);
   const projectScope = scope && scope !== "both" ? scope : "both";
   const { subtotal, rows } = useMemo(
-    () => computeMarginLadder(grandTotal, overheadPct, contingencyPct, gfa, getMarginSteps()),
-    [grandTotal, overheadPct, contingencyPct, gfa]
+    () => computeMarginLadder(grandTotal, overheadPct, contingencyPct, gfa, marginStepsAround(pm)),
+    [grandTotal, overheadPct, contingencyPct, gfa, pm]
   );
 
   return (
@@ -56,8 +65,8 @@ export default function QuoteSummary({
                   <div key={section} className="pl-2 mt-1">
                     <div className="text-[10px] uppercase tracking-widest text-neutral-400 font-semibold">{section}</div>
                     {sections[section].map((r) => (
+                      <div key={r.item.id}>
                       <div
-                        key={r.item.id}
                         draggable={!!onReorder}
                         onDragStart={(e) => { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", r.item.id); }}
                         onDragOver={(e) => { if (onReorder) e.preventDefault(); }}
@@ -71,6 +80,34 @@ export default function QuoteSummary({
                       >
                         <span className="text-neutral-600 truncate pr-2">{isDone(r.item) && <span className="mr-1 text-emerald-600 font-bold" title="Done">✓</span>}{r.item.label}{isProvisional(r.item) && <span className="ml-1 px-1 rounded bg-amber-100 text-amber-800 text-[10px] font-semibold" title="Provisional sum">PS</span>}{r.scope !== projectScope && <span className="ml-1 text-[10px] text-orange-700 font-medium">({scopeLabel(r.scope)})</span>}</span>
                         <span className="font-mono tabular-nums text-neutral-800 flex-none">{money2(r.total)}</span>
+                      </div>
+                      {setElementMargin && r.total > 0 && (() => {
+                        // the element's margin row, then one per subcontract quote row it carries
+                        const e = sellById[r.item.id];
+                        const pinned = pinnedMargin(r.item.marginPct);
+                        return (
+                          <div className="pl-4 pb-1.5 space-y-0.5 border-l-2 border-orange-200 ml-1" data-testid="element-margin" data-element={r.item.id}>
+                            <div className="flex items-center gap-1.5 text-[11px] text-neutral-500">
+                              <span className="uppercase tracking-wide text-[9px] font-semibold">Margin</span>
+                              <PctInput value={pinned ?? undefined} placeholder={pctLabel(pm)} onChange={(v) => setElementMargin(r.item.id, v)} className="!w-14 !py-0 !text-[11px]" title="This element's margin — blank follows the project margin on the ladder" />
+                              <span>{pinned != null ? "pinned" : `inherits ${pctLabel(pm)}`}</span>
+                              {e && <span className="ml-auto font-mono tabular-nums text-neutral-700" title="Sell ex GST at this element's margins">sells {money2(e.sell)}</span>}
+                            </div>
+                            {e && e.lines.filter((l) => l.kind === "sub").map((l) => {
+                              const rp = pinnedMargin(r.item.rowMargins && r.item.rowMargins[l.key]);
+                              return (
+                                <div key={l.key} className="flex items-center gap-1.5 text-[11px] text-neutral-500 pl-3" data-testid="row-margin" data-key={l.key}>
+                                  <span className="text-[9px] font-semibold uppercase tracking-wide text-amber-800 bg-amber-50 rounded px-1 flex-none">sub quote</span>
+                                  <span className="truncate" title={l.name}>{l.name} · {money2(l.cost)}</span>
+                                  <PctInput value={rp ?? undefined} placeholder={pctLabel(elementMargin(r.item, pm))} onChange={(v) => setRowMargin(r.item.id, l.key, v)} className="!w-14 !py-0 !text-[11px] flex-none" title="This quote row's margin — blank follows the element" />
+                                  <span className="flex-none">{rp != null ? "pinned" : "inherits"}</span>
+                                  <span className="ml-auto font-mono tabular-nums text-neutral-700 flex-none">{money2(l.sell)}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
                       </div>
                     ))}
                   </div>
@@ -134,10 +171,19 @@ export default function QuoteSummary({
           </thead>
           <tbody>
             {rows.map((row) => {
-              const isDefault = Math.abs(row.margin - getDefaultMargin()) < 1e-9;
+              const isProject = Math.abs(row.margin - pm) < 1e-9;
               return (
-                <tr key={row.margin} className={`border-t border-neutral-100 ${isDefault ? "bg-emerald-50" : ""}`}>
-                  <td className="px-3 py-1 font-medium text-neutral-700">{Math.round(row.margin * 100)}%</td>
+                <tr key={row.margin} className={`border-t border-neutral-100 ${isProject ? "bg-emerald-50" : ""}`}>
+                  <td className="px-3 py-1 font-medium text-neutral-700">
+                    {isProject && setProjectMargin ? (
+                      <span className="flex items-center gap-1" data-testid="project-margin">
+                        <PctInput value={pm} onChange={(v) => setProjectMargin(v)} className="!w-16 !py-0.5" title="The project margin — every element follows it unless pinned at its own rate" />
+                        {pinnedMargin(quote && quote.marginPct) != null && (
+                          <button type="button" className="text-[11px] text-neutral-400 hover:text-neutral-700" title={`Back to the Settings default ${pctLabel(getDefaultMargin())}`} onClick={() => setProjectMargin(undefined)} data-testid="project-margin-reset">↺</button>
+                        )}
+                      </span>
+                    ) : pctLabel(row.margin)}
+                  </td>
                   <td className="px-2 py-1 text-right font-mono tabular-nums text-neutral-500">
                     {(row.markupOnCost * 100).toFixed(1)}%
                   </td>
@@ -151,7 +197,55 @@ export default function QuoteSummary({
             })}
           </tbody>
         </table>
+        <div className="px-3 py-2 border-t border-neutral-100 text-[12px] flex items-center justify-between gap-2" data-testid="margin-blended">
+          <span className="text-neutral-600">
+            {reg.pinned > 0
+              ? <>With the per-line margins ({reg.pinned} pinned) · blended <b>{pctLabel(reg.totals.blended)}</b></>
+              : <>Every line at the project margin {pctLabel(pm)}</>}
+          </span>
+          <span className="font-mono tabular-nums font-semibold">{money(reg.totals.sell)} <span className="text-neutral-400 font-normal">ex GST</span></span>
+        </div>
+        {requestAdvice && setProjectMargin && items.length > 0 && (
+          <MarginAdvice requestAdvice={requestAdvice} current={pm} onUse={(m) => setProjectMargin(m)} />
+        )}
       </div>
+    </div>
+  );
+}
+
+/** The AI's suggestion under the ladder: advice with its reasons, applied only by Use. */
+function MarginAdvice({ requestAdvice, current, onUse }) {
+  const [state, setState] = useState({ busy: false, advice: null, error: null });
+  const ask = async () => {
+    setState({ busy: true, advice: null, error: null });
+    try { const r = await requestAdvice(); setState({ busy: false, advice: r.advice, error: null, provider: r.provider }); }
+    catch (e) { setState({ busy: false, advice: null, error: e.message || String(e) }); }
+  };
+  const a = state.advice;
+  return (
+    <div className="px-3 py-2 border-t border-neutral-100 bg-neutral-50 text-[12px] space-y-1.5" data-testid="margin-advice">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[10px] font-semibold uppercase tracking-wide text-neutral-500">AI suggestion, from what was entered</span>
+        <button type="button" onClick={ask} disabled={state.busy} className="px-2 py-0.5 rounded bg-orange-600 text-white text-[11px] font-medium hover:bg-orange-700 disabled:opacity-50" data-testid="margin-suggest">
+          {state.busy ? "Reading the quote…" : a ? "Ask again" : "Suggest a margin"}
+        </button>
+      </div>
+      {state.error && <div className="text-red-700" data-testid="margin-advice-error">{state.error}</div>}
+      {a && (
+        <div className="space-y-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span>Suggested project margin <b className="font-mono text-[13px]" data-testid="margin-advice-pct">{pctLabel(a.margin)}</b> <span className="text-neutral-400">({a.confidence} confidence)</span></span>
+            {Math.abs(a.margin - current) > 1e-9 && (
+              <button type="button" onClick={() => onUse(a.margin)} className="px-2 py-0.5 rounded bg-emerald-600 text-white text-[11px] font-medium hover:bg-emerald-700" data-testid="margin-use">Use {pctLabel(a.margin)}</button>
+            )}
+            <button type="button" onClick={() => setState({ busy: false, advice: null, error: null })} className="px-2 py-0.5 rounded border border-neutral-300 text-[11px] text-neutral-600 hover:bg-white">Dismiss</button>
+          </div>
+          {a.reasons && a.reasons.length > 0 && (
+            <ul className="list-disc pl-4 text-neutral-600 space-y-0.5">{a.reasons.map((r, i) => <li key={i}>{r}</li>)}</ul>
+          )}
+          <div className="text-[10px] text-neutral-400">Advice only — nothing changes until you press Use. Read from this quote's own figures and the margins recorded on other projects.</div>
+        </div>
+      )}
     </div>
   );
 }

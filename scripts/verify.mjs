@@ -778,6 +778,134 @@ check("computeExternalScopeLines: per-element sell allocation sums exactly to th
   near(lines[0].sellExGst, ((10 * C25) / directTotal) * expectedTotal);
 });
 
+/* ---------- variable margins (1 Nov 2026) ---------- */
+check("margins: project → element → subcontract quote row, each a fraction, blank = inherit, 0 is a real pin", () => {
+  const M = costingAll;
+  assert.equal(M.pinnedMargin(""), null); assert.equal(M.pinnedMargin(undefined), null); assert.equal(M.pinnedMargin("abc"), null); assert.equal(M.pinnedMargin(1.2), null);
+  assert.equal(M.pinnedMargin(0), 0, "0% is a pin (pass-through at cost), not blank");
+  assert.equal(M.pinnedMargin(0.08), 0.08);
+  assert.equal(M.projectMargin({}), M.getDefaultMargin(), "no project margin typed → the Settings default");
+  assert.equal(M.projectMargin({ marginPct: 0.22 }), 0.22);
+  const item = { marginPct: undefined, rowMargins: { k1: 0.08 } };
+  assert.equal(M.elementMargin(item, 0.22), 0.22, "blank element inherits the project");
+  assert.equal(M.rowMargin(item, "k1", 0.22), 0.08, "a pinned row beats the element");
+  assert.equal(M.rowMargin(item, "k2", 0.22), 0.22, "an unpinned row inherits the element, which inherits the project");
+  assert.equal(M.rowMargin({ marginPct: 0.3 }, "k2", 0.22), 0.3, "an unpinned row follows a pinned element");
+  assert.equal(M.marginSource(item, "k1"), "row"); assert.equal(M.marginSource(item, "k2"), "project"); assert.equal(M.marginSource({ marginPct: 0.3 }, null), "element");
+  // patches write fractions and remove on blank
+  const pinned = M.elementMarginPatch({ id: "a" }, 0.3); assert.equal(pinned.marginPct, 0.3);
+  assert.equal("marginPct" in M.elementMarginPatch(pinned, undefined), false, "clearing removes the key");
+  const rp = M.rowMarginPatch({ id: "a" }, "k", 0.08); assert.deepEqual(rp.rowMargins, { k: 0.08 });
+  assert.equal("rowMargins" in M.rowMarginPatch(rp, "k", ""), false, "an empty pin map is dropped");
+  assert.equal(M.projectMarginPatch({ marginPct: 0.2 }, undefined).marginPct, undefined);
+  assert.deepEqual(M.marginStepsAround(0.22, [0.1, 0.25]), [0.1, 0.22, 0.25], "the ladder gains the project rung");
+  assert.deepEqual(M.marginStepsAround(0.25, [0.1, 0.25]), [0.1, 0.25]);
+});
+check("margins: computeElementSell splits an element into its own work and its subcontract quote rows, each at its resolved rate", () => {
+  const M = costingAll;
+  const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-6, `${msg || ""} ${a} !~= ${b}`);
+  const rates = defaultRates();
+  const el = newElementItem(ELEMENT_TYPES.find((t) => t.id === "screw_piles"));
+  el.labourAuto = false;
+  const subKey = rateKey(M.SUBCONTRACT_CATEGORY_KEY, "Screw Piling", "quote");
+  el.qtys[subKey] = 1; el.rateOverrides = { [subKey]: { unitCost: 2500 } };
+  el.additional.push({ id: "x", name: "Site allowance", unit: "item", qty: 1, rate: 700 });  // own work: $700
+  const quote = { overheadPct: 0.1, contingencyPct: 0, marginPct: 0.25 };
+  const subs = M.subcontractQuoteLines(el, rates, "both");
+  assert.equal(subs.length, 1); assert.equal(subs[0].key, subKey); near(subs[0].cost, 2500);
+  let e = M.computeElementSell(el, rates, quote, "both");
+  near(e.cost, 3200); near(e.loaded, 3520);
+  assert.deepEqual(e.lines.map((l) => l.kind), ["own", "sub"]);
+  near(e.sell, 3520 / 0.75, "nothing pinned: the whole element at the project margin");
+  // the piler passed through at 8%, the own work still at 25%
+  const pinnedRow = M.rowMarginPatch(el, subKey, 0.08);
+  e = M.computeElementSell(pinnedRow, rates, quote, "both");
+  near(e.sell, (700 * 1.1) / 0.75 + (2500 * 1.1) / 0.92, "own work at 25%, the sub quote at 8%");
+  assert.equal(e.lines[1].source, "row"); assert.equal(e.lines[0].source, "project");
+  // the element pinned at 30%: its own work moves, the pinned row does not
+  const pinnedEl = M.elementMarginPatch(pinnedRow, 0.3);
+  e = M.computeElementSell(pinnedEl, rates, quote, "both");
+  near(e.sell, (700 * 1.1) / 0.7 + (2500 * 1.1) / 0.92);
+  assert.equal(e.lines[0].source, "element");
+  // an unpinned row under a pinned element follows the element
+  const onlyEl = M.elementMarginPatch(el, 0.3);
+  e = M.computeElementSell(onlyEl, rates, quote, "both");
+  near(e.sell, 3520 / 0.7); assert.equal(e.lines[1].margin, 0.3);
+  // a labour-only scope still charges the "always" subcontract band; an element with no sub rows has one own line
+  const plain = newElementItem(ELEMENT_TYPES.find((t) => t.id === "strip_footings")); plain.labourAuto = false; plain.additional.push({ id: "y", name: "A", unit: "item", qty: 1, rate: 100 });
+  const pe = M.computeElementSell(plain, rates, quote, "both"); assert.equal(pe.lines.length, 1); assert.equal(pe.lines[0].kind, "own"); near(pe.sell, 110 / 0.75);
+});
+check("margins: the register totals every line, states the blended rate and the per-class subtotals; the external / tender lines tie to it exactly", () => {
+  const M = costingAll;
+  const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-6, `${msg || ""} ${a} !~= ${b}`);
+  const rates = defaultRates();
+  const subKey = rateKey(M.SUBCONTRACT_CATEGORY_KEY, "Screw Piling", "quote");
+  const piles = newElementItem(ELEMENT_TYPES.find((t) => t.id === "screw_piles")); piles.labourAuto = false; piles.label = "Screw Piles";
+  piles.qtys[subKey] = 1; piles.rateOverrides = { [subKey]: { unitCost: 2500 } }; piles.rowMargins = { [subKey]: 0.08 };
+  const strip = newElementItem(ELEMENT_TYPES.find((t) => t.id === "strip_footings")); strip.labourAuto = false; strip.label = "Strip Footings";
+  strip.additional.push({ id: "s", name: "Own", unit: "item", qty: 1, rate: 3200 });
+  const slab = newElementItem(ELEMENT_TYPES.find((t) => t.id === "slab_on_ground")) || null;
+  const slabItem = newElementItem(ELEMENT_TYPES.find((t) => t.id === "capping_beam")); slabItem.labourAuto = false; slabItem.label = "Slab"; slabItem.marginPct = 0.25;
+  slabItem.additional.push({ id: "z", name: "Own", unit: "item", qty: 1, rate: 826 });
+  const empty = newElementItem(ELEMENT_TYPES.find((t) => t.id === "pool_wall")); // nothing priced: never a register line
+  const quote = { overheadPct: 0, contingencyPct: 0, marginPct: 0.25 };
+  const items = [strip, piles, slabItem, empty];
+  const reg = M.computeMarginRegister(items, rates, quote, "both");
+  assert.equal(reg.elements.length, 3, "the unpriced element is left out");
+  assert.deepEqual(reg.lines.map((l) => `${l.kind}:${l.source}`), ["own:project", "sub:row", "own:element"]);
+  near(reg.totals.cost, 6526); near(reg.totals.loaded, 6526);
+  const expectSell = 3200 / 0.75 + 2500 / 0.92 + 826 / 0.75;
+  near(reg.totals.sell, expectSell); near(reg.totals.sellIncGst, expectSell * (1 + M.getGstRate()));
+  near(reg.totals.blended, 1 - 6526 / expectSell);
+  assert.equal(reg.pinned, 2);
+  near(reg.byClass.sub.sell, 2500 / 0.92); near(reg.byClass.sub.margin, 0.08); near(reg.byClass.own.loaded, 4026);
+  // the tender / external lines are the same figures, element by element
+  const ext = M.computeExternalScopeLines(items, rates, 0, 0, 0.25, "both");
+  near(ext.totalExGst, expectSell);
+  const byId = {}; ext.lines.forEach((l) => { byId[l.id] = l.sellExGst; });
+  near(byId[piles.id], 2500 / 0.92); near(byId[slabItem.id], 826 / 0.75); near(byId[strip.id], 3200 / 0.75);
+  // the overall rate moves every inheriting line and leaves the pinned ones alone
+  const reg2 = M.computeMarginRegister(items, rates, { ...quote, marginPct: 0.2 }, "both");
+  near(reg2.totals.sell, 3200 / 0.8 + 2500 / 0.92 + 826 / 0.75);
+  // a project with no margin typed prices at the Settings default (the old behaviour), so nothing saved re-prices on its own
+  const reg3 = M.computeMarginRegister([strip], rates, { overheadPct: 0.08, contingencyPct: 0.05 }, "both");
+  near(reg3.totals.sell, (3200 * 1.13) / (1 - M.getDefaultMargin()));
+});
+checkAsync("margins: the AI advice is context from the quote's own figures, a prompt that forbids invention, a reader that keeps a sane fraction, and a server action that refuses a missing context", async () => {
+  const MA = await import("../src/lib/marginAdvice.js");
+  const M = costingAll;
+  const rates = defaultRates();
+  const subKey = rateKey(M.SUBCONTRACT_CATEGORY_KEY, "Screw Piling", "quote");
+  const piles = newElementItem(ELEMENT_TYPES.find((t) => t.id === "screw_piles")); piles.labourAuto = false; piles.label = "Screw Piles";
+  piles.qtys[subKey] = 1; piles.rateOverrides = { [subKey]: { unitCost: 2500 } }; piles.rowMargins = { [subKey]: 0.08 };
+  const strip = newElementItem(ELEMENT_TYPES.find((t) => t.id === "strip_footings")); strip.labourAuto = false; strip.label = "Strip Footings";
+  strip.additional.push({ id: "s", name: "Own", unit: "item", qty: 1, rate: 3200 });
+  const quote = { projectName: "19 Paringa Road, Portsea VIC 3944", clientName: "Builder X", status: "Estimating", scope: "both", planner: { deadline: "2026-11-07" }, overheadPct: 0.1, contingencyPct: 0, marginPct: 0.25, items: [strip, piles] };
+  const past = MA.pastMarginsFrom({ a: { projectName: "Old Job", status: "Submitted", marginPct: 0.2, items: [] }, b: { projectName: "No margin typed", status: "Submitted", items: [] }, c: { projectName: "19 Paringa Road, Portsea VIC 3944", marginPct: 0.3 } }, quote.projectName);
+  assert.deepEqual(past.map((p) => p.name), ["Old Job"], "only another project with a RECORDED margin says anything");
+  const ctx = MA.marginContext(quote, quote.items, rates, { today: "2026-11-01", pastProjects: past });
+  assert.equal(ctx.elements, 2); assert.equal(ctx.daysToDeadline, 6); assert.equal(ctx.currentMargin, 0.25); assert.equal(ctx.pinnedLines, 1);
+  assert.ok(Math.abs(ctx.subcontractShare - 2500 / 5700) < 0.01, String(ctx.subcontractShare));
+  assert.equal(ctx.subcontractLines[0].margin, 0.08); assert.equal(ctx.past[0].margin, 0.2);
+  const prompt = MA.marginAdvicePrompt(ctx);
+  assert.ok(/never invent a past project/.test(prompt) && /SELL price/.test(prompt) && /Old Job/.test(prompt) && /Screw Piling/.test(prompt) && /margin_pct/.test(prompt), prompt.slice(0, 200));
+  assert.deepEqual(MA.parseMarginAdvice('Sure: ```json\n{"margin_pct": 22, "confidence": "high", "reasons": ["38% of the cost is a subcontract quote at 8%", "small job"]}\n```'), { margin: 0.22, confidence: "high", reasons: ["38% of the cost is a subcontract quote at 8%", "small job"] });
+  assert.equal(MA.parseMarginAdvice('{"margin_pct": 0.18}').margin, 0.18, "a fraction reads as a fraction");
+  assert.equal(MA.parseMarginAdvice('{"margin_pct": 95}'), null, "an absurd rate is refused");
+  assert.equal(MA.parseMarginAdvice("no json here"), null);
+  // the browser request posts action "margin" with the context and the provider; a bad answer throws
+  let posted = null;
+  const ok = await MA.requestMarginAdvice(ctx, { provider: "openai", base: "https://portal.test", fetchImpl: async (url, init) => { posted = { url, body: JSON.parse(init.body) }; return { ok: true, status: 200, json: async () => ({ advice: { margin: 0.22, confidence: "high", reasons: [] }, provider: "openai" }) }; } });
+  assert.equal(posted.url, "https://portal.test/api/ai-engine"); assert.equal(posted.body.action, "margin"); assert.equal(posted.body.provider, "openai"); assert.equal(posted.body.context.elements, 2); assert.equal(ok.advice.margin, 0.22);
+  await assert.rejects(() => MA.requestMarginAdvice(ctx, { base: "https://portal.test", fetchImpl: async () => ({ ok: false, status: 503, json: async () => ({ error: "No AI provider is configured" }) }) }), /No AI provider/);
+  // the server action: no context → 400; with no provider configured → 503 (never a made-up figure)
+  const E = await import("../api/ai-engine.js");
+  const r400 = await E.runAiJob({ action: "margin" }, {});
+  assert.equal(r400.status, 400);
+  const r503 = await E.runAiJob({ action: "margin", context: ctx }, {});
+  assert.equal(r503.status, 503);
+});
+
 /* ---------- custom / one-off items ---------- */
 check("Custom line items add directly (qty * rate)", () => {
   const rates = defaultRates();
