@@ -1642,7 +1642,14 @@ function saveEstimateState(skipHistory){
     localStorage.setItem(keyAtSave, JSON.stringify({ ...snapshot, savedAt: new Date().toISOString() }));
     showSaveStatus("ok");
     if(!skipHistory) pushSaveHistory();
-  }catch(err){ showSaveStatus("err"); }
+  }catch(err){
+    showSaveStatus("err");
+    // The browser copy could not be written (storage full?). It is now OLDER than
+    // what the cloud will hold, so the sync stamp that would let a reload trust it
+    // is dropped: the next boot takes the cloud copy instead (1 Nov 2026).
+    try{ localStorage.removeItem(keyAtSave+"__syncedAt"); }catch(e){}
+    try{ console.warn("Estimates: the browser copy could not be saved ("+(err&&err.message)+") — the cloud copy will be read on the next load"); }catch(e){}
+  }
   // Cloud: only once this tab has reconciled with the cloud copy of this key
   // (see pushTakeoffToCloud); a deliberate save also keeps a cloud version.
   pushTakeoffToCloud(keyAtSave, snapshot);
@@ -1757,11 +1764,17 @@ function loadEstimateState(){
   if(!raw) return false;
   let migrated;
   try{
-    migrated = migrateEstimateSnapshot(JSON.parse(raw));   // deep copy; raw is never mutated
+    const parsedRaw = JSON.parse(raw);
+    // WHEN this browser copy was written, read before the boot's own first save
+    // rewrites it: syncFromCloud compares it with the sync stamp to tell unpushed
+    // edits from a copy that is simply old (1 Nov 2026).
+    LOCAL_LOADED_SAVED_AT[CURRENT_PROJECT_KEY] = (parsedRaw && parsedRaw.savedAt) || "";
+    migrated = migrateEstimateSnapshot(parsedRaw);   // deep copy; raw is never mutated
   }catch(err){ enterRecovery(CURRENT_PROJECT_KEY, raw, err); return false; }
   applyLoadedEstimateState(migrated,{collapseAll:true});
   return true;
 }
+const LOCAL_LOADED_SAVED_AT = {};   // key → savedAt of the browser copy as LOADED (consumed by the first syncFromCloud)
 // Pulls whatever another device last saved, if newer than what this browser has — on
 // load, on regaining focus, and on a slow poll. Never overwrites a local edit that's
 // newer than the cloud copy; seeds the cloud from local state if nothing's there yet.
@@ -1800,7 +1813,27 @@ async function syncFromCloud(){
     // stamp with nothing loaded behind it (no local copy, a placeholder on
     // screen) must not lift the hold — the cloud copy is applied below instead.
     const localBlank = blankSnapshot(estimateStateSnapshot());
-    if(localSyncedAt && row.updated_at <= localSyncedAt && !awaitingCloudLoad && !(localBlank && hasElements(row.value))){
+    // …and the content on screen must BE the cloud copy the stamp certifies.
+    // 1 Nov 2026, 425 Meakins Road: a hard refresh loaded a browser copy that
+    // was OLDER than the last push (three elements, id counter 4) under a
+    // current stamp; the shortcut trusted the stamp, the stale copy stood and
+    // the next edit pushed it over the four-element cloud row — Raft Slab B
+    // vanished. Now a local copy that differs from the cloud row under a
+    // matching stamp is kept only when it was SAVED AFTER that stamp (edits the
+    // tab made and never managed to push); otherwise it is stale and the cloud
+    // copy is applied (the local one kept as a before-sync version).
+    const staleLocal = (()=>{
+      if(!localSyncedAt || awaitingCloudLoad || !row.value) return false;
+      try{ if(sameTakeoff(estimateStateSnapshot(), row.value)) return false; }catch(e){ return false; }
+      // the copy's save time as LOADED — the boot's own first save has already rewritten the stored one
+      let savedAt = LOCAL_LOADED_SAVED_AT[keyAtStart];
+      if(savedAt === undefined){ try{ const raw = JSON.parse(localStorage.getItem(keyAtStart)||"null"); savedAt = (raw && raw.savedAt) || ""; }catch(e){ savedAt = ""; } }
+      const localIsNewer = !!savedAt && Date.parse(savedAt) > Date.parse(localSyncedAt) + 1000;
+      if(!localIsNewer){ try{ console.warn("Estimates: the browser copy of", keyAtStart, "differs from the cloud copy its stamp certifies and is not newer — the cloud copy is applied, the browser copy kept as a before-sync version"); }catch(e){} }
+      return !localIsNewer;
+    })();
+    delete LOCAL_LOADED_SAVED_AT[keyAtStart];   // decided once, at the boot's first reconcile
+    if(localSyncedAt && row.updated_at <= localSyncedAt && !awaitingCloudLoad && !(localBlank && hasElements(row.value)) && !staleLocal){
       if(CURRENT_PROJECT_KEY === keyAtStart) awaitingCloudLoad = false;
       if(LAST_CLOUD_HASH[keyAtStart]===undefined && row.value) LAST_CLOUD_HASH[keyAtStart] = snapshotHash(row.value);
       markReconciled(keyAtStart);

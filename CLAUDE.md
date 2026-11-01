@@ -2264,7 +2264,28 @@ and the first tab pulled it back within six seconds):
    that has no local copy behind it, on boot and on `switchToTakeoff`.
    `test-blank-guard.mjs` proves all four on a mocked PostgREST holding the
    recovered takeoff.
-6. **Derived `_` fields inside `data` are not content.** `takeoffContent`
+6. **A browser copy OLDER than its own sync stamp never stands** (1 Nov
+   2026, 425 Meakins Road: Boma HARD-REFRESHED mid-takeoff; the page booted on
+   a `localStorage` copy that was older than the last push — three elements,
+   id counter 4 — under a current `__syncedAt` stamp; `syncFromCloud`'s
+   "already current" shortcut trusted the stamp, the stale copy stood and the
+   next edit pushed it, conditionally and without conflict, over the
+   four-element cloud row — Raft Slab B vanished; put back by merging the
+   element from the 05:45 autosave into the live row). The shortcut now also
+   requires the content on screen to BE the cloud copy: when
+   `sameTakeoff(local, row.value)` is false, the local copy is kept only when
+   it was SAVED AFTER the stamp (`LOCAL_LOADED_SAVED_AT[key]`, the copy's
+   `savedAt` read in `loadEstimateState` BEFORE the boot's own first save
+   rewrites it, then the stored `savedAt`; "newer" = more than a second after
+   the stamp — those are edits the tab never managed to push), otherwise it is
+   stale: the cloud copy is applied and the local one kept as a `before-sync`
+   version, with a console warning. A `saveEstimateState` whose browser write
+   FAILS (storage full) drops the stamp, so the next boot reads the cloud
+   copy. `test-stale-local.mjs` boots the portal against a mocked PostgREST
+   holding the recovered takeoff and proves the stale copy loses (the cloud's
+   four elements on screen, a before-sync version, the first push carrying all
+   four), an unpushed-edit copy still wins, and the dropped stamp.
+7. **Derived `_` fields inside `data` are not content.** `takeoffContent`
    strips `_`-prefixed keys inside each instance's `data` (`_autoAreaM2`,
    `_concWasteAuto`, `_autoBlindArea`, `_autoInsArea`…) through
    `enteredData`, as it already stripped `results` and top-level `_` flags:
