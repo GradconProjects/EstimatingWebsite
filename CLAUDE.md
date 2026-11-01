@@ -2695,6 +2695,29 @@ element families waits on the owner's approval of the pad footing.
   no length (chairs) stays a plain counted item. Selects in
   any `table.rows` keep their own width (`width:auto`, capped at 260 px) so a
   crowded row can never crush the bar-size dropdown to a sliver.
+  **Every row carries a "×" MULTIPLIER, can be duplicated, and totals live**
+  (1 Nov 2026, Grady, typing on this tab: "the final number doesnt add up
+  realtime but takes time and that was what prompted me to refresh", "i
+  should also be able to duplicate a row", "add a number multiplier that
+  multiplies the row by the entered value"): `r.mult` (the "×" column before
+  Total; blank or 0 = 1, so older takeoffs are unchanged) multiplies the WHOLE
+  row — `addlRowMult(r)` is the ONE reading, applied in `addlRowQty` and on
+  the mesh-piece count, and the register formula leads with it ("3×20×1200mm",
+  "4×2=8 × 600 × 300 mm"); the row's ⧉ (`addlDup`) deep-copies the row right
+  under itself, every cell kept; the Total cell (`data-addl-total`) is
+  rewritten on every keystroke by `refreshAddlRowTotal` (the card's `input`
+  handler, beside `refreshExtraConnCount`) instead of waiting for a card
+  rebuild. **Hidden pages are not rebuilt per keystroke**: `computeAllAndRefresh`
+  renders the Quantity Register and the Export summary through
+  `renderPageIfOnScreen` — only while that page is `active`; otherwise
+  `STALE_PAGES[id]` is set and the NAV handler's render on the tab switch
+  clears it (`renderRegister` / `renderExportSummary` clear their own flag).
+  Before this every keystroke on a 20-element takeoff rebuilt the whole
+  register table and the export summary behind the workspace. The compute,
+  the undo step, the head stats, Project Geometry and the save are still
+  immediate. `test-addl-rows.mjs` proves the live Total, the stale flag and
+  the single rebuild on opening the register, the multiplier on a bar and a
+  mesh row, the duplicate and the save.
 - **Excavation is the estimator's decision on every ground element**
   (`isGroundElement` = library group Foundations / Retention Walls / Ground
   Structure / Ramps / External Works / Special Items, never the generic

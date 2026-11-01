@@ -8834,10 +8834,15 @@ function addlRowEach(r){
   if(r.unit==="no." && addlRowCount(r)>0) return 1;
   return 0;
 }
+/** The row MULTIPLIER (the "×" column): the whole row × this number — the
+ * same set of trimmers on three identical penetrations, the same allowance
+ * on four pads. Blank or 0 = 1 (an older takeoff has no column). 1 Nov 2026,
+ * Grady: "a number multiplier that multiplies the row by the entered value". */
+function addlRowMult(r){ const m=num(r && r.mult); return m>0? m : 1; }
 function addlRowQty(r){
   let n=addlRowCount(r), each=addlRowEach(r);
   if(!(each>0)) return 0;
-  return (n>0? n:1)*each;
+  return (n>0? n:1)*each*addlRowMult(r);
 }
 function additionalItemsSection(inst){
   let d=inst.data, rows=Array.isArray(d.addlRows)? d.addlRows : [];
@@ -8854,14 +8859,15 @@ function additionalItemsSection(inst){
     <td style="width:84px;min-width:84px">${inpNum(`addlRows.${i}.qty`,r.qty)}</td>
     <td>${selOpts(`addlRows.${i}.unit`,r.unit||"m",ADDL_UNITS)}</td>
     <td style="width:64px;min-width:64px">${inpNum(`addlRows.${i}.waste`,r.waste)}</td>
-    <td class="small" style="white-space:nowrap">${fmt(addlRowQty(r),2)}</td>
-    <td><button class="btn small danger" data-action="addlDel" data-i="${i}" type="button">✕</button></td>
+    <td style="width:64px;min-width:64px" title="Multiplier — the whole row × this number (blank = 1)">${inpNum(`addlRows.${i}.mult`,r.mult)}</td>
+    <td class="small" style="white-space:nowrap" data-addl-total="${i}">${fmt(addlRowQty(r),2)}</td>
+    <td style="white-space:nowrap"><button class="btn small" data-action="addlDup" data-i="${i}" type="button" title="Duplicate this row (the copy goes right under it)">⧉</button> <button class="btn small danger" data-action="addlDel" data-i="${i}" type="button" title="Remove this row">✕</button></td>
    </tr>`).join('');
   return `<div class="subsec"><div class="sechead">Additional Reinforcement / Elements</div>
    <p class="small">Anything with no obvious home on the other tabs — a trimmer bar round a penetration, an extra pour, a one-off item. <b>Bar / mesh</b> can be a bar size, a <b>trench mesh</b> or a <b>sheet mesh</b>: a mesh row is PIECES cut to the <b>length each</b> (and, for sheet mesh, the <b>width each</b>) — e.g. 26 × SL82 pieces 600 × 300 mm as dowels — priced in lm of the trench product or m² of sheets with their kg. The <b>count</b> multiplies the row: <b>count × length each</b> for bars (m), <b>count × area</b> for sheet or volume items (m², m³), <b>count × qty each</b> for anything else (no., kg, item). Leave the count blank for a single quantity. <b>Run (m)</b> and <b>@ (mm)</b> set the pieces out along a run instead — run ÷ spacing + 1 end bar (12 m @ 400 = 31), × the count when more than one such run — so a line of starter or trimmer bars is taken off the drawing, not counted by hand. A row needs a description and a quantity before it reaches the takeoff. Rows sized in metres against a bar diameter also report their mass.</p>
    <div style="overflow-x:auto"><table class="rows"><thead><tr>
-     <th>Description</th><th>Goes under</th><th title="A bar size, or a piece of trench mesh / sheet mesh cut to the length (and width) each">Bar / mesh</th><th>Count</th><th title="Set out along a run: run m ÷ spacing mm + 1 end bar, × the count (blank = one run)">Run (m)</th><th title="Spacing along the run (mm)">@ (mm)</th><th>Length each (mm)</th><th title="Sheet-mesh pieces only: the width of each piece (blank = 300 mm)">Width each (mm)</th><th>Area each (m²)</th><th>Qty each</th><th>Unit</th><th>Waste %</th><th>Total</th><th></th>
-   </tr></thead><tbody>${body||`<tr><td colspan="14" class="small">No additional items yet.</td></tr>`}</tbody></table></div>
+     <th>Description</th><th>Goes under</th><th title="A bar size, or a piece of trench mesh / sheet mesh cut to the length (and width) each">Bar / mesh</th><th>Count</th><th title="Set out along a run: run m ÷ spacing mm + 1 end bar, × the count (blank = one run)">Run (m)</th><th title="Spacing along the run (mm)">@ (mm)</th><th>Length each (mm)</th><th title="Sheet-mesh pieces only: the width of each piece (blank = 300 mm)">Width each (mm)</th><th>Area each (m²)</th><th>Qty each</th><th>Unit</th><th>Waste %</th><th title="Multiplier — the whole row × this number (blank = 1): the same set on three identical penetrations, the same allowance on four pads">×</th><th>Total</th><th></th>
+   </tr></thead><tbody>${body||`<tr><td colspan="15" class="small">No additional items yet.</td></tr>`}</tbody></table></div>
    <div class="toolbar" style="margin-top:8px;"><button class="btn small primary" data-action="addlAdd" type="button">+ Add row</button></div>
   </div>`;
 }
@@ -9440,6 +9446,14 @@ function refreshExtraConnCount(card,inst,field){
   const r=(inst.data.extraConn||[])[+m[1]]; const lab=card.querySelector(`[data-extraconn-count="${m[1]}"]`);
   if(r && lab) lab.textContent=String(extraConnCount(r));
 }
+/** The Additional row's Total cell follows every keystroke on that row (1 Nov
+ * 2026, Grady: "the final number doesnt add up realtime"): before this the
+ * cell was written only when the card was rebuilt. */
+function refreshAddlRowTotal(card,inst,field){
+  const m=/^addlRows\.(\d+)\./.exec(field||""); if(!m) return;
+  const r=(inst.data.addlRows||[])[+m[1]]; const td=card.querySelector(`[data-addl-total="${m[1]}"]`);
+  if(r && td) td.textContent=fmt(addlRowQty(r),2);
+}
 function renderExtraConnRows(inst){
   let rows = inst.data.extraConn || (inst.data.extraConn=[]);
   return `<div class="subsec"><div class="sechead">Additional Connections (any element, any quantity)</div>
@@ -9577,6 +9591,7 @@ function attachCardEvents(card,inst){
       return;
     }
     refreshExtraConnCount(card,inst,f);
+    refreshAddlRowTotal(card,inst,f);
     if(e.target.dataset.toggle){
       card.querySelectorAll(`[data-show-if="${e.target.dataset.toggle}"]`).forEach(sec=>sec.classList.toggle('hidden',!val));
       let offSecs=card.querySelectorAll(`[data-show-if="${e.target.dataset.toggle}_off"]`);
@@ -9734,8 +9749,13 @@ function attachCardEvents(card,inst){
     } else if(act==="addlAdd"){
       let dd=inst.data;
       if(!Array.isArray(dd.addlRows)) dd.addlRows=[];
-      dd.addlRows.push({desc:"",kind:"Reinforcement",dia:"N12",count:"",runM:"",spacing:"",lengthMm:"",area:"",qty:"",unit:"m",waste:""});
+      dd.addlRows.push({desc:"",kind:"Reinforcement",dia:"N12",count:"",runM:"",spacing:"",lengthMm:"",area:"",qty:"",unit:"m",waste:"",mult:""});
       computeAllAndRefresh(); rerenderCardKeepTab(card,inst); return;
+    } else if(act==="addlDup"){
+      // a copy of the row, every cell kept, placed right under it (1 Nov 2026, Grady: "i should also be able to duplicate a row")
+      let dd=inst.data, i=parseInt(e.target.dataset.i,10);
+      if(Array.isArray(dd.addlRows) && dd.addlRows[i]) dd.addlRows.splice(i+1,0,JSON.parse(JSON.stringify(dd.addlRows[i])));
+      UNDO_CTX=null; computeAllAndRefresh(); rerenderCardKeepTab(card,inst); return;
     } else if(act==="addlDel"){
       let dd=inst.data, i=parseInt(e.target.dataset.i,10);
       if(Array.isArray(dd.addlRows) && i>=0) dd.addlRows.splice(i,1);
@@ -9888,8 +9908,9 @@ function computeInstance(inst){
     const meshP=addlMeshProduct(r);
     if(meshP){
       // a mesh row is PIECES of the product (sheet: L × W each in m² and whole sheets; trench: L each in lm), or a typed area / metres
-      const n=Math.max(1,addlRowCount(r)||1), L=num(r.lengthMm)>0? num(r.lengthMm) : DOWEL_PIECE_L_MM, W=num(r.widthMm)>0? num(r.widthMm) : DOWEL_PIECE_W_MM;
-      const so=addlRowSetOut(r)>0? `(${num(r.runM)}m/${num(r.spacing)}+1)${num(r.count)>1?`×${num(r.count)}`:""}=${n}` : String(n);
+      const mult=addlRowMult(r), n=Math.max(1,addlRowCount(r)||1)*mult, L=num(r.lengthMm)>0? num(r.lengthMm) : DOWEL_PIECE_L_MM, W=num(r.widthMm)>0? num(r.widthMm) : DOWEL_PIECE_W_MM;
+      const mx=mult!==1? `×${mult}` : "";
+      const so=addlRowSetOut(r)>0? `(${num(r.runM)}m/${num(r.spacing)}+1)${num(r.count)>1?`×${num(r.count)}`:""}${mx}=${n}` : (mx? `${n/mult}${mx}=${n}` : String(n));
       let line;
       if(meshP.kind==="sheet" && num(r.area)>0 && unit==="m²"){ const area=n*num(r.area), kgm2=MESHTYPES[meshP.type]||0, wasted=withWaste(area,waste); line={materialGroup:group,material:meshP.type,spec:`${desc} — ${n} × ${meshP.type} sheet-mesh pieces of ${num(r.area)} m²`,qty:area,unit:"m²",waste,finalQty:wasted,sheets:Math.ceil(wasted/MESH_SHEET_AREA_M2-1e-9),massPerUnit:kgm2,formula:`${so} × ${num(r.area)} m²`,notes:`${fmt(area*kgm2,1)} kg`,source:"addl"}; }
       else if(meshP.kind==="trench" && unit==="m" && !(num(r.lengthMm)>0) && num(r.qty)>0){ const lm=n*num(r.qty), mpm=trenchReoMassPerM(meshP.type); line={materialGroup:group,material:meshP.type,spec:`${desc} — ${meshP.type} trench mesh`,qty:lm,unit:"lm",waste,finalQty:withWaste(lm,waste),massPerUnit:mpm,formula:`${so} × ${num(r.qty)} m`,notes:`${fmt(lm*mpm,1)} kg`,source:"addl"}; }
@@ -9911,12 +9932,14 @@ function computeInstance(inst){
     let isPieces = pieceLenM>0, isKg = steel && unit==="kg";
     let kgm = steel? massPerM(barDiaOf(r.dia)) : 0;
     let notes = isBar? `${fmt(qty*kgm,1)} kg` : isPieces? `${fmt(qty*pieceLenM,2)} m, ${fmt(qty*pieceLenM*kgm,1)} kg` : "";
+    const mult=addlRowMult(r), mx=mult!==1? `×${mult}` : "";
     let so = setOut>0? `(${num(r.runM)}m/${num(r.spacing)}+1)${num(r.count)>1?`×${num(r.count)}`:""}=${count}` : "";
     let cnt = count>0? `${so||count}×` : "";
+    if(mx) cnt = `${mult}×${cnt}`;   // the multiplier leads the formula: "3×20×1200mm" 
     let formula = (unit==="m" && num(r.lengthMm)>0) ? `${cnt}${num(r.lengthMm)}mm`
       : isPieces ? `${so? so+" no." : (count||1)+" no."} × ${num(r.lengthMm)}mm`
       : ((unit==="m²"||unit==="m³") && num(r.area)>0) ? `${cnt}${num(r.area)}`
-      : (num(r.qty)>0 ? `${cnt}${num(r.qty)}` : (cnt? `${so||count} no.` : "entered"));
+      : (num(r.qty)>0 ? `${cnt}${num(r.qty)}` : (cnt? `${mx? mult+"×" : ""}${so||count} no.` : "entered"));
     let line={materialGroup:group,material:(isBar||isPieces||isKg)? r.dia : desc,
       spec:(isBar||isPieces||isKg)? desc : "Additional item",qty,unit,waste,finalQty:withWaste(qty,waste),formula,notes,source:"addl"};
     if(isPieces){ line.massPerUnit=pieceLenM*kgm; line.lengthM=withWaste(qty,waste)*pieceLenM; }
@@ -10175,12 +10198,22 @@ function pillClass(g){
 }
 function refreshAllDiagramsReferencing(){ /* label changes affect target dropdown labels; simplest = full rerender */ document.querySelectorAll('.card').forEach(c=>{ /* no-op, labels resolved live via targetLabelOf at compute time */ }); }
 
+/* The Quantity Register and the Export summary are rebuilt on every edit ONLY
+ * while their page is on screen; hidden, they are marked stale and rebuilt the
+ * moment their tab opens (the NAV handler renders them on every switch).
+ * 1 Nov 2026, Grady, typing on the Additional / Allowances tab: "the final
+ * number doesnt add up realtime but takes time" — every keystroke was
+ * rebuilding the whole register table and the export summary of a
+ * 20-element takeoff behind the workspace. */
+const STALE_PAGES = {};
+function pageOnScreen(id){ const el=document.getElementById("page-"+id); return !!(el && el.classList.contains("active")); }
+function renderPageIfOnScreen(id, render){ if(pageOnScreen(id)) render(); else STALE_PAGES[id]=true; }   // the render itself clears the flag
 function computeAllAndRefresh(){
   refreshReoAllowances(); // live from the Rates Library — see constants above
   INSTANCES.forEach(inst=>{ inst.results = computeInstance(inst); });
   undoCommit(UNDO_CTX); UNDO_CTX=null;   // Phase 3: every committed change is a step back
-  renderRegister();
-  renderExportSummary();
+  renderPageIfOnScreen("register", renderRegister);
+  renderPageIfOnScreen("export", renderExportSummary);
   refreshGeometryForm();
   scheduleAutoPublish();
   // skipHistory: this fires on every edit — only DELIBERATE saves (💾 Save,
@@ -10350,6 +10383,7 @@ function allLines(){
   return out;
 }
 function renderRegister(){
+  STALE_PAGES.register=false;
   let lines=allLines();
   let catSel=document.getElementById("filterCategory");
   let mgSel=document.getElementById("filterMaterialGroup");
@@ -10813,6 +10847,7 @@ function exportAll(){
   openExportPreview({title:"All worksheets", files, note:SHEET_NOTE});
 }
 function renderExportSummary(){
+  STALE_PAGES.export=false;
   renderReviewAck();
   let lines=allLines();
   const r=reinforcementByProduct(lines, ordersCtx());
