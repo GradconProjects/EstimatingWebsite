@@ -1675,7 +1675,10 @@ bare minimum should be archi, struct, soil report". Rules:
    same URLs ride on every message of the round; drawings dropped on the
    chosen elements (`markupSrc`) are offered too.
 4. **`RfqModal.jsx`** (editor header "RFQ (n)" button `rfq-button`, every
-   element card's mail button `element-rfq` opening on that element): step 1
+   element card's **"✉ RFQ" pill** `element-rfq` opening on that element — a
+   white-on-translucent pill with the word on it since 2 Nov 2026, Grady:
+   "the RFQ button is not legible"; it had been a bare 16 px envelope in the
+   band's muted chrome shade, near-invisible on the charcoal band): step 1
    elements, PACKAGES as chips — several at once (Grady, 23 Oct 2026: "i
    should be able to select more than one package"; suggested ones first,
    ★), each ticked package with its OWN contractor section and search

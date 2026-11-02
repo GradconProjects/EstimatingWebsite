@@ -398,8 +398,8 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
           </div>
         )}
         {onRfq && (
-          <button onClick={onRfq} title="Request quotations for this element — choose contractors from the Register, approve one draft each, send separately" className="text-blue-300 hover:text-white transition-colors flex-none" data-testid="element-rfq">
-            <Mail size={16} />
+          <button onClick={onRfq} title="Request quotations for this element — choose contractors from the Register, approve one draft each, send separately" className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-white/15 hover:bg-white/30 text-white text-[11px] font-semibold tracking-wide transition-colors flex-none" data-testid="element-rfq">
+            <Mail size={14} /> RFQ
           </button>
         )}
         <button onClick={onDuplicate} title="Duplicate" className="text-blue-300 hover:text-white transition-colors flex-none">
