@@ -85,62 +85,109 @@ export default function TenderChecklist({ quote, open, onChange, onClose, me, no
   );
 }
 
-/** Step 08 — "Text Grady" (Grady, 2 Nov 2026: "when i click inform grady from the checklist, it automatically
- * sends to him"; "lets wire in the sms first"): the summary is composed from the quote's own figures
- * (lib/notifyGrady.js), shown as an editable draft with an Approve tick, and ONE text goes to the number the
- * server holds (api/notify.js) when Send is pressed. The step is ticked and the send recorded on the quote. */
+/** Step 08 — "Notify Grady" (Grady, 2 Nov 2026: "can i include an email and sms notification of summary of completed
+ * projects to grady? so when i click inform grady from the checklist, it automatically sends to him"; "lets do both at
+ * once"): the email and the text are composed from the quote's own figures (lib/notifyGrady.js), each shown as an
+ * editable draft with its own Approve tick; Send sends what is approved — the email through the projects@ Google
+ * connection (api/gmail.js), the text to the number the server holds (api/notify.js). Every send is recorded on the
+ * quote and step 08 is ticked. Nothing goes without the tick and the press. */
 function NotifyGrady({ quote, notify }) {
   const [open, setOpen] = useState(false);
-  const [status, setStatus] = useState(null);
+  const [sms, setSms] = useState(null);
+  const [mail, setMail] = useState(null);
   const [text, setText] = useState("");
-  const [approved, setApproved] = useState(false);
+  const [subject, setSubject] = useState("");
+  const [body, setBody] = useState("");
+  const [okSms, setOkSms] = useState(false);
+  const [okMail, setOkMail] = useState(false);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
-  const last = lastNotification(quote, "sms");
+  const lastSms = lastNotification(quote, "sms");
+  const lastMail = lastNotification(quote, "email");
+  const redraft = () => { setText(notify.draft()); const e = notify.emailDraft(); setSubject(e.subject); setBody(e.text); setOkSms(false); setOkMail(false); };
   useEffect(() => {
     if (!open) return;
     let alive = true;
-    setText(notify.draft()); setApproved(false); setResult(null); setError(null);
-    notify.status().then((st) => { if (alive) setStatus(st); }).catch((e) => { if (alive) setStatus({ configured: false, missing: [], error: e.message }); });
+    redraft(); setResult(null); setError(null);
+    notify.status().then((st) => { if (alive) setSms(st); }).catch((e) => { if (alive) setSms({ configured: false, missing: [], error: e.message }); });
+    notify.mailStatus().then((st) => { if (alive) setMail(st); }).catch(() => { if (alive) setMail({ configured: false, connected: false, send: false }); });
     return () => { alive = false; };
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
   const segs = smsSegments(text);
   const over = text.length > SMS_MAX_CHARS;
-  const canSend = !!(status && status.configured) && approved && !busy && !over && text.trim();
-  const send = async () => {
-    setBusy(true); setError(null);
-    try { const rec = await notify.send(text.trim()); setResult(rec); setApproved(false); }
-    catch (e) { setError(e.message || String(e)); }
+  const smsReady = !!(sms && sms.configured);
+  const mailReady = !!(mail && mail.configured && mail.connected && mail.send);
+  const canSms = smsReady && okSms && !over && !!text.trim();
+  const canMail = mailReady && okMail && !!subject.trim() && !!body.trim();
+  const send = async (which) => {
+    setBusy(true); setError(null); setResult(null);
+    const done = [];
+    try {
+      if ((which === "email" || which === "both") && canMail) { const rec = await notify.sendEmail({ subject: subject.trim(), text: body }); done.push(rec); setOkMail(false); }
+      if ((which === "sms" || which === "both") && canSms) { const rec = await notify.send(text.trim()); done.push(rec); setOkSms(false); }
+      setResult(done);
+    } catch (e) { setError(e.message || String(e)); if (done.length) setResult(done); }
     finally { setBusy(false); }
   };
+  const lastLine = [lastMail && `Emailed ${whenLabel(lastMail.at)}${lastMail.by ? ` by ${lastMail.by}` : ""}`, lastSms && `Texted ${whenLabel(lastSms.at)}${lastSms.by ? ` by ${lastSms.by}` : ""}${lastSms.segments ? ` · ${lastSms.segments} segment${lastSms.segments === 1 ? "" : "s"}` : ""}`].filter(Boolean).join(" · ");
   return (
     <div className="mt-1.5">
       <div className="flex items-center gap-2 flex-wrap">
         <button type="button" onClick={() => setOpen((o) => !o)} className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-orange-600 text-white text-[11px] font-medium hover:bg-orange-700" data-testid="tender-sms-button">
-          <MessageSquare size={12} /> {open ? "Close" : "Text Grady"}
+          <MessageSquare size={12} /> {open ? "Close" : "Notify Grady — email & SMS"}
         </button>
-        {last && !open && <span className="text-[11px] text-emerald-800" data-testid="tender-sms-last" title={last.text}>Texted {whenLabel(last.at)}{last.by ? ` by ${last.by}` : ""}{last.segments ? ` · ${last.segments} segment${last.segments === 1 ? "" : "s"}` : ""}</span>}
+        {lastLine && !open && <span className="text-[11px] text-emerald-800" data-testid="tender-sms-last" title={(lastMail && lastMail.text) || (lastSms && lastSms.text) || ""}>{lastLine}</span>}
       </div>
       {open && (
-        <div className="mt-1.5 rounded-lg border border-orange-200 bg-orange-50/50 p-2 space-y-1.5 max-w-xl" data-testid="tender-sms-panel">
-          <div className="text-[11px] text-neutral-600" data-testid="tender-sms-status">
-            {!status ? "Checking the SMS set-up…"
-              : status.configured ? <>SMS ready · to Grady <span className="font-mono">{status.to}</span>{status.provider ? ` via ${status.provider === "clicksend" ? "ClickSend" : "Twilio"}` : ""}</>
-              : <span className="text-red-700">SMS not configured{status.missing && status.missing.length ? ` — set ${status.missing.join(" and ")} in the Vercel project's Environment Variables` : status.error ? ` — ${status.error}` : ""}.</span>}
+        <div className="mt-1.5 rounded-lg border border-orange-200 bg-orange-50/50 p-2 space-y-2 max-w-2xl" data-testid="tender-sms-panel">
+          {/* EMAIL */}
+          <div className="rounded border border-neutral-200 bg-white p-2 space-y-1" data-testid="tender-email-block">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-neutral-500">Email to Grady</span>
+              <span className="text-[11px] text-neutral-600" data-testid="tender-email-status">
+                {!mail ? "Checking the mailbox…"
+                  : mailReady ? <>Mail ready · from <span className="font-mono">{mail.email || "projects@gradcon.com.au"}</span> to <span className="font-mono">grady@gradcon.com.au</span></>
+                  : <span className="text-red-700">{!mail.configured ? "Google mail is not configured on the server." : !mail.connected ? "projects@ is not connected — connect it under Settings → Google mail & Drive." : "The Google connection cannot send yet — reconnect it for sending under Settings → Google mail & Drive."}</span>}
+              </span>
+            </div>
+            <input type="text" value={subject} onChange={(e) => { setSubject(e.target.value); setOkMail(false); }} className="w-full bg-white border border-neutral-300 rounded px-2 py-1 text-[12px] focus:outline-none focus:ring-2 focus:ring-orange-400" data-testid="tender-email-subject" placeholder="Subject" />
+            <textarea value={body} onChange={(e) => { setBody(e.target.value); setOkMail(false); }} rows={10} className="w-full bg-white border border-neutral-300 rounded px-2 py-1 text-[12px] font-mono leading-snug focus:outline-none focus:ring-2 focus:ring-orange-400" data-testid="tender-email-text" />
+            <div className="flex items-center justify-end gap-2 text-[11px]">
+              <label className="flex items-center gap-1 cursor-pointer"><input type="checkbox" checked={okMail} onChange={(e) => setOkMail(e.target.checked)} className="accent-emerald-600" data-testid="tender-email-approve" /> Approve email</label>
+              <button type="button" onClick={() => send("email")} disabled={busy || !canMail} className="px-2.5 py-0.5 rounded bg-emerald-600 text-white font-medium hover:bg-emerald-700 disabled:opacity-40" data-testid="tender-email-send" title={!mailReady ? "Connect projects@ for sending first" : !okMail ? "Tick Approve email to send" : "Send this email to Grady now"}>{busy ? "Sending…" : "Send email"}</button>
+            </div>
           </div>
-          <textarea value={text} onChange={(e) => { setText(e.target.value); setApproved(false); }} rows={4} className="w-full bg-white border border-neutral-300 rounded px-2 py-1 text-[12px] font-mono leading-snug focus:outline-none focus:ring-2 focus:ring-orange-400" data-testid="tender-sms-text" />
+          {/* SMS */}
+          <div className="rounded border border-neutral-200 bg-white p-2 space-y-1" data-testid="tender-sms-block">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-neutral-500">Text message to Grady</span>
+              <span className="text-[11px] text-neutral-600" data-testid="tender-sms-status">
+                {!sms ? "Checking the SMS set-up…"
+                  : smsReady ? <>SMS ready · to Grady <span className="font-mono">{sms.to}</span>{sms.provider ? ` via ${sms.provider === "clicksend" ? "ClickSend" : "Twilio"}` : ""}</>
+                  : <span className="text-red-700">SMS not configured{sms.missing && sms.missing.length ? ` — set ${sms.missing.join(" and ")} in the Vercel project's Environment Variables` : sms.error ? ` — ${sms.error}` : ""}.</span>}
+              </span>
+            </div>
+            <textarea value={text} onChange={(e) => { setText(e.target.value); setOkSms(false); }} rows={4} className="w-full bg-white border border-neutral-300 rounded px-2 py-1 text-[12px] font-mono leading-snug focus:outline-none focus:ring-2 focus:ring-orange-400" data-testid="tender-sms-text" />
+            <div className="flex items-center justify-between gap-2 flex-wrap text-[11px]">
+              <span className={over ? "text-red-700" : "text-neutral-500"} data-testid="tender-sms-count">{text.length} characters · {segs} segment{segs === 1 ? "" : "s"}{over ? ` — over ${SMS_MAX_CHARS}, shorten it` : ""}</span>
+              <span className="flex items-center gap-2">
+                <label className="flex items-center gap-1 cursor-pointer"><input type="checkbox" checked={okSms} onChange={(e) => setOkSms(e.target.checked)} className="accent-emerald-600" data-testid="tender-sms-approve" /> Approve SMS</label>
+                <button type="button" onClick={() => send("sms")} disabled={busy || !canSms} className="px-2.5 py-0.5 rounded bg-emerald-600 text-white font-medium hover:bg-emerald-700 disabled:opacity-40" data-testid="tender-sms-send" title={!smsReady ? "Set the SMS variables first" : !okSms ? "Tick Approve SMS to send" : "Send this text to Grady now"}>{busy ? "Sending…" : "Send SMS"}</button>
+              </span>
+            </div>
+          </div>
           <div className="flex items-center justify-between gap-2 flex-wrap text-[11px]">
-            <span className={over ? "text-red-700" : "text-neutral-500"} data-testid="tender-sms-count">{text.length} characters · {segs} segment{segs === 1 ? "" : "s"}{over ? ` — over ${SMS_MAX_CHARS}, shorten it` : ""}</span>
-            <span className="flex items-center gap-2">
-              <button type="button" onClick={() => { setText(notify.draft()); setApproved(false); }} className="px-2 py-0.5 rounded border border-neutral-300 text-neutral-600 hover:bg-white" title="Rebuild the text from the quote's current figures">Re-draft</button>
-              <label className="flex items-center gap-1 cursor-pointer"><input type="checkbox" checked={approved} onChange={(e) => setApproved(e.target.checked)} className="accent-emerald-600" data-testid="tender-sms-approve" /> Approve</label>
-              <button type="button" onClick={send} disabled={!canSend} className="px-2.5 py-0.5 rounded bg-emerald-600 text-white font-medium hover:bg-emerald-700 disabled:opacity-40" data-testid="tender-sms-send" title={!status || !status.configured ? "Set the SMS variables first" : !approved ? "Tick Approve to send" : "Send this text to Grady now"}>{busy ? "Sending…" : "Send SMS"}</button>
-            </span>
+            <button type="button" onClick={redraft} className="px-2 py-0.5 rounded border border-neutral-300 text-neutral-600 hover:bg-white" title="Rebuild both drafts from the quote's current figures" data-testid="tender-notify-redraft">Re-draft both</button>
+            <button type="button" onClick={() => send("both")} disabled={busy || !(canMail && canSms)} className="px-3 py-1 rounded bg-orange-600 text-white font-semibold hover:bg-orange-700 disabled:opacity-40" data-testid="tender-notify-both" title={canMail && canSms ? "Send the approved email and text together" : "Approve both the email and the SMS to send them together"}>{busy ? "Sending…" : "Send both"}</button>
           </div>
           {error && <div className="text-[11px] text-red-700" data-testid="tender-sms-error">{error}</div>}
-          {result && <div className="text-[11px] text-emerald-800" data-testid="tender-sms-sent">Sent to Grady {result.to ? <span className="font-mono">{result.to}</span> : ""}{result.segments ? ` · ${result.segments} segment${result.segments === 1 ? "" : "s"}` : ""} · recorded on this project and step 08 ticked.</div>}
-          <div className="text-[10px] text-neutral-400">Nothing is sent until Approve is ticked and Send is pressed. The number lives on the server, never in this page.</div>
+          {result && result.length > 0 && (
+            <div className="text-[11px] text-emerald-800" data-testid="tender-sms-sent">
+              {result.map((r) => r.kind === "email" ? `Emailed Grady at ${r.to}` : `Texted Grady ${r.to || ""}${r.segments ? ` · ${r.segments} segment${r.segments === 1 ? "" : "s"}` : ""}`).join(" · ")} · recorded on this project and step 08 ticked.
+            </div>
+          )}
+          <div className="text-[10px] text-neutral-400">Nothing is sent until its Approve box is ticked and Send is pressed. The email goes from projects@ to grady@gradcon.com.au; the mobile number lives on the server, never in this page.</div>
         </div>
       )}
     </div>

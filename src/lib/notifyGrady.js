@@ -7,7 +7,10 @@
  * before it goes), the record is kept on the quote, the browser request posts
  * only the approved text — api/notify.js holds the recipient.
  */
-import { computeMarginRegister, computeProvisionalTotals, projectMargin, money } from "./costing.js";
+import { computeMarginRegister, computeProvisionalTotals, projectMargin, money, money2 } from "./costing.js";
+
+/** Grady's address — the ONE recipient of the checklist's email (an address is not a secret; the mailbox that sends is projects@). */
+export const GRADY_EMAIL = "grady@gradcon.com.au";
 
 const clean = (s) => String(s || "").replace(/\s+/g, " ").trim();
 const localDay = (d) => { const x = d || new Date(); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`; };
@@ -66,6 +69,50 @@ export function smsSummary(quote, items, rates, { today, portalUrl } = {}) {
   return parts.join(" ");
 }
 
+/** The email: the same facts in full — every element with its sell and rate, the subcontract quotes, the unpriced
+ * rows, the provisional sums, the assumptions, the portal link. Plain text, editable before it goes. */
+export function emailSummary(quote, items, rates, { today, portalUrl, by } = {}) {
+  const q = quote || {};
+  const its = items || q.items || [];
+  const f = notifyFacts(q, its, rates, { today });
+  const reg = computeMarginRegister(its, rates, q, q.scope);
+  const prov = computeProvisionalTotals(its, rates, q.scope);
+  const scopeWords = f.scope === "labour" ? "labour only" : f.scope === "materials" ? "materials only" : "labour + materials";
+  const L = [];
+  L.push("Hi Grady,", "", `The costings for ${f.project} are ready for your review.`, "");
+  L.push("PROJECT");
+  L.push(`Project: ${f.project}`);
+  if (f.client) L.push(`Client: ${f.client}`);
+  L.push(`Tender: ${f.due || (f.deadline ? `due ${f.deadline}` : "no deadline recorded")}`);
+  L.push(`Scope: ${scopeWords}`);
+  L.push("", "PRICE");
+  L.push(`Direct cost: ${money2(f.directCost)}`);
+  L.push(`Loaded (overheads ${pct(q.overheadPct || 0)}, contingency ${pct(q.contingencyPct || 0)}): ${money2(reg.totals.loaded)}`);
+  L.push(`Margin: project ${pct(f.projectMargin)}${f.pinned ? ` · blended ${pct(f.blended)} (${f.pinned} line${f.pinned === 1 ? "" : "s"} pinned at their own rate)` : ""}`);
+  L.push(`Sell: ${money2(f.sell)} ex GST (${money2(f.sellIncGst)} inc GST)`);
+  L.push("", `ELEMENTS (${reg.elements.length}, sell ex GST)`);
+  reg.elements.forEach((e) => {
+    const subs = e.lines.filter((l) => l.kind === "sub");
+    L.push(`- ${clean(e.label)}: ${money2(e.sell)} at ${pct(e.margin)}${subs.length ? ` (incl. ${subs.map((l) => `${clean(l.name)} ${money2(l.cost)} at ${pct(l.margin)}`).join("; ")})` : ""}`);
+  });
+  if (f.subQuotes) {
+    L.push("", "SUBCONTRACT QUOTES");
+    reg.lines.filter((l) => l.kind === "sub").forEach((l) => L.push(`- ${clean(l.name)} on ${clean(l.element)}: ${money2(l.cost)} at ${pct(l.margin)} → sells ${money2(l.sell)}`));
+  }
+  if (f.unpricedQuotes) {
+    L.push("", `QUOTE ROWS STILL UNPRICED (${f.unpricedQuotes} — priced at $0 today)`);
+    its.forEach((it) => Object.entries((it && it.qtys) || {}).forEach(([k, v]) => {
+      if (/::quote$/.test(k) && Number(v) > 0 && !(it.rateOverrides && it.rateOverrides[k] && Number(it.rateOverrides[k].unitCost) > 0)) L.push(`- ${k.split("::")[1]} on ${clean(it.label)}`);
+    }));
+  }
+  if (prov.count) L.push("", `PROVISIONAL SUMS: ${prov.count} element${prov.count === 1 ? "" : "s"}, ${money2(prov.provisional)} (firm work ${money2(prov.firm)})`);
+  const assumptions = (Array.isArray(q.assumptions) ? q.assumptions : []).map((a) => clean(a && (a.tenderText || a.text))).filter(Boolean);
+  if (assumptions.length) { L.push("", "ASSUMPTIONS"); assumptions.forEach((a) => L.push(`- ${a}`)); }
+  L.push("", `Open the project in the portal${portalUrl ? `: ${portalUrl}` : "."}`);
+  L.push("", `Sent from the Gradcon portal${by ? ` by ${by}` : ""} — step 08 of the tender checklist.`);
+  return { subject: `Costings ready – ${f.project}${f.due ? ` · tender ${f.due}` : ""}`, text: L.join("\n") };
+}
+
 export const SMS_MAX_CHARS = 480;
 export function smsSegments(text) {
   const t = String(text || "");
@@ -85,6 +132,26 @@ export function notifyPatch(quote, record) {
 }
 export const notificationsOf = (quote) => (quote && Array.isArray(quote.notifications) ? quote.notifications : []);
 export const lastNotification = (quote, kind = "sms") => notificationsOf(quote).filter((n) => n.kind === kind).slice(-1)[0] || null;
+
+/** The Google connection's sending status: `{configured, connected, send, email}` from /api/google-auth. */
+export async function mailSendStatus({ fetchImpl, base } = {}) {
+  const f = fetchImpl || fetch;
+  const origin = base || (typeof location !== "undefined" ? location.origin : "");
+  const res = await f(`${origin}/api/google-auth?action=status`, { method: "GET", headers: { accept: "application/json" } });
+  let body = null; try { body = await res.json(); } catch { body = null; }
+  if (!res.ok || !body) return { configured: false, connected: false, send: false };
+  return { configured: !!body.configured, connected: !!body.connected, send: !!body.send, email: body.email || body.mailbox || null };
+}
+/** POST the approved email to Grady through the projects@ connection (api/gmail.js `send`). Resolves `{id, threadId, to, subject}`. */
+export async function requestEmail({ subject, text, fromName }, { fetchImpl, base, to } = {}) {
+  const f = fetchImpl || fetch;
+  const origin = base || (typeof location !== "undefined" ? location.origin : "");
+  const res = await f(`${origin}/api/gmail`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "send", to: to || GRADY_EMAIL, toName: "Grady", fromName: fromName || "Gradcon Concrete Constructions", subject: String(subject || ""), text: String(text || "") }) });
+  let body = null; try { body = await res.json(); } catch { body = null; }
+  if (!res.ok) throw new Error((body && body.error) || `The mail function answered ${res.status}`);
+  const sent = (body && body.sent) || {};
+  return { id: sent.id || null, threadId: sent.threadId || null, to: sent.to || to || GRADY_EMAIL, subject: sent.subject || subject };
+}
 
 /** GET the SMS status (configured, provider, masked recipient). */
 export async function notifyStatus({ fetchImpl, base } = {}) {

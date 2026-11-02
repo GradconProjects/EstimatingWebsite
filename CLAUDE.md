@@ -832,11 +832,11 @@ shows a "☑ N/12" chip (`dashboard-checklist`, next step on hover) once a step
 is ticked. `test-tender-checklist.mjs` proves the rolled-up open, the twelve
 rows, the dating, the note, the reload and the chip.
 
-## Notify Grady from the checklist: SMS (email to follow)
+## Notify Grady from the checklist: email and SMS
 
 Grady, 2 Nov 2026: "can i include an email and sms notification of summary of
 completed projects to grady? so when i click inform grady from the checklist,
-it automatically sends to him"; "lets wire in the sms first". Rules:
+it automatically sends to him"; "lets do both at once". Rules:
 
 1. **`api/_sms.js` is the ONE place an SMS provider is spoken to.** Two
    providers behind `sendSms(text, env, fetchImpl)`, chosen by `SMS_PROVIDER`
@@ -874,27 +874,47 @@ it automatically sends to him"; "lets wire in the sms first". Rules:
    to (masked), text, by, at, provider, messageId, segments}`;
    `lastNotification(quote, kind)` reads the newest; `notifyStatus` /
    `requestSms` are the browser calls (the POST carries ONLY `{action, text}`).
-   The email summary, when it is built, reads the same `notifyFacts`.
-4. **Step 08 "Notify Grady" on the checklist carries "Text Grady"**
-   (`NotifyGrady` in `TenderChecklist.jsx`, `tender-sms-*` test ids; App passes
-   `notify = {draft, status, send}`): the panel opens with the draft from the
-   quote's CURRENT figures (editable, Re-draft rebuilds it, the character and
-   segment count live), the server's status (ready + masked number + provider,
-   or "SMS not configured — set …"), an **Approve** tick and **Send SMS**
-   (disabled until configured, approved, within 480 characters). The send is
-   ONE POST; on success App records it (`notifyPatch`) AND ticks step 08
-   through `checklistPatch` with the account, the panel confirms, and the
-   closed row reads "Texted <when> by <account> · N segments"
+   **The email reads the same facts in full**: `emailSummary(…, {portalUrl,
+   by})` → `{subject: "Costings ready – <project> · tender due <date> (Nd)",
+   text}` — PROJECT (client, tender, scope), PRICE (direct, loaded with the
+   on-cost percentages, project and blended margin with the pinned count, sell
+   ex and inc GST), ELEMENTS (each with its sell and rate, its subcontract
+   quotes inline), SUBCONTRACT QUOTES, QUOTE ROWS STILL UNPRICED, PROVISIONAL
+   SUMS, ASSUMPTIONS (the tender wording when an assumption has one, blanks
+   dropped), the portal link and who sent it. `GRADY_EMAIL` =
+   grady@gradcon.com.au is the ONE recipient; `requestEmail({subject, text})`
+   posts `api/gmail.js` `send` (to Grady, toName "Grady", from the projects@
+   connection — the same path and the same 409 `needsReconnect` as an RFQ; no
+   attachments, no cc) and `mailSendStatus()` reads `/api/google-auth` for
+   `{configured, connected, send, email}`.
+4. **Step 08 "Notify Grady" on the checklist carries "Notify Grady — email &
+   SMS"** (`NotifyGrady` in `TenderChecklist.jsx`, `tender-email-*` /
+   `tender-sms-*` / `tender-notify-*` test ids; App passes `notify = {draft,
+   emailDraft, status, mailStatus, send, sendEmail}`): the panel opens with
+   BOTH drafts from the quote's CURRENT figures — the email (subject and body,
+   editable) with the mailbox's status ("Mail ready · from projects@ to
+   grady@", or not configured / not connected / "cannot send yet — reconnect
+   for sending") and its own **Approve email** tick and **Send email**; the
+   text (editable, the character and segment count live) with the SMS status
+   (ready + masked number + provider, or "SMS not configured — set …") and
+   its own **Approve SMS** tick and **Send SMS**; **Re-draft both**; and **Send
+   both**, enabled only when both are approved and both channels are ready.
+   Each send is ONE POST; on success App records it (`notifyPatch`, kind
+   `email` with the Gmail id or `sms` with the provider's) AND ticks step 08
+   through `checklistPatch` with the account, the panel confirms what went,
+   and the closed row reads "Emailed <when> by <account> · Texted <when> …"
    (`tender-sms-last`). A refused send shows the server's reason and records
-   nothing. Nothing is sent without the tick and the press.
+   nothing. Nothing is sent without its tick and the press.
 `verify.mjs` covers the facts and the text, the segments, the record, the phone
 spellings and the mask, the status with nothing set, a named provider without
 keys, the function's refusals, a mocked ClickSend send (the server's recipient,
 the sender id, basic auth, a rejected status) and a mocked Twilio send (form
 fields, From vs a messaging service), and the browser calls;
 `test-notify-sms.mjs` proves the button, the draft, the unconfigured state, the
-configured state, Approve → Send with only the text posted, the tick, the
-record, the closed row and a refused send.
+configured state, the email draft and the read-only-mailbox state, Send both
+(one email to grady@ with the edited subject, one text), the two records, the
+SMS alone with only the text posted, the tick, the closed row and a refused
+send.
 
 ## Clearable notices (every banner has a ✕)
 

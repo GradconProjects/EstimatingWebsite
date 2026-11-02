@@ -936,6 +936,27 @@ checkAsync("notify Grady: the text is built from the quote's own figures, segmen
   assert.ok(/Sell \$7,117 ex GST at 18\.5% blended on \$5,800 direct\./.test(text), text); // 3200/0.75 + 2500/0.92 + 100/0.75
   assert.ok(/3 elements, 1 sub quote, 1 quote row UNPRICED\./.test(text) && /Tender due 2026-11-07 \(5d\)\./.test(text) && /https:\/\/portal\.test$/.test(text), text);
   assert.ok(text.length <= NG.SMS_MAX_CHARS, `${text.length} chars`);
+  // the email: the same facts in full
+  const em = NG.emailSummary(quote, quote.items, rates, { today: "2026-11-02", portalUrl: "https://portal.test", by: "projects" });
+  assert.equal(em.subject, "Costings ready – 19 Paringa Road, Portsea VIC 3944 · tender due 2026-11-07 (5d)");
+  assert.ok(/^Hi Grady,/.test(em.text) && /Client: Builder X/.test(em.text) && /Direct cost: \$5,800\.00/.test(em.text) && /Sell: \$7,117\.\d\d ex GST/.test(em.text), em.text);
+  assert.ok(/- Strip Footings: \$4,266\.67 at 25%/.test(em.text) && /- Screw Piles: \$2,717\.39 at 8% \(incl\. Screw Piling \$2,500\.00 at 8%\)/.test(em.text), em.text);
+  assert.ok(/SUBCONTRACT QUOTES\n- Screw Piling on Screw Piles: \$2,500\.00 at 8% → sells \$2,717\.39/.test(em.text), em.text);
+  assert.ok(/QUOTE ROWS STILL UNPRICED \(1[^)]*\)\n- Steel fix on Steel fix/.test(em.text), em.text);
+  assert.ok(/Margin: project 25% · blended 18\.5% \(1 line pinned at their own rate\)/.test(em.text) && /https:\/\/portal\.test/.test(em.text) && /by projects — step 08/.test(em.text), em.text);
+  const emA = NG.emailSummary({ ...quote, assumptions: [{ id: "a", text: "Rock excluded", tenderText: "Rock excavation is excluded from our price." }, { id: "b", text: "" }] }, quote.items, rates, { today: "2026-11-02" });
+  assert.ok(/ASSUMPTIONS\n- Rock excavation is excluded from our price\.\n/.test(emA.text), "the tender wording of an assumption prints when it has one; blanks are dropped");
+  // the email goes through the projects@ connection to Grady's address only, as a plain send
+  let mp = null;
+  const er = await NG.requestEmail({ subject: em.subject, text: em.text }, { base: "https://portal.test", fetchImpl: async (url, init) => { mp = { url, body: JSON.parse(init.body) }; return { ok: true, status: 200, json: async () => ({ mailbox: "projects@gradcon.com.au", sent: { id: "M1", threadId: "T1", to: "grady@gradcon.com.au", subject: em.subject } }) }; } });
+  assert.equal(mp.url, "https://portal.test/api/gmail"); assert.equal(mp.body.action, "send"); assert.equal(mp.body.to, NG.GRADY_EMAIL); assert.equal(mp.body.toName, "Grady"); assert.equal(mp.body.subject, em.subject); assert.ok(!("attachments" in mp.body) && !("cc" in mp.body));
+  assert.deepEqual([er.id, er.threadId, er.to], ["M1", "T1", "grady@gradcon.com.au"]);
+  await assert.rejects(() => NG.requestEmail({ subject: "x", text: "y" }, { base: "https://portal.test", fetchImpl: async () => ({ ok: false, status: 409, json: async () => ({ error: "The Google connection cannot send yet" }) }) }), /cannot send yet/);
+  const ms = await NG.mailSendStatus({ base: "https://portal.test", fetchImpl: async (url) => ({ ok: true, status: 200, json: async () => ({ configured: true, connected: true, send: false, email: "projects@gradcon.com.au" }) }) });
+  assert.deepEqual([ms.configured, ms.connected, ms.send, ms.email], [true, true, false, "projects@gradcon.com.au"]);
+  const emRec = NG.notifyRecord({ kind: "email", to: NG.GRADY_EMAIL, text: em.subject, by: "projects", provider: "gmail", messageId: "M1" });
+  const both = { ...quote, ...NG.notifyPatch({ ...quote, ...NG.notifyPatch(quote, emRec) }, NG.notifyRecord({ kind: "sms", text: "t", messageId: "S1" })) };
+  assert.equal(NG.lastNotification(both, "email").messageId, "M1"); assert.equal(NG.lastNotification(both, "sms").messageId, "S1");
   assert.equal(NG.smsSegments("a".repeat(160)), 1); assert.equal(NG.smsSegments("a".repeat(161)), 2); assert.equal(NG.smsSegments("—"), 1); assert.equal(NG.smsSegments("—" + "a".repeat(70)), 2, "a non-GSM character makes it 70 per segment");
   assert.equal(S.smsSegments("a".repeat(306)), 2); assert.equal(S.smsSegments("a".repeat(307)), 3);
   // the record on the quote

@@ -14,7 +14,7 @@ import { AddressOptions } from "./components/AddressNaming.jsx";
 import { needsAddressReview, requestProjectNames, autoApplies, applyNamePatch, keepNamePatch } from "./lib/projectNaming.js";
 import { preferredProvider } from "./lib/tenderWording.js";
 import { marginContext, requestMarginAdvice, pastMarginsFrom } from "./lib/marginAdvice.js";
-import { smsSummary, notifyStatus, requestSms, notifyRecord, notifyPatch } from "./lib/notifyGrady.js";
+import { smsSummary, emailSummary, notifyStatus, mailSendStatus, requestSms, requestEmail, notifyRecord, notifyPatch, GRADY_EMAIL } from "./lib/notifyGrady.js";
 import MarginRegister from "./components/MarginRegister.jsx";
 import { resolveTheme, applyTheme } from "./lib/quoteTheme.js";
 import { progress as workProgress, whenLabel as workWhen, userKey as workUser } from "./lib/workTrail.js";
@@ -1212,7 +1212,16 @@ function ProjectEditor({ project, allProjects, rates: liveRates, setRates: setLi
             notify={{
               // step 08 "Notify Grady": the text from the quote's own figures, the server's SMS set-up, one approved send recorded on the quote
               draft: () => smsSummary(quote, items, rates, { portalUrl: typeof location !== "undefined" ? location.origin : "" }),
+              emailDraft: () => emailSummary(quote, items, rates, { portalUrl: typeof location !== "undefined" ? location.origin : "", by: workUser(portalUser()) }),
               status: () => notifyStatus(),
+              mailStatus: () => mailSendStatus(),
+              sendEmail: async ({ subject, text }) => {
+                const r = await requestEmail({ subject, text });
+                const by = workUser(portalUser());
+                const rec = notifyRecord({ kind: "email", step: "notify", to: r.to || GRADY_EMAIL, text: `${subject}\n\n${text}`, by, provider: "gmail", messageId: r.id, segments: null });
+                setQuote((q) => ({ ...q, ...notifyPatch(q, rec), ...checklistPatch(q, "notify", { done: true }, by) }));
+                return rec;
+              },
               send: async (text) => {
                 const r = await requestSms(text);
                 const by = workUser(portalUser());
