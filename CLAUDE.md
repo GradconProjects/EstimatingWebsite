@@ -832,6 +832,70 @@ shows a "☑ N/12" chip (`dashboard-checklist`, next step on hover) once a step
 is ticked. `test-tender-checklist.mjs` proves the rolled-up open, the twelve
 rows, the dating, the note, the reload and the chip.
 
+## Notify Grady from the checklist: SMS (email to follow)
+
+Grady, 2 Nov 2026: "can i include an email and sms notification of summary of
+completed projects to grady? so when i click inform grady from the checklist,
+it automatically sends to him"; "lets wire in the sms first". Rules:
+
+1. **`api/_sms.js` is the ONE place an SMS provider is spoken to.** Two
+   providers behind `sendSms(text, env, fetchImpl)`, chosen by `SMS_PROVIDER`
+   (`smsProviderId`: a named provider WITHOUT its keys is null, never silently
+   swapped; blank = whichever has keys): **ClickSend** (`CLICKSEND_USERNAME` /
+   `CLICKSEND_API_KEY`, basic auth, `SMS_FROM` an alpha sender id ≤ 11 chars
+   or a number) and **Twilio** (`TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` /
+   `TWILIO_FROM` — a number, or an `MG…` messaging service SID sent as
+   `MessagingServiceSid`). Every variable is SERVER-SIDE ONLY (Vercel →
+   Settings → Environment Variables, never `VITE_`; `.env.example` lists them).
+   **The recipient is `GRADY_MOBILE`, read on the server** — `normalizeMobile`
+   turns any Australian spelling into E.164 (0412 → +61412…; a full +… number
+   of another country passes), the function never texts a number the browser
+   supplies (a `to` in the body is ignored), and every page shows it masked
+   (`maskMobile`, "+614••• ••• 678"). `smsStatus(env)` → `{configured,
+   provider, to (masked), from, missing}` names the variables still to set and
+   never a key. `smsSegments` counts GSM-7 (160 / 153) or UCS-2 (70 / 67 — an
+   em dash or curly quote tips it); a text over 480 characters (three
+   segments) is refused. A provider answer that is not SUCCESS / QUEUED (or
+   has no SID) is a 4xx / 502 with the provider's words.
+2. **`api/notify.js`** (same-origin check as the other functions; `maxDuration`
+   30): `GET` → `{sms: smsStatus()}` (the checklist panel reads it), `POST
+   {action: "sms", text}` → one text to Grady; `runNotify(body, env,
+   fetchImpl)` is the testable body (400 on no text / an unknown action, 503
+   when unconfigured, the provider's status otherwise).
+3. **`src/lib/notifyGrady.js` is pure and verify-covered.** `notifyFacts(quote,
+   items, rates)` is the ONE reading of what Grady is told (project, client,
+   deadline and days, elements, direct cost, sell ex / inc GST, project and
+   blended margin, pinned lines, subcontract quotes, provisional sums, quote
+   rows still UNPRICED, scope); `smsSummary(…, {portalUrl})` lays it out as the
+   text ("Gradcon: costings ready for <project> (<client>). Sell $X ex GST at
+   Y% blended on $Z direct. N elements, M sub quotes, K quote rows UNPRICED.
+   Tender due <date> (Dd). Review in the portal: <url>"); `notifyRecord` /
+   `notifyPatch` keep every send on `quote.notifications[] = {id, kind, step,
+   to (masked), text, by, at, provider, messageId, segments}`;
+   `lastNotification(quote, kind)` reads the newest; `notifyStatus` /
+   `requestSms` are the browser calls (the POST carries ONLY `{action, text}`).
+   The email summary, when it is built, reads the same `notifyFacts`.
+4. **Step 08 "Notify Grady" on the checklist carries "Text Grady"**
+   (`NotifyGrady` in `TenderChecklist.jsx`, `tender-sms-*` test ids; App passes
+   `notify = {draft, status, send}`): the panel opens with the draft from the
+   quote's CURRENT figures (editable, Re-draft rebuilds it, the character and
+   segment count live), the server's status (ready + masked number + provider,
+   or "SMS not configured — set …"), an **Approve** tick and **Send SMS**
+   (disabled until configured, approved, within 480 characters). The send is
+   ONE POST; on success App records it (`notifyPatch`) AND ticks step 08
+   through `checklistPatch` with the account, the panel confirms, and the
+   closed row reads "Texted <when> by <account> · N segments"
+   (`tender-sms-last`). A refused send shows the server's reason and records
+   nothing. Nothing is sent without the tick and the press.
+`verify.mjs` covers the facts and the text, the segments, the record, the phone
+spellings and the mask, the status with nothing set, a named provider without
+keys, the function's refusals, a mocked ClickSend send (the server's recipient,
+the sender id, basic auth, a rejected status) and a mocked Twilio send (form
+fields, From vs a messaging service), and the browser calls;
+`test-notify-sms.mjs` proves the button, the draft, the unconfigured state, the
+configured state, Approve → Send with only the text posted, the tick, the
+record, the closed row and a refused send.
+
 ## Clearable notices (every banner has a ✕)
 
 Grady, 22 Oct 2026: "i should be able to clear these and other notifications

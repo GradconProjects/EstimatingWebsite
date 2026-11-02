@@ -913,6 +913,73 @@ checkAsync("margins: the AI advice is context from the quote's own figures, a pr
   assert.equal(r503.status, 503);
 });
 
+/* ---------- SMS to Grady from the checklist (2 Nov 2026) ---------- */
+checkAsync("notify Grady: the text is built from the quote's own figures, segments are counted, the record is kept, the server fixes the recipient and refuses an unconfigured send; both providers are spoken to correctly on a mock", async () => {
+  const NG = await import("../src/lib/notifyGrady.js");
+  const S = await import("../api/_sms.js");
+  const N = await import("../api/notify.js");
+  const M = costingAll;
+  const rates = defaultRates();
+  const subKey = rateKey(M.SUBCONTRACT_CATEGORY_KEY, "Screw Piling", "quote");
+  const piles = newElementItem(ELEMENT_TYPES.find((t) => t.id === "screw_piles")); piles.labourAuto = false; piles.label = "Screw Piles";
+  piles.qtys[subKey] = 1; piles.rateOverrides = { [subKey]: { unitCost: 2500 } }; piles.rowMargins = { [subKey]: 0.08 };
+  const strip = newElementItem(ELEMENT_TYPES.find((t) => t.id === "strip_footings")); strip.labourAuto = false; strip.label = "Strip Footings";
+  strip.additional.push({ id: "s", name: "Own", unit: "item", qty: 1, rate: 3200 });
+  const unpriced = newElementItem(ELEMENT_TYPES.find((t) => t.id === "capping_beam")); unpriced.labourAuto = false; unpriced.label = "Steel fix";
+  unpriced.qtys[rateKey(M.SUBCONTRACT_CATEGORY_KEY, "Steel fix", "quote")] = 2; unpriced.additional.push({ id: "u", name: "Own", unit: "item", qty: 1, rate: 100 });
+  const quote = { projectName: "19 Paringa Road, Portsea VIC 3944", clientName: "Builder X", planner: { deadline: "2026-11-07" }, overheadPct: 0, contingencyPct: 0, marginPct: 0.25, items: [strip, piles, unpriced] };
+  const f = NG.notifyFacts(quote, quote.items, rates, { today: "2026-11-02" });
+  assert.equal(f.elements, 3); assert.equal(f.subQuotes, 1); assert.equal(f.unpricedQuotes, 1, "a quote row with a qty and no amount is named as unpriced");
+  assert.ok(Math.abs(f.sell - (3200 / 0.75 + 2500 / 0.92 + 100 / 0.75)) < 1e-6);
+  const text = NG.smsSummary(quote, quote.items, rates, { today: "2026-11-02", portalUrl: "https://portal.test" });
+  assert.ok(/^Gradcon: costings ready for 19 Paringa Road, Portsea VIC 3944 \(Builder X\)\./.test(text), text);
+  assert.ok(/Sell \$7,117 ex GST at 18\.5% blended on \$5,800 direct\./.test(text), text); // 3200/0.75 + 2500/0.92 + 100/0.75
+  assert.ok(/3 elements, 1 sub quote, 1 quote row UNPRICED\./.test(text) && /Tender due 2026-11-07 \(5d\)\./.test(text) && /https:\/\/portal\.test$/.test(text), text);
+  assert.ok(text.length <= NG.SMS_MAX_CHARS, `${text.length} chars`);
+  assert.equal(NG.smsSegments("a".repeat(160)), 1); assert.equal(NG.smsSegments("a".repeat(161)), 2); assert.equal(NG.smsSegments("—"), 1); assert.equal(NG.smsSegments("—" + "a".repeat(70)), 2, "a non-GSM character makes it 70 per segment");
+  assert.equal(S.smsSegments("a".repeat(306)), 2); assert.equal(S.smsSegments("a".repeat(307)), 3);
+  // the record on the quote
+  const rec = NG.notifyRecord({ to: "+61 4•• ••• 678", text, by: "projects", provider: "clicksend", messageId: "m1", segments: 2, at: "2026-11-02T03:00:00.000Z" });
+  const patched = { ...quote, ...NG.notifyPatch(quote, rec) };
+  assert.equal(patched.notifications.length, 1); assert.equal(NG.lastNotification(patched).messageId, "m1"); assert.equal(NG.lastNotification(patched, "email"), null);
+  // phone spellings → E.164, masked for pages
+  assert.equal(S.normalizeMobile("0412 345 678"), "+61412345678"); assert.equal(S.normalizeMobile("+61 412-345-678"), "+61412345678"); assert.equal(S.normalizeMobile("61412345678"), "+61412345678");
+  assert.equal(S.normalizeMobile("1234"), null); assert.equal(S.normalizeMobile("0312345678"), "+61312345678", "a landline still normalises (the provider decides)"); assert.equal(S.normalizeMobile("+447700900123"), "+447700900123");
+  assert.equal(S.maskMobile("+61412345678"), "+614••• ••• 678");
+  // status: nothing set → not configured, names what is missing, never a key
+  const none = S.smsStatus({}); assert.equal(none.configured, false); assert.ok(none.missing.join(" ").includes("CLICKSEND_USERNAME") && none.missing.join(" ").includes("GRADY_MOBILE"));
+  const cs = { SMS_PROVIDER: "clicksend", CLICKSEND_USERNAME: "u@x", CLICKSEND_API_KEY: "k", SMS_FROM: "Gradcon", GRADY_MOBILE: "0412 345 678" };
+  const st = S.smsStatus(cs); assert.deepEqual([st.configured, st.provider, st.to, st.from], [true, "clicksend", "+614••• ••• 678", "Gradcon"]); assert.ok(!JSON.stringify(st).includes("\"k\""));
+  assert.equal(S.smsProviderId({ SMS_PROVIDER: "twilio", CLICKSEND_USERNAME: "u", CLICKSEND_API_KEY: "k" }), null, "a named provider without its keys is not silently swapped");
+  // the function: refusals, then a mocked ClickSend send
+  assert.equal((await N.runNotify({ action: "sms", text: "hi" }, {})).status, 503);
+  assert.equal((await N.runNotify({ action: "sms", text: "" }, cs)).status, 400);
+  assert.equal((await N.runNotify({ action: "sms", text: "x".repeat(481) }, cs)).status, 400);
+  assert.equal((await N.runNotify({ action: "nope" }, cs)).status, 400);
+  assert.deepEqual((await N.runNotify({ action: "status" }, cs)).body.sms.to, "+614••• ••• 678");
+  let posted = null;
+  const okCs = await N.runNotify({ action: "sms", text: "Costings ready.", to: "+61499999999" }, cs, async (url, init) => { posted = { url, init, body: JSON.parse(init.body) }; return { ok: true, status: 200, json: async () => ({ data: { messages: [{ status: "SUCCESS", message_id: "CS1", message_price: 0.0794 }] } }) }; });
+  assert.equal(okCs.status, 200); assert.equal(okCs.body.id, "CS1"); assert.equal(okCs.body.to, "+614••• ••• 678");
+  assert.equal(posted.url, "https://rest.clicksend.com/v3/sms/send"); assert.equal(posted.body.messages[0].to, "+61412345678", "the recipient is the server's GRADY_MOBILE — a number in the body is ignored"); assert.equal(posted.body.messages[0].from, "Gradcon"); assert.ok(/^Basic /.test(posted.init.headers.Authorization));
+  const badCs = await N.runNotify({ action: "sms", text: "x" }, cs, async () => ({ ok: true, status: 200, json: async () => ({ data: { messages: [{ status: "INVALID_RECIPIENT" }] } }) }));
+  assert.equal(badCs.status, 200 === badCs.status ? 0 : badCs.status); assert.ok(badCs.status >= 400 && /INVALID_RECIPIENT/.test(badCs.body.error), JSON.stringify(badCs));
+  // Twilio: form-encoded, From or a messaging service
+  const tw = { SMS_PROVIDER: "twilio", TWILIO_ACCOUNT_SID: "ACabc", TWILIO_AUTH_TOKEN: "tok", TWILIO_FROM: "+61400000000", GRADY_MOBILE: "+61412345678" };
+  let tposted = null;
+  const okTw = await N.runNotify({ action: "sms", text: "Costings ready." }, tw, async (url, init) => { tposted = { url, params: new URLSearchParams(init.body) }; return { ok: true, status: 201, json: async () => ({ sid: "SM1", num_segments: "1" }) }; });
+  assert.equal(okTw.body.id, "SM1"); assert.equal(okTw.body.provider, "twilio"); assert.ok(tposted.url.endsWith("/Accounts/ACabc/Messages.json"));
+  assert.equal(tposted.params.get("To"), "+61412345678"); assert.equal(tposted.params.get("From"), "+61400000000"); assert.equal(tposted.params.get("Body"), "Costings ready.");
+  const okMg = await N.runNotify({ action: "sms", text: "x" }, { ...tw, TWILIO_FROM: "MG" + "a".repeat(32) }, async (url, init) => { tposted = new URLSearchParams(init.body); return { ok: true, status: 201, json: async () => ({ sid: "SM2" }) }; });
+  assert.equal(okMg.status, 200); assert.equal(tposted.get("MessagingServiceSid"), "MG" + "a".repeat(32)); assert.equal(tposted.get("From"), null);
+  // the browser side posts only the text and reads the reply; an error throws with the server's words
+  let b = null;
+  const r = await NG.requestSms("Costings ready.", { base: "https://portal.test", fetchImpl: async (url, init) => { b = { url, body: JSON.parse(init.body) }; return { ok: true, status: 200, json: async () => ({ ok: true, provider: "clicksend", id: "CS1", to: "+614••• ••• 678", segments: 1 }) }; } });
+  assert.equal(b.url, "https://portal.test/api/notify"); assert.deepEqual(Object.keys(b.body).sort(), ["action", "text"]); assert.equal(r.id, "CS1");
+  await assert.rejects(() => NG.requestSms("x", { base: "https://portal.test", fetchImpl: async () => ({ ok: false, status: 503, json: async () => ({ error: "SMS is not configured — set GRADY_MOBILE" }) }) }), /not configured/);
+  const stt = await NG.notifyStatus({ base: "https://portal.test", fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ sms: { configured: true, provider: "clicksend", to: "+614••• ••• 678" } }) }) });
+  assert.equal(stt.provider, "clicksend");
+});
+
 /* ---------- custom / one-off items ---------- */
 check("Custom line items add directly (qty * rate)", () => {
   const rates = defaultRates();

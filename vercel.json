@@ -1,6 +1,9 @@
 {
   "crons": [
-    { "path": "/api/tender-inbox", "schedule": "0 20 * * *" }
+    {
+      "path": "/api/tender-inbox",
+      "schedule": "0 20 * * *"
+    }
   ],
   "functions": {
     "api/tender-inbox.js": {
@@ -19,6 +22,9 @@
       "maxDuration": 60
     },
     "api/industry-news.js": {
+      "maxDuration": 30
+    },
+    "api/notify.js": {
       "maxDuration": 30
     }
   }

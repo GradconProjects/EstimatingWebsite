@@ -14,6 +14,7 @@ import { AddressOptions } from "./components/AddressNaming.jsx";
 import { needsAddressReview, requestProjectNames, autoApplies, applyNamePatch, keepNamePatch } from "./lib/projectNaming.js";
 import { preferredProvider } from "./lib/tenderWording.js";
 import { marginContext, requestMarginAdvice, pastMarginsFrom } from "./lib/marginAdvice.js";
+import { smsSummary, notifyStatus, requestSms, notifyRecord, notifyPatch } from "./lib/notifyGrady.js";
 import MarginRegister from "./components/MarginRegister.jsx";
 import { resolveTheme, applyTheme } from "./lib/quoteTheme.js";
 import { progress as workProgress, whenLabel as workWhen, userKey as workUser } from "./lib/workTrail.js";
@@ -1208,6 +1209,18 @@ function ProjectEditor({ project, allProjects, rates: liveRates, setRates: setLi
             me={workUser(portalUser())}
             onClose={() => setChecklistOpen(false)}
             onChange={(id, change) => setQuote((q) => ({ ...q, ...checklistPatch(q, id, change, workUser(portalUser())) }))}
+            notify={{
+              // step 08 "Notify Grady": the text from the quote's own figures, the server's SMS set-up, one approved send recorded on the quote
+              draft: () => smsSummary(quote, items, rates, { portalUrl: typeof location !== "undefined" ? location.origin : "" }),
+              status: () => notifyStatus(),
+              send: async (text) => {
+                const r = await requestSms(text);
+                const by = workUser(portalUser());
+                const rec = notifyRecord({ kind: "sms", step: "notify", to: r.to, text, by, provider: r.provider, messageId: r.id, segments: r.segments });
+                setQuote((q) => ({ ...q, ...notifyPatch(q, rec), ...checklistPatch(q, "notify", { done: true }, by) }));
+                return rec;
+              },
+            }}
           />
           {items.length > 0 && !isNoticeCleared(clearedNotices, NOTICE_IDS.trail, "trail") && (() => {
             // where you left off (lib/workTrail.js): done / total, the next element to work on, the last one touched
