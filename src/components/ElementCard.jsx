@@ -19,7 +19,7 @@ import AdditionalItems from "./AdditionalItems.jsx";
  * the quote's item order (the summary rail, the print report and the
  * export all follow it), the same order QuoteSummary's own drag edits.
  */
-export default function ElementCard({ item, rates, onChange, onRemove, onDuplicate, onLabourRateChange, onMaterialRateChange, onMoveUp, onMoveDown, onReorder, projectScope , handover, onPickFromDrive, rateChanges, onRfq }) {
+export default function ElementCard({ item, rates, onChange, onRemove, onDuplicate, onLabourRateChange, onMaterialRateChange, onMoveUp, onMoveDown, onReorder, projectScope , handover, onPickFromDrive, rateChanges, onRfq, packages = [], onAssignPackage }) {
   // who is typing (lib/workTrail.js): every figure entered records the
   // signed-in account, so Grady's own entries read in his colour
   const me = userKey(signedInUser());
@@ -344,6 +344,21 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
                 </span>
               )}
             </div>
+            {packages.length > 0 && onAssignPackage && (
+              <label className="flex-none flex items-center gap-1 text-[10px] uppercase tracking-widest text-blue-400" onClick={(e) => e.stopPropagation()} title="The package this element belongs to — the package sums add up to the project, and the Tender Quote can price them apart (lib/packages.js)">
+                <span>Package</span>
+                <select
+                  value={packages.some((p) => p.id === item.packageId) ? item.packageId : ""}
+                  onChange={(e) => onAssignPackage(e.target.value)}
+                  className={`bg-transparent border border-blue-800/70 hover:border-blue-600 rounded px-1 py-0 text-[10px] normal-case tracking-normal font-medium focus:outline-none focus:border-orange-400 max-w-[11rem] ${packages.some((p) => p.id === item.packageId) ? "text-blue-200" : "text-amber-300"}`}
+                  aria-label="Element package"
+                  data-testid="element-package"
+                >
+                  <option value="">Unassigned</option>
+                  {packages.map((p) => <option key={p.id} value={p.id}>{p.name || "Package"}</option>)}
+                </select>
+              </label>
+            )}
             <label className={`flex-none flex items-center gap-1 text-[10px] uppercase tracking-widest cursor-pointer ${isProvisional(item) ? "text-amber-300" : "text-blue-400"}`} onClick={(e) => e.stopPropagation()} title="Provisional sum: priced and carried in the total, but listed as PROVISIONAL on the card, the summary, the print report, the exports and the tender's line item" data-testid="element-provisional">
               <input type="checkbox" checked={isProvisional(item)} onChange={(e) => patch((it) => ({ ...it, provisional: e.target.checked || undefined }))} className="accent-amber-400" aria-label="Provisional sum" />
               <span>Provisional</span>

@@ -20,6 +20,7 @@
  */
 import { FULL_CATALOG, RESOURCE_COLS, CATEGORY_ORDER, SECTION_ORDER } from "../data/catalog.js";
 import { computeElementCost, computeGrandTotal, computeMarginLadder, computeMarginRegister, projectMargin, marginStepsAround, rateKey, rowRate, computeRowTotal, rowContext, getDefaultMargin, getMarginSteps, additionalRowsFor, additionalRowTotal, autoSoilRemoval, autoBlindingConcrete, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, autoSpecialistFees, categoryAppliesTo, elementScope, categoryChargedUnder, scopeLabel, isBlindingProduct, blindingIncluded } from "./costing.js";
+import { packageLabelFor, hasPackages, computePackageTotals } from "./packages.js";
 import { GRADCON_LOGO_DATA_URI } from "./logo.js";
 
 /** Rate ($/unit) backed out from the line's own total ÷ qty — always exactly
@@ -161,6 +162,8 @@ ${rows.map(([label, value]) => tr(
 
 export function buildQuoteExcelHtml(quote, items, rates, categoryOrder = CATEGORY_ORDER, sectionOrder = SECTION_ORDER) {
   const groups = groupItems(items, rates, categoryOrder, sectionOrder, quote.scope);
+  const pkgPrefix = (item) => { const n = packageLabelFor(quote, item); return n ? `${n} › ` : ""; }; // the element's package, on a packaged project (lib/packages.js)
+  const pkgTotals = hasPackages(quote) ? computePackageTotals(quote, items, rates, quote.scope) : [];
   const grandTotal = computeGrandTotal(items, rates, quote.scope);
   const pm = projectMargin(quote);
   const { subtotal, rows: marginRows } = computeMarginLadder(
@@ -190,7 +193,7 @@ export function buildQuoteExcelHtml(quote, items, rates, categoryOrder = CATEGOR
       elements.forEach(({ item, cost, lines }) => {
         rowsHtml.push(tr(
           td("", {})
-          + td(esc(item.label + (item.provisional ? " — PROVISIONAL SUM" : "")), { bold: true })
+          + td(esc(pkgPrefix(item) + item.label + (item.provisional ? " — PROVISIONAL SUM" : "")), { bold: true })
           + td("", {}) + td("", {}) + td("", {})
           + td(cost.total.toFixed(2), { bold: true, align: "right", color: COLORS.money, numeric: true })
         ));
@@ -293,6 +296,11 @@ ${summaryRows.join("\n")}
       + td(pctStr(reg.totals.blended), { align: "right", bold: true }) + td(reg.totals.sell.toFixed(2), { align: "right", numeric: true, bold: true })
     ));
   }
+  if (pkgTotals.length) {
+    marginRowsHtml.push(tr(td("", {}) + td("", {}) + td("", {}) + td("", {})));
+    marginRowsHtml.push(tr(td("Packages", { bold: true, bg: COLORS.navy, color: COLORS.navyText }) + td("Elements · direct cost", { bold: true, bg: COLORS.navy, color: COLORS.navyText, align: "right" }) + td("Margin", { bold: true, bg: COLORS.navy, color: COLORS.navyText, align: "right" }) + td("Sell (ex GST)", { bold: true, bg: COLORS.navy, color: COLORS.navyText, align: "right" })));
+    pkgTotals.forEach((t) => marginRowsHtml.push(tr(td(esc(t.name), {}) + td(`${t.count} · ${t.cost.toFixed(2)}`, { align: "right" }) + td(pctStr(t.margin), { align: "right" }) + td(t.sell.toFixed(2), { align: "right", numeric: true }))));
+  }
   const marginTableHtml = `<table class="margin"><colgroup><col class="g0"><col class="g1"><col class="g2"><col class="g3"></colgroup>
 ${marginRowsHtml.join("\n")}
 </table>`;
@@ -342,6 +350,8 @@ const csvRow = (...cells) => cells.map(csvField).join(",");
 
 export function buildQuoteCsv(quote, items, rates, categoryOrder = CATEGORY_ORDER, sectionOrder = SECTION_ORDER) {
   const groups = groupItems(items, rates, categoryOrder, sectionOrder, quote.scope);
+  const pkgPrefix = (item) => { const n = packageLabelFor(quote, item); return n ? `${n} › ` : ""; }; // the element's package, on a packaged project (lib/packages.js)
+  const pkgTotals = hasPackages(quote) ? computePackageTotals(quote, items, rates, quote.scope) : [];
   const lines = [];
   lines.push(csvRow("GRADCON CONCRETE CONSTRUCTIONS"));
   lines.push(csvRow("Project", quote.projectName || "Untitled project"));
@@ -360,7 +370,7 @@ export function buildQuoteCsv(quote, items, rates, categoryOrder = CATEGORY_ORDE
     sections.forEach(({ section, elements }) => {
       let sectionPrinted = false;
       elements.forEach(({ item, cost, lines: elLines }) => {
-        lines.push(csvRow("", categoryPrinted ? "" : category, sectionPrinted ? "" : section, item.label + (item.provisional ? " — PROVISIONAL SUM" : ""), "", "", "", cost.total.toFixed(2)));
+        lines.push(csvRow("", categoryPrinted ? "" : category, sectionPrinted ? "" : section, pkgPrefix(item) + item.label + (item.provisional ? " — PROVISIONAL SUM" : ""), "", "", "", cost.total.toFixed(2)));
         categoryPrinted = true;
         sectionPrinted = true;
         if (elLines.length === 0) {
@@ -400,6 +410,12 @@ export function buildQuoteCsv(quote, items, rates, categoryOrder = CATEGORY_ORDE
     lines.push(csvRow("Line", "Kind", "Element", "Cost", "Loaded", "Margin", "Source", "Sell (ex GST)"));
     reg.lines.forEach((l) => lines.push(csvRow(l.kind === "sub" ? l.name : l.element, l.kind === "sub" ? "subcontract quote" : "own work", l.element, l.cost.toFixed(2), l.loaded.toFixed(2), `${Math.round(l.margin * 1000) / 10}%`, l.source === "project" ? "project" : `${l.source} (pinned)`, l.sell.toFixed(2))));
     lines.push(csvRow("Whole quote", "", "", reg.totals.cost.toFixed(2), reg.totals.loaded.toFixed(2), `${Math.round(reg.totals.blended * 1000) / 10}%`, "blended", reg.totals.sell.toFixed(2)));
+  }
+
+  if (pkgTotals.length) {
+    lines.push("");
+    lines.push(csvRow("PACKAGES", "Elements", "Direct cost", "Margin", "Sell (ex GST)"));
+    pkgTotals.forEach((t) => lines.push(csvRow(t.name, String(t.count), t.cost.toFixed(2), `${Math.round(t.margin * 1000) / 10}%`, t.sell.toFixed(2))));
   }
 
   return lines.join("\r\n");

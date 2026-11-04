@@ -1,5 +1,6 @@
 import { useRef } from "react";
 import { computeExternalScopeLines, money2, projectMargin } from "../lib/costing.js";
+import { itemsByPackage, hasPackages, packageName } from "../lib/packages.js";
 import { GRADCON_LOGO_FULL_DATA_URI } from "../lib/logo.js";
 import { newExternalQuote } from "../lib/externalQuoteDefaults.js";
 import { tenderNoteLines } from "../lib/tenderNotes.js";
@@ -177,7 +178,7 @@ function Bullets({ text }) {
 }
 
 function ReportContent({ quote, items, rates, eq }) {
-  const { lines, totalExGst } = computeExternalScopeLines(items, rates, quote.overheadPct, quote.contingencyPct, projectMargin(quote), quote.scope);
+  const { lines, totalExGst } = computeExternalScopeLines(items, rates, quote.overheadPct, quote.contingencyPct, projectMargin(quote), quote.scope, quote);
 
   return (
     <>
@@ -199,12 +200,22 @@ function ReportContent({ quote, items, rates, eq }) {
       <div className="mb-3 break-inside-avoid">
         <div className="font-bold mb-1">Project Details:</div>
         {lines.length === 0 && <div className="text-neutral-500 italic">No quantities entered yet.</div>}
-        {lines.map((l, i) => (
-          <div key={l.id} className="flex justify-between py-0.5">
-            <span>{i + 1}. {l.label}</span>
-            <span>{money2(l.sellExGst)} + GST</span>
-          </div>
-        ))}
+        {itemsByPackage(quote, items).map(({ pkg, items: gitems }) => {
+          const ids = new Set(gitems.map((it) => it.id)); const glines = lines.filter((l) => ids.has(l.id)); if (!glines.length) return null;
+          const sub = glines.reduce((s, l) => s + l.sellExGst, 0);
+          return (
+            <div key={pkg ? pkg.id : "__unassigned"} className="mb-1" data-testid="external-package" data-package={pkg ? pkg.id : ""}>
+              {hasPackages(quote) && <div className="font-semibold border-b border-neutral-400 mt-1">{packageName(pkg)}</div>}
+              {glines.map((l) => (
+                <div key={l.id} className="flex justify-between py-0.5">
+                  <span>{lines.indexOf(l) + 1}. {l.label}</span>
+                  <span>{money2(l.sellExGst)} + GST</span>
+                </div>
+              ))}
+              {hasPackages(quote) && <div className="flex justify-between py-0.5 font-semibold text-neutral-700"><span>{packageName(pkg)} — subtotal</span><span>{money2(sub)} + GST</span></div>}
+            </div>
+          );
+        })}
         <div className="flex justify-between font-bold border-t-2 border-black mt-1 pt-1">
           <span>TOTAL</span>
           <span>{money2(totalExGst)} + GST</span>

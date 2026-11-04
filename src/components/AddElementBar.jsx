@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Plus } from "lucide-react";
 import { CATEGORY_ORDER, ELEMENT_TYPES } from "../data/catalog.js";
 
-export default function AddElementBar({ onAdd, elementTypes = ELEMENT_TYPES, categoryOrder = CATEGORY_ORDER }) {
+export default function AddElementBar({ onAdd, elementTypes = ELEMENT_TYPES, categoryOrder = CATEGORY_ORDER, packages = [], targetPackage = "", onTargetPackage }) {
   const [sel, setSel] = useState("");
   return (
     <div className="flex items-center gap-2 bg-white border border-neutral-200 rounded-xl p-2 shadow-sm">
@@ -20,6 +20,14 @@ export default function AddElementBar({ onAdd, elementTypes = ELEMENT_TYPES, cat
           </optgroup>
         ))}
       </select>
+      {packages.length > 0 && (
+        <label className="flex-none flex items-center gap-1 text-[11px] text-neutral-500" title="The package the new element joins (lib/packages.js)">
+          into
+          <select value={targetPackage} onChange={(e) => onTargetPackage && onTargetPackage(e.target.value)} className="border border-neutral-200 rounded-lg px-2 py-2 text-sm bg-white max-w-[12rem]" aria-label="Package for the new element" data-testid="add-into-package">
+            {packages.map((p) => <option key={p.id} value={p.id}>{p.name || "Package"}</option>)}
+          </select>
+        </label>
+      )}
       <button
         onClick={() => { if (sel) { onAdd(sel); setSel(""); } }}
         disabled={!sel}

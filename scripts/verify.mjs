@@ -4066,6 +4066,88 @@ await checkAsync("RFQ attachments by hand (rfq.js, markupStore.uploadRfqFile): t
   assert.ok(/data-testid="rfq-add-local-input"/.test(src) && /data-testid="rfq-add-link-button"/.test(src) && /uploadRfqFile\(projectId/.test(src) && /action: "file", id/.test(src), "the local upload and the Drive link read");
 });
 
+// ---------------------------------------------------------------------------------------------------------------
+// Packages within a project (lib/packages.js, 4 Nov 2026): the model and its patches, the margin chain
+// row → element → package → project, the package totals adding up, and the tender's combined / by-package reading.
+await checkAsync("Packages (lib/packages.js, costing.js inheritedMargin, tenderQuoteDefaults.js tender*): patches, grouping, the margin chain, totals that add up, and the tender's two layouts with a package left out", async () => {
+  const P = await import("../src/lib/packages.js");
+  const C = await import("../src/lib/costing.js");
+  const T = await import("../src/lib/tenderQuoteDefaults.js");
+  const { ELEMENT_TYPES, FULL_CATALOG } = await import("../src/data/catalog.js");
+  const rates = C.defaultRates();
+  const conc = FULL_CATALOG.find((c) => c.key === "CONCRETE"); const prod = conc.products.find((p) => /25 mpa/i.test(p.name));
+  const concKey = C.rateKey(conc.key, prod.name, prod.unit);
+  const sub = FULL_CATALOG.find((c) => c.key === C.SUBCONTRACT_CATEGORY_KEY); const sq = sub.products.find((p) => p.unit === "quote"); const subKey = C.rateKey(sub.key, sq.name, sq.unit);
+  const mk = (label, m3) => ({ ...C.newElementItem(ELEMENT_TYPES.find((t) => t.id === "piles_bored")), label, qtys: { [concKey]: m3 } });
+  let a = mk("House raft", 10), b = mk("Pool shell", 5), c = mk("Boundary wall", 2);
+  c.qtys[subKey] = 1; c.rateOverrides = { [subKey]: { unitCost: 2000 } };
+  let q = { projectName: "7 Example St", marginPct: 0.25, overheadPct: 0, contingencyPct: 0, items: [a, b, c] };
+  // a plain project: one group, no package, nothing changes
+  assert.equal(P.hasPackages(q), false); assert.deepEqual(P.itemsByPackage(q, q.items).map((g) => [g.pkg, g.items.length]), [[null, 3]]);
+  assert.equal(P.packageLabelFor(q, a), "");
+  // the FIRST package takes every element; the second starts empty
+  const p1 = P.addPackagePatch(q, "Main residence"); q = { ...q, packages: p1.packages, items: p1.items };
+  assert.equal(q.packages.length, 1); assert.ok(q.items.every((it) => it.packageId === q.packages[0].id), "every element joined the first package");
+  const p2 = P.addPackagePatch(q, "Pool & surrounds"); q = { ...q, packages: p2.packages, items: p2.items };
+  assert.equal(q.packages.length, 2); assert.ok(q.items.every((it) => it.packageId === q.packages[0].id), "a second package takes nothing on its own");
+  assert.equal(P.addPackagePatch(q, "   ").packages[2].name, P.DEFAULT_PACKAGE_NAME, "a blank name gets the default");
+  const main = q.packages[0], pool = q.packages[1];
+  q = { ...q, ...P.assignElementPatch(q, b.id, pool.id) };
+  a = q.items.find((it) => it.id === a.id); b = q.items.find((it) => it.id === b.id); c = q.items.find((it) => it.id === c.id); // the patches copy the elements
+  assert.deepEqual(P.itemsByPackage(q, q.items).map((g) => [g.pkg.id, g.items.map((i) => i.label)]), [[main.id, ["House raft", "Boundary wall"]], [pool.id, ["Pool shell"]]], "grouped in package order, the quote order kept inside");
+  assert.equal(P.packageLabelFor(q, b), "Pool & surrounds");
+  assert.deepEqual(P.assignElementPatch(q, b.id, "nope").items, q.items, "an unknown package id changes nothing");
+  const un = P.assignElementPatch(q, b.id, "").items.find((it) => it.id === b.id); assert.ok(!("packageId" in un), "unassigned drops the key");
+  assert.equal(P.itemsByPackage({ ...q, items: P.assignElementPatch(q, b.id, "").items }, P.assignElementPatch(q, b.id, "").items).pop().pkg, null, "an unassigned element closes the list");
+  // rename, move, margin
+  assert.equal(P.renamePackagePatch(q, pool.id, "Pool").packages[1].name, "Pool");
+  assert.deepEqual(P.movePackagePatch(q, pool.id, -1).packages.map((p) => p.id), [pool.id, main.id]); assert.deepEqual(P.movePackagePatch(q, main.id, -1).packages.map((p) => p.id), [main.id, pool.id], "cannot move above the top");
+  q = { ...q, ...P.packageMarginPatch(q, pool.id, 0.1) };
+  assert.equal(q.packages[1].marginPct, 0.1); assert.ok(!("marginPct" in P.packageMarginPatch(q, pool.id, "").packages[1]), "a blank clears the package margin");
+  // the chain: the pool element inherits 10% from its package, the house keeps the project's 25%, a pinned element wins, a pinned row wins over that
+  assert.equal(C.inheritedMargin(q, b), 0.1); assert.equal(C.inheritedMargin(q, a), 0.25); assert.equal(C.packageMarginFor(q, a), null);
+  assert.equal(C.marginSource(b, null, q), "package"); assert.equal(C.marginSource(a, null, q), "project");
+  const eb = C.computeElementSell(b, rates, q, "both"); const ea = C.computeElementSell(a, rates, q, "both");
+  assert.ok(Math.abs(eb.sell - eb.loaded / 0.9) < 1e-6 && eb.lines[0].source === "package" && eb.packageId === pool.id, "the pool element sells at its package's 10%");
+  assert.ok(Math.abs(ea.sell - ea.loaded / 0.75) < 1e-6 && ea.lines[0].source === "project");
+  const bPinned = C.elementMarginPatch(b, 0.3); assert.ok(Math.abs(C.computeElementSell(bPinned, rates, q, "both").sell - eb.loaded / 0.7) < 1e-6, "an element pin beats the package");
+  const cRow = C.rowMarginPatch(c, subKey, 0.05); const ec = C.computeElementSell(cRow, rates, q, "both");
+  assert.equal(ec.lines.find((l) => l.kind === "sub").margin, 0.05); assert.equal(ec.lines.find((l) => l.kind === "own").margin, 0.25);
+  // the register carries the package on every line and the totals add up
+  const reg = C.computeMarginRegister(q.items, rates, q, "both");
+  assert.ok(reg.lines.every((l) => l.packageId) && reg.lines.find((l) => l.elementId === b.id).inherited === 0.1);
+  const tot = P.computePackageTotals(q, q.items, rates, "both");
+  assert.deepEqual(tot.map((t) => [t.name, t.count]), [["Main residence", 2], ["Pool & surrounds", 1]]);
+  assert.ok(Math.abs(tot.reduce((s, t) => s + t.cost, 0) - C.computeGrandTotal(q.items, rates, "both")) < 1e-6, "package direct costs add up to the grand total");
+  assert.ok(Math.abs(tot.reduce((s, t) => s + t.sell, 0) - reg.totals.sell) < 1e-6, "package sells add up to the register's sell");
+  assert.ok(Math.abs(tot[1].margin - 0.1) < 1e-9, "the pool package's blended margin is its own 10%");
+  // removing a package moves its elements to the first remaining one; removing the last unpackages the project
+  const r1 = P.removePackagePatch(q, pool.id); assert.equal(r1.packages.length, 1); assert.ok(r1.items.every((it) => it.packageId === main.id));
+  const r2 = P.removePackagePatch({ ...q, ...r1 }, main.id); assert.deepEqual(r2.packages, []); assert.ok(r2.items.every((it) => !("packageId" in it)));
+  // the tender: seeded as ever; "combined" = every row; "byPackage" = one block per package with its own sum; an unticked package leaves the print and the sum
+  const tq = { ...T.newTenderQuote(), items: T.seedTenderItems(q, q.items, rates) };
+  assert.equal(T.tenderLayout(tq), "combined"); assert.equal(T.tenderIncludes(tq, pool.id), true);
+  const allRows = T.tenderItemsIncluded(tq, q, q.items).flatMap((it) => it.lines); assert.equal(allRows.length, 3);
+  const sumAll = T.tenderProjectSumFor(tq, q, q.items, 0.1).exGst; assert.ok(Math.abs(sumAll - reg.totals.sell) < 0.02, "the combined project sum is the register's sell");
+  const blocks = T.tenderPackageBlocks({ ...tq, packageLayout: "byPackage" }, q, q.items);
+  assert.deepEqual(blocks.map((b) => [b.name, b.items.flatMap((i) => i.lines).length]), [["Main residence", 2], ["Pool & surrounds", 1]]);
+  assert.ok(Math.abs(blocks.reduce((s, b) => s + b.sum, 0) - sumAll) < 0.02, "the package sums add up to the project sum");
+  assert.ok(Math.abs(blocks[1].sum - eb.sell) < 0.02, "the pool block sums the pool element's price");
+  const without = { ...tq, packagesIncluded: { [pool.id]: false } };
+  assert.equal(T.tenderItemsIncluded(without, q, q.items).flatMap((it) => it.lines).length, 2, "the pool's row leaves");
+  assert.ok(Math.abs(T.tenderProjectSumFor(without, q, q.items, 0.1).exGst - (sumAll - eb.sell)) < 0.02, "…and the project sum drops by its price");
+  assert.deepEqual(T.tenderPackageBlocks({ ...without, packageLayout: "byPackage" }, q, q.items).map((b) => b.name), ["Main residence"]);
+  assert.equal(tq.items.length, T.tenderItemsIncluded(without, q, q.items).length + 0, "a stage emptied by the untick is dropped only when it held element rows");
+  // a hand-typed row with no element stays whatever is ticked, and lands in General by package
+  const typed = { ...without, items: without.items.concat([{ id: "hand", stage: null, title: "Allowance", price: "$100.00 + GST", lines: [] }]) };
+  assert.ok(T.tenderItemsIncluded(typed, q, q.items).some((it) => it.id === "hand"));
+  assert.deepEqual(T.tenderPackageBlocks({ ...typed, packageLayout: "byPackage" }, q, q.items).map((b) => [b.name, Math.round(b.sum)]).pop(), ["General", 100]);
+  // a project without packages reads exactly as before
+  const plain = { ...q, packages: [], items: r2.items };
+  assert.deepEqual(T.tenderItemsIncluded(tq, plain, plain.items), T.normalizeTenderItems(tq.items));
+  assert.equal(T.newTenderQuote().packageLayout, "combined");
+});
+
 if (process.exitCode) {
   console.error("\nSome checks FAILED — see above.");
 } else {

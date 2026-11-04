@@ -4,6 +4,7 @@ import {
 import { markupSrc } from "../lib/markupStore.js";
 import {
   computeElementCost, computeGrandTotal, computeMarginLadder, computeMarginRegister, projectMargin, marginStepsAround, rateKey, rowRate, computeRowTotal, rowContext, money, money2, getDefaultMargin, getMarginSteps, autoSoilRemoval, autoBlindingConcrete, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, additionalRowsFor, additionalRowTotal, autoSpecialistFees, categoryAppliesTo, computeExcludedTotals, categoryChargedUnder, scopeLabel, isProvisional, computeProvisionalTotals, isBlindingProduct, blindingIncluded } from "../lib/costing.js";
+import { itemsByPackage, hasPackages, computePackageTotals, packageName } from "../lib/packages.js";
 import { GRADCON_LOGO_DATA_URI } from "../lib/logo.js";
 
 /**
@@ -87,6 +88,10 @@ function ReportContent({ quote, items, rates, categoryOrder, sectionOrder }) {
   );
   const reg = computeMarginRegister(items, rates, quote, quote.scope);
   const pct = (f) => `${Math.round((Number(f) || 0) * 1000) / 10}%`;
+  // packages fold outside the categories (lib/packages.js, 4 Nov 2026); their sums add up to the grand total
+  const hasPkgs = hasPackages(quote);
+  const pkgGroups = itemsByPackage(quote, items);
+  const pkgTotals = hasPkgs ? computePackageTotals(quote, items, rates, quote.scope) : [];
 
   return (
     <>
@@ -101,8 +106,16 @@ function ReportContent({ quote, items, rates, categoryOrder, sectionOrder }) {
         )}
       </div>
 
+      {pkgGroups.map(({ pkg, items: gitems }) => { const pt = pkgTotals.find((t) => t.id === (pkg ? pkg.id : null)); return (
+      <div key={pkg ? pkg.id : "__unassigned"} className="mb-3" data-testid="print-package-group" data-package={pkg ? pkg.id : ""}>
+      {hasPkgs && (
+        <div className="flex justify-between text-sm font-bold bg-black text-white px-2 py-1 mb-2">
+          <span>{pkg ? "PACKAGE — " : ""}{packageName(pkg).toUpperCase()}</span>
+          <span>{money2(pt ? pt.cost : 0)}</span>
+        </div>
+      )}
       {categoryOrder.map((category) => {
-        const catItems = items.filter((it) => it.category === category);
+        const catItems = gitems.filter((it) => it.category === category);
         if (catItems.length === 0) return null;
         return (
           <div key={category} className="mb-3">
@@ -124,11 +137,28 @@ function ReportContent({ quote, items, rates, categoryOrder, sectionOrder }) {
           </div>
         );
       })}
+      {hasPkgs && pt && (
+        <div className="flex justify-between font-semibold border-t border-black pt-0.5 text-[12px]" data-testid="print-package-subtotal">
+          <span>{packageName(pkg)} — direct cost · sells {money2(pt.sell)} ex GST</span>
+          <span>{money2(pt.cost)}</span>
+        </div>
+      )}
+      </div>
+      ); })}
 
       <div className="mt-4 border-t-2 border-black pt-2 flex justify-between text-sm font-bold break-inside-avoid">
         <span>Grand Total (ex GST)</span>
         <span>{money2(grandTotal)}</span>
       </div>
+      {hasPkgs && (
+        <div className="mt-2 break-inside-avoid" data-testid="print-packages">
+          <div className="text-xs font-bold uppercase tracking-wide bg-blue-900 text-white px-2 py-1">Packages</div>
+          <table className="w-full text-[11px] mt-1">
+            <thead><tr className="text-left bg-blue-50 text-blue-900"><th className="py-1 px-1">Package</th><th className="py-1 px-1 text-right">Elements</th><th className="py-1 px-1 text-right">Direct cost</th><th className="py-1 px-1 text-right">Margin</th><th className="py-1 px-1 text-right">Sell (ex GST)</th></tr></thead>
+            <tbody>{pkgTotals.map((t) => <tr key={t.id || "__unassigned"} className="border-b border-neutral-200"><td className="py-0.5 px-1">{t.name}</td><td className="py-0.5 px-1 text-right">{t.count}</td><td className="py-0.5 px-1 text-right">{money2(t.cost)}</td><td className="py-0.5 px-1 text-right">{pct(t.margin)}</td><td className="py-0.5 px-1 text-right">{money2(t.sell)}</td></tr>)}</tbody>
+          </table>
+        </div>
+      )}
 
       {/* What the estimate assumed, recorded under Project Geometry. Printed
           straight after the total so the figure and its qualifications are

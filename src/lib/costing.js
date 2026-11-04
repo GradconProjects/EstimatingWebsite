@@ -1199,12 +1199,14 @@ export function computeMarginLadder(directCost, overheadPct, contingencyPct, gfa
  * an element with a total contributes proportionally to its own direct
  * cost's share of the whole quote's direct cost.
  */
-export function computeExternalScopeLines(items, rates, overheadPct, contingencyPct, marginPct, projectScope) {
+export function computeExternalScopeLines(items, rates, overheadPct, contingencyPct, marginPct, projectScope, quote) {
   // Since 1 Nov 2026 each element sells at ITS OWN resolved margin
   // (computeElementSell — the element's pinned rate, a subcontract quote
   // row's pinned rate, else `marginPct`, the project margin). With nothing
   // pinned this is exactly the old proportional share of one ladder sell.
-  const q = { overheadPct, contingencyPct, marginPct };
+  // the 7th argument is the quote itself, for its PACKAGES (lib/packages.js): a package's own margin reaches these
+  // lines only through it — a caller that omits it prices at the project / element / row margins alone
+  const q = { overheadPct, contingencyPct, marginPct, packages: quote && Array.isArray(quote.packages) ? quote.packages : undefined };
   const costed = items.map((item) => computeElementSell(item, rates, q, projectScope)).filter((e) => e.cost > 0);
   const totalExGst = costed.reduce((s, e) => s + e.sell, 0);
   const lines = costed.map((e) => ({ id: e.id, label: e.label, sellExGst: e.sell }));
@@ -1251,10 +1253,22 @@ export function rowMargin(item, key, project) {
   const p = pinnedMargin(item && item.rowMargins && item.rowMargins[key]);
   return p == null ? elementMargin(item, project) : p;
 }
-/** Where a line's rate comes from: "row" (a pinned quote row), "element" (a pinned element) or "project". */
-export function marginSource(item, key) {
+/** The margin the element's PACKAGE pins (lib/packages.js — `quote.packages[].marginPct`, 4 Nov 2026), else null. */
+export function packageMarginFor(quote, item) {
+  const pkgs = quote && Array.isArray(quote.packages) ? quote.packages : null;
+  const pk = pkgs && item && item.packageId ? pkgs.find((p) => p && p.id === item.packageId) : null;
+  return pk ? pinnedMargin(pk.marginPct) : null;
+}
+/** What an element inherits when it pins nothing: its package's margin, else the project's. The chain is row → element → package → project. */
+export function inheritedMargin(quote, item) {
+  const p = packageMarginFor(quote, item);
+  return p == null ? projectMargin(quote) : p;
+}
+/** Where a line's rate comes from: "row" (a pinned quote row), "element" (a pinned element), "package" (the element's package pins one) or "project". */
+export function marginSource(item, key, quote) {
   if (key && pinnedMargin(item && item.rowMargins && item.rowMargins[key]) != null) return "row";
   if (pinnedMargin(item && item.marginPct) != null) return "element";
+  if (quote && packageMarginFor(quote, item) != null) return "package";
   return "project";
 }
 /** Direct cost with the project's overheads and contingency on it — the ladder's "subtotal", per line. */
@@ -1285,33 +1299,33 @@ export function subcontractQuoteLines(item, rates, projectScope) {
 /** One element priced at its resolved margins: `{id, label, cost, loaded, sell, margin (blended), elementMargin, lines: [{kind: "own" | "sub", key, name, cost, loaded, margin, source, sell}]}`. */
 export function computeElementSell(item, rates, quote, projectScope) {
   const q = quote || {};
-  const pm = projectMargin(q);
   const oh = q.overheadPct, ct = q.contingencyPct;
   const cost = computeElementCost(item, rates, projectScope).total;
   const subs = subcontractQuoteLines(item, rates, projectScope);
   const subCost = subs.reduce((s, l) => s + l.cost, 0);
   const own = Math.max(0, cost - subCost);
-  const em = elementMargin(item, pm);
+  const base = inheritedMargin(q, item); // the package's margin when it pins one, else the project's
+  const em = elementMargin(item, base);
   const lines = [];
   if (own > 0 || !subs.length) {
     const loaded = loadCost(own, oh, ct);
-    lines.push({ kind: "own", key: null, name: item.label, cost: own, loaded, margin: em, source: marginSource(item, null), sell: sellAtMargin(loaded, em) });
+    lines.push({ kind: "own", key: null, name: item.label, cost: own, loaded, margin: em, source: marginSource(item, null, q), sell: sellAtMargin(loaded, em) });
   }
   subs.forEach((l) => {
-    const m = rowMargin(item, l.key, pm);
+    const m = rowMargin(item, l.key, base);
     const loaded = loadCost(l.cost, oh, ct);
-    lines.push({ kind: "sub", key: l.key, name: l.name, cost: l.cost, loaded, margin: m, source: marginSource(item, l.key), sell: sellAtMargin(loaded, m) });
+    lines.push({ kind: "sub", key: l.key, name: l.name, cost: l.cost, loaded, margin: m, source: marginSource(item, l.key, q), sell: sellAtMargin(loaded, m) });
   });
   const loaded = lines.reduce((s, l) => s + l.loaded, 0);
   const sell = lines.reduce((s, l) => s + l.sell, 0);
-  return { id: item.id, label: item.label, cost, loaded, sell, margin: sell > 0 ? 1 - loaded / sell : em, elementMargin: em, lines };
+  return { id: item.id, label: item.label, packageId: (item && item.packageId) || null, cost, loaded, sell, margin: sell > 0 ? 1 - loaded / sell : em, elementMargin: em, inherited: base, lines };
 }
 /** The Margin Register: every priced line with its rate and source, the per-class subtotals and the blended whole. */
 export function computeMarginRegister(items, rates, quote, projectScope) {
   const q = quote || {};
   const pm = projectMargin(q);
   const elements = (items || []).map((it) => computeElementSell(it, rates, q, projectScope)).filter((e) => e.cost > 0);
-  const lines = elements.flatMap((e) => e.lines.filter((l) => l.cost > 0).map((l) => ({ ...l, elementId: e.id, element: e.label })));
+  const lines = elements.flatMap((e) => e.lines.filter((l) => l.cost > 0).map((l) => ({ ...l, elementId: e.id, element: e.label, packageId: e.packageId, inherited: e.inherited })));
   const sum = (arr, k) => arr.reduce((s, l) => s + (l[k] || 0), 0);
   const cls = (kind) => {
     const ls = lines.filter((l) => l.kind === kind);

@@ -1,5 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { Settings2, ArrowLeft, Printer, ListPlus, FileSpreadsheet, LayoutDashboard, Radar, FolderOpen, History, HardDriveDownload, AlertTriangle, MapPin, Loader2, Mail , Percent } from "lucide-react";
+import { PackagesBar, PackageBand } from "./components/PackagesBar.jsx";
+import { itemsByPackage, hasPackages, packageList, newPackage, addPackagePatch, renamePackagePatch, removePackagePatch, movePackagePatch, assignElementPatch, packageMarginPatch, computePackageTotals } from "./lib/packages.js";
 import { saveVersion, downloadQuoteFile, parseQuoteFile } from "./lib/quoteVersions.js";
 import { quoteStorageKey } from "./lib/projects.js";
 import VersionsModal from "./components/VersionsModal.jsx";
@@ -839,10 +841,22 @@ function ProjectEditor({ project, allProjects, rates: liveRates, setRates: setLi
   const setItems = (updater) =>
     setQuote((q) => ({ ...q, items: typeof updater === "function" ? updater(q.items) : updater }));
 
+  // Packages within the project (lib/packages.js, 4 Nov 2026): a new element
+  // joins the package chosen on the Add bar (the first one until chosen).
+  const [addInto, setAddInto] = useState("");
+  const packages = packageList(quote);
+  const packageTotals = useMemo(() => (hasPackages(quote) ? computePackageTotals(quote, items, rates, quote.scope) : []), [quote, items, rates]);
+  const addPackage = (name) => { const pkg = newPackage(name); setQuote((q) => { const p = addPackagePatch(q, name, pkg); return { ...q, packages: p.packages, items: p.items }; }); setAddInto(pkg.id); };
+  const renamePackage = (id, name) => setQuote((q) => ({ ...q, ...renamePackagePatch(q, id, name) }));
+  const removePackage = (id) => setQuote((q) => ({ ...q, ...removePackagePatch(q, id) }));
+  const movePackage = (id, dir) => setQuote((q) => ({ ...q, ...movePackagePatch(q, id, dir) }));
+  const assignPackage = (itemId, pkgId) => setQuote((q) => ({ ...q, ...assignElementPatch(q, itemId, pkgId) }));
+  const setPackageMargin = (id, v) => setQuote((q) => ({ ...q, ...packageMarginPatch(q, id, v) }));
   const addElement = (typeId) => {
     const type = elementTypes.find((t) => t.id === typeId);
     if (!type) return;
-    setItems((its) => [...its, newElementItem(type)]);
+    const into = packages.some((p) => p.id === addInto) ? addInto : (packages[0] ? packages[0].id : "");
+    setItems((its) => [...its, into ? { ...newElementItem(type), packageId: into } : newElementItem(type)]);
   };
   const updateItem = (id, next) => setItems((its) => its.map((it) => (it.id === id ? next : it)));
   // Variable margins (1 Nov 2026, lib/costing.js): the project margin on the
@@ -1317,7 +1331,8 @@ function ProjectEditor({ project, allProjects, rates: liveRates, setRates: setLi
               <button type="button" className="underline hover:text-neutral-800" onClick={() => setQuote((q) => ({ ...q, clearedNotices: restoreNotices(q.clearedNotices) }))} data-testid="notices-show-again">Show again</button>
             </div>
           )}
-          <AddElementBar onAdd={addElement} elementTypes={elementTypes} categoryOrder={categoryOrder} />
+          <AddElementBar onAdd={addElement} elementTypes={elementTypes} categoryOrder={categoryOrder} packages={packages} targetPackage={packages.some((p) => p.id === addInto) ? addInto : (packages[0] ? packages[0].id : "")} onTargetPackage={setAddInto} />
+          <PackagesBar packages={packages} totals={packageTotals} onAdd={addPackage} />
           <ProjectGeometryPanel
             items={items}
             rates={rates}
@@ -1327,7 +1342,19 @@ function ProjectEditor({ project, allProjects, rates: liveRates, setRates: setLi
             assumptions={quote.assumptions}
             onChangeAssumptions={(assumptions) => setQuote((q) => ({ ...q, assumptions }))}
           />
-          {items.map((item, idx) => (
+          {itemsByPackage(quote, items).map(({ pkg, items: group }, gi, groups) => (
+            <div key={pkg ? pkg.id : "__unassigned"} className="space-y-4" data-testid="package-group" data-package={pkg ? pkg.id : ""}>
+              {packages.length > 0 && (
+                <PackageBand
+                  pkg={pkg} quote={quote} index={gi} count={packages.length}
+                  totals={packageTotals.find((t) => t.id === (pkg ? pkg.id : null))}
+                  onRename={(name) => pkg && renamePackage(pkg.id, name)}
+                  onRemove={() => pkg && removePackage(pkg.id)}
+                  onMove={(dir) => pkg && movePackage(pkg.id, dir)}
+                  onMargin={(v) => pkg && setPackageMargin(pkg.id, v)}
+                />
+              )}
+              {group.map((item) => { const idx = items.indexOf(item); return (
             <ElementCard
               key={item.id}
               item={item}
@@ -1345,7 +1372,12 @@ function ProjectEditor({ project, allProjects, rates: liveRates, setRates: setLi
               onMaterialRateChange={setMaterialRate}
               projectScope={quote.scope}
               handover={quote.handover}
+              packages={packages}
+              onAssignPackage={(pid) => assignPackage(item.id, pid)}
             />
+              ); })}
+              {packages.length > 0 && pkg && group.length === 0 && <div className="text-[12px] text-neutral-400 px-2">No elements in this package yet — add one above with this package chosen, or move one here from its card.</div>}
+            </div>
           ))}
           {items.length > 0 && (
             <MarginRegister
@@ -1380,6 +1412,7 @@ function ProjectEditor({ project, allProjects, rates: liveRates, setRates: setLi
             setProjectMargin={setProjectMargin}
             setElementMargin={setElementMargin}
             setRowMargin={setRowMargin}
+            setPackageMargin={setPackageMargin}
             requestAdvice={requestAdvice}
           />
         </div>

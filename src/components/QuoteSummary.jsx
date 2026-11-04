@@ -1,15 +1,16 @@
 import { useMemo, useState } from "react";
 import { CATEGORY_ORDER, SECTION_ORDER } from "../data/catalog.js";
 import { isDone } from "../lib/workTrail.js";
-import { computeElementCost, computeGrandTotal, computeExcludedTotals, computeProvisionalTotals, isProvisional, computeMarginLadder, money, money2, getDefaultMargin, scopeLabel, computeMarginRegister, projectMargin, pinnedMargin, marginStepsAround, elementMargin, markupFromMargin, marginFromMarkup } from "../lib/costing.js";
+import { computeElementCost, computeGrandTotal, computeExcludedTotals, computeProvisionalTotals, isProvisional, computeMarginLadder, money, money2, getDefaultMargin, scopeLabel, computeMarginRegister, inheritedMargin, projectMargin, pinnedMargin, marginStepsAround, elementMargin, markupFromMargin, marginFromMarkup } from "../lib/costing.js";
 import { NumInput, PctInput } from "./atoms.jsx";
+import { itemsByPackage, hasPackages, computePackageTotals, packageName } from "../lib/packages.js";
 
 const pctLabel = (f) => `${Math.round((Number(f) || 0) * 1000) / 10}%`;
 
 export default function QuoteSummary({
   items, onReorder, rates, categoryOrder = CATEGORY_ORDER, sectionOrder = SECTION_ORDER,
   gfa, setGfa, overheadPct, setOverheadPct, contingencyPct, setContingencyPct, scope,
-  quote, setProjectMargin, setElementMargin, setRowMargin, requestAdvice,
+  quote, setProjectMargin, setElementMargin, setRowMargin, setPackageMargin, requestAdvice,
 }) {
   // Variable margins (1 Nov 2026): the project margin is typed on the ladder,
   // every element and every subcontract quote row can pin its own under the
@@ -19,17 +20,21 @@ export default function QuoteSummary({
   const sellById = useMemo(() => { const m = {}; reg.elements.forEach((e) => { m[e.id] = e; }); return m; }, [reg]);
   // Folded two levels deep — category (Foundations, Suspended Structure...)
   // then section within it — matching the Add-Element dropdown's grouping.
-  const byCategory = useMemo(() => {
+  // …and, on a packaged project, the packages fold OUTSIDE the categories (lib/packages.js, 4 Nov 2026)
+  const groupCats = (list) => {
     const cats = {};
     categoryOrder.forEach((c) => { cats[c] = {}; });
-    items.forEach((it) => {
+    list.forEach((it) => {
       const cost = computeElementCost(it, rates, scope);
       cats[it.category] = cats[it.category] || {};
       cats[it.category][it.section] = cats[it.category][it.section] || [];
       cats[it.category][it.section].push({ item: it, total: cost.total, scope: cost.scope });
     });
     return cats;
-  }, [items, rates, categoryOrder, scope]);
+  };
+  const groups = useMemo(() => itemsByPackage(quote || {}, items), [quote, items]);
+  const hasPkgs = hasPackages(quote || {});
+  const pkgTotals = useMemo(() => (hasPkgs ? computePackageTotals(quote || {}, items, rates, scope) : []), [hasPkgs, quote, items, rates, scope]);
 
   const grandTotal = useMemo(() => computeGrandTotal(items, rates, scope), [items, rates, scope]);
   const provisional = useMemo(() => computeProvisionalTotals(items, rates, scope), [items, rates, scope]);
@@ -55,6 +60,24 @@ export default function QuoteSummary({
           </div>
         )}
         <div className="p-3 max-h-[40vh] overflow-y-auto space-y-3">
+          {groups.map(({ pkg, items: gitems }) => { const byCategory = groupCats(gitems); const pt = pkgTotals.find((t) => t.id === (pkg ? pkg.id : null)); return (
+          <div key={pkg ? pkg.id : "__unassigned"} className="space-y-3" data-testid="summary-package" data-package={pkg ? pkg.id : ""}>
+          {hasPkgs && (
+            <div>
+              <div className="flex items-center justify-between gap-2 text-[11px] font-bold uppercase tracking-widest text-white bg-neutral-800 rounded px-2 py-1" data-band="category">
+                <span className="truncate">{pkg ? "Package · " : ""}{packageName(pkg)}</span>
+                <span className="font-mono tabular-nums flex-none">{money2(pt ? pt.cost : 0)}</span>
+              </div>
+              {pkg && setPackageMargin && (
+                <div className="flex items-center gap-1.5 text-[11px] text-neutral-500 px-1 pt-1" data-testid="package-margin" data-package={pkg.id}>
+                  <span className="uppercase tracking-wide text-[9px] font-semibold">Package margin</span>
+                  <PctInput value={pinnedMargin(pkg.marginPct) ?? undefined} placeholder={pctLabel(pm)} onChange={(v) => setPackageMargin(pkg.id, v)} className="!w-14 !py-0 !text-[11px]" title="This package's margin — its elements inherit it unless pinned; blank = the project margin" />
+                  <span>{pinnedMargin(pkg.marginPct) != null ? "pinned" : `inherits ${pctLabel(pm)}`}</span>
+                  {pt && <span className="ml-auto font-mono tabular-nums text-neutral-700" title="Sell ex GST at this package's margins">sells {money2(pt.sell)}</span>}
+                </div>
+              )}
+            </div>
+          )}
           {categoryOrder.filter((c) => Object.values(byCategory[c] || {}).some((rows) => rows.length)).map((category) => {
             const sections = byCategory[category];
             const catTotal = Object.values(sections).flat().reduce((s, r) => s + r.total, 0);
@@ -89,8 +112,8 @@ export default function QuoteSummary({
                           <div className="pl-4 pb-1.5 space-y-0.5 border-l-2 border-orange-200 ml-1" data-testid="element-margin" data-element={r.item.id}>
                             <div className="flex items-center gap-1.5 text-[11px] text-neutral-500">
                               <span className="uppercase tracking-wide text-[9px] font-semibold">Margin</span>
-                              <PctInput value={pinned ?? undefined} placeholder={pctLabel(pm)} onChange={(v) => setElementMargin(r.item.id, v)} className="!w-14 !py-0 !text-[11px]" title="This element's margin — blank follows the project margin on the ladder" />
-                              <span>{pinned != null ? "pinned" : `inherits ${pctLabel(pm)}`}</span>
+                              <PctInput value={pinned ?? undefined} placeholder={pctLabel(inheritedMargin(quote || {}, r.item))} onChange={(v) => setElementMargin(r.item.id, v)} className="!w-14 !py-0 !text-[11px]" title="This element's margin — blank follows the project margin on the ladder" />
+                              <span>{pinned != null ? "pinned" : `inherits ${pctLabel(inheritedMargin(quote || {}, r.item))}`}</span>
                               {e && <span className="ml-auto font-mono tabular-nums text-neutral-700" title="Sell ex GST at this element's margins">sells {money2(e.sell)}</span>}
                             </div>
                             {e && e.lines.filter((l) => l.kind === "sub").map((l) => {
@@ -99,7 +122,7 @@ export default function QuoteSummary({
                                 <div key={l.key} className="flex items-center gap-1.5 text-[11px] text-neutral-500 pl-3" data-testid="row-margin" data-key={l.key}>
                                   <span className="text-[9px] font-semibold uppercase tracking-wide text-amber-800 bg-amber-50 rounded px-1 flex-none">sub quote</span>
                                   <span className="truncate" title={l.name}>{l.name} · {money2(l.cost)}</span>
-                                  <PctInput value={rp ?? undefined} placeholder={pctLabel(elementMargin(r.item, pm))} onChange={(v) => setRowMargin(r.item.id, l.key, v)} className="!w-14 !py-0 !text-[11px] flex-none" title="This quote row's margin — blank follows the element" />
+                                  <PctInput value={rp ?? undefined} placeholder={pctLabel(elementMargin(r.item, inheritedMargin(quote || {}, r.item)))} onChange={(v) => setRowMargin(r.item.id, l.key, v)} className="!w-14 !py-0 !text-[11px] flex-none" title="This quote row's margin — blank follows the element" />
                                   <span className="flex-none">{rp != null ? "pinned" : "inherits"}</span>
                                   <span className="ml-auto font-mono tabular-nums text-neutral-700 flex-none">{money2(l.sell)}</span>
                                 </div>
@@ -119,6 +142,8 @@ export default function QuoteSummary({
               </div>
             );
           })}
+          </div>
+          ); })}
           {items.length === 0 && (
             <div className="text-sm text-neutral-400 text-center py-6">No elements added yet.</div>
           )}

@@ -706,6 +706,106 @@ context / prompt / parser / request and the server's 400 / 503;
 quote row, the register (open from the header, edit, clear, overall rate),
 the mocked AI suggestion and Use, the saved fractions and the print.
 
+## Packages within a project (separable portions, priced together or apart)
+
+Grady, 4 Nov 2026: "so we dont have different disjointed packages within a
+project. i would like to be able to under a project add different line items
+as the main projects with the option of adding all the packages together or
+individually in the tender quote"; the design was put to him (separable
+portions, not alternatives; package OUTSIDE the stages; ONE Tender Quote with
+a layout toggle and a tick per package; status stays on the project) and he
+said "go ahead". `src/lib/packages.js` (pure, verify-covered). Rules:
+
+1. **A package is a named group of elements INSIDE one project, and the
+   package sums ADD UP to the project.** `quote.packages = [{id, name,
+   marginPct?}]` in display order; `item.packageId` names the element's
+   package. A project with no packages is exactly what it was (one group,
+   `pkg: null`, nothing renamed, nothing re-priced). `packageList`,
+   `hasPackages`, `packageOf`, `packageName` ("Unassigned" for null),
+   `packageLabelFor` ("" on a plain project) and **`itemsByPackage(quote,
+   items)` → `[{pkg, items}]`** (package order, the quote's own order inside;
+   an element whose package is gone or unset comes LAST under `pkg: null`) are
+   the ONE readings — the editor column, the rail, the print report, the
+   exports, the External Quote and the tender all fold through them. The
+   patches: `addPackagePatch` (the FIRST package takes every existing element
+   — a project is either packaged or not; a blank name = `DEFAULT_PACKAGE_NAME`
+   "Main works"), `renamePackagePatch`, `removePackagePatch` (its elements move
+   to the first remaining package; removing the last drops every `packageId`),
+   `movePackagePatch`, `assignElementPatch` (an unknown id is ignored, "" =
+   unassigned), `packageMarginPatch`; `computePackageTotals(quote, items,
+   rates, scope)` → per package `{id, name, count, cost, loaded, sell,
+   provisional, margin}` whose costs sum to `computeGrandTotal` and whose sells
+   sum to the register's sell (verify pins both). An alternative priced
+   INSTEAD of another is not a package — that is a later tick, not built.
+2. **The margin chain is row → element → package → project** (`costing.js`):
+   `packageMarginFor(quote, item)` (the package's pinned fraction, else null)
+   and `inheritedMargin(quote, item)` (package, else project) are the ONE
+   readings; `computeElementSell` resolves `elementMargin(item, inheritedMargin
+   (q, item))` and `rowMargin(item, key, that)`, `marginSource(item, key,
+   quote)` answers `"package"`, every sell line carries `packageId` and
+   `inherited`, and **`computeExternalScopeLines` takes the quote as its 7th
+   argument** — the only way a package margin reaches the tender's and the
+   External Quote's lines; a caller that omits it prices at the project /
+   element / row margins alone (both callers pass it). The rail's element
+   rows and the register's placeholders read `inheritedMargin`, the register's
+   Source column says "package · pinned" and names the package under the line.
+3. **The editor** (`App.jsx`, `components/PackagesBar.jsx`): `PackagesBar`
+   under the Add bar (`packages-bar`: "none — the project is priced as one
+   job" + **Split into packages** → a name box (`package-name-input`,
+   `package-add-confirm`); then one chip per package with its count and
+   direct cost, and **Add package**); the Add bar gains an "into" select
+   (`add-into-package`, App's `addInto` — a new package becomes the target;
+   `addElement` stamps the new element with it); the element column groups
+   the cards by package (`package-group`), each under a `PackageBand`
+   (`package-band`: the name typed in place `package-name`, `package-totals`
+   "N elements · $direct · sells $…", the package **Margin** `PctInput`
+   (`package-margin-input`, placeholder = the project margin), ▲ ▼, and a
+   two-click remove `package-remove` / `-confirm` that says where the
+   elements go); every card's band row 1 carries a **Package** select
+   (`element-package`, amber when unassigned) beside Provisional and Scope.
+   `quote.items` stays the ONE order — the grouping is a display fold, and
+   the ▲ ▼ on a card still move it within the whole list.
+4. **The Quote Summary rail** folds package → category → section
+   (`summary-package`, a dark header with the package's direct cost and a
+   "Package margin" row `package-margin` — `setPackageMargin` prop from App);
+   the print report (`print-package-group`, a black package band, a package
+   subtotal line and a **Packages** table after the grand total,
+   `print-packages`); the .xls / .csv exports prefix every element with
+   "<Package> › " and append a PACKAGES block after the margin register; the
+   External Quote groups its lines by package with a subtotal
+   (`external-package`); the Dashboard row shows an "N pkg" chip
+   (`dashboard-packages`, `packageCount` in `summarizeQuote`).
+5. **The Tender Quote prints the packages combined or one by one, and can
+   leave one out** (`tenderQuoteDefaults.js`): `tq.packageLayout` —
+   `TENDER_LAYOUTS` "combined" (the default: one list of stages, one Project
+   Sum) or "byPackage" (each package as its own block of stages with its own
+   sum, lettered A, B, …, then the combined Project Sum); `tq.packagesIncluded
+   = {packageId: false}` for a package left OUT of this tender
+   (`tenderIncludes`). **The stored stage items never change shape**: a row
+   belongs to a package through ITS ELEMENT, so the layout is a READING —
+   `tenderItemsIncluded(tq, quote, items)` (the rows of unticked packages
+   removed; a stage emptied by that dropped; a hand-typed row with no element
+   always kept), `tenderPackageBlocks(tq, quote, items)` → `[{pkg, name,
+   items, sum}]` over the included packages (rows whose element has no
+   package, hand-typed rows and legacy typed-price items close the list as
+   "General") and `tenderProjectSumFor(tq, quote, items, gstRate)` =
+   `computeTenderProjectSum` over the included rows — the editor's Project
+   Sum, the print and the drift all read these. `TenderPackagesPanel`
+   (`tender-packages`, above the stage items, only on a packaged project):
+   the two layout pills (`tender-layout-combined` / `-byPackage`), one tick
+   per package with its sum (`tender-package`, `data-on`, `tender-package-
+   sum`), "N of M on this tender"; the print's by-package blocks are
+   `print-package` with `print-package-sum`. Seeding, placement, reword,
+   drift and refresh are unchanged — they work on the stored stage items.
+`verify.mjs` covers the patches, the grouping, the chain (a package pin
+inherited, an element pin beating it, a row pin beating that), the totals
+adding up, and the tender's two layouts with a package left out;
+`test-packages.mjs` proves the split (every element into the first package),
+a second package taking the next element, the card's move, the bands and
+the rail adding up, the inherited 10% in the rail and the register, the
+tender combined / by package / without the pool (the Project Sum drops by
+its sum and comes back), the Dashboard chip, the reload and the remove.
+
 ## Quote scope: labour + materials, labour only, materials only
 
 Grady, 2 Oct 2026: "labour only options … some elements labour only and

@@ -1,0 +1,103 @@
+/**
+ * Packages within a project (Grady, 4 Nov 2026: "so we dont have different
+ * disjointed packages within a project. i would like to be able to under a
+ * project add different line items as the main projects with the option of
+ * adding all the packages together or individually in the tender quote").
+ *
+ * A package is a named group of elements INSIDE one project — "Main
+ * residence", "Pool & surrounds", "Stage 2 extension" — a separable portion
+ * whose sums ADD UP to the project (an alternative priced instead of
+ * another is not a package). `quote.packages = [{id, name, marginPct?}]` in
+ * display order; `item.packageId` names the element's package. A project
+ * with no packages is exactly what it was. Pure: no React, no DOM.
+ */
+import { uid, pinnedMargin, projectMargin, computeElementCost, computeElementSell, isProvisional } from "./costing.js";
+
+export const DEFAULT_PACKAGE_NAME = "Main works";
+export const UNASSIGNED_LABEL = "Unassigned";
+
+export const packageList = (quote) => (quote && Array.isArray(quote.packages) ? quote.packages.filter((p) => p && p.id) : []);
+export const hasPackages = (quote) => packageList(quote).length > 0;
+export const packageById = (quote, id) => packageList(quote).find((p) => p.id === id) || null;
+export const packageOf = (quote, item) => (item && item.packageId ? packageById(quote, item.packageId) : null);
+export const packageName = (pkg) => (pkg ? String(pkg.name || "").trim() || "Package" : UNASSIGNED_LABEL);
+/** The package name an element prints under; "" on a project without packages. */
+export function packageLabelFor(quote, item) {
+  if (!hasPackages(quote)) return "";
+  return packageName(packageOf(quote, item));
+}
+/** The elements grouped in package order — `[{pkg, items}]`; an element whose
+ * package is gone or unset comes LAST under `pkg: null` (shown "Unassigned").
+ * On a project without packages: one group, `pkg: null`, every element. */
+export function itemsByPackage(quote, items) {
+  const pkgs = packageList(quote);
+  const list = Array.isArray(items) ? items : [];
+  if (!pkgs.length) return [{ pkg: null, items: list }];
+  const groups = pkgs.map((p) => ({ pkg: p, items: [] }));
+  const rest = [];
+  list.forEach((it) => { const g = it && it.packageId ? groups.find((x) => x.pkg.id === it.packageId) : null; if (g) g.items.push(it); else rest.push(it); });
+  if (rest.length) groups.push({ pkg: null, items: rest });
+  return groups;
+}
+export const newPackage = (name) => ({ id: uid(), name: String(name || "").trim() || DEFAULT_PACKAGE_NAME });
+
+/** Adds a package. The FIRST package takes every existing element with it
+ * (a project is either packaged or not — nothing is left stranded). Returns
+ * the quote fields to patch: `{packages, items}`. */
+export function addPackagePatch(quote, name, pkg = newPackage(name)) {
+  const pkgs = packageList(quote);
+  const items = Array.isArray(quote && quote.items) ? quote.items : [];
+  return { packages: pkgs.concat([pkg]), items: pkgs.length ? items : items.map((it) => ({ ...it, packageId: pkg.id })), packageId: pkg.id };
+}
+export function renamePackagePatch(quote, id, name) {
+  return { packages: packageList(quote).map((p) => (p.id === id ? { ...p, name: String(name || "") } : p)) };
+}
+/** Removes a package: its elements move to the FIRST remaining package; when
+ * none remains every element loses its packageId and the project is plain again. */
+export function removePackagePatch(quote, id) {
+  const remaining = packageList(quote).filter((p) => p.id !== id);
+  const items = (Array.isArray(quote && quote.items) ? quote.items : []).map((it) => {
+    if (!remaining.length) { const { packageId, ...rest } = it; return packageId === undefined ? it : rest; }
+    return it.packageId === id || !remaining.some((p) => p.id === it.packageId) ? { ...it, packageId: remaining[0].id } : it;
+  });
+  return { packages: remaining, items };
+}
+export function movePackagePatch(quote, id, dir) {
+  const pkgs = packageList(quote).slice();
+  const i = pkgs.findIndex((p) => p.id === id); const j = i + (dir < 0 ? -1 : 1);
+  if (i < 0 || j < 0 || j >= pkgs.length) return { packages: pkgs };
+  const [p] = pkgs.splice(i, 1); pkgs.splice(j, 0, p);
+  return { packages: pkgs };
+}
+/** Moves one element into a package ("" / null = unassigned). An unknown package id is ignored. */
+export function assignElementPatch(quote, itemId, packageId) {
+  const ok = !packageId || !!packageById(quote, packageId);
+  return { items: (Array.isArray(quote && quote.items) ? quote.items : []).map((it) => {
+    if (it.id !== itemId || !ok) return it;
+    if (!packageId) { const { packageId: _p, ...rest } = it; return rest; }
+    return { ...it, packageId };
+  }) };
+}
+/** A package's own margin (a fraction; blank clears it — the package then follows the project margin). */
+export function packageMarginPatch(quote, id, pct) {
+  const m = pinnedMargin(pct);
+  return { packages: packageList(quote).map((p) => { if (p.id !== id) return p; const { marginPct, ...rest } = p; return m == null ? rest : { ...rest, marginPct: m }; }) };
+}
+export function packageMargin(quote, pkg) {
+  const p = pinnedMargin(pkg && pkg.marginPct);
+  return p == null ? projectMargin(quote) : p;
+}
+/** Every package with its elements priced — `[{id, name, pkg, count, cost, loaded, sell, provisional, margin}]`
+ * in package order (the unassigned group last, id null). Sums add up to the project. */
+export function computePackageTotals(quote, items, rates, projectScope) {
+  const q = quote || {};
+  return itemsByPackage(q, items).map(({ pkg, items: group }) => {
+    let cost = 0, loaded = 0, sell = 0, provisional = 0;
+    group.forEach((it) => {
+      const e = computeElementSell(it, rates, q, projectScope);
+      cost += e.cost; loaded += e.loaded; sell += e.sell;
+      if (isProvisional(it)) provisional += computeElementCost(it, rates, projectScope).total;
+    });
+    return { id: pkg ? pkg.id : null, name: packageName(pkg), pkg, count: group.length, cost, loaded, sell, provisional, margin: sell > 0 ? 1 - loaded / sell : packageMargin(q, pkg) };
+  });
+}

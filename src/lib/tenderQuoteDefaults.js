@@ -15,6 +15,7 @@
  */
 import { uid, computeElementCost, labourQuantities, computeExternalScopeLines, getDefaultMargin, projectMargin } from "./costing.js";
 import { ELEMENT_TYPES } from "../data/catalog.js";
+import { packageList, packageName, hasPackages } from "./packages.js";
 
 export const TENDER_INCLUSIONS = [
   "All detailed excavation.",
@@ -257,7 +258,7 @@ export const itemPriceLabel = (item) => (itemHasRowPrices(item) ? fmtTenderPrice
  * (the AI placement or the row's select, recorded) else `defaultStageFor`.
  * Every field is editable afterwards. */
 export function seedTenderItems(quote, items, rates) {
-  const { lines } = computeExternalScopeLines(items, rates, quote.overheadPct, quote.contingencyPct, projectMargin(quote), quote.scope);
+  const { lines } = computeExternalScopeLines(items, rates, quote.overheadPct, quote.contingencyPct, projectMargin(quote), quote.scope, quote);
   const sellById = {};
   lines.forEach((l) => { sellById[l.id] = l.sellExGst; });
   const fmt = (n, dp = 2) => Number(n).toLocaleString("en-AU", { maximumFractionDigits: dp });
@@ -436,6 +437,62 @@ export function printedPrice(str, tq) {
   return gstSuffixOn(tq) ? s : s.replace(/\s*\+\s*GST\s*$/i, "");
 }
 
+// ---------------------------------------------------------------------------------------------------------------
+// Packages on the tender (Grady, 4 Nov 2026: "the option of adding all the packages together or individually in
+// the tender quote"). The stored stage items never change shape: a row belongs to a package through ITS ELEMENT
+// (quote.items[].packageId), so the layout is a READING — "combined" prints the stages as ever, "byPackage" prints
+// every package as its own block of stages with its own sum and the combined Project Sum last — and a package
+// unticked for this tender has its rows left out of the print and the sum (the rows stay stored; tick it back).
+export const TENDER_LAYOUTS = [
+  { key: "combined", title: "Combined", note: "one list of stages, one project sum" },
+  { key: "byPackage", title: "By package", note: "each package priced on its own, then the combined total" },
+];
+export const tenderLayout = (tq) => (tq && tq.packageLayout === "byPackage" ? "byPackage" : "combined");
+export const tenderIncludes = (tq, pkgId) => !(tq && tq.packagesIncluded && pkgId && tq.packagesIncluded[pkgId] === false);
+/** `{itemId: packageId | null}` for the quote's elements. */
+const packageOfElements = (items) => { const m = {}; (items || []).forEach((it) => { if (it && it.id) m[it.id] = it.packageId || null; }); return m; };
+/** The stage items with the rows of the packages this tender leaves out REMOVED (a stage emptied by that is
+ * dropped; a hand-typed row with no element always stays). On a project without packages: every item as stored. */
+export function tenderItemsIncluded(tq, quote, items) {
+  const all = normalizeTenderItems((tq && tq.items) || []);
+  const pkgs = packageList(quote);
+  if (!pkgs.length) return all;
+  const excluded = new Set(pkgs.filter((p) => !tenderIncludes(tq, p.id)).map((p) => p.id));
+  if (!excluded.size) return all;
+  const pkgOf = packageOfElements(items || (quote && quote.items));
+  return all.map((it) => { const lines = it.lines.filter((l) => !l.elementId || !excluded.has(pkgOf[l.elementId])); return { ...it, lines, points: lines.map((l) => l.text) }; })
+    .filter((it, i) => it.lines.length > 0 || all[i].lines.length === 0);
+}
+/** The tender laid out in packages: `[{pkg, name, items: [stage items holding ONLY this package's rows], sum}]`
+ * in package order over the INCLUDED packages; rows whose element has no package, and hand-typed rows / legacy
+ * typed-price items, close the list under `pkg: null` ("General"). The block sums add up to the project sum. */
+export function tenderPackageBlocks(tq, quote, items) {
+  const pkgs = packageList(quote).filter((p) => tenderIncludes(tq, p.id));
+  const included = tenderItemsIncluded(tq, quote, items);
+  const pkgOf = packageOfElements(items || (quote && quote.items));
+  const blocks = pkgs.map((p) => ({ pkg: p, name: packageName(p), items: [], sum: 0 }));
+  const general = { pkg: null, name: "General", items: [], sum: 0 };
+  included.forEach((it) => {
+    if (!it.lines.some((l) => l.elementId)) { general.items.push(it); general.sum += itemPriceValue(it); return; }
+    const byPkg = {};
+    it.lines.forEach((l) => { const k = l.elementId ? (pkgOf[l.elementId] || "") : ""; (byPkg[k] = byPkg[k] || []).push(l); });
+    Object.keys(byPkg).forEach((k) => {
+      const lines = byPkg[k];
+      const part = { ...it, lines, points: lines.map((l) => l.text) };
+      const b = blocks.find((x) => x.pkg.id === k) || general;
+      b.items.push(part); b.sum += lines.reduce((s, l) => s + parseTenderPrice(l.price), 0);
+    });
+  });
+  const out = blocks.filter((b) => b.items.length);
+  if (general.items.length) out.push(general);
+  return out;
+}
+/** The project sum this tender prints: the INCLUDED rows only (a package unticked for the tender is out of the sum). */
+export function tenderProjectSumFor(tq, quote, items, gstRate = 0.1) {
+  return computeTenderProjectSum({ ...tq, items: tenderItemsIncluded(tq, quote, items) }, gstRate);
+}
+export const tenderHasPackages = (quote) => hasPackages(quote);
+
 /** Pull the first number out of a tender price string like
  * "$46,050.47 + GST" or "46050.47". Anything without a digit is $0. */
 export const parseTenderPrice = (s) => {
@@ -482,6 +539,8 @@ export function newTenderQuote() {
     markupLabel: "Markup",
     gstOn: true,           // print GST and TOTAL incl. GST lines
     gstSuffix: true,       // print "+ GST" after every price (stage totals, rows, options, the project sum)
+    packageLayout: "combined", // "combined" = one project sum; "byPackage" = each package priced apart, then the combined total (lib/packages.js)
+    packagesIncluded: {},   // {packageId: false} for a package left OUT of this tender; absent = in
     additionalOptions: TENDER_DEFAULT_OPTIONS.map((o) => ({ id: uid(), ...o })),
     drawingsArchitect: "",
     drawingsStructural: "",

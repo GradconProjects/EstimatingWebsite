@@ -11,14 +11,16 @@
 import { useMemo } from "react";
 import { computeMarginRegister, projectMargin, pinnedMargin, getDefaultMargin, money, money2, markupFromMargin, marginFromMarkup } from "../lib/costing.js";
 import { PctInput } from "./atoms.jsx";
+import { packageList } from "../lib/packages.js";
 
 const pctLabel = (f) => `${Math.round((Number(f) || 0) * 1000) / 10}%`;
-const SOURCE_LABEL = { project: "project", element: "element · pinned", row: "row · pinned" };
+const SOURCE_LABEL = { project: "project", element: "element · pinned", row: "row · pinned", package: "package · pinned" };
 
 export default function MarginRegister({ items, rates, quote, scope, setProjectMargin, setElementMargin, setRowMargin, open, onToggle }) {
   const reg = useMemo(() => computeMarginRegister(items, rates, quote || {}, scope), [items, rates, quote, scope]);
   const pm = projectMargin(quote || {});
   const t = reg.totals;
+  const pkgNameOf = (id) => { const p = packageList(quote).find((x) => x.id === id); return p ? (p.name || "Package") : ""; };
   return (
     <div className="rounded-xl border border-neutral-200 bg-white shadow-sm overflow-hidden print:hidden" data-testid="margin-register" id="margin-register">
       <button type="button" onClick={onToggle} className="w-full flex items-center justify-between gap-3 px-4 py-2.5 text-left bg-neutral-900 text-white" data-band="summary" data-testid="margin-register-toggle" aria-expanded={open}>
@@ -60,7 +62,8 @@ export default function MarginRegister({ items, rates, quote, scope, setProjectM
                 {reg.lines.map((l) => {
                   const item = items.find((it) => it.id === l.elementId);
                   const pinned = l.kind === "sub" ? pinnedMargin(item && item.rowMargins && item.rowMargins[l.key]) : pinnedMargin(item && item.marginPct);
-                  const inherit = l.kind === "sub" ? (pinnedMargin(item && item.marginPct) ?? pm) : pm;
+                  const base = l.inherited != null ? l.inherited : pm; // the package's margin when it pins one (lib/packages.js), else the project's
+                  const inherit = l.kind === "sub" ? (pinnedMargin(item && item.marginPct) ?? base) : base;
                   return (
                     <tr key={`${l.elementId}:${l.key || "own"}`} className="border-t border-neutral-100" data-testid="margin-register-row" data-kind={l.kind}>
                       <td className="px-2 py-1">
@@ -69,6 +72,7 @@ export default function MarginRegister({ items, rates, quote, scope, setProjectM
                           ? <span className="ml-1.5 text-[9px] font-semibold uppercase tracking-wide text-amber-800 bg-amber-50 rounded px-1">sub quote</span>
                           : <span className="ml-1.5 text-[9px] font-semibold uppercase tracking-wide text-neutral-500 border border-neutral-200 rounded px-1">own work</span>}
                         {l.kind === "sub" && <div className="text-[10px] text-neutral-400">{l.element}</div>}
+                        {l.packageId && pkgNameOf(l.packageId) && <div className="text-[10px] text-neutral-400" data-testid="margin-register-package">{pkgNameOf(l.packageId)}</div>}
                       </td>
                       <td className="px-2 py-1 text-right font-mono tabular-nums">{money2(l.cost)}</td>
                       <td className="px-2 py-1 text-right font-mono tabular-nums">{money2(l.loaded)}</td>

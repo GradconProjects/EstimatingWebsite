@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { uid, getGstRate } from "../lib/costing.js";
 import { GRADCON_LOGO_FULL_DATA_URI } from "../lib/logo.js";
-import { newTenderQuote, seedTenderItems, computeTenderProjectSum, tenderPriceDrift, refreshTenderPrices, tenderPrefill, rolledUpItems, itemiseRolledUp, normalizeTenderItems, itemLines, itemPriceLabel, itemHasRowPrices, regroupByStage, TENDER_STAGES, stageTitle, isStageKey, printedPrice, gstSuffixOn } from "../lib/tenderQuoteDefaults.js";
+import { newTenderQuote, seedTenderItems, computeTenderProjectSum, tenderPriceDrift, refreshTenderPrices, tenderPrefill, rolledUpItems, itemiseRolledUp, normalizeTenderItems, itemLines, itemPriceLabel, itemHasRowPrices, regroupByStage, TENDER_STAGES, stageTitle, isStageKey, printedPrice, gstSuffixOn, TENDER_LAYOUTS, tenderLayout, tenderIncludes, tenderItemsIncluded, tenderPackageBlocks, tenderProjectSumFor } from "../lib/tenderQuoteDefaults.js";
+import { packageList, hasPackages, packageName } from "../lib/packages.js";
 import { ELEMENT_TYPES } from "../data/catalog.js";
 import { handoverIssues } from "../lib/handover.js";
 import { tenderNoteLines } from "../lib/tenderNotes.js";
@@ -145,7 +146,7 @@ export default function TenderQuoteReport({ quote, items, rates, visible, onClos
     <>
       {isPrintTarget && (
         <div className="hidden print:block text-black text-[11px]">
-          <ReportContent quote={quote} tq={tq} />
+          <ReportContent quote={quote} tq={tq} items={items} />
         </div>
       )}
       {visible && (
@@ -216,6 +217,7 @@ export default function TenderQuoteReport({ quote, items, rates, visible, onClos
                 </Field>
               </div>
 
+              {hasPackages(quote) && <TenderPackagesPanel tq={tq} quote={quote} items={items} set={set} onChange={onChange} />}
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Project Details — stages (one row per element: dot point · price · stage)</span>
@@ -369,7 +371,7 @@ export default function TenderQuoteReport({ quote, items, rates, visible, onClos
                 </div>
               </div>
 
-              <ProjectSumEditor tq={tq} set={set} />
+              <ProjectSumEditor tq={tq} set={set} quote={quote} items={items} />
 
               <div>
                 <div className="flex items-center justify-between mb-1">
@@ -431,7 +433,7 @@ export default function TenderQuoteReport({ quote, items, rates, visible, onClos
               <div className="border-t border-neutral-200 pt-4">
                 <div className="text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-2">Print preview</div>
                 <div className="border border-neutral-300 rounded-lg p-5 text-[11px] text-black bg-white">
-                  <ReportContent quote={quote} tq={tq} />
+                  <ReportContent quote={quote} tq={tq} items={items} />
                 </div>
               </div>
             </div>
@@ -446,12 +448,76 @@ const inputCls = "w-full border border-neutral-300 rounded px-2 py-1.5 text-sm";
 const fixedCls = "border border-neutral-300 rounded px-2 py-1.5 text-sm"; // a fixed-width cell beside a growing one (w-full would win over w-40)
 const textareaCls = "w-full border border-neutral-300 rounded px-2 py-1.5 text-sm";
 
+const fmtTenderPriceLocal = (n) => (n > 0 ? `$${Number(n).toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} + GST` : "$0.00 + GST");
+/** The numbered stage items with their rows — the whole tender (combined), or one package's share of it (by package). */
+function StageList({ items, tq }) {
+  return (
+        <ol className="space-y-2">
+          {items.map((l, i) => {
+            const rows = itemLines(l).filter((r) => String(r.text || "").trim() || String(r.price || "").trim());
+            return (
+              <li key={l.id} className="break-inside-avoid" data-testid="print-item" data-stage={l.stage || ""}>
+                <div className="flex justify-between">
+                  <span className="font-bold">{i + 1}. {l.title}{l.title && !/[:：]\s*$/.test(l.title) ? ":" : ""}</span>
+                  <span className="font-bold">{printedPrice(itemPriceLabel(l), tq)}</span>
+                </div>
+                {rows.length > 0 && (
+                  <ul className="list-disc pl-6 space-y-0.5">
+                    {rows.map((r) => (
+                      <li key={r.id} data-testid="print-row">
+                        <div className="flex justify-between gap-4"><span>{r.text}</span>{String(r.price || "").trim() ? <span className="pl-4 flex-none font-mono tabular-nums">{printedPrice(r.price, tq)}</span> : null}</div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </li>
+            );
+          })}
+        </ol>
+  );
+}
+
+/** Packages on the tender (Grady, 4 Nov 2026: "the option of adding all the packages together or individually
+ * in the tender quote"): the layout — combined, or every package priced apart with the combined total last — and
+ * a tick per package for THIS tender; an unticked package's rows leave the print and the sum (they stay stored). */
+function TenderPackagesPanel({ tq, quote, items, set, onChange }) {
+  const pkgs = packageList(quote);
+  const blocks = tenderPackageBlocks({ ...tq, packagesIncluded: {} }, quote, items); // every package's share, ticked or not
+  const sumOf = (id) => { const b = blocks.find((x) => (x.pkg ? x.pkg.id : null) === id); return b ? b.sum : 0; };
+  const layout = tenderLayout(tq);
+  const toggle = (id, on) => onChange({ ...tq, packagesIncluded: { ...(tq.packagesIncluded || {}), [id]: on ? true : false } });
+  const included = pkgs.filter((p) => tenderIncludes(tq, p.id)).length;
+  return (
+    <div className="border border-neutral-200 rounded-lg p-3 bg-neutral-50 space-y-2" data-testid="tender-packages">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Packages — {included} of {pkgs.length} on this tender</span>
+        <div className="flex items-center gap-1 text-[12px]" role="radiogroup" aria-label="Tender layout">
+          {TENDER_LAYOUTS.map((l) => (
+            <button key={l.key} type="button" onClick={() => set("packageLayout", l.key)} className={`px-2.5 py-1 rounded-full border text-[12px] ${layout === l.key ? "bg-neutral-900 border-neutral-900 text-white" : "bg-white border-neutral-300 text-neutral-700 hover:bg-neutral-100"}`} title={l.note} data-testid={`tender-layout-${l.key}`} aria-pressed={layout === l.key}>{l.title}</button>
+          ))}
+        </div>
+      </div>
+      <div className="text-[11px] text-neutral-500">{layout === "byPackage" ? "Each package prints as its own block of stages with its own sum; the Project Sum is the combined total of the ticked packages." : "One list of stages across the ticked packages, one Project Sum."} Untick a package to send the tender without it — its rows stay here and come back when ticked.</div>
+      <div className="divide-y divide-neutral-200 rounded border border-neutral-200 bg-white">
+        {pkgs.map((p) => (
+          <label key={p.id} className="flex items-center gap-2 px-2 py-1.5 text-[12.5px] cursor-pointer" data-testid="tender-package" data-package={p.id} data-on={tenderIncludes(tq, p.id) ? "1" : "0"}>
+            <input type="checkbox" checked={tenderIncludes(tq, p.id)} onChange={(e) => toggle(p.id, e.target.checked)} />
+            <span className={`font-medium ${tenderIncludes(tq, p.id) ? "text-neutral-800" : "text-neutral-400 line-through"}`}>{packageName(p)}</span>
+            <span className="ml-auto font-mono tabular-nums text-neutral-600" data-testid="tender-package-sum">{fmtTenderPriceLocal(sumOf(p.id))}</span>
+          </label>
+        ))}
+        {blocks.some((b) => !b.pkg) && <div className="flex items-center gap-2 px-2 py-1.5 text-[12px] text-neutral-500"><span>General (rows not in a package)</span><span className="ml-auto font-mono tabular-nums">{fmtTenderPriceLocal(sumOf(null))}</span></div>}
+      </div>
+    </div>
+  );
+}
+
 /** The Project Sum controls: show/hide the block, override the sum, bolt an
  * extra markup on top, and choose whether GST + incl-GST lines print. The
  * numbers preview live here exactly as they'll print. */
-function ProjectSumEditor({ tq, set }) {
+function ProjectSumEditor({ tq, set, quote, items }) {
   const gstRate = getGstRate();
-  const ps = computeTenderProjectSum(tq, gstRate);
+  const ps = tenderProjectSumFor(tq, quote, items, gstRate); // the INCLUDED packages only
   return (
     <div className="border border-neutral-200 rounded-lg p-3 bg-neutral-50">
       <div className="flex items-center justify-between mb-2">
@@ -537,11 +603,14 @@ function Bullets({ text }) {
   );
 }
 
-function ReportContent({ quote, tq }) {
-  const lineItems = normalizeTenderItems(tq.items || []);
+function ReportContent({ quote, tq, items }) {
+  // the packages this tender includes, laid out combined (one list of stages) or by package (lib/packages.js, 4 Nov 2026)
+  const lineItems = tenderItemsIncluded(tq, quote, items);
+  const byPackage = hasPackages(quote) && tenderLayout(tq) === "byPackage";
+  const blocks = byPackage ? tenderPackageBlocks(tq, quote, items) : [];
   const addr = (tq.projectAddress || "").split("\n").map((l) => l.trim()).filter(Boolean);
   const gstRate = getGstRate();
-  const ps = computeTenderProjectSum(tq, gstRate);
+  const ps = tenderProjectSumFor(tq, quote, items, gstRate);
   const gstPctLabel = (gstRate * 100).toLocaleString("en-AU", { maximumFractionDigits: 2 });
   return (
     <>
@@ -569,28 +638,16 @@ function ReportContent({ quote, tq }) {
       <div className="mb-3">
         <div className="font-bold mb-1">Project Details:</div>
         {lineItems.length === 0 && <div className="text-neutral-500 italic">No line items yet.</div>}
-        <ol className="space-y-2">
-          {lineItems.map((l, i) => {
-            const rows = itemLines(l).filter((r) => String(r.text || "").trim() || String(r.price || "").trim());
-            return (
-              <li key={l.id} className="break-inside-avoid" data-testid="print-item" data-stage={l.stage || ""}>
-                <div className="flex justify-between">
-                  <span className="font-bold">{i + 1}. {l.title}{l.title && !/[:：]\s*$/.test(l.title) ? ":" : ""}</span>
-                  <span className="font-bold">{printedPrice(itemPriceLabel(l), tq)}</span>
-                </div>
-                {rows.length > 0 && (
-                  <ul className="list-disc pl-6 space-y-0.5">
-                    {rows.map((r) => (
-                      <li key={r.id} data-testid="print-row">
-                        <div className="flex justify-between gap-4"><span>{r.text}</span>{String(r.price || "").trim() ? <span className="pl-4 flex-none font-mono tabular-nums">{printedPrice(r.price, tq)}</span> : null}</div>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </li>
-            );
-          })}
-        </ol>
+        {!byPackage && <StageList items={lineItems} tq={tq} />}
+        {byPackage && blocks.map((b, bi) => (
+          <div key={b.pkg ? b.pkg.id : "__general"} className="mb-3 break-inside-avoid" data-testid="print-package" data-package={b.pkg ? b.pkg.id : ""}>
+            <div className="flex justify-between font-bold border-b border-black mb-1">
+              <span>{String.fromCharCode(65 + bi)}. {b.name}</span>
+              <span data-testid="print-package-sum">{printedPrice(fmtTenderPriceLocal(b.sum), tq)}</span>
+            </div>
+            <StageList items={b.items} tq={tq} />
+          </div>
+        ))}
         {tq.showProjectSum !== false && (
           <div className="mt-3 ml-auto w-80 break-inside-avoid">
             {ps.markupOn && (
