@@ -2136,7 +2136,7 @@ check("Tender Notes = the project's Assumptions first (recorded order, blanks dr
     const cell = fs.readFileSync(new URL("../src/components/TenderNotesCell.jsx", import.meta.url), "utf8");
     const app = fs.readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
     const geo = fs.readFileSync(new URL("../src/components/ProjectGeometryPanel.jsx", import.meta.url), "utf8");
-    assertTrue(/data-testid="reword-for-tender"/.test(cell) && /data-testid="tender-wording-review"/.test(cell) && /data-testid="apply-tender-wording"/.test(cell) && /requestTenderWording\(/.test(cell) && /applyTenderWording\(/.test(cell) && (app.match(/onChangeAssumptions=\{\(assumptions\) => setQuote/g) || []).length === 3 && /data-testid="assumption-tender-wording"/.test(geo) && /clearTenderWording\(/.test(geo));
+    assertTrue(/data-testid="reword-for-tender"/.test(cell) && /data-testid="tender-wording-review"/.test(cell) && /data-testid="apply-tender-wording"/.test(cell) && /requestTenderWording\(/.test(cell) && /applyTenderWording\(/.test(cell) && (app.match(/onChangeAssumptions=\{\(assumptions\) => setQuote/g) || []).length === 4 && /data-testid="assumption-tender-wording"/.test(geo) && /clearTenderWording\(/.test(geo));
   });
 }
 
@@ -4157,6 +4157,12 @@ await checkAsync("Packages (lib/packages.js, costing.js inheritedMargin, tenderQ
   assert.ok(!("colour" in P.packageColourPatch(qc, pool.id, "red").packages[1]), "a bad value clears the colour"); assert.equal(P.isHexColour("#abc"), false);
   assert.equal(P.inkFor("#ff8800"), "#111111"); assert.equal(P.inkFor("#1d4ed8"), "#ffffff"); assert.equal(P.inkFor("#ffffff"), "#111111"); assert.equal(P.inkFor("#000000"), "#ffffff"); assert.equal(P.inkFor("nope"), "#ffffff");
   assert.ok(P.PACKAGE_COLOURS.every(P.isHexColour) && new Set(P.PACKAGE_COLOURS).size === P.PACKAGE_COLOURS.length, "a palette of distinct hex colours");
+  // the summary ticks: itemsInPackages keeps the ticked packages' elements, an element with no / a gone package always
+  assert.deepEqual(P.itemsInPackages(q, q.items, new Set()).map((i) => i.id), q.items.map((i) => i.id), "no tick off = everything");
+  assert.deepEqual(P.itemsInPackages(q, q.items, new Set([pool.id])).map((i) => i.id), q.items.filter((i) => i.packageId !== pool.id).map((i) => i.id), "the pool unticked leaves");
+  assert.equal(P.itemsInPackages(q, q.items, [pool.id]).length, P.itemsInPackages(q, q.items, new Set([pool.id])).length, "an array works too");
+  assert.deepEqual(P.itemsInPackages(q, q.items.concat([{ id: "orphan", packageId: "gone" }, { id: "none" }]), new Set([pool.id, "gone"])).map((i) => i.id).slice(-2), ["orphan", "none"], "a gone or unset package never leaves");
+  assert.equal(P.itemsInPackages({ ...q, packages: [] }, q.items, new Set([pool.id])).length, q.items.length, "a plain project ignores the ticks");
   // package assumptions: on the package, the tender notes carry them after the project's, prefixed; an unticked package's leave
   const TN = await import("../src/lib/tenderNotes.js");
   const qa = { ...q, assumptions: [{ id: "a1", text: "Spoil to be carted by others" }], ...P.packageAssumptionsPatch(q, pool.id, [{ id: "pa1", text: "Pool shell to engineer's detail" }, { id: "pa2", text: "   " }]) };

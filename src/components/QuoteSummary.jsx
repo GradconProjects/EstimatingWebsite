@@ -3,7 +3,7 @@ import { CATEGORY_ORDER, SECTION_ORDER } from "../data/catalog.js";
 import { isDone } from "../lib/workTrail.js";
 import { computeElementCost, computeGrandTotal, computeExcludedTotals, computeProvisionalTotals, isProvisional, computeMarginLadder, money, money2, getDefaultMargin, scopeLabel, computeMarginRegister, inheritedMargin, projectMargin, pinnedMargin, marginStepsAround, elementMargin, markupFromMargin, marginFromMarkup } from "../lib/costing.js";
 import { NumInput, PctInput } from "./atoms.jsx";
-import { itemsByPackage, hasPackages, computePackageTotals, packageName, packageColour, inkFor, packageList } from "../lib/packages.js";
+import { itemsByPackage, hasPackages, computePackageTotals, packageName, packageColour, inkFor, packageList, itemsInPackages } from "../lib/packages.js";
 
 const pctLabel = (f) => `${Math.round((Number(f) || 0) * 1000) / 10}%`;
 
@@ -17,7 +17,7 @@ export default function QuoteSummary({
   // packages in the summary or to exclude them"): an unticked package stays listed, greyed, but its elements leave the
   // grand total, the provisional / scope figures, the ladder and the register below. A view, never saved.
   const isPkgIn = (pkgId) => !(pkgId && excludedPackages && excludedPackages.has(pkgId));
-  const summaryItems = useMemo(() => (excludedPackages && excludedPackages.size ? items.filter((it) => isPkgIn(it.packageId)) : items), [items, excludedPackages]); // eslint-disable-line react-hooks/exhaustive-deps
+  const summaryItems = useMemo(() => itemsInPackages(quote || {}, items, excludedPackages), [quote, items, excludedPackages]);
   // Variable margins (1 Nov 2026): the project margin is typed on the ladder,
   // every element and every subcontract quote row can pin its own under the
   // element's row, and the register prices the lot (lib/costing.js).

@@ -904,6 +904,35 @@ said "go ahead". `src/lib/packages.js` (pure, verify-covered). Rules:
    assumptions with it (the External Quote carries every package). The
    project-wide assumptions stay on the Project Geometry panel at the top;
    the "Reword for tender" review still rewords the project's list only.
+9. **The whole-project views are ROLL-UPS of the ticked packages, folded
+   under them** (Grady, 4 Nov 2026: "the overall margin register … should
+   consider all available packages and individual margin registers and should
+   still use the checklist logic for them. project geometry even for the main
+   residence should fold under the packages, all created packages should act
+   individually and only come together by the checklist toggles"):
+   `itemsInPackages(quote, items, excluded)` in `packages.js` is the ONE
+   reading of "the ticked packages' elements" (an element of an unticked
+   package leaves; one whose package is gone or unset always stays; a plain
+   project ignores the ticks) — the rail's `summaryItems`, the overall
+   register and the combined geometry all read it off App's `summaryExcluded`.
+   On a packaged project the top Project Geometry panel is NOT rendered:
+   `project-geometry-combined` sits UNDER the package groups, above the overall
+   register, folded on every open (`projGeoOpen`, session-only; the
+   `project-geometry-fold` header reads "Project geometry — whole project · N
+   of M packages") and, unfolded, shows `ProjectGeometryPanel` over the ticked
+   elements with the project-wide assumptions (still the ONE place those are
+   edited). The overall `MarginRegister` takes `excludedPackages`: on a
+   packaged project it prices the ticked packages only, groups its lines under
+   a band per package in the package colour (`margin-register-group`: the
+   count, the rate — "(package)" when pinned, else "(project)" —, the blended
+   rate and the sell), closes each with a subtotal row
+   (`margin-register-group-total`, `margin-register-group-sell`), heads and
+   foots "whole project · N of M packages", and names the unticked packages in
+   `margin-register-excluded`; the per-line package sublabel is gone under a
+   band. A package's own register under its band is unchanged, so the two agree
+   line for line. `verify.mjs` covers `itemsInPackages`; `test-packages.mjs`
+   proves no top panel, the folded combined geometry below the packages, the
+   grouped register, and the pool unticked leaving both.
 `verify.mjs` covers the patches, the grouping, the chain (a package pin
 inherited, an element pin beating it, a row pin beating that), the totals
 adding up, and the tender's two layouts with a package left out;

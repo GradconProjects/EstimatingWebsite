@@ -135,3 +135,13 @@ export function packageAssumptionsPatch(quote, id, assumptions) {
   const list = Array.isArray(assumptions) ? assumptions : [];
   return { packages: packageList(quote).map((p) => (p.id === id ? { ...p, assumptions: list } : p)) };
 }
+
+// The elements the summary ticks keep (Grady, 4 Nov 2026: "all created packages should act individually and only come
+// together by the checklist toggles"): an element of an UNTICKED package leaves; an element whose package is gone or
+// unset (the null group) always stays. `excluded` is a Set (or array) of package ids. The ONE reading for the rail, the
+// overall margin register and the combined project geometry.
+export function itemsInPackages(quote, items, excluded) {
+  const skip = excluded instanceof Set ? excluded : new Set(Array.isArray(excluded) ? excluded : []);
+  if (!skip.size || !hasPackages(quote)) return items || [];
+  return (items || []).filter((it) => !(it && it.packageId && skip.has(it.packageId) && packageById(quote, it.packageId)));
+}

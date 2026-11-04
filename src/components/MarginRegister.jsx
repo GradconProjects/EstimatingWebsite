@@ -11,13 +11,23 @@
 import { useMemo } from "react";
 import { computeMarginRegister, projectMargin, pinnedMargin, getDefaultMargin, money, money2, markupFromMargin, marginFromMarkup } from "../lib/costing.js";
 import { PctInput } from "./atoms.jsx";
-import { packageList, packageMargin, packageName, packageColour, inkFor } from "../lib/packages.js";
+import { packageList, packageMargin, packageName, packageColour, inkFor, itemsInPackages, itemsByPackage, hasPackages } from "../lib/packages.js";
 
 const pctLabel = (f) => `${Math.round((Number(f) || 0) * 1000) / 10}%`;
 const SOURCE_LABEL = { project: "project", element: "element · pinned", row: "row · pinned", package: "package · pinned" };
 
-export default function MarginRegister({ items, rates, quote, scope, setProjectMargin, setElementMargin, setRowMargin, open, onToggle, pkg = null, setPackageMargin }) {
-  const reg = useMemo(() => computeMarginRegister(items, rates, quote || {}, scope), [items, rates, quote, scope]);
+export default function MarginRegister({ items, rates, quote, scope, setProjectMargin, setElementMargin, setRowMargin, open, onToggle, pkg = null, setPackageMargin, excludedPackages = null }) {
+  // the OVERALL register of a packaged project rolls up the TICKED packages only (Grady, 4 Nov 2026: "the overall should
+  // consider all available packages and individual margin registers and should still use the checklist logic for them"):
+  // the rail's ticks (`excludedPackages`) choose the packages, the lines are grouped under a band per package with that
+  // package's subtotal and rate, and the "Whole project" foot is the ticked packages' sum — the same figures as the rail
+  const grouped = !pkg && hasPackages(quote || {});
+  const regItems = useMemo(() => (grouped ? itemsInPackages(quote || {}, items, excludedPackages) : items), [grouped, quote, items, excludedPackages]);
+  const reg = useMemo(() => computeMarginRegister(regItems, rates, quote || {}, scope), [regItems, rates, quote, scope]);
+  const groups = useMemo(() => (grouped ? itemsByPackage(quote || {}, regItems).filter((g) => g.items.length).map((g) => ({ ...g, reg: computeMarginRegister(g.items, rates, quote || {}, scope) })) : null), [grouped, quote, regItems, rates, scope]);
+  const allPkgs = packageList(quote || {});
+  const leftOut = grouped ? allPkgs.filter((p) => excludedPackages && excludedPackages.has(p.id)) : [];
+  const tickedCount = allPkgs.length - leftOut.length;
   // a PACKAGE's own register (lib/packages.js, 4 Nov 2026): its lines only, its overall rate = the package margin
   // (blank = the project's), written back onto the package — the project's register stays the whole quote
   const projectPm = projectMargin(quote || {});
@@ -30,7 +40,7 @@ export default function MarginRegister({ items, rates, quote, scope, setProjectM
   return (
     <div className="rounded-xl border border-neutral-200 bg-white shadow-sm overflow-hidden print:hidden" data-testid={pkg ? "package-margin-register" : "margin-register"} id={pkg ? `margin-register-${pkg.id}` : "margin-register"} data-package={pkg ? pkg.id : undefined}>
       <button type="button" onClick={onToggle} className="w-full flex items-center justify-between gap-3 px-4 py-2.5 text-left bg-neutral-900 text-white" data-band={pkg ? undefined : "summary"} style={band} data-testid="margin-register-toggle" aria-expanded={open}>
-        <span className="text-xs font-semibold uppercase tracking-wide">Margin register{pkg ? ` — ${packageName(pkg)}` : ""}</span>
+        <span className="text-xs font-semibold uppercase tracking-wide">Margin register{pkg ? ` — ${packageName(pkg)}` : grouped ? ` — whole project · ${tickedCount} of ${allPkgs.length} packages` : ""}</span>
         <span className="text-[12px] font-mono tabular-nums text-neutral-300">
           overall <b className="text-white">{pctLabel(pm)}</b> · blended <b className="text-white" data-testid="margin-register-blended">{pctLabel(t.blended)}</b> · sell <b className="text-orange-300">{money(t.sell)}</b> ex GST {reg.pinned > 0 && <span className="text-amber-300">· {reg.pinned} pinned</span>} <span className="ml-2 text-neutral-400">{open ? "▴" : "▾"}</span>
         </span>
@@ -65,7 +75,15 @@ export default function MarginRegister({ items, rates, quote, scope, setProjectM
                 </tr>
               </thead>
               <tbody>
-                {reg.lines.map((l) => {
+                {(groups || [{ pkg: null, items: regItems, reg }]).map((g) => [
+                  groups && (
+                    <tr key={`g:${g.pkg ? g.pkg.id : "__unassigned"}`} data-testid="margin-register-group" data-package={g.pkg ? g.pkg.id : ""}>
+                      <td colSpan={8} className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide" style={g.pkg ? { background: packageColour(quote, g.pkg), color: inkFor(packageColour(quote, g.pkg)) } : { background: "#525252", color: "#fff" }}>
+                        {packageName(g.pkg)} <span className="font-normal normal-case tracking-normal opacity-80">· {g.items.length} element{g.items.length === 1 ? "" : "s"} · rate {g.pkg && pinnedMargin(g.pkg.marginPct) != null ? `${pctLabel(packageMargin(quote, g.pkg))} (package)` : `${pctLabel(projectPm)} (project)`} · blended {pctLabel(g.reg.totals.blended)} · sells {money2(g.reg.totals.sell)} ex GST</span>
+                      </td>
+                    </tr>
+                  ),
+                  ...g.reg.lines.map((l) => {
                   const item = items.find((it) => it.id === l.elementId);
                   const pinned = l.kind === "sub" ? pinnedMargin(item && item.rowMargins && item.rowMargins[l.key]) : pinnedMargin(item && item.marginPct);
                   const base = l.inherited != null ? l.inherited : pm; // the package's margin when it pins one (lib/packages.js), else the project's
@@ -78,7 +96,7 @@ export default function MarginRegister({ items, rates, quote, scope, setProjectM
                           ? <span className="ml-1.5 text-[9px] font-semibold uppercase tracking-wide text-amber-800 bg-amber-50 rounded px-1">sub quote</span>
                           : <span className="ml-1.5 text-[9px] font-semibold uppercase tracking-wide text-neutral-500 border border-neutral-200 rounded px-1">own work</span>}
                         {l.kind === "sub" && <div className="text-[10px] text-neutral-400">{l.element}</div>}
-                        {l.packageId && pkgNameOf(l.packageId) && <div className="text-[10px] text-neutral-400" data-testid="margin-register-package">{pkgNameOf(l.packageId)}</div>}
+                        {!groups && l.packageId && pkgNameOf(l.packageId) && <div className="text-[10px] text-neutral-400" data-testid="margin-register-package">{pkgNameOf(l.packageId)}</div>}
                       </td>
                       <td className="px-2 py-1 text-right font-mono tabular-nums">{money2(l.cost)}</td>
                       <td className="px-2 py-1 text-right font-mono tabular-nums">{money2(l.loaded)}</td>
@@ -95,12 +113,25 @@ export default function MarginRegister({ items, rates, quote, scope, setProjectM
                       <td className="px-2 py-1 text-right font-mono tabular-nums text-neutral-500">{money2(l.sell * (t.sellIncGst / (t.sell || 1)))}</td>
                     </tr>
                   );
-                })}
-                {reg.lines.length === 0 && <tr><td colSpan={8} className="px-2 py-3 text-center text-neutral-400">Nothing priced yet.</td></tr>}
+                  }),
+                  groups && (
+                    <tr key={`t:${g.pkg ? g.pkg.id : "__unassigned"}`} className="border-t border-neutral-300 bg-neutral-50 font-semibold" data-testid="margin-register-group-total" data-package={g.pkg ? g.pkg.id : ""}>
+                      <td className="px-2 py-1">{packageName(g.pkg)} — subtotal</td>
+                      <td className="px-2 py-1 text-right font-mono tabular-nums">{money2(g.reg.totals.cost)}</td>
+                      <td className="px-2 py-1 text-right font-mono tabular-nums">{money2(g.reg.totals.loaded)}</td>
+                      <td className="px-2 py-1 text-right font-mono tabular-nums">{pctLabel(g.reg.totals.blended)}</td>
+                      <td className="px-2 py-1 text-right font-mono tabular-nums text-neutral-500">{pctLabel(markupFromMargin(g.reg.totals.blended))}</td>
+                      <td className="px-2 py-1 text-neutral-500 font-normal">blended</td>
+                      <td className="px-2 py-1 text-right font-mono tabular-nums" data-testid="margin-register-group-sell">{money2(g.reg.totals.sell)}</td>
+                      <td className="px-2 py-1 text-right font-mono tabular-nums">{money2(g.reg.totals.sellIncGst)}</td>
+                    </tr>
+                  ),
+                ])}
+                {reg.lines.length === 0 && <tr><td colSpan={8} className="px-2 py-3 text-center text-neutral-400">{grouped && leftOut.length === allPkgs.length ? "Every package is unticked on the Quote Summary — tick one to bring it in." : "Nothing priced yet."}</td></tr>}
               </tbody>
               <tfoot>
                 <tr className="border-t-2 border-neutral-800 font-semibold">
-                  <td className="px-2 py-1.5">{pkg ? `Whole package — ${packageName(pkg)}` : "Whole quote"}</td>
+                  <td className="px-2 py-1.5">{pkg ? `Whole package — ${packageName(pkg)}` : grouped ? `Whole project — ${tickedCount} of ${allPkgs.length} packages` : "Whole quote"}</td>
                   <td className="px-2 py-1.5 text-right font-mono tabular-nums">{money2(t.cost)}</td>
                   <td className="px-2 py-1.5 text-right font-mono tabular-nums">{money2(t.loaded)}</td>
                   <td className="px-2 py-1.5 text-right font-mono tabular-nums" data-testid="margin-register-blended-cell">{pctLabel(t.blended)}</td>
@@ -112,6 +143,11 @@ export default function MarginRegister({ items, rates, quote, scope, setProjectM
               </tfoot>
             </table>
           </div>
+          {grouped && leftOut.length > 0 && (
+            <div className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1 mb-2" data-testid="margin-register-excluded">
+              Not in this register — unticked on the Quote Summary: {leftOut.map((p) => packageName(p)).join(", ")}. Each still has its own register under its package band; tick it on the summary to bring it back in here.
+            </div>
+          )}
           <div className="text-[11px] text-neutral-500">Loaded = direct cost + overheads + contingency, as the ladder's subtotal. Margin is on the sell price (sell = loaded ÷ (1 − margin)); the Markup column is the same rate on cost (a 33.3% markup is a 25% margin) — type either and the other follows. A rate typed here is written onto that element or quote row and shows in the Quote Summary; clear it to inherit again.</div>
         </div>
       )}

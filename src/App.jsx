@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { Settings2, ArrowLeft, Printer, ListPlus, FileSpreadsheet, LayoutDashboard, Radar, FolderOpen, History, HardDriveDownload, AlertTriangle, MapPin, Loader2, Mail , Percent } from "lucide-react";
 import { PackagesBar, PackageBand } from "./components/PackagesBar.jsx";
-import { itemsByPackage, hasPackages, packageList, newPackage, addPackagePatch, renamePackagePatch, removePackagePatch, movePackagePatch, assignElementPatch, packageMarginPatch, computePackageTotals, packageColour, packageColourPatch, packageName, packageAssumptions, packageAssumptionsPatch } from "./lib/packages.js";
+import { itemsByPackage, hasPackages, packageList, newPackage, addPackagePatch, renamePackagePatch, removePackagePatch, movePackagePatch, assignElementPatch, packageMarginPatch, computePackageTotals, packageColour, packageColourPatch, packageName, packageAssumptions, packageAssumptionsPatch, itemsInPackages } from "./lib/packages.js";
 import { saveVersion, downloadQuoteFile, parseQuoteFile } from "./lib/quoteVersions.js";
 import { quoteStorageKey } from "./lib/projects.js";
 import VersionsModal from "./components/VersionsModal.jsx";
@@ -865,6 +865,10 @@ function ProjectEditor({ project, allProjects, rates: liveRates, setRates: setLi
   const [pkgRegOpen, setPkgRegOpen] = useState({});
   const [summaryExcluded, setSummaryExcluded] = useState(() => new Set());
   const toggleSummaryPackage = (id) => setSummaryExcluded((cur) => { const n = new Set(cur); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  // the whole-project geometry of a packaged project folds under the packages (session-only, folded on every open) and
+  // reads the TICKED packages' elements only — the packages act individually and come together by the summary ticks
+  const [projGeoOpen, setProjGeoOpen] = useState(false);
+  const tickedItems = useMemo(() => itemsInPackages(quote, items, summaryExcluded), [quote, items, summaryExcluded]);
   const addElement = (typeId) => {
     const type = elementTypes.find((t) => t.id === typeId);
     if (!type) return;
@@ -1347,15 +1351,17 @@ function ProjectEditor({ project, allProjects, rates: liveRates, setRates: setLi
           )}
           <AddElementBar onAdd={addElement} elementTypes={elementTypes} categoryOrder={categoryOrder} packages={packages} targetPackage={packages.some((p) => p.id === addInto) ? addInto : (packages[0] ? packages[0].id : "")} onTargetPackage={setAddInto} />
           <PackagesBar packages={packages} totals={packageTotals} onAdd={addPackage} quote={quote} />
-          <ProjectGeometryPanel
-            items={items}
-            rates={rates}
-            estimateGeometry={quote.estimateGeometry}
-            scope={quote.scope}
-            onChangeItem={updateItem}
-            assumptions={quote.assumptions}
-            onChangeAssumptions={(assumptions) => setQuote((q) => ({ ...q, assumptions }))}
-          />
+          {packages.length === 0 && (
+            <ProjectGeometryPanel
+              items={items}
+              rates={rates}
+              estimateGeometry={quote.estimateGeometry}
+              scope={quote.scope}
+              onChangeItem={updateItem}
+              assumptions={quote.assumptions}
+              onChangeAssumptions={(assumptions) => setQuote((q) => ({ ...q, assumptions }))}
+            />
+          )}
           {itemsByPackage(quote, items).map(({ pkg, items: group }, gi, groups) => (
             <div key={pkg ? pkg.id : "__unassigned"} className="space-y-4" data-testid="package-group" data-package={pkg ? pkg.id : ""}>
               {packages.length > 0 && (
@@ -1415,11 +1421,34 @@ function ProjectEditor({ project, allProjects, rates: liveRates, setRates: setLi
               {packages.length > 0 && pkg && isPkgOpen(pkg) && group.length === 0 && <div className="text-[12px] text-neutral-400 px-2">No elements in this package yet — add one above with this package chosen, or move one here from its card.</div>}
             </div>
           ))}
+          {packages.length > 0 && (
+            <div className="rounded-xl border border-neutral-200 bg-white shadow-sm overflow-hidden" data-testid="project-geometry-combined" data-collapsed={projGeoOpen ? "0" : "1"}>
+              <button type="button" onClick={() => setProjGeoOpen((o) => !o)} className="w-full flex items-center justify-between gap-3 px-4 py-2.5 text-left bg-neutral-900 text-white" data-band="geometry" aria-expanded={projGeoOpen} data-testid="project-geometry-fold">
+                <span className="text-xs font-semibold uppercase tracking-wide">Project geometry — whole project · {packages.length - [...summaryExcluded].filter((id) => packages.some((p) => p.id === id)).length} of {packages.length} packages</span>
+                <span className="text-[11px] text-neutral-300">{tickedItems.length} element{tickedItems.length === 1 ? "" : "s"} across the ticked packages · the project-wide assumptions {projGeoOpen ? "▴" : "▾"}</span>
+              </button>
+              {projGeoOpen && (
+                <ProjectGeometryPanel
+                  items={tickedItems}
+                  rates={rates}
+                  estimateGeometry={quote.estimateGeometry}
+                  scope={quote.scope}
+                  onChangeItem={updateItem}
+                  assumptions={quote.assumptions}
+                  onChangeAssumptions={(assumptions) => setQuote((q) => ({ ...q, assumptions }))}
+                  title="Project geometry — whole project"
+                  subtitle="The ticked packages combined — untick a package on the Quote Summary and its elements leave this panel; every package keeps its own geometry under its band"
+                  totalLabel="Project total"
+                />
+              )}
+            </div>
+          )}
           {items.length > 0 && (
             <MarginRegister
               items={items} rates={rates} quote={quote} scope={quote.scope}
               setProjectMargin={setProjectMargin} setElementMargin={setElementMargin} setRowMargin={setRowMargin}
               open={marginsOpen} onToggle={() => setMarginsOpen((o) => !o)}
+              excludedPackages={summaryExcluded}
             />
           )}
           {items.length === 0 && (
