@@ -245,6 +245,31 @@ safety net silently. Keep all cost arithmetic in `lib/costing.js`.
   rate by rate. `verify.mjs` pins the order, the units, the seeds, the retired
   behaviour and the library ↔ catalog names; `test-formwork-pattern.mjs`
   proves the library table, the move, the band and the modal.
+  **Void formers are a FORMWORK group of their own, SUPPLY per m²** (Grady,
+  4 Nov 2026: "add void formers cost as formwork with the best applicable
+  rates per square meter"): group "Void formers", between Suspended and
+  Vertical — EPS waffle pods 150 / 225 / 300 / 375 mm, honeycomb cardboard
+  void formers 50 / 75 / 100 / 125 / 150 / 200 mm, a dome (Cupolex-type) row
+  and an EPS sheet / block row. Every row is `m2` and prices the SUPPLY ex
+  GST; laying is crew-sheet labour, because the m² joins the Boxing row's
+  `lq.formworkMeasure` like every other FORMWORK m² row. The seeds come from
+  published supplier lists read on 4 Nov 2026 and are stated in the catalog
+  comment and the library's row notes: Auscon's 1090 × 1090 pod list prices
+  ($14.00 / $14.99 / $16.00 / $27.00) plus one 4-way star spacer per pod
+  ($1.65) ÷ 1.188 m² + 5 % cutting waste; Allcon's bagged 2400 × 1200
+  cardboard sheets ex GST ($61.40 / $79.80 / $79.80 / $120.50 / $131.20 /
+  $146.00) ÷ 2.88 m² + 5 % waste. No supplier publishes a dome or EPS block
+  rate, so those two rows seed $0 and SAY SO in their label ("no published
+  rate, enter the supplier's quote per m²") — never a remembered figure. The
+  Rates Library's Formwork table carries the same rows (`FORMWORK_LEGACY_ITEMS`,
+  `g: "Void formers"`, a stored library gains them through `backfill`), so
+  its figures govern Quotes through `ratesLibrarySync`; the Estimates bridge
+  does not map void formers (Estimates' "EPS / void former" is a formwork
+  SYSTEM choice that never reaches the line's material) — they are measured
+  on the card. `verify.mjs` pins the group order, the twelve rows' units and
+  seeds, the $0 labels, 120 m² of 225 pods = $1,800 and the Boxing prefill;
+  `test-void-formers.mjs` proves the band, the cost, the crew Qty, the Rates
+  modal and the library table.
 - **Add a new material product:** add a row to the relevant category's
   `products` array in `catalog.js` — `[name, unit, unitWeight, unitCost]`,
   `unitWeight`/`unitCost` are `null` if not applicable. It will
