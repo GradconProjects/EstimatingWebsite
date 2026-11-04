@@ -24,7 +24,7 @@ import { computeProjectUnitRates, money2 } from "../lib/costing.js";
 let assumptionSeq = 0;
 const newAssumptionId = () => `a${Date.now().toString(36)}${(assumptionSeq++).toString(36)}`;
 
-export default function ProjectGeometryPanel({ items, rates, estimateGeometry, onChangeItem, assumptions, onChangeAssumptions, scope }) {
+export default function ProjectGeometryPanel({ items, rates, estimateGeometry, onChangeItem, assumptions, onChangeAssumptions, scope, title, subtitle, accent, totalLabel, testId }) {
   // Elements still waiting on a length or an area — until every element has
   // one the table opens itself, so the figures are asked for rather than
   // hidden behind a fold nobody thinks to open.
@@ -93,18 +93,18 @@ export default function ProjectGeometryPanel({ items, rates, estimateGeometry, o
   const m3Total = (projectRates.find((r) => r.unit === "m³") || {}).qty || 0;
 
   return (
-    <div className="rounded-xl border border-neutral-200 bg-white shadow-sm overflow-hidden">
-      <div data-band="geometry" className="bg-amber-900 text-white px-4 py-3 flex items-center gap-3">
+    <div className="rounded-xl border border-neutral-200 bg-white shadow-sm overflow-hidden" data-testid={testId || "project-geometry"}>
+      <div data-band={accent ? undefined : "geometry"} className="bg-amber-900 text-white px-4 py-3 flex items-center gap-3" style={accent ? { background: accent } : undefined}>
         <button onClick={() => setOpen(!open)} className="text-amber-200 hover:text-white transition-colors flex-none">
           {open ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
         </button>
         <div className="flex-1 min-w-0">
-          <div className="font-semibold text-[15px]">Project Geometry — counts, lengths &amp; areas</div>
-          <div className="text-[11px] text-amber-200">Enter how many of each element, each strip/beam run&apos;s length and each slab&apos;s area here</div>
+          <div className="font-semibold text-[15px]">{title || "Project Geometry — counts, lengths & areas"}</div>
+          <div className="text-[11px] text-amber-200">{subtitle || "Enter how many of each element, each strip/beam run's length and each slab's area here"}</div>
         </div>
         <div className="text-right flex-none">
           <div className="text-[10px] uppercase tracking-widest text-amber-200">
-            {missing > 0 ? `${missing} element${missing === 1 ? "" : "s"} to measure` : "Project total"}
+            {missing > 0 ? `${missing} element${missing === 1 ? "" : "s"} to measure` : (totalLabel || "Project total")}
           </div>
           <div className="font-mono tabular-nums text-sm font-bold text-orange-300">
             {fmt(totals.no)} no. · {fmt(totals.lm)} lm · {fmt(totals.m2)} m² · {fmt(m3Total)} m³
@@ -188,7 +188,7 @@ export default function ProjectGeometryPanel({ items, rates, estimateGeometry, o
               typical detail, an access restriction priced in. They live with
               the project, print on its quote report, and are the first thing
               to check when a number is queried weeks later. */}
-          <div className="rounded-lg border border-neutral-200 bg-white p-3 space-y-2">
+          <div className={`rounded-lg border border-neutral-200 bg-white p-3 space-y-2 ${onChangeAssumptions ? "" : "hidden"}`}>
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="text-[13px] font-semibold text-neutral-800">Assumptions</div>

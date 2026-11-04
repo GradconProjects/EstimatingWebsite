@@ -3,7 +3,7 @@ import { CATEGORY_ORDER, SECTION_ORDER } from "../data/catalog.js";
 import { isDone } from "../lib/workTrail.js";
 import { computeElementCost, computeGrandTotal, computeExcludedTotals, computeProvisionalTotals, isProvisional, computeMarginLadder, money, money2, getDefaultMargin, scopeLabel, computeMarginRegister, inheritedMargin, projectMargin, pinnedMargin, marginStepsAround, elementMargin, markupFromMargin, marginFromMarkup } from "../lib/costing.js";
 import { NumInput, PctInput } from "./atoms.jsx";
-import { itemsByPackage, hasPackages, computePackageTotals, packageName } from "../lib/packages.js";
+import { itemsByPackage, hasPackages, computePackageTotals, packageName, packageColour, inkFor } from "../lib/packages.js";
 
 const pctLabel = (f) => `${Math.round((Number(f) || 0) * 1000) / 10}%`;
 
@@ -64,7 +64,7 @@ export default function QuoteSummary({
           <div key={pkg ? pkg.id : "__unassigned"} className="space-y-3" data-testid="summary-package" data-package={pkg ? pkg.id : ""}>
           {hasPkgs && (
             <div>
-              <div className="flex items-center justify-between gap-2 text-[11px] font-bold uppercase tracking-widest text-white bg-neutral-800 rounded px-2 py-1" data-band="category">
+              <div className="flex items-center justify-between gap-2 text-[11px] font-bold uppercase tracking-widest rounded px-2 py-1" style={{ background: packageColour(quote || {}, pkg), color: inkFor(packageColour(quote || {}, pkg)) }} data-testid="summary-package-head">
                 <span className="truncate">{pkg ? "Package · " : ""}{packageName(pkg)}</span>
                 <span className="font-mono tabular-nums flex-none">{money2(pt ? pt.cost : 0)}</span>
               </div>

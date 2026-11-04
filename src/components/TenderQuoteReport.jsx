@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { uid, getGstRate } from "../lib/costing.js";
 import { GRADCON_LOGO_FULL_DATA_URI } from "../lib/logo.js";
 import { newTenderQuote, seedTenderItems, computeTenderProjectSum, tenderPriceDrift, refreshTenderPrices, tenderPrefill, rolledUpItems, itemiseRolledUp, normalizeTenderItems, itemLines, itemPriceLabel, itemHasRowPrices, regroupByStage, TENDER_STAGES, stageTitle, isStageKey, printedPrice, gstSuffixOn, TENDER_LAYOUTS, tenderLayout, tenderIncludes, tenderItemsIncluded, tenderPackageBlocks, tenderProjectSumFor } from "../lib/tenderQuoteDefaults.js";
-import { packageList, hasPackages, packageName } from "../lib/packages.js";
+import { packageList, hasPackages, packageName, packageColour } from "../lib/packages.js";
 import { ELEMENT_TYPES } from "../data/catalog.js";
 import { handoverIssues } from "../lib/handover.js";
 import { tenderNoteLines } from "../lib/tenderNotes.js";
@@ -502,6 +502,7 @@ function TenderPackagesPanel({ tq, quote, items, set, onChange }) {
         {pkgs.map((p) => (
           <label key={p.id} className="flex items-center gap-2 px-2 py-1.5 text-[12.5px] cursor-pointer" data-testid="tender-package" data-package={p.id} data-on={tenderIncludes(tq, p.id) ? "1" : "0"}>
             <input type="checkbox" checked={tenderIncludes(tq, p.id)} onChange={(e) => toggle(p.id, e.target.checked)} />
+            <span className="inline-block w-2.5 h-2.5 rounded-full flex-none" style={{ background: packageColour(quote, p) }} />
             <span className={`font-medium ${tenderIncludes(tq, p.id) ? "text-neutral-800" : "text-neutral-400 line-through"}`}>{packageName(p)}</span>
             <span className="ml-auto font-mono tabular-nums text-neutral-600" data-testid="tender-package-sum">{fmtTenderPriceLocal(sumOf(p.id))}</span>
           </label>
@@ -640,7 +641,7 @@ function ReportContent({ quote, tq, items }) {
         {lineItems.length === 0 && <div className="text-neutral-500 italic">No line items yet.</div>}
         {!byPackage && <StageList items={lineItems} tq={tq} />}
         {byPackage && blocks.map((b, bi) => (
-          <div key={b.pkg ? b.pkg.id : "__general"} className="mb-3 break-inside-avoid" data-testid="print-package" data-package={b.pkg ? b.pkg.id : ""}>
+          <div key={b.pkg ? b.pkg.id : "__general"} className="mb-3 break-inside-avoid pl-2" style={{ borderLeft: `6px solid ${packageColour(quote, b.pkg)}` }} data-testid="print-package" data-package={b.pkg ? b.pkg.id : ""}>
             <div className="flex justify-between font-bold border-b border-black mb-1">
               <span>{String.fromCharCode(65 + bi)}. {b.name}</span>
               <span data-testid="print-package-sum">{printedPrice(fmtTenderPriceLocal(b.sum), tq)}</span>

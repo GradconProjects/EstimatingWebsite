@@ -19,7 +19,7 @@ import AdditionalItems from "./AdditionalItems.jsx";
  * the quote's item order (the summary rail, the print report and the
  * export all follow it), the same order QuoteSummary's own drag edits.
  */
-export default function ElementCard({ item, rates, onChange, onRemove, onDuplicate, onLabourRateChange, onMaterialRateChange, onMoveUp, onMoveDown, onReorder, projectScope , handover, onPickFromDrive, rateChanges, onRfq, packages = [], onAssignPackage }) {
+export default function ElementCard({ item, rates, onChange, onRemove, onDuplicate, onLabourRateChange, onMaterialRateChange, onMoveUp, onMoveDown, onReorder, projectScope , handover, onPickFromDrive, rateChanges, onRfq, packages = [], onAssignPackage, packageColour }) {
   // who is typing (lib/workTrail.js): every figure entered records the
   // signed-in account, so Grady's own entries read in his colour
   const me = userKey(signedInUser());
@@ -312,6 +312,8 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
       className={`rounded-xl border shadow-sm overflow-hidden flex-1 min-w-0 flex flex-col ${isDone(item) ? "border-emerald-400" : "border-neutral-200"} ${
         cardOpen ? "bg-white" : "bg-blue-950"
       }`}
+      style={packageColour ? { borderLeft: `6px solid ${packageColour}` } : undefined}
+      data-package-colour={packageColour || undefined}
     >
       <div
         className={`bg-blue-950 text-white px-4 py-2.5 flex flex-1 items-center gap-3 ${dragOver ? "ring-2 ring-inset ring-orange-400" : ""}`}
@@ -346,6 +348,7 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
             </div>
             {packages.length > 0 && onAssignPackage && (
               <label className="flex-none flex items-center gap-1 text-[10px] uppercase tracking-widest text-blue-400" onClick={(e) => e.stopPropagation()} title="The package this element belongs to — the package sums add up to the project, and the Tender Quote can price them apart (lib/packages.js)">
+                {packageColour && <span className="inline-block w-2.5 h-2.5 rounded-full flex-none" style={{ background: packageColour }} />}
                 <span>Package</span>
                 <select
                   value={packages.some((p) => p.id === item.packageId) ? item.packageId : ""}

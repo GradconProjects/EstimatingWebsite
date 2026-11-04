@@ -11,20 +11,26 @@
 import { useMemo } from "react";
 import { computeMarginRegister, projectMargin, pinnedMargin, getDefaultMargin, money, money2, markupFromMargin, marginFromMarkup } from "../lib/costing.js";
 import { PctInput } from "./atoms.jsx";
-import { packageList } from "../lib/packages.js";
+import { packageList, packageMargin, packageName, packageColour, inkFor } from "../lib/packages.js";
 
 const pctLabel = (f) => `${Math.round((Number(f) || 0) * 1000) / 10}%`;
 const SOURCE_LABEL = { project: "project", element: "element · pinned", row: "row · pinned", package: "package · pinned" };
 
-export default function MarginRegister({ items, rates, quote, scope, setProjectMargin, setElementMargin, setRowMargin, open, onToggle }) {
+export default function MarginRegister({ items, rates, quote, scope, setProjectMargin, setElementMargin, setRowMargin, open, onToggle, pkg = null, setPackageMargin }) {
   const reg = useMemo(() => computeMarginRegister(items, rates, quote || {}, scope), [items, rates, quote, scope]);
-  const pm = projectMargin(quote || {});
+  // a PACKAGE's own register (lib/packages.js, 4 Nov 2026): its lines only, its overall rate = the package margin
+  // (blank = the project's), written back onto the package — the project's register stays the whole quote
+  const projectPm = projectMargin(quote || {});
+  const pm = pkg ? packageMargin(quote || {}, pkg) : projectPm;
+  const setOverall = pkg ? (v) => setPackageMargin && setPackageMargin(pkg.id, v) : setProjectMargin;
+  const overallPinned = pkg ? pinnedMargin(pkg.marginPct) != null : pinnedMargin(quote && quote.marginPct) != null;
+  const band = pkg ? { background: packageColour(quote, pkg), color: inkFor(packageColour(quote, pkg)) } : undefined;
   const t = reg.totals;
   const pkgNameOf = (id) => { const p = packageList(quote).find((x) => x.id === id); return p ? (p.name || "Package") : ""; };
   return (
-    <div className="rounded-xl border border-neutral-200 bg-white shadow-sm overflow-hidden print:hidden" data-testid="margin-register" id="margin-register">
-      <button type="button" onClick={onToggle} className="w-full flex items-center justify-between gap-3 px-4 py-2.5 text-left bg-neutral-900 text-white" data-band="summary" data-testid="margin-register-toggle" aria-expanded={open}>
-        <span className="text-xs font-semibold uppercase tracking-wide">Margin register</span>
+    <div className="rounded-xl border border-neutral-200 bg-white shadow-sm overflow-hidden print:hidden" data-testid={pkg ? "package-margin-register" : "margin-register"} id={pkg ? `margin-register-${pkg.id}` : "margin-register"} data-package={pkg ? pkg.id : undefined}>
+      <button type="button" onClick={onToggle} className="w-full flex items-center justify-between gap-3 px-4 py-2.5 text-left bg-neutral-900 text-white" data-band={pkg ? undefined : "summary"} style={band} data-testid="margin-register-toggle" aria-expanded={open}>
+        <span className="text-xs font-semibold uppercase tracking-wide">Margin register{pkg ? ` — ${packageName(pkg)}` : ""}</span>
         <span className="text-[12px] font-mono tabular-nums text-neutral-300">
           overall <b className="text-white">{pctLabel(pm)}</b> · blended <b className="text-white" data-testid="margin-register-blended">{pctLabel(t.blended)}</b> · sell <b className="text-orange-300">{money(t.sell)}</b> ex GST {reg.pinned > 0 && <span className="text-amber-300">· {reg.pinned} pinned</span>} <span className="ml-2 text-neutral-400">{open ? "▴" : "▾"}</span>
         </span>
@@ -33,12 +39,12 @@ export default function MarginRegister({ items, rates, quote, scope, setProjectM
         <div className="p-3 space-y-3">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[12px]">
             <label className="flex items-center gap-2">
-              <span className="font-semibold text-neutral-700">Overall rate</span>
-              <PctInput value={pm} onChange={(v) => setProjectMargin(v)} className="!w-16" title="The project margin — every line not pinned follows it" data-testid="margin-register-overall" />
+              <span className="font-semibold text-neutral-700">{pkg ? "Package rate" : "Overall rate"}</span>
+              <PctInput value={pm} onChange={(v) => setOverall(v)} className="!w-16" title={pkg ? "This package's margin — its lines not pinned follow it; clear it to follow the project margin" : "The project margin — every line not pinned follows it"} data-testid="margin-register-overall" />
               <span className="text-neutral-400">= markup</span>
-              <PctInput value={markupFromMargin(pm)} max={900} onChange={(v) => setProjectMargin(v === undefined ? undefined : marginFromMarkup(v))} className="!w-16" title="The same figure as a markup on cost — typing here sets the margin" data-testid="margin-register-overall-markup" />
-              {pinnedMargin(quote && quote.marginPct) != null && (
-                <button type="button" className="text-neutral-400 hover:text-neutral-700" title={`Back to the Settings default ${pctLabel(getDefaultMargin())}`} onClick={() => setProjectMargin(undefined)}>↺ default</button>
+              <PctInput value={markupFromMargin(pm)} max={900} onChange={(v) => setOverall(v === undefined ? undefined : marginFromMarkup(v))} className="!w-16" title="The same figure as a markup on cost — typing here sets the margin" data-testid="margin-register-overall-markup" />
+              {overallPinned && (
+                <button type="button" className="text-neutral-400 hover:text-neutral-700" title={pkg ? `Back to the project margin ${pctLabel(projectPm)}` : `Back to the Settings default ${pctLabel(getDefaultMargin())}`} onClick={() => setOverall(undefined)}>↺ default</button>
               )}
             </label>
             <span className="text-neutral-500">Own work {money(reg.byClass.own.loaded)} at {reg.byClass.own.margin == null ? "—" : pctLabel(reg.byClass.own.margin)} → {money(reg.byClass.own.sell)}</span>
@@ -94,7 +100,7 @@ export default function MarginRegister({ items, rates, quote, scope, setProjectM
               </tbody>
               <tfoot>
                 <tr className="border-t-2 border-neutral-800 font-semibold">
-                  <td className="px-2 py-1.5">Whole quote</td>
+                  <td className="px-2 py-1.5">{pkg ? `Whole package — ${packageName(pkg)}` : "Whole quote"}</td>
                   <td className="px-2 py-1.5 text-right font-mono tabular-nums">{money2(t.cost)}</td>
                   <td className="px-2 py-1.5 text-right font-mono tabular-nums">{money2(t.loaded)}</td>
                   <td className="px-2 py-1.5 text-right font-mono tabular-nums" data-testid="margin-register-blended-cell">{pctLabel(t.blended)}</td>

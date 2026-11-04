@@ -4,7 +4,7 @@ import {
 import { markupSrc } from "../lib/markupStore.js";
 import {
   computeElementCost, computeGrandTotal, computeMarginLadder, computeMarginRegister, projectMargin, marginStepsAround, rateKey, rowRate, computeRowTotal, rowContext, money, money2, getDefaultMargin, getMarginSteps, autoSoilRemoval, autoBlindingConcrete, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, additionalRowsFor, additionalRowTotal, autoSpecialistFees, categoryAppliesTo, computeExcludedTotals, categoryChargedUnder, scopeLabel, isProvisional, computeProvisionalTotals, isBlindingProduct, blindingIncluded } from "../lib/costing.js";
-import { itemsByPackage, hasPackages, computePackageTotals, packageName } from "../lib/packages.js";
+import { itemsByPackage, hasPackages, computePackageTotals, packageName, packageColour, inkFor } from "../lib/packages.js";
 import { GRADCON_LOGO_DATA_URI } from "../lib/logo.js";
 
 /**
@@ -109,7 +109,7 @@ function ReportContent({ quote, items, rates, categoryOrder, sectionOrder }) {
       {pkgGroups.map(({ pkg, items: gitems }) => { const pt = pkgTotals.find((t) => t.id === (pkg ? pkg.id : null)); return (
       <div key={pkg ? pkg.id : "__unassigned"} className="mb-3" data-testid="print-package-group" data-package={pkg ? pkg.id : ""}>
       {hasPkgs && (
-        <div className="flex justify-between text-sm font-bold bg-black text-white px-2 py-1 mb-2">
+        <div className="flex justify-between text-sm font-bold px-2 py-1 mb-2" style={{ background: packageColour(quote, pkg), color: inkFor(packageColour(quote, pkg)), borderLeft: `8px solid ${packageColour(quote, pkg)}` }}>
           <span>{pkg ? "PACKAGE — " : ""}{packageName(pkg).toUpperCase()}</span>
           <span>{money2(pt ? pt.cost : 0)}</span>
         </div>

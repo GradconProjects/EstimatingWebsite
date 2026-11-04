@@ -101,3 +101,28 @@ export function computePackageTotals(quote, items, rates, projectScope) {
     return { id: pkg ? pkg.id : null, name: packageName(pkg), pkg, count: group.length, cost, loaded, sell, provisional, margin: sell > 0 ? 1 - loaded / sell : packageMargin(q, pkg) };
   });
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// Colour-coded packages (Grady, 4 Nov 2026: "COLOUR CODED THE differenct packages"): every package has a colour —
+// its own `colour` (#rrggbb, picked on the band) or, unset, the palette entry for its position — read everywhere the
+// package is shown: the band, the chip, the left edge of its element cards, the rail header, the tender panel and the
+// prints. `inkFor` picks black or white text for legibility on it.
+export const PACKAGE_COLOURS = ["#1d4ed8", "#0f766e", "#b45309", "#7c3aed", "#be123c", "#4d7c0f", "#0e7490", "#9f1239"];
+export const UNASSIGNED_COLOUR = "#525252";
+export const isHexColour = (v) => /^#[0-9a-fA-F]{6}$/.test(String(v || ""));
+export function packageColour(quote, pkg) {
+  if (!pkg) return UNASSIGNED_COLOUR;
+  if (isHexColour(pkg.colour)) return pkg.colour.toLowerCase();
+  const i = packageList(quote).findIndex((p) => p.id === pkg.id);
+  return PACKAGE_COLOURS[(i < 0 ? 0 : i) % PACKAGE_COLOURS.length];
+}
+/** Black or white text for a background colour (WCAG relative luminance). */
+export function inkFor(hex) {
+  if (!isHexColour(hex)) return "#ffffff";
+  const c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+  const lum = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+  return lum > 0.179 ? "#111111" : "#ffffff";
+}
+export function packageColourPatch(quote, id, hex) {
+  return { packages: packageList(quote).map((p) => { if (p.id !== id) return p; const { colour, ...rest } = p; return isHexColour(hex) ? { ...rest, colour: String(hex).toLowerCase() } : rest; }) };
+}

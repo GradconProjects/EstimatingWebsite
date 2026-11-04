@@ -797,6 +797,45 @@ said "go ahead". `src/lib/packages.js` (pure, verify-covered). Rules:
    sum`), "N of M on this tender"; the print's by-package blocks are
    `print-package` with `print-package-sum`. Seeding, placement, reword,
    drift and refresh are unchanged — they work on the stored stage items.
+6. **Every package is COLOUR-CODED, folds, and carries its own geometry and
+   margin register** (Grady, 4 Nov 2026: "COLOUR CODED THE differenct
+   packages and let the packages have their own margin register seperate
+   from the main and also they should have their own project geometry, the
+   packages headers should have foldable row height larger thna the elements
+   row height"): `packageColour(quote, pkg)` is the ONE reading — the
+   package's own `colour` (#rrggbb, the band's colour picker
+   `package-colour`, `packageColourPatch`; a bad value clears it) else
+   `PACKAGE_COLOURS[position]` (eight distinct hues), `UNASSIGNED_COLOUR`
+   grey for the null group — and `inkFor(hex)` picks black or white text by
+   WCAG luminance (cut 0.179, so a mid orange reads in black). The colour
+   paints the band (`data-colour`), the chip's border and dot, the LEFT EDGE
+   of every card in the package (`ElementCard` prop `packageColour` →
+   `data-package-colour`, a 6 px border and a dot beside the Package
+   select), the rail header (`summary-package-head`), the tender panel's
+   dots and the by-package print blocks' left edge, and the print report's
+   package band. **The band is taller than an element's band** (`min-h-[6rem]`
+   ≈ 96 px against the card's two-row ≈ 81 px, the name at 22 px) and
+   **folds** (`package-fold` chevron, `data-collapsed`; App's `foldedPkgs`
+   is session-only): folded, the group shows the band alone with "· folded"
+   on its totals — its cards, geometry and register are unmounted, every
+   figure untouched. **Each package has its own Project Geometry panel**
+   (`ProjectGeometryPanel` with `items` = the package's elements, `title`
+   "Package geometry — <name>", `accent` = the colour, `totalLabel`
+   "Package total", `testId` "package-geometry"; no assumptions — those stay
+   on the project's panel at the top, whose block is `hidden` when
+   `onChangeAssumptions` is not passed) and **its own Margin Register**
+   (`MarginRegister` with `pkg` and `setPackageMargin`:
+   `package-margin-register`, id `margin-register-<pkgId>`, title "Margin
+   register — <name>", the band in the package colour, its lines only, the
+   "Package rate" box = `packageMargin` written onto the PACKAGE (↺ back to
+   the project margin), "Whole package — <name>" footer; App's `pkgRegOpen`
+   is session-only) — the project's register at the foot stays the whole
+   quote. `verify.mjs` covers the palette, the picked colour, the ink and the
+   patch; `test-packages.mjs` proves the colours on band / cards / chip /
+   rail, a picked #ff8800 with dark ink surviving a reload, the band taller
+   than the card's, the two geometry panels, the pool's own register (its
+   line, Package rate 10%, typing 12% moving the package not the project)
+   and the fold.
 `verify.mjs` covers the patches, the grouping, the chain (a package pin
 inherited, an element pin beating it, a row pin beating that), the totals
 adding up, and the tender's two layouts with a package left out;
