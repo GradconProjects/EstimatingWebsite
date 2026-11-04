@@ -490,6 +490,25 @@ export const FULL_CATALOG = [
     { name: "Conventional", unit: "m2", unitCost: 200, group: "Suspended", label: "Conventional (soffit)" },
     { name: "Bondek", unit: "m2", unitCost: 150, group: "Suspended" },
     { name: "Edgeform (suspended)", unit: "m", unitCost: 50, group: "Suspended" },
+    // Void formers (Grady, 4 Nov 2026: "add void formers cost as formwork with the best applicable rates per square
+    // meter"): SUPPLY per m² of void former, ex GST — laying is crew-sheet labour (the m² joins the Boxing row's
+    // lq.formworkMeasure like every other FORMWORK m² row). Seeds from published Australian supplier lists read on
+    // 4 Nov 2026: EPS waffle pods 1090 × 1090 (1.188 m² each) at Auscon's list ($14.00 / $14.99 / $16.00 / $27.00)
+    // plus one 4-way star spacer per pod ($1.65) and 5 % cutting waste; honeycomb cardboard void formers 2400 × 1200
+    // (2.88 m² each, bagged) at Allcon's ex-GST list ($61.40 / $79.80 / $79.80 / $120.50 / $131.20 / $146.00) plus
+    // 5 % cutting waste. No supplier publishes a dome (Cupolex-type) or EPS block rate — those rows say so and seed $0.
+    { name: "Waffle pod 150mm", unit: "m2", unitCost: 14, group: "Void formers", label: "Waffle pod 150 mm — EPS, supply per m² of pods" },
+    { name: "Waffle pod 225mm", unit: "m2", unitCost: 15, group: "Void formers", label: "Waffle pod 225 mm — EPS, supply per m² of pods" },
+    { name: "Waffle pod 300mm", unit: "m2", unitCost: 16, group: "Void formers", label: "Waffle pod 300 mm — EPS, supply per m² of pods" },
+    { name: "Waffle pod 375mm", unit: "m2", unitCost: 26, group: "Void formers", label: "Waffle pod 375 mm — EPS, supply per m² of pods" },
+    { name: "Cardboard void former 50mm", unit: "m2", unitCost: 23, group: "Void formers", label: "Cardboard void former 50 mm — bagged, supply per m²" },
+    { name: "Cardboard void former 75mm", unit: "m2", unitCost: 30, group: "Void formers", label: "Cardboard void former 75 mm — bagged, supply per m²" },
+    { name: "Cardboard void former 100mm", unit: "m2", unitCost: 30, group: "Void formers", label: "Cardboard void former 100 mm — bagged, supply per m²" },
+    { name: "Cardboard void former 125mm", unit: "m2", unitCost: 44, group: "Void formers", label: "Cardboard void former 125 mm — bagged, supply per m²" },
+    { name: "Cardboard void former 150mm", unit: "m2", unitCost: 48, group: "Void formers", label: "Cardboard void former 150 mm — bagged, supply per m²" },
+    { name: "Cardboard void former 200mm", unit: "m2", unitCost: 54, group: "Void formers", label: "Cardboard void former 200 mm — bagged, supply per m²" },
+    { name: "Dome void former (Cupolex-type)", unit: "m2", unitCost: 0, group: "Void formers", label: "Dome void former (Cupolex-type) — no published rate, enter the supplier's quote per m²" },
+    { name: "EPS void former block", unit: "m2", unitCost: 0, group: "Void formers", label: "EPS void former sheet / block — no published rate, enter the supplier's quote per m²" },
     { name: "Walls", unit: "m2", unitCost: 250, group: "Vertical" },
     { name: "Walls Curved", unit: "m2", unitCost: 350, group: "Vertical" },
     { name: "Columns (eg 300x300)", unit: "each", unitCost: 1500, group: "Vertical" },

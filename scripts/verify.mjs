@@ -97,10 +97,10 @@ check("every element type has both a category and a section", () => {
   });
 });
 
-check("20 material categories, 387 products (incl. the 17-row FINISHED PAVEMENTS & CONCRETE FINISHES band, the 45-row SAW CUTS & DOWELS band, CONCRETE PUMPING, REINFORCEMENT BY RATE, the 32-board INSULATION range, 31 SCREEDS, 17 HYDRONIC HEATING, 48 SPECIALIST FINISHING CONCRETE, 45 PRELIMINARIES, the full 24-size TRENCH MESH grid, Bored Piers subcontract, minimum cartage, levy, surcharge)", () => {
+check("20 material categories, 399 products (incl. the 12-row Void formers group of FORMWORK, the 17-row FINISHED PAVEMENTS & CONCRETE FINISHES band, the 45-row SAW CUTS & DOWELS band, CONCRETE PUMPING, REINFORCEMENT BY RATE, the 32-board INSULATION range, 31 SCREEDS, 17 HYDRONIC HEATING, 48 SPECIALIST FINISHING CONCRETE, 45 PRELIMINARIES, the full 24-size TRENCH MESH grid, Bored Piers subcontract, minimum cartage, levy, surcharge)", () => {
   assert.equal(FULL_CATALOG.length, 20);
   const total = FULL_CATALOG.reduce((s, c) => s + c.products.length, 0);
-  assert.equal(total, 387);
+  assert.equal(total, 399);
   const pre = FULL_CATALOG.find((c) => c.key === "PRELIMINARIES");
   assert.equal(pre.products.length, 45);
   assert.ok(!pre.weightBasis && !pre.areaBasis && !pre.lengthBasis && !pre.volumeRateBasis, "preliminaries cost plain qty × rate");
@@ -1198,7 +1198,15 @@ check("Import: wall formwork area maps to Walls; other m² formwork maps to Conv
 await checkAsync("FORMWORK follows the 22 Oct 2026 pattern: application groups in order, the depth-split edgeform, the three suspended rates, the retired beam/fold and per-day scaffold rows costing only where carried, the library's table matching name for name", async () => {
   const cat = FULL_CATALOG.find((c) => c.key === "FORMWORK");
   const live = cat.products.filter((p) => !p.legacy), retired = cat.products.filter((p) => p.legacy);
-  assert.deepEqual([...new Set(live.map((p) => p.group))], ["Ground slabs", "Suspended", "Vertical", "Other"], "the application order");
+  assert.deepEqual([...new Set(live.map((p) => p.group))], ["Ground slabs", "Suspended", "Void formers", "Vertical", "Other"], "the application order");
+  // void formers (4 Nov 2026): supply per m², every row m², the pods and the cardboard thicknesses priced, the two unpublished rows at $0 and saying so
+  const voids = live.filter((p) => p.group === "Void formers");
+  assert.ok(voids.every((p) => p.unit === "m2"), "every void former is per m²");
+  assert.deepEqual(voids.map((p) => [p.name, p.unitCost]), [["Waffle pod 150mm", 14], ["Waffle pod 225mm", 15], ["Waffle pod 300mm", 16], ["Waffle pod 375mm", 26], ["Cardboard void former 50mm", 23], ["Cardboard void former 75mm", 30], ["Cardboard void former 100mm", 30], ["Cardboard void former 125mm", 44], ["Cardboard void former 150mm", 48], ["Cardboard void former 200mm", 54], ["Dome void former (Cupolex-type)", 0], ["EPS void former block", 0]]);
+  assert.ok(voids.filter((p) => p.unitCost === 0).every((p) => /no published rate/.test(productLabel(p))), "an unpriced void former says so in its label");
+  const podded = newElementItem(ELEMENT_TYPES[0]); podded.qtys[rateKey("FORMWORK", "Waffle pod 225mm", "m2")] = 120;
+  assert.equal(computeElementCost(podded, defaultRates(), "both").categoryTotals.FORMWORK, 120 * 15, "120 m² of 225 pods at $15");
+  assert.equal(labourQuantities(podded, defaultRates()).formworkMeasure, 120, "the void former m² feeds the crew sheet's Boxing row");
   const byName = (n) => cat.products.find((p) => p.name === n);
   assert.deepEqual([byName("Edgeform").unit, byName("Edgeform").unitCost, byName("Edgeform").group], ["m", 25, "Ground slabs"], "ground-slab edgeform up to 400 mm: lineal metres at $25");
   assert.deepEqual([byName("Edgeform >400mm deep").unit, byName("Edgeform >400mm deep").unitCost], ["m2", 250]);
