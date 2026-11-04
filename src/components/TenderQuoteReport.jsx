@@ -707,10 +707,10 @@ function ReportContent({ quote, tq, items }) {
         </div>
       )}
 
-      {tenderNoteLines(quote, tq.tenderNotes).all.length > 0 && (
+      {tenderNoteLines(quote, tq.tenderNotes, { excludePackages: packageList(quote).filter((p) => !tenderIncludes(tq, p.id)).map((p) => p.id) }).all.length > 0 && (
         <div className="mb-3 break-inside-avoid" data-testid="tender-notes-print">
           <div className="font-bold mb-1">Tender Notes: <span className="font-normal italic">(information missing from documentation, discrepancies, assumptions etc.)</span></div>
-          <Bullets text={tenderNoteLines(quote, tq.tenderNotes).all.join("\n")} />
+          <Bullets text={tenderNoteLines(quote, tq.tenderNotes, { excludePackages: packageList(quote).filter((p) => !tenderIncludes(tq, p.id)).map((p) => p.id) }).all.join("\n")} />
         </div>
       )}
 

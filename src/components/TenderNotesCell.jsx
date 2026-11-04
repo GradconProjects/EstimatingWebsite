@@ -55,7 +55,7 @@ export default function TenderNotesCell({ quote, value, onChange, onChangeAssump
         <div className="px-2 pt-1.5 pb-1 bg-amber-50/60 border-b border-neutral-200">
           <div className="flex items-start justify-between gap-2 mb-0.5">
             <div className="text-[10px] uppercase tracking-wide text-neutral-500 font-semibold">
-              From the project&apos;s Assumptions <span className="normal-case tracking-normal font-normal">— live; edit them under Project Geometry</span>
+              From the project&apos;s Assumptions <span className="normal-case tracking-normal font-normal">— live; edit them under Project Geometry (a package&apos;s under its own geometry panel)</span>
               {reworded > 0 && (
                 <span className="normal-case tracking-normal font-normal ml-1" data-testid="tender-wording-state">
                   · {reworded} in tender wording{stale > 0 ? <span className="text-amber-700 font-semibold"> · {stale} changed since — reword again</span> : null}

@@ -836,6 +836,49 @@ said "go ahead". `src/lib/packages.js` (pure, verify-covered). Rules:
    than the card's, the two geometry panels, the pool's own register (its
    line, Package rate 10%, typing 12% moving the package not the project)
    and the fold.
+7. **A project opens on its package rows alone, and the rail picks which
+   packages the summary counts** (Grady, 4 Nov 2026: "individual package
+   geometry and margin register should fold under the corresponding package
+   and should always default to folded when the project is opened … upon
+   opening only the packages should be visible … grand total summary on the
+   right should have check boxes to include packages in the summary or to
+   exclude them"): App's `openPkgs` (a Set of package ids, session-only,
+   EMPTY on every open — `isPkgOpen(pkg)`, the unassigned group is always
+   open) is the ONE fold state; a folded package renders its band alone, and
+   its geometry panel, cards, margin register and empty-package note are
+   unmounted until the chevron (`package-fold`) opens it. `openPkg(id)` opens
+   a package the moment work goes into it — `addPackage`, `assignPackage`
+   (the card's Package select) and `addElement` into it — so a new element
+   is never hidden. The Quote Summary rail carries a tick on every package
+   header (`summary-package-include`, `data-included` on `summary-package`;
+   App's `summaryExcluded` Set + `toggleSummaryPackage`, session-only,
+   never saved): an unticked package leaves `summaryItems` — the rail's
+   grand total, the provisional and scope figures, the margin ladder and
+   the blended strip all read the ticked packages only, the grand-total
+   label says "N of M packages" and `summary-packages-excluded` names the
+   packages left out. Nothing else changes: the cards, the print report,
+   the exports, the tender and the Dashboard still carry every package.
+   **The package name input carries no underline** (same day: "cut the
+   underline under the package names" — `border-0`, a focus ring instead).
+8. **Every package carries its own assumptions** (Grady, 4 Nov 2026:
+   "package geometries for all should have their own assumptions logic
+   too"): `pkg.assumptions = [{id, text, tenderText?, tenderSource?}]`, the
+   same shape as `quote.assumptions`; `packageAssumptions(pkg)` and
+   `packageAssumptionsPatch(quote, id, list)` in `packages.js` are the ONE
+   reading and write. The package's geometry panel shows them under
+   "Assumptions — <package>" (`ProjectGeometryPanel` props
+   `assumptionsTitle` / `assumptionsNote`, `assumptions-title` test id; App
+   passes `packageAssumptions(pkg)` and `setPackageAssumptions`), the print
+   report prints them under the package's subtotal in the package colour
+   (`print-package-assumptions`), and `assumptionNoteItems(quote, {
+   excludePackages })` in `tenderNotes.js` appends them AFTER the project's
+   assumptions, each line prefixed "<Package>: " and carrying `packageId` /
+   `packageName`, so the Tender Notes of both quote reports carry them live;
+   the Tender Quote passes the packages unticked on that tender as
+   `excludePackages`, so a package left out of the tender takes its
+   assumptions with it (the External Quote carries every package). The
+   project-wide assumptions stay on the Project Geometry panel at the top;
+   the "Reword for tender" review still rewords the project's list only.
 `verify.mjs` covers the patches, the grouping, the chain (a package pin
 inherited, an element pin beating it, a row pin beating that), the totals
 adding up, and the tender's two layouts with a package left out;

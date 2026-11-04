@@ -24,7 +24,7 @@ import { computeProjectUnitRates, money2 } from "../lib/costing.js";
 let assumptionSeq = 0;
 const newAssumptionId = () => `a${Date.now().toString(36)}${(assumptionSeq++).toString(36)}`;
 
-export default function ProjectGeometryPanel({ items, rates, estimateGeometry, onChangeItem, assumptions, onChangeAssumptions, scope, title, subtitle, accent, totalLabel, testId }) {
+export default function ProjectGeometryPanel({ items, rates, estimateGeometry, onChangeItem, assumptions, onChangeAssumptions, scope, title, subtitle, accent, totalLabel, testId, assumptionsTitle, assumptionsNote }) {
   // Elements still waiting on a length or an area — until every element has
   // one the table opens itself, so the figures are asked for rather than
   // hidden behind a fold nobody thinks to open.
@@ -191,10 +191,9 @@ export default function ProjectGeometryPanel({ items, rates, estimateGeometry, o
           <div className={`rounded-lg border border-neutral-200 bg-white p-3 space-y-2 ${onChangeAssumptions ? "" : "hidden"}`}>
             <div className="flex items-start justify-between gap-3">
               <div>
-                <div className="text-[13px] font-semibold text-neutral-800">Assumptions</div>
+                <div className="text-[13px] font-semibold text-neutral-800" data-testid="assumptions-title">{assumptionsTitle || "Assumptions"}</div>
                 <p className="text-xs text-neutral-500 max-w-3xl">
-                  What this estimate assumes — anything read off a drawing rather than dimensioned, taken on the
-                  builder&apos;s word, or allowed for without a documented scope. These print on the quote report.
+                  {assumptionsNote || "What this estimate assumes — anything read off a drawing rather than dimensioned, taken on the builder's word, or allowed for without a documented scope. These print on the quote report."}
                 </p>
               </div>
               <button

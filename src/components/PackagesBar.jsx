@@ -56,7 +56,7 @@ export function PackageBand({ pkg, quote, totals, index, count, onRename, onRemo
       {onToggle && <button type="button" onClick={onToggle} className="flex-none p-0.5 rounded hover:bg-black/10" title={collapsed ? "Unfold this package" : "Fold this package"} aria-label={collapsed ? "Unfold package" : "Fold package"} aria-expanded={!collapsed} data-testid="package-fold">{collapsed ? <ChevronRight size={20} /> : <ChevronDown size={20} />}</button>}
       <span className="text-[10px] uppercase tracking-widest font-semibold flex-none" style={{ color: faint }}>{pkg ? "Package" : "Unassigned"}</span>
       {pkg
-        ? <input value={pkg.name || ""} onChange={(e) => onRename(e.target.value)} placeholder="Package name" className="flex-1 min-w-[10rem] bg-transparent border-b border-current/40 focus:border-current focus:outline-none font-bold text-[22px] placeholder:opacity-60" style={{ color: ink }} aria-label="Package name" data-testid="package-name" />
+        ? <input value={pkg.name || ""} onChange={(e) => onRename(e.target.value)} placeholder="Package name" className="flex-1 min-w-[10rem] bg-transparent border-0 focus:outline-none focus:ring-1 focus:ring-current/40 rounded px-1 -mx-1 font-bold text-[22px] placeholder:opacity-60" style={{ color: ink }} aria-label="Package name" data-testid="package-name" />
         : <span className="flex-1 min-w-[10rem] text-[13px]" style={{ color: faint }}>elements not in any package — pick one on each card</span>}
       {totals && (
         <span className="flex-none text-[12.5px] font-mono tabular-nums" style={{ color: faint }} title="Elements · direct cost · sell ex GST at the package's margins" data-testid="package-totals">

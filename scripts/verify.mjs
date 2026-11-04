@@ -4149,6 +4149,14 @@ await checkAsync("Packages (lib/packages.js, costing.js inheritedMargin, tenderQ
   assert.ok(!("colour" in P.packageColourPatch(qc, pool.id, "red").packages[1]), "a bad value clears the colour"); assert.equal(P.isHexColour("#abc"), false);
   assert.equal(P.inkFor("#ff8800"), "#111111"); assert.equal(P.inkFor("#1d4ed8"), "#ffffff"); assert.equal(P.inkFor("#ffffff"), "#111111"); assert.equal(P.inkFor("#000000"), "#ffffff"); assert.equal(P.inkFor("nope"), "#ffffff");
   assert.ok(P.PACKAGE_COLOURS.every(P.isHexColour) && new Set(P.PACKAGE_COLOURS).size === P.PACKAGE_COLOURS.length, "a palette of distinct hex colours");
+  // package assumptions: on the package, the tender notes carry them after the project's, prefixed; an unticked package's leave
+  const TN = await import("../src/lib/tenderNotes.js");
+  const qa = { ...q, assumptions: [{ id: "a1", text: "Spoil to be carted by others" }], ...P.packageAssumptionsPatch(q, pool.id, [{ id: "pa1", text: "Pool shell to engineer's detail" }, { id: "pa2", text: "   " }]) };
+  assert.deepEqual(P.packageAssumptions(qa.packages[1]).map((a) => a.id), ["pa1", "pa2"]); assert.deepEqual(P.packageAssumptions(qa.packages[0]), []);
+  assert.deepEqual(TN.assumptionLines(qa), ["Spoil to be carted by others", "Pool & surrounds: Pool shell to engineer's detail"], "the project's first, the package's prefixed, the blank dropped");
+  assert.deepEqual(TN.assumptionNoteItems(qa).map((a) => [a.id, a.packageId]), [["a1", null], ["pa1", pool.id]]);
+  assert.deepEqual(TN.assumptionLines(qa, { excludePackages: [pool.id] }), ["Spoil to be carted by others"], "an unticked package's assumptions leave the notes");
+  assert.deepEqual(TN.tenderNoteLines(qa, "Pool & surrounds: Pool shell to engineer's detail\nAccess from the lane").all, ["Spoil to be carted by others", "Pool & surrounds: Pool shell to engineer's detail", "Access from the lane"], "a typed repeat of a package line prints once");
   // a project without packages reads exactly as before
   const plain = { ...q, packages: [], items: r2.items };
   assert.deepEqual(T.tenderItemsIncluded(tq, plain, plain.items), T.normalizeTenderItems(tq.items));

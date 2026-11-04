@@ -3,7 +3,7 @@ import { CATEGORY_ORDER, SECTION_ORDER } from "../data/catalog.js";
 import { isDone } from "../lib/workTrail.js";
 import { computeElementCost, computeGrandTotal, computeExcludedTotals, computeProvisionalTotals, isProvisional, computeMarginLadder, money, money2, getDefaultMargin, scopeLabel, computeMarginRegister, inheritedMargin, projectMargin, pinnedMargin, marginStepsAround, elementMargin, markupFromMargin, marginFromMarkup } from "../lib/costing.js";
 import { NumInput, PctInput } from "./atoms.jsx";
-import { itemsByPackage, hasPackages, computePackageTotals, packageName, packageColour, inkFor } from "../lib/packages.js";
+import { itemsByPackage, hasPackages, computePackageTotals, packageName, packageColour, inkFor, packageList } from "../lib/packages.js";
 
 const pctLabel = (f) => `${Math.round((Number(f) || 0) * 1000) / 10}%`;
 
@@ -11,12 +11,18 @@ export default function QuoteSummary({
   items, onReorder, rates, categoryOrder = CATEGORY_ORDER, sectionOrder = SECTION_ORDER,
   gfa, setGfa, overheadPct, setOverheadPct, contingencyPct, setContingencyPct, scope,
   quote, setProjectMargin, setElementMargin, setRowMargin, setPackageMargin, requestAdvice,
+  excludedPackages = null, onToggleSummaryPackage,
 }) {
+  // The rail's include ticks (Grady, 4 Nov 2026: "grand total summary on the right should have check boxes to include
+  // packages in the summary or to exclude them"): an unticked package stays listed, greyed, but its elements leave the
+  // grand total, the provisional / scope figures, the ladder and the register below. A view, never saved.
+  const isPkgIn = (pkgId) => !(pkgId && excludedPackages && excludedPackages.has(pkgId));
+  const summaryItems = useMemo(() => (excludedPackages && excludedPackages.size ? items.filter((it) => isPkgIn(it.packageId)) : items), [items, excludedPackages]); // eslint-disable-line react-hooks/exhaustive-deps
   // Variable margins (1 Nov 2026): the project margin is typed on the ladder,
   // every element and every subcontract quote row can pin its own under the
   // element's row, and the register prices the lot (lib/costing.js).
   const pm = projectMargin(quote || {});
-  const reg = useMemo(() => computeMarginRegister(items, rates, quote || {}, scope), [items, rates, quote, scope]);
+  const reg = useMemo(() => computeMarginRegister(summaryItems, rates, quote || {}, scope), [summaryItems, rates, quote, scope]);
   const sellById = useMemo(() => { const m = {}; reg.elements.forEach((e) => { m[e.id] = e; }); return m; }, [reg]);
   // Folded two levels deep — category (Foundations, Suspended Structure...)
   // then section within it — matching the Add-Element dropdown's grouping.
@@ -36,9 +42,10 @@ export default function QuoteSummary({
   const hasPkgs = hasPackages(quote || {});
   const pkgTotals = useMemo(() => (hasPkgs ? computePackageTotals(quote || {}, items, rates, scope) : []), [hasPkgs, quote, items, rates, scope]);
 
-  const grandTotal = useMemo(() => computeGrandTotal(items, rates, scope), [items, rates, scope]);
-  const provisional = useMemo(() => computeProvisionalTotals(items, rates, scope), [items, rates, scope]);
-  const excluded = useMemo(() => computeExcludedTotals(items, rates, scope), [items, rates, scope]);
+  const grandTotal = useMemo(() => computeGrandTotal(summaryItems, rates, scope), [summaryItems, rates, scope]);
+  const provisional = useMemo(() => computeProvisionalTotals(summaryItems, rates, scope), [summaryItems, rates, scope]);
+  const excluded = useMemo(() => computeExcludedTotals(summaryItems, rates, scope), [summaryItems, rates, scope]);
+  const leftOut = useMemo(() => (hasPkgs ? itemsByPackage(quote || {}, items).filter((g) => g.pkg && !isPkgIn(g.pkg.id)).map((g) => packageName(g.pkg)) : []), [hasPkgs, quote, items, excludedPackages]); // eslint-disable-line react-hooks/exhaustive-deps
   const projectScope = scope && scope !== "both" ? scope : "both";
   const { subtotal, rows } = useMemo(
     () => computeMarginLadder(grandTotal, overheadPct, contingencyPct, gfa, marginStepsAround(pm)),
@@ -61,11 +68,14 @@ export default function QuoteSummary({
         )}
         <div className="p-3 max-h-[40vh] overflow-y-auto space-y-3">
           {groups.map(({ pkg, items: gitems }) => { const byCategory = groupCats(gitems); const pt = pkgTotals.find((t) => t.id === (pkg ? pkg.id : null)); return (
-          <div key={pkg ? pkg.id : "__unassigned"} className="space-y-3" data-testid="summary-package" data-package={pkg ? pkg.id : ""}>
+          <div key={pkg ? pkg.id : "__unassigned"} className={`space-y-3 ${pkg && !isPkgIn(pkg.id) ? "opacity-50" : ""}`} data-testid="summary-package" data-package={pkg ? pkg.id : ""} data-included={pkg && !isPkgIn(pkg.id) ? "0" : "1"}>
           {hasPkgs && (
             <div>
               <div className="flex items-center justify-between gap-2 text-[11px] font-bold uppercase tracking-widest rounded px-2 py-1" style={{ background: packageColour(quote || {}, pkg), color: inkFor(packageColour(quote || {}, pkg)) }} data-testid="summary-package-head">
-                <span className="truncate">{pkg ? "Package · " : ""}{packageName(pkg)}</span>
+                <span className="flex items-center gap-1.5 min-w-0">
+                  {pkg && onToggleSummaryPackage && <input type="checkbox" checked={isPkgIn(pkg.id)} onChange={() => onToggleSummaryPackage(pkg.id)} className="flex-none" title={isPkgIn(pkg.id) ? "In the summary — untick to leave this package out of the grand total and the ladder" : "Left out of the summary — tick to include it"} aria-label={`Include ${packageName(pkg)} in the summary`} data-testid="summary-package-include" />}
+                  <span className="truncate">{pkg ? "Package · " : ""}{packageName(pkg)}{pkg && !isPkgIn(pkg.id) ? " · not in the summary" : ""}</span>
+                </span>
                 <span className="font-mono tabular-nums flex-none">{money2(pt ? pt.cost : 0)}</span>
               </div>
               {pkg && setPackageMargin && (
@@ -149,9 +159,14 @@ export default function QuoteSummary({
           )}
         </div>
         <div data-band="summary" className="px-4 py-3 bg-neutral-900 text-white flex items-center justify-between">
-          <span className="text-xs font-semibold uppercase tracking-wide">Grand Total (ex GST)</span>
+          <span className="text-xs font-semibold uppercase tracking-wide">Grand Total (ex GST){leftOut.length ? <span className="ml-2 normal-case tracking-normal font-normal text-[11px] text-neutral-300">— {leftOut.length} of {packageList(quote || {}).length} packages</span> : null}</span>
           <span className="font-mono tabular-nums text-xl font-bold text-orange-400">{money2(grandTotal)}</span>
         </div>
+        {leftOut.length > 0 && (
+          <div className="px-4 py-1.5 text-[11px] text-neutral-600 bg-neutral-50 border-t border-neutral-200" data-testid="summary-packages-excluded">
+            Left out of this summary: {leftOut.join(", ")} — tick a package above to put it back. The ladder and the register below follow this choice; nothing on the quote changes.
+          </div>
+        )}
         {provisional.count > 0 && (
           <div className="px-4 py-2 bg-amber-50 border-t border-amber-200 text-[12px] text-amber-900 flex items-center justify-between gap-2" data-testid="provisional-sums">
             <span>Of which <b>provisional sums</b> ({provisional.count} element{provisional.count === 1 ? "" : "s"}) · firm work {money2(provisional.firm)}</span>

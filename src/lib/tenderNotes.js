@@ -31,16 +31,30 @@ function noteKey(line) {
 /** The project's assumption lines AS THE TENDER READS THEM — the accepted
  * tender wording where one exists (lib/tenderWording.js), else the typed
  * text — recorded order, blanks dropped. */
-export function assumptionLines(quote) {
-  return assumptionNoteItems(quote).map((a) => a.line);
+export function assumptionLines(quote, opts) {
+  return assumptionNoteItems(quote, opts).map((a) => a.line);
 }
 
 /** Each assumption with its typed text, the line the tender prints and the wording state ("none" | "reworded" | "stale"). */
-export function assumptionNoteItems(quote) {
+export function assumptionNoteItems(quote, opts = {}) {
   const list = quote && Array.isArray(quote.assumptions) ? quote.assumptions : [];
-  return list
-    .map((a) => ({ id: a && a.id, text: cleanNoteLine(a && a.text), line: cleanNoteLine(assumptionTenderLine(a)), state: wordingState(a) }))
+  const project = list
+    .map((a) => ({ id: a && a.id, text: cleanNoteLine(a && a.text), line: cleanNoteLine(assumptionTenderLine(a)), state: wordingState(a), packageId: null, packageName: "" }))
     .filter((a) => a.line);
+  // the packages' own assumptions follow the project's, each line prefixed with its package's name (lib/packages.js,
+  // 4 Nov 2026); a package the caller leaves out (a tender it is unticked on) contributes nothing
+  const skip = new Set(Array.isArray(opts.excludePackages) ? opts.excludePackages : opts.excludePackages instanceof Set ? [...opts.excludePackages] : []);
+  const pkgs = quote && Array.isArray(quote.packages) ? quote.packages.filter((p) => p && p.id && !skip.has(p.id)) : [];
+  const packaged = [];
+  pkgs.forEach((p) => {
+    const name = String(p.name || "").trim() || "Package";
+    (Array.isArray(p.assumptions) ? p.assumptions : []).forEach((a) => {
+      const line = cleanNoteLine(assumptionTenderLine(a));
+      if (!line) return;
+      packaged.push({ id: a && a.id, text: cleanNoteLine(a && a.text), line: `${name}: ${line}`, state: wordingState(a), packageId: p.id, packageName: name });
+    });
+  });
+  return project.concat(packaged);
 }
 
 /** The notes typed on the report: one per line, bullet marks stripped, blanks dropped. */
@@ -48,8 +62,8 @@ export function typedNoteLines(text) {
   return String(text == null ? "" : text).split("\n").map(cleanNoteLine).filter(Boolean);
 }
 
-export function tenderNoteLines(quote, typedText) {
-  const assumptions = assumptionLines(quote);
+export function tenderNoteLines(quote, typedText, opts) {
+  const assumptions = assumptionLines(quote, opts);
   const seen = new Set(assumptions.map(noteKey));
   const typed = [];
   for (const line of typedNoteLines(typedText)) {

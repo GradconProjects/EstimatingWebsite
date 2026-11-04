@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { Settings2, ArrowLeft, Printer, ListPlus, FileSpreadsheet, LayoutDashboard, Radar, FolderOpen, History, HardDriveDownload, AlertTriangle, MapPin, Loader2, Mail , Percent } from "lucide-react";
 import { PackagesBar, PackageBand } from "./components/PackagesBar.jsx";
-import { itemsByPackage, hasPackages, packageList, newPackage, addPackagePatch, renamePackagePatch, removePackagePatch, movePackagePatch, assignElementPatch, packageMarginPatch, computePackageTotals, packageColour, packageColourPatch, packageName } from "./lib/packages.js";
+import { itemsByPackage, hasPackages, packageList, newPackage, addPackagePatch, renamePackagePatch, removePackagePatch, movePackagePatch, assignElementPatch, packageMarginPatch, computePackageTotals, packageColour, packageColourPatch, packageName, packageAssumptions, packageAssumptionsPatch } from "./lib/packages.js";
 import { saveVersion, downloadQuoteFile, parseQuoteFile } from "./lib/quoteVersions.js";
 import { quoteStorageKey } from "./lib/projects.js";
 import VersionsModal from "./components/VersionsModal.jsx";
@@ -846,22 +846,31 @@ function ProjectEditor({ project, allProjects, rates: liveRates, setRates: setLi
   const [addInto, setAddInto] = useState("");
   const packages = packageList(quote);
   const packageTotals = useMemo(() => (hasPackages(quote) ? computePackageTotals(quote, items, rates, quote.scope) : []), [quote, items, rates]);
-  const addPackage = (name) => { const pkg = newPackage(name); setQuote((q) => { const p = addPackagePatch(q, name, pkg); return { ...q, packages: p.packages, items: p.items }; }); setAddInto(pkg.id); };
+  const addPackage = (name) => { const pkg = newPackage(name); setQuote((q) => { const p = addPackagePatch(q, name, pkg); return { ...q, packages: p.packages, items: p.items }; }); setAddInto(pkg.id); openPkg(pkg.id); };
   const renamePackage = (id, name) => setQuote((q) => ({ ...q, ...renamePackagePatch(q, id, name) }));
   const removePackage = (id) => setQuote((q) => ({ ...q, ...removePackagePatch(q, id) }));
   const movePackage = (id, dir) => setQuote((q) => ({ ...q, ...movePackagePatch(q, id, dir) }));
-  const assignPackage = (itemId, pkgId) => setQuote((q) => ({ ...q, ...assignElementPatch(q, itemId, pkgId) }));
+  const assignPackage = (itemId, pkgId) => { setQuote((q) => ({ ...q, ...assignElementPatch(q, itemId, pkgId) })); openPkg(pkgId); };
   const setPackageMargin = (id, v) => setQuote((q) => ({ ...q, ...packageMarginPatch(q, id, v) }));
   const setPackageColour = (id, hex) => setQuote((q) => ({ ...q, ...packageColourPatch(q, id, hex) }));
-  // folded packages and open per-package registers are session-only (never saved)
-  const [foldedPkgs, setFoldedPkgs] = useState(() => new Set());
-  const toggleFold = (id) => setFoldedPkgs((cur) => { const n = new Set(cur); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const setPackageAssumptions = (id, list) => setQuote((q) => ({ ...q, ...packageAssumptionsPatch(q, id, list) }));
+  // Every package opens FOLDED (Grady, 4 Nov 2026: "should always default to folded when the project is opened so we
+  // have a clean rows of current packages … when drop down clicked, expose the project geometry, line items and margin
+  // register"): `openPkgs` holds the packages unfolded THIS session (never saved); a package just added, or one an
+  // element was just added or moved into, opens so the work is in view. The rail's include ticks are session-only too.
+  const [openPkgs, setOpenPkgs] = useState(() => new Set());
+  const isPkgOpen = (pkg) => !pkg || openPkgs.has(pkg.id);
+  const openPkg = (id) => { if (id) setOpenPkgs((cur) => (cur.has(id) ? cur : new Set([...cur, id]))); };
+  const toggleFold = (id) => setOpenPkgs((cur) => { const n = new Set(cur); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const [pkgRegOpen, setPkgRegOpen] = useState({});
+  const [summaryExcluded, setSummaryExcluded] = useState(() => new Set());
+  const toggleSummaryPackage = (id) => setSummaryExcluded((cur) => { const n = new Set(cur); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const addElement = (typeId) => {
     const type = elementTypes.find((t) => t.id === typeId);
     if (!type) return;
     const into = packages.some((p) => p.id === addInto) ? addInto : (packages[0] ? packages[0].id : "");
     setItems((its) => [...its, into ? { ...newElementItem(type), packageId: into } : newElementItem(type)]);
+    openPkg(into);
   };
   const updateItem = (id, next) => setItems((its) => its.map((it) => (it.id === id ? next : it)));
   // Variable margins (1 Nov 2026, lib/costing.js): the project margin on the
@@ -1358,19 +1367,21 @@ function ProjectEditor({ project, allProjects, rates: liveRates, setRates: setLi
                   onMove={(dir) => pkg && movePackage(pkg.id, dir)}
                   onMargin={(v) => pkg && setPackageMargin(pkg.id, v)}
                   onColour={(hex) => pkg && setPackageColour(pkg.id, hex)}
-                  collapsed={!!pkg && foldedPkgs.has(pkg.id)}
+                  collapsed={!isPkgOpen(pkg)}
                   onToggle={pkg ? () => toggleFold(pkg.id) : null}
                 />
               )}
               {/* the package's OWN geometry (its counts, runs and areas; the assumptions stay on the project) */}
-              {packages.length > 0 && pkg && !foldedPkgs.has(pkg.id) && group.length > 0 && (
+              {packages.length > 0 && pkg && isPkgOpen(pkg) && group.length > 0 && (
                 <ProjectGeometryPanel
                   items={group} rates={rates} estimateGeometry={quote.estimateGeometry} scope={quote.scope} onChangeItem={updateItem}
                   title={`Package geometry — ${packageName(pkg)}`} subtitle="This package's counts, lengths and areas — its own $/no., $/lm, $/m² and $/m³"
                   accent={packageColour(quote, pkg)} totalLabel="Package total" testId="package-geometry"
+                  assumptions={packageAssumptions(pkg)} onChangeAssumptions={(a) => setPackageAssumptions(pkg.id, a)}
+                  assumptionsTitle={`Assumptions — ${packageName(pkg)}`} assumptionsNote="What this package's figures assume. They print under the package on the quote report and reach the Tender Notes prefixed with the package's name; the project-wide assumptions stay on the Project Geometry panel above."
                 />
               )}
-              {(!pkg || !foldedPkgs.has(pkg.id)) && group.map((item) => { const idx = items.indexOf(item); return (
+              {isPkgOpen(pkg) && group.map((item) => { const idx = items.indexOf(item); return (
             <ElementCard
               key={item.id}
               item={item}
@@ -1394,14 +1405,14 @@ function ProjectEditor({ project, allProjects, rates: liveRates, setRates: setLi
             />
               ); })}
               {/* the package's OWN margin register — its lines, its rate; the project's register below stays whole */}
-              {packages.length > 0 && pkg && !foldedPkgs.has(pkg.id) && group.length > 0 && (
+              {packages.length > 0 && pkg && isPkgOpen(pkg) && group.length > 0 && (
                 <MarginRegister
                   items={group} rates={rates} quote={quote} scope={quote.scope} pkg={pkg}
                   setProjectMargin={setProjectMargin} setElementMargin={setElementMargin} setRowMargin={setRowMargin} setPackageMargin={setPackageMargin}
                   open={!!pkgRegOpen[pkg.id]} onToggle={() => setPkgRegOpen((o) => ({ ...o, [pkg.id]: !o[pkg.id] }))}
                 />
               )}
-              {packages.length > 0 && pkg && group.length === 0 && <div className="text-[12px] text-neutral-400 px-2">No elements in this package yet — add one above with this package chosen, or move one here from its card.</div>}
+              {packages.length > 0 && pkg && isPkgOpen(pkg) && group.length === 0 && <div className="text-[12px] text-neutral-400 px-2">No elements in this package yet — add one above with this package chosen, or move one here from its card.</div>}
             </div>
           ))}
           {items.length > 0 && (
@@ -1438,6 +1449,8 @@ function ProjectEditor({ project, allProjects, rates: liveRates, setRates: setLi
             setElementMargin={setElementMargin}
             setRowMargin={setRowMargin}
             setPackageMargin={setPackageMargin}
+            excludedPackages={summaryExcluded}
+            onToggleSummaryPackage={toggleSummaryPackage}
             requestAdvice={requestAdvice}
           />
         </div>

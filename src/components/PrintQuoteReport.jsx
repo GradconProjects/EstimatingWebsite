@@ -143,6 +143,12 @@ function ReportContent({ quote, items, rates, categoryOrder, sectionOrder }) {
           <span>{money2(pt.cost)}</span>
         </div>
       )}
+      {hasPkgs && pkg && (pkg.assumptions || []).some((a) => (a.text || "").trim()) && (
+        <div className="mt-1 mb-2 break-inside-avoid" data-testid="print-package-assumptions">
+          <div className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5" style={{ background: packageColour(quote, pkg), color: inkFor(packageColour(quote, pkg)) }}>Assumptions — {packageName(pkg)}</div>
+          <ol className="px-4 py-1 list-decimal space-y-0.5">{(pkg.assumptions || []).filter((a) => (a.text || "").trim()).map((a) => <li key={a.id}>{a.text}</li>)}</ol>
+        </div>
+      )}
       </div>
       ); })}
 

@@ -126,3 +126,12 @@ export function inkFor(hex) {
 export function packageColourPatch(quote, id, hex) {
   return { packages: packageList(quote).map((p) => { if (p.id !== id) return p; const { colour, ...rest } = p; return isHexColour(hex) ? { ...rest, colour: String(hex).toLowerCase() } : rest; }) };
 }
+
+// Package assumptions (Grady, 4 Nov 2026: "package geometeries for all should have their own assumptions logic too"):
+// `pkg.assumptions = [{id, text, tenderText?, tenderSource?}]` — the same shape as `quote.assumptions`, edited on the
+// package's own geometry panel, printed under the package and read into the Tender Notes prefixed with the package name.
+export const packageAssumptions = (pkg) => (pkg && Array.isArray(pkg.assumptions) ? pkg.assumptions : []);
+export function packageAssumptionsPatch(quote, id, assumptions) {
+  const list = Array.isArray(assumptions) ? assumptions : [];
+  return { packages: packageList(quote).map((p) => (p.id === id ? { ...p, assumptions: list } : p)) };
+}
