@@ -270,3 +270,46 @@ export function attachmentOptions(quote, items, markupUrl = () => "") {
   for (const item of items || []) for (const m of (Array.isArray(item.markups) ? item.markups : [])) { const url = markupUrl(m); if (url && !/^data:/.test(url)) out.push({ id: `markup:${m.id}`, kind: "markup", name: m.name || "drawing", mimeType: m.type || "", url, element: item.label }); }
   return out;
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// Files added BY HAND to a round (Grady, 4 Nov 2026, on the amber "Not found in the folder, not attached: Soil /
+// geotechnical report": "i would like this error message to not stop the progress of works. rather add a button so i
+// can add local files too or drive links to the files i want to attach"). Nothing here ever blocked a build — the
+// note is information — and these two paths bring the missing document in: a file from this computer is uploaded into
+// the portal's own bucket (`rfq-files/<projectId>/…`, the only place api/gmail.js fetches an attachment from), a pasted
+// Drive FILE link is read through api/drive.js action `file` (root-scoped: a file outside the office folder is a 403).
+/** A Drive FILE id from a pasted link ("…/file/d/<id>/view", "…/open?id=<id>", "…/uc?id=<id>", a bare id); null otherwise.
+ *  Folder links are driveFolderIdFrom's business (api/_google.js) — this one reads the file forms, and a bare id. */
+export function driveFileIdFrom(text) {
+  const s = String(text || "").trim();
+  if (!s) return null;
+  const m = /\/(?:file\/)?d\/([A-Za-z0-9_-]{10,})/.exec(s) || /[?&]id=([A-Za-z0-9_-]{10,})/.exec(s);
+  if (m) return m[1];
+  if (/\/folders\//.test(s)) return null;
+  return /^[A-Za-z0-9_-]{10,}$/.test(s) ? s : null;
+}
+export const LOCAL_FILE_MAX_BYTES = 50 * 1024 * 1024;   // the bucket's object cap; anything over the Gmail plan still goes as a link
+const LOCAL_FILE_RE = /\.(pdf|png|jpe?g|gif|webp|tiff?|bmp|dwg|dxf|docx?|xlsx?|csv|zip)$/i;
+export const LOCAL_FILE_ACCEPT = ".pdf,.png,.jpg,.jpeg,.gif,.webp,.tif,.tiff,.bmp,.dwg,.dxf,.doc,.docx,.xls,.xlsx,.csv,.zip";
+/** Why a file from this computer cannot be attached ("" = it can): the kinds a contractor can open, under the bucket cap. */
+export function localFileCheck(file) {
+  if (!file || !file.name) return "no file";
+  if (!LOCAL_FILE_RE.test(file.name)) return "not a drawing, document, image, CAD file or zip";
+  if (Number(file.size) > LOCAL_FILE_MAX_BYTES) return `over ${Math.round(LOCAL_FILE_MAX_BYTES / 1048576)} MB`;
+  if (!(Number(file.size) > 0)) return "empty file";
+  return "";
+}
+/** The bucket name a local file is stored under — the server's own safe-name rule (letters, digits, . _ -; 100 chars). */
+export const rfqFileName = (name) => String(name || "file").replace(/[^A-Za-z0-9._-]+/g, "_").slice(0, 100);
+export const rfqFilePath = (projectId, name, stamp = Date.now()) => `rfq-files/${String(projectId || "project").replace(/[^A-Za-z0-9_-]/g, "")}/${stamp}-${rfqFileName(name)}`;
+/** An attachment option for an uploaded local file: ticked on its own, tagged by its name like a folder file. */
+export function localFileOption(up, pkgKey = "") {
+  const tags = classifyFile(up.name, "", pkgKey);
+  return { id: `local:${up.path}`, kind: "local", name: up.name, url: up.url, size: Number(up.size) || 0, mimeType: up.mimeType || "", tags, auto: true, added: true };
+}
+/** An attachment option for a Drive file reached by its LINK (api/drive `file` metadata); null for a folder. */
+export function driveLinkOption(meta, pkgKey = "") {
+  if (!meta || !meta.id || meta.kind === "folder") return null;
+  const tags = classifyFile(meta.name, "", pkgKey);
+  return { id: `drive:${meta.id}`, kind: "drive", name: meta.name || "file", fileId: meta.id, mimeType: meta.mimeType || "", url: "", size: Number(meta.size) || 0, folderName: "Drive link", tags, auto: true, added: true };
+}

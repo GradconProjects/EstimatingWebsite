@@ -1674,6 +1674,40 @@ bare minimum should be archi, struct, soil report". Rules:
    into the bucket ONCE per build (`api/drive` copy, target preview) and the
    same URLs ride on every message of the round; drawings dropped on the
    chosen elements (`markupSrc`) are offered too.
+   **A document the folder does not hold is added BY HAND, and the note never
+   stops a build** (Grady, 4 Nov 2026, on the amber "Not found in the folder,
+   not attached: Soil / geotechnical report": "i would like this error message
+   to not stop the progress of works. rather add a button so i can add local
+   files too or drive links to the files i want to attach"): the note reads
+   "Not attached yet: … — add it below from this computer or as a Drive link,
+   or say so in the notes. The RFQ goes without it if you choose." in plain
+   grey (`rfq-attach-missing`; the "nothing is ticked" line is amber, not
+   red); Build is gated on contractors and elements ONLY, never on the
+   attachments (`verify.mjs` pins both). Under the list, `rfq-add-files`:
+   **"Add files from this computer"** (`rfq-add-local` / `-input`, multiple;
+   `localFileCheck` — PDF, images, DWG / DXF, Word / Excel / CSV, zip, under
+   `LOCAL_FILE_MAX_BYTES` = 50 MB, never empty; a refused file is named in
+   `rfq-add-error` and the rest still go) uploads each file through
+   `uploadRfqFile(projectId, file)` (`markupStore.js`) into the portal's own
+   bucket at `rfqFilePath` = `rfq-files/<projectId>/<stamp>-<safe name>` —
+   the ONLY place `api/gmail.js` fetches an attachment from, so nothing
+   server-side changes — and lists it as a `kind: "local"` option
+   (`localFileOption`: "from this computer", tagged by name, ticked at once;
+   at build its URL is used as a markup's is, never copied again). **"Paste a
+   Google Drive file link…" + Add link** (`rfq-add-link` / `-button`, Enter
+   works): `driveFileIdFrom(text)` reads `/file/d/<id>/`, `/d/<id>/` (a Doc),
+   `?id=<id>` and a bare id — a FOLDER link is null (folders stay
+   `driveFolderIdFrom`'s) — then `api/drive` action `file` (root-scoped) and
+   `driveLinkOption(meta)` lists it as a Drive option ("Drive link", tagged,
+   ticked; a file already in the list is just ticked); a folder, a file
+   outside the office folder (403), a reconnect-needed connection and a
+   non-link each show their reason in `rfq-add-error` and add nothing. The
+   linked file is copied into the bucket at build exactly like a folder file.
+   Verify covers the id forms, the file check, the path, both options, the
+   note satisfied by a local file and the upload on a fake client;
+   `test-rfq-attach.mjs` (cloud build) proves the grey note with Build
+   enabled, two uploads, the refused .exe, the four link outcomes and the
+   three documents in the draft.
 4. **`RfqModal.jsx`** (editor header "RFQ (n)" button `rfq-button`, every
    element card's **"✉ RFQ" pill** `element-rfq` opening on that element — a
    white-on-translucent pill with the word on it since 2 Nov 2026, Grady:

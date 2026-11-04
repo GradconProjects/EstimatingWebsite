@@ -4015,6 +4015,57 @@ check("bridge: an L-series trench-mesh line in lineal metres (a joint dowel stri
   assertTrue(importAll.TRENCH_STOCK_M === 6);
 });
 
+// ---------------------------------------------------------------------------------------------------------------
+// RFQ attachments added BY HAND (4 Nov 2026): a local file uploaded into the bucket, a pasted Drive file link —
+// and the "not attached" note is information, never a stop.
+await checkAsync("RFQ attachments by hand (rfq.js, markupStore.uploadRfqFile): the Drive FILE id from every link form, the local-file check, the bucket path, the two option builders, and the missing-class note satisfied by a local file", async () => {
+  const R = await import("../src/lib/rfq.js");
+  const MS = await import("../src/lib/markupStore.js");
+  const G = await import("../api/_google.js");
+  const id = "1AbCdEfGhIjKlMnOpQrStUvWxYz0123456";
+  assert.equal(R.driveFileIdFrom(`https://drive.google.com/file/d/${id}/view?usp=sharing`), id, "share link");
+  assert.equal(R.driveFileIdFrom(`https://drive.google.com/open?id=${id}`), id, "open?id link");
+  assert.equal(R.driveFileIdFrom(`https://drive.google.com/uc?export=download&id=${id}`), id, "uc?id link");
+  assert.equal(R.driveFileIdFrom(`https://docs.google.com/document/d/${id}/edit`), id, "a Google Doc link");
+  assert.equal(R.driveFileIdFrom(`  ${id} `), id, "a bare id");
+  assert.equal(R.driveFileIdFrom(`https://drive.google.com/drive/folders/${id}`), null, "a FOLDER link is not a file link");
+  assert.equal(R.driveFileIdFrom("not a link"), null); assert.equal(R.driveFileIdFrom(""), null);
+  assert.equal(G.driveFolderIdFrom(`https://drive.google.com/drive/folders/${id}`), id, "the folder reader is unchanged");
+  // local files: the kinds a contractor can open, under the cap, never empty
+  assert.equal(R.localFileCheck({ name: "Geotech Report.pdf", size: 1200 }), "");
+  assert.equal(R.localFileCheck({ name: "S-01 slab plan.dwg", size: 1200 }), "");
+  assert.match(R.localFileCheck({ name: "setup.exe", size: 1200 }), /not a drawing/);
+  assert.match(R.localFileCheck({ name: "big.pdf", size: R.LOCAL_FILE_MAX_BYTES + 1 }), /over 50 MB/);
+  assert.equal(R.localFileCheck({ name: "empty.pdf", size: 0 }), "empty file");
+  assert.equal(R.rfqFilePath("p-12/x", "Soil Report (final).pdf", 1700000000000), "rfq-files/p-12x/1700000000000-Soil_Report_final_.pdf", "the server's safe-name rule, the project id cleaned");
+  // the options: tagged by name like a folder file, ticked on their own (auto), marked added
+  const loc = R.localFileOption({ path: "rfq-files/p1/1-Geotech_Report.pdf", url: "https://x/rfq-files/p1/1-Geotech_Report.pdf", name: "Geotech Report.pdf", size: 1200, mimeType: "application/pdf" }, "bored");
+  assert.deepEqual([loc.id, loc.kind, loc.auto, loc.added, loc.tags], ["local:rfq-files/p1/1-Geotech_Report.pdf", "local", true, true, ["soil"]]);
+  const lnk = R.driveLinkOption({ id: "f1", name: "S-01 Structural.pdf", mimeType: "application/pdf", kind: "pdf", size: 9000 }, "bored");
+  assert.deepEqual([lnk.id, lnk.kind, lnk.fileId, lnk.folderName, lnk.tags, lnk.auto, lnk.added], ["drive:f1", "drive", "f1", "Drive link", ["struct"], true, true]);
+  assert.equal(R.driveLinkOption({ id: "d1", name: "Drawings", kind: "folder" }, "bored"), null, "a folder is no attachment");
+  assert.equal(R.driveLinkOption(null), null);
+  // the note: the soil report missing from the folder is covered by the local file
+  const folderOpts = R.driveFolderOptions([{ id: "a", name: "A-101 Architectural.pdf", kind: "pdf", size: 1 }, { id: "s", name: "S-01 Structural.pdf", kind: "pdf", size: 1 }], "bored");
+  assert.deepEqual(R.missingAttachClasses(folderOpts, new Set(folderOpts.map((o) => o.id))).map((c) => c.key), ["soil"]);
+  assert.deepEqual(R.missingAttachClasses([...folderOpts, loc], new Set([...folderOpts.map((o) => o.id), loc.id])), [], "the local geotech report satisfies the soil class");
+  // the upload: the bucket, the path, upsert, the content type, the public URL — on a fake storage client; no client throws
+  const calls = [];
+  const client = { storage: { from: (bucket) => ({ upload: async (path, body, opts) => { calls.push({ bucket, path, size: body.size, opts }); return { error: null }; }, getPublicUrl: (path) => ({ data: { publicUrl: `https://xbmyhvrcuyapoarmchpv.supabase.co/storage/v1/object/public/${bucket}/${path}` } }) }) } };
+  const up = await MS.uploadRfqFile("p1", { name: "Soil Report.pdf", size: 4321, type: "application/pdf" }, client, 1700000000000);
+  assert.deepEqual(calls, [{ bucket: "gradcon-files", path: "rfq-files/p1/1700000000000-Soil_Report.pdf", size: 4321, opts: { upsert: true, contentType: "application/pdf" } }]);
+  assert.deepEqual(up, { path: "rfq-files/p1/1700000000000-Soil_Report.pdf", url: "https://xbmyhvrcuyapoarmchpv.supabase.co/storage/v1/object/public/gradcon-files/rfq-files/p1/1700000000000-Soil_Report.pdf", name: "Soil Report.pdf", size: 4321, mimeType: "application/pdf" });
+  assert.ok(up.url.startsWith(G.ATTACH_URL_PREFIX), "the uploaded file is where the send function may fetch from");
+  await assert.rejects(() => MS.uploadRfqFile("p1", { name: "x.pdf", size: 1, type: "" }, null), /not configured/);
+  const refused = { storage: { from: () => ({ upload: async () => ({ error: new Error("Payload too large") }), getPublicUrl: () => ({ data: { publicUrl: "" } }) }) } };
+  await assert.rejects(() => MS.uploadRfqFile("p1", { name: "x.pdf", size: 1, type: "" }, refused), /Payload too large/);
+  // the composer: the note is information, the build button is never gated on it, and both add paths exist
+  const src = fs.readFileSync(new URL("../src/components/RfqModal.jsx", import.meta.url), "utf8");
+  assert.ok(/data-testid="rfq-attach-missing">Not attached yet:/.test(src) && !/Not found in the folder, not attached/.test(src), "the note no longer reads as an error");
+  assert.ok(/disabled=\{building \|\| !totalPicks \|\| !chosenItems\.length\}/.test(src), "Build is gated on contractors and elements only — never on the attachments");
+  assert.ok(/data-testid="rfq-add-local-input"/.test(src) && /data-testid="rfq-add-link-button"/.test(src) && /uploadRfqFile\(projectId/.test(src) && /action: "file", id/.test(src), "the local upload and the Drive link read");
+});
+
 if (process.exitCode) {
   console.error("\nSome checks FAILED — see above.");
 } else {

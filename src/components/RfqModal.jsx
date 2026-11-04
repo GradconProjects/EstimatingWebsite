@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { X, Send, Check, ChevronLeft, Paperclip, Loader2, AlertTriangle, Mail } from "lucide-react";
-import { RFQ_PACKAGES, RFQ_LEAD, packageByKey, packageLabel, suggestPackages, contractorsFor, rfqContact, rfqDrafts, rfqSubject, elementScope, dayPlus, rfqRecord, attachmentOptions, driveFolderOptions, missingAttachClasses, planAttachments, fmtBytes, ATTACH_PLAN_BYTES, DEFAULT_CC, parseCc, rfqHead, rfqBody, joinDraft, draftNameIssues } from "../lib/rfq.js";
+import { RFQ_PACKAGES, RFQ_LEAD, packageByKey, packageLabel, suggestPackages, contractorsFor, rfqContact, rfqDrafts, rfqSubject, elementScope, dayPlus, rfqRecord, attachmentOptions, driveFolderOptions, missingAttachClasses, planAttachments, driveFileIdFrom, localFileCheck, localFileOption, driveLinkOption, LOCAL_FILE_ACCEPT, fmtBytes, ATTACH_PLAN_BYTES, DEFAULT_CC, parseCc, rfqHead, rfqBody, joinDraft, draftNameIssues } from "../lib/rfq.js";
 import { readRegister, registerOrgs } from "../lib/registerStore.js";
 import { readTakeoffForProject } from "../lib/estimatesRead.js";
 import { driveApi } from "../lib/driveFiles.js";
-import { markupSrc } from "../lib/markupStore.js";
+import { markupSrc, uploadRfqFile, markupStoreEnabled } from "../lib/markupStore.js";
 /** Run async jobs at most `n` at a time, in order of start; resolves when all have settled (a throw rejects at once). */
 async function runPool(jobs, n) { let next = 0; const workers = Array.from({ length: Math.min(n, jobs.length) }, async () => { while (next < jobs.length) { const j = jobs[next++]; await j(); } }); await Promise.all(workers); }
 
@@ -26,7 +26,7 @@ const defaultSender = () => {
  * contractor's own name and address), approve the ones to send, send them one
  * by one through the connected mailbox. Nothing leaves without an approval tick.
  */
-export default function RfqModal({ quote, items, rates, projectScope, elementTypes = [], initialItemIds = null, user = "", onClose, onSent }) {
+export default function RfqModal({ quote, items, rates, projectScope, elementTypes = [], initialItemIds = null, user = "", projectId = "", onClose, onSent }) {
   const [step, setStep] = useState("setup");
   const [register, setRegister] = useState(null);
   const [takeoff, setTakeoff] = useState(null);
@@ -59,6 +59,13 @@ export default function RfqModal({ quote, items, rates, projectScope, elementTyp
   const ccList = useMemo(() => parseCc(ccText), [ccText]);
   const [driveFolder, setDriveFolder] = useState(null); // {id, name, files:[...], note}
   const [autoDone, setAutoDone] = useState(false);
+  // files brought in BY HAND — uploaded from this computer, or a pasted Drive file link (4 Nov 2026)
+  const [added, setAdded] = useState([]);
+  const [addError, setAddError] = useState("");
+  const [addNote, setAddNote] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [linkText, setLinkText] = useState("");
+  const [linking, setLinking] = useState(false);
 
   const typeName = (item) => { const t = elementTypes.find((x) => x.id === item.typeId); return t ? t.name : ""; };
   const chosenItems = useMemo(() => items.filter((i) => selected.has(i.id)), [items, selected]);
@@ -80,13 +87,57 @@ export default function RfqModal({ quote, items, rates, projectScope, elementTyp
     const seen = new Set(base.map((o) => o.fileId).filter(Boolean));
     const folder = driveFolderOptions((driveFolder && driveFolder.files) || [], pkgKeyList).filter((o) => !seen.has(o.fileId));
     // the project's already-attached Drive files are tagged the same way
-    return [...base.map((o) => (o.kind === "drive" ? { ...o, tags: classifyTags(o.name, pkgKeyList), auto: classifyTags(o.name, pkgKeyList).length > 0 } : o)), ...folder];
-  }, [quote, chosenItems, driveFolder, pkgKeyList]);
+    const list = [...base.map((o) => (o.kind === "drive" ? { ...o, tags: classifyTags(o.name, pkgKeyList), auto: classifyTags(o.name, pkgKeyList).length > 0 } : o)), ...folder];
+    // the files added by hand (uploaded, or a Drive link) come last, tagged by name like the rest; one already listed is not repeated
+    const ids = new Set(list.map((o) => o.id));
+    for (const a of added) if (!ids.has(a.id)) { list.push({ ...a, tags: classifyTags(a.name, pkgKeyList) }); ids.add(a.id); }
+    return list;
+  }, [quote, chosenItems, driveFolder, pkgKeyList, added]);
   // the relevant files are ticked on their own once the folder has been read (and again when the package changes)
   useEffect(() => { if (!driveFolder || autoDone) return; setAttach(new Set(options.filter((o) => o.auto || o.kind === "markup").map((o) => o.id))); setAutoDone(true); }, [driveFolder, options, autoDone]);
   useEffect(() => { setAutoDone(false); }, [pkgKeyList.join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
   const missing = useMemo(() => missingAttachClasses(options, attach), [options, attach]);
   const plan = useMemo(() => planAttachments(options.filter((o) => attach.has(o.id))), [options, attach]);
+
+  // A document the folder does not hold is added BY HAND and ticked at once (Grady, 4 Nov 2026: "i would like this error
+  // message to not stop the progress of works. rather add a button so i can add local files too or drive links"): a file
+  // from this computer goes into the portal's own bucket (the only place the send function fetches an attachment from);
+  // a pasted Drive FILE link is read through the Drive function (root-scoped — outside the office folder is a 403).
+  const addOption = (opt) => { setAdded((a) => (a.some((x) => x.id === opt.id) ? a : [...a, opt])); setAttach((s) => new Set([...s, opt.id])); };
+  async function addLocalFiles(fileList) {
+    setAddError("");
+    const files = Array.from(fileList || []); if (!files.length) return;
+    if (!markupStoreEnabled) { setAddError("Cloud storage is not configured in this build — a file from this computer cannot be attached here."); return; }
+    setUploading(true); const bad = [];
+    try {
+      for (let i = 0; i < files.length; i++) {
+        const f = files[i]; const why = localFileCheck(f);
+        if (why) { bad.push(`${f.name} (${why})`); continue; }
+        setAddNote(`Uploading ${i + 1} of ${files.length} — ${f.name}`);
+        try { const up = await uploadRfqFile(projectId || "project", f); addOption(localFileOption(up, pkgKeyList)); }
+        catch (e) { bad.push(`${f.name} (${(e && e.message) || "upload failed"})`); }
+      }
+    } finally { setUploading(false); setAddNote(""); }
+    if (bad.length) setAddError("Not attached — " + bad.join("; ") + ".");
+  }
+  async function addDriveLink() {
+    setAddError("");
+    const id = driveFileIdFrom(linkText);
+    if (!id) { setAddError("That is not a Google Drive file link — in Drive, right-click the file → Share → Copy link, and paste it here."); return; }
+    const have = options.find((o) => o.kind === "drive" && o.fileId === id);
+    if (have) { setAttach((s) => new Set([...s, have.id])); setLinkText(""); return; }
+    setLinking(true);
+    try {
+      const r = await driveApi({ action: "file", id });
+      const opt = driveLinkOption(r && r.file, pkgKeyList);
+      if (!opt) { setAddError("That link is a folder — paste the link of a FILE (a folder's files are read from the project folder itself)."); return; }
+      addOption(opt); setLinkText("");
+    } catch (e) {
+      setAddError(e && e.status === 403 ? "That file is outside the office folder the app may read — move or share it into the project files folder, or add it from this computer."
+        : e && e.needsReconnect ? "The Google connection needs a reconnect for Drive (Settings → Google mail & Drive) before a Drive link can be read."
+        : "The Drive link could not be read" + (e && e.message ? ": " + e.message : "") + ".");
+    } finally { setLinking(false); }
+  }
 
   useEffect(() => {
     let alive = true;
@@ -129,7 +180,7 @@ export default function RfqModal({ quote, items, rates, projectScope, elementTyp
       const ticked = options.filter((o) => attach.has(o.id));
       const files = new Array(ticked.length); let done = 0;
       await runPool(ticked.map((opt, i) => async () => {
-        if (opt.kind === "markup") { files[i] = { name: opt.name, url: opt.url, tags: ["pkg"], size: Number(opt.size) || 0 }; }
+        if (opt.kind === "markup" || opt.kind === "local") { files[i] = { name: opt.name, url: opt.url, tags: opt.kind === "local" && opt.tags && opt.tags.length ? opt.tags : ["pkg"], size: Number(opt.size) || 0 }; }
         else {
           setCopyNote(`Copying ${Math.min(done + 1, ticked.length)} of ${ticked.length} — ${opt.name}`);
           const r = await driveApi({ action: "copy", id: opt.fileId, target: "preview" });
@@ -265,14 +316,23 @@ export default function RfqModal({ quote, items, rates, projectScope, elementTyp
                         {o.size > 0 && <span className={`text-[11px] tabular-nums ${plan.link.some((f) => f.id === o.id) ? "text-amber-800 font-semibold" : "text-neutral-400"}`} data-testid="rfq-attach-bytes">{fmtBytes(o.size)}{plan.link.some((f) => f.id === o.id) ? " · as a link" : ""}</span>}
                         {(o.tags || []).filter((t) => t !== "pkg").map((t) => <span key={t} className="text-[10px] font-bold uppercase tracking-wider px-1 rounded bg-emerald-100 text-emerald-800">{t === "archi" ? "archi" : t === "struct" ? "struct" : "soil"}</span>)}
                         {(o.tags || []).includes("pkg") && <span className="text-[10px] font-bold uppercase tracking-wider px-1 rounded bg-blue-100 text-blue-800">{pkgLabelNow}</span>}
-                        <span className="text-neutral-400 text-[11px] ml-auto whitespace-nowrap">{o.kind === "drive" ? (o.folderName ? o.folderName + " · " : "") + (o.size ? Math.max(1, Math.round(o.size / 1024)) + " KB" : "Drive") : `drawing on ${o.element}`}</span>
+                        <span className="text-neutral-400 text-[11px] ml-auto whitespace-nowrap">{o.kind === "drive" ? (o.folderName ? o.folderName + " · " : "") + (o.size ? Math.max(1, Math.round(o.size / 1024)) + " KB" : "Drive") : o.kind === "local" ? "from this computer" : `drawing on ${o.element}`}</span>
                       </label>
                     ))}
                   </div>
                 )}
-                {driveFolder && driveFolder.id && missing.length > 0 && <div className="text-[12px] text-amber-800 mt-1" data-testid="rfq-attach-missing">Not found in the folder, not attached: {missing.map((c) => c.label).join(", ")} — add it to Drive, or say so in the notes.</div>}
+                {(driveFolder || added.length > 0) && missing.length > 0 && <div className="text-[12px] text-neutral-600 mt-1" data-testid="rfq-attach-missing">Not attached yet: {missing.map((c) => c.label).join(", ")} — add it below from this computer or as a Drive link, or say so in the notes. The RFQ goes without it if you choose.</div>}
                 {attach.size > 0 && <div className={`text-[12px] mt-1 ${plan.link.length ? "text-amber-800" : "text-neutral-500"}`} data-testid="rfq-attach-size">{fmtBytes(plan.total)} attached of {fmtBytes(ATTACH_PLAN_BYTES)} Gmail allows{plan.link.length ? ` — ${plan.link.map((f) => f.name).join(", ")} ${plan.link.length === 1 ? "is" : "are"} too large and will go as download links in the email` : ""}</div>}
-                {driveFolder && attach.size === 0 && <div className="text-[12px] text-red-700 mt-1" data-testid="rfq-attach-none">Nothing is ticked — an RFQ goes out with its documents attached. Tick the architectural and structural drawings and the soil report (add them to the project's Drive folder if they are not there).</div>}
+                {driveFolder && attach.size === 0 && <div className="text-[12px] text-amber-800 mt-1" data-testid="rfq-attach-none">Nothing is ticked yet — an RFQ normally goes out with the architectural and structural drawings and the soil report attached. Tick them, add them below, or build anyway and say they follow separately.</div>}
+                <div className="mt-1.5 flex flex-wrap items-center gap-1.5" data-testid="rfq-add-files">
+                  <label className={`inline-flex items-center gap-1 px-2 py-1 rounded border border-neutral-300 bg-white text-[12px] cursor-pointer ${uploading ? "opacity-60" : "hover:bg-neutral-50"}`} data-testid="rfq-add-local" title="Upload files from this computer into the project's file store and attach them">
+                    {uploading ? <Loader2 size={12} className="animate-spin" /> : <Paperclip size={12} />} {uploading ? (addNote || "Uploading…") : "Add files from this computer"}
+                    <input type="file" multiple className="hidden" accept={LOCAL_FILE_ACCEPT} disabled={uploading} onChange={(e) => { const fl = Array.from(e.target.files || []); e.target.value = ""; addLocalFiles(fl); }} data-testid="rfq-add-local-input" />
+                  </label>
+                  <input value={linkText} onChange={(e) => setLinkText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addDriveLink(); } }} placeholder="Paste a Google Drive file link…" className="flex-1 min-w-[12rem] border border-neutral-300 rounded px-2 py-1 text-[12px]" data-testid="rfq-add-link" />
+                  <button type="button" onClick={addDriveLink} disabled={linking || !linkText.trim()} className="px-2 py-1 rounded border border-neutral-300 bg-white text-[12px] hover:bg-neutral-50 disabled:opacity-40" data-testid="rfq-add-link-button">{linking ? "Reading…" : "Add link"}</button>
+                </div>
+                {addError && <div className="text-[12px] text-red-700 mt-1" data-testid="rfq-add-error">{addError}</div>}
               </div>
             </div>
             <div className="space-y-3">

@@ -25,6 +25,7 @@
  * the PDF-to-images converter.
  */
 import { supabase, supabaseEnabled } from "./supabaseClient.js";
+import { rfqFilePath } from "./rfq.js";
 
 export const MARKUP_BUCKET = "gradcon-files";
 export const markupFolder = (projectId) => `quote-markups/${projectId}`;
@@ -131,3 +132,19 @@ export async function markupDataURL(m, client = supabase) {
 }
 
 export { supabaseEnabled as markupStoreEnabled };
+
+/**
+ * A file from this computer, attached to an RFQ by hand: uploaded into the same bucket under
+ * `rfq-files/<projectId>/<stamp>-<name>` (rfqFilePath in rfq.js), so api/gmail.js — which fetches an attachment only
+ * from the portal's own bucket — can send it. Returns {path, url, name, size, mimeType}; throws when there is no
+ * storage client (an install with no Supabase) or the upload is refused.
+ */
+export async function uploadRfqFile(projectId, file, client = supabase, stamp = Date.now()) {
+  if (!client) throw new Error("cloud storage is not configured in this build");
+  const path = rfqFilePath(projectId, file.name, stamp);
+  const mime = file.type || "application/octet-stream";
+  const { error } = await client.storage.from(MARKUP_BUCKET).upload(path, file, { upsert: true, contentType: mime });
+  if (error) throw error;
+  const { data } = client.storage.from(MARKUP_BUCKET).getPublicUrl(path);
+  return { path, url: data.publicUrl, name: file.name, size: Number(file.size) || 0, mimeType: mime };
+}

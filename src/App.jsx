@@ -1436,6 +1436,7 @@ function ProjectEditor({ project, allProjects, rates: liveRates, setRates: setLi
           projectScope={quote.scope}
           elementTypes={elementTypes}
           initialItemIds={rfq.itemIds}
+          projectId={project.id}
           user={portalUser() || ""}
           onClose={() => setRfq(null)}
           onSent={(records, sent) => {
