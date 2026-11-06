@@ -408,31 +408,38 @@
   .ai-fab{ position:fixed; right:18px; bottom:18px; z-index:60; border:0; border-radius:999px; padding:11px 16px; background:#6b3fd6; color:#fff; font:inherit; font-weight:700; font-size:13px; cursor:pointer; box-shadow:0 14px 30px -14px rgba(35,31,32,.6); }
   .ai-fab:hover{ background:#5a32b8; }
   .ai-fab[hidden], .ai-chat[hidden]{ display:none !important; }
-  /* Grady's mate — Grady's own illustration in the bottom-left corner, four poses cut out of the sheet
-     (portal/mate/*.png, inlined by the assembler); portal/mate.js decides the pose and the line */
-  #mate{ position:fixed; left:12px; bottom:8px; z-index:60; width:104px; height:124px; cursor:pointer; user-select:none; -webkit-user-select:none; }
+  /* Grady's mate — Grady's own illustration, eight poses cut out of the sheets he sent (portal/mate/*.webp, inlined
+     by the assembler); portal/mate.js decides the pose and the line. Draggable anywhere; --mate-h is the Settings size. */
+  #mate{ position:fixed; left:12px; bottom:8px; z-index:60; --mate-h:240px; width:calc(var(--mate-h) * .62); height:calc(var(--mate-h) + 6px); cursor:grab; user-select:none; -webkit-user-select:none; touch-action:none; }
+  #mate[data-dragging]{ cursor:grabbing; }
   #mate[hidden]{ display:none !important; }
-  #mate .fig{ position:absolute; left:0; right:0; bottom:0; height:120px; display:flex; align-items:flex-end; justify-content:center; transform-origin:50% 100%; }
-  #mate .fig img{ display:none; height:120px; width:auto; filter:drop-shadow(0 8px 10px rgba(35,31,32,.3)); }
-  #mate .shadow{ position:absolute; left:50%; bottom:2px; width:64px; height:9px; margin-left:-32px; border-radius:50%; background:rgba(35,31,32,.18); }
-  #mate .mate-mark{ position:absolute; display:none; font:900 22px/1 Inter, "Segoe UI", sans-serif; color:#231f20; text-shadow:0 1px 0 #fff; }
-  #mate .zz{ right:4px; top:4px; font-size:18px; color:#6b6b6b; }
-  #mate .q{ right:2px; top:0; font-size:26px; color:#c2410c; }
-  #mate .clock{ right:0; top:6px; width:22px; height:22px; border-radius:50%; border:3px solid #231f20; background:#fff; }
-  #mate .clock:before{ content:""; position:absolute; left:8px; top:3px; width:2px; height:8px; background:#231f20; transform-origin:50% 100%; animation:mate-hand 1.2s linear infinite; }
+  #mate .fig{ position:absolute; left:0; right:0; bottom:0; height:var(--mate-h); display:flex; align-items:flex-end; justify-content:center; transform-origin:50% 100%; }
+  #mate .fig img{ display:none; height:var(--mate-h); width:auto; max-width:none; filter:drop-shadow(0 10px 12px rgba(35,31,32,.32)); pointer-events:none; }
+  #mate .shadow{ position:absolute; left:50%; bottom:2px; width:46%; height:4%; margin-left:-23%; border-radius:50%; background:rgba(35,31,32,.18); }
+  #mate .mate-mark{ position:absolute; display:none; font:900 calc(var(--mate-h) * .1) / 1 Inter, "Segoe UI", sans-serif; color:#231f20; text-shadow:0 1px 0 #fff; }
+  #mate .zz{ right:0; top:0; color:#6b6b6b; }
+  #mate .q{ right:-4px; top:-6px; font-size:calc(var(--mate-h) * .13); color:#c2410c; }
+  #mate .clock{ right:0; top:4px; width:calc(var(--mate-h) * .11); height:calc(var(--mate-h) * .11); border-radius:50%; border:3px solid #231f20; background:#fff; box-sizing:border-box; }
+  #mate .clock:before{ content:""; position:absolute; left:calc(50% - 1px); top:12%; width:2px; height:38%; background:#231f20; transform-origin:50% 100%; animation:mate-hand 1.2s linear infinite; }
   #mate .confetti{ position:absolute; inset:0; display:none; pointer-events:none; }
-  #mate .confetti i{ position:absolute; width:6px; height:6px; border-radius:50%; background:#d5de5d; animation:mate-confetti 1.1s linear infinite; }
+  #mate .confetti i{ position:absolute; width:7px; height:7px; border-radius:50%; background:#d5de5d; animation:mate-confetti 1.1s linear infinite; }
   #mate .confetti i:nth-child(2){ left:20%; background:#f97316; animation-delay:.2s; } #mate .confetti i:nth-child(3){ left:45%; background:#2f7fd6; animation-delay:.45s; }
   #mate .confetti i:nth-child(4){ left:70%; animation-delay:.1s; } #mate .confetti i:nth-child(5){ left:90%; background:#f97316; animation-delay:.6s; } #mate .confetti i:nth-child(1){ left:5%; }
   #mate[data-pose="idle"] .img-stand, #mate[data-pose="nod"] .img-stand, #mate[data-pose="sleep"] .img-stand{ display:block; }
-  #mate[data-pose="wave"] .img-point, #mate[data-pose="point"] .img-point{ display:block; }
+  #mate[data-pose="wave"] .img-wave{ display:block; }
+  #mate[data-pose="point"] .img-point{ display:block; }
   #mate[data-pose="thumbs"] .img-thumbs, #mate[data-pose="celebrate"] .img-thumbs{ display:block; }
-  #mate[data-pose="scratch"] .img-arms, #mate[data-pose="wrist"] .img-arms{ display:block; }
+  #mate[data-pose="scratch"] .img-arms{ display:block; }
+  #mate[data-pose="wrist"] .img-hips, #mate[data-pose="hips"] .img-hips{ display:block; }
+  #mate[data-pose="measure"] .img-kneel{ display:block; }
+  #mate[data-pose="clipboard"] .img-clipboard{ display:block; }
   #mate[data-pose="idle"] .fig{ animation:mate-breathe 3.4s ease-in-out infinite; }
   #mate[data-pose="wave"] .fig{ animation:mate-rock .55s ease-in-out infinite alternate; }
   #mate[data-pose="point"] .fig{ animation:mate-jab .7s ease-in-out infinite alternate; }
   #mate[data-pose="nod"] .fig{ animation:mate-nod .5s ease-in-out 3; }
-  #mate[data-pose="thumbs"] .fig{ animation:mate-bob .6s ease-in-out infinite alternate; }
+  #mate[data-pose="thumbs"] .fig, #mate[data-pose="clipboard"] .fig{ animation:mate-bob .6s ease-in-out infinite alternate; }
+  #mate[data-pose="hips"] .fig{ animation:mate-breathe 2.2s ease-in-out infinite; }
+  #mate[data-pose="measure"] .fig{ animation:mate-measure 1.6s ease-in-out infinite alternate; }
   #mate[data-pose="scratch"] .fig{ transform:rotate(-6deg); animation:mate-think 1.4s ease-in-out infinite alternate; }
   #mate[data-pose="scratch"] .q{ display:block; animation:mate-float 1.2s ease-in-out infinite alternate; }
   #mate[data-pose="wrist"] .fig{ transform:rotate(5deg); animation:mate-tap .45s ease-in-out infinite alternate; }
@@ -440,26 +447,30 @@
   #mate[data-pose="celebrate"] .fig{ animation:mate-jump .45s ease-in-out infinite; }
   #mate[data-pose="celebrate"] .confetti{ display:block; }
   #mate[data-pose="sleep"] .fig{ transform:rotate(7deg) translateY(3px); }
-  #mate[data-pose="sleep"] .fig img{ filter:grayscale(.5) brightness(.9) drop-shadow(0 8px 10px rgba(35,31,32,.3)); }
+  #mate[data-pose="sleep"] .fig img{ filter:grayscale(.5) brightness(.9) drop-shadow(0 10px 12px rgba(35,31,32,.32)); }
   #mate[data-pose="sleep"] .zz{ display:block; animation:mate-zz 2.4s ease-in-out infinite; }
   @keyframes mate-breathe{ 0%,100%{ transform:scaleY(1);} 50%{ transform:scaleY(1.015);} }
-  @keyframes mate-rock{ from{ transform:rotate(-5deg);} to{ transform:rotate(5deg);} }
-  @keyframes mate-jab{ from{ transform:scale(1) translateX(0);} to{ transform:scale(1.05) translateX(3px);} }
-  @keyframes mate-nod{ 0%,100%{ transform:translateY(0);} 50%{ transform:translateY(5px) scaleY(.97);} }
-  @keyframes mate-bob{ from{ transform:translateY(0);} to{ transform:translateY(-4px);} }
+  @keyframes mate-rock{ from{ transform:rotate(-4deg);} to{ transform:rotate(4deg);} }
+  @keyframes mate-jab{ from{ transform:scale(1) translateX(0);} to{ transform:scale(1.04) translateX(4px);} }
+  @keyframes mate-nod{ 0%,100%{ transform:translateY(0);} 50%{ transform:translateY(6px) scaleY(.97);} }
+  @keyframes mate-bob{ from{ transform:translateY(0);} to{ transform:translateY(-5px);} }
+  @keyframes mate-measure{ from{ transform:translateX(0);} to{ transform:translateX(5px) rotate(1.5deg);} }
   @keyframes mate-think{ from{ transform:rotate(-6deg);} to{ transform:rotate(-2deg);} }
-  @keyframes mate-float{ from{ transform:translateY(0);} to{ transform:translateY(-6px);} }
+  @keyframes mate-float{ from{ transform:translateY(0);} to{ transform:translateY(-8px);} }
   @keyframes mate-tap{ from{ transform:rotate(5deg);} to{ transform:rotate(8deg);} }
   @keyframes mate-hand{ from{ transform:rotate(0);} to{ transform:rotate(360deg);} }
-  @keyframes mate-jump{ 0%,100%{ transform:translateY(0);} 50%{ transform:translateY(-10px);} }
-  @keyframes mate-confetti{ from{ top:-6px; opacity:1;} to{ top:60px; opacity:0;} }
-  @keyframes mate-zz{ 0%{ transform:translate(0,0); opacity:0;} 30%{ opacity:1;} 100%{ transform:translate(10px,-16px); opacity:0;} }
+  @keyframes mate-jump{ 0%,100%{ transform:translateY(0);} 50%{ transform:translateY(-14px);} }
+  @keyframes mate-confetti{ from{ top:-6px; opacity:1;} to{ top:40%; opacity:0;} }
+  @keyframes mate-zz{ 0%{ transform:translate(0,0); opacity:0;} 30%{ opacity:1;} 100%{ transform:translate(12px,-20px); opacity:0;} }
   @keyframes mate-pop{ from{ opacity:0; transform:translateY(6px) scale(.96);} to{ opacity:1; transform:translateY(0) scale(1);} }
-  #mate-bubble{ position:fixed; left:14px; bottom:140px; z-index:60; max-width:280px; background:#fff; color:#231f20; border:1px solid var(--line); border-radius:12px; padding:9px 30px 9px 12px; font-size:13px; line-height:1.35; box-shadow:0 14px 30px -14px rgba(35,31,32,.5); animation:mate-pop .22s ease-out; }
+  #mate-bubble{ position:fixed; left:14px; bottom:260px; z-index:60; max-width:300px; background:#fff; color:#231f20; border:1px solid var(--line); border-radius:12px; padding:9px 30px 9px 12px; font-size:13.5px; line-height:1.35; box-shadow:0 14px 30px -14px rgba(35,31,32,.5); animation:mate-pop .22s ease-out; }
   #mate-bubble[hidden]{ display:none !important; }
-  #mate-bubble:after{ content:""; position:absolute; left:34px; bottom:-7px; width:12px; height:12px; background:#fff; border-right:1px solid var(--line); border-bottom:1px solid var(--line); transform:rotate(45deg); }
+  #mate-bubble:after{ content:""; position:absolute; width:12px; height:12px; background:#fff; border-right:1px solid var(--line); border-bottom:1px solid var(--line); transform:rotate(45deg); left:34px; bottom:-7px; }
+  #mate-bubble[data-side="right"]:after{ left:-7px; bottom:auto; top:18px; transform:rotate(135deg); }
+  #mate-bubble[data-side="left"]:after{ left:auto; right:-7px; bottom:auto; top:18px; transform:rotate(-45deg); }
   #mate-bubble button{ position:absolute; top:4px; right:6px; border:0; background:none; font:inherit; font-size:14px; color:#8a8a8a; cursor:pointer; padding:2px 4px; }
   #mate-bubble button:hover{ color:#231f20; }
+  .settings-range{ display:flex; align-items:center; gap:10px; } .settings-range input[type=range]{ flex:1; } .settings-range output{ min-width:3em; font-variant-numeric:tabular-nums; }
   @media (prefers-reduced-motion: reduce){ #mate *, #mate-bubble{ animation:none !important; } }
   .ai-chat{ position:fixed; right:18px; bottom:18px; z-index:61; width:min(420px, calc(100vw - 36px)); height:min(620px, calc(100vh - 36px)); background:#fff; border:1px solid var(--line); border-radius:14px; box-shadow:0 24px 60px -24px rgba(35,31,32,.6); display:flex; flex-direction:column; overflow:hidden; font-size:13.5px; }
   .ai-chat-head{ display:flex; align-items:center; gap:8px; padding:10px 12px; background:#1b1334; color:#fff; }
@@ -939,7 +950,32 @@
         <div class="hint">Every Save keeps a full version of the quote for good. While a quote is changing, another version is kept automatically at this interval. 0 turns the automatic ones off.</div>
       </div>
       <div class="field"><label class="settings-check"><input type="checkbox" id="settings-download-on-save"> Quotes: also save a copy to this computer on every Save</label></div>
-      <div class="field"><label class="settings-check"><input type="checkbox" id="settings-mate"> Grady's mate — the site worker in the corner</label><div class="hint">Waves on sign-in, points at the next element, nods at a Done tick, scratches his head at an unpriced quote row, celebrates a submission. Click him to ask Gradcon AI. He changes nothing on a quote.</div></div>
+      <div class="field"><label class="settings-check"><input type="checkbox" id="settings-mate"> Grady's mate — the figure on the screen</label><div class="hint">Waves on sign-in, points at the next element, nods at a Done tick, scratches his head at an unpriced quote row, celebrates a submission. Drag him anywhere; click him to ask Gradcon AI. He changes nothing on a quote.</div></div>
+      <div class="field">
+        <label for="settings-mate-chatter">Grady's mate — chatter</label>
+        <select id="settings-mate-chatter">
+          <option value="0">Off — he only reacts to the work</option>
+          <option value="10">A friendly line every 10 minutes</option>
+          <option value="20">A friendly line every 20 minutes (default)</option>
+          <option value="30">A friendly line every 30 minutes</option>
+          <option value="60">A friendly line every hour</option>
+        </select>
+        <div class="hint">Seventy-odd sayings built from real facts: the project last worked on, what is next, the projects opened today, the quotes due, the weather. Never while he is asleep, never over another bubble.</div>
+      </div>
+      <div class="field">
+        <label for="settings-mate-size">Grady's mate — size</label>
+        <select id="settings-mate-size">
+          <option value="120">Small (120 px)</option>
+          <option value="180">Medium (180 px)</option>
+          <option value="240">Large (240 px, default)</option>
+          <option value="320">Extra large (320 px)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="settings-mate-opacity">Grady's mate — transparency</label>
+        <div class="settings-range"><input type="range" id="settings-mate-opacity" min="20" max="100" step="5" value="100" oninput="document.getElementById('settings-mate-opacity-out').value = this.value + '%'"><output id="settings-mate-opacity-out">100%</output></div>
+        <div class="hint">100% is solid; lower lets the page show through him.</div>
+      </div>
       <div class="field">
         <label for="settings-weather-place">Weather on the dashboard — place</label>
         <input type="text" id="settings-weather-place" placeholder="Melbourne" list="settings-weather-places">
@@ -1105,14 +1141,18 @@
      AI jobs) and answers; it never acts on its own — an action it proposes
      is a button the person clicks. -->
 <button type="button" id="ai-chat-fab" class="ai-fab" hidden title="Ask Gradcon AI about your projects, deadlines, rates and takeoffs">🤖 Ask Gradcon AI</button>
-<!-- Grady's mate: Grady's own illustration (portal/mate/*.png — four poses cut out of the sheet he sent on 6 Nov 2026, inlined as data URLs by the assembler) who reacts to the work (portal/mate.js). Click = Ask Gradcon AI; off under Settings → App behaviour. -->
-<div id="mate" hidden data-pose="idle" role="button" tabindex="0" title="Grady's mate — click to ask Gradcon AI. Turn off under Settings → App behaviour." data-testid="mate">
+<!-- Grady's mate: Grady's own illustration (portal/mate/*.webp — eight poses cut out of the sheets he sent on 6 Nov 2026, inlined as data URLs by the assembler) who reacts to the work and chats between times (portal/mate.js). Drag him anywhere; click = Ask Gradcon AI; size, transparency, chatter and the switch under Settings → App behaviour. -->
+<div id="mate" hidden data-pose="idle" role="button" tabindex="0" title="Grady's mate — click to ask Gradcon AI, drag to move. Size, transparency and chatter under Settings → App behaviour." data-testid="mate">
   <span class="shadow"></span>
   <div class="fig">
     <img class="img-stand" alt="" src="__MATE_POSE_STAND__">
     <img class="img-point" alt="" src="__MATE_POSE_POINT__">
     <img class="img-thumbs" alt="" src="__MATE_POSE_THUMBS__">
     <img class="img-arms" alt="" src="__MATE_POSE_ARMS__">
+    <img class="img-hips" alt="" src="__MATE_POSE_HIPS__">
+    <img class="img-kneel" alt="" src="__MATE_POSE_KNEEL__">
+    <img class="img-clipboard" alt="" src="__MATE_POSE_CLIPBOARD__">
+    <img class="img-wave" alt="" src="__MATE_POSE_WAVE__">
   </div>
   <span class="mate-mark zz">z<sup>Z</sup></span>
   <span class="mate-mark q">?</span>
@@ -1366,6 +1406,7 @@
     ['settings-est-formwaste','estFormworkWaste'], ['settings-est-lap','estLapPct'],
     ['settings-est-bulking','estBulking'], ['settings-est-cover','estCover'],
     ['settings-est-barstock','estBarStock'], ['settings-est-grade','estGrade'],
+    ['settings-mate-opacity','mateOpacity'],
     ['settings-autosave','quotesAutosaveMinutes']
   ];
   // Quotes colour tokens — a JSON MIRROR of src/lib/quoteTheme.js (THEME_TOKENS
@@ -1416,7 +1457,9 @@
     ['settings-est-startpage','estStartPage','setup'],
     ['settings-page-orient','pageOrientation','portrait'],
     ['settings-quotes-theme','quotesTheme','portal'],
-    ['settings-weather-place','weatherPlace','']
+    ['settings-weather-place','weatherPlace',''],
+    ['settings-mate-chatter','mateChatterMin','20'],
+    ['settings-mate-size','mateSize','240']
   ];
   // Toggle-backed preferences: [element id, prefs key, default-on?]. Stored
   // as explicit booleans on save (like showHero), so the apps can
@@ -1479,6 +1522,8 @@
     NUM_FIELDS.forEach(function(f){
       document.getElementById(f[0]).value = (typeof prefs[f[1]] === 'number' && isFinite(prefs[f[1]])) ? prefs[f[1]] : '';
     });
+    if(typeof prefs.mateOpacity !== 'number'){ document.getElementById('settings-mate-opacity').value = 100; }
+    document.getElementById('settings-mate-opacity-out').value = document.getElementById('settings-mate-opacity').value + '%';
     STR_FIELDS.forEach(function(f){
       document.getElementById(f[0]).value = (typeof prefs[f[1]] === 'string') ? prefs[f[1]] : f[2];
     });
@@ -1983,8 +2028,10 @@
         });
     }).catch(function(){ b.hidden = true; });
   }
+  var MATE_WEATHER = null; // the chip's reading, for Grady's mate's chatter (temp, sky, place — never invented)
   function renderWeather(b, w){
     var sky = WMO[w.code] || ['🌡️', 'Weather'];
+    MATE_WEATHER = { temp: w.temp, sky: sky[1], place: w.place };
     var r = function(v){ return v == null ? '–' : Math.round(v); };
     b.hidden = false;
     b.innerHTML = '<span class="icon">' + sky[0] + '</span><b>' + r(w.temp) + '°C</b><span>' + escapeHtml(sky[1]) + ' · ' + escapeHtml(w.place) + '</span><span class="muted">feels ' + r(w.feels) + '° · ' + r(w.min) + '–' + r(w.max) + '°' + (w.rainChance != null ? ' · rain ' + r(w.rainChance) + '%' : '') + (w.wind != null ? ' · wind ' + r(w.wind) + ' km/h' : '') + '</span>';
@@ -2400,45 +2447,80 @@
   document.getElementById('ai-chat-form').addEventListener('submit', function(e){ e.preventDefault(); var inp = document.getElementById('ai-chat-input'); var t = inp.value; inp.value = ''; sendChat(t); });
 
   // ---------------- Grady's mate ----------------
-  // The figure in the bottom-left corner. portal/mate.js (inlined above) decides the pose and the
-  // line for every event; the apps send events through localStorage (src/lib/mate.js) and this
-  // block only plays them. Quiet by default: one bubble at a time, the same fact once in ten
-  // minutes, ✕ on the bubble, the Settings switch. Asleep after ten idle minutes.
+  // Grady's own illustration, anywhere on the screen. portal/mate.js (inlined above) decides the pose and the
+  // line for every event and the chatter between times; the apps send events through localStorage
+  // (src/lib/mate.js) and this block only plays them. Quiet by default: one bubble at a time, the same fact
+  // once in ten minutes, a ✕ on the bubble, chatter only while he is awake and only at the Settings interval,
+  // the Settings switch. Draggable (the spot is remembered per browser), size and transparency from Settings.
   (function initMate(){
     var el = document.getElementById('mate'), bubble = document.getElementById('mate-bubble'), textEl = document.getElementById('mate-text');
     if(!el || typeof mateReaction !== 'function') return;
-    var lastSig = null, lastAt = 0, lastActive = Date.now(), timer = null, screenId = 'screen-login', facts = function(){ return WELCOME_FACTS; };
-    function enabled(){ return mateEnabled(loadPrefs()); }
+    var lastSig = null, lastAt = 0, lastActive = Date.now(), timer = null, screenId = 'screen-login';
+    var lastBubbleAt = 0, lastChatterAt = Date.now(), lastSaying = null, session = { opened: [], project: '', next: '', done: 0, total: 0 };
+    function prefs(){ return loadPrefs(); }
+    function enabled(){ return mateEnabled(prefs()); }
     function visible(){ return enabled() && screenId !== 'screen-login'; }
+    function facts(){ return { welcome: WELCOME_FACTS, name: currentUser ? firstName(currentUser) : '', tod: timeOfDay(new Date()), day: new Date().toLocaleDateString('en-AU', { weekday:'long' }), opened: session.opened, project: session.project, next: session.next, done: session.done, total: session.total, weather: MATE_WEATHER }; }
     function setPose(p){ el.setAttribute('data-pose', MATE_POSES.indexOf(p) >= 0 ? p : 'idle'); }
     function rest(){ setPose(idlePose(lastActive, Date.now())); }
+    function placeBubble(){ // above him when there is room, else beside him, always on screen
+      var r = el.getBoundingClientRect(), vw = window.innerWidth, vh = window.innerHeight;
+      bubble.style.maxWidth = Math.min(300, vw - 28) + 'px';
+      var bw = bubble.offsetWidth, bh = bubble.offsetHeight;
+      if(r.top >= bh + 14){ bubble.setAttribute('data-side', 'above'); bubble.style.left = Math.max(8, Math.min(r.left, vw - bw - 8)) + 'px'; bubble.style.top = (r.top - bh - 10) + 'px'; }
+      else if(r.right + bw + 14 <= vw){ bubble.setAttribute('data-side', 'right'); bubble.style.left = (r.right + 10) + 'px'; bubble.style.top = Math.max(8, Math.min(r.top + 10, vh - bh - 8)) + 'px'; }
+      else { bubble.setAttribute('data-side', 'left'); bubble.style.left = Math.max(8, r.left - bw - 10) + 'px'; bubble.style.top = Math.max(8, Math.min(r.top + 10, vh - bh - 8)) + 'px'; }
+      bubble.style.bottom = 'auto';
+    }
     function hideBubble(){ bubble.hidden = true; if(timer){ clearTimeout(timer); timer = null; } rest(); }
     function say(r){
       if(!r || !visible()) return false;
-      setPose(r.pose); textEl.textContent = r.text; bubble.hidden = false;
+      setPose(r.pose); textEl.textContent = r.text; bubble.hidden = false; placeBubble(); lastBubbleAt = Date.now();
       if(timer) clearTimeout(timer);
       timer = setTimeout(function(){ timer = null; bubble.hidden = true; rest(); }, MATE_BUBBLE_MS);
       return true;
     }
     function react(ev){
-      var r = mateReaction(ev, facts());
+      var e = parseMateEvent(ev); if(!e) return false;
+      if(e.kind === 'open' && e.detail){ var nm = String(e.detail.project || '').trim(); if(nm && session.opened.indexOf(nm) < 0) session.opened.push(nm); session.project = nm; session.next = String(e.detail.next || ''); session.done = Number(e.detail.done) || 0; session.total = Number(e.detail.total) || 0; }
+      if(e.kind === 'done' && e.detail){ session.next = String(e.detail.next || ''); session.done = Number(e.detail.done) || 0; session.total = Number(e.detail.total) || 0; }
+      var r = mateReaction(e, WELCOME_FACTS);
       if(!shouldSpeak(r, lastSig, lastAt, Date.now())) return false;
       if(!say(r)) return false;
       lastSig = r.sig; lastAt = Date.now(); return true;
     }
-    function refresh(){ el.hidden = !visible(); if(el.hidden) hideBubble(); }
+    function chatter(force){ // a friendly line between events — never over a bubble, never asleep, at the Settings interval
+      var ms = mateChatterMs(prefs()); var now = Date.now();
+      if(!force){ if(!ms || !visible() || !bubble.hidden || idlePose(lastActive, now) === 'sleep' || now - lastChatterAt < ms || now - lastBubbleAt < 2 * 60000) return false; }
+      else if(!visible()) return false;
+      var r = mateSaying(facts(), Math.floor(now / 60000) + session.opened.length, lastSaying); if(!r) return false;
+      lastChatterAt = now; lastSaying = r.text; return say(r);
+    }
+    function applyLook(){ // size, transparency and the remembered spot
+      var p = prefs(); var h = mateSize(p); el.style.setProperty('--mate-h', h + 'px'); el.style.opacity = String(mateOpacity(p));
+      var pos = clampMatePos(p.matePos, { w: el.offsetWidth || h * .62, h: el.offsetHeight || h }, { w: window.innerWidth, h: window.innerHeight });
+      if(pos){ el.style.left = pos.x + 'px'; el.style.top = pos.y + 'px'; el.style.bottom = 'auto'; } else { el.style.left = ''; el.style.top = ''; el.style.bottom = ''; }
+      if(!bubble.hidden) placeBubble();
+    }
+    function refresh(){ el.hidden = !visible(); if(el.hidden) hideBubble(); else applyLook(); }
     function active(){ lastActive = Date.now(); if(bubble.hidden && el.getAttribute('data-pose') === 'sleep') setPose('idle'); }
     function watchFrame(){ // clicks and keys inside the app iframe (same origin, a blob: URL) count as activity
       var f = document.getElementById('app-frame'); if(!f) return;
       f.addEventListener('load', function(){ try{ var d = f.contentWindow && f.contentWindow.document; if(d){ d.addEventListener('pointerdown', active, true); d.addEventListener('keydown', active, true); } }catch(e){} });
     }
+    // drag anywhere; a press that moves under 6 px is a click
+    var drag = null;
+    el.addEventListener('pointerdown', function(e){ if(e.button !== 0) return; var r = el.getBoundingClientRect(); drag = { id: e.pointerId, dx: e.clientX - r.left, dy: e.clientY - r.top, x0: e.clientX, y0: e.clientY, moved: false }; try{ el.setPointerCapture(e.pointerId); }catch(err){} active(); });
+    el.addEventListener('pointermove', function(e){ if(!drag || e.pointerId !== drag.id) return; if(!drag.moved && Math.abs(e.clientX - drag.x0) + Math.abs(e.clientY - drag.y0) < 6) return; drag.moved = true; el.setAttribute('data-dragging', '1'); var pos = clampMatePos({ x: e.clientX - drag.dx, y: e.clientY - drag.dy }, { w: el.offsetWidth, h: el.offsetHeight }, { w: window.innerWidth, h: window.innerHeight }); el.style.left = pos.x + 'px'; el.style.top = pos.y + 'px'; el.style.bottom = 'auto'; if(!bubble.hidden) placeBubble(); });
+    function endDrag(e){ if(!drag || e.pointerId !== drag.id) return; var moved = drag.moved; drag = null; el.removeAttribute('data-dragging'); if(moved){ var p = loadPrefs(); p.matePos = { x: parseInt(el.style.left, 10) || 0, y: parseInt(el.style.top, 10) || 0 }; savePrefs(p); } else { hideBubble(); var fab = document.getElementById('ai-chat-fab'); if(fab && !fab.hidden) fab.click(); } }
+    el.addEventListener('pointerup', endDrag); el.addEventListener('pointercancel', function(e){ if(drag && e.pointerId === drag.id){ drag = null; el.removeAttribute('data-dragging'); } });
+    el.addEventListener('keydown', function(e){ if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); hideBubble(); var fab = document.getElementById('ai-chat-fab'); if(fab && !fab.hidden) fab.click(); } });
+    window.addEventListener('resize', function(){ if(!el.hidden) applyLook(); });
     document.addEventListener('pointerdown', active, true); document.addEventListener('keydown', active, true); watchFrame();
-    window.addEventListener('storage', function(e){ if(e.key === MATE_EVENT_KEY && e.newValue){ active(); react(parseMateEvent(e.newValue)); } });
-    setInterval(function(){ if(bubble.hidden && !el.hidden) rest(); }, 30000);
-    el.addEventListener('click', function(){ hideBubble(); var fab = document.getElementById('ai-chat-fab'); if(fab && !fab.hidden) fab.click(); });
-    el.addEventListener('keydown', function(e){ if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); el.click(); } });
+    window.addEventListener('storage', function(e){ if(e.key === MATE_EVENT_KEY && e.newValue){ active(); react(e.newValue); } });
+    setInterval(function(){ if(el.hidden) return; if(bubble.hidden) rest(); chatter(false); }, 30000);
     document.getElementById('mate-close').addEventListener('click', function(e){ e.stopPropagation(); hideBubble(); });
-    window.gradconMate = { react: react, refresh: refresh, screen: function(id){ screenId = id; refresh(); }, state: function(){ return { pose: el.getAttribute('data-pose'), hidden: el.hidden, bubble: bubble.hidden ? null : textEl.textContent, lastSig: lastSig }; }, sleepNow: function(){ lastActive = 0; rest(); } };
+    window.gradconMate = { react: react, refresh: refresh, chatter: function(){ return chatter(true); }, facts: facts, screen: function(id){ screenId = id; refresh(); }, state: function(){ return { pose: el.getAttribute('data-pose'), hidden: el.hidden, bubble: bubble.hidden ? null : textEl.textContent, lastSig: lastSig, side: bubble.getAttribute('data-side'), left: el.style.left, top: el.style.top, opacity: el.style.opacity, size: el.style.getPropertyValue('--mate-h') }; }, sleepNow: function(){ lastActive = 0; rest(); } };
     refresh();
   })();
 

@@ -4265,7 +4265,32 @@ await checkAsync("Grady's mate (portal/mate.js, src/lib/mate.js): the rules, the
   const sb = { globalThis: undefined, module: undefined }; sb.globalThis = sb; vm.runInNewContext(src, sb, { filename: "mate.js" });
   const M = sb; const ML = await import("../src/lib/mate.js");
   assert.equal(M.MATE_EVENT_KEY, ML.MATE_EVENT_KEY, "the apps write the key the shell listens on");
-  assert.equal(JSON.stringify(M.MATE_POSES), JSON.stringify(["idle", "wave", "point", "nod", "thumbs", "scratch", "wrist", "celebrate", "sleep"]));
+  assert.equal(JSON.stringify(M.MATE_POSES), JSON.stringify(["idle", "wave", "point", "nod", "thumbs", "scratch", "wrist", "celebrate", "sleep", "measure", "hips", "clipboard"]));
+  // chatter: 60–100 sayings, every placeholder declared, filled lines carry no braces, a line needs its facts, no back-to-back repeat
+  assert.ok(M.MATE_SAYINGS.length >= 60 && M.MATE_SAYINGS.length <= 100, `${M.MATE_SAYINGS.length} sayings`);
+  for (const sy of M.MATE_SAYINGS) {
+    const ph = [...sy.t.matchAll(/\{(\w+)\}/g)].map((m) => m[1]);
+    assert.ok(ph.every((k) => sy.needs.includes(k)), `every placeholder of "${sy.t}" is declared`);
+    assert.ok(sy.needs.every((k) => M.SAYING_PLACEHOLDERS.includes(k) || M.SAYING_FLAGS.includes(k)), `"${sy.t}" needs known facts`);
+    assert.ok(M.MATE_POSES.includes(sy.pose), `"${sy.t}" strikes a known pose`);
+  }
+  const rawFacts = { name: "Grady", tod: "Good morning", welcome: { day: "Friday", dueToday: ["7 Example Street"], dueWeek: ["9 Beach Road"], nQueued: 3, nEstimating: 2, nTakingOff: 1, recent: { name: "14 Marine Pde", when: "today at 9:12 am", elements: 5 } }, project: "14 Marine Pde", next: "Slab SL3", done: 2, total: 5, opened: ["7 Example Street", "14 Marine Pde"], weather: { temp: 21.4, sky: "Sunny", place: "Melbourne" } };
+  const sf = M.sayingFacts(rawFacts); assert.equal(sf.temp, "21"); assert.equal(sf.sky, "sunny"); assert.equal(sf.nOpened, "2"); assert.equal(sf.elementsMany, "1"); assert.equal(sf.noneDue, undefined);
+  const el1 = M.eligibleSayings(sf); assert.ok(el1.length >= 60, `${el1.length} eligible with every fact`);
+  for (let i = 0; i < 200; i++) { const sy = M.mateSaying(rawFacts, i); assert.ok(sy && !/[{}]/.test(sy.text), `no brace left in "${sy && sy.text}"`); assert.ok(M.MATE_POSES.includes(sy.pose)); }
+  assert.match(M.mateSaying(rawFacts, 0).text, /Last worked on was 14 Marine Pde, today at 9:12 am/);
+  const bare = M.eligibleSayings(M.sayingFacts({})); assert.ok(bare.length >= 25 && bare.every((sy) => sy.needs.length === 0), "with nothing known only the fact-free lines are eligible");
+  assert.ok(!M.eligibleSayings(M.sayingFacts({ welcome: { recent: { name: "X" } } })).some((sy) => sy.needs.includes("lastWhen")), "no 'when' → no line that needs it");
+  const first = M.mateSaying(rawFacts, 7); assert.notEqual(M.mateSaying(rawFacts, 7, first.text).text, first.text, "the previous line is not repeated");
+  assert.equal(M.mateSaying({}, 1, null) && M.mateSaying({}, 1, null).needs, undefined);
+  assert.ok(M.MATE_SAYINGS.filter((sy) => sy.needs.includes("last")).length >= 6 && M.MATE_SAYINGS.filter((sy) => sy.needs.includes("opened") || sy.needs.includes("nOpened")).length >= 3 && M.MATE_SAYINGS.some((sy) => /What a good/.test(sy.t)), "last worked on, the projects opened, what a good day");
+  // size, transparency, chatter interval, the remembered spot
+  assert.equal(M.mateSize({}), 240); assert.equal(M.mateSize({ mateSize: "120" }), 120); assert.equal(M.mateSize({ mateSize: 999 }), 240);
+  assert.equal(M.mateOpacity({}), 1); assert.equal(M.mateOpacity({ mateOpacity: 60 }), 0.6); assert.equal(M.mateOpacity({ mateOpacity: 5 }), 0.2); assert.equal(M.mateOpacity({ mateOpacity: 500 }), 1);
+  assert.equal(M.mateChatterMs({}), 20 * 60000); assert.equal(M.mateChatterMs({ mateChatterMin: "0" }), 0); assert.equal(M.mateChatterMs({ mateChatterMin: 60 }), 3600000); assert.equal(M.mateChatterMs({ mateChatterMin: 7 }), 20 * 60000);
+  assert.equal(M.clampMatePos(null), null); assert.equal(M.clampMatePos({ x: "a", y: 1 }), null);
+  assert.deepEqual(JSON.parse(JSON.stringify(M.clampMatePos({ x: 5000, y: -40 }, { w: 150, h: 240 }, { w: 1280, h: 800 }))), { x: 1130, y: 0 });
+  assert.deepEqual(JSON.parse(JSON.stringify(M.clampMatePos({ x: 300, y: 200 }, { w: 150, h: 240 }, { w: 1280, h: 800 }))), { x: 300, y: 200 });
   const facts = { dueToday: ["7 Example Street, Rye VIC 3941"], dueWeek: ["9 Beach Road"] };
   let r = M.mateReaction({ kind: "signin", detail: { name: "Grady" }, at: 1 }, facts); assert.equal(r.pose, "wrist"); assert.match(r.text, /G'day Grady\. 1 quote is due TODAY: 7 Example Street/);
   r = M.mateReaction({ kind: "signin", detail: { name: "Grady" }, at: 1 }, { dueToday: [], dueWeek: ["A", "B"] }); assert.equal(r.pose, "wave"); assert.match(r.text, /2 quotes due this week — A first/);
@@ -4274,13 +4299,14 @@ await checkAsync("Grady's mate (portal/mate.js, src/lib/mate.js): the rules, the
   r = M.mateReaction({ kind: "open", detail: { project: "P", done: 2, total: 5, next: "X", unpriced: 2 }, at: 1 }); assert.equal(r.pose, "scratch"); assert.match(r.text, /2 quote rows on P still have no amount/, "an unpriced quote row beats the next-up line");
   r = M.mateReaction({ kind: "open", detail: { project: "P", done: 0, total: 3, expiring: 1 }, at: 1 }); assert.equal(r.pose, "scratch"); assert.match(r.text, /1 supplier rate expiring/);
   r = M.mateReaction({ kind: "open", detail: { project: "P", done: 0, total: 0 }, at: 1 }); assert.equal(r.pose, "wave"); assert.match(r.text, /blank quote/);
-  r = M.mateReaction({ kind: "open", detail: { project: "P", done: 3, total: 3 }, at: 1 }); assert.equal(r.pose, "thumbs");
+  r = M.mateReaction({ kind: "open", detail: { project: "P", done: 3, total: 3 }, at: 1 }); assert.equal(r.pose, "clipboard");
+  assert.equal(M.mateReaction({ kind: "open", detail: { project: "P", status: "Taking Off", done: 0, total: 3, next: "Raft" }, at: 1 }).pose, "measure", "a Taking Off project gets the tape");
   r = M.mateReaction({ kind: "done", detail: { label: "Strip Footings", done: 1, total: 3, next: "Screw Piles" }, at: 1 }); assert.equal(r.pose, "nod"); assert.equal(r.text, "Strip Footings ticked. 1 of 3 done. Next up: Screw Piles.");
   r = M.mateReaction({ kind: "done", detail: { label: "Strip Footings", done: 3, total: 3 }, at: 1 }); assert.equal(r.pose, "celebrate"); assert.match(r.text, /every element/);
-  r = M.mateReaction({ kind: "saved", detail: { project: "P" }, at: 60000 }); assert.equal(r.pose, "thumbs"); assert.match(r.text, /Saved — a version of P kept for good/);
+  r = M.mateReaction({ kind: "saved", detail: { project: "P" }, at: 60000 }); assert.equal(r.pose, "clipboard"); assert.match(r.text, /Saved — a version of P kept for good/);
   r = M.mateReaction({ kind: "rfq", detail: { count: 2, packages: "Screw Piling" }, at: 1 }); assert.equal(r.pose, "wave"); assert.match(r.text, /2 RFQs sent — Screw Piling/); assert.equal(M.mateReaction({ kind: "rfq", detail: { count: 0 }, at: 1 }), null);
   assert.equal(M.mateReaction({ kind: "status", detail: { project: "P", status: "Successful" }, at: 1 }).pose, "celebrate"); assert.equal(M.mateReaction({ kind: "status", detail: { status: "Submitted" }, at: 1 }).pose, "celebrate");
-  assert.equal(M.mateReaction({ kind: "status", detail: { status: "Completed Estimating" }, at: 1 }).pose, "thumbs"); assert.equal(M.mateReaction({ kind: "status", detail: { status: "Unsuccessful" }, at: 1 }).pose, "scratch");
+  assert.equal(M.mateReaction({ kind: "status", detail: { status: "Completed Estimating" }, at: 1 }).pose, "clipboard"); assert.equal(M.mateReaction({ kind: "status", detail: { status: "Unsuccessful" }, at: 1 }).pose, "scratch");
   assert.equal(M.mateReaction({ kind: "status", detail: { status: "Deadline Missed" }, at: 1 }).pose, "wrist"); assert.equal(M.mateReaction({ kind: "status", detail: { status: "Estimating" }, at: 1 }), null, "an open status says nothing");
   assert.equal(M.mateReaction({ kind: "checklist", detail: { complete: true, total: 12 }, at: 1 }).pose, "celebrate"); assert.equal(M.mateReaction({ kind: "checklist", detail: { complete: false }, at: 1 }), null);
   assert.equal(M.mateReaction({ kind: "jump", detail: { label: "Raft Slab B" }, at: 1 }).text, "Raft Slab B — right there.");
@@ -4299,18 +4325,22 @@ await checkAsync("Grady's mate (portal/mate.js, src/lib/mate.js): the rules, the
   assert.equal(ML.mateEvent("done", {}, null), null); assert.equal(ML.mateEvent("", {}, fake), null);
   // the wiring: the shell loads the module and carries the figure, the bubble and the Settings switch; the assembler inlines it; the editor sends every event
   const shell = fs.readFileSync(new URL("../portal/portal-shell.html", import.meta.url), "utf8");
+  const app = fs.readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
   assert.match(shell, /<script src="mate\.js"><\/script>/); assert.match(shell, /id="mate" hidden data-pose="idle"/); assert.match(shell, /id="mate-bubble"/); assert.match(shell, /\['settings-mate','mateOn',true\]/);
   assert.match(shell, /window\.gradconMate\.react\(\{ kind:'signin'/); assert.match(shell, /window\.gradconMate\.screen\(id\)/); assert.match(shell, /e\.key === MATE_EVENT_KEY/);
   assert.match(shell, /prefers-reduced-motion: reduce\)\{ #mate \*, #mate-bubble\{ animation:none !important; \}/, "reduced motion = a still figure");
   for (const pose of M.MATE_POSES.filter((p) => p !== "idle" && p !== "sleep")) assert.match(shell, new RegExp(`#mate\\[data-pose="${pose}"\\]`), `the shell styles the ${pose} pose`);
   assert.match(shell, /#mate\[data-pose="sleep"\]/);
   const asm = fs.readFileSync(new URL("./assemble-portal.mjs", import.meta.url), "utf8"); assert.match(asm, /portal", "mate\.js"/); assert.match(asm, /no longer loads mate\.js/);
-  for (const pose of ["stand", "point", "thumbs", "arms"]) { // his four illustrated poses, cut out and inlined
-    const png = fs.readFileSync(new URL(`../portal/mate/${pose}.png`, import.meta.url)); assert.ok(png.length > 1000 && png.readUInt32BE(0) === 0x89504e47, `portal/mate/${pose}.png is a PNG`);
+  for (const pose of ["stand", "point", "thumbs", "arms", "hips", "kneel", "clipboard", "wave"]) { // his eight illustrated poses, cut out and inlined
+    const webp = fs.readFileSync(new URL(`../portal/mate/${pose}.webp`, import.meta.url)); assert.ok(webp.length > 1000 && webp.toString("ascii", 0, 4) === "RIFF" && webp.toString("ascii", 8, 12) === "WEBP", `portal/mate/${pose}.webp is a WebP`);
     assert.ok(shell.includes(`__MATE_POSE_${pose.toUpperCase()}__`), `the shell carries the ${pose} placeholder`); assert.match(shell, new RegExp(`\\.img-${pose}\\{ display:block`), `some pose shows the ${pose} image`);
   }
+  for (const id of ["settings-mate-chatter", "settings-mate-size", "settings-mate-opacity"]) assert.ok(shell.includes(`id="${id}"`), `Settings carries ${id}`);
+  assert.match(shell, /\['settings-mate-chatter','mateChatterMin','20'\]/); assert.match(shell, /\['settings-mate-size','mateSize','240'\]/); assert.match(shell, /\['settings-mate-opacity','mateOpacity'\]/);
+  assert.match(shell, /el\.addEventListener\('pointerdown'/, "draggable"); assert.match(shell, /p\.matePos = \{ x:/, "the spot is remembered"); assert.match(shell, /MATE_WEATHER = \{ temp: w\.temp, sky: sky\[1\], place: w\.place \}/, "the weather facts come from the chip");
+  assert.match(app, /mateEvent\("open", \{ project: quote\.projectName \|\| "", status: quote\.status/, "the open event carries the status");
   assert.match(asm, /__MATE_POSE_\$\{pose\.toUpperCase\(\)\}__/, "the assembler inlines the poses");
-  const app = fs.readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
   for (const k of ["open", "done", "checklist", "saved", "status", "rfq", "jump"]) assert.match(app, new RegExp(`mateEvent\\("${k}"`), `the editor sends the ${k} event`);
 });
 

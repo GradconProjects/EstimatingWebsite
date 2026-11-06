@@ -1188,37 +1188,64 @@ send.
 Grady, 6 Nov 2026: "an avatar of Grady that acts more like the old Microsoft
 Office paper clip with gestures made while he works?" — "just for fun", with
 a photo for the likeness, then his own illustration sheet ("use an external
-cut out service and then animate him accordingly"). **He IS Grady's
-illustration**: `portal/mate/{stand,point,thumbs,arms}.png` are the four
-poses cut out of the sheet (hands in pockets, pointing, thumbs-up crouch,
-arms crossed), inlined as data URLs by `assemble-portal.mjs`
-(`__MATE_POSE_<POSE>__`, asserted PNG) and animated as whole figures (breathe,
-rock, jab, bob, jump with confetti, a "?" when he thinks, a clock on the
-wrist tap, grey and z's asleep). The cut-out was done LOCALLY with
+cut out service and then animate him accordingly"; then "moveable and kept
+anywhere on the screen … transparency level changeable … comments like 'last
+worked on was', 'what a good day to…' friendly and funny, 50–100
+interchangeable sayings … not imposing and can be shut off … twice the size
+… more poses"). **He IS Grady's illustration**: `portal/mate/{stand,point,
+thumbs,arms,hips,kneel,clipboard,wave}.webp` are the eight poses cut out of
+the sheets (hands in pockets, pointing, thumbs-up crouch, arms crossed, hands
+on hips, kneeling with the tape, clipboard thumbs-up, waving), 520 px tall
+WebP with alpha, inlined as data URLs by `assemble-portal.mjs`
+(`__MATE_POSE_<POSE>__`, asserted RIFF/WEBP) and animated as whole figures
+(breathe, rock, jab, bob, jump with confetti, a "?" when he thinks, a clock
+on the wrist tap, grey and z's asleep). The cut-out was done LOCALLY with
 ImageMagick (flood-fill of the white ground): the Higgsfield workspace was
 out of credits and OpenArt has no image cut-out, so nothing of his went to
-an outside service. The first build (f0121dd) carried a hand-drawn vector
-instead. Pinned to the bottom-left of every signed-in screen. Rules:
+an outside service (four poses were uploaded to Higgsfield before it
+refused). Images sent MID-TURN never land as files — only an image at the
+start of a message does (`images/<n>.webp`). The first build (f0121dd)
+carried a hand-drawn vector instead. Rules:
 
 1. **`portal/mate.js` is pure and verify-covered and decides everything he
    does**; inlined into `portal-shell.html` by `assemble-portal.mjs` the way
    `estimates-schema.js` is (the `<script src="mate.js">` tag is asserted).
-   `MATE_POSES` = idle, wave, point, nod, thumbs (his shaka), scratch, wrist,
-   celebrate, sleep; `mateReaction(event, facts)` → `{pose, text, sig}` or
-   null is the ONE rule table — sign-in (wave; wrist when a quote is due
-   today, off the welcome facts), a project opened (scratch at an unpriced
-   subcontract quote row or an expiring supplier rate, else point at the
-   "Next up" element, thumbs when every element is done, wave on a blank
-   quote), a Done tick (nod with "N of M done. Next up: …"; celebrate on the
-   last), Save (thumbs), an RFQ round (wave), a status move (celebrate on
-   Submitted / Tendered / Successful, thumbs on Completed Estimating, scratch
-   on Unsuccessful, wrist on Deadline Missed, nothing on an open status), the
-   checklist completing (celebrate), a trail jump (point). **Every line is
-   built from the facts in the event** — never an invented name, project or
-   figure. `shouldSpeak` says the same `sig` once in `MATE_REPEAT_MS` = 10
-   min; `idlePose` = asleep after `MATE_IDLE_MS` = 10 idle minutes (clicks and
-   keys on the shell AND inside the app iframe count); `mateEnabled(prefs)` =
-   on unless `mateOn === false`.
+   `MATE_POSES` = idle, wave, point, nod, thumbs, scratch, wrist, celebrate,
+   sleep, measure (kneeling with the tape), hips, clipboard (the stand image
+   plays idle / nod / sleep, the arms-crossed image scratch, hips plays hips
+   and wrist, thumbs plays thumbs and celebrate); `mateReaction(event, facts)`
+   → `{pose, text, sig}` or null is the ONE rule table — sign-in (wave; wrist
+   when a quote is due today, off the welcome facts), a project opened
+   (scratch at an unpriced subcontract quote row or an expiring supplier
+   rate, else measure on a Taking Off project / point at the "Next up"
+   element, clipboard when every element is done, wave on a blank quote,
+   hips otherwise), a Done tick (nod with "N of M done. Next up: …";
+   celebrate on the last), Save (clipboard), an RFQ round (wave), a status
+   move (celebrate on Submitted / Tendered / Successful, clipboard on
+   Completed Estimating, scratch on Unsuccessful, wrist on Deadline Missed,
+   nothing on an open status), the checklist completing (celebrate), a trail
+   jump (point). **Every line is built from the facts in the event** — never
+   an invented name, project or figure. `shouldSpeak` says the same `sig`
+   once in `MATE_REPEAT_MS` = 10 min; `idlePose` = asleep after
+   `MATE_IDLE_MS` = 10 idle minutes (clicks and keys on the shell AND inside
+   the app iframe count); `mateEnabled(prefs)` = on unless `mateOn === false`.
+   **Chatter** (`MATE_SAYINGS`, 70 templates, verify pins 60–100): a friendly
+   line on his own every `mateChatterMin` minutes (Settings "Grady's mate —
+   chatter": off / 10 / 20 (default) / 30 / 60; `mateChatterMs`), never while
+   asleep, never over a bubble, never within two minutes of the last one.
+   Every template is `{t, needs, pose}` and a `{placeholder}` is filled ONLY
+   from `sayingFacts(raw)` — the welcome facts (the project last worked on
+   and when, its element count, the quotes due today / this week, the queue
+   counts, the weekday), the projects opened this session (the shell keeps
+   them off the `open` events), the current project with its done / total /
+   next, the signed-in first name, the time of day and the weather chip's
+   reading (`MATE_WEATHER`) — and a line is eligible only when every need is
+   known (`eligibleSayings`), so with nothing known only the fact-free lines
+   play and he never names a project or a figure he was not given.
+   `mateSaying(raw, seed, lastText)` → `{text, pose, sig}` picks by the minute
+   slot, never repeats the previous line back to back, capitalises the first
+   letter. Verify pins every placeholder declared, every pose known, no brace
+   left after filling, the eligibility and the no-repeat.
 2. **The apps send events, the shell plays them.** `src/lib/mate.js`
    `mateEvent(kind, detail)` is ONE localStorage write under `MATE_EVENT_KEY`
    = `gradcon-mate-event` (the blob: iframe shares the shell's origin, so the
@@ -1228,17 +1255,32 @@ instead. Pinned to the bottom-left of every signed-in screen. Rules:
    progress turning complete), `saved` (after the manual version), `status`,
    `rfq` and `jump`. Nothing is read back; nothing on a quote changes.
 3. **Quiet by design** (Clippy was hated for interrupting): one bubble at a
-   time, only on an event, `MATE_BUBBLE_MS` = 9 s then back to idle, a ✕ on
-   the bubble (`mate-close`), hidden on the login screen, a still figure
-   under `prefers-reduced-motion`, and the Settings → App behaviour switch
-   "Grady's mate" (`settings-mate`, `mateOn`, default on, `BOOL_FIELDS`).
-   Clicking him opens the Gradcon AI chat (`ai-chat-fab`). `window.gradconMate`
-   (`react`, `refresh`, `screen`, `state`, `sleepNow`) is the test seam.
+   time, only on an event or the chatter interval, `MATE_BUBBLE_MS` = 9 s
+   then back to idle, a ✕ on the bubble (`mate-close`), hidden on the login
+   screen, a still figure under `prefers-reduced-motion`, and the Settings →
+   App behaviour switch "Grady's mate" (`settings-mate`, `mateOn`, default
+   on, `BOOL_FIELDS`). Clicking him opens the Gradcon AI chat (`ai-chat-fab`).
+4. **He is dragged anywhere, sized and faded from Settings.** Pointer drag
+   on `#mate` (a press that moves under 6 px is the click); the spot is
+   `prefs.matePos = {x, y}` (per browser, `clampMatePos` keeps him on screen
+   at any viewport, null = the bottom-left corner); the bubble goes above him
+   when there is room, else beside him (`data-side` above / right / left).
+   `--mate-h` is the height: Settings "size" (`mateSize`, `MATE_SIZES` 120 /
+   180 / 240 (default — "twice what we had") / 320, `STR_FIELDS`); Settings
+   "transparency" (`mateOpacity` 20–100, a range in `NUM_FIELDS`,
+   `mateOpacity(prefs)` → CSS opacity on the figure only, never the bubble).
+   `applyAllPrefs` → `gradconMate.refresh()` applies all three at once.
+   `window.gradconMate` (`react`, `refresh`, `chatter`, `facts`, `screen`,
+   `state`, `sleepNow`) is the test seam.
 `verify.mjs` covers every reaction, the trim, the dedupe, the idle, the switch,
-the writer and the wiring (shell, assembler, App events, the pose styles);
-`test-mate.mjs` proves the login hide, the sign-in wave, the Done nod and
-celebrate from inside Quotes, the jump, the ✕, the dedupe, the click, the
-Settings switch and the sleep, with a screenshot of every pose.
+the sayings, the size / opacity / chatter readings, the clamp, the writer and
+the wiring (shell, assembler, App events, the pose styles, the eight WebP
+files, the Settings ids); `test-mate.mjs` proves the login hide, the sign-in
+wave, the 240 px figure with eight WebP poses, the drag to the top-right with
+the bubble beside him and the spot surviving a reload, the Settings
+transparency / size / chatter, two different chatter lines from the facts, the
+Done nod and celebrate from inside Quotes, the jump, the ✕, the dedupe, the
+click, the Settings switch and the sleep, with a screenshot of every pose.
 
 ## Clearable notices (every banner has a ✕)
 

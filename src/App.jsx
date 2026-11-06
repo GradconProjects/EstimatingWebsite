@@ -829,7 +829,7 @@ function ProjectEditor({ project, allProjects, rates: liveRates, setRates: setLi
     if (!quoteLoadedForVersions || mateOpenedRef.current === project.id) return;
     mateOpenedRef.current = project.id;
     const pr = workProgress(quote.items || []);
-    mateEvent("open", { project: quote.projectName || "", done: pr.done, total: pr.total, next: pr.next ? pr.next.label : "", unpriced: countUnpricedQuoteRows(quote.items), expiring: expiringRates(liveRates || {}).length });
+    mateEvent("open", { project: quote.projectName || "", status: quote.status || "", done: pr.done, total: pr.total, next: pr.next ? pr.next.label : "", unpriced: countUnpricedQuoteRows(quote.items), expiring: expiringRates(liveRates || {}).length });
   }, [quoteLoadedForVersions, project.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const doneCount = (quote.items || []).filter(isElementDone).length;
   const mateDoneRef = useRef(null);
