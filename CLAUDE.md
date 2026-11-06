@@ -1187,10 +1187,18 @@ send.
 
 Grady, 6 Nov 2026: "an avatar of Grady that acts more like the old Microsoft
 Office paper clip with gestures made while he works?" — "just for fun", with
-a photo for the likeness. A vector site worker (hard hat, hi-vis, the curls,
-the beard, the grin — drawn BY HAND in the shell's SVG from the photo; the
-photo itself is not stored and was never sent to an image service) pinned to
-the bottom-left of every signed-in screen. Rules:
+a photo for the likeness, then his own illustration sheet ("use an external
+cut out service and then animate him accordingly"). **He IS Grady's
+illustration**: `portal/mate/{stand,point,thumbs,arms}.png` are the four
+poses cut out of the sheet (hands in pockets, pointing, thumbs-up crouch,
+arms crossed), inlined as data URLs by `assemble-portal.mjs`
+(`__MATE_POSE_<POSE>__`, asserted PNG) and animated as whole figures (breathe,
+rock, jab, bob, jump with confetti, a "?" when he thinks, a clock on the
+wrist tap, grey and z's asleep). The cut-out was done LOCALLY with
+ImageMagick (flood-fill of the white ground): the Higgsfield workspace was
+out of credits and OpenArt has no image cut-out, so nothing of his went to
+an outside service. The first build (f0121dd) carried a hand-drawn vector
+instead. Pinned to the bottom-left of every signed-in screen. Rules:
 
 1. **`portal/mate.js` is pure and verify-covered and decides everything he
    does**; inlined into `portal-shell.html` by `assemble-portal.mjs` the way

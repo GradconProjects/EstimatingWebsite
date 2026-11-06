@@ -255,6 +255,17 @@ let shell = fs.readFileSync(shellPath, "utf8");
   if (!/function mateReaction\(/.test(mateSrc)) throw new Error("mate.js defines no mateReaction");
   shell = shell.replace(mateTag, () => `<script>\n${mateSrc}\n</script>`);
   console.log(`Inlined portal/mate.js (${(mateSrc.length / 1024).toFixed(0)} KB) into the portal shell`);
+  // His four poses (portal/mate/<pose>.png, cut out of the illustration Grady sent) ride along as data URLs.
+  let poseBytes = 0;
+  for (const pose of ["stand", "point", "thumbs", "arms"]) {
+    const tag = `__MATE_POSE_${pose.toUpperCase()}__`;
+    if (!shell.includes(tag)) throw new Error(`portal-shell.html has no ${tag} placeholder — mate pose step out of date`);
+    const png = fs.readFileSync(path.join(root, "portal", "mate", `${pose}.png`));
+    if (png.length < 1000 || png.readUInt32BE(0) !== 0x89504e47) throw new Error(`portal/mate/${pose}.png is not a PNG`);
+    poseBytes += png.length;
+    shell = shell.replace(tag, () => `data:image/png;base64,${png.toString("base64")}`);
+  }
+  console.log(`Inlined the four mate poses (${(poseBytes / 1024).toFixed(0)} KB of PNG) into the portal shell`);
 }
 shell = shell
   .replace("__QUOTES_B64__", quotesB64)

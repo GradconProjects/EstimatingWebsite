@@ -4305,6 +4305,11 @@ await checkAsync("Grady's mate (portal/mate.js, src/lib/mate.js): the rules, the
   for (const pose of M.MATE_POSES.filter((p) => p !== "idle" && p !== "sleep")) assert.match(shell, new RegExp(`#mate\\[data-pose="${pose}"\\]`), `the shell styles the ${pose} pose`);
   assert.match(shell, /#mate\[data-pose="sleep"\]/);
   const asm = fs.readFileSync(new URL("./assemble-portal.mjs", import.meta.url), "utf8"); assert.match(asm, /portal", "mate\.js"/); assert.match(asm, /no longer loads mate\.js/);
+  for (const pose of ["stand", "point", "thumbs", "arms"]) { // his four illustrated poses, cut out and inlined
+    const png = fs.readFileSync(new URL(`../portal/mate/${pose}.png`, import.meta.url)); assert.ok(png.length > 1000 && png.readUInt32BE(0) === 0x89504e47, `portal/mate/${pose}.png is a PNG`);
+    assert.ok(shell.includes(`__MATE_POSE_${pose.toUpperCase()}__`), `the shell carries the ${pose} placeholder`); assert.match(shell, new RegExp(`\\.img-${pose}\\{ display:block`), `some pose shows the ${pose} image`);
+  }
+  assert.match(asm, /__MATE_POSE_\$\{pose\.toUpperCase\(\)\}__/, "the assembler inlines the poses");
   const app = fs.readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
   for (const k of ["open", "done", "checklist", "saved", "status", "rfq", "jump"]) assert.match(app, new RegExp(`mateEvent\\("${k}"`), `the editor sends the ${k} event`);
 });
