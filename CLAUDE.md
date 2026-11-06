@@ -1183,6 +1183,55 @@ configured state, the email draft and the read-only-mailbox state, Send both
 SMS alone with only the text posted, the tick, the closed row and a refused
 send.
 
+## Grady's mate (the figure in the corner — just for fun)
+
+Grady, 6 Nov 2026: "an avatar of Grady that acts more like the old Microsoft
+Office paper clip with gestures made while he works?" — "just for fun", with
+a photo for the likeness. A vector site worker (hard hat, hi-vis, the curls,
+the beard, the grin — drawn BY HAND in the shell's SVG from the photo; the
+photo itself is not stored and was never sent to an image service) pinned to
+the bottom-left of every signed-in screen. Rules:
+
+1. **`portal/mate.js` is pure and verify-covered and decides everything he
+   does**; inlined into `portal-shell.html` by `assemble-portal.mjs` the way
+   `estimates-schema.js` is (the `<script src="mate.js">` tag is asserted).
+   `MATE_POSES` = idle, wave, point, nod, thumbs (his shaka), scratch, wrist,
+   celebrate, sleep; `mateReaction(event, facts)` → `{pose, text, sig}` or
+   null is the ONE rule table — sign-in (wave; wrist when a quote is due
+   today, off the welcome facts), a project opened (scratch at an unpriced
+   subcontract quote row or an expiring supplier rate, else point at the
+   "Next up" element, thumbs when every element is done, wave on a blank
+   quote), a Done tick (nod with "N of M done. Next up: …"; celebrate on the
+   last), Save (thumbs), an RFQ round (wave), a status move (celebrate on
+   Submitted / Tendered / Successful, thumbs on Completed Estimating, scratch
+   on Unsuccessful, wrist on Deadline Missed, nothing on an open status), the
+   checklist completing (celebrate), a trail jump (point). **Every line is
+   built from the facts in the event** — never an invented name, project or
+   figure. `shouldSpeak` says the same `sig` once in `MATE_REPEAT_MS` = 10
+   min; `idlePose` = asleep after `MATE_IDLE_MS` = 10 idle minutes (clicks and
+   keys on the shell AND inside the app iframe count); `mateEnabled(prefs)` =
+   on unless `mateOn === false`.
+2. **The apps send events, the shell plays them.** `src/lib/mate.js`
+   `mateEvent(kind, detail)` is ONE localStorage write under `MATE_EVENT_KEY`
+   = `gradcon-mate-event` (the blob: iframe shares the shell's origin, so the
+   shell's `storage` listener gets it); `countUnpricedQuoteRows` is the
+   handover's test. `App.jsx` sends `open` (once per project, after its row
+   has loaded), `done` (an effect on the done count rising), `checklist` (the
+   progress turning complete), `saved` (after the manual version), `status`,
+   `rfq` and `jump`. Nothing is read back; nothing on a quote changes.
+3. **Quiet by design** (Clippy was hated for interrupting): one bubble at a
+   time, only on an event, `MATE_BUBBLE_MS` = 9 s then back to idle, a ✕ on
+   the bubble (`mate-close`), hidden on the login screen, a still figure
+   under `prefers-reduced-motion`, and the Settings → App behaviour switch
+   "Grady's mate" (`settings-mate`, `mateOn`, default on, `BOOL_FIELDS`).
+   Clicking him opens the Gradcon AI chat (`ai-chat-fab`). `window.gradconMate`
+   (`react`, `refresh`, `screen`, `state`, `sleepNow`) is the test seam.
+`verify.mjs` covers every reaction, the trim, the dedupe, the idle, the switch,
+the writer and the wiring (shell, assembler, App events, the pose styles);
+`test-mate.mjs` proves the login hide, the sign-in wave, the Done nod and
+celebrate from inside Quotes, the jump, the ✕, the dedupe, the click, the
+Settings switch and the sleep, with a screenshot of every pose.
+
 ## Clearable notices (every banner has a ✕)
 
 Grady, 22 Oct 2026: "i should be able to clear these and other notifications

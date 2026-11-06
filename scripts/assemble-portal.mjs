@@ -246,6 +246,16 @@ function buildStamp() {
 const stamp = buildStamp() + (process.env.PORTAL_STAMP_SUFFIX || "");
 
 let shell = fs.readFileSync(shellPath, "utf8");
+// Grady's mate (portal/mate.js — pure, verify-covered) is inlined into the shell the way
+// estimates-schema.js is into Estimates, so the page stays one self-contained document.
+{
+  const mateTag = /<script src="mate\.js"><\/script>/;
+  if (!mateTag.test(shell)) throw new Error("portal-shell.html no longer loads mate.js — inline step out of date");
+  const mateSrc = fs.readFileSync(path.join(root, "portal", "mate.js"), "utf8").replace(/<\/script/gi, "<\\/script");
+  if (!/function mateReaction\(/.test(mateSrc)) throw new Error("mate.js defines no mateReaction");
+  shell = shell.replace(mateTag, () => `<script>\n${mateSrc}\n</script>`);
+  console.log(`Inlined portal/mate.js (${(mateSrc.length / 1024).toFixed(0)} KB) into the portal shell`);
+}
 shell = shell
   .replace("__QUOTES_B64__", quotesB64)
   .replace("__ESTIMATES_B64__", estimatesB64)

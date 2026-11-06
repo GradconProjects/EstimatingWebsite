@@ -28,7 +28,10 @@ import TenderChecklist, { TenderChecklistButton } from "./components/TenderCheck
 import RfqModal from "./components/RfqModal.jsx";
 import { rfqPatch } from "./lib/rfq.js";
 import { recordRegisterContacts } from "./lib/registerStore.js";
-import { checklistPatch } from "./lib/tenderChecklist.js";
+import { checklistPatch, checklistProgress } from "./lib/tenderChecklist.js";
+import { mateEvent, countUnpricedQuoteRows } from "./lib/mate.js";
+import { expiringRates } from "./lib/rateValidity.js";
+import { isDone as isElementDone } from "./lib/workTrail.js";
 import { driveFiles, allProjectFiles } from "./lib/driveFiles.js";
 import { DEADLINE_SOURCE_LABEL, mailFiles } from "./lib/tenderInbox.js";
 import RateValidityBanner from "./components/RateValidityBanner.jsx";
@@ -792,6 +795,7 @@ function ProjectEditor({ project, allProjects, rates: liveRates, setRates: setLi
     try {
       await keepVersion("manual");
       note(`Saved — version kept ${new Date().toLocaleTimeString("en-AU", { hour: "2-digit", minute: "2-digit" })}`);
+      mateEvent("saved", { project: quoteRef.current.projectName || "" });
     } catch (e) {
       note(e?.code === "VERSIONS_UNAVAILABLE" ? e.message : `Saved, but the version could not be kept: ${e?.message || e}`, "error");
     }
@@ -818,6 +822,32 @@ function ProjectEditor({ project, allProjects, rates: liveRates, setRates: setLi
   // and no autosave version was kept between 29 Oct and the day an element
   // was deleted by mistake).
   const quoteLoadedForVersions = quoteStatus !== "loading";
+  // Grady's mate (src/lib/mate.js → the portal shell): one event when the project has loaded, one when
+  // an element is ticked done, one when the tender checklist completes. Reads only; nothing is written.
+  const mateOpenedRef = useRef(null);
+  useEffect(() => {
+    if (!quoteLoadedForVersions || mateOpenedRef.current === project.id) return;
+    mateOpenedRef.current = project.id;
+    const pr = workProgress(quote.items || []);
+    mateEvent("open", { project: quote.projectName || "", done: pr.done, total: pr.total, next: pr.next ? pr.next.label : "", unpriced: countUnpricedQuoteRows(quote.items), expiring: expiringRates(liveRates || {}).length });
+  }, [quoteLoadedForVersions, project.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const doneCount = (quote.items || []).filter(isElementDone).length;
+  const mateDoneRef = useRef(null);
+  useEffect(() => {
+    if (!quoteLoadedForVersions) return;
+    const prev = mateDoneRef.current; mateDoneRef.current = doneCount;
+    if (prev === null || doneCount <= prev) return;
+    const pr = workProgress(quote.items || []);
+    const last = (quote.items || []).filter(isElementDone).sort((a, b) => String((b.done || {}).at || "").localeCompare(String((a.done || {}).at || "")))[0];
+    mateEvent("done", { label: last ? last.label : "", done: pr.done, total: pr.total, next: pr.next ? pr.next.label : "" });
+  }, [doneCount, quoteLoadedForVersions]); // eslint-disable-line react-hooks/exhaustive-deps
+  const checklistComplete = checklistProgress(quote).complete;
+  const mateChecklistRef = useRef(null);
+  useEffect(() => {
+    if (!quoteLoadedForVersions) return;
+    const prev = mateChecklistRef.current; mateChecklistRef.current = checklistComplete;
+    if (prev === false && checklistComplete) mateEvent("checklist", { project: quote.projectName || "", complete: true, total: checklistProgress(quote).total });
+  }, [checklistComplete, quoteLoadedForVersions]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!(autosaveMinutes > 0) || !quoteLoadedForVersions) return;
     const id = setInterval(async () => {
@@ -1188,7 +1218,7 @@ function ProjectEditor({ project, allProjects, rates: liveRates, setRates: setLi
           <span>Status:</span>
           <select
             value={normalizeStatus(quote.status) || QUOTE_STATUSES[0]}
-            onChange={(e) => { const status = e.target.value; setQuote((q) => ({ ...q, ...statusChangePatch(q, status, liveRates) })); }}
+            onChange={(e) => { const status = e.target.value; setQuote((q) => ({ ...q, ...statusChangePatch(q, status, liveRates) })); mateEvent("status", { project: quote.projectName || "", status }); }}
             title="Completed Estimating and every status after it pin this project's rates: the Rates Library stops changing its figures until it is re-priced or moved back to an open status"
             className={`border border-neutral-200 rounded px-2 py-1 text-xs font-semibold ${QUOTE_STATUS_STYLES[normalizeStatus(quote.status) || QUOTE_STATUSES[0]].text} ${QUOTE_STATUS_STYLES[normalizeStatus(quote.status) || QUOTE_STATUSES[0]].bg}`}
           >
@@ -1308,6 +1338,7 @@ function ProjectEditor({ project, allProjects, rates: liveRates, setRates: setLi
             const pr = workProgress(items); const me = workUser(portalUser());
             const jump = (id) => { // under the sticky header, with a short flash so the card is found at a glance
               const el = document.getElementById(`element-${id}`); if (!el) return;
+              mateEvent("jump", { label: ((items.find((it) => it.id === id) || {}).label) || "" });
               window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - 120, behavior: "auto" });
               el.classList.add("ring-4", "ring-emerald-400", "rounded-xl"); el.setAttribute("data-jumped", "1");
               setTimeout(() => { el.classList.remove("ring-4", "ring-emerald-400", "rounded-xl"); el.removeAttribute("data-jumped"); }, 1600);
@@ -1585,6 +1616,7 @@ function ProjectEditor({ project, allProjects, rates: liveRates, setRates: setLi
             const by = workUser(portalUser());
             setQuote((q) => { let next = q; for (const record of records) next = { ...next, ...rfqPatch(next, record) }; const note = [(q.checklist && q.checklist.rfq && q.checklist.rfq.note) || "", ...records.map((r) => `${r.package}: ${r.recipients.map((d) => d.orgName).join(", ")}`)].filter(Boolean).join(" · "); return { ...next, ...checklistPatch(next, "rfq", { done: true, note }, by) }; });
             recordRegisterContacts(sent.map((d) => ({ orgId: d.orgId, subject: d.subject, threadId: d.threadId, messageId: d.messageId })), by).catch(() => {});
+            mateEvent("rfq", { count: sent.length, packages: records.map((r) => r.package).join(", ") });
           }}
         />
       )}

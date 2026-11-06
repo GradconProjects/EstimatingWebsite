@@ -4259,6 +4259,56 @@ await checkAsync("Packages (lib/packages.js, costing.js inheritedMargin, tenderQ
   assert.equal(T.newTenderQuote().packageLayout, "combined");
 });
 
+await checkAsync("Grady's mate (portal/mate.js, src/lib/mate.js): the rules, the dedupe, the idle, the switch, the wiring", async () => {
+  const vm = await import("node:vm");
+  const src = fs.readFileSync(new URL("../portal/mate.js", import.meta.url), "utf8");
+  const sb = { globalThis: undefined, module: undefined }; sb.globalThis = sb; vm.runInNewContext(src, sb, { filename: "mate.js" });
+  const M = sb; const ML = await import("../src/lib/mate.js");
+  assert.equal(M.MATE_EVENT_KEY, ML.MATE_EVENT_KEY, "the apps write the key the shell listens on");
+  assert.equal(JSON.stringify(M.MATE_POSES), JSON.stringify(["idle", "wave", "point", "nod", "thumbs", "scratch", "wrist", "celebrate", "sleep"]));
+  const facts = { dueToday: ["7 Example Street, Rye VIC 3941"], dueWeek: ["9 Beach Road"] };
+  let r = M.mateReaction({ kind: "signin", detail: { name: "Grady" }, at: 1 }, facts); assert.equal(r.pose, "wrist"); assert.match(r.text, /G'day Grady\. 1 quote is due TODAY: 7 Example Street/);
+  r = M.mateReaction({ kind: "signin", detail: { name: "Grady" }, at: 1 }, { dueToday: [], dueWeek: ["A", "B"] }); assert.equal(r.pose, "wave"); assert.match(r.text, /2 quotes due this week — A first/);
+  r = M.mateReaction({ kind: "signin", detail: {}, at: 1 }, {}); assert.equal(r.pose, "wave"); assert.match(r.text, /G'day there\. Nothing due this week/);
+  r = M.mateReaction({ kind: "open", detail: { project: "14 Marine Pde", done: 2, total: 5, next: "Slab on Ground SL3" }, at: 1 }); assert.equal(r.pose, "point"); assert.equal(r.text, "Back on 14 Marine Pde. Next up: Slab on Ground SL3.");
+  r = M.mateReaction({ kind: "open", detail: { project: "P", done: 2, total: 5, next: "X", unpriced: 2 }, at: 1 }); assert.equal(r.pose, "scratch"); assert.match(r.text, /2 quote rows on P still have no amount/, "an unpriced quote row beats the next-up line");
+  r = M.mateReaction({ kind: "open", detail: { project: "P", done: 0, total: 3, expiring: 1 }, at: 1 }); assert.equal(r.pose, "scratch"); assert.match(r.text, /1 supplier rate expiring/);
+  r = M.mateReaction({ kind: "open", detail: { project: "P", done: 0, total: 0 }, at: 1 }); assert.equal(r.pose, "wave"); assert.match(r.text, /blank quote/);
+  r = M.mateReaction({ kind: "open", detail: { project: "P", done: 3, total: 3 }, at: 1 }); assert.equal(r.pose, "thumbs");
+  r = M.mateReaction({ kind: "done", detail: { label: "Strip Footings", done: 1, total: 3, next: "Screw Piles" }, at: 1 }); assert.equal(r.pose, "nod"); assert.equal(r.text, "Strip Footings ticked. 1 of 3 done. Next up: Screw Piles.");
+  r = M.mateReaction({ kind: "done", detail: { label: "Strip Footings", done: 3, total: 3 }, at: 1 }); assert.equal(r.pose, "celebrate"); assert.match(r.text, /every element/);
+  r = M.mateReaction({ kind: "saved", detail: { project: "P" }, at: 60000 }); assert.equal(r.pose, "thumbs"); assert.match(r.text, /Saved — a version of P kept for good/);
+  r = M.mateReaction({ kind: "rfq", detail: { count: 2, packages: "Screw Piling" }, at: 1 }); assert.equal(r.pose, "wave"); assert.match(r.text, /2 RFQs sent — Screw Piling/); assert.equal(M.mateReaction({ kind: "rfq", detail: { count: 0 }, at: 1 }), null);
+  assert.equal(M.mateReaction({ kind: "status", detail: { project: "P", status: "Successful" }, at: 1 }).pose, "celebrate"); assert.equal(M.mateReaction({ kind: "status", detail: { status: "Submitted" }, at: 1 }).pose, "celebrate");
+  assert.equal(M.mateReaction({ kind: "status", detail: { status: "Completed Estimating" }, at: 1 }).pose, "thumbs"); assert.equal(M.mateReaction({ kind: "status", detail: { status: "Unsuccessful" }, at: 1 }).pose, "scratch");
+  assert.equal(M.mateReaction({ kind: "status", detail: { status: "Deadline Missed" }, at: 1 }).pose, "wrist"); assert.equal(M.mateReaction({ kind: "status", detail: { status: "Estimating" }, at: 1 }), null, "an open status says nothing");
+  assert.equal(M.mateReaction({ kind: "checklist", detail: { complete: true, total: 12 }, at: 1 }).pose, "celebrate"); assert.equal(M.mateReaction({ kind: "checklist", detail: { complete: false }, at: 1 }), null);
+  assert.equal(M.mateReaction({ kind: "jump", detail: { label: "Raft Slab B" }, at: 1 }).text, "Raft Slab B — right there.");
+  assert.equal(M.mateReaction({ kind: "whatever", detail: {}, at: 1 }), null); assert.equal(M.mateReaction("not json"), null); assert.equal(M.mateReaction({ detail: {} }), null);
+  assert.match(M.mateReaction({ kind: "open", detail: { project: "x".repeat(80), done: 0, total: 1, next: "y".repeat(80) }, at: 1 }).text, /x{47}…\. Next up: y{47}…\./, "long names are trimmed");
+  // dedupe: the same fact once in ten minutes
+  r = M.mateReaction({ kind: "open", detail: { project: "P", done: 1, total: 2, next: "X" }, at: 1 });
+  assert.equal(M.shouldSpeak(r, null, 0, 1000), true); assert.equal(M.shouldSpeak(r, r.sig, 1000, 1000 + 5 * 60000), false); assert.equal(M.shouldSpeak(r, r.sig, 1000, 1000 + M.MATE_REPEAT_MS), true); assert.equal(M.shouldSpeak(null, null, 0, 1), false);
+  assert.equal(M.idlePose(0, M.MATE_IDLE_MS - 1), "idle"); assert.equal(M.idlePose(0, M.MATE_IDLE_MS), "sleep");
+  assert.equal(M.mateEnabled({}), true); assert.equal(M.mateEnabled(null), true); assert.equal(M.mateEnabled({ mateOn: false }), false); assert.equal(M.mateEnabled({ mateOn: true }), true);
+  const its = [{ qtys: { "SUB CONTRACTORS::Steel fix::quote": 2 } }, { qtys: { "SUB CONTRACTORS::Steel fix::quote": 1 }, rateOverrides: { "SUB CONTRACTORS::Steel fix::quote": { unitCost: 500 } } }, { qtys: { "CONCRETE::25 mpa::m3": 4 } }];
+  assert.equal(M.countUnpricedQuoteRows(its), 1); assert.equal(ML.countUnpricedQuoteRows(its), 1); assert.equal(M.countUnpricedQuoteRows(null), 0);
+  // the writer: one localStorage write under the key, a no-op with no storage
+  const store = {}; const fake = { setItem: (k, v) => { store[k] = v; } };
+  const ev = ML.mateEvent("done", { label: "A" }, fake); assert.equal(ev.kind, "done"); assert.equal(JSON.stringify(M.parseMateEvent(store[M.MATE_EVENT_KEY]).detail), JSON.stringify({ label: "A" })); assert.ok(M.parseMateEvent(store[M.MATE_EVENT_KEY]).at > 0);
+  assert.equal(ML.mateEvent("done", {}, null), null); assert.equal(ML.mateEvent("", {}, fake), null);
+  // the wiring: the shell loads the module and carries the figure, the bubble and the Settings switch; the assembler inlines it; the editor sends every event
+  const shell = fs.readFileSync(new URL("../portal/portal-shell.html", import.meta.url), "utf8");
+  assert.match(shell, /<script src="mate\.js"><\/script>/); assert.match(shell, /id="mate" hidden data-pose="idle"/); assert.match(shell, /id="mate-bubble"/); assert.match(shell, /\['settings-mate','mateOn',true\]/);
+  assert.match(shell, /window\.gradconMate\.react\(\{ kind:'signin'/); assert.match(shell, /window\.gradconMate\.screen\(id\)/); assert.match(shell, /e\.key === MATE_EVENT_KEY/);
+  assert.match(shell, /prefers-reduced-motion: reduce\)\{ #mate \*, #mate-bubble\{ animation:none !important; \}/, "reduced motion = a still figure");
+  for (const pose of M.MATE_POSES.filter((p) => p !== "idle" && p !== "sleep")) assert.match(shell, new RegExp(`#mate\\[data-pose="${pose}"\\]`), `the shell styles the ${pose} pose`);
+  assert.match(shell, /#mate\[data-pose="sleep"\]/);
+  const asm = fs.readFileSync(new URL("./assemble-portal.mjs", import.meta.url), "utf8"); assert.match(asm, /portal", "mate\.js"/); assert.match(asm, /no longer loads mate\.js/);
+  const app = fs.readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
+  for (const k of ["open", "done", "checklist", "saved", "status", "rfq", "jump"]) assert.match(app, new RegExp(`mateEvent\\("${k}"`), `the editor sends the ${k} event`);
+});
+
 if (process.exitCode) {
   console.error("\nSome checks FAILED — see above.");
 } else {

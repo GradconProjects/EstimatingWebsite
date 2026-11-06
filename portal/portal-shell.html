@@ -408,6 +408,56 @@
   .ai-fab{ position:fixed; right:18px; bottom:18px; z-index:60; border:0; border-radius:999px; padding:11px 16px; background:#6b3fd6; color:#fff; font:inherit; font-weight:700; font-size:13px; cursor:pointer; box-shadow:0 14px 30px -14px rgba(35,31,32,.6); }
   .ai-fab:hover{ background:#5a32b8; }
   .ai-fab[hidden], .ai-chat[hidden]{ display:none !important; }
+  /* Grady's mate — the site worker in the bottom-left corner (portal/mate.js decides the pose and the line) */
+  #mate{ position:fixed; left:14px; bottom:10px; z-index:60; width:72px; height:92px; cursor:pointer; user-select:none; -webkit-user-select:none; }
+  #mate[hidden]{ display:none !important; }
+  #mate svg{ width:72px; height:92px; overflow:visible; display:block; filter:drop-shadow(0 8px 10px rgba(35,31,32,.25)); }
+  #mate .arm{ transform-box:fill-box; transform-origin:50% 8%; transition:transform .35s ease; }
+  #mate .head{ transform-box:fill-box; transform-origin:50% 90%; transition:transform .35s ease; }
+  #mate .body{ transform-box:fill-box; transform-origin:50% 100%; }
+  #mate .eye{ transform-box:fill-box; transform-origin:50% 50%; animation:mate-blink 5s infinite; }
+  #mate .mouth-o, #mate .mouth-flat, #mate .zz, #mate .confetti, #mate .watch{ display:none; }
+  #mate[data-pose="wave"] .arm-r{ transform:rotate(-150deg); animation:mate-wave .7s ease-in-out infinite alternate; }
+  #mate[data-pose="point"] .arm-r{ transform:rotate(-95deg); animation:mate-bob .8s ease-in-out infinite alternate; }
+  #mate[data-pose="point"] .head{ transform:rotate(-8deg); }
+  #mate[data-pose="nod"] .head{ animation:mate-nod .5s ease-in-out 3; }
+  #mate[data-pose="thumbs"] .arm-r{ transform:rotate(-140deg); animation:mate-shaka .5s ease-in-out infinite alternate; }
+  #mate[data-pose="thumbs"] .thumb{ display:block; }
+  #mate .thumb{ display:none; }
+  #mate[data-pose="scratch"] .arm-r{ transform:rotate(-178deg) translateY(2px); animation:mate-scratch .5s ease-in-out infinite alternate; }
+  #mate[data-pose="scratch"] .head{ transform:rotate(10deg); }
+  #mate[data-pose="scratch"] .mouth-flat{ display:block; } #mate[data-pose="scratch"] .mouth{ display:none; }
+  #mate[data-pose="wrist"] .arm-l{ transform:rotate(95deg); }
+  #mate[data-pose="wrist"] .watch{ display:block; }
+  #mate[data-pose="wrist"] .head{ transform:rotate(14deg); animation:mate-tap .5s ease-in-out infinite alternate; }
+  #mate[data-pose="celebrate"] .arm-r{ transform:rotate(-160deg); animation:mate-wave .35s ease-in-out infinite alternate; }
+  #mate[data-pose="celebrate"] .arm-l{ transform:rotate(160deg); animation:mate-wave .35s ease-in-out infinite alternate-reverse; }
+  #mate[data-pose="celebrate"] .body{ animation:mate-jump .45s ease-in-out infinite; }
+  #mate[data-pose="celebrate"] .mouth-o{ display:block; } #mate[data-pose="celebrate"] .mouth{ display:none; }
+  #mate[data-pose="celebrate"] .confetti{ display:block; animation:mate-confetti 1.2s linear infinite; }
+  #mate[data-pose="sleep"] .eye{ animation:none; transform:scaleY(.12); }
+  #mate[data-pose="sleep"] .head{ transform:rotate(12deg) translateY(2px); }
+  #mate[data-pose="sleep"] .zz{ display:block; animation:mate-zz 2.4s ease-in-out infinite; }
+  #mate[data-pose="sleep"] .mouth-o{ display:block; } #mate[data-pose="sleep"] .mouth{ display:none; }
+  #mate[data-pose="idle"] .body{ animation:mate-breathe 3.2s ease-in-out infinite; }
+  @keyframes mate-blink{ 0%,92%,100%{ transform:scaleY(1);} 95%{ transform:scaleY(.1);} }
+  @keyframes mate-wave{ from{ transform:rotate(-150deg);} to{ transform:rotate(-175deg);} }
+  @keyframes mate-shaka{ from{ transform:rotate(-140deg);} to{ transform:rotate(-128deg);} }
+  @keyframes mate-bob{ from{ transform:rotate(-95deg);} to{ transform:rotate(-101deg);} }
+  @keyframes mate-nod{ 0%,100%{ transform:rotate(0) translateY(0);} 50%{ transform:rotate(0) translateY(3px);} }
+  @keyframes mate-scratch{ from{ transform:rotate(-178deg) translateY(2px);} to{ transform:rotate(-170deg) translateY(1px);} }
+  @keyframes mate-tap{ from{ transform:rotate(14deg);} to{ transform:rotate(18deg);} }
+  @keyframes mate-jump{ 0%,100%{ transform:translateY(0);} 50%{ transform:translateY(-6px);} }
+  @keyframes mate-confetti{ from{ transform:translateY(-6px); opacity:1;} to{ transform:translateY(18px); opacity:0;} }
+  @keyframes mate-zz{ 0%{ transform:translate(0,0); opacity:0;} 30%{ opacity:1;} 100%{ transform:translate(10px,-14px); opacity:0;} }
+  @keyframes mate-breathe{ 0%,100%{ transform:scaleY(1);} 50%{ transform:scaleY(1.02);} }
+  @keyframes mate-pop{ from{ opacity:0; transform:translateY(6px) scale(.96);} to{ opacity:1; transform:translateY(0) scale(1);} }
+  #mate-bubble{ position:fixed; left:14px; bottom:108px; z-index:60; max-width:280px; background:#fff; color:#231f20; border:1px solid var(--line); border-radius:12px; padding:9px 30px 9px 12px; font-size:13px; line-height:1.35; box-shadow:0 14px 30px -14px rgba(35,31,32,.5); animation:mate-pop .22s ease-out; }
+  #mate-bubble[hidden]{ display:none !important; }
+  #mate-bubble:after{ content:""; position:absolute; left:26px; bottom:-7px; width:12px; height:12px; background:#fff; border-right:1px solid var(--line); border-bottom:1px solid var(--line); transform:rotate(45deg); }
+  #mate-bubble button{ position:absolute; top:4px; right:6px; border:0; background:none; font:inherit; font-size:14px; color:#8a8a8a; cursor:pointer; padding:2px 4px; }
+  #mate-bubble button:hover{ color:#231f20; }
+  @media (prefers-reduced-motion: reduce){ #mate *, #mate-bubble{ animation:none !important; } }
   .ai-chat{ position:fixed; right:18px; bottom:18px; z-index:61; width:min(420px, calc(100vw - 36px)); height:min(620px, calc(100vh - 36px)); background:#fff; border:1px solid var(--line); border-radius:14px; box-shadow:0 24px 60px -24px rgba(35,31,32,.6); display:flex; flex-direction:column; overflow:hidden; font-size:13.5px; }
   .ai-chat-head{ display:flex; align-items:center; gap:8px; padding:10px 12px; background:#1b1334; color:#fff; }
   .ai-chat-head b{ font-size:14px; } .ai-chat-prov{ flex:1; font-size:11px; opacity:.75; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -886,6 +936,7 @@
         <div class="hint">Every Save keeps a full version of the quote for good. While a quote is changing, another version is kept automatically at this interval. 0 turns the automatic ones off.</div>
       </div>
       <div class="field"><label class="settings-check"><input type="checkbox" id="settings-download-on-save"> Quotes: also save a copy to this computer on every Save</label></div>
+      <div class="field"><label class="settings-check"><input type="checkbox" id="settings-mate"> Grady's mate — the site worker in the corner</label><div class="hint">Waves on sign-in, points at the next element, nods at a Done tick, scratches his head at an unpriced quote row, celebrates a submission. Click him to ask Gradcon AI. He changes nothing on a quote.</div></div>
       <div class="field">
         <label for="settings-weather-place">Weather on the dashboard — place</label>
         <input type="text" id="settings-weather-place" placeholder="Melbourne" list="settings-weather-places">
@@ -1051,6 +1102,41 @@
      AI jobs) and answers; it never acts on its own — an action it proposes
      is a button the person clicks. -->
 <button type="button" id="ai-chat-fab" class="ai-fab" hidden title="Ask Gradcon AI about your projects, deadlines, rates and takeoffs">🤖 Ask Gradcon AI</button>
+<!-- Grady's mate: a site worker in the corner who reacts to the work (portal/mate.js). Click = Ask Gradcon AI; off under Settings → App behaviour. -->
+<div id="mate" hidden data-pose="idle" role="button" tabindex="0" title="Grady's mate — click to ask Gradcon AI. Turn off under Settings → App behaviour." data-testid="mate">
+  <svg viewBox="0 0 72 92" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <ellipse cx="36" cy="88" rx="20" ry="3.5" fill="rgba(35,31,32,.18)"/>
+    <g class="confetti" fill="#d5de5d"><circle cx="8" cy="8" r="2"/><circle cx="62" cy="4" r="2" fill="#f97316"/><circle cx="20" cy="2" r="1.6" fill="#2f7fd6"/><circle cx="50" cy="12" r="1.6"/><circle cx="68" cy="20" r="1.4" fill="#f97316"/></g>
+    <g class="zz" font-family="Inter, Segoe UI, sans-serif" font-weight="800" fill="#6b6b6b"><text x="50" y="22" font-size="9">z</text><text x="57" y="12" font-size="12">Z</text></g>
+    <g class="body">
+      <rect x="25" y="68" width="8" height="16" rx="2.5" fill="#3a3a3a"/><rect x="39" y="68" width="8" height="16" rx="2.5" fill="#3a3a3a"/>
+      <rect x="22" y="82" width="13" height="6" rx="2" fill="#231f20"/><rect x="37" y="82" width="13" height="6" rx="2" fill="#231f20"/>
+      <rect x="20" y="44" width="32" height="28" rx="7" fill="#f97316"/>
+      <rect x="20" y="52" width="32" height="4" fill="#d5de5d"/><rect x="20" y="62" width="32" height="4" fill="#d5de5d"/>
+      <rect x="33" y="44" width="6" height="28" fill="#ea6a0a"/>
+      <g class="arm arm-l"><rect x="12" y="46" width="8" height="24" rx="4" fill="#f97316"/><circle cx="16" cy="71" r="4.2" fill="#e8b98a"/><g class="watch"><rect x="12.5" y="64" width="7" height="4" rx="1" fill="#231f20"/><circle cx="16" cy="66" r="1.2" fill="#d5de5d"/></g></g>
+      <g class="arm arm-r"><rect x="52" y="46" width="8" height="24" rx="4" fill="#f97316"/><circle cx="56" cy="71" r="4.2" fill="#e8b98a"/><g class="thumb"><rect x="58.5" y="63" width="3" height="7" rx="1.5" fill="#e8b98a"/><rect x="50.5" y="63" width="3" height="7" rx="1.5" fill="#e8b98a"/></g></g>
+    </g>
+    <g class="head">
+      <!-- drawn by hand from Grady's photo (6 Nov 2026): sun-bleached curls under the hat, the beard, the grin -->
+      <rect x="31" y="38" width="10" height="8" fill="#e8b98a"/>
+      <g fill="#d9a84b"><circle cx="21.5" cy="28" r="3.6"/><circle cx="23" cy="33" r="3.2"/><circle cx="50.5" cy="28" r="3.6"/><circle cx="49" cy="33" r="3.2"/><circle cx="25" cy="23.5" r="3"/><circle cx="47" cy="23.5" r="3"/></g>
+      <circle cx="36" cy="27" r="14" fill="#e8b98a"/>
+      <path d="M24 31 q0 12 12 12 q12 0 12 -12 q-3 9 -12 9 q-9 0 -12 -9 z" fill="#c9923e"/>
+      <path d="M22 24 a14 14 0 0 1 28 0 v2 h-28 z" fill="#d5de5d"/>
+      <rect x="18" y="24" width="36" height="4" rx="2" fill="#231f20"/>
+      <path d="M26 15 a10 8 0 0 1 20 0 v9 h-20 z" fill="#d5de5d"/>
+      <text x="36" y="22" text-anchor="middle" font-family="Inter, Segoe UI, sans-serif" font-weight="900" font-size="7" fill="#231f20">G</text>
+      <g class="eye"><circle cx="30.5" cy="30" r="2.4" fill="#3b7dd8"/><circle cx="30.8" cy="30" r="1.2" fill="#231f20"/></g>
+      <g class="eye"><circle cx="41.5" cy="30" r="2.4" fill="#3b7dd8"/><circle cx="41.8" cy="30" r="1.2" fill="#231f20"/></g>
+      <g class="mouth"><path d="M29.5 35 q6.5 6 13 0 z" fill="#fff" stroke="#8a4b1e" stroke-width="1.2" stroke-linejoin="round"/></g>
+      <path class="mouth-flat" d="M31 37 h10" stroke="#8a4b1e" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+      <ellipse class="mouth-o" cx="36" cy="37" rx="2.6" ry="3" fill="#8a4b1e"/>
+    </g>
+  </svg>
+</div>
+<div id="mate-bubble" hidden role="status" data-testid="mate-bubble"><span id="mate-text"></span><button type="button" id="mate-close" aria-label="Close" data-testid="mate-close">✕</button></div>
+<script src="mate.js"></script>
 <div id="ai-chat" class="ai-chat" hidden>
   <div class="ai-chat-head"><b>Gradcon AI</b><span class="ai-chat-prov"></span><button type="button" id="ai-chat-clear" title="Start a new conversation">Clear</button><button type="button" id="ai-chat-close" title="Close">✕</button></div>
   <div class="ai-chat-log" id="ai-chat-log"></div>
@@ -1072,6 +1158,7 @@
     el.classList.add('active','fade-in');
     // The AI chat is there for every signed-in account, on the dashboard and inside every app
     var fab = document.getElementById('ai-chat-fab'); if(fab) fab.hidden = (id === 'screen-login');
+    if(window.gradconMate) window.gradconMate.screen(id);
     if(id === 'screen-login'){ var panel = document.getElementById('ai-chat'); if(panel) panel.hidden = true; }
   }
 
@@ -1239,6 +1326,7 @@
     applyAccentColor(p.accentColor || DEFAULT_ACCENT);
     applyFontScale(p.portalFontScale || 'default');
     applyHeroVisibility(p.showHero);
+    if(window.gradconMate) window.gradconMate.refresh();
   }
 
   // "Open after sign-in" preference: jump straight into the chosen app the
@@ -1354,7 +1442,8 @@
     ['settings-remember-project','quotesRememberProject',true],
     ['settings-download-on-save','quotesDownloadOnSave',false],
     ['settings-autopublish','estAutoPublish',true],
-    ['settings-est-blueprint','estBlueprintShell',false]
+    ['settings-est-blueprint','estBlueprintShell',false],
+    ['settings-mate','mateOn',true]
   ];
   // Elements always start rolled up now, in Quotes and in Estimates. The two
   // toggles that used to govern that shipped defaulting to OFF, so anyone who
@@ -1818,6 +1907,7 @@
     document.getElementById('welcome-eyebrow').textContent = now.toLocaleDateString('en-AU', { weekday:'long', day:'numeric', month:'long' });
     document.getElementById('welcome-greeting').textContent = timeOfDay(now) + ', ' + firstName(currentUser) + '.';
     WELCOME_FACTS = facts; paintWelcomeLine(now); scheduleWelcomeRotation();
+    if(window.gradconMate) window.gradconMate.react({ kind:'signin', detail:{ name: firstName(currentUser) }, at: now.getTime() });
     window.gradconWelcome = { excitedLine: excitedLine, paintWelcomeLine: paintWelcomeLine, facts: function(){ return WELCOME_FACTS; }, paintIndustryNews: paintIndustryNews, renderIndustryNews: renderIndustryNews, paintInboxBand: paintInboxBand }; // test seam
     var recent = items.filter(function(i){ return i.name && i.updatedAt && (i.kind !== 'quote' || OPEN_WORK[i.status]); }).sort(function(a,b){ return a.updatedAt < b.updatedAt ? 1 : -1; }).slice(0, 6);
     // Coming up: every open quote that is overdue, due today or due within 7 days, soonest first
@@ -2324,6 +2414,49 @@
   document.getElementById('ai-chat-close').addEventListener('click', function(){ document.getElementById('ai-chat').hidden = true; document.getElementById('ai-chat-fab').hidden = false; });
   document.getElementById('ai-chat-clear').addEventListener('click', function(){ saveChat([]); renderChatLog(); });
   document.getElementById('ai-chat-form').addEventListener('submit', function(e){ e.preventDefault(); var inp = document.getElementById('ai-chat-input'); var t = inp.value; inp.value = ''; sendChat(t); });
+
+  // ---------------- Grady's mate ----------------
+  // The figure in the bottom-left corner. portal/mate.js (inlined above) decides the pose and the
+  // line for every event; the apps send events through localStorage (src/lib/mate.js) and this
+  // block only plays them. Quiet by default: one bubble at a time, the same fact once in ten
+  // minutes, ✕ on the bubble, the Settings switch. Asleep after ten idle minutes.
+  (function initMate(){
+    var el = document.getElementById('mate'), bubble = document.getElementById('mate-bubble'), textEl = document.getElementById('mate-text');
+    if(!el || typeof mateReaction !== 'function') return;
+    var lastSig = null, lastAt = 0, lastActive = Date.now(), timer = null, screenId = 'screen-login', facts = function(){ return WELCOME_FACTS; };
+    function enabled(){ return mateEnabled(loadPrefs()); }
+    function visible(){ return enabled() && screenId !== 'screen-login'; }
+    function setPose(p){ el.setAttribute('data-pose', MATE_POSES.indexOf(p) >= 0 ? p : 'idle'); }
+    function rest(){ setPose(idlePose(lastActive, Date.now())); }
+    function hideBubble(){ bubble.hidden = true; if(timer){ clearTimeout(timer); timer = null; } rest(); }
+    function say(r){
+      if(!r || !visible()) return false;
+      setPose(r.pose); textEl.textContent = r.text; bubble.hidden = false;
+      if(timer) clearTimeout(timer);
+      timer = setTimeout(function(){ timer = null; bubble.hidden = true; rest(); }, MATE_BUBBLE_MS);
+      return true;
+    }
+    function react(ev){
+      var r = mateReaction(ev, facts());
+      if(!shouldSpeak(r, lastSig, lastAt, Date.now())) return false;
+      if(!say(r)) return false;
+      lastSig = r.sig; lastAt = Date.now(); return true;
+    }
+    function refresh(){ el.hidden = !visible(); if(el.hidden) hideBubble(); }
+    function active(){ lastActive = Date.now(); if(bubble.hidden && el.getAttribute('data-pose') === 'sleep') setPose('idle'); }
+    function watchFrame(){ // clicks and keys inside the app iframe (same origin, a blob: URL) count as activity
+      var f = document.getElementById('app-frame'); if(!f) return;
+      f.addEventListener('load', function(){ try{ var d = f.contentWindow && f.contentWindow.document; if(d){ d.addEventListener('pointerdown', active, true); d.addEventListener('keydown', active, true); } }catch(e){} });
+    }
+    document.addEventListener('pointerdown', active, true); document.addEventListener('keydown', active, true); watchFrame();
+    window.addEventListener('storage', function(e){ if(e.key === MATE_EVENT_KEY && e.newValue){ active(); react(parseMateEvent(e.newValue)); } });
+    setInterval(function(){ if(bubble.hidden && !el.hidden) rest(); }, 30000);
+    el.addEventListener('click', function(){ hideBubble(); var fab = document.getElementById('ai-chat-fab'); if(fab && !fab.hidden) fab.click(); });
+    el.addEventListener('keydown', function(e){ if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); el.click(); } });
+    document.getElementById('mate-close').addEventListener('click', function(e){ e.stopPropagation(); hideBubble(); });
+    window.gradconMate = { react: react, refresh: refresh, screen: function(id){ screenId = id; refresh(); }, state: function(){ return { pose: el.getAttribute('data-pose'), hidden: el.hidden, bubble: bubble.hidden ? null : textEl.textContent, lastSig: lastSig }; }, sleepNow: function(){ lastActive = 0; rest(); } };
+    refresh();
+  })();
 
   (function restoreSession(){
     var session = loadSession();
