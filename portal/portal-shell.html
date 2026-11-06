@@ -2005,10 +2005,24 @@
       if(!d.drive){ b.classList.add('warn'); b.innerHTML = '<span class="dot"></span>Gradcon Storage · <b>Drive access to grant</b> · reconnect projects@ in Settings'; return; }
       // short on the pill so it shares one row with the weather chip (23 Oct 2026); the account and Dropbox note ride on the hover
       b.classList.add('on'); b.innerHTML = '<span class="dot"></span>Google Drive · <b>' + escapeHtml((d.root && d.root.name) || 'Project files') + '</b>';
-      b.title = 'Gradcon Storage — Google Drive connected as ' + (d.email || 'projects@') + ', reading under "' + ((d.root && d.root.name) || 'Project files') + '" · Dropbox soon · click for Settings';
+      b.title = 'Gradcon Storage — Google Drive connected as ' + (d.email || 'projects@') + ', reading under "' + ((d.root && d.root.name) || 'Project files') + '" · Dropbox soon · click to open the Drive';
     }).catch(function(){ b.hidden = true; });
   }
-  document.getElementById('welcome-storage').addEventListener('click', function(){ document.getElementById('settings-btn').click(); });
+  // The badge opens the Drive itself once it is connected (Grady, 6 Nov 2026:
+  // "this opens settings instead of the drive") — the same Cloud Storage view
+  // the nav's Google Drive button opens; Settings only while there is nothing
+  // to browse (not connected, or Drive access still to grant).
+  function storageBadgeTarget(b){ return b.classList.contains('on') ? 'drive' : 'settings'; }
+  document.getElementById('welcome-storage').addEventListener('click', function(){
+    var b = document.getElementById('welcome-storage');
+    if(storageBadgeTarget(b) === 'drive'){
+      var route = MENU_ROUTES.drive;
+      try{ localStorage.setItem('gradcon-quotes-initial-view', route.view); }catch(err){}
+      openApp(route.target, true); setActiveMenu('drive');
+      return;
+    }
+    document.getElementById('settings-btn').click();
+  });
   // Weather and temperature at the top of the dashboard (Grady, 22 Oct 2026):
   // Open-Meteo, read straight from the browser (no key), for the place in
   // Settings (blank = Melbourne). The place is geocoded once and kept; the

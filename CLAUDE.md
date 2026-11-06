@@ -1813,7 +1813,14 @@ same drawer, later. Rules:
    or one of projects@'s top-level folders / shared drives). The **Gradcon
    Storage badge** on the portal dashboard (`#welcome-storage`,
    `paintStorageBadge`) states Drive connected + folder, Drive access to
-   grant, or not connected, and opens Settings. Dropbox reads "soon".
+   grant, or not connected. **Connected, it opens the DRIVE** (Grady, 6 Nov
+   2026: "this opens settings instead of the drive"): the click takes the
+   nav's Google Drive route (`MENU_ROUTES.drive` → Quotes on the Cloud
+   Storage view, the office folder browsed in place; `storageBadgeTarget(b)`
+   is the ONE reading — the `on` class), and Settings only while there is
+   nothing to browse (not connected, or Drive access still to grant);
+   `verify.mjs` pins both and `test-storage-badge.mjs` proves the three
+   states. Dropbox reads "soon".
 `verify.mjs` covers the scopes, the matching, every `runDrive` action on a
 fake Drive (root scoping, the 403s, the copy paths, a chosen root) and the
 quote helpers; `test-drive-files.mjs` proves the drawer, the card picker, the

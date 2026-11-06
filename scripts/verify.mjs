@@ -4330,6 +4330,11 @@ await checkAsync("Grady's mate (portal/mate.js, src/lib/mate.js): the rules, the
   assert.match(shell, /window\.gradconMate\.react\(\{ kind:'signin'/); assert.match(shell, /window\.gradconMate\.screen\(id\)/); assert.match(shell, /e\.key === MATE_EVENT_KEY/);
   assert.match(shell, /prefers-reduced-motion: reduce\)\{ #mate \*, #mate-bubble\{ animation:none !important; \}/, "reduced motion = a still figure");
   for (const pose of M.MATE_POSES.filter((p) => p !== "idle" && p !== "sleep")) assert.match(shell, new RegExp(`#mate\\[data-pose="${pose}"\\]`), `the shell styles the ${pose} pose`);
+  // the Gradcon Storage badge on the welcome dashboard opens the DRIVE once connected (Grady, 6 Nov 2026: "this opens settings instead of the drive") — the nav's Google Drive route — and Settings only while there is nothing to browse
+  assert.match(shell, /function storageBadgeTarget\(b\)\{ return b\.classList\.contains\('on'\) \? 'drive' : 'settings'; \}/);
+  const badgeClick = shell.slice(shell.indexOf("document.getElementById('welcome-storage').addEventListener('click'"), shell.indexOf("document.getElementById('welcome-storage').addEventListener('click'") + 700);
+  assert.match(badgeClick, /storageBadgeTarget\(b\) === 'drive'/); assert.match(badgeClick, /MENU_ROUTES\.drive/); assert.match(badgeClick, /localStorage\.setItem\('gradcon-quotes-initial-view', route\.view\)/); assert.match(badgeClick, /openApp\(route\.target, true\); setActiveMenu\('drive'\)/); assert.match(badgeClick, /document\.getElementById\('settings-btn'\)\.click\(\)/);
+  assert.match(shell, /drive:\s*\{ target:'quotes',\s*view:'drive' \}/); assert.match(shell, /click to open the Drive'/); assert.ok(!/click for Settings'/.test(shell), "the connected badge's hover no longer says Settings");
   assert.match(shell, /#mate\[data-pose="sleep"\]/);
   const asm = fs.readFileSync(new URL("./assemble-portal.mjs", import.meta.url), "utf8"); assert.match(asm, /portal", "mate\.js"/); assert.match(asm, /no longer loads mate\.js/);
   for (const pose of ["stand", "point", "thumbs", "arms", "hips", "kneel", "clipboard", "wave"]) { // his eight illustrated poses, cut out and inlined
