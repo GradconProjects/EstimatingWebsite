@@ -4340,6 +4340,10 @@ await checkAsync("Grady's mate (portal/mate.js, src/lib/mate.js): the rules, the
   assert.match(shell, /\['settings-mate-chatter','mateChatterMin','20'\]/); assert.match(shell, /\['settings-mate-size','mateSize','240'\]/); assert.match(shell, /\['settings-mate-opacity','mateOpacity'\]/);
   assert.match(shell, /el\.addEventListener\('pointerdown'/, "draggable"); assert.match(shell, /p\.matePos = \{ x:/, "the spot is remembered"); assert.match(shell, /MATE_WEATHER = \{ temp: w\.temp, sky: sky\[1\], place: w\.place \}/, "the weather facts come from the chip");
   assert.match(app, /mateEvent\("open", \{ project: quote\.projectName \|\| "", status: quote\.status/, "the open event carries the status");
+  // the inbox band never counts a submitted or closed-as-missed project overdue (6 Nov 2026)
+  assert.match(shell, /var SUBMITTED_WORK = \{ 'Submitted':1, 'Tendered':1, 'Successful':1, 'Unsuccessful':1 \}/); assert.match(shell, /function frozenDueLabel\(status, deadline, submittedAt\)/);
+  assert.match(shell, /frozenDueLabel\(st\.status, st\.deadline \|\| c\.deadline, st\.submittedAt\)\) \|\| \(c\.deadline \? dueLabel\(c\.deadline, now\) : null\)/, "the band reads the status before the countdown");
+  assert.match(shell, /items\.forEach\(noteProjectStatus\); if\(INBOX_RECORD\) paintInboxBand\(\);/, "the welcome paint feeds the band the statuses");
   assert.match(asm, /__MATE_POSE_\$\{pose\.toUpperCase\(\)\}__/, "the assembler inlines the poses");
   for (const k of ["open", "done", "checklist", "saved", "status", "rfq", "jump"]) assert.match(app, new RegExp(`mateEvent\\("${k}"`), `the editor sends the ${k} event`);
 });

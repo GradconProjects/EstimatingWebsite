@@ -394,6 +394,7 @@
   .upcoming-row .due{ font-size:12px; font-weight:700; white-space:nowrap; padding:3px 9px; border-radius:999px; background:#eef1f6; color:var(--muted); }
   .upcoming-row .due.hot{ background:#fde8e8; color:#9b1c1c; }
   .upcoming-row .due.warm{ background:#fff3d6; color:#8a5a00; }
+  .upcoming-row .due.done{ background:#e8f0ea; color:#2f5e3a; }
   .welcome-inbox .eyebrow::before{ background:#0ea5e9; }
   .inbox-row .name small{ font-weight:500; color:var(--muted); }
   #welcome-inbox-foot button{ margin-left:10px; font:inherit; font-size:12px; padding:3px 10px; border:1px solid var(--line); border-radius:999px; background:#fff; cursor:pointer; }
@@ -1762,6 +1763,16 @@
     if(n === 1) return { text:'Due tomorrow · ' + day, cls:'warm', n:n };
     return { text:'Due in ' + n + ' days · ' + day, cls: n <= 3 ? 'warm' : '', n:n };
   }
+  // A quote that went out, or was closed as missed, never counts overdue (Grady, 6 Nov 2026: "what is labelled
+  // submitted or deadline missed should not persist as overdue"): the same frozen words lib/planner.js gives the
+  // Dashboard — the day it went out, or the deadline day it was closed on — in a grey chip.
+  var SUBMITTED_WORK = { 'Submitted':1, 'Tendered':1, 'Successful':1, 'Unsuccessful':1 };
+  function dayWords(ymd){ var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(ymd||'')); if(!m) return ''; return new Date(+m[1], +m[2]-1, +m[3]).toLocaleDateString('en-AU', { day:'numeric', month:'short', year:'numeric' }); }
+  function frozenDueLabel(status, deadline, submittedAt){
+    if(SUBMITTED_WORK[status]){ var d = dayWords(submittedAt); return { text: d ? 'Submitted ' + d : 'Submitted', cls:'done', n:null, title: status + (deadline ? ' — the ' + dayWords(deadline) + ' deadline no longer counts' : '') }; }
+    if(status === 'Deadline Missed'){ var dd = dayWords(deadline); return { text: dd ? 'Deadline missed ' + dd : 'Deadline missed', cls:'done', n:null, title:'Closed as missed — the days are not counted on' }; }
+    return null;
+  }
   function readJSON(key){ try{ var r = localStorage.getItem(key); return r ? JSON.parse(r) : null; }catch(e){ return null; } }
   function firstName(email){
     var local = String(email||'').split('@')[0].toLowerCase();
@@ -1791,7 +1802,7 @@
     return idx.filter(function(p){ return p && p.storageKey; }).map(function(p){
       var hit = readJSON('gradcon-cache:summary:' + p.storageKey);
       var q = hit && hit.value ? hit.value : readJSON(p.storageKey);
-      return { kind:'quote', id:p.id, key:p.storageKey, name:(q && q.projectName) || '', status:(q && q.status) || '', deadline:(q && q.planner && q.planner.deadline) || null,
+      return { kind:'quote', id:p.id, key:p.storageKey, name:(q && q.projectName) || '', status:(q && q.status) || '', deadline:(q && q.planner && q.planner.deadline) || null, submittedAt:(q && q.submittedAt) || null,
                elements:(q && Array.isArray(q.items)) ? q.items.length : null, updatedAt:(hit && hit.updatedAt) || null, named: !!(q && q.projectName) };
     });
   }
@@ -1931,7 +1942,10 @@
     };
   }
   function escapeHtml(s){ return String(s==null?'':s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+  var PROJECT_STATUS = {}; // projectId → {status, deadline, submittedAt}, from this browser's copies and the cloud summaries
+  function noteProjectStatus(i){ if(i && i.kind === 'quote' && i.id && i.status) PROJECT_STATUS[i.id] = { status: i.status, deadline: i.deadline || null, submittedAt: i.submittedAt || null }; }
   function paintWelcome(items, now){
+    items.forEach(noteProjectStatus); if(INBOX_RECORD) paintInboxBand();
     var facts = welcomeFacts(items, now);
     document.getElementById('welcome-eyebrow').textContent = now.toLocaleDateString('en-AU', { weekday:'long', day:'numeric', month:'long' });
     document.getElementById('welcome-greeting').textContent = timeOfDay(now) + ', ' + firstName(currentUser) + '.';
@@ -2049,6 +2063,7 @@
   function inboxSeen(){ try{ return localStorage.getItem(inboxSeenKey()) || ''; }catch(err){ return ''; } }
   function dismissInbox(){ try{ localStorage.setItem(inboxSeenKey(), new Date().toISOString()); }catch(err){} var host = document.getElementById('welcome-inbox'); if(host) host.hidden = true; }
   var INBOX_RECORD = null;
+  var INBOX_STATUS_ASKED = {};
   function paintInboxBand(record){
     var host = document.getElementById('welcome-inbox'); if(!host) return;
     if(record){ INBOX_RECORD = record; }
@@ -2060,12 +2075,22 @@
     var fresh = (rec.created || []).filter(function(c){ return c && (!seen || String(c.at) > seen); });
     if(!fresh.length){ host.hidden = true; return; }
     host.hidden = false;
+    var unknown = fresh.filter(function(c){ return c.projectId && !PROJECT_STATUS[c.projectId] && !INBOX_STATUS_ASKED[c.projectId]; });
+    if(unknown.length){ // a project this browser never opened: ask the summaries function (a few keys, drawings stripped) and repaint
+      unknown.forEach(function(c){ INBOX_STATUS_ASKED[c.projectId] = true; });
+      summariesInBatches(unknown.map(function(c){ return c.storageKey || ('gradcon-quote-' + c.projectId); })).then(function(rows){
+        var moved = false;
+        (Array.isArray(rows) ? rows : []).forEach(function(r){ var q = r && r.value; var c = unknown.find(function(x){ return (x.storageKey || ('gradcon-quote-' + x.projectId)) === r.key; }); if(q && c && q.status){ PROJECT_STATUS[c.projectId] = { status:q.status, deadline:(q.planner && q.planner.deadline) || null, submittedAt:q.submittedAt || null }; moved = true; } });
+        if(moved) paintInboxBand();
+      }).catch(function(){});
+    }
     document.getElementById('welcome-inbox-list').innerHTML = fresh.map(function(c){
-      var due = c.deadline ? dueLabel(c.deadline, now) : null;
+      var st = PROJECT_STATUS[c.projectId] || null;
+      var due = (st && frozenDueLabel(st.status, st.deadline || c.deadline, st.submittedAt)) || (c.deadline ? dueLabel(c.deadline, now) : null);
       return '<button type="button" class="upcoming-row inbox-row" data-kind="quote" data-id="' + escapeHtml(c.projectId) + '" title="Open ' + escapeHtml(c.name || 'project') + '">' +
         '<span class="name">' + escapeHtml(c.name || 'Untitled project') + (c.client ? ' <small>· ' + escapeHtml(c.client) + '</small>' : '') + '</span>' +
         '<span class="status">from ' + escapeHtml(String(c.from || '').replace(/<[^>]*>/, '').trim() || c.from || '') + (c.via ? ' via ' + escapeHtml(c.via.split('@')[0]) : '') + ' · ' + escapeHtml(whenLabel(c.receivedAt || c.at, now)) + (c.attachments ? ' · ' + c.attachments + ' file' + (c.attachments===1?'':'s') : '') + '</span>' +
-        (due ? '<span class="due ' + due.cls + '" title="' + (c.deadlineSource === 'default' ? 'No closing date in the email — set 14 days from receipt' : 'Closing date from the email') + '">' + escapeHtml(due.text) + (c.deadlineSource === 'default' ? ' *' : '') + '</span>' : '') + '</button>';
+        (due ? '<span class="due ' + due.cls + '" title="' + escapeHtml(due.title || (c.deadlineSource === 'default' ? 'No closing date in the email — set 14 days from receipt' : 'Closing date from the email')) + '">' + escapeHtml(due.text) + (c.deadlineSource === 'default' && due.n != null ? ' *' : '') + '</span>' : '') + '</button>';
     }).join('');
     document.getElementById('welcome-inbox-foot').innerHTML = fresh.length + ' project' + (fresh.length===1?'':'s') + ' created from the inbox' + (rec.lastScanAt ? ' · last scan ' + escapeHtml(whenLabel(rec.lastScanAt, now)) : '') + ' · * deadline set to 14 days (none stated) <button type="button" id="welcome-inbox-dismiss" data-testid="welcome-inbox-dismiss">Dismiss</button>';
   }
@@ -2121,7 +2146,7 @@
       var fill = unnamed.length ? summariesInBatches(unnamed.map(function(i){ return i.key; })) : Promise.resolve(null);
       return fill.then(function(sum){
         if(run !== welcomeRun) return;
-        if(Array.isArray(sum)) sum.forEach(function(row){ var it = items.find(function(i){ return i.key === row.key; }); var q = row.value || {}; if(it){ it.name = q.projectName || it.name; it.status = q.status || it.status; it.deadline = (q.planner && q.planner.deadline) || it.deadline; it.elements = Array.isArray(q.items) ? q.items.length : it.elements; it.named = !!it.name; } });
+        if(Array.isArray(sum)) sum.forEach(function(row){ var it = items.find(function(i){ return i.key === row.key; }); var q = row.value || {}; if(it){ it.name = q.projectName || it.name; it.status = q.status || it.status; it.deadline = (q.planner && q.planner.deadline) || it.deadline; it.submittedAt = q.submittedAt || it.submittedAt || null; it.elements = Array.isArray(q.items) ? q.items.length : it.elements; it.named = !!it.name; } });
         paintWelcome(items, now);
       });
     }).catch(function(){ /* offline: the local paint stands */ });

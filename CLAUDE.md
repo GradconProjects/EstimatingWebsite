@@ -2225,7 +2225,20 @@ no duplicate projects are present and yes copy email attachments". Rules:
    (`inbox-source`: sender, subject, received, how the deadline was set —
    `DEADLINE_SOURCE_LABEL` —, attachments, "Open the email"), clearable
    (`NOTICE_IDS.inbox`, signature = the message id); the Dashboard row carries
-   an "✉ inbox" chip (`dashboard-inbox`, the sender on hover). Settings →
+   an "✉ inbox" chip (`dashboard-inbox`, the sender on hover). **The band's
+   deadline chip follows the project's CURRENT status** (Grady, 6 Nov 2026:
+   "what is labelled submitted or deadline missed should not persist as
+   overdue"): `PROJECT_STATUS` (projectId → status / deadline / submittedAt)
+   is filled by `paintWelcome` from this browser's copies (`localQuotes` now
+   carries `submittedAt`) and, for a listed project this browser never
+   opened, by one `summariesInBatches` read (`INBOX_STATUS_ASKED`, once per
+   id); `frozenDueLabel(status, deadline, submittedAt)` gives a grey `done`
+   chip — "Submitted <day it went out>" for `SUBMITTED_WORK` (Submitted /
+   Tendered / Successful / Unsuccessful), "Deadline missed <deadline day>" for
+   Deadline Missed, the same words `lib/planner.js` gives the Dashboard — and
+   every other status keeps the live `dueLabel` countdown (Completed
+   Estimating with a passed deadline IS still overdue: nothing went out).
+   `test-tender-inbox.mjs` proves both frozen chips beside a live one. Settings →
    Google mail & Drive → "Tender inbox scan" (`settings-inbox`) shows the last
    scan's counts, errors and created projects and the "Scan now" button.
 8. **Read-only on Google.** Nothing is labelled, moved, replied to or sent;
