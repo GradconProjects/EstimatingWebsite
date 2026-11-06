@@ -558,8 +558,11 @@ export function computeElementCost(item, rates, projectScope) {
     });
   // Soil removal bulked off the Excavation line when nothing is typed on its row
   { const soil = autoSoilRemoval(item, rates); if (soil) land(FULL_CATALOG.find((c) => c.key === "OTHER ALLOWANCES"), soil.total); }
-  // Blinding concrete from the crew sheet's build-up when nothing is typed on its row (left out with the tick, like a typed figure)
-  { const bl = autoBlindingConcrete(item, rates); if (bl) { if (blindingIn) land(concreteCat, bl.total); else excludedBlinding += bl.total; } }
+  // Blinding concrete from the BLINDING band's build-up when nothing is typed on the CONCRETE row (left out with the
+  // tick, like a typed figure). It lands under the band's OWN key, BLINDING_BAND_KEY — never on the CONCRETE band
+  // (Grady, 6 Nov 2026: "blinding concrete should not be automatically entered anymore under the concrete as we have a
+  // separate row for blinding"); the scope rule is the CONCRETE band's (a supply).
+  { const bl = autoBlindingConcrete(item, rates); if (bl) { if (!blindingIn) excludedBlinding += bl.total; else if (categoryChargedUnder(concreteCat, scope)) { categoryTotals[BLINDING_BAND_KEY] = (categoryTotals[BLINDING_BAND_KEY] || 0) + bl.total; materialsTotal += bl.total; } else { excludedTotals[BLINDING_BAND_KEY] = (excludedTotals[BLINDING_BAND_KEY] || 0) + bl.total; excludedMaterials += bl.total; } } }
   // VicMix charges on the specialist band: pigment washout per truck, short load under the minimum
   autoSpecialistFees(item, rates).forEach((fee) => {
     land(specialistCat, fee.total);
@@ -848,6 +851,8 @@ export function blindingBuildUp(item) {
   });
   return { parts, m3: round2(parts.reduce((t, p) => t + (p.on ? p.m3 : 0), 0)), any: parts.some((p) => p.typed) };
 }
+/** The key the BLINDING band's build-up money carries in `categoryTotals` / `excludedTotals` — a band of the card, not a catalog category. */
+export const BLINDING_BAND_KEY = "BLINDING";
 export function autoBlindingConcrete(item, rates) {
   const cat = FULL_CATALOG.find((c) => c.key === "CONCRETE");
   const prod = cat && cat.products.find((p) => isBlindingProduct(cat, p));

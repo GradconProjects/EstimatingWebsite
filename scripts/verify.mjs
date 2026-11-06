@@ -1195,6 +1195,73 @@ check("Import: wall formwork area maps to Walls; other m² formwork maps to Conv
   assert.ok(flags.some((f) => f.includes("Opening reveals")), `expected the non-wall formwork to still be flagged for review, got: ${flags.join(" | ")}`);
 });
 
+await checkAsync("Project bundle (lib/projectBundle.js, projectBundleBuild.js): the store zip round-trips with CRCs, the mail search names every spelling of the project, the manual carries every section, the builder on fake deps packs the quote, the takeoff, the emails, a drawing and the issues; App keeps a version before an element is removed and the autosave timer ignores the save status", async () => {
+  const B = await import("../src/lib/projectBundle.js");
+  const BB = await import("../src/lib/projectBundleBuild.js");
+  // the zip
+  const bytes = B.zipStore([{ name: "a/b.txt", data: "hello" }, { name: "c.bin", data: new Uint8Array([1, 2, 3, 250]) }, { name: "ü/ñ.json", data: { x: 1 } }], new Date("2026-11-05T10:00:00"));
+  const back = B.unzipStore(bytes);
+  assert.deepEqual(Object.keys(back).sort(), ["a/b.txt", "c.bin", "ü/ñ.json"]);
+  assert.equal(new TextDecoder().decode(back["a/b.txt"]), "hello"); assert.deepEqual([...back["c.bin"]], [1, 2, 3, 250]); assert.equal(new TextDecoder().decode(back["ü/ñ.json"]), '{"x":1}');
+  assert.equal(B.crc32(new TextEncoder().encode("123456789")), 0xcbf43926, "the CRC-32 check value");
+  // the mail search
+  const mq = B.mailQuery({ projectName: "14-16 Marine Parade, Shoreham VIC 3916 — Tennis Pavilion", nameSource: "14-16 Marine Pde, Shoreham", siteAddress: "14-16 Marine Parade, Shoreham VIC 3916" });
+  assert.ok(mq.includes('"14-16 Marine Parade, Shoreham VIC 3916"') && mq.includes('"14-16 Marine Pde, Shoreham"') && mq.includes('"14-16 Marine Parade"') && !/Tennis/.test(mq) && mq.startsWith("(") && / OR /.test(mq), mq);
+  assert.equal(B.mailQuery({}), "", "no name, no search");
+  assert.equal(B.safeName("RFQ – Piling / 14-16 Marine Pde: \"draft\"?"), "RFQ - Piling 14-16 Marine Pde draft");
+  assert.ok(/^7 Example Street Rye VIC 3941 - project bundle \d{4}-\d{2}-\d{2}$/.test(B.bundleName({ projectName: "7 Example Street, Rye VIC 3941" })), B.bundleName({ projectName: "7 Example Street, Rye VIC 3941" }));
+  // a quote with two elements, one a subcontract quote, a tender, assumptions, a checklist tick, an RFQ and a drawing
+  const t1 = ELEMENT_TYPES.find((t) => t.id === "strip_footings"), t2 = ELEMENT_TYPES.find((t) => t.id === "screw_piles");
+  const a = newElementItem(t1), b = newElementItem(t2);
+  a.label = "Strip Footings"; a.qtys[rateKey("CONCRETE", "25 mpa", "m3")] = 10; a.measureLm = 40; a.markups = [{ id: "m1", name: "S01.pdf", type: "application/pdf", path: "quote-markups/p1/m1.pdf" }];
+  b.label = "Screw Piles"; const subCat = FULL_CATALOG.find((c) => /^SUB CONTRACTORS/.test(c.key)); const subP = subCat.products.map((p) => (Array.isArray(p) ? { name: p[0], unit: p[1] } : p)).find((p) => p.unit === "quote"); const sk = rateKey(subCat.key, subP.name, subP.unit); b.qtys[sk] = 1; b.rateOverrides = { [sk]: { unitCost: 2500 } }; b.provisional = true;
+  const quote = { projectName: "7 Example Street, Rye VIC 3941", clientName: "Example Builders", status: "Completed Estimating", overheadPct: 0.08, contingencyPct: 0.05, marginPct: 0.25, items: [a, b], assumptions: [{ id: "a1", text: "Spoil carted by others" }], checklist: { receive: { done: true, at: "2026-11-01", by: "projects" } }, rfqs: [{ id: "r1", at: "2026-11-02T01:00:00Z", by: "projects", package: "Screw Piling", due: "2026-11-09", attachments: ["S01.pdf"], recipients: [{ orgName: "BCS Piling", contactName: "Ben", email: "ben@bcs.example", status: "sent" }] }], packages: [] };
+  const sq = (await import("../src/lib/tenderQuoteDefaults.js"));
+  quote.tenderQuote = { ...sq.newTenderQuote(), items: sq.seedTenderItems(quote, quote.items, defaultRates()) };
+  const html = B.manualHtml({ quote, items: quote.items, rates: defaultRates(), takeoff: { name: "7 Example Street", instances: [{ id: "i1", label: "Strip Footings", typeKey: "stripfooting", data: { length: 40, width: 600, depth: 500 }, results: { lines: [{ materialGroup: "Concrete", material: "N25 concrete", spec: "40 × 0.6 × 0.5", qty: 12, unit: "m³", finalQty: 12.6 }] } }] }, emails: [{ id: "e1", threadId: "t1", from: "ben@bcs.example", to: "projects@gradcon.com.au", subject: "RE: RFQ – Screw Piling – 7 Example Street", date: "2026-11-03T02:00:00Z", text: "Hi, quote attached. $2,500 + GST.", attachments: [{ filename: "quote.pdf", size: 20480 }] }], versions: [{ savedAt: "2026-11-05T00:00:00Z", source: "autosave", size: 1000 }], bundle: { at: "2026-11-05T10:00:00Z", by: "projects@gradcon.com.au", files: [{ name: "quote/quote.json", what: "the quote" }], issues: ["Drawing \"S01.pdf\" could not be fetched (HTTP 404)."] } });
+  for (const id of ["summary", "packages", "elements", "margins", "tender", "assumptions", "checklist", "rfq", "estimates", "files", "contents"]) assert.ok(html.includes(`id="${id}"`), `section ${id}`);
+  assert.ok(/Strip Footings/.test(html) && /Screw Piles/.test(html) && /Provisional sum/.test(html) && /Spoil carted by others/.test(html) && /BCS Piling/.test(html) && /RE: RFQ – Screw Piling/.test(html) && /quote attached/.test(html) && /N25 concrete/.test(html) && /01 Receive tender/.test(html) && /could not be fetched/.test(html) && /Project sum:/.test(html), "the manual names the elements, the PS, the assumption, the RFQ, the email, the takeoff line, the checklist, the issue and the tender sum");
+  assert.ok(!/<script/i.test(html), "no script in the manual");
+  assert.ok(/&lt;/.test(B.esc("<b>")) && B.emailText({ from: "x", subject: "s", text: "body", attachments: [{ filename: "a.pdf" }] }).includes("Attachments:\n  - a.pdf"));
+  assert.equal(B.emailFileName({ date: "2026-11-03T02:00:00Z", subject: "RE: RFQ – Screw Piling / 7 Example" }, 0), "2026-11-03 01 RE RFQ - Screw Piling 7 Example.txt");
+  assert.ok(B.takeoffCsv([{ label: "SF", typeKey: "strip", results: [{ materialGroup: "Concrete", material: "N25", qty: 1, unit: "m³", finalQty: 1.05 }] }]).split("\r\n")[1].startsWith("SF,strip,Concrete,N25,,1,m³,1.05"), "a v1 results array reads too");
+  // the builder on fake deps
+  const calls = [];
+  const deps = {
+    by: "projects@gradcon.com.au",
+    fetch: async (url) => { calls.push(url); if (/m1\.pdf$/.test(url)) return { ok: true, status: 200, arrayBuffer: async () => new Uint8Array([37, 80, 68, 70]).buffer }; return { ok: false, status: 404 }; },
+    gmail: async (body) => { calls.push(`gmail:${body.action}`); if (body.action === "list") { assert.ok(/7 Example Street/.test(body.q)); return { messages: [{ id: "e1", threadId: "t1", from: "ben@bcs.example", to: "projects@", subject: "RE: RFQ", date: "2026-11-03T02:00:00Z", snippet: "quote attached" }] }; } return { message: { id: body.id, text: "Hi, quote attached. $2,500 + GST.", attachments: [] } }; },
+    markupSrc: (m) => `https://files.example/${m.path}`,
+    listVersions: async () => [{ savedAt: "2026-11-05T00:00:00Z", source: "autosave", size: 1000 }],
+    readTakeoff: async (name) => (/7 Example/.test(name) ? { name: "7 Example Street", key: "k1", instances: [{ id: "i1", label: "Strip Footings", typeKey: "stripfooting", data: { length: 40 }, results: { lines: [{ materialGroup: "Concrete", material: "N25 concrete", qty: 12, unit: "m³", finalQty: 12.6 }] } }] } : null),
+    now: () => new Date("2026-11-05T10:00:00"),
+  };
+  const progress = [];
+  const r = await BB.buildProjectBundle({ quote: { ...quote, files: [{ id: "f1", provider: "mail", name: "tender.pdf", url: "https://files.example/quote-files/p1/tender.pdf" }] }, items: quote.items, rates: defaultRates(), project: { id: "p1" }, elementTypes: ELEMENT_TYPES }, deps, (t) => progress.push(t));
+  const z = B.unzipStore(r.bytes); const names = Object.keys(z).map((n) => n.replace(/^[^/]+\//, ""));
+  assert.ok(r.name.endsWith(" - project bundle 2026-11-05.zip"), r.name);
+  for (const n of ["README.html", "quote/quote.json", "quote/quote.xls", "quote/quote.csv", "estimates/takeoff.json", "estimates/register.csv", "emails/2026-11-03 01 RE RFQ.txt", "drawings/Strip Footings/S01.pdf", "versions.json"]) assert.ok(names.includes(n), `${n} in ${names.join(", ")}`);
+  const qdoc = JSON.parse(new TextDecoder().decode(z[Object.keys(z).find((n) => n.endsWith("quote/quote.json"))]));
+  assert.equal(qdoc.source, "bundle"); assert.equal(qdoc.savedBy, "projects@gradcon.com.au"); assert.equal(qdoc.quote.items.length, 2, "the quote document is restorable");
+  assert.equal(r.report.counts.emails, 1); assert.equal(r.report.counts.takeoff, 1);
+  assert.ok(r.report.issues.some((s) => /tender\.pdf.*404/.test(s)), "the 404 file is named as not included: " + r.report.issues.join(" | "));
+  assert.ok(!names.some((n) => /files\/tender\.pdf/.test(n)), "and is not in the zip");
+  const readme = new TextDecoder().decode(z[Object.keys(z).find((n) => n.endsWith("README.html"))]);
+  assert.ok(/quote attached/.test(readme) && /Not included/.test(readme) && /emails\/2026-11-03 01 RE RFQ\.txt/.test(readme), "the manual lists the email file and the issue");
+  assert.ok(progress.some((t) => /Searching projects@/.test(t)) && progress.some((t) => /Packing the zip/.test(t)));
+  assert.ok(calls.includes("gmail:list") && calls.includes("gmail:read"));
+  // emails off: no mailbox call
+  const r2 = await BB.buildProjectBundle({ quote, items: quote.items, rates: defaultRates(), project: { id: "p1" }, elementTypes: ELEMENT_TYPES, want: { emails: false, drawings: false, files: false, takeoff: false, versions: false } }, { ...deps, gmail: async () => { throw new Error("must not be called"); } });
+  assert.ok(Object.keys(B.unzipStore(r2.bytes)).length === 4, "manual + the three quote files only");
+  // App: the removal net and the timer
+  const app = fs.readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
+  assert.ok(/const removeItem = \(id\) => \{\s*keepVersion\("before-remove"\)/.test(app), "a before-remove version is kept before an element is removed");
+  assert.ok(/\[autosaveMinutes, project\.id, quoteLoadedForVersions\]/.test(app) && !/\[autosaveMinutes, project\.id, quoteStatus\]/.test(app), "the autosave timer never restarts on a save's status flip");
+  assert.ok(/addEventListener\("pagehide", flush\)/.test(app) && /saveVersion\(p\.projectId, p\.quote, "autosave"\)/.test(app), "leaving with pending changes keeps a version from the state they were made on");
+  assert.ok(/data-testid="download-project-button"/.test(app) && /<DownloadProjectModal quote=\{quote\}/.test(app));
+  const vm = fs.readFileSync(new URL("../src/components/VersionsModal.jsx", import.meta.url), "utf8");
+  assert.ok(/"before-remove": "Before an element was removed"/.test(vm));
+});
 await checkAsync("FORMWORK follows the 22 Oct 2026 pattern: application groups in order, the depth-split edgeform, the three suspended rates, the retired beam/fold and per-day scaffold rows costing only where carried, the library's table matching name for name", async () => {
   const cat = FULL_CATALOG.find((c) => c.key === "FORMWORK");
   const live = cat.products.filter((p) => !p.legacy), retired = cat.products.filter((p) => p.legacy);
@@ -1778,8 +1845,14 @@ check("blinding build-up on the crew sheet (22 Oct 2026): slab = area × depth, 
   assert.equal(C.blindingBuildUp(off).m3, 10.6, "unticking the edge beams drops only their 0.7 m³");
   const typed = { ...base, qtys: { [auto.key]: 4 } }; assert.equal(C.autoBlindingConcrete(typed, rates), null, "a typed figure on the row takes it manual"); assert.equal(C.labourQuantities(typed, rates).blindingM3, 4);
   const cost = C.computeElementCost(base, rates), costOut = C.computeElementCost({ ...base, blindingIncluded: false }, rates);
-  assert.ok(cost.categoryTotals["CONCRETE"] >= 11.3 * auto.unitCost - 1e-6, "the build-up prices on the CONCRETE band (plus the Holcim fees on the poured m³)");
-  assert.equal(costOut.categoryTotals["CONCRETE"] || 0, 0); assert.ok(costOut.excludedBlinding >= 11.3 * auto.unitCost - 1e-6, "the master tick leaves the build-up out and states the money");
+  // 6 Nov 2026: the build-up's money lands on the BLINDING band's own key, never the CONCRETE band (the CONCRETE row carries no auto figure)
+  assert.ok(Math.abs(cost.categoryTotals[C.BLINDING_BAND_KEY] - 11.3 * auto.unitCost) < 1e-6, "the build-up prices on the BLINDING band");
+  assert.ok(cost.categoryTotals["CONCRETE"] < 11.3 * auto.unitCost, "the CONCRETE band carries only the Holcim fees on the poured m³, not the blinding"); assert.ok(cost.categoryTotals["CONCRETE"] > 0, "the fees still count the blinding as poured m³");
+  assert.ok(Math.abs(cost.total - (cost.categoryTotals["CONCRETE"] + cost.categoryTotals[C.BLINDING_BAND_KEY] + cost.labourTotal)) < 1e-6, "the element total is the two bands plus labour");
+  assert.equal(costOut.categoryTotals[C.BLINDING_BAND_KEY] || 0, 0); assert.equal(costOut.categoryTotals["CONCRETE"] || 0, 0); assert.ok(costOut.excludedBlinding >= 11.3 * auto.unitCost - 1e-6, "the master tick leaves the build-up out and states the money");
+  const typedCost = C.computeElementCost(typed, rates); assert.equal(typedCost.categoryTotals[C.BLINDING_BAND_KEY] || 0, 0, "a typed CONCRETE row replaces the band's build-up — nothing lands on the band");
+  const cb = fs.readFileSync(new URL("../src/components/CategoryBlock.jsx", import.meta.url), "utf8");
+  assert.ok(/const isAutoBlind = false/.test(cb) && /data-testid="blinding-on-band"/.test(cb) && /data-testid="blinding-typed-override"/.test(cb), "the CONCRETE row shows no auto figure, says the band prices it, and flags a typed override");
   // the parts follow what the element allows
   const partsOf = (typeId) => C.blindingPartsFor({ typeId }).map((p) => p.key);
   assert.deepEqual(partsOf("raft_foundation"), ["slab", "edge", "internal"]); assert.deepEqual(partsOf("slab_on_ground"), ["slab", "edge", "internal"]); assert.deepEqual(partsOf("driveway_hardstand"), ["slab", "edge", "internal"]);

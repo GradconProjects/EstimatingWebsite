@@ -318,7 +318,7 @@ function ElementReportBlock({ item, rates, projectScope }) {
   }
   const blindAuto = autoBlindingConcrete(item, rates);
   if (blindAuto && blindingIncluded(item)) {
-    materialLines.push({ key: `${blindAuto.key}::auto`, label: `Blinding concrete (CONCRETE — from the crew sheet's build-up: ${blindAuto.parts.map((p) => `${p.label} ${p.m3} m³`).join(", ")})`, qty: blindAuto.qty, unit: "m3", total: blindAuto.total });
+    materialLines.push({ key: `${blindAuto.key}::auto`, label: `Blinding concrete (BLINDING band — build-up: ${blindAuto.parts.map((p) => `${p.label} ${p.m3} m³`).join(", ")})`, qty: blindAuto.qty, unit: "m3", total: blindAuto.total });
   }
   const soil = autoSoilRemoval(item, rates);
   if (soil) {

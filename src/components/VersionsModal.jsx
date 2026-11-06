@@ -3,7 +3,7 @@ import { X, History, Download, RotateCcw, Loader2 } from "lucide-react";
 import { listVersions, loadVersion, downloadQuoteFile } from "../lib/quoteVersions.js";
 import { formatFileSize } from "../lib/storageFiles.js";
 
-const SOURCE_LABEL = { manual: "Saved", autosave: "Autosave", "before-restore": "Before a restore", import: "Opened from file" };
+const SOURCE_LABEL = { manual: "Saved", autosave: "Autosave", "before-restore": "Before a restore", "before-remove": "Before an element was removed", "before-reprice": "Before a re-price", restore: "Restored", bundle: "Downloaded as a bundle", import: "Opened from file" };
 
 function when(iso) {
   if (!iso) return "—";

@@ -54,6 +54,7 @@ import { applyHandover, liveHandover, liveHandoverApplies, undoHandover } from "
 import { needsOffload, offloadMarkups, applyOffload, markupStoreEnabled } from "./lib/markupStore.js";
 import ManageElementTypesModal from "./components/ManageElementTypesModal.jsx";
 import ProjectGeometryPanel from "./components/ProjectGeometryPanel.jsx";
+import DownloadProjectModal from "./components/DownloadProjectModal.jsx";
 
 const OFFICE_COMMS_KEY = "gradcon-office-communications";
 const INITIAL_VIEW_KEY = "gradcon-quotes-initial-view";
@@ -728,18 +729,21 @@ function ProjectEditor({ project, allProjects, rates: liveRates, setRates: setLi
   const [autosaveMinutes] = useState(prefAutosaveMinutes);
   const [downloadOnSave] = useState(prefDownloadOnSave);
   const [versionsOpen, setVersionsOpen] = useState(false);
+  const [downloadOpen, setDownloadOpen] = useState(false);
   const [saveNote, setSaveNote] = useState(null);           // { text, tone: "ok" | "error" }
   const quoteRef = useRef(quote);
   quoteRef.current = quote;
   const changedSinceVersionRef = useRef(false);            // anything to autosave?
   const seenLoadedQuoteRef = useRef(false);
+  const pendingVersionRef = useRef(null);                  // {projectId, quote} — the last state not yet in a version
   useEffect(() => {
     if (quoteStatus === "loading") return;
     // The first settled value is the row arriving, not an edit — opening a
     // project must not by itself produce an autosave version.
     if (!seenLoadedQuoteRef.current) { seenLoadedQuoteRef.current = true; return; }
     changedSinceVersionRef.current = true;
-  }, [quote, quoteStatus]);
+    pendingVersionRef.current = { projectId: project.id, quote };
+  }, [quote, quoteStatus]); // eslint-disable-line react-hooks/exhaustive-deps
   // The address convention on the project name (lib/projectNaming.js): when
   // the field is left, a name not yet in the convention is sent to the AI
   // provider — a confident single answer is applied at once (with Undo in
@@ -775,6 +779,7 @@ function ProjectEditor({ project, allProjects, rates: liveRates, setRates: setLi
   const keepVersion = async (source) => {
     const v = await saveVersion(project.id, quoteRef.current, source);
     changedSinceVersionRef.current = false;
+    pendingVersionRef.current = null;
     return v;
   };
   // Save = the live row now + the index + Cost Planner (as before), PLUS a
@@ -805,9 +810,16 @@ function ProjectEditor({ project, allProjects, rates: liveRates, setRates: setLi
       note(`Couldn't save to this computer: ${e?.message || e}`, "error");
     }
   };
-  // Autosave: a version every N minutes while something has changed.
+  // Autosave: a version every N minutes while something has changed. The
+  // timer depends on the project and on whether its row has LOADED — never on
+  // the save status itself (5 Nov 2026, 14-16 Marine Pde: every edit flipped
+  // the status "saving" → "saved", which re-ran this effect and restarted the
+  // countdown, so a project worked on steadily never reached its ten minutes
+  // and no autosave version was kept between 29 Oct and the day an element
+  // was deleted by mistake).
+  const quoteLoadedForVersions = quoteStatus !== "loading";
   useEffect(() => {
-    if (!(autosaveMinutes > 0) || quoteStatus === "loading") return;
+    if (!(autosaveMinutes > 0) || !quoteLoadedForVersions) return;
     const id = setInterval(async () => {
       if (!changedSinceVersionRef.current) return;
       try {
@@ -817,7 +829,20 @@ function ProjectEditor({ project, allProjects, rates: liveRates, setRates: setLi
     }, autosaveMinutes * 60 * 1000);
     return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autosaveMinutes, project.id, quoteStatus]);
+  }, [autosaveMinutes, project.id, quoteLoadedForVersions]);
+  // Leaving the project (back to the Dashboard, another project, the tab
+  // closing) with changes no version holds yet keeps one — best-effort, from
+  // the state those changes were made on, never from the next project's row.
+  useEffect(() => {
+    const flush = () => {
+      const p = pendingVersionRef.current;
+      if (!p || !changedSinceVersionRef.current) return;
+      pendingVersionRef.current = null; changedSinceVersionRef.current = false;
+      saveVersion(p.projectId, p.quote, "autosave").catch(() => { /* the live row is the moving copy */ });
+    };
+    window.addEventListener("pagehide", flush);
+    return () => { window.removeEventListener("pagehide", flush); flush(); };
+  }, [project.id]);
   // Restore keeps what is on screen NOW as its own version first, so a
   // restore can be undone from the same list.
   const restoreVersion = async (restoredQuote) => {
@@ -894,7 +919,14 @@ function ProjectEditor({ project, allProjects, rates: liveRates, setRates: setLi
     const ctx = marginContext(quote, items, rates, { pastProjects: past });
     return requestMarginAdvice(ctx, { provider: preferredProvider() });
   };
-  const removeItem = (id) => setItems((its) => its.filter((it) => it.id !== id));
+  // Removing an element keeps a "before-remove" version FIRST (5 Nov 2026: an
+  // element deleted by mistake had no copy of its own — the Estimates app's
+  // removal net, brought to Quotes): the version is built from the quote as
+  // it stands at this moment, so the removed element is in it.
+  const removeItem = (id) => {
+    keepVersion("before-remove").catch(() => { /* the live row is the moving copy */ });
+    setItems((its) => its.filter((it) => it.id !== id));
+  };
   const reorderItems = (draggedId, targetId) =>
     setItems((its) => {
       if (draggedId === targetId) return its;
@@ -1074,6 +1106,14 @@ function ProjectEditor({ project, allProjects, rates: liveRates, setRates: setLi
             data-testid="rfq-button"
           >
             <Mail size={16} /> RFQ{Array.isArray(quote.rfqs) && quote.rfqs.length > 0 && <span className="text-orange-300">({quote.rfqs.length})</span>}
+          </button>
+          <button
+            onClick={() => setDownloadOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-900 hover:bg-blue-800 text-sm font-medium transition-colors flex-none"
+            title="Download the whole project as one zip: a reference manual, the quote, the Estimates takeoff, the emails, the drawings and the attached files"
+            data-testid="download-project-button"
+          >
+            <HardDriveDownload size={16} /> Download project
           </button>
           <button
             onClick={() => setDrive({ mode: "attach" })}
@@ -1528,6 +1568,8 @@ function ProjectEditor({ project, allProjects, rates: liveRates, setRates: setLi
       )}
 
       {ratesOpen && <RatesModal rates={rates} setRates={setRates} lockedFor={locked && hasFrozenRates(quote) ? quote.ratesFrozen : null} onClose={() => setRatesOpen(false)} />}
+
+      {downloadOpen && <DownloadProjectModal quote={quote} items={items} rates={rates} project={project} elementTypes={elementTypes} onClose={() => setDownloadOpen(false)} />}
       {rfq && (
         <RfqModal
           quote={quote}

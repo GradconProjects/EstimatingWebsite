@@ -1,6 +1,6 @@
 import { Fragment } from "react";
 import { ChevronDown, ChevronRight, Plus, X } from "lucide-react";
-import { rateKey, money2, rowRate, computeRowTotal, rowContext, autoSoilRemoval, autoBlindingConcrete, isQuantityOnlyKey, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, additionalRowsFor, additionalRowTotal, autoPigmentWashout, autoSpecialistShortLoad, productLabel, visibleProducts, isBlindingProduct, blindingIncluded } from "../lib/costing.js";
+import { rateKey, money2, rowRate, computeRowTotal, rowContext, autoSoilRemoval, autoBlindingConcrete, blindingBuildUp, isQuantityOnlyKey, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, additionalRowsFor, additionalRowTotal, autoPigmentWashout, autoSpecialistShortLoad, productLabel, visibleProducts, isBlindingProduct, blindingIncluded } from "../lib/costing.js";
 import { SPECIALIST_CONCRETE_KEY } from "../data/catalog.js";
 import { NumInput } from "./atoms.jsx";
 import { validityState, validityLabel, formatValidUntil } from "../lib/rateValidity.js";
@@ -46,7 +46,9 @@ export default function CategoryBlock({ cat, item, rates, onQtyChange, entryTone
   const surcharge = cat.key === "CONCRETE" ? autoConcreteSurcharge(item, rates) : null;
   const levy = cat.key === "CONCRETE" ? autoEnvironmentLevy(item, rates) : null;
   const soil = cat.key === "OTHER ALLOWANCES" ? autoSoilRemoval(item, rates) : null; // follows the Excavation line, bulked
-  const blindAuto = cat.key === "CONCRETE" ? autoBlindingConcrete(item, rates) : null; // the crew sheet's blinding build-up
+  // the BLINDING band's build-up is priced on THAT band (6 Nov 2026) — the CONCRETE "Blinding concrete" row shows no
+  // auto figure any more; a figure typed on it is the estimator's own and overrides the band's build-up
+  const blindAuto = cat.key === "CONCRETE" ? autoBlindingConcrete(item, rates) : null;
   // VicMix charges on the specialist band, same amber-ghost treatment: the
   // pigment washout per truck of pigmented mix, and one short-load charge
   // when the pour is under the published-price minimum.
@@ -115,8 +117,9 @@ export default function CategoryBlock({ cat, item, rates, onQtyChange, entryTone
                 const isAutoWashout = washout && washout.key === qKey;
                 const isAutoShort = shortLoad && shortLoad.key === qKey;
                 const isAutoSoil = soil && soil.key === qKey;
-                const isAutoBlind = blindAuto && blindAuto.key === qKey;
-                const autoRow = isAutoCartage ? minCartage : isAutoSur ? surcharge : isAutoLevy ? levy : isAutoWashout ? washout : isAutoShort ? shortLoad : isAutoSoil ? soil : isAutoBlind ? blindAuto : null;
+                const isAutoBlind = false; // never a placeholder on the CONCRETE row — the BLINDING band prices its own build-up
+                const onBlindingBand = blindAuto && blindAuto.key === qKey; // the band carries a build-up and this row is blank
+                const autoRow = isAutoCartage ? minCartage : isAutoSur ? surcharge : isAutoLevy ? levy : isAutoWashout ? washout : isAutoShort ? shortLoad : isAutoSoil ? soil : null;
                 const rowTotal = autoRow ? autoRow.total : computeRowTotal(cat, rate, qty, ctx);
                 // kg/m³ × the element's poured m³ — the tonnage this rate buys
                 const rateTonnes = hasVolumeRate ? (qty * ctx.concreteM3) / 1000 : null;
@@ -132,6 +135,8 @@ export default function CategoryBlock({ cat, item, rates, onQtyChange, entryTone
                   <tr className={`border-t border-neutral-100 ${filled ? "bg-orange-50/40" : ""}`}>
                     <td className="px-3 py-1 text-neutral-700">
                       {productLabel(p)}{p.legacy && <span className="ml-1 text-[10px] text-neutral-400">retired</span>}
+                      {onBlindingBand && <span className="ml-1.5 text-[10px] font-semibold uppercase tracking-wide text-neutral-500" title={`The BLINDING band above prices its build-up (${blindAuto.qty} m³ at ${money2(blindAuto.unitCost)}/m³ = ${money2(blindAuto.total)}). Type a figure here only to price blinding by hand instead — it replaces the band's build-up.`} data-testid="blinding-on-band">on the BLINDING band — {blindAuto.qty} m³</span>}
+                      {isBlindingProduct(cat, p) && qty > 0 && blindingIncluded(item) && blindingBuildUp(item).m3 > 0 && <span className="ml-1.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700" title="A figure typed here replaces the BLINDING band's build-up — the band's m³ is not charged while this row is typed" data-testid="blinding-typed-override">typed — replaces the band's build-up</span>}
                       {blindingOut && qty > 0 && <span className="ml-1.5 text-[10px] font-semibold uppercase tracking-wide text-neutral-500" title="Tick 'Add blinding' on the crew sheet to charge it" data-testid="blinding-not-added">not added — crew sheet</span>}
                       {isAutoCartage && (
                         <span

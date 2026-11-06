@@ -374,10 +374,26 @@ safety net silently. Keep all cost arithmetic in `lib/costing.js`.
   `PrintQuoteReport` and `exportQuote` all call it), `pouredVolume` counts it
   (Holcim fees), `labourQuantities` feeds it to the crew sheet's Blinding row
   Qty, and the master tick leaves all of it out (`excludedBlinding`). The
-  band's header reads the m³ and the $; `verify.mjs` covers the arithmetic,
-  the auto row, the crew Qty, the typed override and the master tick;
-  `test-blinding-buildup.mjs` proves the band, the prefill, the CONCRETE
-  placeholder and an untick in the browser.
+  band's header reads the m³ and the $. **The build-up is priced on the
+  BLINDING band, never shown on the CONCRETE row** (Grady, 6 Nov 2026:
+  "blinding concrete should not be automatically entered anymore under the
+  concrete as we have a separate row for blinding"): `computeElementCost`
+  lands the auto row's money under `BLINDING_BAND_KEY` = "BLINDING" in
+  `categoryTotals` / `excludedTotals` (the CONCRETE band's scope rule, a
+  supply), so the CONCRETE band's header carries only its own rows and the
+  Holcim fees (which still count the build-up as poured m³);
+  `CategoryBlock` puts NO amber placeholder on the CONCRETE "Blinding
+  concrete" row — it reads "on the BLINDING band — N m³"
+  (`blinding-on-band`) while the band carries a build-up and the row is
+  blank; a figure typed on the row is the estimator's own, replaces the
+  band's build-up (nothing lands on the band) and is flagged "typed —
+  replaces the band's build-up" (`blinding-typed-override`); the print
+  report, `exportQuote` and the project bundle label the line "Blinding
+  concrete (BLINDING band — build-up: …)". `verify.mjs` covers the
+  arithmetic, the auto row, the band key, the CONCRETE band without it, the
+  crew Qty, the typed override and the master tick;
+  `test-blinding-buildup.mjs` proves the band, the prefill, the bare CONCRETE
+  row with its note and an untick in the browser.
 - **Crew-sheet rows are matched by NAME** (`taskRowMeta` in `costing.js`):
   a row whose name says "excavate" draws its Qty from the element's
   **Excavation** (m³) line, a row saying "spoil" / "soil removal" / "cart
@@ -2549,10 +2565,70 @@ Three layers, each with a rule that was learned the hard way:
 - **Versions** (`lib/quoteVersions.js`) are immutable full copies in the
   `gradcon-files` bucket under `quote-versions/<projectId>/` — one on every
   Save, one every N minutes (portal Settings `quotesAutosaveMinutes`, 0 =
-  off) while the quote has changed, and one "before-restore" ahead of any
-  restore. Nothing deletes a version. The same document shape is what "Save
-  to computer" downloads and "Open .json" reads; filenames must stay ASCII
-  (Chromium drops a download name containing an em dash or curly quote).
+  off) while the quote has changed, one "before-restore" ahead of any
+  restore, **one "before-remove" the moment an element is removed**
+  (`removeItem` in App.jsx keeps it FIRST, from the quote as it stands, so
+  the removed element is in it — 5 Nov 2026, 14-16 Marine Pde: an element
+  deleted by mistake had no copy of its own, and the user's own restore of
+  the 29 Oct autosave then dropped a week's work; the Estimates removal net,
+  brought to Quotes), and **one on leaving the project with changes no
+  version holds** (`pendingVersionRef` — the quote as it stood when the
+  changes were made, never the next project's row; flushed on unmount and on
+  `pagehide`, best-effort). **The autosave timer depends on the project and
+  on its row having loaded, never on the save status** (same day: every edit
+  flipped `quoteStatus` "saving" → "saved", which re-ran the effect and
+  restarted the ten-minute countdown, so a project worked on steadily never
+  reached it and no autosave was kept between 29 Oct and 5 Nov). The
+  Versions list labels them (`SOURCE_LABEL`: before-remove, before-reprice,
+  restore, bundle). Nothing deletes a version. The same document shape is
+  what "Save to computer" downloads and "Open .json" reads; filenames must
+  stay ASCII (Chromium drops a download name containing an em dash or curly
+  quote). `verify.mjs` pins the removal net, the timer's deps and the flush.
+
+- **"Download project" is one zip — the reference manual** (Grady, 5 Nov
+  2026: "a local download option … once Grady finishes his input and clicks
+  on download project. it should export the estimates, the quotes etc and
+  even the emails associated to that project as a reference manual"):
+  `src/lib/projectBundle.js` is PURE (verify-covered, runs in Node) —
+  `zipStore` / `unzipStore` (a store-method ZIP with CRC-32, UTF-8 names, no
+  dependency), `manualHtml(ctx)` (README.html: cover facts, summary, packages,
+  every element's priced lines and crew sheet through `buildElementLines`
+  — now exported from `exportQuote.js` —, the margin register, the Tender
+  Quote stages / options / inclusions / notes / project sum, the assumptions
+  (project and package), the checklist, the RFQ rounds, the notifications,
+  every email in full, the takeoff's elements and register lines, the files,
+  drawings and versions, "What is in this bundle" and "Not included"; no
+  script), `mailQuery(quote)` (every spelling of the name and address the
+  quote carries plus the street alone, each an exact phrase, OR-ed; no name
+  = no search), `takeoffCsv`, `emailText` / `emailFileName`, `safeName`,
+  `bundleName` ("<project> - project bundle <day>"). `projectBundleBuild.js`
+  gathers in the browser, READ-ONLY and best-effort (`deps` = the test seam:
+  fetch, gmail, drive, readTakeoff, listVersions, markupSrc, now, by): the
+  quote as `quote/quote.json` (a `buildQuoteFile` document, source "bundle",
+  so "Open .json" restores it), `quote.xls` / `quote.csv`, the Estimates
+  takeoff with the project's name (`readTakeoffForProject` on the convention
+  name, then the name as typed) as `estimates/takeoff.json` + `register.csv`,
+  the newest `EMAILS_MAX` = 60 matches in projects@ read in full (`api/gmail`
+  list + read, five at a time) as `emails/<date> <n> <subject>.txt`, the
+  drawings on the cards (`markupSrc`, or the inline data URL) under
+  `drawings/<element>/`, the attached files (a mail attachment's bucket URL;
+  a Drive file through `api/drive` copy, preview target) under `files/`, and
+  `versions.json` (names only); anything that cannot be fetched is named in
+  the manual's "Not included" and the modal's `download-issues`, never a
+  silent gap; a mailbox that is not connected is one line, not a failure.
+  `DownloadProjectModal.jsx` (the header's **Download project** button,
+  `download-project-button`; ticks per optional part `download-part-*`,
+  `download-project-build`, `download-progress`, `download-result`) saves the
+  zip through `downloadBytes` (the Save-as picker where offered, else a plain
+  download from the top window — the same two-window dance as
+  `downloadQuoteFile`). Nothing on the project changes. **Saving into the
+  project's Google Drive folder is NOT built**: the Drive connection is
+  read-only by rule (`drive.readonly`); writing the zip there is a scope
+  change on the projects@ connection (`drive.file`) and an `upload` action
+  in `api/drive.js` — to be added only when Grady asks for it expressly.
+  `test-download-project.mjs` proves the button, the modal, the zip (manual,
+  quote files, two mocked emails, a drawing), the restorable quote document,
+  the mailbox search and the project left untouched.
 
 - **Markup drawings live in the `gradcon-files` bucket, never in the row**
   (`lib/markupStore.js`, 9 Oct 2026: a nine-element project carried 17
