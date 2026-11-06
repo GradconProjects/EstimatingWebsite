@@ -393,7 +393,22 @@ safety net silently. Keep all cost arithmetic in `lib/costing.js`.
   arithmetic, the auto row, the band key, the CONCRETE band without it, the
   crew Qty, the typed override and the master tick;
   `test-blinding-buildup.mjs` proves the band, the prefill, the bare CONCRETE
-  row with its note and an untick in the browser.
+  row with its note and an untick in the browser. **A blinding row can be
+  added by hand** (Grady, 6 Nov 2026: "add another custom blinding where i
+  manually enter another row instead of having just the default one"): the
+  band's "+ Add a blinding row" (`blinding-add-custom`) writes
+  `item.blinding["custom:<id>"] = {name, kind: "area" | "run", areaM2 |
+  lengthM + widthMm, tMm, on}` through the same `onPart` writer as a default
+  part; `customBlindingParts(item)` (`CUSTOM_BLINDING_PREFIX`) is the ONE
+  reading and `blindingBuildUp` appends them AFTER the element's allowed parts
+  (an element that does not blind — a column — ignores them), so they price on
+  the band, feed the crew Qty and the Holcim fees and obey the master tick
+  like any part. The row carries a name box (`blinding-<key>-name`, blank =
+  "Custom blinding"), a kind select (`blinding-<key>-kind`: area × depth, or
+  run × width × depth) and a remove ✕ (`blinding-<key>-remove`, the card's
+  `onRemovePart` deletes the key, stamped on the trail). Verify covers the
+  reading, the build-up, the price, the crew Qty, the unticked row and the
+  column; the probe adds, names, prices and removes one.
 - **Crew-sheet rows are matched by NAME** (`taskRowMeta` in `costing.js`):
   a row whose name says "excavate" draws its Qty from the element's
   **Excavation** (m³) line, a row saying "spoil" / "soil removal" / "cart

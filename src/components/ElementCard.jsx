@@ -638,6 +638,7 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
                 toggle={() => setOpenCats((o) => ({ ...o, BLINDING: !o.BLINDING }))}
                 entryTone={tone}
                 onPart={(partKey, field, v) => patch((it) => stamp({ ...it, blinding: { ...(it.blinding || {}), [partKey]: { ...((it.blinding || {})[partKey] || {}), [field]: field === "on" ? (v ? undefined : false) : v } } }, `blinding:${partKey}:${field}`))}
+                onRemovePart={(partKey) => patch((it) => { const b = { ...(it.blinding || {}) }; delete b[partKey]; return stamp({ ...it, blinding: b }, `blinding:${partKey}:removed`); })}
               />
             )}
             </Fragment>

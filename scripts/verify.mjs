@@ -1851,6 +1851,15 @@ check("blinding build-up on the crew sheet (22 Oct 2026): slab = area × depth, 
   assert.ok(Math.abs(cost.total - (cost.categoryTotals["CONCRETE"] + cost.categoryTotals[C.BLINDING_BAND_KEY] + cost.labourTotal)) < 1e-6, "the element total is the two bands plus labour");
   assert.equal(costOut.categoryTotals[C.BLINDING_BAND_KEY] || 0, 0); assert.equal(costOut.categoryTotals["CONCRETE"] || 0, 0); assert.ok(costOut.excludedBlinding >= 11.3 * auto.unitCost - 1e-6, "the master tick leaves the build-up out and states the money");
   const typedCost = C.computeElementCost(typed, rates); assert.equal(typedCost.categoryTotals[C.BLINDING_BAND_KEY] || 0, 0, "a typed CONCRETE row replaces the band's build-up — nothing lands on the band");
+  // custom blinding rows (6 Nov 2026): typed by hand under "custom:<id>", counted with the parts, named, removable
+  const withCustom = { ...base, blinding: { ...base.blinding, "custom:x1": { name: "Lift pit base", kind: "area", areaM2: 6, tMm: 100 }, "custom:x2": { kind: "run", lengthM: 10, widthMm: 500, tMm: 50 }, "custom:x3": { kind: "area", areaM2: 4, tMm: 50, on: false } } };
+  assert.deepEqual(C.customBlindingParts(withCustom).map((p) => [p.key, p.label, p.kind]), [["custom:x1", "Lift pit base", "area"], ["custom:x2", "Custom blinding", "run"], ["custom:x3", "Custom blinding", "area"]]);
+  const buC = C.blindingBuildUp(withCustom);
+  assert.deepEqual(buC.parts.map((p) => [p.key, p.on, p.m3]), [["slab", true, 10], ["edge", true, 0.7], ["internal", true, 0.6], ["custom:x1", true, 0.6], ["custom:x2", true, 0.25], ["custom:x3", false, 0]], "the custom rows follow the defaults; the unticked one counts nothing");
+  assert.equal(buC.m3, 12.15); assert.equal(C.autoBlindingConcrete(withCustom, rates).qty, 12.15, "the band prices the custom rows too"); assert.equal(C.labourQuantities(withCustom, rates).blindingM3, 12.15, "and the crew Qty reads them");
+  assert.deepEqual(C.blindingBuildUp({ ...withCustom, typeId: "rc_columns" }).parts, [], "a custom row never gives a column blinding");
+  const bb = fs.readFileSync(new URL("../src/components/BlindingBand.jsx", import.meta.url), "utf8");
+  assert.ok(/data-testid="blinding-add-custom"/.test(bb) && /CUSTOM_BLINDING_PREFIX\}\$\{uid\(\)\}/.test(bb) && /blinding-\$\{part\.key\}-name/.test(bb) && /onRemovePart\(part\.key\)/.test(bb), "the band adds, names and removes a custom row");
   const cb = fs.readFileSync(new URL("../src/components/CategoryBlock.jsx", import.meta.url), "utf8");
   assert.ok(/const isAutoBlind = false/.test(cb) && /data-testid="blinding-on-band"/.test(cb) && /data-testid="blinding-typed-override"/.test(cb), "the CONCRETE row shows no auto figure, says the band prices it, and flags a typed override");
   // the parts follow what the element allows

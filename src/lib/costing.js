@@ -840,9 +840,23 @@ export function blindingPartM3(part, p) {
   if (part.kind === "area") return round2(numOr0(p.areaM2) * t);
   return round2(numOr0(p.lengthM) * (numOr0(p.widthMm) / 1000) * t);
 }
+/** The custom blinding rows an element carries (Grady, 6 Nov 2026: "add another custom blinding where i manually enter
+ * another row instead of having just the default one"): `item.blinding["custom:<id>"] = {name, kind: "area" | "run",
+ * areaM2 | lengthM + widthMm, tMm, on}` — the same cells as a default part, under a key the element's type never owns.
+ * `customBlindingParts(item)` is the ONE reading; they count only on an element that blinds at all. */
+export const CUSTOM_BLINDING_PREFIX = "custom:";
+export function customBlindingParts(item) {
+  const b = (item && item.blinding) || {};
+  return Object.keys(b).filter((k) => k.startsWith(CUSTOM_BLINDING_PREFIX) && b[k] && typeof b[k] === "object").map((key) => {
+    const p = b[key];
+    const kind = p.kind === "run" ? "run" : "area";
+    return { key, label: String(p.name || "").trim() || "Custom blinding", kind, custom: true, hint: kind === "area" ? "a plan area × the blinding depth, typed by hand" : "a run × the blinding width × depth, typed by hand" };
+  });
+}
 export function blindingBuildUp(item) {
   const b = (item && item.blinding) || {};
-  const parts = blindingPartsFor(item).map((part) => {
+  const allowed = blindingPartsFor(item);
+  const parts = (allowed.length ? allowed.concat(customBlindingParts(item)) : []).map((part) => {
     const p = b[part.key] || {};
     const on = p.on !== false;
     const m3 = blindingPartM3(part, p);
