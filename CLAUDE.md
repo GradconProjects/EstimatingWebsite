@@ -1196,7 +1196,13 @@ interchangeable sayings … not imposing and can be shut off … twice the size
 thumbs,arms,hips,kneel,clipboard,wave}.webp` are the eight poses cut out of
 the sheets (hands in pockets, pointing, thumbs-up crouch, arms crossed, hands
 on hips, kneeling with the tape, clipboard thumbs-up, waving), 520 px tall
-WebP with alpha, inlined as data URLs by `assemble-portal.mjs`
+WebP with alpha (re-cut 8 Nov 2026 — Grady: "remove the background from all
+the images": the corner flood fill had left the pale ground shadows under the
+boots, the white pockets the outline encloses — between the legs, under an
+arm, between the arms — and a one-pixel white halo; each was cleared by
+component with the chest logo, the teeth and the clipboard paper kept, the
+halo by a one-pixel alpha erode; the recipe is in the scratchpad's
+`mate-check/recut.sh`), inlined as data URLs by `assemble-portal.mjs`
 (`__MATE_POSE_<POSE>__`, asserted RIFF/WEBP) and animated as whole figures
 (breathe, rock, jab, bob, jump with confetti, a "?" when he thinks, a clock
 on the wrist tap, grey and z's asleep). The cut-out was done LOCALLY with
@@ -1257,9 +1263,31 @@ carried a hand-drawn vector instead. Rules:
 3. **Quiet by design** (Clippy was hated for interrupting): one bubble at a
    time, only on an event or the chatter interval, `MATE_BUBBLE_MS` = 9 s
    then back to idle, a ✕ on the bubble (`mate-close`), hidden on the login
-   screen, a still figure under `prefers-reduced-motion`, and the Settings →
-   App behaviour switch "Grady's mate" (`settings-mate`, `mateOn`, default
-   on, `BOOL_FIELDS`). Clicking him opens the Gradcon AI chat (`ai-chat-fab`).
+   screen, a still figure under `prefers-reduced-motion`, and the switch
+   "Show Grady's mate" (`settings-mate`, `mateOn`, default on,
+   `BOOL_FIELDS`). Clicking him opens the Gradcon AI chat (`ai-chat-fab`).
+   **A ✕ sits over his head** (Grady, 8 Nov 2026: "add a close mark over his
+   head so user can close it"): `#mate-hide` (`.hide`, centred above the
+   figure; its pointerdown never starts a drag) closes him for the rest of
+   THIS TAB'S SESSION — `sessionStorage[MATE_CLOSED_KEY]` =
+   `gradcon-mate-closed`, `mateClosed(storage)` the ONE reading, folded into
+   the driver's `visible()` — never the lasting off (that stays the Settings
+   switch); the next sign-in in a new tab starts fresh. **His Settings live in
+   a block of their own** (same day: "add a dedicated block for settings
+   concerning this in the settings tab"): the section
+   `settings-section-mate` "Grady's mate" — the switch, "Closed with the ✕ for
+   this session · Show him again now" (`settings-mate-show`, shown only while
+   he is closed; `gradconMate.show()`), "Change pose on his own every"
+   (`settings-mate-cycle`), chatter, size, transparency; nothing of his is
+   left under App behaviour (`verify.mjs` pins the block and the absence).
+   **He changes pose on his own while idle** (same day: "reduce the time it
+   takes for the image to change"): every `mateCycleSec` seconds
+   (`MATE_CYCLE_OPTIONS` 0 / 10 / 20 (default) / 45 / 90, `mateCycleMs`,
+   `STR_FIELDS`) the 5 s driver tick moves him through `MATE_CALM_POSES`
+   (idle, hips, clipboard, measure, thumbs — the poses with no mark over his
+   head; `cyclePose(prev, slot)` never repeats the pose he is in), never
+   while a bubble is up and never asleep; an event still sets its own pose.
+   `gradconMate.cycle()` / `.close()` / `.show()` are the test seams.
 4. **He is dragged anywhere, sized and faded from Settings.** Pointer drag
    on `#mate` (a press that moves under 6 px is the click); the spot is
    `prefs.matePos = {x, y}` (per browser, `clampMatePos` keeps him on screen

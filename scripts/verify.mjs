@@ -4330,6 +4330,28 @@ await checkAsync("Grady's mate (portal/mate.js, src/lib/mate.js): the rules, the
   assert.match(shell, /window\.gradconMate\.react\(\{ kind:'signin'/); assert.match(shell, /window\.gradconMate\.screen\(id\)/); assert.match(shell, /e\.key === MATE_EVENT_KEY/);
   assert.match(shell, /prefers-reduced-motion: reduce\)\{ #mate \*, #mate-bubble\{ animation:none !important; \}/, "reduced motion = a still figure");
   for (const pose of M.MATE_POSES.filter((p) => p !== "idle" && p !== "sleep")) assert.match(shell, new RegExp(`#mate\\[data-pose="${pose}"\\]`), `the shell styles the ${pose} pose`);
+  // 8 Nov 2026: the ✕ over his head, the pose cycle while idle, his own Settings block
+  assert.ok(JSON.stringify(M.MATE_CYCLE_OPTIONS) === "[0,10,20,45,90]" && M.MATE_CYCLE_SEC_DEFAULT === 20, "pose-change options");
+  assert.equal(M.mateCycleMs({}), 20000); assert.equal(M.mateCycleMs({ mateCycleSec: "0" }), 0); assert.equal(M.mateCycleMs({ mateCycleSec: 45 }), 45000); assert.equal(M.mateCycleMs({ mateCycleSec: 7 }), 20000, "an unknown value = the default");
+  for (const p of M.MATE_CALM_POSES) assert.ok(M.MATE_POSES.indexOf(p) >= 0, `calm pose ${p} is a known pose`);
+  for (const p of ["scratch", "wrist", "celebrate", "sleep", "wave", "point", "nod"]) assert.ok(M.MATE_CALM_POSES.indexOf(p) < 0, `${p} carries a mark or a reaction — never cycled`);
+  for (let slot = 0; slot < 12; slot++) { const nx = M.cyclePose("idle", slot); assert.ok(nx !== "idle" && M.MATE_CALM_POSES.indexOf(nx) >= 0, "the cycle never repeats the current pose"); assert.equal(M.cyclePose("hips", slot), M.cyclePose("hips", slot), "deterministic by slot"); }
+  assert.ok(new Set([0, 1, 2, 3].map((k) => M.cyclePose("idle", k))).size === 4, "every other calm pose comes round");
+  assert.equal(M.MATE_CLOSED_KEY, "gradcon-mate-closed"); assert.ok(M.mateClosed({ getItem: () => "1" }) && !M.mateClosed({ getItem: () => null }) && !M.mateClosed(null));
+  assert.match(shell, /<button type="button" class="hide" id="mate-hide"[^>]*data-testid="mate-hide">✕<\/button>/, "the ✕ over his head");
+  assert.match(shell, /#mate \.hide\{ position:absolute; left:50%; top:-8px;/, "the ✕ sits above the figure");
+  assert.match(shell, /hideBtn\.addEventListener\('pointerdown', function\(e\)\{ e\.stopPropagation\(\); \}\)/, "pressing the ✕ never starts a drag");
+  assert.match(shell, /function closeForSession\(\)\{ try\{ sessionStorage\.setItem\(MATE_CLOSED_KEY/, "the ✕ closes him for this tab's session, never for good");
+  assert.match(shell, /function visible\(\)\{ return enabled\(\) && !closed\(\) && screenId !== 'screen-login'; \}/);
+  assert.match(shell, /setPose\(cyclePose\(el\.getAttribute\('data-pose'\), Math\.floor\(now \/ 1000\)\)\)/, "the idle pose cycle");
+  assert.match(shell, /if\(!ms \|\| !bubble\.hidden \|\| idlePose\(lastActive, now\) === 'sleep' \|\| now - lastCycleAt < ms\) return false;/, "never over a bubble, never asleep");
+  assert.match(shell, /\}, 5000\);\n\s*document\.getElementById\('mate-close'\)/, "the tick runs every 5 s");
+  assert.match(shell, /<div class="settings-section" id="settings-section-mate">Grady's mate<\/div>/, "his own Settings block");
+  const mateBlock = shell.slice(shell.indexOf('id="settings-section-mate"'), shell.indexOf("Estimates — defaults for new takeoffs"));
+  for (const id of ["settings-mate", "settings-mate-show", "settings-mate-cycle", "settings-mate-chatter", "settings-mate-size", "settings-mate-opacity"]) assert.ok(mateBlock.includes(`id="${id}"`), `${id} lives in the Grady's mate block`);
+  const appBlock = shell.slice(shell.indexOf('<div class="settings-section">App behaviour</div>'), shell.indexOf('id="settings-section-mate"'));
+  assert.ok(!/settings-mate/.test(appBlock), "nothing of his is left under App behaviour");
+  assert.match(shell, /\['settings-mate-cycle','mateCycleSec','20'\]/, "the cycle is a stored preference");
   // the Gradcon Storage badge on the welcome dashboard opens the DRIVE once connected (Grady, 6 Nov 2026: "this opens settings instead of the drive") — the nav's Google Drive route — and Settings only while there is nothing to browse
   assert.match(shell, /function storageBadgeTarget\(b\)\{ return b\.classList\.contains\('on'\) \? 'drive' : 'settings'; \}/);
   const badgeClick = shell.slice(shell.indexOf("document.getElementById('welcome-storage').addEventListener('click'"), shell.indexOf("document.getElementById('welcome-storage').addEventListener('click'") + 700);

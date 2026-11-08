@@ -32,6 +32,15 @@
   const MATE_CHATTER_MIN_DEFAULT = 20;     // a friendly line every N minutes while he is awake (Settings; 0 = off)
   const MATE_CHATTER_OPTIONS = [0, 10, 20, 30, 60];
   const MATE_SIZES = [120, 180, 240, 320]; // the figure's height in px (Settings; 240 = "twice what we had")
+  // He changes pose on his own while idle (Grady, 8 Nov 2026: "reduce the time it takes for the image to
+  // change"): every MATE_CYCLE_SEC_DEFAULT seconds, a Settings choice from MATE_CYCLE_OPTIONS (0 = never),
+  // through the CALM poses only — the ones with no mark over his head — never while a bubble is up or asleep.
+  const MATE_CYCLE_OPTIONS = [0, 10, 20, 45, 90];
+  const MATE_CYCLE_SEC_DEFAULT = 20;
+  const MATE_CALM_POSES = ["idle", "hips", "clipboard", "measure", "thumbs"];
+  // The ✕ over his head closes him for the rest of this tab's session (sessionStorage); Settings → Grady's mate
+  // brings him back at once, and the next sign-in in a new tab starts fresh. The Settings switch is the lasting off.
+  const MATE_CLOSED_KEY = "gradcon-mate-closed";
   const MATE_SIZE_DEFAULT = 240;
   const MATE_OPACITY_DEFAULT = 100;        // percent (Settings slider, 20–100)
 
@@ -249,6 +258,14 @@
   /* ------------------------------------------------------------- placement, size, opacity, chatter */
   function mateSize(prefs) { const v = n(prefs && prefs.mateSize); return MATE_SIZES.indexOf(v) >= 0 ? v : MATE_SIZE_DEFAULT; }
   function mateOpacity(prefs) { const v = prefs && Number.isFinite(Number(prefs.mateOpacity)) ? Number(prefs.mateOpacity) : MATE_OPACITY_DEFAULT; return Math.min(100, Math.max(20, v)) / 100; }
+  function mateCycleMs(prefs) { const v = prefs && Number.isFinite(Number(prefs.mateCycleSec)) ? Number(prefs.mateCycleSec) : MATE_CYCLE_SEC_DEFAULT; return MATE_CYCLE_OPTIONS.indexOf(v) >= 0 ? v * 1000 : MATE_CYCLE_SEC_DEFAULT * 1000; }
+  /** The next calm pose for an idle figure: picked by the slot, never the pose he is already in. */
+  function cyclePose(prev, slot) {
+    const pool = MATE_CALM_POSES.filter((p) => p !== prev);
+    return pool[Math.abs(Math.floor(n(slot))) % pool.length];
+  }
+  /** Closed with the ✕ for this tab's session? (storage = sessionStorage, or any {getItem}) */
+  function mateClosed(storage) { try { return !!(storage && storage.getItem(MATE_CLOSED_KEY)); } catch (e) { return false; } }
   function mateChatterMs(prefs) { const v = prefs && Number.isFinite(Number(prefs.mateChatterMin)) ? Number(prefs.mateChatterMin) : MATE_CHATTER_MIN_DEFAULT; return MATE_CHATTER_OPTIONS.indexOf(v) >= 0 ? v * 60000 : MATE_CHATTER_MIN_DEFAULT * 60000; }
   /** Keep a dragged figure on screen: {x, y} are the figure's left / top in px; null = the default corner. */
   function clampMatePos(pos, size, viewport) {
@@ -263,6 +280,7 @@
   }
 
   return { MATE_EVENT_KEY, MATE_POSES, MATE_REPEAT_MS, MATE_IDLE_MS, MATE_BUBBLE_MS, MATE_CHATTER_MIN_DEFAULT, MATE_CHATTER_OPTIONS, MATE_SIZES, MATE_SIZE_DEFAULT, MATE_OPACITY_DEFAULT,
+    MATE_CYCLE_OPTIONS, MATE_CYCLE_SEC_DEFAULT, MATE_CALM_POSES, MATE_CLOSED_KEY, mateCycleMs, cyclePose, mateClosed,
     MATE_SAYINGS, SAYING_PLACEHOLDERS, SAYING_FLAGS, sayingFacts, fillSaying, eligibleSayings, mateSaying, mateSize, mateOpacity, mateChatterMs, clampMatePos,
     parseMateEvent, mateReaction, shouldSpeak, idlePose, mateEnabled, countUnpricedQuoteRows };
 });

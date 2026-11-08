@@ -417,6 +417,8 @@
   #mate .fig{ position:absolute; left:0; right:0; bottom:0; height:var(--mate-h); display:flex; align-items:flex-end; justify-content:center; transform-origin:50% 100%; }
   #mate .fig img{ display:none; height:var(--mate-h); width:auto; max-width:none; filter:drop-shadow(0 10px 12px rgba(35,31,32,.32)); pointer-events:none; }
   #mate .shadow{ position:absolute; left:50%; bottom:2px; width:46%; height:4%; margin-left:-23%; border-radius:50%; background:rgba(35,31,32,.18); }
+  #mate .hide{ position:absolute; left:50%; top:-8px; margin-left:-11px; width:22px; height:22px; border-radius:50%; border:1px solid #c9c9c9; background:#fff; color:#6b6b6b; font:700 12px/20px Inter, "Segoe UI", sans-serif; text-align:center; cursor:pointer; padding:0; box-shadow:0 2px 6px rgba(35,31,32,.25); opacity:.85; z-index:2; }
+  #mate .hide:hover{ opacity:1; color:#231f20; border-color:#231f20; }
   #mate .mate-mark{ position:absolute; display:none; font:900 calc(var(--mate-h) * .1) / 1 Inter, "Segoe UI", sans-serif; color:#231f20; text-shadow:0 1px 0 #fff; }
   #mate .zz{ right:0; top:0; color:#6b6b6b; }
   #mate .q{ right:-4px; top:-6px; font-size:calc(var(--mate-h) * .13); color:#c2410c; }
@@ -951,32 +953,6 @@
         <div class="hint">Every Save keeps a full version of the quote for good. While a quote is changing, another version is kept automatically at this interval. 0 turns the automatic ones off.</div>
       </div>
       <div class="field"><label class="settings-check"><input type="checkbox" id="settings-download-on-save"> Quotes: also save a copy to this computer on every Save</label></div>
-      <div class="field"><label class="settings-check"><input type="checkbox" id="settings-mate"> Grady's mate — the figure on the screen</label><div class="hint">Waves on sign-in, points at the next element, nods at a Done tick, scratches his head at an unpriced quote row, celebrates a submission. Drag him anywhere; click him to ask Gradcon AI. He changes nothing on a quote.</div></div>
-      <div class="field">
-        <label for="settings-mate-chatter">Grady's mate — chatter</label>
-        <select id="settings-mate-chatter">
-          <option value="0">Off — he only reacts to the work</option>
-          <option value="10">A friendly line every 10 minutes</option>
-          <option value="20">A friendly line every 20 minutes (default)</option>
-          <option value="30">A friendly line every 30 minutes</option>
-          <option value="60">A friendly line every hour</option>
-        </select>
-        <div class="hint">Seventy-odd sayings built from real facts: the project last worked on, what is next, the projects opened today, the quotes due, the weather. Never while he is asleep, never over another bubble.</div>
-      </div>
-      <div class="field">
-        <label for="settings-mate-size">Grady's mate — size</label>
-        <select id="settings-mate-size">
-          <option value="120">Small (120 px)</option>
-          <option value="180">Medium (180 px)</option>
-          <option value="240">Large (240 px, default)</option>
-          <option value="320">Extra large (320 px)</option>
-        </select>
-      </div>
-      <div class="field">
-        <label for="settings-mate-opacity">Grady's mate — transparency</label>
-        <div class="settings-range"><input type="range" id="settings-mate-opacity" min="20" max="100" step="5" value="100" oninput="document.getElementById('settings-mate-opacity-out').value = this.value + '%'"><output id="settings-mate-opacity-out">100%</output></div>
-        <div class="hint">100% is solid; lower lets the page show through him.</div>
-      </div>
       <div class="field">
         <label for="settings-weather-place">Weather on the dashboard — place</label>
         <input type="text" id="settings-weather-place" placeholder="Melbourne" list="settings-weather-places">
@@ -1020,6 +996,48 @@
     </div>
     <p class="settings-note">Turning off delete confirmation makes every ✕ Remove a single, immediate click — there is no undo. Auto-publish keeps the Cost Planner fed live from Estimates' Quantity Register; turn it off if you'd rather it not update automatically.</p>
 
+    <div class="settings-section" id="settings-section-mate">Grady's mate</div>
+    <div class="settings-grid" data-testid="settings-mate-block">
+      <div class="field"><label class="settings-check"><input type="checkbox" id="settings-mate"> Show Grady's mate — the figure on the screen</label><div class="hint">Waves on sign-in, points at the next element, nods at a Done tick, scratches his head at an unpriced quote row, celebrates a submission. Drag him anywhere; click him to ask Gradcon AI; the ✕ over his head closes him for the rest of this session. He changes nothing on a quote.</div></div>
+      <div class="field" id="settings-mate-closed-field" hidden><label>Closed with the ✕ for this session</label><button type="button" class="btn-ghost" id="settings-mate-show" data-testid="settings-mate-show">Show him again now</button></div>
+      <div class="field">
+        <label for="settings-mate-cycle">Change pose on his own every</label>
+        <select id="settings-mate-cycle" data-testid="settings-mate-cycle">
+          <option value="0">Never — only when something happens</option>
+          <option value="10">10 seconds</option>
+          <option value="20">20 seconds (default)</option>
+          <option value="45">45 seconds</option>
+          <option value="90">90 seconds</option>
+        </select>
+        <div class="hint">While nothing is happening he moves through his calm poses at this pace — never while a bubble is up, never asleep.</div>
+      </div>
+      <div class="field"><label class="settings-check"><input type="checkbox" id="settings-mate"> Grady's mate — the figure on the screen</label><div class="hint">Waves on sign-in, points at the next element, nods at a Done tick, scratches his head at an unpriced quote row, celebrates a submission. Drag him anywhere; click him to ask Gradcon AI. He changes nothing on a quote.</div></div>
+      <div class="field">
+        <label for="settings-mate-chatter">Chatter</label>
+        <select id="settings-mate-chatter">
+          <option value="0">Off — he only reacts to the work</option>
+          <option value="10">A friendly line every 10 minutes</option>
+          <option value="20">A friendly line every 20 minutes (default)</option>
+          <option value="30">A friendly line every 30 minutes</option>
+          <option value="60">A friendly line every hour</option>
+        </select>
+        <div class="hint">Seventy-odd sayings built from real facts: the project last worked on, what is next, the projects opened today, the quotes due, the weather. Never while he is asleep, never over another bubble.</div>
+      </div>
+      <div class="field">
+        <label for="settings-mate-size">Size</label>
+        <select id="settings-mate-size">
+          <option value="120">Small (120 px)</option>
+          <option value="180">Medium (180 px)</option>
+          <option value="240">Large (240 px, default)</option>
+          <option value="320">Extra large (320 px)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="settings-mate-opacity">Transparency</label>
+        <div class="settings-range"><input type="range" id="settings-mate-opacity" min="20" max="100" step="5" value="100" oninput="document.getElementById('settings-mate-opacity-out').value = this.value + '%'"><output id="settings-mate-opacity-out">100%</output></div>
+        <div class="hint">100% is solid; lower lets the page show through him.</div>
+      </div>
+    </div>
     <div class="settings-section">Estimates — defaults for new takeoffs</div>
     <div class="settings-grid">
       <div class="field">
@@ -1143,7 +1161,8 @@
      is a button the person clicks. -->
 <button type="button" id="ai-chat-fab" class="ai-fab" hidden title="Ask Gradcon AI about your projects, deadlines, rates and takeoffs">🤖 Ask Gradcon AI</button>
 <!-- Grady's mate: Grady's own illustration (portal/mate/*.webp — eight poses cut out of the sheets he sent on 6 Nov 2026, inlined as data URLs by the assembler) who reacts to the work and chats between times (portal/mate.js). Drag him anywhere; click = Ask Gradcon AI; size, transparency, chatter and the switch under Settings → App behaviour. -->
-<div id="mate" hidden data-pose="idle" role="button" tabindex="0" title="Grady's mate — click to ask Gradcon AI, drag to move. Size, transparency and chatter under Settings → App behaviour." data-testid="mate">
+<div id="mate" hidden data-pose="idle" role="button" tabindex="0" title="Grady's mate — click to ask Gradcon AI, drag to move, ✕ to close him for now. His own block under Settings → Grady's mate." data-testid="mate">
+  <button type="button" class="hide" id="mate-hide" aria-label="Close Grady's mate for now" title="Close him for now — Settings → Grady's mate brings him back" data-testid="mate-hide">✕</button>
   <span class="shadow"></span>
   <div class="fig">
     <img class="img-stand" alt="" src="__MATE_POSE_STAND__">
@@ -1460,7 +1479,8 @@
     ['settings-quotes-theme','quotesTheme','portal'],
     ['settings-weather-place','weatherPlace',''],
     ['settings-mate-chatter','mateChatterMin','20'],
-    ['settings-mate-size','mateSize','240']
+    ['settings-mate-size','mateSize','240'],
+    ['settings-mate-cycle','mateCycleSec','20']
   ];
   // Toggle-backed preferences: [element id, prefs key, default-on?]. Stored
   // as explicit booleans on save (like showHero), so the apps can
@@ -2498,7 +2518,9 @@
     var lastBubbleAt = 0, lastChatterAt = Date.now(), lastSaying = null, session = { opened: [], project: '', next: '', done: 0, total: 0 };
     function prefs(){ return loadPrefs(); }
     function enabled(){ return mateEnabled(prefs()); }
-    function visible(){ return enabled() && screenId !== 'screen-login'; }
+    function closed(){ return mateClosed(window.sessionStorage); }
+    function visible(){ return enabled() && !closed() && screenId !== 'screen-login'; }
+    var lastCycleAt = Date.now();
     function facts(){ return { welcome: WELCOME_FACTS, name: currentUser ? firstName(currentUser) : '', tod: timeOfDay(new Date()), day: new Date().toLocaleDateString('en-AU', { weekday:'long' }), opened: session.opened, project: session.project, next: session.next, done: session.done, total: session.total, weather: MATE_WEATHER }; }
     function setPose(p){ el.setAttribute('data-pose', MATE_POSES.indexOf(p) >= 0 ? p : 'idle'); }
     function rest(){ setPose(idlePose(lastActive, Date.now())); }
@@ -2541,7 +2563,15 @@
       if(pos){ el.style.left = pos.x + 'px'; el.style.top = pos.y + 'px'; el.style.bottom = 'auto'; } else { el.style.left = ''; el.style.top = ''; el.style.bottom = ''; }
       if(!bubble.hidden) placeBubble();
     }
-    function refresh(){ el.hidden = !visible(); if(el.hidden) hideBubble(); else applyLook(); }
+    function refresh(){ el.hidden = !visible(); if(el.hidden) hideBubble(); else applyLook(); var cf = document.getElementById('settings-mate-closed-field'); if(cf) cf.hidden = !(enabled() && closed()); }
+    // the ✕ over his head: closed for the rest of this tab's session; Settings → Grady's mate → "Show him again now"
+    function closeForSession(){ try{ sessionStorage.setItem(MATE_CLOSED_KEY, String(Date.now())); }catch(e){} refresh(); }
+    function showAgain(){ try{ sessionStorage.removeItem(MATE_CLOSED_KEY); }catch(e){} lastActive = Date.now(); refresh(); }
+    // while nothing is happening he changes pose on his own at the Settings pace (calm poses only)
+    function cycle(now){
+      var ms = mateCycleMs(prefs()); if(!ms || !bubble.hidden || idlePose(lastActive, now) === 'sleep' || now - lastCycleAt < ms) return false;
+      setPose(cyclePose(el.getAttribute('data-pose'), Math.floor(now / 1000))); lastCycleAt = now; return true;
+    }
     function active(){ lastActive = Date.now(); if(bubble.hidden && el.getAttribute('data-pose') === 'sleep') setPose('idle'); }
     function watchFrame(){ // clicks and keys inside the app iframe (same origin, a blob: URL) count as activity
       var f = document.getElementById('app-frame'); if(!f) return;
@@ -2557,9 +2587,13 @@
     window.addEventListener('resize', function(){ if(!el.hidden) applyLook(); });
     document.addEventListener('pointerdown', active, true); document.addEventListener('keydown', active, true); watchFrame();
     window.addEventListener('storage', function(e){ if(e.key === MATE_EVENT_KEY && e.newValue){ active(); react(e.newValue); } });
-    setInterval(function(){ if(el.hidden) return; if(bubble.hidden) rest(); chatter(false); }, 30000);
+    setInterval(function(){ if(el.hidden) return; var now = Date.now(); if(bubble.hidden && idlePose(lastActive, now) === 'sleep') setPose('sleep'); else cycle(now); chatter(false); }, 5000);
     document.getElementById('mate-close').addEventListener('click', function(e){ e.stopPropagation(); hideBubble(); });
-    window.gradconMate = { react: react, refresh: refresh, chatter: function(){ return chatter(true); }, facts: facts, screen: function(id){ screenId = id; refresh(); }, state: function(){ return { pose: el.getAttribute('data-pose'), hidden: el.hidden, bubble: bubble.hidden ? null : textEl.textContent, lastSig: lastSig, side: bubble.getAttribute('data-side'), left: el.style.left, top: el.style.top, opacity: el.style.opacity, size: el.style.getPropertyValue('--mate-h') }; }, sleepNow: function(){ lastActive = 0; rest(); } };
+    var hideBtn = document.getElementById('mate-hide');
+    hideBtn.addEventListener('pointerdown', function(e){ e.stopPropagation(); }); hideBtn.addEventListener('pointerup', function(e){ e.stopPropagation(); });
+    hideBtn.addEventListener('click', function(e){ e.stopPropagation(); e.preventDefault(); closeForSession(); });
+    var showBtn = document.getElementById('settings-mate-show'); if(showBtn) showBtn.addEventListener('click', function(){ showAgain(); });
+    window.gradconMate = { react: react, refresh: refresh, chatter: function(){ return chatter(true); }, facts: facts, screen: function(id){ screenId = id; refresh(); }, close: closeForSession, show: showAgain, cycle: function(){ lastCycleAt = 0; return cycle(Date.now()); }, state: function(){ return { pose: el.getAttribute('data-pose'), hidden: el.hidden, closed: closed(), bubble: bubble.hidden ? null : textEl.textContent, lastSig: lastSig, side: bubble.getAttribute('data-side'), left: el.style.left, top: el.style.top, opacity: el.style.opacity, size: el.style.getPropertyValue('--mate-h') }; }, sleepNow: function(){ lastActive = 0; rest(); } };
     refresh();
   })();
 
