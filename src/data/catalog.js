@@ -212,6 +212,9 @@ export const LABOUR_TEMPLATES = {
   finishing: CREW_SHEET_TASKS,
   // Irregular concrete constructions (hearths, plinths, composite assemblies): full crew sheet.
   composite: CREW_SHEET_TASKS,
+  // Precast / tilt-up (9 Nov 2026): the same crew sheet for now — set out, erect, prop, grout, strip props — own key so a
+  // precast-specific task list can be swapped in per family.
+  precast: CREW_SHEET_TASKS,
 };
 
 /* ---------- Full material catalog ----------
@@ -805,6 +808,27 @@ export const FULL_CATALOG = [
     ["Inspector", "each", null, 130], { name: "Excavation", unit: "m3", unitWeight: null, unitCost: 0, quantityOnly: true }, ["Soil removal", "m3", null, 40], ["Bin Hire", "each", null, 600], ["Sawcutting", "day", null, 450],
     ["Concrete test", "each", null, 241.5], ["Off-site washout fee", "each", null, 400], ["Truck washout fee", "each", null, 10.5],
   ]},
+  /* PRECAST / TILT-UP (Grady, 9 Nov 2026): rendered and costed ONLY on the PRECAST / TILT-UP elements (visibleFor —
+   * the third element-scoped band beside SPECIALIST FINISHING CONCRETE and PRELIMINARIES; the rows mean nothing on a
+   * footing). scopeBucket "always": every figure here is typed deliberately — a supply quote, an erection quote, a hire
+   * rate. The panel supply and the crane / erection crew are SUBCONTRACT QUOTE rows (unit "quote": manual-only, the
+   * received amount typed on the element — never a catalog price, CLAUDE.md "Rates: what is shared"). The rated rows
+   * carry PUBLISHED trade figures ex GST read on 9 Nov 2026 — Reid / Ramset 5 t × 200 mm face lifter $15.19 ex GST
+   * (cdaets.com.au); SikaGrout-212 HP 20 kg $37.50 inc GST = $34.09 ex (ProTrade Warehouse, Canterbury Timbers) — and
+   * a row no supplier publishes a rate for (prop / brace hire, shims) seeds $0 and SAYS SO in its name, never a
+   * remembered figure. The Estimates precast panel emits the inserts, props and grout bags under these exact names
+   * (estimates-app.html PRECAST_*_PRODUCT), so the bridge lands them 1:1; no Rates Library section lists them yet —
+   * the catalog default governs and the Rates modal edits them. */
+  { key: "PRECAST / TILT-UP", weightBasis: false, visibleFor: ["PRECAST / TILT-UP"], scopeBucket: "always",
+    note: "Supply and erection are subcontract quotes typed on the element; the props, inserts and grout count per panel (the Estimates panel schedule feeds them).", products: [
+    ["Precast panel / unit supply & delivery (subcontract quote)", "quote", null, null],
+    ["Precast erection — crane, rigging & erection crew (subcontract quote)", "quote", null, null],
+    ["Stitch joints, dowels, weld plates & embeds (subcontract quote)", "quote", null, null],
+    ["Panel props / braces hire (no published rate — enter the hire quote per prop)", "each", null, 0],
+    ["Lifting insert / face lifter 5 t (cast-in)", "each", null, 15.19],
+    ["Non-shrink grout — 20 kg bag (SikaGrout-212 HP class)", "each", null, 34.09],
+    ["Levelling shims / packers per panel (no published rate — enter the supplier's quote)", "each", null, 0],
+  ]},
   { key: "SUB CONTRACTORS / TEMPORARY WORKS", weightBasis: false, scopeBucket: "always", products: [
     ["Excavation (subcontract)", "quote", null, null], ["Formwork (subcontract)", "quote", null, null], ["Steel supply", "quote", null, null], ["Steel fix", "quote", null, null],
     ["Screw Piling", "quote", null, null], ["CFA Piling", "quote", null, null],
@@ -914,6 +938,19 @@ export const ELEMENT_TYPES = [
   { id: "rc_columns", category: "VERTICAL STRUCTURE", section: "COLUMNS", name: "RC Columns - Fence Post Columns", labour: "footing" },
   { id: "core_shear_wall", category: "VERTICAL STRUCTURE", section: "WALLS", name: "Core / Shear Wall", labour: "wall" },
   { id: "loadbearing_wall", category: "VERTICAL STRUCTURE", section: "WALLS", name: "Load-Bearing Wall", labour: "wall" },
+
+  // Precast / tilt-up (Grady, 9 Nov 2026: "include precast panels in the estimates and the quotes with all geometry
+  // applicable etc and wire it in"): panels, columns, beams and floor planks made by a precaster and erected by crane,
+  // and the stitch joints, grout and embeds that tie them in. Their own category right after the vertical structure
+  // (a wall panel IS the vertical structure; a plank sits where a suspended slab would). The card prices the SUPPLY
+  // and the ERECTION as subcontract quote rows on the PRECAST / TILT-UP band (visibleFor), the props, inserts and
+  // grout from the same band, and the panel's own concrete and steel from the ordinary bands when Gradcon casts them.
+  // The Estimates precast types land here through ESTIMATE_TYPE_MAP; Project Geometry carries the panel count, the
+  // edge length (lm) and the panel area (m²).
+  { id: "precast_wall_panel", category: "PRECAST / TILT-UP", section: "PRECAST PANELS", name: "Precast / Tilt-up Wall Panel (supply, erect, prop & grout)", labour: "precast" },
+  { id: "precast_column_beam", category: "PRECAST / TILT-UP", section: "PRECAST PANELS", name: "Precast Column / Beam (supply & erect)", labour: "precast" },
+  { id: "precast_floor_plank", category: "PRECAST / TILT-UP", section: "PRECAST PANELS", name: "Precast Floor Plank / Hollowcore (supply & place)", labour: "precast" },
+  { id: "precast_stitch_grout", category: "PRECAST / TILT-UP", section: "PRECAST JOINTS & EMBEDS", name: "Precast Stitch Joints, Grout & Embeds", labour: "precast" },
 
   // Suspended structure — elevated slabs/beams, deliberately separate from Foundations.
   { id: "suspended_beam", category: "SUSPENDED STRUCTURE", section: "SUSPENDED BEAMS", name: "Suspended Beam", labour: "slab_suspended" },

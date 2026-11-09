@@ -5265,6 +5265,11 @@ function slabDefaults(cat,suspended){ const precast=cat==="Precast Panel"; retur
   category:cat, suspended:!!suspended, manualArea:precast, areaOverride:0, length:25,  width:12,  // metres for slabs (large plan dims)
   planShape:"rect", diameterM:10,   // "circular" prices a round slab off its diameter (26 Oct 2026, Grady: "slab area is currently rectangular assumed, allow for circular shapes also")
   qty:precast?1:undefined,  // precast: the number of panels (count only — the area typed is the TOTAL of all panels)
+  // Precast panel schedule and erection items (Grady, 9 Nov 2026: "include precast panels in the estimates and the quotes
+  // with all geometry applicable"): panelRows = one row per panel mark {mark, qty, hMm, wMm, openM2}; when panelSchedule is
+  // on the schedule IS the geometry (count, total area, edge length — panelScheduleTotals). The erection items are counted
+  // per panel and named after the Quotes PRECAST / TILT-UP catalog rows so the bridge lands them 1:1.
+  panelSchedule:false, panelRows:[], panelInsertsEach:precast?2:0, panelPropsEach:precast?2:0, panelGroutOn:precast, panelGroutBedMm:25, panelGroutRunM:"",
   thickness:150, perimeterAuto:true, perimeterOverride:0, outlineOn:false, outlinePts:[{x:0,y:0},{x:25,y:0},{x:25,y:12},{x:0,y:12}], baseThickness:100, baseMaterialState:"compacted", vapourMembrane:!suspended, meshOn:true, meshType:"SL82", meshLayers:1, meshLap:false,
   edgeForms:true, soffit:!!suspended && !precast, openings:[], drops:false, setdowns:false, upstands:false, cjStopEnds:false,
   botX:true,botXDia:"N12",botXMethod:precast?"area":"spacing",botXSpacing:200,botXQty:0,botXBars:[],botXLap:false, botY:true,botYDia:"N12",botYMethod:precast?"area":"spacing",botYSpacing:200,botYQty:0,botYBars:[],botYLap:false,
@@ -5295,6 +5300,35 @@ function slabDefaults(cat,suspended){ const precast=cat==="Precast Panel"; retur
   // with its own cross-section (see EXTRA_BEAM_KINDS)
   edgeBeamGroups:[], intBeamGroups:[]
 };}
+/* The precast PANEL SCHEDULE (9 Nov 2026): one row per panel mark — count, height, width, the openings in each panel —
+ * and the totals the slab prices from (count, net area, edge length, grout run). With the tick off the card is the
+ * 26 Oct 2026 total-area entry. */
+function panelScheduleSection(inst){
+  const d=inst.data, on=panelScheduleOn(d), ps=panelScheduleTotals(d);
+  const rows=(d.panelRows||[]).map((r,i)=>{ const t=ps.rows[i]||{eachM2:0,eachEdgeM:0}; return `<tr data-row="panelRows.${i}">
+   <td style="min-width:90px">${inpText(`panelRows.${i}.mark`,r.mark||"")}</td>
+   <td style="width:64px;min-width:64px">${inpNumR(`panelRows.${i}.qty`,r.qty)}</td>
+   <td style="width:84px;min-width:84px">${inpNumR(`panelRows.${i}.hMm`,r.hMm)}</td>
+   <td style="width:84px;min-width:84px">${inpNumR(`panelRows.${i}.wMm`,r.wMm)}</td>
+   <td style="width:84px;min-width:84px">${inpNumR(`panelRows.${i}.openM2`,r.openM2)}</td>
+   <td class="small" style="white-space:nowrap" data-panel-each="${i}">${fmt(t.eachM2,2)} m² · ${fmt(t.eachEdgeM,2)} m edge</td>
+   <td><button type="button" class="btn small danger" data-action="delRow" data-target="panelRows" data-idx="${i}" title="Remove this panel">✕</button></td>
+  </tr>`; }).join("");
+  return `<div class="subsec" data-testid="panel-schedule"><div class="grid cols4">${chk("panelSchedule",!!d.panelSchedule,"Panel schedule — enter the panels one by one (count × height × width; the area, count and edge length follow)","panelSchedule")}</div>
+  <div class="subsec ${on?'':'hidden'}" data-show-if="panelSchedule">
+  <table class="rows panels"><thead><tr><th>Mark</th><th>No.</th><th>Height (mm)</th><th>Width (mm)</th><th>Openings each (m²)</th><th>Each</th><th></th></tr></thead><tbody>${rows}</tbody></table>
+  <button type="button" class="btn small" data-action="addRow" data-target="panelRows" data-testid="panel-add">+ Add a panel</button>
+  <p class="small" data-testid="panel-totals"><b>${ps.count}</b> panels · <b>${fmt(ps.areaM2,2)} m²</b> net (${fmt(ps.grossM2,2)} gross − ${fmt(ps.openM2,2)} openings) · <b>${fmt(ps.edgeM,2)} m</b> of edge forms · ${fmt(ps.widthsM,2)} m of panel bases</p>
+  <p class="small">The schedule replaces the total-area box: concrete = net area × thickness, edge forms = every panel's 2 × (H + W), the panel count goes to Project Geometry and the grout bed run defaults to the panel widths. Openings are each panel's own (m² per panel).</p></div></div>`;
+}
+/* The precast ERECTION block (9 Nov 2026) on the Connections tab: lifting inserts and props per panel, the grout bed. */
+function panelErectionSection(inst){
+  const d=inst.data; if(d.category!=="Precast Panel") return "";
+  return `<div class="subsec" data-testid="panel-erection"><div class="sechead">Panel erection — inserts, props, grout bed</div>
+  <div class="grid cols4">${F("Lifting inserts per panel (no.)",inpNum("panelInsertsEach",d.panelInsertsEach))}${F("Props / braces per panel (no.)",inpNum("panelPropsEach",d.panelPropsEach))}${chk("panelGroutOn",!!d.panelGroutOn,"Grout bed under the panels","panelGroutOn")}</div>
+  <div class="subsec ${d.panelGroutOn?'':'hidden'}" data-show-if="panelGroutOn"><div class="grid cols4">${F("Grout bed run (m, blank = the schedule's panel widths)",inpNum("panelGroutRunM",d.panelGroutRunM))}${F("Bed depth (mm, blank = 25)",inpNum("panelGroutBedMm",d.panelGroutBedMm))}</div></div>
+  <p class="small">Counted per panel and named after the Quotes PRECAST / TILT-UP rows, so the bridge prices them there: inserts and props × the panel count, the grout bed as 20 kg bags (run × panel thickness × bed depth ÷ ${GROUT_BAG_LITRES} L a bag). The panel SUPPLY and the crane / erection crew are subcontract quotes typed on the Quotes card — nothing here prices the panel itself.</p></div>`;
+}
 function renderSlab(inst,def){
   let d=inst.data;
   // Raft beam groups carry the FULL standalone-Ground-Beam parameter set,
@@ -5307,7 +5341,8 @@ function renderSlab(inst,def){
   if(!d.beamStripsLigZones) d.beamStripsLigZones=[{zone:"General",length:0,dia:d.beamStripsLigDia||"N10",spacing:num(d.beamStripsLigSpacing,300)}];
   const precast=!!(def&&def.precast) || d.category==="Precast Panel";
   let geom=`${precast?`<div class="tip" data-testid="precast-note"><span class="ico">🧱</span><div><b>Precast / tilt-up panels are measured like a slab, by TOTAL area.</b> Type the number of panels and the total area of all of them (from the panel schedule), the thickness, then the mesh and bars on the Reinforcement tab exactly as for a slab — sheet mesh, bar mats by spacing / count / area, by rate, additional bars, starters and connections all apply. Edge forms are measured by the metre around every panel: type the total edge length as the perimeter override (blank = square panels assumed, flagged). Panels are cast on a bed, so no soffit formwork, excavation or blinding is taken.</div></div><div class="grid cols3">${F("Number of panels (no.)",inpNum("qty",d.qty===undefined?1:d.qty))}</div>`:""}<div class="grid cols3">${chk("manualArea",d.manualArea,precast?"Enter the total panel area manually (recommended)":"Enter area manually (irregular slab)","manualArea",true)}</div>
-  <div class="subsec ${d.manualArea?'':'hidden'}" data-show-if="manualArea"><div class="grid cols3">${F(precast?"Total panel area (m²) — all panels together":"Area (m²)",inpNum("areaOverride",d.areaOverride))}</div></div>
+  ${precast? panelScheduleSection(inst) : ""}
+  <div class="subsec ${d.manualArea && !panelScheduleOn(d)?'':'hidden'}" data-show-if="manualArea"><div class="grid cols3">${F(precast?"Total panel area (m²) — all panels together":"Area (m²)",inpNum("areaOverride",d.areaOverride))}</div></div>
   <div class="subsec ${d.manualArea?'hidden':''}" data-show-if="manualArea_off"><div class="grid cols3">${precast?"":F("Plan shape",selOpts("planShape",d.planShape||"rect",[["rect","Rectangular (L × W)"],["circular","Circular (diameter)"]],true))}${(d.planShape==="circular"&&!precast)? F("Diameter (m)",inpNum("diameterM",d.diameterM)) : F("Length (m)",inpNum("length",d.length))+F("Width (m)",inpNum("width",d.width))}</div>${(d.planShape==="circular"&&!precast)?`<p class="small" data-testid="circular-note">Round slab: area = π·Ø²/4, edge forms = π·Ø, a bar mat at a spacing = Ø ÷ spacing + 1 bars each the mean chord π·Ø/4 long (so its metres = area ÷ spacing); a sketched outline or a typed area overrides the shape.</p>`:""}</div>
   <div class="grid cols4">
    ${F("Thickness (mm)",inpNum("thickness",d.thickness))}${coverField(inst)}
@@ -5524,7 +5559,7 @@ function renderSlab(inst,def){
   // footing/wall below", connQty) is migrated by starterRunsOf into one
   // run set out by total number, so it prices exactly as before. The default
   // run is the slab perimeter.
-  let conns=starterRunsUI(inst,d,slabPerimM(d),"slab","slab perimeter");
+  let conns=panelErectionSection(inst)+starterRunsUI(inst,d,slabPerimM(d),"slab","slab perimeter");
   let steps = `<div class="sechead">Step-down / Level Change</div>
   ${chk("stepdown",d.stepdown,"Slab has a step-down / level change requiring connecting dowels","stepdown")}
   <div class="subsec ${d.stepdown?'':'hidden'}" data-show-if="stepdown"><div class="grid cols4">
@@ -5607,6 +5642,23 @@ function areaBarGeom(d,prefix){
    (π·D/4): a bar mat laid at a spacing across a round slab is D ÷ spacing + 1
    bars, each on average π·D/4 long, so the mat's metres = area ÷ spacing,
    exactly as on a rectangle. */
+/* ---- Precast panel schedule (9 Nov 2026) ----
+ * panelScheduleTotals(d) is the ONE reading of the schedule rows: count = Σ qty, gross area = Σ qty × H × W, openings =
+ * Σ qty × openM2 (each panel's own openings, m²), edge = Σ qty × 2(H + W) — the edge forms around every panel — and
+ * widthsM = Σ qty × W, the run of grout bed the panels stand on. A row with no height or width counts nothing. */
+const GROUT_BAG_LITRES = 11;   // yield of one 20 kg bag of non-shrink cementitious grout (SikaGrout-212 HP data sheet: ~11 L per 20 kg)
+const PRECAST_INSERT_PRODUCT = "Lifting insert / face lifter 5 t (cast-in)";
+const PRECAST_PROP_PRODUCT = "Panel props / braces hire (no published rate — enter the hire quote per prop)";
+const PRECAST_GROUT_PRODUCT = "Non-shrink grout — 20 kg bag (SikaGrout-212 HP class)";
+function panelScheduleTotals(d){
+  const rows=Array.isArray(d.panelRows)? d.panelRows : [];
+  let count=0, grossM2=0, openM2=0, edgeM=0, widthsM=0, rowsOut=[];
+  rows.forEach(r=>{ const n=Math.max(0,num(r.qty,1)), h=num(r.hMm)/1000, w=num(r.wMm)/1000; if(!(n>0)||!(h>0)||!(w>0)){ rowsOut.push({mark:r.mark||"",qty:n,eachM2:0,eachEdgeM:0}); return; }
+    const each=h*w, edge=2*(h+w); count+=n; grossM2+=n*each; openM2+=n*Math.max(0,num(r.openM2)); edgeM+=n*edge; widthsM+=n*w; rowsOut.push({mark:r.mark||"",qty:n,eachM2:each,eachEdgeM:edge}); });
+  const r2=(x)=>Math.round(x*1000)/1000;
+  return {count, grossM2:r2(grossM2), openM2:r2(openM2), areaM2:r2(Math.max(0,grossM2-openM2)), edgeM:r2(edgeM), widthsM:r2(widthsM), rows:rowsOut};
+}
+const panelScheduleOn=(d)=>d.category==="Precast Panel" && !!d.panelSchedule;
 function slabIsCircular(d){ return !d.manualArea && !slabOutlinePts(d) && d.planShape==="circular"; }
 function slabChordM(d){ return Math.PI*num(d.diameterM)/4; }
 function slabPerimM(d){
@@ -5616,17 +5668,20 @@ function slabPerimM(d){
   if(slabIsCircular(d)) return Math.PI*num(d.diameterM);
   // A precast panel set measured by TOTAL area has no L×W: until the total edge length is typed
   // the edge forms assume n equal SQUARE panels (4·√(A/n)·n) and computeSlab flags it (26 Oct 2026).
+  if(panelScheduleOn(d)) return panelScheduleTotals(d).edgeM;   // the schedule's edge length — every panel's 2(H + W)
   if(d.category==="Precast Panel" && d.manualArea){ const n=Math.max(1,num(d.qty,1)), A=num(d.areaOverride); return A>0? 4*Math.sqrt(A/n)*n : 0; }
   return 2*(num(d.length)+num(d.width));
 }
-const precastPerimAssumed=(d)=>d.category==="Precast Panel" && d.manualArea && d.perimeterAuto && !slabOutlinePts(d);
+const precastPerimAssumed=(d)=>d.category==="Precast Panel" && d.manualArea && d.perimeterAuto && !slabOutlinePts(d) && !panelScheduleOn(d);
 function computeSlab(inst,def){
   let d=inst.data, lines=[], warnings=[];
   let outline = slabOutlinePts(d);
   const circular = slabIsCircular(d);
-  let area = d.manualArea? num(d.areaOverride) : (outline? polyArea(outline) : circular? Math.PI*Math.pow(num(d.diameterM),2)/4 : num(d.length)*num(d.width));
+  const ps = panelScheduleOn(d)? panelScheduleTotals(d) : null;
+  let area = ps? ps.grossM2 : d.manualArea? num(d.areaOverride) : (outline? polyArea(outline) : circular? Math.PI*Math.pow(num(d.diameterM),2)/4 : num(d.length)*num(d.width));
   if(circular && !(num(d.diameterM)>0)) warnings.push({text:"Circular slab with no diameter — type the diameter in metres (nothing is taken off until it is)",section:"geom",level:"completeness"});
-  let openArea=0;
+  if(ps && !(ps.count>0)) warnings.push({text:"Panel schedule is on but no panel has a count, height and width — nothing is taken off until a row is complete",section:"geom",level:"completeness"});
+  let openArea= ps? ps.openM2 : 0;
   (d.openings||[]).forEach(o=>{ openArea += (num(o.w)/1000)*(num(o.h)/1000)*num(o.qty,1); });
   let netArea=Math.max(0,area-openArea);
   d._autoInsArea = netArea; // insulation line (computeInstance) defaults to the slab's own plan area
@@ -5855,6 +5910,22 @@ function computeSlab(inst,def){
       else { const mpm=trenchReoMassPerM(type,num(d.thickness)); const totLen=runM*layers; const wt=totLen*mpm; const lapPct=d.panelTrenchLap?MESH_LAP_PCT:0;
         lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",part:"extra",material:type,spec:`Trench mesh along the panels${layers>1?` × ${layers} layers`:""}`,qty:totLen,unit:"lm",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,lapPct),massPerUnit:mpm,formula:`${num(d.panelTrenchRunM)>0?"typed run":"panel edge length"} ${fmt(runM,2)} m × ${layers} layer(s)`,notes:`${fmt(wt,1)} kg`})); }
     } else warnings.push({text:"Trench reinforcement is on but no run is known — type the total run (or the panels' edge length) on Geometry.",section:"reo",level:"completeness"});
+  }
+  if(d.category==="Precast Panel"){
+    // Erection items, counted per panel (9 Nov 2026): lifting inserts and props/braces × the panel count, and the non-shrink
+    // grout bed under the panels in 20 kg bags (run × panel thickness × bed depth ÷ the bag yield). Each line is NAMED
+    // after its Quotes PRECAST / TILT-UP catalog row, so the bridge prices it on that row. The supply and erection
+    // quotes are typed on the Quotes card (subcontract quote rows) — nothing here prices the panel itself.
+    const nPanels = ps? ps.count : Math.max(0,num(d.qty,1));
+    const inserts=Math.max(0,num(d.panelInsertsEach)), props=Math.max(0,num(d.panelPropsEach));
+    if(nPanels>0 && inserts>0) lines.push(baseLine(inst,def,{materialGroup:"Connections",material:PRECAST_INSERT_PRODUCT,spec:`Lifting inserts — ${inserts} per panel × ${nPanels} panels`,qty:nPanels*inserts,unit:"no.",waste:0,finalQty:nPanels*inserts,massPerUnit:0,formula:`${nPanels} panels × ${inserts}`}));
+    if(nPanels>0 && props>0) lines.push(baseLine(inst,def,{materialGroup:"Temporary Works",material:PRECAST_PROP_PRODUCT,spec:`Panel props / braces — ${props} per panel × ${nPanels} panels (hire until the structure ties the panels in)`,qty:nPanels*props,unit:"no.",waste:0,finalQty:nPanels*props,massPerUnit:0,formula:`${nPanels} panels × ${props}`}));
+    if(d.panelGroutOn){
+      const runM = num(d.panelGroutRunM)>0? num(d.panelGroutRunM) : ps? ps.widthsM : 0, bedMm=(d.panelGroutBedMm===undefined||d.panelGroutBedMm==="")? 25 : Math.max(0,num(d.panelGroutBedMm)), tMm=num(d.thickness);
+      if(runM>0 && bedMm>0 && tMm>0){ const litres=runM*(tMm/1000)*(bedMm/1000)*1000, bags=Math.ceil(litres/GROUT_BAG_LITRES-1e-9);
+        lines.push(baseLine(inst,def,{materialGroup:"Joints",material:PRECAST_GROUT_PRODUCT,spec:`Grout bed under the panels — ${fmt(runM,2)} m × ${tMm} mm × ${bedMm} mm bed = ${fmt(litres,1)} L`,qty:bags,unit:"no.",waste:0,finalQty:bags,massPerUnit:0,formula:`${fmt(runM,2)} m × ${tMm} × ${bedMm} mm ÷ ${GROUT_BAG_LITRES} L per bag`,notes:`${fmt(litres,1)} L of grout`}));
+      } else warnings.push({text:"Grout bed under the panels is on but its run is not known — type the run of panel bases (blank = the schedule's panel widths) and the bed depth",section:"conn",level:"completeness"});
+    }
   }
   if(d.returnBars){
     let girthMm=num(d.retTurndown)*2+num(d.retLeg);
@@ -9768,6 +9839,7 @@ function attachCardEvents(card,inst){
       let template = leaf==="openings"? {label:"Opening",w:600,h:2100,qty:1}
        : /Groups$/.test(leaf)? newExtraBeamGroup(inst.data,leaf,arr.length)
        : leaf==="reoAreaRows"? {area:"", dia:"N12", spacing:200, ways:"each"}
+       : leaf==="panelRows"? {mark:`P${arr.length+1}`, qty:1, hMm:3000, wMm:2400, openM2:0}
        : /Rows$/.test(leaf)? {position:"Additional",qty:2,dia:"N16",layers:1,startA:"straight",endA:"straight"}
        : leaf==="extraConn"? {target:"",role:"Dowel",mode:"count",qty:4,runM:"",spacing:400,rows:1,dia:"N16",embed:400,proj:400,hook:"straight"}
        : leaf==="meshDowels"? {name:"", type:"SL82", runM:"", spacing:400, count:"", pieceL:DOWEL_PIECE_L_MM, pieceW:DOWEL_PIECE_W_MM}
@@ -10295,8 +10367,11 @@ function autoGeometry(inst){
   const def = LIB_INDEX[inst.typeKey] || {};
   const d = inst.data || {};
   // Run: strip footings and every beam type measure count × length.
+  // A precast panel set publishes its EDGE LENGTH as the run (every panel's 2(H + W) — the edge forms, 9 Nov 2026).
+  const precast = d.category==="Precast Panel" || def.slabCategory==="Precast Panel";
   const runM = (def.calc==="stripfooting" || def.calc==="beam" || def.calc==="boxgutter")
     ? (num(d.qty,1) * num(d.length)) / 1000
+    : precast? slabPerimM(d)
     : 0;
   // Area: the calculator's own measure first (`_autoAreaM2` — a wall's face,
   // a box gutter's plan footprint, a composite's slab areas; 6 Oct 2026,
@@ -10307,7 +10382,7 @@ function autoGeometry(inst){
   const areaM2 = num(d._autoAreaM2) || num(d._autoInsArea) || num(d._autoBlindArea) || 0;
   // Count: every calculator's own Quantity — how many of the element there
   // are (12 piles, 4 pad footings) — so Quotes can show a cost per one.
-  const countNo = Math.max(0, num(d.qty, 1));
+  const countNo = (precast && panelScheduleOn(d))? panelScheduleTotals(d).count : Math.max(0, num(d.qty, 1));
   const r2 = (n)=>Math.round(n*100)/100;
   return { countNo: countNo>0? r2(countNo):0, runM: runM>0? r2(runM):0, areaM2: areaM2>0? r2(areaM2):0 };
 }

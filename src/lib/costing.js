@@ -803,6 +803,10 @@ export function finishBuildUp(item) {
     else if (run && Number(run.fields.lengthM) > 0 && Number(run.fields.widthMm) > 0) { planM2 = Number(run.fields.lengthM) * Number(run.fields.widthMm) / 1000; note = "the BLINDING band's run × width"; }
     parts.push(part("top", "Top surface", planM2, note || "enter the area in Project Geometry"));
     method = "the top surface only — the sides are against the ground or formed and not finished";
+  } else if (category === "PRECAST / TILT-UP") {
+    // A precast panel is finished on the bed, one face (the off-form face is the mould): the panel area from Project Geometry (9 Nov 2026).
+    parts.push(part("face", "Panel face (one side)", geomM2 > 0 ? geomM2 : meshM2, geomM2 > 0 ? "Project Geometry area (the panel area)" : "the mesh area"));
+    method = "one face of the panels — the exposed face finished on the casting bed; edges and the mould face are not counted";
   } else if (labour === "wall" || /column/.test(id) || category === "VERTICAL STRUCTURE") {
     const walls = sum(form, WALL_FORM_RE, "m2");
     parts.push(part("faces", "Exposed formed faces", geomM2 > 0 ? geomM2 : walls, geomM2 > 0 ? "Project Geometry area" : "the FORMWORK band's Walls m² (the faces exposed after stripping)"));
@@ -823,7 +827,7 @@ export function blindingPartsFor(item) {
   const section = type ? type.section : item.section || "";
   const labour = type ? type.labour : item.labour || "";
   const keys = (...k) => k.map((x) => BP[x]);
-  if (["PRELIMINARIES", "EARTHWORKS", "VERTICAL STRUCTURE", "SUSPENDED STRUCTURE", "ROOF", "SCREEDS", "TOPPINGS", "HYDRONIC HEATING", "SPECIALIST FINISHING CONCRETE"].includes(category)) return [];
+  if (["PRELIMINARIES", "EARTHWORKS", "VERTICAL STRUCTURE", "PRECAST / TILT-UP", "SUSPENDED STRUCTURE", "ROOF", "SCREEDS", "TOPPINGS", "HYDRONIC HEATING", "SPECIALIST FINISHING CONCRETE"].includes(category)) return [];
   if (section === "PILING & PIERS") return [];
   if (labour === "slab_ground" || /slab|raft|driveway|paths|paving|hardstand|ramp/.test(id)) return id === "pool_slab" ? keys("slab", "edge") : keys("slab", "edge", "internal");
   if (/pile_cap|pad|stump|anchor_block|base_plate/.test(id)) return keys("pad");

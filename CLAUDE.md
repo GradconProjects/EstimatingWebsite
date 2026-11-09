@@ -3537,6 +3537,66 @@ element families waits on the owner's approval of the pad footing.
   `EST_WASTE_TYPES` and `DEFAULT_COVERS.slab["Precast Panel"]` = 30 carry the
   type; `test-precast-panel.mjs` proves the defaults, the concrete / mesh /
   bars, the assumed edge, the typed edge and the by-area method.
+- **Precast / tilt-up panels are wired through BOTH apps** (Grady, 9 Nov
+  2026: "include precast panels in the estimates and the quotes with all
+  geometry applicable etc and wire it in"). **Estimates**: the measured panel
+  (`precastpanelmeasured`, the slab calculator's "Precast Panel" category)
+  carries a **Panel schedule** on its Geometry tab (`panelSchedule` tick,
+  `data-testid="panel-schedule"`; `panelRows[] = {mark, qty, hMm, wMm,
+  openM2}` through the `addRow` template `panelRows`, which is matched BEFORE
+  the generic `/Rows$/` rule): `panelScheduleTotals(d)` is the ONE reading —
+  count = Σ qty, gross area = Σ qty × H × W, openings = Σ qty × openM2 (each
+  panel's own), edge = Σ qty × 2(H + W), widthsM = Σ qty × W — and with the
+  tick on it IS the geometry: `computeSlab` takes the gross area and the
+  openings from it, `slabPerimM` answers its edge length (so the edge forms,
+  the panel trench run and the starter run follow), `autoGeometry` publishes
+  the count as the No. and, for EVERY precast panel set (schedule or total
+  area), the edge length as the RUN (`runM`) beside the area — so the Quotes
+  card shows $/no., $/lm and $/m². With the tick off the card is the 26 Oct
+  2026 total-area entry, unchanged. A schedule with no complete row is a
+  completeness warning. **Erection items** (`panelErectionSection`, heading
+  the panel's Connections tab, `data-testid="panel-erection"`):
+  `panelInsertsEach` (seed 2) and `panelPropsEach` (seed 2) × the panel
+  count, and the grout bed under the panels (`panelGroutOn`, `panelGroutRunM`
+  blank = the schedule's panel widths, `panelGroutBedMm` blank = 25) as
+  20 kg bags = ceil(run × panel thickness × bed depth ÷ `GROUT_BAG_LITRES` =
+  11 L, the SikaGrout-212 HP yield); each line is NAMED after its Quotes
+  catalog row (`PRECAST_INSERT_PRODUCT` / `PRECAST_PROP_PRODUCT` /
+  `PRECAST_GROUT_PRODUCT`, `verify.mjs` checks the three names against the
+  catalog) under Connections / Temporary Works / Joints in `no.`. **Quotes**:
+  the `PRECAST / TILT-UP` category sits right after VERTICAL STRUCTURE —
+  `precast_wall_panel`, `precast_column_beam`, `precast_floor_plank`
+  (section PRECAST PANELS) and `precast_stitch_grout` (PRECAST JOINTS &
+  EMBEDS), `labour: "precast"` (= `CREW_SHEET_TASKS` today, its own key so a
+  precast task list can be swapped in) — and the `PRECAST / TILT-UP` band is
+  the THIRD `visibleFor` band (rule 1's exception, beside SPECIALIST
+  FINISHING CONCRETE and PRELIMINARIES), `scopeBucket: "always"`: three
+  SUBCONTRACT QUOTE rows (panel supply & delivery; crane, rigging & erection
+  crew; stitch joints, dowels, weld plates & embeds — `unit: "quote"`,
+  manual-only, the received amount typed on the element, NEVER a catalog
+  price), the lifting insert ($15.19 ex GST — Reid / Ramset 5 t face lifter,
+  cdaets.com.au, 9 Nov 2026) and the 20 kg non-shrink grout bag ($34.09 ex —
+  SikaGrout-212 HP $37.50 inc, ProTrade Warehouse / Canterbury Timbers), and
+  two rows no supplier publishes a rate for (props / braces hire, levelling
+  shims) that seed $0 and SAY SO in their names. No Rates Library section
+  lists the band yet — the catalog default governs and the Rates modal edits
+  it. A precast element never blinds (`blindingPartsFor` → `[]`), finishes
+  ONE face — the panel area from Project Geometry (`finishBuildUp`) — and the
+  handover never digs for it (`NO_DIG`). **The bridge** (`ESTIMATE_TYPE_MAP`):
+  both Estimates panel labels → `precast_wall_panel`, "Precast Stitch / Grout
+  / Embeds" → `precast_stitch_grout`; a Connections / Temporary Works / Joints
+  line in `no.` whose material names a PRECAST / TILT-UP `each` row lands on
+  that row by exact name (the inserts, the props, the grout bags), the panel's
+  concrete, mesh, bars and edge forms take their ordinary paths. `verify.mjs`
+  pins the types, the order, the band (units, the null quote prices, the two
+  $0 rows' wording, the two published seeds, visibleFor, the manual-only
+  keys), the costing rules, the Estimates source (the schedule reading, the
+  perimeter, the area and openings, the geometry publish, the add-row rule,
+  the three names) and the bridge end to end (type, measures, the three rows
+  unflagged, the band's $); `test-precast-wiring.mjs` proves the schedule
+  (12 panels · 95.28 m² net · 141.6 m of edge · 12 grout bags), the
+  warnings, the add-row button, the geometry, the publish into Quotes and the
+  card's band at $773.64.
 - **Screed (standalone)** (`Floor Finishes` library group, calc `screed`:
   `screedDefaults` / `screedGeom` / `renderScreed` / `computeScreed` /
   `diagScreed` — 2 Oct 2026, Grady: "the screed is standalone. add it as its

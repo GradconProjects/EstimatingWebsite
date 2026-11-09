@@ -69,6 +69,10 @@ export const ESTIMATE_TYPE_MAP = {
   "Box Gutter (concrete)": "box_gutter",
   "Parapet / Upstand Wall": "parapet_upstand",
   "Roof Plinth / Plant Kerb / Hob": "roof_plinth",
+  // Precast / tilt-up (9 Nov 2026): both panel entries land on the Quotes wall panel; the stitch / grout item on its own type.
+  "Precast / Tilt-up Panel (supply-and-fix allowance)": "precast_wall_panel",
+  "Precast / Tilt-up Panel (measured — total area, mesh, bars, edge forms)": "precast_wall_panel",
+  "Precast Stitch / Grout / Embeds": "precast_stitch_grout",
   "Driveway": "driveway_hardstand",
   "Path": "paths_paving",
   "Hardstand": "driveway_hardstand",
@@ -92,6 +96,7 @@ const QUOTES_TYPE_BY_ID = {};
 ELEMENT_TYPES.forEach((t) => { QUOTES_TYPE_BY_ID[t.id] = t; });
 
 const CONCRETE_CAT = FULL_CATALOG.find((c) => c.key === "CONCRETE");
+const PRECAST_CAT = FULL_CATALOG.find((c) => c.key === "PRECAST / TILT-UP");
 const TRENCH_CAT = FULL_CATALOG.find((c) => c.key === "TRENCH MESH");
 /** Quotes prices trench mesh per stock LENGTH; Estimates measures it in lineal metres. */
 export const TRENCH_STOCK_M = 6;
@@ -525,6 +530,16 @@ export function buildImportFromEstimate(estimateExport) {
     // bar + hole, never bar alone (6 Oct 2026). ---
     group.filter((l) => l.materialGroup === "Connections" && /^drill & epoxy$/i.test(l.material || "") && l.unit === "no.").forEach((l) => {
       map(l, rateKey("SAW CUTS & DOWELS", CHEMSET_HOLE_PRODUCT, "each"), Number(l.finalQty) || 0);
+    });
+
+    // --- Precast erection items (9 Nov 2026): the Estimates panel's lifting
+    // inserts (Connections), props / braces (Temporary Works) and grout bags
+    // (Joints) are counted lines NAMED after the PRECAST / TILT-UP catalog rows
+    // — each lands on its row by exact name. Anything else in those groups
+    // keeps its own path (drill & epoxy above, the sweep below). ---
+    group.filter((l) => ["Connections", "Temporary Works", "Joints"].includes(l.materialGroup) && !handled.has(l) && (l.unit === "no." || l.unit === "each")).forEach((l) => {
+      const product = PRECAST_CAT && PRECAST_CAT.products.find((pr) => pr.name === l.material && pr.unit === "each");
+      if (product) map(l, rateKey("PRECAST / TILT-UP", product.name, "each"), Number(l.finalQty) || 0);
     });
 
     // --- Finishes (the standalone screed): every line named after a SCREEDS

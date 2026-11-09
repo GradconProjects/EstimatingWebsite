@@ -58,14 +58,14 @@ const C25 = RATE("CONCRETE", "25 mpa", "m3");
 const C32 = RATE("CONCRETE", "32 mpa", "m3");
 
 /* ---------- catalog shape ---------- */
-check("108 element types, 16 categories, 26 sections (ROOF 8 after SUSPENDED STRUCTURE; PRELIMINARIES 17 first; Basement Ramp beside Ramp; IRREGULAR CONCRETE CONSTRUCTIONS 3 before External & Landscape; SCREEDS 14, TOPPINGS 7, HYDRONIC HEATING 3, SPECIALIST FINISHING CONCRETE 10 — each its own category)", () => {
-  assert.equal(ELEMENT_TYPES.length, 108);
+check("112 element types, 17 categories, 28 sections (PRECAST / TILT-UP 4 after VERTICAL STRUCTURE; ROOF 8 after SUSPENDED STRUCTURE; PRELIMINARIES 17 first; Basement Ramp beside Ramp; IRREGULAR CONCRETE CONSTRUCTIONS 3 before External & Landscape; SCREEDS 14, TOPPINGS 7, HYDRONIC HEATING 3, SPECIALIST FINISHING CONCRETE 10 — each its own category)", () => {
+  assert.equal(ELEMENT_TYPES.length, 112);
   assert.equal(ELEMENT_TYPES.filter((t) => t.category === "IRREGULAR CONCRETE CONSTRUCTIONS").length, 3);
   assert.ok(ELEMENT_TYPES.some((t) => t.id === "hearth_fireplace_base" && t.labour === "composite"), "hearth is a priced Quotes element with a crew sheet");
   assert.ok(CATEGORY_ORDER.indexOf("IRREGULAR CONCRETE CONSTRUCTIONS") < CATEGORY_ORDER.indexOf("EXTERNAL & LANDSCAPE CONCRETE"), "irregular constructions sit with the structure, before landscape works");
   assert.ok(ELEMENT_TYPES.some((t) => t.id === "basement_ramp" && t.section === "GROUND-BEARING SLABS"), "Basement Ramp is its own selectable element");
-  assert.equal(CATEGORY_ORDER.length, 16);
-  assert.equal(SECTION_ORDER.length, 26);
+  assert.equal(CATEGORY_ORDER.length, 17);
+  assert.equal(SECTION_ORDER.length, 28);
   assert.equal(ELEMENT_TYPES.filter((t) => t.category === "PRELIMINARIES").length, 17);
   assert.equal(CATEGORY_ORDER[0], "PRELIMINARIES", "preliminaries come before earthworks");
   assert.deepEqual(SECTION_ORDER.slice(0, 3), ["TRAFFIC & ACCESS", "SITE ESTABLISHMENT", "SITE MANAGEMENT & COMPLIANCE"]);
@@ -98,9 +98,9 @@ check("every element type has both a category and a section", () => {
 });
 
 check("20 material categories, 402 products (incl. the R6 / R8 / R10 plain rounds on PROCESSED BAR, the 12-row Void formers group of FORMWORK, the 17-row FINISHED PAVEMENTS & CONCRETE FINISHES band, the 45-row SAW CUTS & DOWELS band, CONCRETE PUMPING, REINFORCEMENT BY RATE, the 32-board INSULATION range, 31 SCREEDS, 17 HYDRONIC HEATING, 48 SPECIALIST FINISHING CONCRETE, 45 PRELIMINARIES, the full 24-size TRENCH MESH grid, Bored Piers subcontract, minimum cartage, levy, surcharge)", () => {
-  assert.equal(FULL_CATALOG.length, 20);
+  assert.equal(FULL_CATALOG.length, 21);
   const total = FULL_CATALOG.reduce((s, c) => s + c.products.length, 0);
-  assert.equal(total, 402);
+  assert.equal(total, 409);
   const pre = FULL_CATALOG.find((c) => c.key === "PRELIMINARIES");
   assert.equal(pre.products.length, 45);
   assert.ok(!pre.weightBasis && !pre.areaBasis && !pre.lengthBasis && !pre.volumeRateBasis, "preliminaries cost plain qty × rate");
@@ -2894,7 +2894,7 @@ check("the SPECIALIST FINISHING CONCRETE band is on its own elements ONLY: hidde
   const finish = newElementItem(ELEMENT_TYPES.find((t) => t.id === "finish_polished"));
   assert.equal(categoryAppliesTo(cat, footing), false); assert.equal(categoryAppliesTo(cat, finish), true);
   FULL_CATALOG.filter((c) => !c.visibleFor).forEach((c) => { assert.ok(categoryAppliesTo(c, footing) && categoryAppliesTo(c, finish), `${c.key} must be on every card`); });
-  assert.deepEqual(FULL_CATALOG.filter((c) => c.visibleFor).map((c) => c.key).sort(), ["PRELIMINARIES", "SPECIALIST FINISHING CONCRETE"], "exactly two element-scoped bands");
+  assert.deepEqual(FULL_CATALOG.filter((c) => c.visibleFor).map((c) => c.key).sort(), ["PRECAST / TILT-UP", "PRELIMINARIES", "SPECIALIST FINISHING CONCRETE"], "exactly three element-scoped bands");
   // a stale VicMix quantity on a footing (entered before the band moved) can never carry invisible money
   footing.qtys[mixKey] = 10;
   const fc = computeElementCost(footing, rates);
@@ -3468,6 +3468,72 @@ check("Project Geometry carries a COUNT: $/no. leads the benchmark rates, sums a
     }
     { const { quote, flags } = buildImportFromEstimate({ project: {}, lines: [estLine({ material: "N20 concrete", finalQty: 1 }), { ...estLine({}), materialGroup: "Reinforcement", material: "R8", spec: "Ligatures / stirrups", unit: "m", finalQty: 52.5 }] });
       assert.equal(quote.items[0].qtys[rateKey("PROCESSED BAR", "R8", "m")], 52.5, "an R8 ligature line bridges onto PROCESSED BAR R8"); assert.ok(!flags.some((f) => /R8/.test(f)), "and is not flagged as unmatched"); }
+  }
+  // Precast / tilt-up panels wired through both apps (Grady, 9 Nov 2026: "include precast panels in the estimates and the quotes with all geometry applicable etc and wire it in")
+  {
+    const est = fs.readFileSync(new URL("../portal/estimates-app.html", import.meta.url), "utf8");
+    // Quotes: the category, its four types, their crew sheet, the band and its rows
+    const pc = ELEMENT_TYPES.filter((t) => t.category === "PRECAST / TILT-UP");
+    assert.deepEqual(pc.map((t) => t.id), ["precast_wall_panel", "precast_column_beam", "precast_floor_plank", "precast_stitch_grout"]);
+    assert.deepEqual([...new Set(pc.map((t) => t.section))], ["PRECAST PANELS", "PRECAST JOINTS & EMBEDS"]);
+    assert.ok(pc.every((t) => t.labour === "precast") && LABOUR_TEMPLATES.precast, "precast types carry the precast crew-sheet template");
+    assert.equal(CATEGORY_ORDER.indexOf("PRECAST / TILT-UP"), CATEGORY_ORDER.indexOf("VERTICAL STRUCTURE") + 1, "precast sits right after the vertical structure");
+    const band = FULL_CATALOG.find((c) => c.key === "PRECAST / TILT-UP");
+    assert.ok(band && band.scopeBucket === "always" && !band.weightBasis && !band.areaBasis && !band.volumeRateBasis, "the band is a typed-figures band");
+    assert.deepEqual(band.visibleFor, ["PRECAST / TILT-UP"], "the band renders and costs only on precast elements");
+    assert.deepEqual(band.products.map((p) => p.unit), ["quote", "quote", "quote", "each", "each", "each", "each"]);
+    band.products.filter((p) => p.unit === "quote").forEach((p) => assert.equal(p.unitCost, null, `${p.name} carries no catalog price — a subcontract quote is typed on the element`));
+    band.products.filter((p) => p.unit === "each" && p.unitCost === 0).forEach((p) => assert.match(p.name, /no published rate/, `${p.name} seeds $0 and says so`));
+    assert.equal(band.products.filter((p) => p.unit === "each" && p.unitCost === 0).length, 2, "two rows have no published rate");
+    assert.equal(band.products.find((p) => /Lifting insert/.test(p.name)).unitCost, 15.19); assert.equal(band.products.find((p) => /Non-shrink grout/.test(p.name)).unitCost, 34.09);
+    const panel = { typeId: "precast_wall_panel", category: "PRECAST / TILT-UP" };
+    assert.ok(categoryAppliesTo(band, panel) && !categoryAppliesTo(band, { typeId: "strip_footings", category: "FOUNDATIONS" }), "the band is on a panel, not a footing");
+    assert.ok(FULL_CATALOG.filter((c) => !c.visibleFor).every((c) => categoryAppliesTo(c, panel)), "every ordinary band is still on the panel card");
+    band.products.filter((p) => p.unit === "quote").forEach((p) => assert.ok(costingAll.isManualQuoteKey(rateKey("PRECAST / TILT-UP", p.name, "quote")), "supply and erection are manual-only quote rows"));
+    // Costing rules: no blinding, finish = one face, the handover never digs
+    assert.deepEqual(costingAll.blindingPartsFor({ typeId: "precast_wall_panel" }), [], "a precast panel never blinds");
+    const fb = costingAll.finishBuildUp({ typeId: "precast_wall_panel", measureM2: 96, qtys: {} });
+    assert.equal(fb.m2, 96); assert.match(fb.method, /one face of the panels/);
+    assert.match(fs.readFileSync(new URL("../src/lib/handover.js", import.meta.url), "utf8"), /NO_DIG = new Set\(\["VERTICAL STRUCTURE", "PRECAST \/ TILT-UP"/, "the handover's dig band skips precast");
+    // Estimates: the panel schedule, the erection items and the geometry publish
+    assert.match(est, /function panelScheduleTotals\(d\)\{/, "panelScheduleTotals is the ONE schedule reading");
+    assert.match(est, /if\(panelScheduleOn\(d\)\) return panelScheduleTotals\(d\)\.edgeM;/, "the schedule's edge length is the perimeter (edge forms)");
+    assert.match(est, /let area = ps\? ps\.grossM2 : d\.manualArea\?/, "the schedule's gross area drives the slab area");
+    assert.match(est, /let openArea= ps\? ps\.openM2 : 0;/, "the schedule's openings come off");
+    assert.match(est, /: precast\? slabPerimM\(d\)\s*: 0;/, "autoGeometry publishes a panel set's edge length as its run");
+    assert.match(est, /const countNo = \(precast && panelScheduleOn\(d\)\)\? panelScheduleTotals\(d\)\.count : Math\.max\(0, num\(d\.qty, 1\)\);/, "the schedule's count is the element's No.");
+    assert.match(est, /leaf==="panelRows"\? \{mark:`P\$\{arr\.length\+1\}`, qty:1, hMm:3000, wMm:2400, openM2:0\}/, "the add-row template precedes the generic Rows rule");
+    assert.ok(est.indexOf('leaf==="panelRows"') < est.indexOf('/Rows$/.test(leaf)'), "panelRows is matched before /Rows$/");
+    assert.match(est, /const GROUT_BAG_LITRES = 11;/);
+    // the three erection line names are the catalog rows' exact names, so the bridge lands them 1:1
+    for (const [cst, re] of [["PRECAST_INSERT_PRODUCT", /Lifting insert/], ["PRECAST_PROP_PRODUCT", /props \/ braces hire/], ["PRECAST_GROUT_PRODUCT", /Non-shrink grout/]]) {
+      const m = est.match(new RegExp(`const ${cst} = "([^"]+)";`)); assert.ok(m, `${cst} declared`);
+      assert.ok(band.products.some((p) => p.name === m[1] && p.unit === "each" && re.test(p.name)), `${cst} names the catalog row exactly`);
+    }
+    assert.match(est, /let conns=panelErectionSection\(inst\)\+starterRunsUI\(inst,d,slabPerimM\(d\),"slab","slab perimeter"\);/, "the erection block heads the slab's Connections tab");
+    // the library's waste-type mirror and the bridge's type map carry the three Estimates precast labels
+    for (const label of ["Precast / Tilt-up Panel (supply-and-fix allowance)", "Precast / Tilt-up Panel (measured — total area, mesh, bars, edge forms)", "Precast Stitch / Grout / Embeds"]) {
+      assert.ok(importAll.ESTIMATE_TYPE_MAP[label], `${label} is bridged`); assert.ok(est.includes(`label:"${label}"`), `${label} is an Estimates library label`);
+    }
+    assert.equal(importAll.ESTIMATE_TYPE_MAP["Precast / Tilt-up Panel (measured — total area, mesh, bars, edge forms)"], "precast_wall_panel");
+    assert.equal(importAll.ESTIMATE_TYPE_MAP["Precast Stitch / Grout / Embeds"], "precast_stitch_grout");
+    // the bridge: a measured panel's lines land on the wall panel type, the inserts / props / grout bags on the band, the concrete on CONCRETE
+    const L = (o) => estLine({ stage: "Precast / Tilt-up", category: "Precast / Tilt-up Panel (measured — total area, mesh, bars, edge forms)", element: "Precast Panel 1", elementId: "PC1", ...o });
+    const { quote, flags } = buildImportFromEstimate({ project: { name: "Panels" }, lines: [
+      L({ materialGroup: "Concrete", material: "N40 concrete", unit: "m³", finalQty: 14.4 }),
+      L({ materialGroup: "Connections", material: "Lifting insert / face lifter 5 t (cast-in)", unit: "no.", finalQty: 24 }),
+      L({ materialGroup: "Temporary Works", material: "Panel props / braces hire (no published rate — enter the hire quote per prop)", unit: "no.", finalQty: 24 }),
+      L({ materialGroup: "Joints", material: "Non-shrink grout — 20 kg bag (SikaGrout-212 HP class)", unit: "no.", finalQty: 6 }),
+    ], elementGeometry: { PC1: { countNo: 12, runM: 129.6, areaM2: 86.4 } } });
+    const it = quote.items[0];
+    assert.equal(it.typeId, "precast_wall_panel");
+    assert.equal(it.qtys[rateKey("PRECAST / TILT-UP", "Lifting insert / face lifter 5 t (cast-in)", "each")], 24);
+    assert.equal(it.qtys[rateKey("PRECAST / TILT-UP", "Panel props / braces hire (no published rate — enter the hire quote per prop)", "each")], 24);
+    assert.equal(it.qtys[rateKey("PRECAST / TILT-UP", "Non-shrink grout — 20 kg bag (SikaGrout-212 HP class)", "each")], 6);
+    assert.ok(!flags.some((f) => /Lifting insert|props \/ braces|Non-shrink grout/.test(f)), `erection items are not flagged: ${flags.join(" | ")}`);
+    assert.equal(it.measureNo, 12); assert.equal(it.measureLm, 129.6); assert.equal(it.measureM2, 86.4);
+    const cost = computeElementCost(it, defaultRates());
+    assert.equal(Math.round(cost.categoryTotals["PRECAST / TILT-UP"] * 100) / 100, Math.round((24 * 15.19 + 6 * 34.09) * 100) / 100, "the band prices the inserts and the grout; the $0 props row and the unquoted supply rows cost nothing");
   }
   // The AI Engine page's AI_TYPES mirror must list exactly the Estimates LIBRARY ids
   const est = fs.readFileSync(new URL("../portal/estimates-app.html", import.meta.url), "utf8");
