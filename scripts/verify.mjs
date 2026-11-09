@@ -97,7 +97,7 @@ check("every element type has both a category and a section", () => {
   });
 });
 
-check("20 material categories, 399 products (incl. the 12-row Void formers group of FORMWORK, the 17-row FINISHED PAVEMENTS & CONCRETE FINISHES band, the 45-row SAW CUTS & DOWELS band, CONCRETE PUMPING, REINFORCEMENT BY RATE, the 32-board INSULATION range, 31 SCREEDS, 17 HYDRONIC HEATING, 48 SPECIALIST FINISHING CONCRETE, 45 PRELIMINARIES, the full 24-size TRENCH MESH grid, Bored Piers subcontract, minimum cartage, levy, surcharge)", () => {
+check("20 material categories, 402 products (incl. the R6 / R8 / R10 plain rounds on PROCESSED BAR, the 12-row Void formers group of FORMWORK, the 17-row FINISHED PAVEMENTS & CONCRETE FINISHES band, the 45-row SAW CUTS & DOWELS band, CONCRETE PUMPING, REINFORCEMENT BY RATE, the 32-board INSULATION range, 31 SCREEDS, 17 HYDRONIC HEATING, 48 SPECIALIST FINISHING CONCRETE, 45 PRELIMINARIES, the full 24-size TRENCH MESH grid, Bored Piers subcontract, minimum cartage, levy, surcharge)", () => {
   assert.equal(FULL_CATALOG.length, 20);
   const total = FULL_CATALOG.reduce((s, c) => s + c.products.length, 0);
   assert.equal(total, 399);
@@ -3438,6 +3438,37 @@ check("Project Geometry carries a COUNT: $/no. leads the benchmark rates, sums a
   const tp = E.takeoffPrompt({ types: [{ id: "padfooting", label: "Pad Footing", group: "Foundations" }], projectName: "P", profile: { defaults: { coverByElement: { all: 50 } } } });
   check("AI Engine: the takeoff prompt carries the element type ids, the JSON shape and the spec profile, and asks for evidence and confidence", () => assertTrue(/padfooting — Pad Footing/.test(tp) && /"confidence": "high"\|"medium"\|"low"/.test(tp) && /coverByElement/.test(tp) && /evidence/.test(tp)));
   check("AI Engine: the spec prompt asks for page and quote on every item and forbids invented standards", () => assertTrue(/"page": number, "quote": string/.test(E.specPrompt({})) && /Do not list standards or clauses that are not on the pages/.test(E.specPrompt({}))));
+  // Cogs on reinforcement (Grady, 9 Nov 2026: "add cog option to reinforcement in estimates")
+  {
+    const est = fs.readFileSync(new URL("../portal/estimates-app.html", import.meta.url), "utf8");
+    assert.match(est, /\["cog","Cog — the typed cog length \(Cogs section\)"\]/, "every anchorage select offers Cog");
+    assert.match(est, /if\(type==="cog"\) return \{mm:Math\.max\(0,num\(custom\)\), bySection:false, cog:true/, "a cog is the typed length, never a diameter multiple or the section rule");
+    assert.match(est, /function hookLeg\(inst,type,dia,custom\)\{ if\(type==="cog" && !\(num\(custom\)>0\)\) custom=inst\.data\.cogMm;/, "the element's cog length is the fallback");
+    assert.match(est, /hookLegOf\(r\.startA,bd,g\.secDepthMm,cvr,inst\.data\.cogMm\)/, "raft beam rows read the same length");
+    assert.match(est, /let out=calc\.compute\(inst,def\);\n\s*applyCogs\(inst,def,out\);\s*\/\/[^\n]*\n\s*applyConcreteOverride\(inst,def,out\);/, "the cog pass runs right after the calculator, before the by-rate replacement");
+    assert.match(est, /\$\{parts\.reo\}\$\{cogSection\(inst\)\}<\/div>/, "the Cogs section sits on every Reinforcement tab's detailed block");
+    assert.match(est, /if\(l\.materialGroup!=="Reinforcement" \|\| l\.unit!=="m" \|\| !\(num\(l\.bars\)>0\) \|\| l\.manualOverride\) return;/, "only metre bar lines with a bar count take the cog");
+    const tagged = (est.match(/bars:(count|N\*count|N\*num\(qty\)|count\*N|ev\?0:N\*count)|spec:label,bars,qty/g) || []).length;
+    assert.ok(tagged >= 11, `the main-bar lines carry a bar count (${tagged})`);
+    assert.ok(!/spec:\`\$\{label\} \(area covered[^]*?bars:/.test(est.slice(est.indexOf("(area covered"), est.indexOf("(area covered") + 400)), "a by-area mat is a rate — never cogged");
+    const cogFn = est.slice(est.indexOf("function applyCogs"), est.indexOf("function reoMethodSection"));
+    assert.ok(!/l\.spec\s*=/.test(cogFn), "the spec (the manual-override key) is never changed by the cog pass");
+    assert.match(cogFn, /no cog length is typed — nothing is added until it is/, "cogs on with no length = a completeness warning, never a silent zero");
+    // R8 ligatures (Grady, 9 Nov 2026: "include r8 ligatures"): every Estimates bar size is a PROCESSED BAR row, at d²/162 kg/m for the plain rounds
+    const sizes = JSON.parse(/const BARSIZES = (\[[^\]]*\])/.exec(est)[1]);
+    assert.deepEqual(sizes, ["N10","N12","N16","N20","N24","N28","N32","N36","N40","R6","R8","R10"], "Estimates bar sizes carry R6 / R8 / R10");
+    const pb = FULL_CATALOG.find((c) => c.key === "PROCESSED BAR");
+    for (const sz of sizes) { const prod = pb.products.find((p) => p.name === sz); assert.ok(prod, `PROCESSED BAR prices ${sz}`); assert.equal(prod.unit, "m"); }
+    for (const [sz, d] of [["R6", 6], ["R8", 8], ["R10", 10]]) { const prod = pb.products.find((p) => p.name === sz); assert.equal(prod.unitWeight, Math.round(d * d / 162 * 1000) / 1000, `${sz} weighs d²/162`); assert.equal(prod.unitCost, 1925, `${sz} at the flat mill rate`); }
+    const names = (src) => { const i = src.indexOf('"Processed Bar": { buildup:"Processed", items:['); return [...src.slice(i, src.indexOf("]},", i)).matchAll(/\{p:"([^"]+)",u:"m",w:([0-9.]+)\}/g)].map((m) => [m[1], Number(m[2])]); };
+    for (const [file, label] of [["../portal/rates-library.html", "Rates Library"], ["../portal/cost-planner.html", "Cost Planner"]]) {
+      const list = names(fs.readFileSync(new URL(file, import.meta.url), "utf8"));
+      assert.deepEqual(list.map((x) => x[0]), pb.products.map((p) => p.name), `${label}'s Processed Bar table lists the catalog's sizes in order`);
+      for (const [nm, w] of list) assert.equal(w, pb.products.find((p) => p.name === nm).unitWeight, `${label} ${nm} kg/m = catalog`);
+    }
+    { const { quote, flags } = buildImportFromEstimate({ project: {}, lines: [estLine({ material: "N20 concrete", finalQty: 1 }), { ...estLine({}), materialGroup: "Reinforcement", material: "R8", spec: "Ligatures / stirrups", unit: "m", finalQty: 52.5 }] });
+      assert.equal(quote.items[0].qtys[rateKey("PROCESSED BAR", "R8", "m")], 52.5, "an R8 ligature line bridges onto PROCESSED BAR R8"); assert.ok(!flags.some((f) => /R8/.test(f)), "and is not flagged as unmatched"); }
+  }
   // The AI Engine page's AI_TYPES mirror must list exactly the Estimates LIBRARY ids
   const est = fs.readFileSync(new URL("../portal/estimates-app.html", import.meta.url), "utf8");
   const libBlock = est.slice(est.indexOf("const LIBRARY = ["), est.indexOf("];", est.indexOf("const LIBRARY = [")));

@@ -296,6 +296,9 @@ export const FULL_CATALOG = [
   { key: "PROCESSED BAR", label: "PROCESSED BAR (unit cost $/tonne, applied to Total Weight)", weightBasis: true, products: [
     ["N10", "m", 0.632, 1925], ["N12", "m", 0.91, 1925], ["N16", "m", 1.6, 1925], ["N20", "m", 2.532, 1925], ["N24", "m", 3.639, 1925],
     ["N28", "m", 4.951, 1925], ["N32", "m", 6.468, 1925], ["N36", "m", 8.19, 1925], ["N40", "m", 10.107, 1925],
+    // Plain round bar for ligatures and ties (Grady, 9 Nov 2026: "include R8 ligatures"): the kg/m is d²/162, the
+    // same nominal mass Estimates prices every bar at, so an R-bar line bridges onto this row at the flat mill rate.
+    ["R6", "m", 0.222, 1925], ["R8", "m", 0.395, 1925], ["R10", "m", 0.617, 1925],
   ]},
   /* Reinforcement priced off a RATE rather than a schedule — the way a job is
    * costed before anyone has bar-listed it ("call it 90 kg/m³"). Qty is the

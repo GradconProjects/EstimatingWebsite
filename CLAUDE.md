@@ -3627,6 +3627,44 @@ element families waits on the owner's approval of the pad footing.
   mode is a completeness warning and no line, never a silent zero
   (`computeSlab` now returns its own `warnings`). The Method select
   rerenders the card so only the chosen mode's fields show.
+- **Cogs on reinforcement are a TYPED length** (Grady, 9 Nov 2026: "add cog
+  option to reinforcement in estimates"): a cog is a 90° bend of the length the
+  drawing states ("cog 300") at the end of a bar — never a diameter multiple
+  and never the hooks' section-depth rule. The Reinforcement tab of every
+  element carries a **Cogs** section (`cogSection(inst)`, inside the detailed
+  block beside `reoMethodSection`): `cogMm` (the ONE length) and `cogEnds`
+  (none / one / both — `cogEndsOf(d)`). (1) **Main bars**: `applyCogs(inst,
+  def, out)` runs in `computeInstance` right after the calculator (so waste and
+  lap cover the cogged length and a by-rate / by-area method still replaces the
+  mat) and adds `bars × ends × cogMm` to every Reinforcement line in METRES
+  that carries a `bars` count — slab bars by spacing, count or sections,
+  strip-footing longitudinal and cross bars, pad / pile-cap / composite mats,
+  wall and retaining-wall bars (the sites tag `bars:` on the line); never
+  mesh, trench products, ligatures, starters, dowels, a by-area mat or a
+  sketched wall's horizontals (a rate, not a count — `bars` 0). The spec is
+  NEVER changed (the manual-override key is built from it); the cog is stated
+  in the formula and the notes and `cogM` carries the metres added; cogs on
+  with no length is a completeness warning, never a silent figure. (2) **Every
+  anchorage select** (`ANCHOR_OPTS`: beam rows, raft beam groups, pier cage,
+  caps, columns, connections) offers "Cog", priced by `hookLegOf` at the same
+  `cogMm` (`hookLeg` falls back to the element's; the raft groups pass
+  `inst.data.cogMm`); a Cog end with no length prices as straight. Starter
+  runs keep their own `cog` field. `verify.mjs` pins the option, the length
+  rule, the pass order, the tagged sites and the untouched spec;
+  `test-cogs.mjs` proves the pad mats (4.4 → 6.8 m), one end, none, the
+  warning, the mesh and by-area exclusions, the beam row's Cog end, the slab
+  by spacing, the by-rate replacement and the saved fields.
+  **R8 ligatures** (Grady, same day: "include r8 ligatures"): `BARSIZES` in
+  Estimates carries R6 / R8 / R10 after the N sizes (every bar-size select, so
+  a ligature, tie or stirrup can be a plain round), and the Quotes `PROCESSED
+  BAR` catalog carries the same three rows at d²/162 kg/m (0.222 / 0.395 /
+  0.617 — the nominal mass Estimates prices every bar at, so the two agree)
+  at the flat mill rate, so the bridge lands an R-bar line on its own row
+  instead of flagging it; the Rates Library's and the Cost Planner's
+  "Processed Bar" tables list the same sizes (`verify.mjs` pins the list, the
+  weights, both mirrors and the bridge; a stored library only gains the rows
+  when its Processed Bar table is next saved — the catalog default governs
+  until then). `test-cogs.mjs` prices R8 stirrups on a strip footing.
 - **A selected hook spans the section depth less the cover** (`hookLegOf` /
   `hookLeg` / `sectionDepthMm` / `instCoverMm` beside `anchorLen`; 8 Oct
   2026, Grady: "when a user selects hooks, hooks should span the depth of
