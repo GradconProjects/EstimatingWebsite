@@ -3502,9 +3502,18 @@ check("Project Geometry carries a COUNT: $/no. leads the benchmark rates, sums a
     assert.match(est, /let openArea= ps\? ps\.openM2 : 0;/, "the schedule's openings come off");
     assert.match(est, /: precast\? slabPerimM\(d\)\s*: 0;/, "autoGeometry publishes a panel set's edge length as its run");
     assert.match(est, /const countNo = \(precast && panelScheduleOn\(d\)\)\? panelScheduleTotals\(d\)\.count : Math\.max\(0, num\(d\.qty, 1\)\);/, "the schedule's count is the element's No.");
-    assert.match(est, /leaf==="panelRows"\? \{mark:`P\$\{arr\.length\+1\}`, qty:1, hMm:3000, wMm:2400, openM2:0\}/, "the add-row template precedes the generic Rows rule");
+    assert.match(est, /leaf==="panelRows"\? \{mark:`P\$\{arr\.length\+1\}`, qty:1, hMm:3000, wMm:2400, openM2:0, openPerM:0\}/, "the add-row template precedes the generic Rows rule");
     assert.ok(est.indexOf('leaf==="panelRows"') < est.indexOf('/Rows$/.test(leaf)'), "panelRows is matched before /Rows$/");
     assert.match(est, /const GROUT_BAG_LITRES = 11;/);
+    // every panel edge is selectable (Grady, 9 Nov 2026: "FORMWORK for precast should have all perimeter possible to select")
+    assert.match(est, /function panelEdgeSelection\(d\)\{/, "panelEdgeSelection is the ONE reading of the edges formed");
+    assert.match(est, /const top = d\.panelEdgeTop===undefined\? true : !!d\.panelEdgeTop, bottom = d\.panelEdgeBottom===undefined\? true : !!d\.panelEdgeBottom;/, "an unset edge is formed — a takeoff saved before the choice forms all four");
+    assert.match(est, /edge=sel\.widths\*w\+sel\.sides\*h;/, "the schedule's edge run is the selected edges: widths × W + sides × H");
+    assert.match(est, /4\*Math\.sqrt\(A\/n\)\*n\*panelEdgeSelection\(d\)\.fraction : 0;/, "the square-panel assumption forms only the selected fraction");
+    assert.match(est, /data-testid="panel-edges"/); assert.match(est, /selOpts\("panelEdgeSides",String\(sel\.sides\),\[\["2","Both sides"\],\["1","One side[^"]*"\],\["0","None"\]\]\)/, "sides: both / one / none");
+    assert.match(est, /panelRows\.\$\{i\}\.openPerM/, "the schedule row carries the reveal perimeter");
+    assert.match(est, /const revLm = revealsOn\? \(ps\? ps\.revealM : num\(d\.panelRevealRunM\)\) : 0;/, "panel reveals come from the schedule or the typed run");
+    assert.match(est, /<\/div><\/div>\$\{panelEdgeFormSection\(inst\)\}/, "the edge section sits on the slab's Formwork tab, right under the Slab Formwork ticks");
     // the three erection line names are the catalog rows' exact names, so the bridge lands them 1:1
     for (const [cst, re] of [["PRECAST_INSERT_PRODUCT", /Lifting insert/], ["PRECAST_PROP_PRODUCT", /props \/ braces hire/], ["PRECAST_GROUT_PRODUCT", /Non-shrink grout/]]) {
       const m = est.match(new RegExp(`const ${cst} = "([^"]+)";`)); assert.ok(m, `${cst} declared`);

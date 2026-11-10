@@ -3597,6 +3597,28 @@ element families waits on the owner's approval of the pad footing.
   (12 panels · 95.28 m² net · 141.6 m of edge · 12 grout bags), the
   warnings, the add-row button, the geometry, the publish into Quotes and the
   card's band at $773.64.
+  **Every edge of a panel is its own choice** (Grady, 9 Nov 2026: "FORMWORK
+  for precast should have all perimeter possible to select"): the panel's
+  Formwork tab carries "Panel edges formed" (`panelEdgeFormSection`,
+  `data-testid="panel-edges"`): Top edge (`panelEdgeTop`), Bottom edge
+  (`panelEdgeBottom`), Side edges (`panelEdgeSides` "2" both / "1" one — the
+  other shared in a gang casting or against the bed rail / "0" none), Opening
+  reveals (`panelRevealsOn`; the run from the schedule's new "Reveals each
+  (m)" column `openPerM` × the count, or the typed `panelRevealRunM` in
+  total-area mode) and "Extra formed edges" (`panelEdgeExtraM` — rebates,
+  steps, returns, its own Edgeform line). `panelEdgeSelection(d)` is the ONE
+  reading (an unset tick is ON and unset sides are 2, so a takeoff saved
+  before the choice forms all four); `panelScheduleTotals` prices `edgeM` =
+  Σ panels × (ticked widths × W + sides × H) beside `edgeAllM` (all round)
+  and `revealM`; in total-area mode the square-panel assumption forms only
+  the selected FRACTION of each perimeter, and a typed edge length on
+  Geometry stands as typed (the note says which applies). The edge run feeds
+  the edge forms, the panel trench run, the starter run and Project
+  Geometry's lm alike. `verify.mjs` pins the reading, the unset default, the
+  arithmetic, the fraction, the select, the reveal column and the tab;
+  `test-precast-wiring.mjs` proves top + one side = 70.8 of 141.6 m with
+  23.2 m of reveals, no edge ticked, 12 m of rebates, and 75% of the square
+  assumption with a typed reveal run.
 - **Screed (standalone)** (`Floor Finishes` library group, calc `screed`:
   `screedDefaults` / `screedGeom` / `renderScreed` / `computeScreed` /
   `diagScreed` — 2 Oct 2026, Grady: "the screed is standalone. add it as its

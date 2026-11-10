@@ -5270,6 +5270,10 @@ function slabDefaults(cat,suspended){ const precast=cat==="Precast Panel"; retur
   // on the schedule IS the geometry (count, total area, edge length — panelScheduleTotals). The erection items are counted
   // per panel and named after the Quotes PRECAST / TILT-UP catalog rows so the bridge lands them 1:1.
   panelSchedule:false, panelRows:[], panelInsertsEach:precast?2:0, panelPropsEach:precast?2:0, panelGroutOn:precast, panelGroutBedMm:25, panelGroutRunM:"",
+  // Panel edge forms (Grady, 9 Nov 2026: "FORMWORK for precast should have all perimeter possible to select"): every edge of
+  // a panel is its own choice — top, bottom, the sides (both / one shared gang form / none) — plus the opening reveals
+  // (blockouts) and any extra formed edges (rebates, steps). panelEdgeSelection(d) is the ONE reading.
+  panelEdgeTop:true, panelEdgeBottom:true, panelEdgeSides:"2", panelRevealsOn:true, panelRevealRunM:"", panelEdgeExtraM:"",
   thickness:150, perimeterAuto:true, perimeterOverride:0, outlineOn:false, outlinePts:[{x:0,y:0},{x:25,y:0},{x:25,y:12},{x:0,y:12}], baseThickness:100, baseMaterialState:"compacted", vapourMembrane:!suspended, meshOn:true, meshType:"SL82", meshLayers:1, meshLap:false,
   edgeForms:true, soffit:!!suspended && !precast, openings:[], drops:false, setdowns:false, upstands:false, cjStopEnds:false,
   botX:true,botXDia:"N12",botXMethod:precast?"area":"spacing",botXSpacing:200,botXQty:0,botXBars:[],botXLap:false, botY:true,botYDia:"N12",botYMethod:precast?"area":"spacing",botYSpacing:200,botYQty:0,botYBars:[],botYLap:false,
@@ -5311,15 +5315,28 @@ function panelScheduleSection(inst){
    <td style="width:84px;min-width:84px">${inpNumR(`panelRows.${i}.hMm`,r.hMm)}</td>
    <td style="width:84px;min-width:84px">${inpNumR(`panelRows.${i}.wMm`,r.wMm)}</td>
    <td style="width:84px;min-width:84px">${inpNumR(`panelRows.${i}.openM2`,r.openM2)}</td>
+   <td style="width:84px;min-width:84px">${inpNumR(`panelRows.${i}.openPerM`,r.openPerM)}</td>
    <td class="small" style="white-space:nowrap" data-panel-each="${i}">${fmt(t.eachM2,2)} m² · ${fmt(t.eachEdgeM,2)} m edge</td>
    <td><button type="button" class="btn small danger" data-action="delRow" data-target="panelRows" data-idx="${i}" title="Remove this panel">✕</button></td>
   </tr>`; }).join("");
   return `<div class="subsec" data-testid="panel-schedule"><div class="grid cols4">${chk("panelSchedule",!!d.panelSchedule,"Panel schedule — enter the panels one by one (count × height × width; the area, count and edge length follow)","panelSchedule")}</div>
   <div class="subsec ${on?'':'hidden'}" data-show-if="panelSchedule">
-  <table class="rows panels"><thead><tr><th>Mark</th><th>No.</th><th>Height (mm)</th><th>Width (mm)</th><th>Openings each (m²)</th><th>Each</th><th></th></tr></thead><tbody>${rows}</tbody></table>
+  <table class="rows panels"><thead><tr><th>Mark</th><th>No.</th><th>Height (mm)</th><th>Width (mm)</th><th>Openings each (m²)</th><th>Reveals each (m)</th><th>Each</th><th></th></tr></thead><tbody>${rows}</tbody></table>
   <button type="button" class="btn small" data-action="addRow" data-target="panelRows" data-testid="panel-add">+ Add a panel</button>
-  <p class="small" data-testid="panel-totals"><b>${ps.count}</b> panels · <b>${fmt(ps.areaM2,2)} m²</b> net (${fmt(ps.grossM2,2)} gross − ${fmt(ps.openM2,2)} openings) · <b>${fmt(ps.edgeM,2)} m</b> of edge forms · ${fmt(ps.widthsM,2)} m of panel bases</p>
-  <p class="small">The schedule replaces the total-area box: concrete = net area × thickness, edge forms = every panel's 2 × (H + W), the panel count goes to Project Geometry and the grout bed run defaults to the panel widths. Openings are each panel's own (m² per panel).</p></div></div>`;
+  <p class="small" data-testid="panel-totals"><b>${ps.count}</b> panels · <b>${fmt(ps.areaM2,2)} m²</b> net (${fmt(ps.grossM2,2)} gross − ${fmt(ps.openM2,2)} openings) · <b>${fmt(ps.edgeM,2)} m</b> of edge forms (${ps.edgeM===ps.edgeAllM? "all four edges" : `of ${fmt(ps.edgeAllM,2)} m — the edges ticked on Formwork`}) · ${fmt(ps.revealM,2)} m of reveals · ${fmt(ps.widthsM,2)} m of panel bases</p>
+  <p class="small">The schedule replaces the total-area box: concrete = net area × thickness, edge forms = the edges ticked on the Formwork tab (every panel's 2 × (H + W) with all four), the panel count goes to Project Geometry and the grout bed run defaults to the panel widths. Openings are each panel's own (m² per panel), reveals the perimeter of those openings (m per panel).</p></div></div>`;
+}
+/* The precast PANEL EDGE FORMS (Grady, 9 Nov 2026: "FORMWORK for precast should have all perimeter possible to select"):
+ * every edge of a panel is a choice — top, bottom, both / one / no side (a side shared with the next panel in a gang
+ * casting, or against the bed's fixed rail, is not formed twice) — plus the opening reveals and extra formed edges. */
+function panelEdgeFormSection(inst){
+  const d=inst.data; if(d.category!=="Precast Panel") return "";
+  const sel=panelEdgeSelection(d), on=panelScheduleOn(d), ps=panelScheduleTotals(d);
+  const typed = d.manualArea && !on && !d.perimeterAuto;
+  return `<div class="subsec" data-testid="panel-edges"><div class="sechead">Panel edges formed — pick every edge that takes a form</div>
+  <div class="grid cols4">${chk("panelEdgeTop",sel.top,"Top edge (W)")}${chk("panelEdgeBottom",sel.bottom,"Bottom edge (W)")}${F("Side edges (H each)",selOpts("panelEdgeSides",String(sel.sides),[["2","Both sides"],["1","One side (the other shared / against the bed rail)"],["0","None"]]))}${chk("panelRevealsOn",d.panelRevealsOn===undefined? true : !!d.panelRevealsOn,"Opening reveals (blockouts)")}</div>
+  <div class="grid cols4">${on? "" : F("Reveal run (m, all panels)",inpNum("panelRevealRunM",d.panelRevealRunM))}${F("Extra formed edges (m — rebates, steps, returns)",inpNum("panelEdgeExtraM",d.panelEdgeExtraM))}</div>
+  <p class="small" data-testid="panel-edges-note">${on? `Edge forms = Σ panels × (${sel.widths} × W + ${sel.sides} × H) = <b>${fmt(ps.edgeM,2)} m</b> of ${fmt(ps.edgeAllM,2)} m all round; reveals from the schedule's "Reveals each" column = ${fmt(ps.revealM,2)} m.` : typed? `The typed edge length on Geometry stands as the edge run — the ticks apply when the edge length is derived (square panels assumed, or the panel schedule).` : `Square panels assumed: the ticked edges are ${fmt(sel.fraction*100,0)}% of each panel's perimeter — type the total edge length on Geometry, or use the panel schedule, for the exact run.`} Every run is at the panel thickness (under 400 mm by the metre, deeper in m²).</p></div>`;
 }
 /* The precast ERECTION block (9 Nov 2026) on the Connections tab: lifting inserts and props per panel, the grout bed. */
 function panelErectionSection(inst){
@@ -5386,10 +5403,10 @@ function renderSlab(inst,def){
   <tbody>${d.openings.map((r,i)=>openRowHtml(i,r)).join('')}</tbody></table>
   <button class="btn small" data-action="addRow" data-target="openings">+ Add opening</button></div>`;
   let form=`<div class="subsec"><div class="sechead">Slab Formwork</div><div class="grid cols4">
-   ${chk("edgeForms",d.edgeForms,"Perimeter edge formwork (by the metre)")}
-   ${d.suspended? chk("soffit",d.soffit,"Soffit formwork"):""}
+   ${chk("edgeForms",d.edgeForms,d.category==="Precast Panel"? "Panel edge formwork (by the metre — pick the edges below)" : "Perimeter edge formwork (by the metre)")}
+   ${d.suspended? chk("soffit",d.soffit,d.category==="Precast Panel"? "Soffit formwork (a panel is cast on the bed — normally off)" : "Soffit formwork"):""}
    ${chk("cjStopEnds",d.cjStopEnds,"Construction joint stop ends")}
-  </div></div>
+  </div></div>${panelEdgeFormSection(inst)}
   ${slabBeamFormworkSection(inst,d)}`;
   function barBlock(prefix,label){
     const precastBlk = d.category==="Precast Panel";
@@ -5650,13 +5667,21 @@ const GROUT_BAG_LITRES = 11;   // yield of one 20 kg bag of non-shrink cementiti
 const PRECAST_INSERT_PRODUCT = "Lifting insert / face lifter 5 t (cast-in)";
 const PRECAST_PROP_PRODUCT = "Panel props / braces hire (no published rate — enter the hire quote per prop)";
 const PRECAST_GROUT_PRODUCT = "Non-shrink grout — 20 kg bag (SikaGrout-212 HP class)";
+/* Which edges of every panel are formed (9 Nov 2026): top and bottom ticks (undefined = on, so a takeoff saved before the
+ * choice existed forms all four), the sides as 2 / 1 / 0 ("2" when unset). Returns the counts the arithmetic multiplies. */
+function panelEdgeSelection(d){
+  const top = d.panelEdgeTop===undefined? true : !!d.panelEdgeTop, bottom = d.panelEdgeBottom===undefined? true : !!d.panelEdgeBottom;
+  const sidesRaw = d.panelEdgeSides===undefined || d.panelEdgeSides===""? 2 : Math.max(0,Math.min(2,Math.round(num(d.panelEdgeSides))));
+  return {top, bottom, sides:sidesRaw, widths:(top?1:0)+(bottom?1:0), fraction:((top?1:0)+(bottom?1:0)+sidesRaw)/4};
+}
 function panelScheduleTotals(d){
   const rows=Array.isArray(d.panelRows)? d.panelRows : [];
-  let count=0, grossM2=0, openM2=0, edgeM=0, widthsM=0, rowsOut=[];
+  const sel=panelEdgeSelection(d);
+  let count=0, grossM2=0, openM2=0, edgeM=0, edgeAllM=0, revealM=0, widthsM=0, rowsOut=[];
   rows.forEach(r=>{ const n=Math.max(0,num(r.qty,1)), h=num(r.hMm)/1000, w=num(r.wMm)/1000; if(!(n>0)||!(h>0)||!(w>0)){ rowsOut.push({mark:r.mark||"",qty:n,eachM2:0,eachEdgeM:0}); return; }
-    const each=h*w, edge=2*(h+w); count+=n; grossM2+=n*each; openM2+=n*Math.max(0,num(r.openM2)); edgeM+=n*edge; widthsM+=n*w; rowsOut.push({mark:r.mark||"",qty:n,eachM2:each,eachEdgeM:edge}); });
+    const each=h*w, edgeAll=2*(h+w), edge=sel.widths*w+sel.sides*h; count+=n; grossM2+=n*each; openM2+=n*Math.max(0,num(r.openM2)); edgeM+=n*edge; edgeAllM+=n*edgeAll; revealM+=n*Math.max(0,num(r.openPerM)); widthsM+=n*w; rowsOut.push({mark:r.mark||"",qty:n,eachM2:each,eachEdgeM:edge}); });
   const r2=(x)=>Math.round(x*1000)/1000;
-  return {count, grossM2:r2(grossM2), openM2:r2(openM2), areaM2:r2(Math.max(0,grossM2-openM2)), edgeM:r2(edgeM), widthsM:r2(widthsM), rows:rowsOut};
+  return {count, grossM2:r2(grossM2), openM2:r2(openM2), areaM2:r2(Math.max(0,grossM2-openM2)), edgeM:r2(edgeM), edgeAllM:r2(edgeAllM), revealM:r2(revealM), widthsM:r2(widthsM), rows:rowsOut, sel};
 }
 const panelScheduleOn=(d)=>d.category==="Precast Panel" && !!d.panelSchedule;
 function slabIsCircular(d){ return !d.manualArea && !slabOutlinePts(d) && d.planShape==="circular"; }
@@ -5669,7 +5694,7 @@ function slabPerimM(d){
   // A precast panel set measured by TOTAL area has no L×W: until the total edge length is typed
   // the edge forms assume n equal SQUARE panels (4·√(A/n)·n) and computeSlab flags it (26 Oct 2026).
   if(panelScheduleOn(d)) return panelScheduleTotals(d).edgeM;   // the schedule's edge length — every panel's 2(H + W)
-  if(d.category==="Precast Panel" && d.manualArea){ const n=Math.max(1,num(d.qty,1)), A=num(d.areaOverride); return A>0? 4*Math.sqrt(A/n)*n : 0; }
+  if(d.category==="Precast Panel" && d.manualArea){ const n=Math.max(1,num(d.qty,1)), A=num(d.areaOverride); return A>0? 4*Math.sqrt(A/n)*n*panelEdgeSelection(d).fraction : 0; }
   return 2*(num(d.length)+num(d.width));
 }
 const precastPerimAssumed=(d)=>d.category==="Precast Panel" && d.manualArea && d.perimeterAuto && !slabOutlinePts(d) && !panelScheduleOn(d);
@@ -5707,7 +5732,15 @@ function computeSlab(inst,def){
   // Edgeform is by the metre unless the slab is 400 mm or thicker, when the edge is formed over the material's full depth in m² (Grady, 22 Oct 2026)
   if(d.edgeForms) lines.push(...formworkLines(inst,def,{material:"Edgeform — perimeter edge formwork",spec:`${d.thickness}mm high edge`,faces:[{name:"slab edge",runM:perim,faceMm:num(d.thickness)>0? num(d.thickness) : 1}],formula:`slab perimeter ${fmt(perim,1)}m`}));
   if(d.suspended && d.soffit) lines.push(baseLine(inst,def,{materialGroup:"Formwork",material:"Soffit formwork",spec:"",qty:netArea,unit:"m²",waste:PROJECT.formworkWaste,finalQty:withWaste(netArea,PROJECT.formworkWaste),formula:"net area"}));
-  if(openArea>0){
+  if(d.category==="Precast Panel"){
+    // Panel reveals (blockouts) and extra formed edges (9 Nov 2026): the reveal run comes from the schedule's "Reveals
+    // each" column (× the panel count) or the typed run; rebates / steps / returns are a typed run. Both at the panel thickness.
+    const revealsOn = d.panelRevealsOn===undefined? true : !!d.panelRevealsOn;
+    const revLm = revealsOn? (ps? ps.revealM : num(d.panelRevealRunM)) : 0;
+    if(revLm>0) lines.push(...formworkLines(inst,def,{material:"Opening reveals",spec:`${d.thickness}mm high reveal — panel blockouts`,faces:[{name:"reveals",runM:revLm,faceMm:num(d.thickness)>0? num(d.thickness) : 1}],formula:ps? "Σ panels × reveals each" : "typed reveal run"}));
+    const extraLm=num(d.panelEdgeExtraM);
+    if(extraLm>0) lines.push(...formworkLines(inst,def,{material:"Edgeform — perimeter edge formwork",spec:`${d.thickness}mm high edge — rebates, steps, returns`,faces:[{name:"extra formed edges",runM:extraLm,faceMm:num(d.thickness)>0? num(d.thickness) : 1}],formula:"typed extra edges"}));
+  } else if(openArea>0){
     // Reveals are edge boards — measured by the METRE around each opening
     // (like Edgeform), with the slab thickness on the spec as the board
     // height. Previously area-based AND carried finalQty:0, so reveals
@@ -9839,7 +9872,7 @@ function attachCardEvents(card,inst){
       let template = leaf==="openings"? {label:"Opening",w:600,h:2100,qty:1}
        : /Groups$/.test(leaf)? newExtraBeamGroup(inst.data,leaf,arr.length)
        : leaf==="reoAreaRows"? {area:"", dia:"N12", spacing:200, ways:"each"}
-       : leaf==="panelRows"? {mark:`P${arr.length+1}`, qty:1, hMm:3000, wMm:2400, openM2:0}
+       : leaf==="panelRows"? {mark:`P${arr.length+1}`, qty:1, hMm:3000, wMm:2400, openM2:0, openPerM:0}
        : /Rows$/.test(leaf)? {position:"Additional",qty:2,dia:"N16",layers:1,startA:"straight",endA:"straight"}
        : leaf==="extraConn"? {target:"",role:"Dowel",mode:"count",qty:4,runM:"",spacing:400,rows:1,dia:"N16",embed:400,proj:400,hook:"straight"}
        : leaf==="meshDowels"? {name:"", type:"SL82", runM:"", spacing:400, count:"", pieceL:DOWEL_PIECE_L_MM, pieceW:DOWEL_PIECE_W_MM}
