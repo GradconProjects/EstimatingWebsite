@@ -5304,6 +5304,63 @@ function slabDefaults(cat,suspended){ const precast=cat==="Precast Panel"; retur
   // with its own cross-section (see EXTRA_BEAM_KINDS)
   edgeBeamGroups:[], intBeamGroups:[]
 };}
+/* Diagonal re-entrant corner reinforcement — ONE section and ONE pricing for every element with internal corners
+ * (Grady, 10 Nov 2026: "I WANT rentrant bars to come in trench meshes and sheets also"): the slab had the three materials
+ * (bars / trench-mesh or mesh strip / sheet piece) since Oct 2026; the concrete wall (window and door corners) and the
+ * composite assembly now carry the same block. `autoCount` is the element's own corner count when nothing is typed (the
+ * slab's sketched reflex corners, a wall's 4 × its openings); a typed count wins. */
+function reentrantSection(inst, autoCount, autoNote){
+  const d=inst.data; autoCount=Math.max(0,Math.round(num(autoCount))); autoNote=autoNote||"auto";
+  return `   <div class="subsec"><div class="sechead">Diagonal Re-entrant Corner Bars</div>
+   ${chk("reentrantOn",d.reentrantOn,"Diagonal crack-control reinforcement at re-entrant (internal) corners","reentrantOn")}
+   <div class="subsec ${d.reentrantOn?'':'hidden'}" data-show-if="reentrantOn"><div class="grid cols4">
+    ${F(`Re-entrant corners (count${autoCount?`, ${autoNote} ${autoCount}`:''})`,inpNum("reentrantQty",d.reentrantQty))}
+    ${F("Material",selOpts("reentrantMode",d.reentrantMode||"bars",[["bars","Diagonal bars"],["strip","Trench mesh / mesh strip (cut to width)"],["sheet","Mesh sheet piece (SL/RL offcut, L × W)"]],true))}
+    ${(d.reentrantMode||"bars")==="strip"
+      ? F("Strip type (trench mesh or SL/RL mesh)",trenchMeshTypeSel("reentrantStripType",d.reentrantStripType||"4 Bar-L12TM"))+F("Strip width (mm)",inpNum("reentrantStripW",d.reentrantStripW===undefined?300:d.reentrantStripW))
+      : (d.reentrantMode||"bars")==="sheet"
+      ? F("Mesh sheet type",selOpts("reentrantSheetType",d.reentrantSheetType||"SL82",Object.keys(MESHTYPES).map(m=>[m,`${m} (${MESHTYPES[m]} kg/m²)`])))+F("Piece width (mm)",inpNum("reentrantSheetW",d.reentrantSheetW===undefined?600:d.reentrantSheetW))
+      : F("Bar size",barSizeSel("reentrantDia",d.reentrantDia))+F("Bars per corner",inpNum("reentrantPer",d.reentrantPer===undefined?2:d.reentrantPer))}
+    ${F((d.reentrantMode||"bars")==="strip"?"Strip length per corner (mm)":(d.reentrantMode||"bars")==="sheet"?"Piece length per corner (mm)":"Bar length (mm)",inpNum("reentrantLen",d.reentrantLen===undefined?1200:d.reentrantLen))}
+    ${chk("reentrantLap",d.reentrantLap,"Include lap allowance (%)","reentrantLap")}
+   </div>
+   <div class="tip"><span class="ico">🎓</span><div>Every internal (re-entrant) corner of an L-, T- or U-shaped slab concentrates shrinkage stress and cracks diagonally from the corner — standard practice lays diagonal bars (typically 2×N12×1200 top), a short trench-mesh or SL/RL strip at 45°, or a mesh sheet offcut (e.g. SL82 1200×600) across each one — choose the material above and its type/size follows. Sheet pieces are cut from whole 6.0×2.4 m sheets, so the register counts whole sheets by how many pieces fit. Leave the count blank to use the sketched outline's own re-entrant corner count where one is drawn.</div></div></div></div>`;
+}
+function reentrantLines(inst,def,autoCount){
+  const d=inst.data, lines=[];
+  if(!d.reentrantOn) return lines;
+  // diagonal crack-control reinforcement at re-entrant corners — an entered count wins; blank falls back to the element's own count
+  const corners = num(d.reentrantQty)>0? Math.round(num(d.reentrantQty)) : Math.max(0,Math.round(num(autoCount)));
+  const lenM=num(d.reentrantLen,1200)/1000;
+  if(!(corners>0 && lenM>0)) return lines;
+  const mode=d.reentrantMode||"bars";
+  if(mode==="sheet"){
+    // a mesh sheet offcut per corner (L × W), cut from whole 6.0 × 2.4 m sheets
+    const type=MESHTYPES[d.reentrantSheetType]!==undefined? d.reentrantSheetType : "SL82";
+    const wM=num(d.reentrantSheetW,600)/1000;
+    const areaPer=lenM*wM, area=corners*areaPer;
+    const perSheet=Math.max(1, Math.floor(6.0/lenM+1e-9)*Math.floor(2.4/wM+1e-9));
+    const reLap=d.reentrantLap?MESH_LAP_PCT:0;
+    const wastedArea=withWasteLap(area,PROJECT.reoWaste,reLap);
+    const sheets=Math.ceil(withWasteLap(corners,PROJECT.reoWaste,reLap)/perSheet-1e-9);
+    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",part:"extra",material:type,spec:`Re-entrant corner mesh pieces (${num(d.reentrantLen,1200)}×${num(d.reentrantSheetW,600)} mm, ${corners} corner(s))`,qty:area,unit:"m²",waste:PROJECT.reoWaste,lap:reLap,finalQty:wastedArea,sheets,formula:`${corners} corners × ${num(d.reentrantLen,1200)}×${num(d.reentrantSheetW,600)} mm = ${fmt(area,2)} m² · ${perSheet} pieces per sheet`,notes:`${sheets} sheet(s) — ${fmt(wastedArea*MESHTYPES[type],1)} kg`}));
+  } else if(mode==="strip"){
+    const type=d.reentrantStripType||"4 Bar-L12TM", lp=layerProduct(type);
+    const totLen=corners*lenM;
+    if(lp.kind==="bars"){
+      // straight stock bars picked in the strip selector price as plain bar by the metre, never as a trench product
+      const l=stockBarLayerLine(inst,def,lp,1,totLen,`Re-entrant corner bars (diagonal, ${corners} corner(s))`,d.reentrantLap); l.part="extra"; lines.push(l);
+    } else {
+      const mpm=trenchReoMassPerM(type,num(d.reentrantStripW,300)), wt=totLen*mpm, reLap=d.reentrantLap?MESH_LAP_PCT:0;
+      lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",part:"extra",material:type,spec:`Re-entrant corner strips (diagonal, ${corners} corner(s))`,qty:totLen,unit:"lm",waste:PROJECT.reoWaste,lap:reLap,finalQty:withWasteLap(totLen,PROJECT.reoWaste,reLap),massPerUnit:mpm,formula:`${corners} corners × ${fmt(lenM,2)} m`,notes:`${fmt(wt,1)} kg`}));
+    }
+  } else {
+    const dia=barDiaOf(d.reentrantDia), per=Math.max(1,Math.round(num(d.reentrantPer,2)));
+    const totLen=corners*per*lenM, wt=totLen*massPerM(dia), reLap=d.reentrantLap?PROJECT.lapPct:0;
+    lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",part:"extra",material:d.reentrantDia,spec:`Re-entrant corner bars (diagonal, ${corners} corner(s))`,qty:totLen,unit:"m",waste:PROJECT.reoWaste,lap:reLap,finalQty:withWasteLap(totLen,PROJECT.reoWaste,reLap),massPerUnit:massPerM(dia),formula:`${corners} corners × ${per} × ${fmt(lenM,2)} m`,notes:`${fmt(wt,1)} kg`}));
+  }
+  return lines;
+}
 /* The precast PANEL SCHEDULE (9 Nov 2026): one row per panel mark — count, height, width, the openings in each panel —
  * and the totals the slab prices from (count, net area, edge length, grout run). With the tick off the card is the
  * 26 Oct 2026 total-area entry. */
@@ -5549,20 +5606,7 @@ function renderSlab(inst,def){
    </div>
    <div class="grid cols3">${chk("retLap",d.retLap,"Include lap allowance (%)","retLap")}</div>
    <div class="tip"><span class="ico">🎓</span><div>Applied around the full perimeter unless overridden. Free (unsupported) slab edges need the top and bottom mats tied together, or the edge behaves like a hinge under load — that's what the turn-down U-bar does. It's one of the most commonly missed items in a manual takeoff because it never shows as its own line on the drawing; it's implied by the edge detail.</div></div></div></div>
-   <div class="subsec"><div class="sechead">Diagonal Re-entrant Corner Bars</div>
-   ${chk("reentrantOn",d.reentrantOn,"Diagonal crack-control reinforcement at re-entrant (internal) corners","reentrantOn")}
-   <div class="subsec ${d.reentrantOn?'':'hidden'}" data-show-if="reentrantOn"><div class="grid cols4">
-    ${F(`Re-entrant corners (count${reentrantCornerCount(d)?`, sketch shows ${reentrantCornerCount(d)}`:''})`,inpNum("reentrantQty",d.reentrantQty))}
-    ${F("Material",selOpts("reentrantMode",d.reentrantMode||"bars",[["bars","Diagonal bars"],["strip","Trench mesh / mesh strip (cut to width)"],["sheet","Mesh sheet piece (SL/RL offcut, L × W)"]],true))}
-    ${(d.reentrantMode||"bars")==="strip"
-      ? F("Strip type (trench mesh or SL/RL mesh)",trenchMeshTypeSel("reentrantStripType",d.reentrantStripType||"4 Bar-L12TM"))+F("Strip width (mm)",inpNum("reentrantStripW",d.reentrantStripW===undefined?300:d.reentrantStripW))
-      : (d.reentrantMode||"bars")==="sheet"
-      ? F("Mesh sheet type",selOpts("reentrantSheetType",d.reentrantSheetType||"SL82",Object.keys(MESHTYPES).map(m=>[m,`${m} (${MESHTYPES[m]} kg/m²)`])))+F("Piece width (mm)",inpNum("reentrantSheetW",d.reentrantSheetW===undefined?600:d.reentrantSheetW))
-      : F("Bar size",barSizeSel("reentrantDia",d.reentrantDia))+F("Bars per corner",inpNum("reentrantPer",d.reentrantPer===undefined?2:d.reentrantPer))}
-    ${F((d.reentrantMode||"bars")==="strip"?"Strip length per corner (mm)":(d.reentrantMode||"bars")==="sheet"?"Piece length per corner (mm)":"Bar length (mm)",inpNum("reentrantLen",d.reentrantLen===undefined?1200:d.reentrantLen))}
-    ${chk("reentrantLap",d.reentrantLap,"Include lap allowance (%)","reentrantLap")}
-   </div>
-   <div class="tip"><span class="ico">🎓</span><div>Every internal (re-entrant) corner of an L-, T- or U-shaped slab concentrates shrinkage stress and cracks diagonally from the corner — standard practice lays diagonal bars (typically 2×N12×1200 top), a short trench-mesh or SL/RL strip at 45°, or a mesh sheet offcut (e.g. SL82 1200×600) across each one — choose the material above and its type/size follows. Sheet pieces are cut from whole 6.0×2.4 m sheets, so the register counts whole sheets by how many pieces fit. Leave the count blank to use the sketched outline's own re-entrant corner count where one is drawn.</div></div></div></div>
+   ${reentrantSection(inst, reentrantCornerCount(d), "sketch shows")}
    <div class="subsec"><div class="sechead">Joints &amp; Dowels</div><div class="grid cols4">
     ${chk("joints",d.joints,"Construction/control joints")}${F("Joint spacing (m)",inpNum("jointSpacing",d.jointSpacing))}
     ${chk("dowels",d.dowels,"Joint dowels","dowels")}
@@ -5981,38 +6025,7 @@ function computeSlab(inst,def){
       lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",part:"extra",material:d.retDia,spec:"Edge return / turn-down bars",qty:totLen,unit:"m",waste:PROJECT.reoWaste,lap:retLapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,retLapPct),formula:`count(${count})×(2×turndown ${d.retTurndown}+leg ${d.retLeg})/1000`,notes:`${count} bars, ${fmt(wt,1)} kg`}));
     }
   }
-  if(d.reentrantOn){
-    // diagonal crack-control reinforcement at re-entrant corners — an
-    // entered count wins; blank falls back to the sketched outline's own
-    // reflex-corner count
-    let corners = num(d.reentrantQty)>0? Math.round(num(d.reentrantQty)) : reentrantCornerCount(d);
-    let lenM=num(d.reentrantLen,1200)/1000;
-    if(corners>0 && lenM>0){
-      if((d.reentrantMode||"bars")==="sheet"){
-        // a mesh sheet offcut per corner (L × W), cut from whole 6.0 × 2.4 m sheets
-        let type=MESHTYPES[d.reentrantSheetType]!==undefined? d.reentrantSheetType : "SL82";
-        let wM=num(d.reentrantSheetW,600)/1000;
-        let areaPer=lenM*wM; let area=corners*areaPer;
-        let perSheet=Math.max(1, Math.floor(6.0/lenM+1e-9)*Math.floor(2.4/wM+1e-9));
-        let reLap=d.reentrantLap?MESH_LAP_PCT:0;
-        let wastedArea=withWasteLap(area,PROJECT.reoWaste,reLap);
-        let sheets=Math.ceil(withWasteLap(corners,PROJECT.reoWaste,reLap)/perSheet-1e-9);
-        lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",part:"extra",material:type,spec:`Re-entrant corner mesh pieces (${num(d.reentrantLen,1200)}×${num(d.reentrantSheetW,600)} mm, ${corners} corner(s))`,qty:area,unit:"m²",waste:PROJECT.reoWaste,lap:reLap,finalQty:wastedArea,sheets,formula:`${corners} corners × ${fmt(lenM,2)}×${fmt(wM,2)}m (+${PROJECT.reoWaste}% waste${reLap?`, +${reLap}% lap`:''}) → ${perSheet} piece(s) per 6.0×2.4m sheet = ${sheets} sheet(s)`,notes:`${sheets} sheet(s), ≈${fmt(wastedArea*MESHTYPES[type],1)} kg`}));
-      } else if((d.reentrantMode||"bars")==="strip"){
-        let type=d.reentrantStripType||"4 Bar-L12TM";
-        let mpm=trenchReoMassPerM(type,num(d.reentrantStripW,300));
-        let totLen=corners*lenM; let wt=totLen*mpm;
-        let reLap=d.reentrantLap?MESH_LAP_PCT:0;
-        lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",part:"extra",material:type,spec:`Re-entrant corner strips (diagonal, ${corners} corner(s))`,qty:totLen,unit:"lm",waste:PROJECT.reoWaste,lap:reLap,finalQty:withWasteLap(totLen,PROJECT.reoWaste,reLap),massPerUnit:mpm,formula:`${corners} corners × ${fmt(lenM,2)}m strip (+${PROJECT.reoWaste}% waste${reLap?`, +${reLap}% lap`:''})`,notes:`${fmt(wt,1)} kg`}));
-      } else {
-        let dia=barDiaOf(d.reentrantDia);
-        let per=Math.max(1,Math.round(num(d.reentrantPer,2)));
-        let totLen=corners*per*lenM; let wt=totLen*massPerM(dia);
-        let reLap=d.reentrantLap?PROJECT.lapPct:0;
-        lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",part:"extra",material:d.reentrantDia,spec:`Re-entrant corner bars (diagonal, ${corners} corner(s))`,qty:totLen,unit:"m",waste:PROJECT.reoWaste,lap:reLap,finalQty:withWasteLap(totLen,PROJECT.reoWaste,reLap),formula:`${corners} corners × ${per} bars × ${fmt(lenM,2)}m (+${PROJECT.reoWaste}% waste${reLap?`, +${reLap}% lap`:''})`,notes:`${corners*per} bars, ${fmt(wt,1)} kg`}));
-      }
-    }
-  }
+  lines.push(...reentrantLines(inst,def,reentrantCornerCount(d)));
   if(d.joints){
     const jointRunM = circular? num(d.diameterM) : num(d.length), jointLenM = circular? slabChordM(d) : num(d.width);   // a round slab: joints across the diameter, each the mean chord long
     let numJoints=Math.max(0,Math.floor(jointRunM/num(d.jointSpacing))-1);
@@ -6155,7 +6168,8 @@ function renderWall(inst){
   let steps=`<div class="sechead">Step-down / Construction-joint Connecting Bars</div>
   ${chk("stepdown",d.stepdown,"Wall steps down / has level change requiring connecting dowels","stepdown")}
   <div class="subsec ${d.stepdown?'':'hidden'}" data-show-if="stepdown"><div class="grid cols4">${F("Total step-down length (m)",inpNum("sdLength",d.sdLength))}${F("Step depth (mm)",inpNum("sdDepth",d.sdDepth))}${F("Dowel / step reinforcement",dowelProductSel("sdDia",d.sdDia))}${dowelProductFields(d,"sdDia","sdSpacing","Spacing (mm)","sd")}</div>${sdBarShapeIf(d,2*num(d.sdProj1))}${sdSetupFields(d)}<div class="tip"><span class="ico">🏗️</span><div>A stepped wall footing or a change in wall thickness up the height both need continuity dowels across the joint — treat each step exactly like a mini construction joint.</div></div></div>`;
-  return {geom,conc:concSection(d,"<p class='small'>Concrete = (L×H − openings) × thickness</p>"),reo:reo+steps,form,conns};
+  const wallOpenCorners = 4*(d.openings||[]).reduce((n,o)=>n+Math.max(0,num(o.qty,1)),0)*Math.max(1,num(d.qty,1));
+  return {geom,conc:concSection(d,"<p class='small'>Concrete = (L×H − openings) × thickness</p>"),reo:reo+steps+`<div class="subsec">${reentrantSection(inst, wallOpenCorners, "openings give")}</div>`,form,conns};
 }
 function computeWall(inst,def){
   let d=inst.data, lines=[];
@@ -6224,6 +6238,7 @@ function computeWall(inst,def){
     if(dowelProduct(d.sdDia).kind!=="bar") lines.push(dowelPieceLine(inst,def,"Connections",dowelProduct(d.sdDia),count*N,d,"sd","Step-down connecting dowels",`${count} positions${N>1?" × "+N:""}`)); else lines.push(baseLine(inst,def,{materialGroup:"Connections",material:d.sdDia,spec:"Step-down connecting dowels",qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`count(${count})×2×proj/1000×${N}`,notes:`${count} dowels, ${fmt(wt,1)} kg`}));
     sdExtraBarLines(inst,def,lines,d,sdRunM,N);
   }
+  lines.push(...reentrantLines(inst,def,4*(d.openings||[]).reduce((n,o)=>n+Math.max(0,num(o.qty,1)),0)*Math.max(1,num(d.qty,1))));
   return {lines,warnings:[]};
 }
 
@@ -6968,8 +6983,9 @@ function renderComposite(inst){
   const reo=`<div class="grid cols3">${chk("meshLap",d.meshLap,"Mesh — include lap allowance (%)")}${chk("barLap",d.barLap,"Bars — include lap allowance (%)")}</div>
    <p class="small">Each slab and wall carries its own reinforcement on the Geometry tab; the laps above apply to all of them. Slab bars each way = bars along the width at their spacing × length + bars along the length × width, per layer. Wall bars: verticals along the length at their spacing × (height + 0.4 m lap), horizontals along the height × length, × reinforced faces.</p>`;
   const conns=starterRunsUI(inst,d,compositeLenM(d),"assembly");
+  const reoExtra=`<div class="subsec">${reentrantSection(inst, 0, "")}</div>`;
   const form=`<p class="small">Formwork is chosen per part on the Geometry tab: slab edges by the metre (perimeter or an entered length), soffits where a slab is suspended, wall faces and ends.</p>`;
-  return {geom, conc:concSection(d,"<p class='small'>Concrete = Σ slab area × thickness + Σ wall L × H × T, each part at its own grade (blank = the element grade above).</p>"), reo, form, conns};
+  return {geom, conc:concSection(d,"<p class='small'>Concrete = Σ slab area × thickness + Σ wall L × H × T, each part at its own grade (blank = the element grade above).</p>"), reo:reo+reoExtra, form, conns};
 }
 function computeComposite(inst,def){
   const d=inst.data, lines=[], warnings=[]; const N=num(d.qty,1), cover=num(d.cover,40)/1000;
@@ -7007,6 +7023,7 @@ function computeComposite(inst,def){
   });
   lines.push(...starterRunLines(inst,def,d,N,compositeLenM(d),"Starter bars"));
   if(!(d.slabs||[]).length && !(d.walls||[]).length) warnings.push({text:"No slabs or walls yet — add the parts of the detail", section:"geom", level:"completeness"});
+  lines.push(...reentrantLines(inst,def,0));
   return {lines,warnings};
 }
 /** Section through the assembly: slabs stacked in order, walls standing on

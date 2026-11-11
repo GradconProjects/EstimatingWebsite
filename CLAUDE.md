@@ -3851,6 +3851,27 @@ element families waits on the owner's approval of the pad footing.
   joints & dowels, step-downs) as `parts.reoAlways`, which `buildCard`
   appends AFTER the method-gated block so it is visible and editable under
   "By rate" and "By area" too. `test-reo-extras-kept.mjs` proves it.
+- **Re-entrant corner reinforcement is ONE shared block, in three materials,
+  on slabs, walls and composites** (Grady, 10 Nov 2026: "I WANT rentrant bars
+  to come in trench meshes and sheets also"): `reentrantSection(inst,
+  autoCount, autoNote)` is the ONE renderer and `reentrantLines(inst, def,
+  autoCount)` the ONE pricing — the slab's block (bars / "Trench mesh / mesh
+  strip (cut to width)" / "Mesh sheet piece (SL/RL offcut, L × W)", with the
+  Oct 2026 fields `reentrantOn`, `reentrantQty`, `reentrantMode`,
+  `reentrantDia`, `reentrantPer`, `reentrantLen`, `reentrantStripType`,
+  `reentrantStripW`, `reentrantSheetType`, `reentrantSheetW`,
+  `reentrantLap`) lifted out of `renderSlab` / `computeSlab` unchanged and
+  now also on the **concrete wall**'s Reinforcement tab (the default count is
+  4 × its openings × qty — "openings give N" on the label; a typed count
+  wins) and the **composite assembly** (typed count). Every line is
+  `part: "extra"`, so a by-rate / by-area method keeps it. **A stock-bar
+  choice in the strip selector** (`trenchMeshTypeSel` offers "2 Bar-N16")
+  now prices through `stockBarLayerLine` as plain bar by the metre — before
+  this it went out as an lm "trench product" the bridge could not name.
+  `verify.mjs` pins the single markup, the three materials, the three
+  callers and the stock-bar branch; `test-reentrant.mjs` proves bars /
+  strips / stock bars / sheets on a slab, the wall's 8 corners from two
+  openings and a typed 6, the untick, the composite and the saved fields.
 - **A sheet-mesh line WEIGHS** (26 Oct 2026, Grady's pad footing PF1-3 with
   two layers of SL92 read "0kg reo"): `lineWeightKg` returns final m² ×
   `MESHTYPES[material]` (kg/m²) for an m² Reinforcement line, so the element

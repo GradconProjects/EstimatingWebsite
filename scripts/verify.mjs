@@ -3544,6 +3544,22 @@ check("Project Geometry carries a COUNT: $/no. leads the benchmark rates, sums a
     const cost = computeElementCost(it, defaultRates());
     assert.equal(Math.round(cost.categoryTotals["PRECAST / TILT-UP"] * 100) / 100, Math.round((24 * 15.19 + 6 * 34.09) * 100) / 100, "the band prices the inserts and the grout; the $0 props row and the unquoted supply rows cost nothing");
   }
+  // Re-entrant corner reinforcement is ONE shared block — bars, trench-mesh / mesh strips, sheet pieces — on slabs, walls and composites (Grady, 10 Nov 2026)
+  {
+    const est = fs.readFileSync(new URL("../portal/estimates-app.html", import.meta.url), "utf8");
+    assert.match(est, /function reentrantSection\(inst, autoCount, autoNote\)\{/, "reentrantSection is the ONE renderer");
+    assert.match(est, /function reentrantLines\(inst,def,autoCount\)\{/, "reentrantLines is the ONE pricing");
+    assert.equal((est.match(/Diagonal Re-entrant Corner Bars/g) || []).length, 1, "the block's markup exists once, in the shared renderer");
+    assert.match(est, /\[\["bars","Diagonal bars"\],\["strip","Trench mesh \/ mesh strip \(cut to width\)"\],\["sheet","Mesh sheet piece \(SL\/RL offcut, L × W\)"\]\]/, "the three materials");
+    assert.match(est, /reentrantSection\(inst, reentrantCornerCount\(d\), "sketch shows"\)/, "the slab passes its sketched reflex corners");
+    assert.match(est, /lines\.push\(\.\.\.reentrantLines\(inst,def,reentrantCornerCount\(d\)\)\);/, "the slab prices through the shared pricing");
+    assert.match(est, /const wallOpenCorners = 4\*\(d\.openings\|\|\[\]\)\.reduce/, "a wall's corners default to 4 per opening");
+    assert.match(est, /reentrantSection\(inst, wallOpenCorners, "openings give"\)/, "the wall renders the block");
+    assert.match(est, /lines\.push\(\.\.\.reentrantLines\(inst,def,4\*\(d\.openings\|\|\[\]\)\.reduce/, "the wall prices it");
+    assert.match(est, /reentrantSection\(inst, 0, ""\)/, "the composite renders the block (typed count)");
+    assert.match(est, /lines\.push\(\.\.\.reentrantLines\(inst,def,0\)\);/, "the composite prices it");
+    assert.match(est, /if\(lp\.kind==="bars"\)\{\n\s*\/\/ straight stock bars picked in the strip selector price as plain bar/, "a stock-bar choice in the strip selector is plain bar, never a trench product");
+  }
   // The AI Engine page's AI_TYPES mirror must list exactly the Estimates LIBRARY ids
   const est = fs.readFileSync(new URL("../portal/estimates-app.html", import.meta.url), "utf8");
   const libBlock = est.slice(est.indexOf("const LIBRARY = ["), est.indexOf("];", est.indexOf("const LIBRARY = [")));
