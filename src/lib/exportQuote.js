@@ -19,7 +19,7 @@
  *   can't accept the HTML clipboard format still gets usable text).
  */
 import { FULL_CATALOG, RESOURCE_COLS, CATEGORY_ORDER, SECTION_ORDER } from "../data/catalog.js";
-import { computeElementCost, computeGrandTotal, computeMarginLadder, computeMarginRegister, projectMargin, marginStepsAround, rateKey, rowRate, computeRowTotal, rowContext, getDefaultMargin, getMarginSteps, additionalRowsFor, additionalRowTotal, autoSoilRemoval, autoBlindingConcrete, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, autoSpecialistFees, categoryAppliesTo, elementScope, categoryChargedUnder, scopeLabel, isBlindingProduct, blindingIncluded } from "./costing.js";
+import { computeElementCost, computeGrandTotal, computeMarginLadder, computeMarginRegister, projectMargin, marginStepsAround, rateKey, rowRate, computeRowTotal, rowContext, getDefaultMargin, getMarginSteps, additionalRowsFor, additionalRowTotal, autoSoilRemoval, autoBlindingConcrete, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, autoSpecialistFees, categoryAppliesTo, elementScope, categoryChargedUnder, scopeLabel, isBlindingProduct, blindingIncluded, catalogRate } from "./costing.js";
 import { packageLabelFor, hasPackages, computePackageTotals } from "./packages.js";
 import { GRADCON_LOGO_DATA_URI } from "./logo.js";
 
@@ -57,9 +57,7 @@ export function buildElementLines(item, rates, projectScope) {
       const qKey = rateKey(cat.key, p.name, p.unit);
       const qty = Number(item.qtys[qKey]) || 0;
       if (qty > 0) {
-        const rate = rowRate(item, rates, qKey, {
-          unitCost: p.unitCost ?? 0, unitWeight: p.unitWeight, sheetArea: p.sheetArea, barLength: p.barLength,
-        });
+        const rate = rowRate(item, rates, qKey, catalogRate(p));
         const rowTotal = computeRowTotal(cat, rate, qty, ctx);
         const blindingOut = isBlindingProduct(cat, p) && !blindingIncluded(item);
         materialLines.push(scoped(cat, { label: `${p.label || p.name} (${cat.key}${p.group ? " · " + p.group : ""})${blindingOut ? " — not added (crew sheet)" : ""}`, qty, unit: p.unit, total: blindingOut ? 0 : rowTotal }));

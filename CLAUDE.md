@@ -131,6 +131,29 @@ safety net silently. Keep all cost arithmetic in `lib/costing.js`.
    render blank/undefined pricing. `verify.mjs` has a test for this
    ("falls back to catalog default rather than $0") — keep it passing.
 
+   **The fallback is `catalogRate(p)`, never an object spelled inline**
+   (12 Nov 2026, 41 Wildcoast Road — two windows on the same project showed
+   different totals): each call site used to spell its own subset of the
+   catalog fields and they had drifted — `computeElementCost` left out
+   `barLength`, so a stock bar the saved rates row did not list yet (the R8
+   ligatures, added that day; the live row carried 145 of the 412 products)
+   priced on the card's ROW as whole 6 m bars (13 × $4.33 = $56.29) and in the
+   element TOTAL and band header as metres × $/bar (72.53 × $4.33 = $314.05);
+   and none carried `minQty`, so a pump's "4 hr min" (rule 8) was never billed
+   on an install whose rates predate the pumping rows. `catalogRate(p)` in
+   `costing.js` returns `{unitCost, unitWeight, sheetArea, barLength, minQty}`
+   and is what `defaultRates()`, `computeElementCost`,
+   `computeElementReinforcementTonnes`, `subcontractQuoteLines`,
+   `CategoryBlock`, `PrintQuoteReport`, `exportQuote` and `AdditionalItems`
+   pass. `verify.mjs` prices every product that carries a bar length, a
+   minimum or a sheet area against an EMPTY rates row and requires the same
+   figure as the catalog's, and fails if a call site spells the object again;
+   `test-rate-fallback.mjs` proves the row, the band header and the element
+   total agree in the browser. (Read-only check of the 32 live projects on
+   the day: one element moved, that Strip Footings, by −$257.76; no pinned
+   project moved.) **A new catalog field a row is priced by goes into
+   `catalogRate` and nowhere else.**
+
 7. **Concrete delivery fees are auto-applied, per the Holcim schedule.**
    Three CONCRETE rows cost themselves from the element's poured volume
    rather than being typed: **Minimum cartage** (the poured volume is

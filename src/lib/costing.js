@@ -87,7 +87,7 @@ export function defaultRates() {
   const r = {};
   FULL_CATALOG.forEach((cat) => {
     cat.products.forEach((p) => {
-      r[rateKey(cat.key, p.name, p.unit)] = { unitCost: p.unitCost ?? 0, unitWeight: p.unitWeight, sheetArea: p.sheetArea, barLength: p.barLength, minQty: p.minQty };
+      r[rateKey(cat.key, p.name, p.unit)] = catalogRate(p);
     });
   });
   RESOURCE_COLS.forEach((res) => {
@@ -108,6 +108,23 @@ export function defaultRates() {
  */
 export function lookupRate(rates, key, fallback) {
   return rates[key] || fallback;
+}
+
+/**
+ * The catalog's own rate for a product — the ONE fallback every per-row rate
+ * read passes. It carries EVERY field a row is priced by: the $, the weight,
+ * the sheet area, the bar length and the contract minimum. Before 12 Nov 2026
+ * each call site spelled its own subset, and they had drifted:
+ * `computeElementCost` left out `barLength`, so a stock bar the saved rates
+ * row did not list yet (the R8 ligatures, added that day) priced on the card's
+ * ROW as whole 6 m bars (13 × $4.33 = $56.29) and in the element TOTAL as
+ * metres × $/bar (72.53 × $4.33 = $314.05) — 41 Wildcoast Road; and none of
+ * them carried `minQty`, so a pump's "4 hr min" was never billed on an install
+ * whose saved rates predate the pumping rows. Never spell this object inline.
+ */
+export function catalogRate(p) {
+  if (!p) return { unitCost: 0 };
+  return { unitCost: p.unitCost ?? 0, unitWeight: p.unitWeight, sheetArea: p.sheetArea, barLength: p.barLength, minQty: p.minQty };
 }
 
 /**
@@ -530,7 +547,7 @@ export function computeElementCost(item, rates, projectScope) {
       const qKey = rateKey(cat.key, p.name, p.unit);
       const qty = Number(item.qtys[qKey]) || 0;
       if (qty > 0) {
-        const rate = rowRate(item, rates, qKey, { unitCost: p.unitCost ?? 0, unitWeight: p.unitWeight, sheetArea: p.sheetArea });
+        const rate = rowRate(item, rates, qKey, catalogRate(p));
         const rowTotal = computeRowTotal(cat, rate, qty, ctx);
         if (isBlindingProduct(cat, p) && !blindingIn) { excludedBlinding += rowTotal; return; } // blinding left out on the crew sheet: typed, not charged
         catTotal += rowTotal;
@@ -658,7 +675,7 @@ export function computeElementReinforcementTonnes(item, rates) {
       const qKey = rateKey(cat.key, p.name, p.unit);
       const qty = Number(item.qtys[qKey]) || 0;
       if (qty <= 0) return;
-      const rate = rowRate(item, rates, qKey, { unitCost: p.unitCost ?? 0, unitWeight: p.unitWeight, sheetArea: p.sheetArea, barLength: p.barLength });
+      const rate = rowRate(item, rates, qKey, catalogRate(p));
       if (rate.unitWeight == null) return;
       const sheets = cat.areaBasis && rate.sheetArea ? Math.ceil(qty / rate.sheetArea) : null;
       const bars = cat.lengthBasis && rate.barLength ? Math.ceil(qty / rate.barLength) : null;
@@ -1314,7 +1331,7 @@ export function subcontractQuoteLines(item, rates, projectScope) {
     const key = rateKey(cat.key, p.name, p.unit);
     const qty = Number(item.qtys && item.qtys[key]) || 0;
     if (!(qty > 0)) return;
-    const cost = computeRowTotal(cat, rowRate(item, rates, key, { unitCost: p.unitCost ?? 0 }), qty, ctx);
+    const cost = computeRowTotal(cat, rowRate(item, rates, key, catalogRate(p)), qty, ctx);
     if (cost > 0) out.push({ key, name: productLabel(p), cost });
   });
   return out;

@@ -3,7 +3,7 @@ import {
 } from "../data/catalog.js";
 import { markupSrc } from "../lib/markupStore.js";
 import {
-  computeElementCost, computeGrandTotal, computeMarginLadder, computeMarginRegister, projectMargin, marginStepsAround, rateKey, rowRate, computeRowTotal, rowContext, money, money2, getDefaultMargin, getMarginSteps, autoSoilRemoval, autoBlindingConcrete, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, additionalRowsFor, additionalRowTotal, autoSpecialistFees, categoryAppliesTo, computeExcludedTotals, categoryChargedUnder, scopeLabel, isProvisional, computeProvisionalTotals, isBlindingProduct, blindingIncluded } from "../lib/costing.js";
+  computeElementCost, computeGrandTotal, computeMarginLadder, computeMarginRegister, projectMargin, marginStepsAround, rateKey, rowRate, computeRowTotal, rowContext, money, money2, getDefaultMargin, getMarginSteps, autoSoilRemoval, autoBlindingConcrete, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, additionalRowsFor, additionalRowTotal, autoSpecialistFees, categoryAppliesTo, computeExcludedTotals, categoryChargedUnder, scopeLabel, isProvisional, computeProvisionalTotals, isBlindingProduct, blindingIncluded, catalogRate } from "../lib/costing.js";
 import { itemsByPackage, hasPackages, computePackageTotals, packageName, packageColour, inkFor } from "../lib/packages.js";
 import { GRADCON_LOGO_DATA_URI } from "../lib/logo.js";
 
@@ -289,7 +289,7 @@ function ElementReportBlock({ item, rates, projectScope }) {
       const qKey = rateKey(cat.key, p.name, p.unit);
       const qty = Number(item.qtys[qKey]) || 0;
       if (qty > 0) {
-        const rate = rowRate(item, rates, qKey, { unitCost: p.unitCost ?? 0, unitWeight: p.unitWeight, sheetArea: p.sheetArea, barLength: p.barLength });
+        const rate = rowRate(item, rates, qKey, catalogRate(p));
         const rowTotal = computeRowTotal(cat, rate, qty, ctx);
         const blindingOut = isBlindingProduct(cat, p) && !blindingIncluded(item);
         materialLines.push({ key: qKey, label: `${p.label || p.name} (${cat.key}${p.group ? " · " + p.group : ""})${blindingOut ? " — not added (crew sheet)" : ""}`, qty, unit: p.unit, total: blindingOut ? 0 : rowTotal });

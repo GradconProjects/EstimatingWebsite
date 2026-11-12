@@ -3658,6 +3658,42 @@ check("Project Geometry carries a COUNT: $/no. leads the benchmark rates, sums a
     assert.equal(bp.qtys[rateKey("OTHER ALLOWANCES", "Excavation", "m3")], undefined, "a bored pier's spoil is the rig's — not put on the Excavation row");
     assert.ok(r2.flags.some((f) => /BP1.*Bored spoil/.test(f)), "and it stays flagged");
   }
+  // ONE catalog fallback for every per-row rate read (12 Nov 2026, 41 Wildcoast Road: the R8 ligature stock bar priced as whole 6 m bars on the
+  // card's row and as metres × $/bar in the element total, because computeElementCost's inline fallback left out barLength and the saved rates
+  // row did not list the new product; and no fallback carried minQty, so a pump minimum was never billed on an install whose rates predate it)
+  {
+    const C = await import("../src/lib/costing.js");
+    assert.deepEqual(C.catalogRate({ unitCost: 4.33, unitWeight: 2.37, sheetArea: undefined, barLength: 6, minQty: undefined }), { unitCost: 4.33, unitWeight: 2.37, sheetArea: undefined, barLength: 6, minQty: undefined });
+    assert.deepEqual(C.catalogRate(null), { unitCost: 0 });
+    const mk = () => newElementItem(ELEMENT_TYPES.find((t) => t.id === "strip_footings"));
+    // a saved rates row that lists NONE of the products prices exactly as the catalog does — for every product with a bar length, a minimum or a sheet area
+    let checked = 0;
+    for (const cat of FULL_CATALOG) for (const p of cat.products) {
+      if (!(p.barLength || p.minQty || p.sheetArea) || p.unit === "quote") continue;
+      const typesFor = cat.visibleFor ? ELEMENT_TYPES.filter((t) => cat.visibleFor.includes(t.category)) : [ELEMENT_TYPES.find((t) => t.id === "strip_footings")];
+      const it = newElementItem(typesFor[0]); it.qtys[rateKey(cat.key, p.name, p.unit)] = 1.5;
+      const withDefaults = computeElementCost(it, defaultRates()).categoryTotals[cat.key], withNone = computeElementCost(it, {}).categoryTotals[cat.key];
+      assert.ok(withDefaults > 0 || !(p.unitCost > 0), `${p.name} prices`);
+      assert.equal(Math.round(withNone * 100), Math.round(withDefaults * 100), `${cat.key} › ${p.name}: a rates row that does not list the product prices as the catalog (bar length / minimum / sheet area kept)`);
+      checked++;
+    }
+    assert.ok(checked >= 30, `the fallback is checked on every special product (${checked})`);
+    // the case itself: 72.53 m of R8 ligatures = 13 whole bars × $4.33 = $56.29, never 72.53 × $4.33 = $314.05
+    const sf = mk(); sf.qtys[rateKey("STOCK BAR", "R8 Ligatures - 6.0m length", "m")] = 72.53;
+    assert.equal(Math.round(computeElementCost(sf, {}).categoryTotals["STOCK BAR"] * 100) / 100, 56.29);
+    assert.ok(Math.abs(C.computeElementReinforcementTonnes(sf, {}) - 13 * 2.37 / 1000) < 1e-9, "…and it weighs 13 bars");
+    // a pump's contract minimum bills on a rates row that never listed the pump: 1 hour typed = the 4 hour minimum
+    const pump = FULL_CATALOG.find((c) => c.key === "CONCRETE PUMPING").products.find((p) => p.minQty === 4 && p.unitCost > 0);
+    const pi2 = mk(); pi2.qtys[rateKey("CONCRETE PUMPING", pump.name, pump.unit)] = 1;
+    assert.equal(computeElementCost(pi2, {}).categoryTotals["CONCRETE PUMPING"], 4 * pump.unitCost, "1 hr on a 4 hr-min pump bills 4 hours");
+    // no call site spells the fallback inline any more
+    for (const f of ["../src/lib/costing.js", "../src/lib/exportQuote.js", "../src/components/CategoryBlock.jsx", "../src/components/PrintQuoteReport.jsx", "../src/components/AdditionalItems.jsx"]) {
+      const src = fs.readFileSync(new URL(f, import.meta.url), "utf8");
+      const inline = (src.match(/unitWeight: p\.unitWeight/g) || []).length;
+      assert.equal(inline, f.endsWith("costing.js") ? 1 : 0, `${f}: the catalog fallback is catalogRate(p), spelled once`);
+      assert.ok(/catalogRate\(p\)/.test(src), `${f} reads the fallback through catalogRate`);
+    }
+  }
   // The AI Engine page's AI_TYPES mirror must list exactly the Estimates LIBRARY ids
   const est = fs.readFileSync(new URL("../portal/estimates-app.html", import.meta.url), "utf8");
   const libBlock = est.slice(est.indexOf("const LIBRARY = ["), est.indexOf("];", est.indexOf("const LIBRARY = [")));

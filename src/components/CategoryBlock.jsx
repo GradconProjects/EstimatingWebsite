@@ -1,6 +1,6 @@
 import { Fragment } from "react";
 import { ChevronDown, ChevronRight, Plus, X } from "lucide-react";
-import { rateKey, money2, rowRate, computeRowTotal, rowContext, autoSoilRemoval, autoBlindingConcrete, blindingBuildUp, isQuantityOnlyKey, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, additionalRowsFor, additionalRowTotal, autoPigmentWashout, autoSpecialistShortLoad, productLabel, visibleProducts, isBlindingProduct, blindingIncluded } from "../lib/costing.js";
+import { rateKey, money2, rowRate, computeRowTotal, rowContext, autoSoilRemoval, autoBlindingConcrete, blindingBuildUp, isQuantityOnlyKey, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, additionalRowsFor, additionalRowTotal, autoPigmentWashout, autoSpecialistShortLoad, productLabel, visibleProducts, isBlindingProduct, blindingIncluded, catalogRate } from "../lib/costing.js";
 import { SPECIALIST_CONCRETE_KEY } from "../data/catalog.js";
 import { NumInput } from "./atoms.jsx";
 import { validityState, validityLabel, formatValidUntil } from "../lib/rateValidity.js";
@@ -100,7 +100,7 @@ export default function CategoryBlock({ cat, item, rates, onQtyChange, entryTone
                 const groupHead = p.group && (pi === 0 || list[pi - 1].group !== p.group) ? p.group : null;
                 // The shared rate with this element's own figure laid over it —
                 // a subcontract "quote" row's amount belongs to THIS project.
-                const rate = rowRate(item, rates, qKey, { unitCost: p.unitCost ?? 0, unitWeight: p.unitWeight, sheetArea: p.sheetArea, barLength: p.barLength });
+                const rate = rowRate(item, rates, qKey, catalogRate(p));
                 const pinnedHere = !!(item.rateOverrides && item.rateOverrides[qKey]);
                 const isQuoteRow = p.unit === "quote";
                 // A quote row types its figure onto the element, never the shared rate.

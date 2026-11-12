@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ChevronDown, ChevronRight, Plus, Trash2 } from "lucide-react";
 import { FULL_CATALOG, RESOURCE_COLS } from "../data/catalog.js";
-import { money2, rateKey, lookupRate, additionalRowsFor } from "../lib/costing.js";
+import { money2, rateKey, lookupRate, additionalRowsFor, catalogRate } from "../lib/costing.js";
 import { NumInput } from "./atoms.jsx";
 
 export default function AdditionalItems({ item, rates, onAdd, onRemove, onChange, onFill, total, entryTone }) {
@@ -23,7 +23,7 @@ export default function AdditionalItems({ item, rates, onAdd, onRemove, onChange
     if (kind === "m") {
       const cat = FULL_CATALOG[i];
       const p = cat.products[j];
-      const rate = lookupRate(rates, rateKey(cat.key, p.name, p.unit), { unitCost: p.unitCost ?? 0 });
+      const rate = lookupRate(rates, rateKey(cat.key, p.name, p.unit), catalogRate(p));
       onFill(id, { name: p.name, unit: p.unit || "", rate: rate.unitCost ?? 0 });
     } else {
       const res = RESOURCE_COLS[i];
