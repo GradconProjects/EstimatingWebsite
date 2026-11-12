@@ -1375,6 +1375,39 @@ and verify-covered. Rules:
    once); the banner's "Turn live prefill on" / "Prefill crew sheets now" sets
    it back. `applyHandover` / `shouldAutoHandover` remain the one-shot form
    (blank cells only) for a project the live rule does not cover.
+   **ONE writer at a time** (12 Nov 2026, 41 Wildcoast Road — Grady: "entering
+   figures here disappears from no3 … the entered value is flashing on and
+   off"): a tab left open on a build from before 9 Nov did not know a precast
+   panel never digs, so it kept writing "Excavation & prep base: 4 crew days,
+   1 excavator day" onto the precast element while the current build kept
+   clearing them; the row was re-saved every few seconds and each copy that
+   arrived replaced what was being typed (the live row showed the two cells
+   and the record's 62 / 64 entries flipping). Three guards, all
+   verify-covered: (a) `HANDOVER_RULES_VER` is stamped on the record
+   (`handover.rules`) and `liveHandoverApplies(quote, {stale})` stands down
+   when the record's rules are NEWER than the tab's — **bump it whenever a
+   band, a category set (`NO_DIG` …) or a row rule changes what the plan
+   writes**; (b) builds from before the guard read only `handoverLive`, so the
+   live pass stores `handoverLive: false` beside `handoverMode: "live"`
+   (`HANDOVER_LIVE_ON`; Undo stores `HANDOVER_LIVE_OFF`) and every such tab
+   stops re-planning the moment it receives the project —
+   `handoverLiveOn(quote)` is the ONE reading of the switch (the mode when
+   set, else the old flag), never `quote.handoverLive` inline; a project with
+   no element is never stamped (a blank draft stays a draft); (c) the editor
+   runs the pass once when the project opens and then after a LOCAL edit only
+   — `setQuote` in `ProjectEditor` counts every write made in this tab
+   (`localEdits`), the hook's own remote apply and the pass's own write
+   (`setQuoteStored`) are not counted, and `handoverRanFor` skips a run when
+   nothing was typed here since the last one — and never in a tab the shell
+   has found to be on an older build (`window.gradconStaleBuild`, set by the
+   stale-build check; `staleBuild()` in App.jsx reads the parent window).
+   **An idle tab must never rewrite a project in reaction to someone else's
+   save** — a new rule-based recompute follows the same pattern.
+   `test-two-builds.mjs` runs the REAL pre-9-Nov `handover.js` against the
+   build before the fix (12 arrivals, 12 writes, the cells flipping) and the
+   fixed build (the old tab stands down, typed figures hold through six round
+   trips); `probe-crew-vanish.mjs` types into 180 crew cells of three elements
+   and samples them for ten seconds.
 2. **Blank cells only, every cell stays an ordinary typed cell.**
    `handoverPlan` writes only where the crew cell is blank, renames only a
    blank "Additional labour / plant" row, sets the Steel fix tonnage only

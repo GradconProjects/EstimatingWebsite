@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { Settings2, ArrowLeft, Printer, ListPlus, FileSpreadsheet, LayoutDashboard, Radar, FolderOpen, History, HardDriveDownload, AlertTriangle, MapPin, Loader2, Mail , Percent } from "lucide-react";
 import { PackagesBar, PackageBand } from "./components/PackagesBar.jsx";
 import { itemsByPackage, hasPackages, packageList, newPackage, addPackagePatch, renamePackagePatch, removePackagePatch, movePackagePatch, assignElementPatch, packageMarginPatch, computePackageTotals, packageColour, packageColourPatch, packageName, packageAssumptions, packageAssumptionsPatch, itemsInPackages } from "./lib/packages.js";
@@ -53,7 +53,7 @@ import TenderQuoteReport from "./components/TenderQuoteReport.jsx";
 import ExportExcelModal from "./components/ExportExcelModal.jsx";
 import ImportFlagsBanner from "./components/ImportFlagsBanner.jsx";
 import HandoverBanner from "./components/HandoverBanner.jsx";
-import { applyHandover, liveHandover, liveHandoverApplies, undoHandover } from "./lib/handover.js";
+import { applyHandover, liveHandover, liveHandoverApplies, undoHandover, HANDOVER_LIVE_ON } from "./lib/handover.js";
 import { needsOffload, offloadMarkups, applyOffload, markupStoreEnabled } from "./lib/markupStore.js";
 import ManageElementTypesModal from "./components/ManageElementTypesModal.jsx";
 import ProjectGeometryPanel from "./components/ProjectGeometryPanel.jsx";
@@ -575,8 +575,23 @@ export default function App() {
   );
 }
 
+// The shell's stale-build check (portal-shell.html) sets this on ITS window
+// when a newer build is live; the Quotes frame shares the origin, so it can
+// read it. A tab on an older build never runs the rule-based crew prefill.
+function staleBuild() {
+  try { return !!(window.parent && window.parent.gradconStaleBuild); } catch { return false; }
+}
+
 function ProjectEditor({ project, allProjects, rates: liveRates, setRates: setLiveRates, ratesStatus, rateChanges, saveProjectsNow, onBack, isDraft, onPromote, elementTypes, categoryOrder, sectionOrder, customTypes, setCustomTypes }) {
-  const [quote, setQuote, quoteStatus, saveQuoteNow, quoteLoaded] = useStoredState(project.storageKey, blankQuote());
+  const [quote, setQuoteStored, quoteStatus, saveQuoteNow, quoteLoaded] = useStoredState(project.storageKey, blankQuote());
+  // Every write made IN THIS TAB goes through setQuote and is counted; a copy
+  // that arrives from another device (the hook's own remote apply) is not.
+  // The live handover prefill reads the count, so it re-plans after a local
+  // edit only — an idle tab never rewrites a project in reaction to someone
+  // else's save (12 Nov 2026: two builds re-planning at each other wiped the
+  // figures being typed).
+  const localEdits = useRef(0);
+  const setQuote = useCallback((updater) => { localEdits.current += 1; setQuoteStored(updater); }, [setQuoteStored]);
 
   /* ---- Pinned rates on a finished project (see lib/rateFreeze.js) ----
    * A project in a locked status costs off ITS OWN copy of the rates, taken
@@ -607,12 +622,12 @@ function ProjectEditor({ project, allProjects, rates: liveRates, setRates: setLi
   // status test (open work, live prefill, rates pin) reads the current name.
   useEffect(() => {
     if (quoteStatus === "loading") return;
-    if (quote.status && normalizeStatus(quote.status) !== quote.status) setQuote((q) => (normalizeStatus(q.status) !== q.status ? { ...q, status: normalizeStatus(q.status) } : q));
+    if (quote.status && normalizeStatus(quote.status) !== quote.status) setQuoteStored((q) => (normalizeStatus(q.status) !== q.status ? { ...q, status: normalizeStatus(q.status) } : q));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quoteStatus, quote.status]);
   useEffect(() => {
     if (quoteStatus === "loading" || ratesStatus === "loading" || ratesStatus === "syncing") return;
-    if (needsFreeze(quote)) setQuote((q) => (needsFreeze(q) ? { ...q, ratesFrozen: freezeRates(effectiveRates(q, liveRates), q.status) } : q));
+    if (needsFreeze(quote)) setQuoteStored((q) => (needsFreeze(q) ? { ...q, ratesFrozen: freezeRates(effectiveRates(q, liveRates), q.status) } : q));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quoteStatus, ratesStatus, quote.status]);
   // The LIVE handover prefill (lib/handover.js; Grady, 13 Oct 2026: "i want
@@ -624,12 +639,20 @@ function ProjectEditor({ project, allProjects, rates: liveRates, setRates: setLi
   // the same quote when nothing moves, so this cannot loop. The editor only,
   // never from a Dashboard summary (those copies must not write items); only
   // on a working status (liveHandoverApplies), never on a quote that went out.
+  // ONE writer at a time (12 Nov 2026): the pass runs once when the project
+  // opens and then only after an edit made in THIS tab (localEdits) — never
+  // in reaction to a copy that arrived from another device — and never in a
+  // tab the shell has found to be on an older build (staleBuild).
+  const handoverRanFor = useRef(-1);
   useEffect(() => {
     if (quoteStatus === "loading" || ratesStatus === "loading" || ratesStatus === "syncing") return;
-    if (!liveHandoverApplies(quote)) return;
-    setQuote((q) => (liveHandoverApplies(q) ? liveHandover(q, effectiveRates(q, liveRates)) : q));
+    const stale = staleBuild();
+    if (!liveHandoverApplies(quote, { stale })) return;
+    if (handoverRanFor.current === localEdits.current) return; // nothing typed here since the last pass
+    handoverRanFor.current = localEdits.current;
+    setQuoteStored((q) => (liveHandoverApplies(q, { stale }) ? liveHandover(q, effectiveRates(q, liveRates)) : q));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [quoteStatus, ratesStatus, quote.status, quote.items, quote.handoverLive, quote.completedAt, liveRates]);
+  }, [quoteStatus, ratesStatus, quote.status, quote.items, quote.handoverMode, quote.handoverLive, quote.completedAt, liveRates]);
   // Markup drawings go to the bucket, never into the row (lib/markupStore.js):
   // the moment the row has settled — and again whenever a drawing with its
   // bytes inline appears (just dropped onto a card) — every such markup is
@@ -1407,7 +1430,7 @@ function ProjectEditor({ project, allProjects, rates: liveRates, setRates: setLi
             quote={quote}
             items={items}
             elementTypes={elementTypes}
-            onPrefill={() => { setQuote((q) => (liveHandoverApplies({ ...q, handoverLive: true }) ? liveHandover({ ...q, handoverLive: true }, effectiveRates(q, liveRates)) : applyHandover(q, effectiveRates(q, liveRates)))); note("Crew sheets prefilled from the handover bands — live from here on; every figure stays editable"); }}
+            onPrefill={() => { setQuote((q) => (liveHandoverApplies({ ...q, ...HANDOVER_LIVE_ON }, { stale: staleBuild() }) ? liveHandover({ ...q, ...HANDOVER_LIVE_ON }, effectiveRates(q, liveRates)) : applyHandover(q, effectiveRates(q, liveRates)))); note("Crew sheets prefilled from the handover bands — live from here on; every figure stays editable"); }}
             onUndo={() => { setQuote((q) => undoHandover(q)); note("Handover prefill undone and switched off — cells you changed were kept"); }}
             onRenameItem={(id, label) => setItems((its) => its.map((it) => (it.id === id ? { ...it, label } : it)))}
             onSetOnCosts={(overheadPct, contingencyPct) => setQuote((q) => ({ ...q, overheadPct, contingencyPct }))}

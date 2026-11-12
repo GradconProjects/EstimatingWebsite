@@ -2647,6 +2647,7 @@
       const live = shaOf(m[1]);
       if(live && live !== shaOf(RUNNING)){
         shown=true;
+        window.gradconStaleBuild = true; // the Quotes frame reads this: a tab on an older build never re-plans the crew sheets (it may hold the old rules)
         document.getElementById("stale-build-text").textContent = `A newer build (${live}) is live — this tab is still running ${shaOf(RUNNING)}. Reload to get the current version; everything is saved automatically first.`;
         document.getElementById("stale-build").style.display="flex";
       }

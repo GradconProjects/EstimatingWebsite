@@ -229,6 +229,36 @@ export function applyHandover(quote, rates, at) {
   return { ...quote, items, handover };
 }
 
+/* ---- ONE writer at a time (12 Nov 2026, 41 Wildcoast Road) ----
+ * A tab left open on a build from before 9 Nov did not know a precast panel
+ * never digs, so it kept writing "Excavation & prep base: 4 crew days, 1
+ * excavator day" onto the precast element; the current build kept clearing
+ * them. Each bounce re-saved the whole project through the cloud, and every
+ * copy that arrived replaced what was being typed — Grady: "the entered value
+ * is flashing on and off". Three guards, so two builds can never fight again:
+ *  - `HANDOVER_RULES_VER` is stamped on the record (`handover.rules`). A tab
+ *    whose own rules are OLDER than the record's stands down. BUMP IT whenever
+ *    a band, a category set (NO_DIG …) or a row rule changes what the plan
+ *    writes.
+ *  - builds from before this guard read only `handoverLive`: the live pass now
+ *    stores `handoverLive: false` beside `handoverMode: "live"`, so every such
+ *    tab stops re-planning the moment it receives the project.
+ *    `handoverLiveOn(quote)` is the ONE reading of the switch — the mode when
+ *    it is set, else the old flag (a quote from before the mode).
+ *  - the editor runs the pass after a LOCAL edit only (App.jsx), never in
+ *    reaction to a copy that arrived from another device. */
+export const HANDOVER_RULES_VER = 2;
+export function handoverLiveOn(quote) {
+  if (!quote) return false;
+  if (quote.handoverMode === "live") return true;
+  if (quote.handoverMode === "off") return false;
+  return quote.handoverLive !== false;
+}
+/** What switching the live prefill ON stores (older builds read the flag and stand down). */
+export const HANDOVER_LIVE_ON = { handoverLive: false, handoverMode: "live" };
+/** …and OFF (Undo). */
+export const HANDOVER_LIVE_OFF = { handoverLive: false, handoverMode: "off" };
+
 /** The statuses a project is worked in: the live prefill runs on these only
  * (a quote that has gone out, won, lost, missed or on hold never re-prices
  * itself). */
@@ -237,8 +267,10 @@ export const LIVE_HANDOVER_STATUSES = new Set(["Queued", "Taking Off", "Estimati
  * (Undo switches it off), a working status, and — on a finished status — a
  * project completed on or after HANDOVER_SINCE (one Grady worked through by
  * hand before the prefill existed is never touched on its own). */
-export function liveHandoverApplies(quote) {
-  if (!quote || quote.handoverLive === false) return false;
+export function liveHandoverApplies(quote, opts) {
+  if (!quote || !handoverLiveOn(quote)) return false;
+  if (opts && opts.stale) return false; // a tab that knows a newer build is live never re-plans (its rules may be the old ones)
+  if (quote.handover && Number(quote.handover.rules) > HANDOVER_RULES_VER) return false; // the record was planned by NEWER rules than this tab's — stand down
   const status = quote.status || "Queued";
   if (!LIVE_HANDOVER_STATUSES.has(status)) return false;
   if (status === "Completed Estimating" || status === "Quoting") { const day = quote.completedAt || ""; if (!(typeof day === "string" && day >= HANDOVER_SINCE)) return false; }
@@ -314,11 +346,14 @@ export function liveHandover(quote, rates, at) {
     changed = true;
     return { ...item, tasks, qtys, steelMode };
   });
-  const handover = { at: prev ? prev.at : at || new Date().toISOString(), live: true, cells: plan.cells.concat(clearedCells), rows: plan.rows, qtys: plan.qtys.concat(clearedQtys), steel: plan.steel, addedRows };
+  const handover = { at: prev ? prev.at : at || new Date().toISOString(), live: true, rules: HANDOVER_RULES_VER, cells: plan.cells.concat(clearedCells), rows: plan.rows, qtys: plan.qtys.concat(clearedQtys), steel: plan.steel, addedRows };
   const strip = (h) => h && JSON.stringify({ ...h, at: null, updatedAt: null });
-  if (!changed && prev && strip(prev) === strip(handover)) return quote;
-  if (!changed && !prev && !handover.cells.length && !handover.rows.length && !handover.qtys.length) return quote; // nothing to prefill yet — no record either
-  return { ...quote, items, handover: { ...handover, updatedAt: at || new Date().toISOString() } };
+  // the switch as older builds must read it: they stand down on handoverLive === false
+  const stamped = quote.handoverMode === HANDOVER_LIVE_ON.handoverMode && quote.handoverLive === HANDOVER_LIVE_ON.handoverLive;
+  if (!changed && prev && strip(prev) === strip(handover)) return stamped ? quote : { ...quote, ...HANDOVER_LIVE_ON };
+  // nothing to prefill yet — no record either. A project with no element is returned untouched (a blank draft is never written); one with elements is stamped once, so an older build stands down on it too
+  if (!changed && !prev && !handover.cells.length && !handover.rows.length && !handover.qtys.length) return stamped || !(quote.items || []).length ? quote : { ...quote, ...HANDOVER_LIVE_ON };
+  return { ...quote, ...HANDOVER_LIVE_ON, items, handover: { ...handover, updatedAt: at || new Date().toISOString() } };
 }
 
 /** Clear what the pass filled — only cells, rows and quantities that STILL
@@ -343,7 +378,7 @@ export function undoHandover(quote) {
     const steelMode = steel && item.steelMode === steel.mode ? undefined : item.steelMode;
     return { ...item, tasks, qtys, steelMode };
   });
-  return { ...quote, items, handover: { ...h, undoneAt: new Date().toISOString() }, handoverLive: false }; // undo also switches the live prefill off, or it would refill at once
+  return { ...quote, items, handover: { ...h, undoneAt: new Date().toISOString() }, ...HANDOVER_LIVE_OFF }; // undo also switches the live prefill off, or it would refill at once
 }
 
 /** The cells on one element the pass filled and that still hold its figure —

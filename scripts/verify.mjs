@@ -2040,7 +2040,7 @@ check("LIVE handover prefill (Grady, 13 Oct 2026): the crew sheets follow the qu
   const cell = (it, re, key) => (it.tasks.find((t) => re.test(t.name)) || { qtys: {} }).qtys[key];
   const raft = newElementItem(T("raft_foundation")); raft.label = "Raft";
   const q0 = { items: [raft], status: "Estimating" };
-  assert.strictEqual(HO.liveHandover(q0, rates, "t0"), q0, "nothing poured, nothing tied — nothing written, no record");
+  { const s0 = HO.liveHandover(q0, rates, "t0"); assert.strictEqual(s0.items, q0.items, "nothing poured, nothing tied — no cell written"); assert.equal(s0.handover, undefined, "…and no record"); assert.equal(s0.handoverMode, "live"); assert.strictEqual(HO.liveHandover(s0, rates, "t0"), s0, "stamped once, then the same object"); }
   raft.qtys[conc] = 10; raft.qtys[bar] = 500;
   const q1 = HO.liveHandover({ items: [raft], status: "Estimating" }, rates, "t1");
   const r1 = q1.items[0];
@@ -2064,12 +2064,46 @@ check("LIVE handover prefill (Grady, 13 Oct 2026): the crew sheets follow the qu
   const q8 = HO.liveHandover({ ...q7, items: q7.items.map((it) => ({ ...it, qtys: { ...it.qtys, [conc]: "", [bar]: "" } })) }, rates, "t6"); const r8 = q8.items[0];
   assert.equal(cell(r8, /pour/i, "concreter_day"), 12); assert.equal(cell(r8, /excavat/i, "excavator_day"), undefined); assert.ok(r8.tasks.filter((t) => /Delivery of materials|^Boxing$/.test(t.name)).every((t) => t.qtys.concreter_day === undefined || t.qtys.concreter_day === ""), "the delivery and boxing rows stay (Grady's own) with their prefilled cells cleared"); assert.equal(q8.handover.cells.filter((c) => !c.cleared).length, 0);
   // undo switches the live prefill off; where it runs
-  const u = HO.undoHandover(q7); assert.equal(u.handoverLive, false); assert.ok(u.handover.undoneAt);
+  const u = HO.undoHandover(q7); assert.equal(u.handoverLive, false); assert.equal(u.handoverMode, "off"); assert.ok(!HO.handoverLiveOn(u)); assert.ok(u.handover.undoneAt);
+  // ONE writer at a time (12 Nov 2026, 41 Wildcoast Road: a tab on a pre-9-Nov build and the current one re-planned a precast element at each other and wiped the figures being typed)
+  {
+    assert.equal(HO.HANDOVER_RULES_VER, 2);
+    // the live pass stamps the rules version and stores the switch the way an older build reads as OFF
+    assert.equal(q7.handover.rules, HO.HANDOVER_RULES_VER); assert.equal(q7.handoverLive, false); assert.equal(q7.handoverMode, "live"); assert.ok(HO.handoverLiveOn(q7) && HO.liveHandoverApplies({ ...q7, status: "Estimating" }));
+    // …so a build from before the guard (it reads only `handoverLive !== false`) stands down on that copy
+    const oldBuildApplies = (q) => !(!q || q.handoverLive === false);
+    assert.ok(!oldBuildApplies(q7), "an older build never re-plans a project the current build has touched");
+    // the ONE reading of the switch: the mode when set, else the old flag
+    assert.ok(HO.handoverLiveOn({}) && HO.handoverLiveOn({ handoverLive: true }) && !HO.handoverLiveOn({ handoverLive: false }) && HO.handoverLiveOn({ handoverLive: false, handoverMode: "live" }) && !HO.handoverLiveOn({ handoverLive: true, handoverMode: "off" }));
+    // a record planned by NEWER rules, or a tab that knows it is stale: this tab stands down
+    assert.ok(!HO.liveHandoverApplies({ status: "Estimating", handover: { rules: HO.HANDOVER_RULES_VER + 1 } }), "a newer record is never re-planned by older rules");
+    assert.ok(HO.liveHandoverApplies({ status: "Estimating", handover: { rules: HO.HANDOVER_RULES_VER } }) && HO.liveHandoverApplies({ status: "Estimating", handover: {} }));
+    assert.ok(!HO.liveHandoverApplies({ status: "Estimating" }, { stale: true }), "a tab on an older build never re-plans");
+    // a settled project is returned as the SAME object (no write), and one with nothing to prefill is still stamped once
+    assert.equal(HO.liveHandover(q7, rates, "t9"), q7, "a second pass over a settled project writes nothing");
+    const blank0 = { status: "Estimating", items: [] }; assert.equal(HO.liveHandover(blank0, rates, "t9"), blank0, "a project with no element is never written (a blank draft stays a draft)");
+    // a precast panel never digs: the excavation row takes no crew from the pass, and figures typed on it stay
+    const pt = ELEMENT_TYPES.find((t) => t.id === "precast_wall_panel"); const pi = newElementItem(pt); pi.qtys[rateKey("CONCRETE", "40 mpa", "m3")] = 29.2;
+    const p1 = HO.liveHandover({ status: "Estimating", items: [pi] }, rates, "p1"); const excRow = (q) => q.items[0].tasks.find((t) => /excavat/i.test(t.name));
+    assert.deepEqual(excRow(p1).qtys, {}, "no dig on a precast panel");
+    const typedQ = { ...p1, items: p1.items.map((it) => ({ ...it, tasks: it.tasks.map((t) => (/excavat/i.test(t.name) ? { ...t, qty: 12, qtys: { concreter_day: 3, excavator_day: 2 } } : t)) })) };
+    const p2 = HO.liveHandover(typedQ, rates, "p2"); assert.deepEqual(excRow(p2).qtys, { concreter_day: 3, excavator_day: 2 }, "typed figures on a row the pass does not plan are the estimator's"); assert.equal(excRow(p2).qty, 12);
+    // cells an older build wrote there (recorded as the pass's own) are cleared ONCE, and the project then settles
+    const foreign = { ...p1, items: p1.items.map((it) => ({ ...it, tasks: it.tasks.map((t) => (/excavat/i.test(t.name) ? { ...t, qtys: { concreter_day: 4, excavator_day: 1 } } : t)) })), handover: { ...p1.handover, rules: undefined, cells: p1.handover.cells.concat([{ itemId: pi.id, taskId: excRow(p1).id, key: "concreter_day", value: 4 }, { itemId: pi.id, taskId: excRow(p1).id, key: "excavator_day", value: 1 }]) } };
+    const p3 = HO.liveHandover(foreign, rates, "p3"); assert.deepEqual(excRow(p3).qtys, {}, "the older build's dig cells are cleared"); assert.equal(HO.liveHandover(p3, rates, "p4"), p3, "…and the next pass writes nothing");
+    const app2 = fs.readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
+    assert.match(app2, /const setQuote = useCallback\(\(updater\) => \{ localEdits\.current \+= 1; setQuoteStored\(updater\); \}, \[setQuoteStored\]\);/, "every write made in this tab is counted");
+    assert.match(app2, /if \(handoverRanFor\.current === localEdits\.current\) return; \/\/ nothing typed here since the last pass/, "the live pass runs after a local edit only, never in reaction to a remote copy");
+    assert.match(app2, /setQuoteStored\(\(q\) => \(liveHandoverApplies\(q, \{ stale \}\) \? liveHandover\(q, effectiveRates\(q, liveRates\)\) : q\)\);/, "the pass's own write is not counted as a local edit");
+    assert.match(app2, /return !!\(window\.parent && window\.parent\.gradconStaleBuild\);/, "the Quotes frame reads the shell's stale-build flag");
+    const shell2 = fs.readFileSync(new URL("../portal/portal-shell.html", import.meta.url), "utf8");
+    assert.match(shell2, /window\.gradconStaleBuild = true;/, "the shell flags a stale tab");
+  }
   assert.ok(HO.liveHandoverApplies({ status: "Estimating" }) && HO.liveHandoverApplies({ status: "Queued" }) && HO.liveHandoverApplies({}) && HO.liveHandoverApplies({ status: "Completed Estimating", completedAt: "2026-10-13" }));
   assert.ok(!HO.liveHandoverApplies({ status: "Submitted" }) && !HO.liveHandoverApplies({ status: "On Hold" }) && !HO.liveHandoverApplies({ status: "Completed Estimating", completedAt: "2026-09-01" }) && !HO.liveHandoverApplies({ status: "Estimating", handoverLive: false }));
   // the editor runs it on every change to the elements, the banner says it is live
   const app = fs.readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
-  assertTrue(/liveHandover\(q, effectiveRates\(q, liveRates\)\)/.test(app) && /\[quoteStatus, ratesStatus, quote\.status, quote\.items, quote\.handoverLive, quote\.completedAt, liveRates\]/.test(app) && !/shouldAutoHandover\(quote\)\) setQuote/.test(app));
+  assertTrue(/liveHandover\(q, effectiveRates\(q, liveRates\)\)/.test(app) && /\[quoteStatus, ratesStatus, quote\.status, quote\.items, quote\.handoverMode, quote\.handoverLive, quote\.completedAt, liveRates\]/.test(app) && !/shouldAutoHandover\(quote\)\) setQuote/.test(app));
   const banner = fs.readFileSync(new URL("../src/components/HandoverBanner.jsx", import.meta.url), "utf8");
   assertTrue(/data-testid="handover-live"/.test(banner) && /liveHandoverApplies\(quote\)/.test(banner));
 });
