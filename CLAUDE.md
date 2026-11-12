@@ -3619,6 +3619,65 @@ element families waits on the owner's approval of the pad footing.
   `test-precast-wiring.mjs` proves top + one side = 70.8 of 141.6 m with
   23.2 m of reveals, no edge ticked, 12 m of rebates, and 75% of the square
   assumption with a typed reveal run.
+  **A panel forms ONE soffit and the perimeter of each panel** (Grady, 12 Nov
+  2026: "the precast panels formwork is still not covered as it should. i wan
+  to have one open soffit and then perimeter of each panel"): `panelSoffit`
+  (the Formwork section's first tick — "Soffit — the casting bed / mould base
+  under every panel (one face, the top face is open)"; UNSET = ON, so a panel
+  saved before this takes its soffit, and the review status flags the change)
+  emits ONE `Formwork` "Soffit formwork" m² line over the GROSS panel area
+  (Σ panels × H × W with the schedule, else the typed total area — the bed
+  runs under the blockouts, so openings are not deducted; the concrete stays
+  net), spec "Precast panel soffit — casting bed / mould base, one face (top
+  face open)". The slab's own `soffit` tick is NOT shown or read on a panel
+  (`computeSlab` branches on the category first). The section is titled
+  "Panel formwork — one soffit and the perimeter of each panel" and states
+  the soffit figure (`panel-soffit-note`); the perimeter is the edge
+  selection above (all four edges of every panel by default). The bridge
+  lands the soffit on FORMWORK "Conventional" (m², with its usual "switch
+  product if another system applies" flag) and the edges on "Edgeform" (m).
+  `verify.mjs` pins the default, the line, the hidden slab tick and the
+  title; `test-panel-soffit-dig.mjs` proves 60 m² + 72 m on a total-area set,
+  103.68 m² gross + 141.6 m on the schedule, the untick and the unset field.
+- **Bulk excavation is a real DIG in Estimates and lands on the Quotes
+  Excavation and Soil removal rows** (Grady, 12 Nov 2026: "also add bulk
+  excavation in the quotes and estimation levels"). **Estimates**: every
+  generic excavation item but Backfill (`digApplies(def)` — Bulk Excavation,
+  Footing Excavation (standalone), Slab Trim / Cut-to-fall) carries "The dig
+  — working space, batter, rock, spoil" on its Geometry tab
+  (`excavationDigSection`, `data-testid="dig-options"`): `digWorkEach` (mm
+  each side of an L × W dig), `digBatter` (horizontal per 1 vertical — the
+  pit is then a prismoid D/3 × (A1 + A2 + √(A1·A2)) from the widened base to
+  the battered top), `digRockPct`, `digSpoilOn`, `digBulkPct` (blank = Project
+  Setup's bulking) and `digRetainM3` (bank m³ kept on site for backfill).
+  `digGeom(d, def)` is the ONE reading (a typed volume wins, then a typed
+  area × depth, then the pit); `computeGeneric` emits the item's own line for
+  the ordinary ground (`material: def.label`, so an older line keeps its
+  name), "Rock excavation" for the rock share and "Spoil disposal (loose,
+  bulked)" = (dug − kept) × (1 + bulking) — the same name the footings'
+  `spoilLine` uses. An L × W dig publishes its base plan area
+  (`_autoAreaM2`) to Project Geometry. `digSpoilOn` is ON for a new item and
+  UNSET = off, so an excavation saved before this is one line, unchanged.
+  **The bridge** (`estimateImport.js`, before the Finishes block): once an
+  element carries a dig — any `Excavation`-group m³ line named excavation /
+  slab trim / cut-to-fall, never backfill — each dig line lands on OTHER
+  ALLOWANCES "Excavation" (m3, the quantity-only row that drives the
+  excavator, bobcat and crew days through the live handover) and each "Spoil
+  disposal" line on "Soil removal" (m3, priced per m³; a typed figure, so
+  `autoSoilRemoval` stands down); a rock line is counted on the Excavation
+  row AND flagged ("… of the dig is ROCK — allow the breaking / ripping").
+  This covers the standalone items and every calculator that digs (footings,
+  pads, caps, retaining walls, tanks, the opt-in bulk excavation on slabs).
+  A pier's "Drilled spoil" / "Bored spoil" is the piling rig's: with no dig
+  line on the element nothing is mapped and the sweep still flags it;
+  backfill stays flagged too. Before this every dig crossed as a "no catalog
+  line" flag and the m³ was retyped. No new priced row: Excavation stays a
+  quantity only (its cost is the crew sheet), Soil removal keeps its $/m³.
+  `verify.mjs` pins the source and the bridge (300 m³ incl. 60 rock + 345
+  spoil → $13,800 on the band, the crew quantities, a strip footing's trench
+  and a bored pier left flagged); `test-panel-soffit-dig.mjs` proves the
+  block, 300 → 346.5 → 383.57 m³, the rock and spoil lines, the unchanged
+  older item, typed area / volume, Backfill, and the Quotes card.
 - **Screed (standalone)** (`Floor Finishes` library group, calc `screed`:
   `screedDefaults` / `screedGeom` / `renderScreed` / `computeScreed` /
   `diagScreed` — 2 Oct 2026, Grady: "the screed is standalone. add it as its

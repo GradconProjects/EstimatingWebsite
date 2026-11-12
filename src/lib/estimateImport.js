@@ -542,6 +542,29 @@ export function buildImportFromEstimate(estimateExport) {
       if (product) map(l, rateKey("PRECAST / TILT-UP", product.name, "each"), Number(l.finalQty) || 0);
     });
 
+    // --- The dig (Grady, 12 Nov 2026: "add bulk excavation in the quotes and
+    // estimation levels"): an Excavation line dug by Gradcon's own plant —
+    // bulk / trench / rock excavation, a slab trim — lands on the element's
+    // OTHER ALLOWANCES "Excavation" row (a quantity only: it drives the
+    // excavator and crew days on the crew sheet), and the bulked spoil
+    // carted away lands on "Soil removal" (priced per m³). A drilled or
+    // bored pier's spoil is the piling rig's — it and its disposal stay
+    // flagged, as does backfill, which Quotes has no row for. Before this
+    // every dig crossed as a flag and the estimator retyped the m³. ---
+    {
+      const excLines = group.filter((l) => l.materialGroup === "Excavation" && (l.unit === "m³" || l.unit === "m3") && !handled.has(l));
+      const isDig = (l) => /excavation|slab trim|cut-to-fall/i.test(l.material || "") && !/backfill/i.test(l.material || "");
+      const digs = excLines.filter(isDig);
+      if (digs.length) {
+        const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+        digs.forEach((l) => {
+          map(l, rateKey("OTHER ALLOWANCES", "Excavation", "m3"), r2(l.finalQty));
+          if (/rock/i.test(l.material || "")) flags.push(`${elementLabel}: ${r2(l.finalQty).toFixed(2)} m³ of the dig is ROCK — it is counted on the Excavation row with the rest; allow the breaking / ripping on the crew sheet or as an allowance.`);
+        });
+        excLines.filter((l) => /spoil disposal/i.test(l.material || "")).forEach((l) => map(l, rateKey("OTHER ALLOWANCES", "Soil removal", "m3"), r2(l.finalQty)));
+      }
+    }
+
     // --- Finishes (the standalone screed): every line named after a SCREEDS
     // catalog product lands on it — the screed itself by the m², the bonding
     // coat, galvanised mesh, fibres (kg), rails and joints (m), curing. An

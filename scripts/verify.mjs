@@ -3560,6 +3560,54 @@ check("Project Geometry carries a COUNT: $/no. leads the benchmark rates, sums a
     assert.match(est, /lines\.push\(\.\.\.reentrantLines\(inst,def,0\)\);/, "the composite prices it");
     assert.match(est, /if\(lp\.kind==="bars"\)\{\n\s*\/\/ straight stock bars picked in the strip selector price as plain bar/, "a stock-bar choice in the strip selector is plain bar, never a trench product");
   }
+  // A precast panel forms ONE soffit and the perimeter of each panel; bulk excavation is a real dig in Estimates and lands on the Quotes Excavation / Soil removal rows (Grady, 12 Nov 2026)
+  {
+    const est = fs.readFileSync(new URL("../portal/estimates-app.html", import.meta.url), "utf8");
+    assert.match(est, /panelSoffit:true,/, "a panel's soffit is on by default");
+    assert.match(est, /if\(d\.panelSoffit!==false && area>0\) lines\.push\(baseLine\(inst,def,\{materialGroup:"Formwork",material:"Soffit formwork",spec:"Precast panel soffit — casting bed \/ mould base, one face \(top face open\)",qty:area,unit:"m²"/, "the soffit is one face over the gross panel area, unset = on");
+    assert.match(est, /\} else if\(d\.suspended && d\.soffit\) lines\.push\(/, "a suspended slab keeps its own soffit tick");
+    assert.match(est, /\$\{d\.suspended && d\.category!=="Precast Panel"\? chk\("soffit",d\.soffit,"Soffit formwork"\):""\}/, "the slab's soffit tick is not shown on a panel");
+    assert.match(est, /Panel formwork — one soffit and the perimeter of each panel/, "the Formwork section says what it forms");
+    assert.match(est, /data-testid="panel-soffit-note"/, "the soffit figure is stated");
+    // the dig
+    assert.match(est, /const digApplies=\(def\)=>!!def && def\.kind==="excavation" && def\.id!=="backfill";/, "the dig options are on every excavation item but backfill");
+    assert.match(est, /function digGeom\(d,def\)\{/, "digGeom is the ONE reading of the dig");
+    assert.match(est, /n\*\(D\/3\)\*\(A1\+A2\+Math\.sqrt\(A1\*A2\)\)/, "a battered pit is a prismoid");
+    assert.match(est, /digSpoilOn:kind==="excavation"/, "a new excavation item carts its spoil; an older one (unset) does not");
+    assert.match(est, /const spoil = spoilOn\? \(vol-retain\)\*\(1\+bulk\/100\) : 0;/, "spoil = the dug volume less what is kept, bulked");
+    assert.match(est, /material:"Rock excavation"/, "the rock share is its own line");
+    assert.match(est, /material:"Spoil disposal \(loose, bulked\)",spec:`Bulking/, "the spoil line carries the name the bridge reads");
+    assert.match(est, /\$\{excavationDigSection\(inst,def\)\}`;/, "the dig block is on the item's Geometry tab");
+    assert.match(est, /else if\(digApplies\(def\) && dig\.planM2>0\) d\._autoAreaM2 = dig\.planM2;/, "an L × W dig publishes its plan area");
+    // the bridge
+    const L = (o) => estLine({ stage: "Earthworks", category: "Bulk Excavation", element: "Bulk Excavation 1", elementId: "BX1", materialGroup: "Excavation", unit: "m³", ...o });
+    const { quote, flags } = buildImportFromEstimate({ project: { name: "Dig" }, lines: [
+      L({ material: "Bulk Excavation", finalQty: 240 }),
+      L({ material: "Rock excavation", finalQty: 60 }),
+      L({ material: "Spoil disposal (loose, bulked)", finalQty: 345 }),
+    ], elementGeometry: { BX1: { countNo: 1, areaM2: 200 } } });
+    const it = quote.items[0];
+    assert.equal(it.typeId, "excavation_bulk");
+    assert.equal(it.qtys[rateKey("OTHER ALLOWANCES", "Excavation", "m3")], 300, "ordinary + rock land on the Excavation row");
+    assert.equal(it.qtys[rateKey("OTHER ALLOWANCES", "Soil removal", "m3")], 345, "the bulked spoil lands on Soil removal");
+    assert.ok(flags.some((f) => /60\.00 m³ of the dig is ROCK/.test(f)), "the rock share is named");
+    assert.ok(!flags.some((f) => /Quotes has no catalog line/.test(f)), `nothing of the dig is left unmapped: ${flags.join(" | ")}`);
+    const cost = computeElementCost(it, defaultRates());
+    assert.equal(cost.categoryTotals["OTHER ALLOWANCES"], 345 * 40, "Excavation is a quantity only; the spoil prices at the Soil removal rate");
+    { const lq = labourQuantities(it, defaultRates()); assert.equal(lq.excavationM3, 300, "the crew sheet's Excavation row takes the dug m³"); assert.equal(lq.soilRemovalM3, 345, "and its Remove soil row the spoil"); }
+    // a footing's own trench dig and spoil cross the same way; a pier's bored spoil stays flagged
+    const F = (o) => estLine({ stage: "Foundations", category: "Strip Footing", element: "SF1", elementId: "SF1", materialGroup: "Excavation", unit: "m³", ...o });
+    const P = (o) => estLine({ stage: "Foundations", category: "Bored Pier", element: "BP1", elementId: "BP1", materialGroup: "Excavation", unit: "m³", ...o });
+    const r2 = buildImportFromEstimate({ project: { name: "Dig 2" }, lines: [
+      F({ material: "Trench excavation", finalQty: 12.5 }), F({ material: "Spoil disposal (loose, bulked)", finalQty: 14.38 }),
+      P({ material: "Bored spoil", finalQty: 9 }),
+    ] });
+    const sf = r2.quote.items.find((i) => i.label === "SF1"), bp = r2.quote.items.find((i) => i.label === "BP1");
+    assert.equal(sf.qtys[rateKey("OTHER ALLOWANCES", "Excavation", "m3")], 12.5);
+    assert.equal(sf.qtys[rateKey("OTHER ALLOWANCES", "Soil removal", "m3")], 14.38);
+    assert.equal(bp.qtys[rateKey("OTHER ALLOWANCES", "Excavation", "m3")], undefined, "a bored pier's spoil is the rig's — not put on the Excavation row");
+    assert.ok(r2.flags.some((f) => /BP1.*Bored spoil/.test(f)), "and it stays flagged");
+  }
   // The AI Engine page's AI_TYPES mirror must list exactly the Estimates LIBRARY ids
   const est = fs.readFileSync(new URL("../portal/estimates-app.html", import.meta.url), "utf8");
   const libBlock = est.slice(est.indexOf("const LIBRARY = ["), est.indexOf("];", est.indexOf("const LIBRARY = [")));
