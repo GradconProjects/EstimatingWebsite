@@ -3806,6 +3806,17 @@ element families waits on the owner's approval of the pad footing.
   weights, both mirrors and the bridge; a stored library only gains the rows
   when its Processed Bar table is next saved — the catalog default governs
   until then). `test-cogs.mjs` prices R8 stirrups on a strip footing.
+  **The STOCK BAR band carries them too** (Grady, 12 Nov 2026, with the
+  STOCK BAR band open beside "N10 Ligatures": "i cant find the R8 previously
+  asked to add" — it sat only on PROCESSED BAR, which was folded): "R6 / R8 /
+  R10 Ligatures - 6.0m length" sit right under "N10 Ligatures - 6.0m length",
+  entered in metres and bought in whole 6 m bars like every row there, weight
+  = 6 × the PROCESSED BAR kg/m (1.332 / 2.37 / 3.702 kg) and $/bar = that
+  weight × the band's flat $1825/tonne ($2.43 / $4.33 / $6.76). The Rates
+  Library's Stock Bar table does not list them (nor N10 Ligatures), so the
+  catalog default governs and the Rates modal edits it; the bridge still
+  lands an R-bar line on PROCESSED BAR. `verify.mjs` pins the order, the
+  weights, the price rule and 13 m of R8 = 3 bars = $12.99.
 - **A selected hook spans the section depth less the cover** (`hookLegOf` /
   `hookLeg` / `sectionDepthMm` / `instCoverMm` beside `anchorLen`; 8 Oct
   2026, Grady: "when a user selects hooks, hooks should span the depth of

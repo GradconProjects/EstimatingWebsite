@@ -290,6 +290,10 @@ export const FULL_CATALOG = [
   // see rule 2 in CLAUDE.md — this only changes where the $/bar number comes from.
   { key: "STOCK BAR", weightBasis: false, lengthBasis: true, products: [
     ["N10 Ligatures - 6.0m length", "m", 3.79, 6.92, null, 6],
+    // Plain round ligature bar in stock lengths (Grady, 12 Nov 2026, looking for R8 on this band: "i cant find the R8
+    // previously asked to add" — it had gone onto PROCESSED BAR only). Weight = d²/162 kg/m × 6 m, the same nominal mass
+    // the PROCESSED BAR R rows carry; $/bar = that weight × the band's flat $1825/tonne, as every row here.
+    ["R6 Ligatures - 6.0m length", "m", 1.332, 2.43, null, 6], ["R8 Ligatures - 6.0m length", "m", 2.37, 4.33, null, 6], ["R10 Ligatures - 6.0m length", "m", 3.702, 6.76, null, 6],
     ["N12 - 6.0m length", "m", 5.46, 9.96, null, 6], ["N16 - 6.0m length", "m", 9.6, 17.52, null, 6], ["N20 - 6.0m length", "m", 15.19, 27.72, null, 6],
     ["N24 - 6.0m length", "m", 21.83, 39.84, null, 6], ["N28 - 6.0m length", "m", 29.71, 54.22, null, 6], ["N32 - 6.0m length", "m", 38.81, 70.83, null, 6],
   ]},

@@ -100,7 +100,7 @@ check("every element type has both a category and a section", () => {
 check("20 material categories, 402 products (incl. the R6 / R8 / R10 plain rounds on PROCESSED BAR, the 12-row Void formers group of FORMWORK, the 17-row FINISHED PAVEMENTS & CONCRETE FINISHES band, the 45-row SAW CUTS & DOWELS band, CONCRETE PUMPING, REINFORCEMENT BY RATE, the 32-board INSULATION range, 31 SCREEDS, 17 HYDRONIC HEATING, 48 SPECIALIST FINISHING CONCRETE, 45 PRELIMINARIES, the full 24-size TRENCH MESH grid, Bored Piers subcontract, minimum cartage, levy, surcharge)", () => {
   assert.equal(FULL_CATALOG.length, 21);
   const total = FULL_CATALOG.reduce((s, c) => s + c.products.length, 0);
-  assert.equal(total, 409);
+  assert.equal(total, 412);
   const pre = FULL_CATALOG.find((c) => c.key === "PRELIMINARIES");
   assert.equal(pre.products.length, 45);
   assert.ok(!pre.weightBasis && !pre.areaBasis && !pre.lengthBasis && !pre.volumeRateBasis, "preliminaries cost plain qty × rate");
@@ -173,6 +173,22 @@ check("20 material categories, 402 products (incl. the R6 / R8 / R10 plain round
   assert.ok(subbies.products.some((p) => p.name === "Bored Piers (subcontract)" && p.unit === "quote"), "Bored Piers quote item present");
   const stock = FULL_CATALOG.find((c) => c.key === "STOCK BAR");
   assert.ok(stock.products.some((p) => /N10 Ligatures/.test(p.name)), "N10 Ligatures stock bar present");
+  // R6 / R8 / R10 ligature bar in 6 m stock lengths, right under N10 Ligatures (Grady, 12 Nov 2026: "i cant find the R8")
+  {
+    const names = stock.products.map((p) => p.name);
+    assert.deepEqual(names.slice(0, 4), ["N10 Ligatures - 6.0m length", "R6 Ligatures - 6.0m length", "R8 Ligatures - 6.0m length", "R10 Ligatures - 6.0m length"], "the ligature bars head the STOCK BAR band");
+    const proc = FULL_CATALOG.find((c) => c.key === "PROCESSED BAR");
+    for (const d of ["R6", "R8", "R10"]) {
+      const sb = stock.products.find((p) => p.name === `${d} Ligatures - 6.0m length`), pb = proc.products.find((p) => p.name === d);
+      assert.equal(sb.unit, "m");
+      assert.ok(Math.abs(sb.unitWeight - pb.unitWeight * 6) < 0.005, `${d}: a 6 m length weighs 6 × the PROCESSED BAR kg/m`);
+      assert.ok(Math.abs(sb.unitCost - sb.unitWeight * 1.825) < 0.006, `${d}: $/bar = weight × the band's flat $1825/tonne`);
+    }
+    // 13 m of R8 = 3 whole 6 m bars × $4.33
+    const it = newElementItem(ELEMENT_TYPES.find((t) => t.id === "strip_footings"));
+    it.qtys[rateKey("STOCK BAR", "R8 Ligatures - 6.0m length", "m")] = 13;
+    assert.equal(Math.round(computeElementCost(it, defaultRates()).categoryTotals["STOCK BAR"] * 100) / 100, 12.99);
+  }
   // The INSULATION category carries specified products (material/thickness/
   // R-value), plain qty × rate — never weight/area/length-priced.
   const insul = FULL_CATALOG.find((c) => c.key === "INSULATION");
