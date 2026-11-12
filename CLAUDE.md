@@ -1426,6 +1426,28 @@ and verify-covered. Rules:
    stale-build check; `staleBuild()` in App.jsx reads the parent window).
    **An idle tab must never rewrite a project in reaction to someone else's
    save** — a new rule-based recompute follows the same pattern.
+   **(d) The switch sticks in the DATABASE** (same day, an hour later: the
+   flashing went on — two tabs on builds from before the guards were still
+   re-planning at each other, ~84 whole-row saves a minute by the Supabase
+   logs, and each was mid-save whenever a stamped copy landed, so it wrote its
+   stale copy straight back over the stamp; a client-side stamp cannot win
+   that race). `supabase/migrations/0005_estimator_kv_keep_handover_switch.sql`
+   (applied to the live project 12 Nov 2026 with Boma's approval): a BEFORE
+   UPDATE trigger on `estimator_kv` — when a `gradcon-quote-%` row that
+   carries `handoverMode` is replaced by a value with none (only a build from
+   before the rule writes one) and that value does not say `handoverLive:
+   false` itself, the stored mode is carried over and `handoverLive` is held
+   false. Nothing else in the value is touched; a value stating its own mode
+   (the current build: live, off) and the old-style off are stored as sent;
+   other rows are never looked at. So the first older-build save after a stamp
+   reaches the other tab WITH the stamp and both stand down — the saves
+   stopped the second 41 Wildcoast Road was stamped. `scripts/
+   verify-handover-switch-sql.mjs` proves it in an isolated PGlite (15 checks:
+   200 alternating stale saves, the Dashboard merge, non-project rows, a 3 MB
+   row); `verify.mjs` pins the migration's conditions. A project is stamped
+   the first time a current-build tab opens it; one that only frozen tabs
+   hold open needs the stamp set by hand (`value || {"handoverLive": false,
+   "handoverMode": "live"}`, an approved write).
    `test-two-builds.mjs` runs the REAL pre-9-Nov `handover.js` against the
    build before the fix (12 arrivals, 12 writes, the cells flipping) and the
    fixed build (the old tab stands down, typed figures hold through six round
@@ -2884,6 +2906,32 @@ every 3 minutes, compares the `Build <b>sha` stamp with the one baked in
 (`__BUILD_STAMP__`) and offers "Reload now" when they differ. When a user
 reports behaviour the current build cannot produce, check the Build number
 in their footer first.
+
+**A copy that is NOT the live site says so** (12 Nov 2026, 41 Wildcoast Road:
+the two tabs above were not merely unreloaded — a reload could never update
+them. One showed "Google is not configured — set GOOGLE_CLIENT_ID …" in the
+Drive picker while the live site's `/api/drive` answered configured and
+connected: it was a preview deployment, which has no Production variables, and
+a deployment's own address stays on its build for good; the stale-build check
+compares an address with ITSELF, so it saw nothing). `assemble-portal.mjs`
+bakes `__DEPLOY_ENV__` (Vercel's `VERCEL_ENV`) and `__PROD_HOST__`
+(`GRADCON_PROD_HOST`, else `VERCEL_PROJECT_PRODUCTION_URL`, else
+estimating-website.vercel.app) into the shell and writes `dist/build.txt` (the
+bare commit; `vercel.json` serves it with `Access-Control-Allow-Origin: *`,
+no-store). In the shell, `checkAll` = the own-address check, then `checkLive`:
+on any https host that is not the live host (never localhost) a PREVIEW build
+shows "This is a preview copy of the app, not the live site … Mail, Google
+Drive and SMS are not set up here" at once; any other address asks the live
+site's `build.txt` and, when that differs, shows "This address is a frozen
+copy … a reload here will not update it". Either way `gradconStaleBuild` (and
+`gradconNotLive`) is set — the tab never re-plans a crew sheet — and the
+button reads "Open the live site". An alias on the live build, an unreachable
+live site and the live host itself show nothing. It protects builds from this
+one on; a deployment frozen earlier carries no such check — the database
+trigger above is what stops those. `window.gradconBuildCheck` is the test
+seam; `verify.mjs` pins the wiring and `test-not-live.mjs` proves the five
+kinds of address. **When someone reports an error naming a missing server
+variable, ask for the address in the address bar before anything else.**
 
 The Quotes bundle is inlined into the portal and runs from a blob: URL, so
 a relative chunk import cannot resolve there: `scripts/assemble-portal.mjs`

@@ -27,5 +27,20 @@
     "api/notify.js": {
       "maxDuration": 30
     }
-  }
+  },
+  "headers": [
+    {
+      "source": "/build.txt",
+      "headers": [
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "no-store"
+        }
+      ]
+    }
+  ]
 }

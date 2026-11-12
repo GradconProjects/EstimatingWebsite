@@ -2098,6 +2098,29 @@ check("LIVE handover prefill (Grady, 13 Oct 2026): the crew sheets follow the qu
     assert.match(app2, /return !!\(window\.parent && window\.parent\.gradconStaleBuild\);/, "the Quotes frame reads the shell's stale-build flag");
     const shell2 = fs.readFileSync(new URL("../portal/portal-shell.html", import.meta.url), "utf8");
     assert.match(shell2, /window\.gradconStaleBuild = true;/, "the shell flags a stale tab");
+    // … and the switch STICKS in the database (same day: the two older tabs were mid-save every time the switch landed and wrote their stale copies straight back over it)
+    const mig = fs.readFileSync(new URL("../supabase/migrations/0005_estimator_kv_keep_handover_switch.sql", import.meta.url), "utf8");
+    assert.match(mig, /before update on public\.estimator_kv\s+for each row execute function public\.estimator_kv_keep_handover_switch\(\)/, "the trigger runs before every update");
+    assert.match(mig, /new\.key like 'gradcon-quote-%'/, "project rows only");
+    assert.match(mig, /old\.value \? 'handoverMode'\s+and not \(new\.value \? 'handoverMode'\)\s+and \(new\.value -> 'handoverLive'\) is distinct from 'false'::jsonb/, "only a value from before the rule, on a project that was switched");
+    assert.match(mig, /'handoverMode', old\.value -> 'handoverMode',\s+'handoverLive', false/, "the stored mode is carried and the old flag held false");
+    assert.ok(!/delete|truncate|drop table|security definer/i.test(mig), "the migration removes nothing and runs as the caller");
+    assert.ok(fs.existsSync(new URL("./verify-handover-switch-sql.mjs", import.meta.url)), "the isolated-Postgres proof ships with it");
+    // NOT THE LIVE SITE: a preview copy or a deployment's own frozen address says so, stands down and offers the live site
+    assert.match(shell2, /const DEPLOY_ENV = "__DEPLOY_ENV__", PROD_HOST = "__PROD_HOST__";/, "the shell is told which deployment it is and where the live site is");
+    assert.match(shell2, /host !== PROD_HOST && host !== "localhost" && host !== "127\.0\.0\.1"/, "the live host and a local build are never flagged");
+    assert.match(shell2, /if\(DEPLOY_ENV === "preview"\)\{\s+notLive\(/, "a preview build says so without asking anyone");
+    assert.match(shell2, /fetch\("https:\/\/" \+ PROD_HOST \+ "\/build\.txt\?" \+ Date\.now\(\), \{cache:"no-store"\}\)/, "any other address asks the live site for its build");
+    assert.match(shell2, /shown = true; action = "live";\s+window\.gradconStaleBuild = true; window\.gradconNotLive = true;/, "a copy that is not the live site never re-plans a crew sheet");
+    assert.match(shell2, /if\(action === "live"\) location\.href = "https:\/\/" \+ PROD_HOST \+ "\/"; else location\.reload\(\);/, "its button opens the live site");
+    assert.match(shell2, /const checkAll = \(\)=>checkBuild\(\)\.then\(checkLive\);/, "the own-address check runs first (a reload fixes that one)");
+    const asm2 = fs.readFileSync(new URL("./assemble-portal.mjs", import.meta.url), "utf8");
+    assert.match(asm2, /process\.env\.GRADCON_PROD_HOST \|\| process\.env\.VERCEL_PROJECT_PRODUCTION_URL \|\| "estimating-website\.vercel\.app"/, "the assembler names the live site");
+    assert.match(asm2, /replaceAll\("__DEPLOY_ENV__", \/\^\[a-z\]\+\$\/\.test\(deployEnv\) \? deployEnv : ""\)\.replaceAll\("__PROD_HOST__", prodHost\)/, "… and bakes both into the shell");
+    assert.match(asm2, /fs\.writeFileSync\(path\.join\(path\.dirname\(outPathFinal\), "build\.txt"\), stamp\.split\(" "\)\[0\] \+ "\\n"\);/, "… and writes the bare commit beside the page");
+    const vj = JSON.parse(fs.readFileSync(new URL("../vercel.json", import.meta.url), "utf8"));
+    const bh = (vj.headers || []).find((h) => h.source === "/build.txt");
+    assert.ok(bh && bh.headers.some((h) => h.key === "Access-Control-Allow-Origin" && h.value === "*") && bh.headers.some((h) => h.key === "Cache-Control" && h.value === "no-store"), "build.txt is readable from any origin and never cached");
   }
   assert.ok(HO.liveHandoverApplies({ status: "Estimating" }) && HO.liveHandoverApplies({ status: "Queued" }) && HO.liveHandoverApplies({}) && HO.liveHandoverApplies({ status: "Completed Estimating", completedAt: "2026-10-13" }));
   assert.ok(!HO.liveHandoverApplies({ status: "Submitted" }) && !HO.liveHandoverApplies({ status: "On Hold" }) && !HO.liveHandoverApplies({ status: "Completed Estimating", completedAt: "2026-09-01" }) && !HO.liveHandoverApplies({ status: "Estimating", handoverLive: false }));

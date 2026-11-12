@@ -276,7 +276,23 @@ shell = shell
   .replace("__REGISTER_B64__", registerB64)
   .replaceAll("__BUILD_STAMP__", stamp);
 
+// Which deployment this is, so a copy that is NOT the live site can say so (the shell's
+// "not the live site" check). Vercel names the environment and the project's production
+// domain at build time; a local build is neither a preview nor off the live host.
+{
+  const deployEnv = String(process.env.VERCEL_ENV || "");
+  const prodHost = String(process.env.GRADCON_PROD_HOST || process.env.VERCEL_PROJECT_PRODUCTION_URL || "estimating-website.vercel.app")
+    .replace(/^https?:\/\//, "").replace(/\/.*$/, "").toLowerCase();
+  if (!/^[a-z0-9.-]+$/.test(prodHost)) throw new Error(`The production host "${prodHost}" is not a host name`);
+  for (const tag of ["__DEPLOY_ENV__", "__PROD_HOST__"]) if (!shell.includes(`"${tag}"`)) throw new Error(`portal-shell.html has no ${tag} placeholder — live-site check out of date`);
+  shell = shell.replaceAll("__DEPLOY_ENV__", /^[a-z]+$/.test(deployEnv) ? deployEnv : "").replaceAll("__PROD_HOST__", prodHost);
+  console.log(`Deployment: ${deployEnv || "local"} · live site ${prodHost}`);
+}
+
 fs.mkdirSync(path.dirname(outPathFinal), { recursive: true });
 fs.writeFileSync(outPathFinal, shell);
+// The bare commit, readable from any origin (vercel.json sets the CORS header): a frozen
+// deployment address asks the live site for this to learn that it is behind.
+fs.writeFileSync(path.join(path.dirname(outPathFinal), "build.txt"), stamp.split(" ")[0] + "\n");
 console.log("Build stamp:", stamp);
 console.log("Assembled combined portal at", outPathFinal, "-", (fs.statSync(outPathFinal).size / 1024 / 1024).toFixed(2), "MB");

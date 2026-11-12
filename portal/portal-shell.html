@@ -2653,10 +2653,52 @@
       }
     }catch(e){ /* offline or blocked — try again next time */ }
   }
-  document.getElementById("stale-build-reload").addEventListener("click", ()=>{ location.reload(); });
-  window.addEventListener("focus", checkBuild);
-  document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) checkBuild(); });
-  setTimeout(checkBuild, 15000);
-  setInterval(checkBuild, 3*60*1000);
+  /* NOT THE LIVE SITE (12 Nov 2026, 41 Wildcoast Road): two windows were open on
+     copies of the app that a reload can never update — a preview deployment and a
+     deployment's own frozen address. They held older crew-sheet rules, rewrote the
+     live project once a second, and had no Google connection ("Google is not
+     configured"). The check above compares this address with ITSELF, so it could
+     not see either. This one names the live site: a preview build says so at
+     once; any other address asks the live site for its build (build.txt, readable
+     across origins) and, when that differs while this address is "current",
+     says the address is frozen. Either way the tab is treated as an old build
+     (it never re-plans a crew sheet) and the button opens the live site. */
+  const DEPLOY_ENV = "__DEPLOY_ENV__", PROD_HOST = "__PROD_HOST__";
+  let action = "reload";
+  function notLive(text){
+    shown = true; action = "live";
+    window.gradconStaleBuild = true; window.gradconNotLive = true;
+    document.getElementById("stale-build-text").textContent = text;
+    document.getElementById("stale-build-reload").textContent = "Open the live site";
+    const el = document.getElementById("stale-build"); el.style.display = "flex"; el.setAttribute("data-kind", "not-live");
+  }
+  function offLiveHost(){
+    const host = location.hostname;
+    return /^[a-z0-9.-]+$/.test(PROD_HOST) && location.protocol === "https:" && host !== PROD_HOST && host !== "localhost" && host !== "127.0.0.1";
+  }
+  async function checkLive(){
+    if(shown || !offLiveHost()) return;
+    if(DEPLOY_ENV === "preview"){
+      notLive(`This is a preview copy of the app, not the live site (${PROD_HOST}). Mail, Google Drive and SMS are not set up here and this address does not update. Open the live site to work.`);
+      return;
+    }
+    if(!/^[0-9a-f]{7}$/.test(shaOf(RUNNING))) return;
+    try{
+      const res = await fetch("https://" + PROD_HOST + "/build.txt?" + Date.now(), {cache:"no-store"});
+      if(!res.ok) return;
+      const live = String(await res.text()).trim().slice(0, 7);
+      if(/^[0-9a-f]{7}$/.test(live) && live !== shaOf(RUNNING)){
+        notLive(`This address is a frozen copy of the app on build ${shaOf(RUNNING)} — the live site (${PROD_HOST}) is on ${live} and a reload here will not update it. Open the live site to work.`);
+      }
+    }catch(e){ /* the live site could not be asked — try again next time */ }
+  }
+  const checkAll = ()=>checkBuild().then(checkLive);
+  document.getElementById("stale-build-reload").addEventListener("click", ()=>{ if(action === "live") location.href = "https://" + PROD_HOST + "/"; else location.reload(); });
+  window.addEventListener("focus", checkAll);
+  document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) checkAll(); });
+  if(DEPLOY_ENV === "preview") checkLive();
+  setTimeout(checkAll, 15000);
+  setInterval(checkAll, 3*60*1000);
+  window.gradconBuildCheck = { checkAll, checkLive, offLiveHost };
 })();
 </script>
