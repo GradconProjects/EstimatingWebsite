@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase, supabaseEnabled } from "./supabaseClient.js";
 import { readMirror, writeMirror, clearMirror } from "./localMirror.js";
+import { idSet, mergeById, stampNotNewer } from "./arrayMerge.js";
 
 const TABLE = "estimator_kv";
 
@@ -79,6 +80,12 @@ export function useStoredState(key, initial, { cacheFirst = false } = {}) {
   // edit — a live, silent cross-device sync failure. Skipping the save entirely when
   // this flag is set removes that failure mode at the source.
   const remoteApplyRef = useRef(false);
+  // For an id-keyed LIST (the projects index): the ids this tab last knew to
+  // be in the cloud — what it loaded, what a poll or push delivered, what it
+  // last saved. The save's three-way merge (arrayMerge.js) reads it to tell
+  // "removed here" from "added elsewhere"; null = nothing synced yet.
+  const baseIdsRef = useRef(null);
+  const noteSynced = (v) => { baseIdsRef.current = Array.isArray(v) ? idSet(v) : null; };
   // The ONE way a value that came from storage (load, mirror, poll, realtime)
   // is put into state. Functional so the flag is set only when React will
   // actually re-render: if `next` is the very object already in state (the
@@ -130,6 +137,7 @@ export function useStoredState(key, initial, { cacheFirst = false } = {}) {
           if (cached) {
             fromMirror = true;
             applyRemote(cached.value);
+            noteSynced(cached.value);
             lastSyncedAtRef.current = cached.updatedAt;
             loadedRef.current = true;
             setStatus("syncing");
@@ -149,13 +157,14 @@ export function useStoredState(key, initial, { cacheFirst = false } = {}) {
             // be saved on top of whatever is remote, so applying the fetched
             // row now would just overwrite what is being typed. Same rule as
             // the poll. The save sets the status.
-          } else if (fromMirror && data && lastSyncedAtRef.current && data.updated_at <= lastSyncedAtRef.current) {
+          } else if (fromMirror && data && stampNotNewer(data.updated_at, lastSyncedAtRef.current)) {
             // The mirror was already current (or a save landed first): nothing
             // to apply. Deliberately no setValue — a fresh object identity
             // would be indistinguishable from a real edit to the save effect.
             setStatus("saved");
           } else {
             applyRemote(data ? data.value : initial);
+            noteSynced(data ? data.value : initial);
             lastSyncedAtRef.current = data ? data.updated_at : null;
             setStatus("saved");
             if (cacheFirst) {
@@ -220,30 +229,31 @@ export function useStoredState(key, initial, { cacheFirst = false } = {}) {
       try {
         let toSave = valueRef.current;
         // Array-shaped values (e.g. the projects index — a plain list of
-        // {id, ...} entries) get union-merged by id against whatever is
-        // currently in the cloud before this browser overwrites the row.
-        // Without this, two accounts creating/renaming projects around the
-        // same time would have whichever one saves last silently wipe out
-        // the other's concurrent change — neither account is meant to take
-        // priority over the other (see CLAUDE.md: same shared data, no
-        // per-user separation). Non-array values (a single project's own
-        // quote, the rates blob, etc.) keep the simple overwrite — merging
-        // arbitrary object edits field-by-field isn't safe to do blindly.
+        // {id, ...} entries) are merged by id with whatever is in the cloud
+        // before this browser overwrites the row, so two accounts creating
+        // projects around the same time never wipe out each other's entry —
+        // neither account is meant to take priority over the other (see
+        // CLAUDE.md: same shared data, no per-user separation). The merge is
+        // THREE-WAY (arrayMerge.js): an entry this tab removed stays removed,
+        // one removed elsewhere is dropped here, one added elsewhere is kept.
+        // It was a plain union until 13 Nov 2026, which put a deleted or
+        // pruned entry straight back on the tab's own save. Non-array values
+        // (a single project's own quote, the rates blob, etc.) keep the
+        // simple overwrite — merging arbitrary object edits field-by-field
+        // isn't safe to do blindly.
         if (Array.isArray(toSave)) {
+          const started = toSave;
           const { data: current } = await supabase.from(TABLE).select("value, updated_at").eq("key", key).maybeSingle();
-          if (current && Array.isArray(current.value) && current.updated_at !== lastSyncedAtRef.current) {
-            const byId = new Map();
-            current.value.forEach((item) => {
-              if (item && item.id != null) byId.set(item.id, item);
-            });
-            toSave.forEach((item) => {
-              if (item && item.id != null) byId.set(item.id, item);
-            });
-            const merged = Array.from(byId.values());
-            if (merged.length !== toSave.length) {
-              toSave = merged;
-              remoteApplyRef.current = true;
-              setValue(merged);
+          if (current && Array.isArray(current.value)) {
+            const res = mergeById(toSave, current.value, baseIdsRef.current);
+            if (res.changed) {
+              toSave = res.merged;
+              // only when nothing was edited while the cloud was being read —
+              // a newer local edit is saved (and merged) by its own pass
+              if (valueRef.current === started) {
+                remoteApplyRef.current = true;
+                setValue(res.merged);
+              }
             }
           }
         }
@@ -251,6 +261,7 @@ export function useStoredState(key, initial, { cacheFirst = false } = {}) {
         const { error } = await supabase.from(TABLE).upsert({ key, value: toSave, updated_at: nowIso });
         if (!error) {
           lastSyncedAtRef.current = nowIso;
+          noteSynced(toSave);
           if (cacheFirst) writeMirror(key, toSave, nowIso);
         }
         setStatus(error ? "error" : "saved");
@@ -341,13 +352,14 @@ export function useStoredState(key, initial, { cacheFirst = false } = {}) {
       try {
         const { data: stamp, error: stampError } = await supabase.from(TABLE).select("updated_at").eq("key", key).maybeSingle();
         if (stampError || !stamp) return;
-        if (lastSyncedAtRef.current && stamp.updated_at <= lastSyncedAtRef.current) return;
+        if (stampNotNewer(stamp.updated_at, lastSyncedAtRef.current)) return;
         if (localEditPending()) return; // an edit started while the stamp was in flight
         const { data, error } = await supabase.from(TABLE).select("value, updated_at").eq("key", key).maybeSingle();
         if (error || !data) return;
-        if (lastSyncedAtRef.current && data.updated_at <= lastSyncedAtRef.current) return;
+        if (stampNotNewer(data.updated_at, lastSyncedAtRef.current)) return;
         lastSyncedAtRef.current = data.updated_at;
         applyRemote(data.value);
+        noteSynced(data.value);
         if (cacheFirst) writeMirror(key, data.value, data.updated_at);
       } catch {
         /* best-effort — the next poll tries again */
@@ -377,9 +389,10 @@ export function useStoredState(key, initial, { cacheFirst = false } = {}) {
           const row = payload.new;
           if (!row) return;
           if (localEditPending()) return;   // our own write is in flight — the poll catches up after
-          if (lastSyncedAtRef.current && row.updated_at <= lastSyncedAtRef.current) return;
+          if (stampNotNewer(row.updated_at, lastSyncedAtRef.current)) return;
           lastSyncedAtRef.current = row.updated_at;
           applyRemote(row.value);
+          noteSynced(row.value);
           if (cacheFirst) writeMirror(key, row.value, row.updated_at);
         }
       )

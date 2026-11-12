@@ -2889,6 +2889,40 @@ Three layers, each with a rule that was learned the hard way:
   summaries function's `dataURL` strip stays (harmless on a path).
   Verify-covered with a mock storage client.
 
+**An id-keyed LIST is merged THREE ways before it is saved** (13 Nov 2026,
+Boma: "there is an untitled project clicking underneath the listed projects"
+— the Supabase logs showed ~1,800 saves of the projects index in an hour).
+`useStoredState` used to UNION an array value with the cloud copy whenever the
+cloud row's stamp differed from the tab's last-synced stamp, and compared the
+two as TEXT: PostgREST answers `2026-11-12T20:55:51.17+00:00`, the tab had
+stored `2026-11-12T20:55:51.170Z` after its own save, so they never matched
+and every save merged. A union cannot tell "I removed this" from "someone
+else added this", so a deleted or pruned index entry was put straight back by
+the tab's OWN save; the Dashboard pruned the row-less entry again, the save
+put it back … an "Untitled project" row flickering under the list, for as
+long as a Dashboard was open. `src/lib/arrayMerge.js` (pure, verify-covered):
+`mergeById(local, remote, base)` — `base` = the ids the tab last knew to be
+in the cloud (`baseIdsRef`, noted by `noteSynced` on the mirror paint, the
+load, a poll, a push and every successful save): in base and gone locally =
+removed HERE, stays removed; in base and gone from the cloud = removed
+ELSEWHERE, dropped here; in the cloud and never seen = added elsewhere, kept;
+only local = added here, kept; no base = the old union. A cloud copy missing
+more than `REMOTE_REMOVALS_MAX` = 5 entries or half the list is a clobbered
+row, never a clean-up — nothing is dropped. Entries with no id (the
+rate-change log — which the old code EMPTIED on a merge) are this tab's list
+as it stands. A merged list is put into state only when nothing was edited
+while the cloud was being read. `stampNotNewer(remote, held)` compares
+instants (`stampMs`), and is what the load, the poll and the realtime push
+use — never `<=` / `!==` on stamp strings again. The Dashboard also never
+LISTS an entry the database confirmed has no row (`orphanKeys`, older than
+the hour's grace) and asks for its prune at most once in 20 s, ten times a
+mount (`pruneTried`), so an older tab putting it back cannot make this one
+thrash. `verify.mjs` runs the merge and the stamp cases and pins both files;
+`test-untitled-loop.mjs` (cloud build, a mocked PostgREST that spells stamps
+as Postgres does) proves the entry is never listed, one index save not a
+loop, a delete that stays deleted after the tab's own save, a project added
+on another device kept through a local delete, and an older tab's re-add.
+
 A new project is a **draft** held only in `App` state until it has a name
 or an element (`onPromote`); leaving it unpromoted discards it, so an
 "Untitled project" never persists. The dashboard prunes index entries whose

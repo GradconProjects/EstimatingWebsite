@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Plus, Trash2, ArrowRight, LayoutDashboard, Loader2, FolderOpen, ArrowUp, ArrowDown, ArrowUpDown, MapPin } from "lucide-react";
 import { QUOTE_STATUSES, QUOTE_STATUS_STYLES, normalizeStatus } from "../data/catalog.js";
 import { computeGrandTotal, computeMarginLadder, computeMarginRegister, money, getDefaultMargin, getMarginSteps, scopeLabel } from "../lib/costing.js";
@@ -122,6 +122,14 @@ export default function Dashboard({ projects, rates, rateChanges, onOpen, onCrea
   // the tick that re-runs the load when Retry is pressed.
   const [failedCount, setFailedCount] = useState(0);
   const [reloadTick, setReloadTick] = useState(0);
+  // Index entries the database confirmed have NO data row (and are older than
+  // the hour's grace): never listed, whatever happens to the prune. 13 Nov
+  // 2026: such an entry was pruned, put back by the index save's merge and
+  // pruned again, so an "Untitled project" row flickered under the list and
+  // could be clicked. `pruneTried` keeps this tab from asking again more than
+  // once in 20 s (and ten times in all) should another, older tab put it back.
+  const [orphanKeys, setOrphanKeys] = useState(() => new Set());
+  const pruneTried = useRef({});
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
@@ -141,12 +149,21 @@ export default function Dashboard({ projects, rates, rateChanges, onOpen, onCrea
       // (a timeout, a network failure, an error) is in `failed` instead and
       // is never pruned. A brand-new entry is left alone for an hour so a
       // slow first save cannot be mistaken for an orphan.
-      if (onPrune && missing.length > 0) {
-        const cutoff = Date.now() - 60 * 60 * 1000;
-        const orphans = projects
-          .filter((p) => missing.includes(p.storageKey) && Date.parse(p.createdAt || 0) < cutoff)
-          .map((p) => p.id);
-        if (orphans.length) onPrune(orphans);
+      const cutoff = Date.now() - 60 * 60 * 1000;
+      const orphanEntries = projects.filter((p) => missing.includes(p.storageKey) && Date.parse(p.createdAt || 0) < cutoff);
+      setOrphanKeys((prev) => {
+        const next = new Set(orphanEntries.map((p) => p.storageKey));
+        return next.size === prev.size && [...next].every((k) => prev.has(k)) ? prev : next;
+      });
+      if (onPrune && orphanEntries.length > 0) {
+        const now = Date.now();
+        const due = orphanEntries.filter((p) => {
+          const t = pruneTried.current[p.id] || { n: 0, at: 0 };
+          if (t.n >= 10 || now - t.at < 20000) return false;
+          pruneTried.current[p.id] = { n: t.n + 1, at: now };
+          return true;
+        }).map((p) => p.id);
+        if (due.length) onPrune(due);
       }
     });
     return () => {
@@ -155,8 +172,8 @@ export default function Dashboard({ projects, rates, rateChanges, onOpen, onCrea
   }, [projects, reloadTick]);
 
   const summaries = useMemo(
-    () => projects.map((p) => ({ project: p, ...summarizeQuote(quotesByKey[p.storageKey], rates) })),
-    [projects, quotesByKey, rates]
+    () => projects.filter((p) => !orphanKeys.has(p.storageKey)).map((p) => ({ project: p, ...summarizeQuote(quotesByKey[p.storageKey], rates) })),
+    [projects, quotesByKey, rates, orphanKeys]
   );
 
   // Sort: the ONE rule in lib/projectSort.js (shared with Project Management

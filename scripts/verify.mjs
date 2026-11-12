@@ -4677,6 +4677,49 @@ await checkAsync("Grady's mate (portal/mate.js, src/lib/mate.js): the rules, the
   for (const k of ["open", "done", "checklist", "saved", "status", "rfq", "jump"]) assert.match(app, new RegExp(`mateEvent\\("${k}"`), `the editor sends the ${k} event`);
 });
 
+// A removed project stays removed (13 Nov 2026: "there is an untitled project clicking underneath the listed projects" — a deleted / pruned index entry was put back by the tab's own save, ~1,800 index saves an hour)
+await checkAsync("the projects index merges THREE ways: a removal sticks, an addition from elsewhere is kept, stamps compare as instants", async () => {
+  const AM = await import("../src/lib/arrayMerge.js");
+  const e = (id) => ({ id, storageKey: "gradcon-quote-" + id });
+  const ids = (l) => l.map((x) => x.id).join(",");
+  // the bug: the cloud still holds X, this tab removed it → the old union put it back
+  let r = AM.mergeById([e("a"), e("b")], [e("a"), e("b"), e("x")], AM.idSet([e("a"), e("b"), e("x")]));
+  assert.equal(ids(r.merged), "a,b", "an entry removed here is not put back by the cloud copy"); assert.equal(r.changed, false);
+  // added elsewhere, never seen here → kept
+  r = AM.mergeById([e("a"), e("b")], [e("a"), e("b"), e("n")], AM.idSet([e("a"), e("b")]));
+  assert.equal(ids(r.merged), "a,b,n"); assert.deepEqual(r.added, ["n"]); assert.equal(r.changed, true);
+  // removed elsewhere (in base, still here, gone from the cloud) → dropped here too
+  r = AM.mergeById([e("a"), e("b"), e("c")], [e("a"), e("c")], AM.idSet([e("a"), e("b"), e("c")]));
+  assert.equal(ids(r.merged), "a,c"); assert.deepEqual(r.dropped, ["b"]);
+  // added here (not in base, not in the cloud) → kept; all four at once
+  r = AM.mergeById([e("a"), e("mine")], [e("a"), e("x"), e("theirs")], AM.idSet([e("a"), e("x"), e("gone")]));
+  assert.equal(ids(r.merged), "a,mine,theirs", "mine kept, theirs kept, x stays removed");
+  // nothing synced yet → the old union
+  r = AM.mergeById([e("a")], [e("b")], null); assert.equal(ids(r.merged), "a,b");
+  // a clobbered cloud copy (most of the list missing) is never read as removals
+  const many = Array.from({ length: 30 }, (_, i) => e("p" + i));
+  r = AM.mergeById(many, [e("p0")], AM.idSet(many)); assert.equal(r.merged.length, 30, "a cloud copy that lost 29 of 30 entries removes nothing"); assert.deepEqual(r.dropped, []);
+  r = AM.mergeById(many, many.slice(0, 27), AM.idSet(many)); assert.equal(r.merged.length, 27, "three removed elsewhere are dropped");
+  // entries with no id (the rate-change log) are this tab's list as it stands — the old code emptied such a list
+  r = AM.mergeById([{ at: 1 }, { at: 2 }], [{ at: 0 }], AM.idSet([])); assert.equal(r.merged.length, 2); assert.equal(r.changed, false);
+  // stamps: PostgREST's spelling and the tab's own are the same instant
+  assert.equal(AM.stampMs("2026-11-12T20:55:51.17+00:00"), AM.stampMs("2026-11-12T20:55:51.170Z"));
+  assert.ok(AM.stampNotNewer("2026-11-12T20:55:51.17+00:00", "2026-11-12T20:55:51.170Z"), "the tab's own save echoed back is not newer");
+  assert.ok(AM.stampNotNewer("2026-11-12T20:55:51+00:00", "2026-11-12T20:55:51.000Z"));
+  assert.ok(!AM.stampNotNewer("2026-11-12T20:55:51.171+00:00", "2026-11-12T20:55:51.170Z"), "a millisecond later is newer");
+  assert.ok(AM.stampNotNewer("2026-11-12T20:55:51.169+00:00", "2026-11-12T20:55:51.170Z"));
+  assert.ok(!AM.stampNotNewer("2026-11-12T20:55:51.17+00:00", null), "nothing held: the cloud copy is newer");
+  const st = fs.readFileSync(new URL("../src/lib/storage.js", import.meta.url), "utf8");
+  assert.match(st, /const res = mergeById\(toSave, current\.value, baseIdsRef\.current\);/, "the save merges three ways");
+  assert.ok(!/updated_at !== lastSyncedAtRef\.current/.test(st) && !/updated_at <= lastSyncedAtRef\.current/.test(st), "no stamp is compared as text any more");
+  assert.equal((st.match(/stampNotNewer\(/g) || []).length, 4, "load, poll (twice) and push compare instants");
+  assert.equal((st.match(/noteSynced\(/g) || []).length, 5, "the base is noted on the mirror paint, the load, the save, the poll and the push");
+  assert.match(st, /if \(valueRef\.current === started\) \{\s+remoteApplyRef\.current = true;\s+setValue\(res\.merged\);/, "a merged list never overwrites an edit made while the cloud was being read");
+  const dash = fs.readFileSync(new URL("../src/components/Dashboard.jsx", import.meta.url), "utf8");
+  assert.match(dash, /projects\.filter\(\(p\) => !orphanKeys\.has\(p\.storageKey\)\)\.map\(/, "an entry with no data row is never listed");
+  assert.match(dash, /if \(t\.n >= 10 \|\| now - t\.at < 20000\) return false;/, "the prune is asked at most once in 20 s, ten times in all");
+});
+
 if (process.exitCode) {
   console.error("\nSome checks FAILED — see above.");
 } else {
