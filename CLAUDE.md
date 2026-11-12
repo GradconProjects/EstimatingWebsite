@@ -3516,6 +3516,23 @@ element families waits on the owner's approval of the pad footing.
   cell to its figure (52 px numbers, 62 px lengths, 42 px waste / ×, selects
   capped at 118 px, the description cell takes the rest). `test-addl-fit.mjs`
   measures no overflow and every row on the page at 1280 and 1366 px.
+  **A run with NO spacing is the bar's own LENGTH, and a zero Total says why**
+  (12 Nov 2026, Grady, on a capping beam's "Start Horizontal" row — count 4,
+  run 16 m, × 2 reading 0: "total didnt update realtime as instructed before".
+  The cell WAS live; the rules had nothing to multiply, because a run was read
+  only with a spacing): `addlRunAsLength(r)` — a row in metres with a run
+  typed and no spacing, no length each and no qty each — makes the run the
+  length of each piece, so `addlRowEach` answers the run and the row is count
+  (blank = 1) × run × the multiplier: 4 × 16 m × 2 = 128 m (register formula
+  "2×4×16 m run"; a trench-mesh row the same in lm). With a spacing the run
+  sets pieces out as before; a length each or a qty each beats the run; a
+  no. row still counts pieces. `addlRowHint(r)` is the ONE reading of why a
+  row with figures on it totals 0 ("type a Len each (mm), or a Run (m) with no
+  spacing", "a spacing needs a Run", "type an Area ea", "type a Qty ea"): the
+  Total cell shows "0 ⓘ" in amber (`td.tot.need`) with the reason on hover,
+  painted by the card build and by `refreshAddlRowTotal` alike, so a zero is
+  never mistaken for a stale figure. `verify.mjs` runs the real functions out
+  of the page source; `test-addl-run-length.mjs` types Grady's rows.
 - **Excavation is the estimator's decision on every ground element**
   (`isGroundElement` = library group Foundations / Retention Walls / Ground
   Structure / Ramps / External Works / Special Items, never the generic

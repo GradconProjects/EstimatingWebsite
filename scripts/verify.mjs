@@ -3633,6 +3633,29 @@ check("Project Geometry carries a COUNT: $/no. leads the benchmark rates, sums a
     assert.match(est, /lines\.push\(\.\.\.reentrantLines\(inst,def,0\)\);/, "the composite prices it");
     assert.match(est, /if\(lp\.kind==="bars"\)\{\n\s*\/\/ straight stock bars picked in the strip selector price as plain bar/, "a stock-bar choice in the strip selector is plain bar, never a trench product");
   }
+  // An Additional row with a run and NO spacing: the run is the bar's length; a zero Total says why (Grady, 12 Nov 2026: "total didnt update realtime" — count 4, run 16 m, × 2 read 0)
+  {
+    const est = fs.readFileSync(new URL("../portal/estimates-app.html", import.meta.url), "utf8");
+    const grab = (name) => { const m = new RegExp("function " + name + "\\(r\\)\\{[\\s\\S]*?\\n\\}").exec(est); assert.ok(m, name + " in estimates-app.html"); return m[0]; };
+    const num = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? n : 0; };
+    const dowelProduct = () => ({ kind: "bar" }); const DOWEL_PIECE_W_MM = 300;
+    const fns = new Function("num", "dowelProduct", "DOWEL_PIECE_W_MM", ["addlRowSetOut", "addlRowCount", "addlRunAsLength", "addlRowHint", "addlMeshProduct", "addlRowEach", "addlRowQty"].map((n) => (n === "addlMeshProduct" ? "function addlMeshProduct(r){ return null; }" : grab(n))).join("\n") + "\nfunction addlRowMult(r){ const m=num(r && r.mult); return m>0? m : 1; }\nreturn {addlRowQty, addlRowHint, addlRunAsLength};")(num, dowelProduct, DOWEL_PIECE_W_MM);
+    assert.equal(fns.addlRowQty({ count: 4, runM: 16, unit: "m", mult: 2 }), 128, "4 bars along a 16 m run, × 2 = 128 m");
+    assert.equal(fns.addlRowQty({ runM: 7.5, unit: "m" }), 7.5, "a run alone is one bar of that length");
+    assert.ok(Math.abs(fns.addlRowQty({ runM: 16, spacing: 300, lengthMm: 600, unit: "m" }) - 32.4) < 1e-9, "a run at a spacing still sets pieces out (54 × 0.6)");
+    assert.ok(Math.abs(fns.addlRowQty({ runM: 16, spacing: 300, lengthMm: 1400, unit: "m", mult: 2 }) - 151.2) < 1e-9, "… × the multiplier");
+    assert.ok(Math.abs(fns.addlRowQty({ count: 4, runM: 16, lengthMm: 600, unit: "m" }) - 2.4) < 1e-9, "a length each beats the run when there is no spacing");
+    assert.equal(fns.addlRowQty({ runM: 16, spacing: 300, unit: "m" }), 0, "a set-out with no length each prices nothing");
+    assert.equal(fns.addlRowQty({ count: 4, runM: 16, unit: "no." }), 4, "a no. row counts its pieces, the run is not a length there");
+    assert.equal(fns.addlRowQty({ count: 4, runM: 16, qty: 3, unit: "m" }), 12, "a typed qty each beats the run");
+    assert.match(fns.addlRowHint({ count: 4, unit: "m" }), /Len each \(mm\), or a Run \(m\) with no spacing/, "a zero says what is missing");
+    assert.match(fns.addlRowHint({ spacing: 300, unit: "m" }), /needs a Run/, "a spacing with no run");
+    assert.match(fns.addlRowHint({ count: 3, unit: "m²" }), /Area ea/, "an area row with only a count");
+    assert.equal(fns.addlRowHint({ unit: "m" }), "", "a blank row has no hint"); assert.equal(fns.addlRowHint({ count: 4, runM: 16, unit: "m" }), "", "a row that prices has no hint");
+    assert.match(est, /td\.textContent=fmt\(addlRowQty\(r\),2\)\+\(hint\? " ⓘ" : ""\); td\.title=hint; td\.classList\.toggle\("need",!!hint\);/, "the live refresh paints the hint with the figure");
+    assert.match(est, /: addlRunAsLength\(r\) \? `\$\{cnt\}\$\{num\(r\.runM\)\} m run`/, "the register formula names the run");
+    assert.match(est, /else if\(meshP\.kind==="trench" && addlRunAsLength\(r\)\)\{ const lm=n\*num\(r\.runM\)/, "a trench mesh row runs the length too");
+  }
   // A precast panel forms ONE soffit and the perimeter of each panel; bulk excavation is a real dig in Estimates and lands on the Quotes Excavation / Soil removal rows (Grady, 12 Nov 2026)
   {
     const est = fs.readFileSync(new URL("../portal/estimates-app.html", import.meta.url), "utf8");
