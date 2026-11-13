@@ -948,9 +948,17 @@ checkAsync("notify Grady: the text is built from the quote's own figures, segmen
   assert.equal(f.elements, 3); assert.equal(f.subQuotes, 1); assert.equal(f.unpricedQuotes, 1, "a quote row with a qty and no amount is named as unpriced");
   assert.ok(Math.abs(f.sell - (3200 / 0.75 + 2500 / 0.92 + 100 / 0.75)) < 1e-6);
   const text = NG.smsSummary(quote, quote.items, rates, { today: "2026-11-02", portalUrl: "https://portal.test" });
-  assert.ok(/^Gradcon: costings ready for 19 Paringa Road, Portsea VIC 3944 \(Builder X\)\./.test(text), text);
+  assert.ok(/^Hi Grady, costings are ready for 19 Paringa Road, Portsea VIC 3944 \(Builder X\)\./.test(text), text);
   assert.ok(/Sell \$7,117 ex GST at 18\.5% blended on \$5,800 direct\./.test(text), text); // 3200/0.75 + 2500/0.92 + 100/0.75
-  assert.ok(/3 elements, 1 sub quote, 1 quote row UNPRICED\./.test(text) && /Tender due 2026-11-07 \(5d\)\./.test(text) && /https:\/\/portal\.test$/.test(text), text);
+  assert.ok(/3 elements, 1 sub quote, 1 quote row UNPRICED\./.test(text) && /Tender due 2026-11-07 \(5d\)\.$/.test(text), text);
+  assert.ok(!/https?:|portal/i.test(text), "the text carries no link (13 Nov 2026)");
+  // Boma's own draft: no client, nothing pinned, no deadline
+  assert.equal(NG.smsSummary({ projectName: "9 Fairfax Street, Blairgowrie VIC 3942", items: [] }, [], rates).replace(/Sell .*$/, ""), "Hi Grady, costings are ready for 9 Fairfax Street, Blairgowrie VIC 3942. ");
+  assert.equal(NG.smsSegments("Hi Grady, costings are ready for 9 Fairfax Street, Blairgowrie VIC 3942. Sell $189,262 ex GST at 25% on $125,616 direct. 3 elements."), 1, "his text is one segment");
+  // a link in a message to Grady is the LIVE site, never a deployment's own frozen address
+  assert.equal(NG.portalLink("https://estimating-website-po3nd896b-gradcon.vercel.app"), "https://estimating-website.vercel.app");
+  assert.equal(NG.portalLink("https://estimating-website.vercel.app"), "https://estimating-website.vercel.app");
+  assert.equal(NG.portalLink("http://localhost:5173"), "http://localhost:5173"); assert.equal(NG.portalLink(""), "");
   assert.ok(text.length <= NG.SMS_MAX_CHARS, `${text.length} chars`);
   // the email: the same facts in full
   const em = NG.emailSummary(quote, quote.items, rates, { today: "2026-11-02", portalUrl: "https://portal.test", by: "projects" });

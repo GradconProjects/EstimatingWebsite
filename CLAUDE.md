@@ -1160,10 +1160,15 @@ it automatically sends to him"; "lets do both at once". Rules:
    items, rates)` is the ONE reading of what Grady is told (project, client,
    deadline and days, elements, direct cost, sell ex / inc GST, project and
    blended margin, pinned lines, subcontract quotes, provisional sums, quote
-   rows still UNPRICED, scope); `smsSummary(…, {portalUrl})` lays it out as the
-   text ("Gradcon: costings ready for <project> (<client>). Sell $X ex GST at
-   Y% blended on $Z direct. N elements, M sub quotes, K quote rows UNPRICED.
-   Tender due <date> (Dd). Review in the portal: <url>"); `notifyRecord` /
+   rows still UNPRICED, scope); `smsSummary(…)` lays it out as the text, written TO
+   Grady and with NO link (Boma, 13 Nov 2026: "lets personalise this for
+   Grady. Start with Hi Grady and no need to include the link to the
+   project"): "Hi Grady, costings are ready for <project> (<client>). Sell $X
+   ex GST at Y% blended on $Z direct. N elements, M sub quotes, K quote rows
+   UNPRICED. Tender due <date> (Dd)." The email keeps its portal link, read
+   through `portalLink(origin)` — the LIVE site (`LIVE_SITE`) whenever the tab
+   is on another vercel.app address (a deployment's own frozen address was in
+   a draft that day); `notifyRecord` /
    `notifyPatch` keep every send on `quote.notifications[] = {id, kind, step,
    to (masked), text, by, at, provider, messageId, segments}`;
    `lastNotification(quote, kind)` reads the newest; `notifyStatus` /

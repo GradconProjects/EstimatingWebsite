@@ -53,11 +53,22 @@ export function notifyFacts(quote, items, rates, { today } = {}) {
   };
 }
 
-/** The text message: short, the figures Grady asks for first, a pointer to the portal. Editable before it goes. */
-export function smsSummary(quote, items, rates, { today, portalUrl } = {}) {
+/** The address a message to Grady may carry: the LIVE site. A tab opened on a deployment's own address
+ * (estimating-website-<hash>-gradcon.vercel.app) is a frozen copy — 13 Nov 2026, a draft carried one. */
+export const LIVE_SITE = "https://estimating-website.vercel.app";
+export function portalLink(origin) {
+  const o = String(origin || "").trim();
+  if (!o) return "";
+  let host = ""; try { host = new URL(o).hostname; } catch { return o; }
+  return /\.vercel\.app$/i.test(host) && `https://${host}` !== LIVE_SITE ? LIVE_SITE : o;
+}
+
+/** The text message, written TO Grady (Boma, 13 Nov 2026: "lets personalise this for Grady. Start with Hi Grady and no
+ * need to include the link to the project"): a greeting, the figures he asks for first, no link. Editable before it goes. */
+export function smsSummary(quote, items, rates, { today } = {}) {
   const f = notifyFacts(quote, items, rates, { today });
   const parts = [];
-  parts.push(`Gradcon: costings ready for ${f.project}${f.client ? ` (${f.client})` : ""}.`);
+  parts.push(`Hi Grady, costings are ready for ${f.project}${f.client ? ` (${f.client})` : ""}.`);
   parts.push(`Sell ${money0(f.sell)} ex GST at ${pct(f.blended)}${f.pinned ? " blended" : ""} on ${money0(f.directCost)} direct.`);
   const bits = [`${f.elements} element${f.elements === 1 ? "" : "s"}`];
   if (f.subQuotes) bits.push(`${f.subQuotes} sub quote${f.subQuotes === 1 ? "" : "s"}`);
@@ -66,7 +77,6 @@ export function smsSummary(quote, items, rates, { today, portalUrl } = {}) {
   if (f.scope !== "both") bits.push(f.scope === "labour" ? "labour only" : "materials only");
   parts.push(`${bits.join(", ")}.`);
   if (f.due) parts.push(`Tender ${f.due}.`);
-  parts.push(`Review in the portal${portalUrl ? `: ${portalUrl}` : "."}`);
   return parts.join(" ");
 }
 
