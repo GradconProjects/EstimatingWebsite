@@ -1150,7 +1150,12 @@ it automatically sends to him"; "lets do both at once". Rules:
    never a key. `smsSegments` counts GSM-7 (160 / 153) or UCS-2 (70 / 67 — an
    em dash or curly quote tips it); a text over 480 characters (three
    segments) is refused. A provider answer that is not SUCCESS / QUEUED (or
-   has no SID) is a 4xx / 502 with the provider's words.
+   has no SID) is a 4xx / 502 with the provider's words — for Twilio
+   `twilioRefusal(j)`: the code, "Twilio says: <its message>" and, for a code
+   in `TWILIO_HINTS`, what to do. A hint is added ONLY for a code read off
+   Twilio's own error page (13 Nov 2026, the first live send: 572002 — a TRIAL
+   account may only send from the trial number Twilio assigned to that
+   verified recipient; the panel had shown the bare "(572002)").
 2. **`api/notify.js`** (same-origin check as the other functions; `maxDuration`
    30): `GET` → `{sms: smsStatus()}` (the checklist panel reads it), `POST
    {action: "sms", text}` → one text to Grady; `runNotify(body, env,

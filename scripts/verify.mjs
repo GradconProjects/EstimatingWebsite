@@ -1027,6 +1027,14 @@ checkAsync("notify Grady: the text is built from the quote's own figures, segmen
   assert.equal(stTw.configured, true); assert.equal(stTw.from, "+614••• ••• 000", "the sender is shown masked, never whole"); assert.equal(stTw.warning, null);
   assert.match(S.smsStatus({ ...tw, TWILIO_FROM: "12345" }).warning, /TWILIO_FROM is not a phone number/);
   assert.equal(S.smsStatus({ ...tw, TWILIO_FROM: "MG" + "a".repeat(32) }).from, "MGaaaa…");
+  // a Twilio refusal carries the code, Twilio's own words and, for a code read off its error page, what to do (13 Nov 2026: 572002)
+  const trial = await N.runNotify({ action: "sms", text: "x" }, tw, async () => ({ ok: false, status: 400, json: async () => ({ code: 572002, message: "The 'From' number isn't assigned to this verified Messaging recipient", status: 400 }) }));
+  assert.equal(trial.status, 400);
+  assert.match(trial.body.error, /^Twilio did not accept the text \(572002\)\. Twilio says: The 'From' number isn't assigned to this verified Messaging recipient\. This Twilio account is on a trial/);
+  assert.match(trial.body.error, /TWILIO_FROM/); assert.match(trial.body.error, /upgrade the Twilio account/);
+  const other = await N.runNotify({ action: "sms", text: "x" }, tw, async () => ({ ok: false, status: 400, json: async () => ({ code: 99999, message: "Something else" }) }));
+  assert.equal(other.body.error, "Twilio did not accept the text (99999). Twilio says: Something else.", "an unknown code shows Twilio's words and no invented advice");
+  assert.equal(S.twilioRefusal(null), "Twilio did not accept the text.");
   // the browser side posts only the text and reads the reply; an error throws with the server's words
   let b = null;
   const r = await NG.requestSms("Costings ready.", { base: "https://portal.test", fetchImpl: async (url, init) => { b = { url, body: JSON.parse(init.body) }; return { ok: true, status: 200, json: async () => ({ ok: true, provider: "clicksend", id: "CS1", to: "+614••• ••• 678", segments: 1 }) }; } });

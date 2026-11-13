@@ -85,6 +85,21 @@ export function smsSegments(text) {
 }
 
 const b64 = (s) => Buffer.from(s, "utf8").toString("base64");
+/**
+ * What to DO about a Twilio refusal, for the codes read off Twilio's own error pages (never from memory):
+ * 572002 (twilio.com/docs/api/errors/572002, read 13 Nov 2026 — the first live send hit it): a TRIAL account may
+ * only send from the trial number Twilio assigned to that verified recipient.
+ */
+export const TWILIO_HINTS = {
+  572002: "This Twilio account is on a trial, and a trial may only send from the trial number Twilio assigned to Grady's verified mobile. Put that number in TWILIO_FROM (Twilio Console → Phone Numbers → Active numbers) and redeploy, or upgrade the Twilio account.",
+};
+/** The refusal as the page shows it: the code, Twilio's own words, and the hint when one is known. */
+export function twilioRefusal(j) {
+  const code = j && j.code ? ` (${j.code})` : "";
+  const words = j && j.message ? ` Twilio says: ${String(j.message).trim().replace(/\.?$/, ".")}` : "";
+  const hint = j && TWILIO_HINTS[j.code] ? ` ${TWILIO_HINTS[j.code]}` : "";
+  return `Twilio did not accept the text${code}.${words}${hint}`;
+}
 const err = (status, message, detail) => Object.assign(new Error(message), { status, detail });
 
 /** Sends ONE text to the configured recipient. Resolves `{ok, provider, id, to (masked), segments}`; throws with a status. */
@@ -110,6 +125,6 @@ export async function sendSms(text, env = process.env, fetchImpl = fetch) {
   form.set(sender.field, sender.value);
   const res = await fetchImpl(twilioUrl(env.TWILIO_ACCOUNT_SID), { method: "POST", headers: { Authorization: `Basic ${b64(`${env.TWILIO_ACCOUNT_SID}:${env.TWILIO_AUTH_TOKEN}`)}`, "Content-Type": "application/x-www-form-urlencoded" }, body: form.toString() });
   let j = null; try { j = await res.json(); } catch { j = null; }
-  if (!res.ok || !j || !j.sid) throw err(res.status >= 400 && res.status < 600 ? res.status : 502, `Twilio did not accept the text${j && j.code ? ` (${j.code})` : ""}.`, (j && j.message) || null);
+  if (!res.ok || !j || !j.sid) throw err(res.status >= 400 && res.status < 600 ? res.status : 502, twilioRefusal(j), (j && j.message) || null);
   return { ok: true, provider: "twilio", id: j.sid, to: maskMobile(to), segments: j.num_segments ? Number(j.num_segments) : smsSegments(body) };
 }
