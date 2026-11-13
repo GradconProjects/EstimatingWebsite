@@ -1135,7 +1135,11 @@ it automatically sends to him"; "lets do both at once". Rules:
    `CLICKSEND_API_KEY`, basic auth, `SMS_FROM` an alpha sender id ≤ 11 chars
    or a number) and **Twilio** (`TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` /
    `TWILIO_FROM` — a number, or an `MG…` messaging service SID sent as
-   `MessagingServiceSid`). Every variable is SERVER-SIDE ONLY (Vercel →
+   `MessagingServiceSid`; `twilioSender(raw)` is the ONE reading: a number in
+   ANY Australian spelling goes to Twilio as E.164 — 13 Nov 2026, it was typed
+   "04xx xxx xxx" and Twilio takes E.164 only — an alphanumeric id as typed,
+   and digits it cannot read set `smsStatus().warning`; the status shows the
+   sender masked through `twilioFromLabel`, never whole). Every variable is SERVER-SIDE ONLY (Vercel →
    Settings → Environment Variables, never `VITE_`; `.env.example` lists them).
    **The recipient is `GRADY_MOBILE`, read on the server** — `normalizeMobile`
    turns any Australian spelling into E.164 (0412 → +61412…; a full +… number

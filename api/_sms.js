@@ -25,6 +25,28 @@ export function normalizeMobile(raw) {
   if (/^\+[1-9]\d{7,14}$/.test(s)) return s; // another country's full international number
   return null;
 }
+/**
+ * The Twilio sender as the API wants it (13 Nov 2026: TWILIO_FROM was typed "04xx xxx xxx" — Twilio takes a
+ * number in E.164 only and answered every send with an invalid-From error). `{field, value, kind}`:
+ * an `MG…` Messaging Service SID → MessagingServiceSid; a phone number in ANY Australian spelling (or a full
+ * +… number) → From in E.164; anything else (an alphanumeric sender id, "Gradcon") → From as typed.
+ */
+export function twilioSender(raw) {
+  const v = String(raw || "").trim();
+  if (!v) return null;
+  if (/^MG[0-9a-f]{32}$/i.test(v)) return { field: "MessagingServiceSid", value: v, kind: "service" };
+  const num = normalizeMobile(v);
+  if (num) return { field: "From", value: num, kind: "number" };
+  return { field: "From", value: v, kind: /^[\d\s+()\-.]+$/.test(v) ? "unreadable" : "alpha" };
+}
+/** What a page may show of the Twilio sender: a number masked like the recipient, a service SID shortened, an alpha id as typed. */
+export function twilioFromLabel(raw) {
+  const t = twilioSender(raw);
+  if (!t) return null;
+  if (t.kind === "number") return maskMobile(t.value);
+  if (t.kind === "service") return `${t.value.slice(0, 6)}…`;
+  return t.kind === "unreadable" ? "unreadable number" : t.value;
+}
 /** "+61412345678" → "+61 4•• ••• 678" — enough to recognise, never the whole number in a page. */
 export function maskMobile(e164) {
   const s = String(e164 || "");
@@ -47,7 +69,9 @@ export function smsStatus(env = process.env) {
   const missing = [];
   if (!provider) missing.push(String(env.SMS_PROVIDER || "").toLowerCase() === "twilio" ? "TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / TWILIO_FROM" : "CLICKSEND_USERNAME / CLICKSEND_API_KEY (or the Twilio trio)");
   if (!to) missing.push(env.GRADY_MOBILE ? "GRADY_MOBILE is not a mobile number the function can read" : "GRADY_MOBILE");
-  return { configured: !!provider && !!to, provider, to: to ? maskMobile(to) : null, from: provider === "twilio" ? (env.TWILIO_FROM || null) : (env.SMS_FROM || null), missing };
+  return { configured: !!provider && !!to, provider, to: to ? maskMobile(to) : null, from: provider === "twilio" ? twilioFromLabel(env.TWILIO_FROM) : (env.SMS_FROM || null), missing,
+    // a sender the function cannot read as a number is said here, before a send is refused by Twilio
+    warning: provider === "twilio" && (twilioSender(env.TWILIO_FROM) || {}).kind === "unreadable" ? "TWILIO_FROM is not a phone number the function can read — use the Twilio number as +61…, or an MG… Messaging Service SID" : null };
 }
 
 /** GSM-7 segments: 160 in one, 153 each after; a non-GSM character (an em dash, a curly quote) makes it UCS-2 — 70 / 67. */
@@ -82,7 +106,8 @@ export async function sendSms(text, env = process.env, fetchImpl = fetch) {
   }
   // Twilio: form-encoded, a number or a messaging service as the sender
   const form = new URLSearchParams({ To: to, Body: body });
-  if (/^MG[0-9a-f]{32}$/i.test(String(env.TWILIO_FROM))) form.set("MessagingServiceSid", env.TWILIO_FROM); else form.set("From", env.TWILIO_FROM);
+  const sender = twilioSender(env.TWILIO_FROM);
+  form.set(sender.field, sender.value);
   const res = await fetchImpl(twilioUrl(env.TWILIO_ACCOUNT_SID), { method: "POST", headers: { Authorization: `Basic ${b64(`${env.TWILIO_ACCOUNT_SID}:${env.TWILIO_AUTH_TOKEN}`)}`, "Content-Type": "application/x-www-form-urlencoded" }, body: form.toString() });
   let j = null; try { j = await res.json(); } catch { j = null; }
   if (!res.ok || !j || !j.sid) throw err(res.status >= 400 && res.status < 600 ? res.status : 502, `Twilio did not accept the text${j && j.code ? ` (${j.code})` : ""}.`, (j && j.message) || null);

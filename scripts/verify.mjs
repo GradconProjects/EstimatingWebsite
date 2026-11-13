@@ -1008,6 +1008,17 @@ checkAsync("notify Grady: the text is built from the quote's own figures, segmen
   assert.equal(tposted.params.get("To"), "+61412345678"); assert.equal(tposted.params.get("From"), "+61400000000"); assert.equal(tposted.params.get("Body"), "Costings ready.");
   const okMg = await N.runNotify({ action: "sms", text: "x" }, { ...tw, TWILIO_FROM: "MG" + "a".repeat(32) }, async (url, init) => { tposted = new URLSearchParams(init.body); return { ok: true, status: 201, json: async () => ({ sid: "SM2" }) }; });
   assert.equal(okMg.status, 200); assert.equal(tposted.get("MessagingServiceSid"), "MG" + "a".repeat(32)); assert.equal(tposted.get("From"), null);
+  // 13 Nov 2026: TWILIO_FROM typed in the local spelling ("0400 000 000") is sent as E.164 — Twilio refuses anything else
+  assert.deepEqual(S.twilioSender("0400 000 000"), { field: "From", value: "+61400000000", kind: "number" });
+  assert.deepEqual(S.twilioSender("61400000000"), { field: "From", value: "+61400000000", kind: "number" });
+  assert.equal(S.twilioSender("+15005550006").value, "+15005550006"); assert.equal(S.twilioSender("Gradcon").kind, "alpha"); assert.equal(S.twilioSender("Gradcon").value, "Gradcon");
+  assert.equal(S.twilioSender("12345").kind, "unreadable"); assert.equal(S.twilioSender(""), null);
+  const okLocal = await N.runNotify({ action: "sms", text: "x" }, { ...tw, TWILIO_FROM: "0400 000 000" }, async (url, init) => { tposted = new URLSearchParams(init.body); return { ok: true, status: 201, json: async () => ({ sid: "SM3" }) }; });
+  assert.equal(okLocal.status, 200); assert.equal(tposted.get("From"), "+61400000000", "the local spelling goes to Twilio as E.164");
+  const stTw = S.smsStatus({ ...tw, TWILIO_FROM: "0400 000 000" });
+  assert.equal(stTw.configured, true); assert.equal(stTw.from, "+614••• ••• 000", "the sender is shown masked, never whole"); assert.equal(stTw.warning, null);
+  assert.match(S.smsStatus({ ...tw, TWILIO_FROM: "12345" }).warning, /TWILIO_FROM is not a phone number/);
+  assert.equal(S.smsStatus({ ...tw, TWILIO_FROM: "MG" + "a".repeat(32) }).from, "MGaaaa…");
   // the browser side posts only the text and reads the reply; an error throws with the server's words
   let b = null;
   const r = await NG.requestSms("Costings ready.", { base: "https://portal.test", fetchImpl: async (url, init) => { b = { url, body: JSON.parse(init.body) }; return { ok: true, status: 200, json: async () => ({ ok: true, provider: "clicksend", id: "CS1", to: "+614••• ••• 678", segments: 1 }) }; } });

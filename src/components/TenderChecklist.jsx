@@ -165,7 +165,7 @@ function NotifyGrady({ quote, notify }) {
               <span className="text-[10px] font-semibold uppercase tracking-wide text-neutral-500">Text message to Grady</span>
               <span className="text-[11px] text-neutral-600" data-testid="tender-sms-status">
                 {!sms ? "Checking the SMS set-up…"
-                  : smsReady ? <>SMS ready · to Grady <span className="font-mono">{sms.to}</span>{sms.provider ? ` via ${sms.provider === "clicksend" ? "ClickSend" : "Twilio"}` : ""}</>
+                  : smsReady ? <>SMS ready · to Grady <span className="font-mono">{sms.to}</span>{sms.provider ? ` via ${sms.provider === "clicksend" ? "ClickSend" : "Twilio"}` : ""}{sms.warning ? <span className="text-amber-700" data-testid="tender-sms-warning"> · {sms.warning}</span> : null}</>
                   : <span className="text-red-700" data-testid="tender-sms-problem">{sms.error && !(sms.missing && sms.missing.length) ? sms.error : <>SMS not configured{sms.missing && sms.missing.length ? ` — set ${sms.missing.join(" and ")} in the Vercel project's Environment Variables` : ""}.</>}</span>}
               </span>
             </div>
