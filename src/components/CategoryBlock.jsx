@@ -1,6 +1,6 @@
 import { Fragment } from "react";
 import { ChevronDown, ChevronRight, Plus, X } from "lucide-react";
-import { rateKey, money2, rowRate, computeRowTotal, rowContext, autoSoilRemoval, autoBlindingConcrete, blindingBuildUp, isQuantityOnlyKey, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, additionalRowsFor, additionalRowTotal, autoPigmentWashout, autoSpecialistShortLoad, productLabel, visibleProducts, isBlindingProduct, blindingIncluded, catalogRate } from "../lib/costing.js";
+import { rateKey, money2, rowRate, computeRowTotal, rowContext, columnBasis, autoSoilRemoval, autoBlindingConcrete, blindingBuildUp, isQuantityOnlyKey, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, additionalRowsFor, additionalRowTotal, autoPigmentWashout, autoSpecialistShortLoad, productLabel, visibleProducts, isBlindingProduct, blindingIncluded, catalogRate } from "../lib/costing.js";
 import { SPECIALIST_CONCRETE_KEY } from "../data/catalog.js";
 import { NumInput } from "./atoms.jsx";
 import { validityState, validityLabel, formatValidUntil } from "../lib/rateValidity.js";
@@ -38,6 +38,10 @@ export default function CategoryBlock({ cat, item, rates, onQtyChange, entryTone
   const hasVolumeRate = !!cat.volumeRateBasis;
   const extraCols = (hasArea ? 1 : 0) + (hasLength ? 1 : 0) + (hasVolumeRate ? 2 : 0) + (hasWeight ? 2 : 0);
   const ctx = rowContext(item);
+  // What the weight and the price are PER (13 Nov 2026, Boma, on "N12 - 6.0m length · m · 112 · $9.96": "this cost doesnt
+  // add up" — the row was right, 19 whole bars × $9.96 = $189.24, but the column read "Unit $" beside a unit of "m", so it
+  // looked like 112 m × $9.96). columnBasis(cat) in costing.js is the ONE reading; the Total cell prints the sum it made.
+  const basis = columnBasis(cat);
   // A last delivered load under 4 m³ auto-applies Minimum cartage (amber ghost on its
   // row, like the crew sheet) — typing a Qty there takes the row manual.
   const minCartage = cat.key === "CONCRETE" ? autoMinimumCartage(item, rates) : null;
@@ -88,9 +92,9 @@ export default function CategoryBlock({ cat, item, rates, onQtyChange, entryTone
                 {hasLength && <th className="text-right px-2 py-1.5 font-medium w-20">Bars</th>}
                 {hasVolumeRate && <th className="text-right px-2 py-1.5 font-medium w-20">On m³</th>}
                 {hasVolumeRate && <th className="text-right px-2 py-1.5 font-medium w-20">Steel (t)</th>}
-                {hasWeight && <th className="text-right px-2 py-1.5 font-medium w-20">Wt (kg)</th>}
+                {hasWeight && <th className="text-right px-2 py-1.5 font-medium w-20" data-testid="col-weight" title={hasLength ? "Weight of one whole bar" : hasArea ? "Weight of one whole sheet" : undefined}>{basis.weight}</th>}
                 {hasWeight && <th className="text-right px-2 py-1.5 font-medium w-20">Total (t)</th>}
-                <th className="text-right px-2 py-1.5 font-medium w-28 min-w-[7rem]">Unit $</th>
+                <th className="text-right px-2 py-1.5 font-medium w-28 min-w-[7rem]" data-testid="col-unit-cost" title={basis.priceNote}>{basis.price}</th>
                 <th className="text-right px-3 py-1.5 font-medium w-28 min-w-[7rem]">Total $</th>
               </tr>
             </thead>
@@ -257,7 +261,13 @@ export default function CategoryBlock({ cat, item, rates, onQtyChange, entryTone
                           }}
                         />
                       ) : (
-                        money2(rowTotal)
+                        <>
+                          {money2(rowTotal)}
+                          {/* the sum behind a whole-bar / whole-sheet row, so the figure can be checked at a glance */}
+                          {!autoRow && qty > 0 && (bars != null || sheets != null) && (
+                            <div className="text-[10px] font-normal text-neutral-400 leading-tight" data-testid="row-sum">{bars != null ? bars : sheets} {bars != null ? (bars === 1 ? "bar" : "bars") : (sheets === 1 ? "sheet" : "sheets")} × {money2(rate.unitCost)}</div>
+                          )}
+                        </>
                       )}
                     </td>
                   </tr>

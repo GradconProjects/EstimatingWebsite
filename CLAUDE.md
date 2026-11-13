@@ -2935,11 +2935,51 @@ blob: URL and every other panel is inlined, so switching panels never picks
 up a newer deploy — only a page reload does (30 Sep 2026: a tab open across
 three deploys kept showing subcontractor rates the live site no longer
 had). The shell's stale-build notice (`#stale-build`, end of
-`portal-shell.html`) fetches the page with `?build-check=` on focus and
-every 3 minutes, compares the `Build <b>sha` stamp with the one baked in
+`portal-shell.html`) asks its own address for `build.txt` (the bare commit,
+8 bytes) on focus and every 3 minutes, compares it with the stamp baked in
 (`__BUILD_STAMP__`) and offers "Reload now" when they differ. When a user
 reports behaviour the current build cannot produce, check the Build number
-in their footer first.
+in their footer first. **Never fetch the page itself to learn the build**
+(13 Nov 2026): until then the check downloaded the whole page — about 1.9 MB
+compressed — on every focus and every 3 minutes from every open tab, close to
+1 GB of transfer a day for each tab left open, against a hosting plan with a
+monthly allowance. A periodic check from the browser asks for bytes, not
+megabytes.
+
+**The hosting switched off is said in those words, never as "not
+configured"** (13 Nov 2026, Boma: "this message has become too persistent … i
+cant sent the emails for grady notification: Google mail is not configured on
+the server"): Vercel was answering EVERY address of the project — the live
+site, the git alias, `/api/*`, `build.txt` — with `402 Payment required /
+DEPLOYMENT_DISABLED` in plain text (the account's billing or plan usage; only
+the Vercel dashboard of the account that owns the project says which, and
+nothing in the code can lift it). A tab already open keeps saving, because the
+browser talks to the database directly, so the only sign was each surface
+reading "no JSON came back" as "the variables are not set".
+`src/lib/serverStatus.js` (pure, verify-covered): `serverDownReason(status)`
+is the ONE wording for a server function that did not answer with JSON (402 →
+"The app's hosting has been switched off by Vercel (402 Payment required) …
+do not reload this tab until then"; 0 → could not be reached; else "did not
+answer (N)"), `readServerReply(res)` → `{ok, status, body}` (body null when no
+JSON) and `failureReason(reply, fallback)` (the server's own `error` when it
+sent JSON, else the reason above). `mailSendStatus` returns `{unreachable,
+status, reason}` and `requestEmail` / `requestSms` / `notifyStatus` /
+`driveApi` / `driveStatus` / the RFQ composer's status read all go through
+it; the checklist prints `mail.reason` BEFORE it may say "Google mail is not
+configured" (`tender-email-problem`, `tender-sms-problem`), the RFQ warning
+and the Drive drawer the same. A server that ANSWERS "not configured" in JSON
+still reads as not configured. In the shell the build check treats a 402 on
+`build.txt` as `hostingOff()` — the bar reads "The app's hosting has been
+switched off by Vercel (Payment required) … do not reload or close this tab",
+`data-kind="hosting-off"`, no button, `window.gradconHostingOff`; it never
+marks the tab as an old build (the crew prefill keeps running) and
+`hostingBack()` clears it the moment `build.txt` answers again. **A new
+browser call to `/api/*` reads its reply through `readServerReply` /
+`failureReason`, never `res.json()` with a "not configured" default.**
+`test-hosting-off.mjs` proves the checklist, the Drive drawer and the bar
+against a server that answers 402 in plain text; `test-not-live.mjs` covers
+the build check on the five kinds of address and a frozen deployment with no
+`build.txt`.
 
 **A copy that is NOT the live site says so** (12 Nov 2026, 41 Wildcoast Road:
 the two tabs above were not merely unreloaded — a reload could never update
@@ -4382,6 +4422,19 @@ if Estimates gains an element type Quotes already has a match for.
   material sections). Numbers are `font-mono tabular-nums` throughout so
   columns of figures align — keep that convention for any new numeric
   display.
+- **A band's price and weight columns say what they are PER** (13 Nov 2026,
+  Boma, on the STOCK BAR row "N12 - 6.0m length · m · 112 · $9.96": "this cost
+  doesnt add up" — the row was right, 112 m is 19 whole 6 m bars and 19 ×
+  $9.96 = $189.24, but the head read "Unit $" beside a unit of "m", so it
+  looked like 112 m × $9.96 = $1,115.52): `columnBasis(cat)` in `costing.js`
+  is the ONE reading, mirroring the bases `computeRowTotal` prices by —
+  STOCK BAR "$ / bar" · "kg / bar", SQUARE MESH "$ / sheet" · "kg / sheet",
+  PROCESSED BAR "$ / tonne" · "kg / m", REINFORCEMENT BY RATE "$ / tonne",
+  every other band "Unit $" · "Wt (kg)" — with the arithmetic on the head's
+  hover (`col-unit-cost`, `col-weight`), and a whole-bar / whole-sheet row
+  with a quantity prints the sum under its total (`row-sum`: "19 bars ×
+  $9.96"). A new basis in `computeRowTotal` gets its words in `columnBasis`
+  (`verify.mjs` fails a band with a basis flag that still reads "Unit $").
 - Every material/labour input is a controlled `<input type="number">`
   via the shared `NumInput` component (`components/atoms.jsx`) — reuse
   it rather than writing a new number input, it already handles the

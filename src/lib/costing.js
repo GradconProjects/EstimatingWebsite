@@ -188,6 +188,23 @@ export function computeRowTotal(cat, rate, qty, ctx) {
   return qty * rate.unitCost;
 }
 
+/**
+ * What a band's weight and price columns are PER — the ONE reading the card's
+ * column heads use (13 Nov 2026, Boma, on the STOCK BAR row "N12 - 6.0m length ·
+ * m · 112 · $9.96": "this cost doesnt add up". The row was right — 112 m is 19
+ * whole 6 m bars, 19 × $9.96 = $189.24 — but the head read "Unit $" beside a
+ * unit of "m", so it looked like 112 m × $9.96 = $1,115.52). Mirrors the bases
+ * `computeRowTotal` prices by; a new basis there gets its words here.
+ */
+export function columnBasis(cat) {
+  const c = cat || {};
+  if (c.lengthBasis) return { per: "bar", weight: "kg / bar", price: "$ / bar", priceNote: "Priced per WHOLE bar: the metres typed are rounded up to whole bars (the Bars column) and Total $ = bars × $ / bar" };
+  if (c.areaBasis) return { per: "sheet", weight: "kg / sheet", price: "$ / sheet", priceNote: "Priced per WHOLE sheet: the m² typed is rounded up to whole sheets (the Sheets column) and Total $ = sheets × $ / sheet" };
+  if (c.weightBasis) return { per: "tonne", weight: "kg / m", price: "$ / tonne", priceNote: "Priced by weight: Total $ = Total (t) × $ / tonne" };
+  if (c.volumeRateBasis) return { per: "tonne", weight: "Wt (kg)", price: "$ / tonne", priceNote: "Priced by weight: Total $ = Steel (t) × $ / tonne" };
+  return { per: "unit", weight: "Wt (kg)", price: "Unit $", priceNote: undefined };
+}
+
 const MIN_CARTAGE_PRODUCT_MATCH = /minimum cartage|small load/i;   // legacy name still matches
 // Per-m³ fees charged on EVERY delivered m³, with no threshold.
 const SURCHARGE_PRODUCT_MATCH = /transport surcharge/i;

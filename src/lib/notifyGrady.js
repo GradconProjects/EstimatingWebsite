@@ -7,6 +7,7 @@
  * before it goes), the record is kept on the quote, the browser request posts
  * only the approved text — api/notify.js holds the recipient.
  */
+import { serverDownReason, readServerReply, failureReason } from "./serverStatus.js";
 import { computeMarginRegister, computeProvisionalTotals, projectMargin, money, money2 } from "./costing.js";
 
 /** Grady's address — the ONE recipient of the checklist's email (an address is not a secret; the mailbox that sends is projects@). */
@@ -137,9 +138,13 @@ export const lastNotification = (quote, kind = "sms") => notificationsOf(quote).
 export async function mailSendStatus({ fetchImpl, base } = {}) {
   const f = fetchImpl || fetch;
   const origin = base || (typeof location !== "undefined" ? location.origin : "");
-  const res = await f(`${origin}/api/google-auth?action=status`, { method: "GET", headers: { accept: "application/json" } });
-  let body = null; try { body = await res.json(); } catch { body = null; }
-  if (!res.ok || !body) return { configured: false, connected: false, send: false };
+  let res;
+  try { res = await f(`${origin}/api/google-auth?action=status`, { method: "GET", headers: { accept: "application/json" } }); }
+  catch { return { configured: false, connected: false, send: false, unreachable: true, reason: serverDownReason(0) }; }
+  const reply = await readServerReply(res); const body = reply.body;
+  // no JSON = the server did not answer at all (hosting switched off, a gateway page) — never "not configured"
+  if (!body) return { configured: false, connected: false, send: false, unreachable: true, status: res.status, reason: serverDownReason(res.status) };
+  if (!res.ok) return { configured: false, connected: false, send: false, status: res.status, reason: failureReason(reply) };
   return { configured: !!body.configured, connected: !!body.connected, send: !!body.send, email: body.email || body.mailbox || null };
 }
 /** POST the approved email to Grady through the projects@ connection (api/gmail.js `send`). Resolves `{id, threadId, to, subject}`. */
@@ -147,8 +152,8 @@ export async function requestEmail({ subject, text, fromName }, { fetchImpl, bas
   const f = fetchImpl || fetch;
   const origin = base || (typeof location !== "undefined" ? location.origin : "");
   const res = await f(`${origin}/api/gmail`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "send", to: to || GRADY_EMAIL, toName: "Grady", fromName: fromName || "Gradcon Concrete Constructions", subject: String(subject || ""), text: String(text || "") }) });
-  let body = null; try { body = await res.json(); } catch { body = null; }
-  if (!res.ok) throw new Error((body && body.error) || `The mail function answered ${res.status}`);
+  const reply = await readServerReply(res); const body = reply.body;
+  if (!res.ok) throw new Error(failureReason(reply, `The mail function answered ${res.status}`));
   const sent = (body && body.sent) || {};
   return { id: sent.id || null, threadId: sent.threadId || null, to: sent.to || to || GRADY_EMAIL, subject: sent.subject || subject };
 }
@@ -158,8 +163,8 @@ export async function notifyStatus({ fetchImpl, base } = {}) {
   const f = fetchImpl || fetch;
   const origin = base || (typeof location !== "undefined" ? location.origin : "");
   const res = await f(`${origin}/api/notify`, { method: "GET" });
-  let body = null; try { body = await res.json(); } catch { body = null; }
-  if (!res.ok) throw new Error((body && body.error) || `The notify function answered ${res.status}`);
+  const reply = await readServerReply(res); const body = reply.body;
+  if (!res.ok || !body) throw new Error(failureReason(reply, `The notify function answered ${res.status}`));
   return (body && body.sms) || { configured: false, missing: ["unknown"] };
 }
 /** POST the approved text. Resolves `{ok, provider, id, to, segments}`; throws with the server's reason. */
@@ -167,7 +172,7 @@ export async function requestSms(text, { fetchImpl, base } = {}) {
   const f = fetchImpl || fetch;
   const origin = base || (typeof location !== "undefined" ? location.origin : "");
   const res = await f(`${origin}/api/notify`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "sms", text: String(text || "") }) });
-  let body = null; try { body = await res.json(); } catch { body = null; }
-  if (!res.ok) throw new Error((body && body.error) || `The notify function answered ${res.status}`);
+  const reply = await readServerReply(res); const body = reply.body;
+  if (!res.ok || !body) throw new Error(failureReason(reply, `The notify function answered ${res.status}`));
   return body;
 }

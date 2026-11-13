@@ -1,3 +1,4 @@
+import { serverDownReason } from "../lib/serverStatus.js";
 import { useState, useEffect } from "react";
 import { ClipboardCheck, ChevronDown, ChevronUp, MessageSquare } from "lucide-react";
 import { TENDER_STEPS, KEY_CONTROL_POINTS, checklistProgress, stepState } from "../lib/tenderChecklist.js";
@@ -111,7 +112,7 @@ function NotifyGrady({ quote, notify }) {
     let alive = true;
     redraft(); setResult(null); setError(null);
     notify.status().then((st) => { if (alive) setSms(st); }).catch((e) => { if (alive) setSms({ configured: false, missing: [], error: e.message }); });
-    notify.mailStatus().then((st) => { if (alive) setMail(st); }).catch(() => { if (alive) setMail({ configured: false, connected: false, send: false }); });
+    notify.mailStatus().then((st) => { if (alive) setMail(st); }).catch(() => { if (alive) setMail({ configured: false, connected: false, send: false, unreachable: true, reason: serverDownReason(0) }); });
     return () => { alive = false; };
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
   const segs = smsSegments(text);
@@ -148,7 +149,7 @@ function NotifyGrady({ quote, notify }) {
               <span className="text-[11px] text-neutral-600" data-testid="tender-email-status">
                 {!mail ? "Checking the mailbox…"
                   : mailReady ? <>Mail ready · from <span className="font-mono">{mail.email || "projects@gradcon.com.au"}</span> to <span className="font-mono">grady@gradcon.com.au</span></>
-                  : <span className="text-red-700">{!mail.configured ? "Google mail is not configured on the server." : !mail.connected ? "projects@ is not connected — connect it under Settings → Google mail & Drive." : "The Google connection cannot send yet — reconnect it for sending under Settings → Google mail & Drive."}</span>}
+                  : <span className="text-red-700" data-testid="tender-email-problem">{mail.reason ? mail.reason : !mail.configured ? "Google mail is not configured on the server." : !mail.connected ? "projects@ is not connected — connect it under Settings → Google mail & Drive." : "The Google connection cannot send yet — reconnect it for sending under Settings → Google mail & Drive."}</span>}
               </span>
             </div>
             <input type="text" value={subject} onChange={(e) => { setSubject(e.target.value); setOkMail(false); }} className="w-full bg-white border border-neutral-300 rounded px-2 py-1 text-[12px] focus:outline-none focus:ring-2 focus:ring-orange-400" data-testid="tender-email-subject" placeholder="Subject" />
@@ -165,7 +166,7 @@ function NotifyGrady({ quote, notify }) {
               <span className="text-[11px] text-neutral-600" data-testid="tender-sms-status">
                 {!sms ? "Checking the SMS set-up…"
                   : smsReady ? <>SMS ready · to Grady <span className="font-mono">{sms.to}</span>{sms.provider ? ` via ${sms.provider === "clicksend" ? "ClickSend" : "Twilio"}` : ""}</>
-                  : <span className="text-red-700">SMS not configured{sms.missing && sms.missing.length ? ` — set ${sms.missing.join(" and ")} in the Vercel project's Environment Variables` : sms.error ? ` — ${sms.error}` : ""}.</span>}
+                  : <span className="text-red-700" data-testid="tender-sms-problem">{sms.error && !(sms.missing && sms.missing.length) ? sms.error : <>SMS not configured{sms.missing && sms.missing.length ? ` — set ${sms.missing.join(" and ")} in the Vercel project's Environment Variables` : ""}.</>}</span>}
               </span>
             </div>
             <textarea value={text} onChange={(e) => { setText(e.target.value); setOkSms(false); }} rows={4} className="w-full bg-white border border-neutral-300 rounded px-2 py-1 text-[12px] font-mono leading-snug focus:outline-none focus:ring-2 focus:ring-orange-400" data-testid="tender-sms-text" />

@@ -1,3 +1,4 @@
+import { serverDownReason, readServerReply, failureReason } from "../lib/serverStatus.js";
 import { useEffect, useMemo, useState } from "react";
 import { X, Send, Check, ChevronLeft, Paperclip, Loader2, AlertTriangle, Mail } from "lucide-react";
 import { RFQ_PACKAGES, RFQ_LEAD, packageByKey, packageLabel, suggestPackages, contractorsFor, rfqContact, rfqDrafts, rfqSubject, elementScope, dayPlus, rfqRecord, attachmentOptions, driveFolderOptions, missingAttachClasses, planAttachments, driveFileIdFrom, localFileCheck, localFileOption, driveLinkOption, LOCAL_FILE_ACCEPT, fmtBytes, ATTACH_PLAN_BYTES, DEFAULT_CC, parseCc, rfqHead, rfqBody, joinDraft, draftNameIssues } from "../lib/rfq.js";
@@ -143,7 +144,7 @@ export default function RfqModal({ quote, items, rates, projectScope, elementTyp
     let alive = true;
     readRegister().then((r) => { if (alive) setRegister(r); });
     readTakeoffForProject(quote.projectName).then((t) => { if (alive) setTakeoff(t); }).catch(() => {});
-    fetch(`${apiBase()}/api/google-auth?action=status`, { headers: { accept: "application/json" } }).then((r) => (r.ok ? r.json() : null)).then((d) => { if (alive) setMail(d || { configured: false }); }).catch(() => { if (alive) setMail({ configured: false }); });
+    fetch(`${apiBase()}/api/google-auth?action=status`, { headers: { accept: "application/json" } }).then(async (r) => { const rep = await readServerReply(r); return rep.body && r.ok ? rep.body : { configured: false, reason: failureReason(rep) }; }).then((d) => { if (alive) setMail(d); }).catch(() => { if (alive) setMail({ configured: false, reason: serverDownReason(0) }); });
     // the project's Drive folder: its files, one level of subfolders, and a keyword search beneath — tagged for auto-attach
     (async () => {
       try {
@@ -264,7 +265,7 @@ export default function RfqModal({ quote, items, rates, projectScope, elementTyp
         {mail && (!mail.configured || !mail.connected || !mail.send) && (
           <div className="mx-5 mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-[12px] text-amber-900 flex items-start gap-2" data-testid="rfq-mail-warning">
             <AlertTriangle size={14} className="mt-0.5 flex-none" />
-            <span>{!mail.configured ? "The Google connection is not configured on this deployment — drafts can be built and copied, not sent." : !mail.connected ? "The projects@ mailbox is not connected — connect it under Settings → Google mail & Drive to send." : "The mailbox connection is read-only — open Settings → Google mail & Drive and click “Reconnect for sending” once. Until then, drafts can be built and copied, not sent."}</span>
+            <span>{mail.reason ? `${mail.reason} Drafts can be built and copied, not sent.` : !mail.configured ? "The Google connection is not configured on this deployment — drafts can be built and copied, not sent." : !mail.connected ? "The projects@ mailbox is not connected — connect it under Settings → Google mail & Drive to send." : "The mailbox connection is read-only — open Settings → Google mail & Drive and click “Reconnect for sending” once. Until then, drafts can be built and copied, not sent."}</span>
           </div>
         )}
         {error && <div className="mx-5 mt-3 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-[12px] text-red-800" data-testid="rfq-error">{error}</div>}

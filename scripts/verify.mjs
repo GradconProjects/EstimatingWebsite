@@ -4720,6 +4720,57 @@ await checkAsync("the projects index merges THREE ways: a removal sticks, an add
   assert.match(dash, /if \(t\.n >= 10 \|\| now - t\.at < 20000\) return false;/, "the prune is asked at most once in 20 s, ten times in all");
 });
 
+await checkAsync("a server that does not answer is never 'not configured'; the build check asks for 8 bytes; a bar / sheet band says what its price is per (13 Nov 2026)", async () => {
+  const SS = await import("../src/lib/serverStatus.js");
+  const NG2 = await import("../src/lib/notifyGrady.js");
+  const DF = await import("../src/lib/driveFiles.js");
+  const C2 = await import("../src/lib/costing.js");
+  // Vercel's disabled-project page: 402, plain text, no JSON
+  const off = async () => ({ ok: false, status: 402, json: async () => { throw new Error("not json"); } });
+  assert.match(SS.serverDownReason(402), /switched off by Vercel \(402 Payment required\)/);
+  assert.match(SS.serverDownReason(402), /do not reload/);
+  assert.match(SS.serverDownReason(0), /could not be reached/);
+  assert.match(SS.serverDownReason(504), /did not answer \(504\)/);
+  assert.equal(SS.failureReason({ status: 503, body: { error: "Google is not configured — set X" } }), "Google is not configured — set X", "the server's own words stand when it sent JSON");
+  const ms = await NG2.mailSendStatus({ base: "https://portal.test", fetchImpl: off });
+  assert.equal(ms.configured, false); assert.equal(ms.unreachable, true); assert.equal(ms.status, 402);
+  assert.match(ms.reason, /switched off by Vercel/, "the checklist is told the hosting is off, not that Google is unset");
+  const thrown = await NG2.mailSendStatus({ base: "https://portal.test", fetchImpl: async () => { throw new Error("offline"); } });
+  assert.equal(thrown.unreachable, true); assert.match(thrown.reason, /could not be reached/);
+  const real = await NG2.mailSendStatus({ base: "https://portal.test", fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ configured: false, connected: false }) }) });
+  assert.equal(real.configured, false); assert.ok(!real.reason, "a server that ANSWERS 'not configured' still reads as not configured");
+  await assert.rejects(() => NG2.requestEmail({ subject: "s", text: "t" }, { base: "https://portal.test", fetchImpl: off }), /switched off by Vercel/);
+  await assert.rejects(() => NG2.requestSms("x", { base: "https://portal.test", fetchImpl: off }), /switched off by Vercel/);
+  await assert.rejects(() => NG2.notifyStatus({ base: "https://portal.test", fetchImpl: off }), /switched off by Vercel/);
+  await assert.rejects(() => DF.driveApi({ action: "status" }, off), (e) => /switched off by Vercel/.test(e.message) && e.status === 402 && e.serverDown === true);
+  await assert.rejects(() => DF.driveApi({ action: "status" }, async () => ({ ok: false, status: 409, json: async () => ({ error: "Reconnect for Drive", needsReconnect: true }) })), (e) => e.message === "Reconnect for Drive" && e.needsReconnect === true && !e.serverDown);
+  const tc = fs.readFileSync(new URL("../src/components/TenderChecklist.jsx", import.meta.url), "utf8");
+  assert.match(tc, /mail\.reason \? mail\.reason : !mail\.configured \?/, "the checklist prints the reason before it says 'not configured'");
+  const rfq = fs.readFileSync(new URL("../src/components/RfqModal.jsx", import.meta.url), "utf8");
+  assert.match(rfq, /reason: failureReason\(rep\)/); assert.match(rfq, /mail\.reason \? `\$\{mail\.reason\} Drafts can be built/);
+  // the shell: the build check reads build.txt, never the whole page; a 402 shows the hosting notice and it clears itself
+  const shell = fs.readFileSync(new URL("../portal/portal-shell.html", import.meta.url), "utf8");
+  assert.ok(!/\?build-check=/.test(shell), "the build check no longer downloads the page");
+  assert.match(shell, /const res = await fetch\("\/build\.txt\?" \+ Date\.now\(\), \{cache:"no-store"\}\);\s+if\(res\.status === 402\)\{ hostingOff\(\); return; \}/);
+  assert.match(shell, /function hostingOff\(\)\{[\s\S]{0,700}data-kind", "hosting-off"/);
+  assert.match(shell, /hostingBack\(\);\s+if\(live && live !== shaOf\(RUNNING\)\)/, "the notice clears the moment the site answers again");
+  // the columns
+  const cat = (k) => FULL_CATALOG.find((c) => c.key === k);
+  assert.deepEqual([C2.columnBasis(cat("STOCK BAR")).price, C2.columnBasis(cat("STOCK BAR")).weight], ["$ / bar", "kg / bar"]);
+  assert.deepEqual([C2.columnBasis(cat("SQUARE MESH")).price, C2.columnBasis(cat("SQUARE MESH")).weight], ["$ / sheet", "kg / sheet"]);
+  assert.deepEqual([C2.columnBasis(cat("PROCESSED BAR")).price, C2.columnBasis(cat("PROCESSED BAR")).weight], ["$ / tonne", "kg / m"]);
+  assert.equal(C2.columnBasis(cat("REINFORCEMENT BY RATE")).price, "$ / tonne");
+  assert.equal(C2.columnBasis(cat("CONCRETE")).price, "Unit $"); assert.equal(C2.columnBasis(cat("TRENCH MESH")).price, "Unit $");
+  // every basis computeRowTotal prices by has its words (a band with a basis flag never reads plain "Unit $")
+  FULL_CATALOG.forEach((c) => { if (c.lengthBasis || c.areaBasis || c.weightBasis || c.volumeRateBasis) assert.notEqual(C2.columnBasis(c).price, "Unit $", c.key); });
+  // Boma's row: 112 m of N12 = 19 whole bars × $9.96 = $189.24 (not 112 × $9.96)
+  const sb = cat("STOCK BAR"); const n12 = sb.products.map((p) => (Array.isArray(p) ? { name: p[0], unit: p[1], unitWeight: p[2], unitCost: p[3], barLength: p[5] } : p)).find((p) => p.name === "N12 - 6.0m length");
+  assert.equal(Math.round(C2.computeRowTotal(sb, { unitCost: n12.unitCost, unitWeight: n12.unitWeight, barLength: n12.barLength }, 112, { concreteM3: 0 }) * 100) / 100, 189.24);
+  const cb = fs.readFileSync(new URL("../src/components/CategoryBlock.jsx", import.meta.url), "utf8");
+  assert.match(cb, /const basis = columnBasis\(cat\);/); assert.match(cb, /data-testid="col-unit-cost" title=\{basis\.priceNote\}>\{basis\.price\}/);
+  assert.match(cb, /data-testid="row-sum"/, "a whole-bar / whole-sheet row prints the sum behind its total");
+});
+
 if (process.exitCode) {
   console.error("\nSome checks FAILED — see above.");
 } else {

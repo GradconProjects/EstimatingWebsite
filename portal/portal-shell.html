@@ -2636,15 +2636,35 @@
   const RUNNING = "__BUILD_STAMP__";
   const shaOf = (stamp)=>String(stamp||"").split(" ")[0].trim();
   let shown=false;
+  /* HOSTING SWITCHED OFF (13 Nov 2026): Vercel answered every address of the project with "402 Payment required /
+     DEPLOYMENT_DISABLED". A tab already open keeps saving (the browser talks to the database directly), but mail,
+     Drive, SMS and AI stop and the page cannot be loaded again — and the only sign was "Google mail is not configured".
+     The build check sees the 402 and says what it is; the notice goes away by itself once the site answers again. */
+  let hostingDown=false;
+  function hostingOff(){
+    if(shown || hostingDown) return;
+    hostingDown = true; window.gradconHostingOff = true;
+    document.getElementById("stale-build-text").textContent = "The app's hosting has been switched off by Vercel (Payment required) — the Vercel account needs attention (billing or plan usage). Your work still saves, but mail, Google Drive, SMS and AI will not run, and this page will not load again until it is back: do not reload or close this tab.";
+    document.getElementById("stale-build-reload").style.display = "none";
+    const el = document.getElementById("stale-build"); el.style.display = "flex"; el.setAttribute("data-kind", "hosting-off");
+  }
+  function hostingBack(){
+    if(!hostingDown) return;
+    hostingDown = false; window.gradconHostingOff = false;
+    document.getElementById("stale-build-reload").style.display = "";
+    const el = document.getElementById("stale-build"); el.style.display = "none"; el.removeAttribute("data-kind");
+  }
   async function checkBuild(){
     if(shown || !/^[0-9a-f]{7}$/.test(shaOf(RUNNING))) return;
     try{
-      const res = await fetch(location.pathname + "?build-check=" + Date.now(), {cache:"no-store", headers:{"Accept":"text/html"}});
+      // build.txt is the bare commit — 8 bytes. Until 13 Nov 2026 this fetched the WHOLE PAGE (about 1.9 MB compressed)
+      // on every focus and every 3 minutes from every open tab: close to 1 GB of transfer a day for each tab left open.
+      const res = await fetch("/build.txt?" + Date.now(), {cache:"no-store"});
+      if(res.status === 402){ hostingOff(); return; }   // Vercel has switched the project off (Payment required)
       if(!res.ok) return;
-      const html = await res.text();
-      const m = /Build <b>([^<]+)<\/b>/.exec(html);
-      if(!m) return;
-      const live = shaOf(m[1]);
+      const live = String(await res.text()).trim().slice(0, 7);
+      if(!/^[0-9a-f]{7}$/.test(live)) return;
+      hostingBack();
       if(live && live !== shaOf(RUNNING)){
         shown=true;
         window.gradconStaleBuild = true; // the Quotes frame reads this: a tab on an older build never re-plans the crew sheets (it may hold the old rules)
@@ -2699,6 +2719,6 @@
   if(DEPLOY_ENV === "preview") checkLive();
   setTimeout(checkAll, 15000);
   setInterval(checkAll, 3*60*1000);
-  window.gradconBuildCheck = { checkAll, checkLive, offLiveHost };
+  window.gradconBuildCheck = { checkAll, checkBuild, checkLive, offLiveHost };
 })();
 </script>

@@ -11,6 +11,7 @@
  * file is copied into the app's own store only the moment it is used (a
  * markup, an AI Engine job) — api/drive.js action "copy".
  */
+import { readServerReply, failureReason } from "./serverStatus.js";
 import { uid } from "./costing.js";
 
 export const DRIVE_FILE_KINDS = ["pdf", "image", "doc", "sheet", "slides", "cad", "other"];
@@ -22,14 +23,15 @@ export function driveApiUrl() {
 /** POST one action to the Drive function; throws an Error carrying `status` and `needsReconnect`. */
 export async function driveApi(body, fetchImpl = typeof fetch === "function" ? fetch : null) {
   const r = await fetchImpl(driveApiUrl(), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body || {}), signal: AbortSignal.timeout(60000) });
-  const d = await r.json().catch(() => ({}));
-  if (!r.ok) { const e = new Error(d.error || `Drive request failed (${r.status})`); e.status = r.status; e.needsReconnect = !!d.needsReconnect; throw e; }
+  const reply = await readServerReply(r); const d = reply.body || {};
+  if (!r.ok || !reply.body) { const e = new Error(failureReason(reply, `Drive request failed (${r.status})`)); e.status = r.status; e.needsReconnect = !!d.needsReconnect; e.serverDown = !reply.body; throw e; }
   return d;
 }
 export async function driveStatus(fetchImpl = typeof fetch === "function" ? fetch : null) {
   const r = await fetchImpl(`${driveApiUrl()}?action=status`, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(15000) });
-  if (!r.ok) throw new Error(`status ${r.status}`);
-  return r.json();
+  const reply = await readServerReply(r);
+  if (!r.ok || !reply.body) { const e = new Error(failureReason(reply, `status ${r.status}`)); e.status = r.status; e.serverDown = !reply.body; throw e; }
+  return reply.body;
 }
 
 export const projectDriveFolder = (quote) => (quote && quote.storageFolders && quote.storageFolders.drive) || null;
