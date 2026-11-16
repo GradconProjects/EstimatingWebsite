@@ -62,6 +62,22 @@ export function smsProviderId(env = process.env) {
   return has.clicksend ? "clicksend" : has.twilio ? "twilio" : null;
 }
 
+/**
+ * The numbers that get a COPY of every text (Boma, 16 Nov 2026: "sending sms should be sent to me also"): `SMS_COPY_TO`,
+ * one or more mobiles separated by commas, read on the server like GRADY_MOBILE and shown masked. Grady's own number and
+ * repeats are dropped; an entry the function cannot read is reported in `unreadable`, never guessed.
+ */
+export function smsCopyNumbers(env = process.env) {
+  const grady = normalizeMobile(env.GRADY_MOBILE);
+  const out = [], unreadable = [];
+  String(env.SMS_COPY_TO || "").split(/[,;\n]+/).map((x) => x.trim()).filter(Boolean).forEach((raw) => {
+    const n = normalizeMobile(raw);
+    if (!n) { unreadable.push(raw.replace(/\d(?=\d{3})/g, "•")); return; }
+    if (n !== grady && !out.includes(n)) out.push(n);
+  });
+  return { numbers: out, unreadable };
+}
+
 /** What Settings and the checklist may know: configured or not, which provider, the recipient masked. Never a key. */
 export function smsStatus(env = process.env) {
   const provider = smsProviderId(env);
@@ -69,7 +85,10 @@ export function smsStatus(env = process.env) {
   const missing = [];
   if (!provider) missing.push(String(env.SMS_PROVIDER || "").toLowerCase() === "twilio" ? "TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / TWILIO_FROM" : "CLICKSEND_USERNAME / CLICKSEND_API_KEY (or the Twilio trio)");
   if (!to) missing.push(env.GRADY_MOBILE ? "GRADY_MOBILE is not a mobile number the function can read" : "GRADY_MOBILE");
-  return { configured: !!provider && !!to, provider, to: to ? maskMobile(to) : null, from: provider === "twilio" ? twilioFromLabel(env.TWILIO_FROM) : (env.SMS_FROM || null), missing,
+  const copies = smsCopyNumbers(env);
+  return { configured: !!provider && !!to, provider, to: to ? maskMobile(to) : null, copyTo: copies.numbers.map(maskMobile),
+    copyWarning: copies.unreadable.length ? `SMS_COPY_TO holds ${copies.unreadable.length === 1 ? "a number" : "numbers"} the function cannot read (${copies.unreadable.join(", ")})` : null,
+    from: provider === "twilio" ? twilioFromLabel(env.TWILIO_FROM) : (env.SMS_FROM || null), missing,
     // a sender the function cannot read as a number is said here, before a send is refused by Twilio
     warning: provider === "twilio" && (twilioSender(env.TWILIO_FROM) || {}).kind === "unreadable" ? "TWILIO_FROM is not a phone number the function can read — use the Twilio number as +61…, or an MG… Messaging Service SID" : null };
 }
@@ -102,14 +121,48 @@ export function twilioRefusal(j) {
 }
 const err = (status, message, detail) => Object.assign(new Error(message), { status, detail });
 
-/** Sends ONE text to the configured recipient. Resolves `{ok, provider, id, to (masked), segments}`; throws with a status. */
+/**
+ * Sends the approved text to Grady and a COPY to every `SMS_COPY_TO` number. Grady's send decides the outcome (it throws
+ * with a status when refused, and then no copy goes); a copy that fails is reported in `copies`, never thrown — the
+ * text Grady was meant to get has gone. Resolves `{ok, provider, id, to (masked), segments, copies: [{to, ok, id | error}]}`.
+ */
 export async function sendSms(text, env = process.env, fetchImpl = fetch) {
+  const main = await sendSmsTo(normalizeMobile(env.GRADY_MOBILE), text, env, fetchImpl);
+  const copies = [];
+  for (const n of smsCopyNumbers(env).numbers) {
+    try { const r = await sendSmsTo(n, text, env, fetchImpl); copies.push({ to: r.to, ok: true, id: r.id }); }
+    catch (e) { copies.push({ to: maskMobile(n), ok: false, error: e.message }); }
+  }
+  return { ...main, copies };
+}
+
+/**
+ * Sends a list of texts by ROLE — `{role: "grady" | "copy", text}`: "grady" goes to GRADY_MOBILE, "copy" to every
+ * SMS_COPY_TO number. Used where the two readers get different words (a new project from the inbox). Never throws for a
+ * refused text: resolves `[{role, to (masked), ok, id | error, text}]`, one entry per message actually attempted.
+ */
+export async function sendSmsByRole(messages, env = process.env, fetchImpl = fetch) {
+  const grady = normalizeMobile(env.GRADY_MOBILE);
+  const copies = smsCopyNumbers(env).numbers;
+  const out = [];
+  for (const m of Array.isArray(messages) ? messages : []) {
+    const targets = m && m.role === "grady" ? (grady ? [grady] : []) : m && m.role === "copy" ? copies : [];
+    for (const n of targets) {
+      try { const r = await sendSmsTo(n, m.text, env, fetchImpl); out.push({ role: m.role, to: r.to, ok: true, id: r.id, text: m.text }); }
+      catch (e) { out.push({ role: m.role, to: maskMobile(n), ok: false, error: e.message, text: m.text }); }
+    }
+  }
+  return out;
+}
+
+/** Sends ONE text to ONE number (already E.164, read from the server's own variables — never one the browser supplied). */
+export async function sendSmsTo(to, text, env = process.env, fetchImpl = fetch) {
   const st = smsStatus(env);
   if (!st.configured) throw err(503, `SMS is not configured — set ${st.missing.join(" and ")} in the Vercel project's Environment Variables.`);
   const body = String(text || "").trim();
   if (!body) throw err(400, "Nothing to send.");
   if (body.length > 480) throw err(400, "The text is over 480 characters (three segments) — shorten it.");
-  const to = normalizeMobile(env.GRADY_MOBILE);
+  if (!to) throw err(400, "No number to send to.");
   if (st.provider === "clicksend") {
     const msg = { source: "gradcon-portal", to, body };
     if (env.SMS_FROM) msg.from = String(env.SMS_FROM).slice(0, 11);

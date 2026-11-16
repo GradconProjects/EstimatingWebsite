@@ -165,7 +165,7 @@ function NotifyGrady({ quote, notify }) {
               <span className="text-[10px] font-semibold uppercase tracking-wide text-neutral-500">Text message to Grady</span>
               <span className="text-[11px] text-neutral-600" data-testid="tender-sms-status">
                 {!sms ? "Checking the SMS set-up…"
-                  : smsReady ? <>SMS ready · to Grady <span className="font-mono">{sms.to}</span>{sms.provider ? ` via ${sms.provider === "clicksend" ? "ClickSend" : "Twilio"}` : ""}{sms.warning ? <span className="text-amber-700" data-testid="tender-sms-warning"> · {sms.warning}</span> : null}</>
+                  : smsReady ? <>SMS ready · to Grady <span className="font-mono">{sms.to}</span>{sms.provider ? ` via ${sms.provider === "clicksend" ? "ClickSend" : "Twilio"}` : ""}{sms.copyTo && sms.copyTo.length ? <span data-testid="tender-sms-copy"> · copy to <span className="font-mono">{sms.copyTo.join(", ")}</span></span> : null}{sms.copyWarning ? <span className="text-amber-700"> · {sms.copyWarning}</span> : null}{sms.warning ? <span className="text-amber-700" data-testid="tender-sms-warning"> · {sms.warning}</span> : null}</>
                   : <span className="text-red-700" data-testid="tender-sms-problem">{sms.error && !(sms.missing && sms.missing.length) ? sms.error : <>SMS not configured{sms.missing && sms.missing.length ? ` — set ${sms.missing.join(" and ")} in the Vercel project's Environment Variables` : ""}.</>}</span>}
               </span>
             </div>
@@ -185,7 +185,7 @@ function NotifyGrady({ quote, notify }) {
           {error && <div className="text-[11px] text-red-700" data-testid="tender-sms-error">{error}</div>}
           {result && result.length > 0 && (
             <div className="text-[11px] text-emerald-800" data-testid="tender-sms-sent">
-              {result.map((r) => r.kind === "email" ? `Emailed Grady at ${r.to}` : `Texted Grady ${r.to || ""}${r.segments ? ` · ${r.segments} segment${r.segments === 1 ? "" : "s"}` : ""}`).join(" · ")} · recorded on this project and step 08 ticked.
+              {result.map((r) => r.kind === "email" ? `Emailed Grady at ${r.to}` : `Texted Grady ${r.to || ""}${r.segments ? ` · ${r.segments} segment${r.segments === 1 ? "" : "s"}` : ""}${(r.copies || []).filter((c) => c.ok).length ? ` · copy to ${(r.copies || []).filter((c) => c.ok).map((c) => c.to).join(", ")}` : ""}${(r.copies || []).filter((c) => !c.ok).length ? ` · copy NOT sent to ${(r.copies || []).filter((c) => !c.ok).map((c) => `${c.to} (${c.error})`).join(", ")}` : ""}`).join(" · ")} · recorded on this project and step 08 ticked.
             </div>
           )}
           <div className="text-[10px] text-neutral-400">Nothing is sent until its Approve box is ticked and Send is pressed. The email goes from projects@ to grady@gradcon.com.au; the mobile number lives on the server, never in this page.</div>

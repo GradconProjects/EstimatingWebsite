@@ -1350,7 +1350,7 @@ function ProjectEditor({ project, allProjects, rates: liveRates, setRates: setLi
               send: async (text) => {
                 const r = await requestSms(text);
                 const by = workUser(portalUser());
-                const rec = notifyRecord({ kind: "sms", step: "notify", to: r.to, text, by, provider: r.provider, messageId: r.id, segments: r.segments });
+                const rec = { ...notifyRecord({ kind: "sms", step: "notify", to: r.to, text, by, provider: r.provider, messageId: r.id, segments: r.segments }), copies: Array.isArray(r.copies) ? r.copies : [] }; // the copy numbers (masked) and whether each went
                 setQuote((q) => ({ ...q, ...notifyPatch(q, rec), ...checklistPatch(q, "notify", { done: true }, by) }));
                 return rec;
               },

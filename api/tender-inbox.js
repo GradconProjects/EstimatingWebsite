@@ -32,6 +32,8 @@
 import * as Gm from "./_google.js";
 import { resolveProviderId, callText } from "./_providers.js";
 import { uid } from "../src/lib/costing.js";
+import { smsStatus, sendSmsByRole } from "./_sms.js";
+import { newProjectTexts, newProjectSmsOn } from "../src/lib/newProjectSms.js";
 import {
   INBOX_ROW_KEY, MAX_ATTACHMENT_BYTES, MAIL_ATTACH_KINDS, attachExt,
   classifyMessage, candidateFromMessage, tenderQuoteFrom, findDuplicate, emptyRecord, scanQuery, applyScan, wasHandled,
@@ -118,7 +120,7 @@ export async function copyAttachments(cand, projectId, token, fetchImpl, errors)
 export async function runTenderInbox({ action = "status", by = "cron" } = {}, env = process.env, fetchImpl = fetch, deps = {}) {
   const now = deps.now ? deps.now() : new Date();
   const readRecord = async () => { const v = await Gm.readRow(INBOX_ROW_KEY, fetchImpl).catch(() => null); return v && typeof v === "object" ? { ...emptyRecord(), ...v } : emptyRecord(); };   // readRow answers the row's VALUE
-  if (action === "status") return { status: 200, body: { record: await readRecord(), configured: Gm.googleConfigured(env) } };
+  if (action === "status") return { status: 200, body: { record: await readRecord(), configured: Gm.googleConfigured(env), sms: newProjectSmsStatus(env) } };
   if (action !== "scan") return { status: 400, body: { error: `unknown action ${action}` } };
   if (!Gm.googleConfigured(env)) return { status: 503, body: { error: "Google is not configured — set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in the Vercel project's Environment Variables." } };
   let tok;
@@ -200,10 +202,28 @@ export async function runTenderInbox({ action = "status", by = "cron" } = {}, en
     created.push(item);
     handled.push({ messageId: cand.messageId, threadId: cand.threadId, outcome: "created", projectId });
   }
-  const summary = { scanned, read: fullReads, candidates: cands.length, created: created.length, duplicates: handled.filter((h) => h.outcome === "duplicate").length, skipped: handled.filter((h) => h.outcome === "skipped").length, failed: handled.filter((h) => h.outcome === "failed").length };
+  // 8. tell both people by text (16 Nov 2026) — only when NEW_PROJECT_SMS is on; a refused text is an error line, never a failed scan
+  const sms = { on: newProjectSmsOn(env), sent: 0, failed: 0 };
+  if (created.length && sms.on) {
+    const send = deps.sendSms || ((msgs) => sendSmsByRole(msgs, env, fetchImpl));
+    if (!deps.sendSms && !smsStatus(env).configured) errors.push("New-project texts are switched on but SMS is not configured — nothing was texted");
+    else {
+      try {
+        const out = await send(newProjectTexts(created, { estimator: env.SMS_COPY_NAME || "Boma" }));
+        (out || []).forEach((r) => { if (r.ok) sms.sent += 1; else { sms.failed += 1; errors.push(`Text to ${r.to} not sent: ${r.error}`); } });
+      } catch (e) { errors.push(`New-project texts not sent: ${e.message}`); }
+    }
+  }
+  const summary = { sms, scanned, read: fullReads, candidates: cands.length, created: created.length, duplicates: handled.filter((h) => h.outcome === "duplicate").length, skipped: handled.filter((h) => h.outcome === "skipped").length, failed: handled.filter((h) => h.outcome === "failed").length };
   const next = applyScan(record, { at: now.toISOString(), by, seenMaxMs, created, handled, summary, errors });
   try { await Gm.writeRow(INBOX_ROW_KEY, next, fetchImpl); } catch (e) { errors.push(`the scan record could not be saved: ${e.message}`); }
   return { status: 200, body: { mailbox: tok.email, record: next, created, summary, errors } };
+}
+
+/** What Settings may show of the new-project texts: the switch and the masked numbers. Never a key or a whole number. */
+export function newProjectSmsStatus(env = process.env) {
+  const st = smsStatus(env);
+  return { on: newProjectSmsOn(env), configured: st.configured, to: st.to, copyTo: st.copyTo || [], copyWarning: st.copyWarning || null };
 }
 
 export default async function handler(req, res) {

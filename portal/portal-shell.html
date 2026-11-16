@@ -2142,7 +2142,13 @@
     var line = rec.lastScanAt ? 'Last scan ' + whenLabel(rec.lastScanAt, now) + (rec.lastScanBy ? ' (' + escapeHtml(rec.lastScanBy) + ')' : '') + (last ? ' — ' + last.scanned + ' emails read, ' + last.created + ' project' + (last.created===1?'':'s') + ' created, ' + last.duplicates + ' duplicate' + (last.duplicates===1?'':'s') + ' skipped' : '') : 'Not scanned yet — the first scan reads the last 14 days.';
     var errs = (rec.errors || []).slice(0, 5).map(function(e){ return '<div class="ai-result" style="color:#9b1c1c">' + escapeHtml(e) + '</div>'; }).join('');
     var created = (rec.created || []).slice(0, 8).map(function(c){ return '<div class="ai-result">' + escapeHtml(whenLabel(c.at, now)) + ' — <b>' + escapeHtml(c.name) + '</b>' + (c.client ? ' · ' + escapeHtml(c.client) : '') + ' · due ' + escapeHtml(c.deadline || '—') + (c.deadlineSource === 'default' ? ' (14 days, none stated)' : '') + '</div>'; }).join('');
-    host.innerHTML = '<div class="ai-row"><div class="name">Daily at 7 am<small>' + line + '</small></div><button type="button" id="inbox-scan-now" data-testid="inbox-scan-now"' + (d && d.configured === false ? ' disabled' : '') + '>Scan now</button><span class="ai-result" id="inbox-scan-result"></span></div>' + errs + (created ? '<div style="margin-top:6px">' + created + '</div>' : '');
+    // texts on a new project (16 Nov 2026): the switch and the masked numbers, read from the server
+    var sm = d && d.sms; var smsLine = '';
+    if(sm){
+      var nums = [sm.to].concat(sm.copyTo || []).filter(Boolean).map(escapeHtml).join(' and ');
+      smsLine = '<div class="ai-result" data-testid="inbox-sms-line">Text when a project is created: ' + (sm.on ? (sm.configured ? '<b>on</b> — to ' + nums : '<b>on</b>, but SMS is not configured') : '<b>off</b> — set NEW_PROJECT_SMS to on in the Vercel project to switch it on' + (nums ? ' (it would go to ' + nums + ')' : '')) + (sm.copyWarning ? ' · ' + escapeHtml(sm.copyWarning) : '') + '</div>';
+    }
+    host.innerHTML = '<div class="ai-row"><div class="name">Daily at 7 am<small>' + line + '</small></div><button type="button" id="inbox-scan-now" data-testid="inbox-scan-now"' + (d && d.configured === false ? ' disabled' : '') + '>Scan now</button><span class="ai-result" id="inbox-scan-result"></span></div>' + smsLine + errs + (created ? '<div style="margin-top:6px">' + created + '</div>' : '');
   }
   document.getElementById('settings-inbox').addEventListener('click', function(e){
     var b = e.target.closest('#inbox-scan-now'); if(!b) return;

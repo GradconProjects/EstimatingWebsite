@@ -1035,6 +1035,43 @@ checkAsync("notify Grady: the text is built from the quote's own figures, segmen
   const other = await N.runNotify({ action: "sms", text: "x" }, tw, async () => ({ ok: false, status: 400, json: async () => ({ code: 99999, message: "Something else" }) }));
   assert.equal(other.body.error, "Twilio did not accept the text (99999). Twilio says: Something else.", "an unknown code shows Twilio's words and no invented advice");
   assert.equal(S.twilioRefusal(null), "Twilio did not accept the text.");
+  // 16 Nov 2026 — a COPY of every text to SMS_COPY_TO; the two readers of a new-project text get their own words
+  const cenv = { ...tw, SMS_COPY_TO: "0400 111 222; 0412345678, +61400111222, 12" };
+  assert.deepEqual(S.smsCopyNumbers(cenv).numbers, ["+61400111222"], "Grady's own number and a repeat are dropped");
+  assert.equal(S.smsCopyNumbers(cenv).unreadable.length, 1);
+  assert.deepEqual(S.smsStatus(cenv).copyTo, ["+614••• ••• 222"]); assert.match(S.smsStatus(cenv).copyWarning, /cannot read/);
+  assert.deepEqual(S.smsStatus(tw).copyTo, []); assert.equal(S.smsStatus(tw).copyWarning, null);
+  const sentTo = [];
+  const withCopy = await N.runNotify({ action: "sms", text: "Hi Grady, costings are ready." }, cenv, async (url, init) => { const f = new URLSearchParams(init.body); sentTo.push(f.get("To") + "|" + f.get("Body")); return { ok: true, status: 201, json: async () => ({ sid: "SM" + sentTo.length }) }; });
+  assert.equal(withCopy.status, 200); assert.deepEqual(sentTo, ["+61412345678|Hi Grady, costings are ready.", "+61400111222|Hi Grady, costings are ready."], "Grady first, then the copy, the same words");
+  assert.deepEqual(withCopy.body.copies, [{ to: "+614••• ••• 222", ok: true, id: "SM2" }]); assert.equal(withCopy.body.to, "+614••• ••• 678");
+  let nth = 0;
+  const copyFails = await N.runNotify({ action: "sms", text: "x" }, cenv, async () => { nth += 1; return nth === 1 ? { ok: true, status: 201, json: async () => ({ sid: "SM1" }) } : { ok: false, status: 400, json: async () => ({ code: 21608, message: "unverified" }) }; });
+  assert.equal(copyFails.status, 200, "a refused COPY never fails the text Grady got"); assert.equal(copyFails.body.copies[0].ok, false); assert.match(copyFails.body.copies[0].error, /21608/);
+  let tries = 0;
+  const mainFails = await N.runNotify({ action: "sms", text: "x" }, cenv, async () => { tries += 1; return { ok: false, status: 400, json: async () => ({ code: 572002, message: "no" }) }; });
+  assert.equal(mainFails.status, 400); assert.equal(tries, 1, "when Grady's text is refused no copy is attempted");
+  const byRole = [];
+  const roleOut = await S.sendSmsByRole([{ role: "grady", text: "to grady" }, { role: "copy", text: "to the estimator" }, { role: "nobody", text: "x" }], cenv, async (url, init) => { const f = new URLSearchParams(init.body); byRole.push(f.get("To") + "|" + f.get("Body")); return { ok: true, status: 201, json: async () => ({ sid: "S" }) }; });
+  assert.deepEqual(byRole, ["+61412345678|to grady", "+61400111222|to the estimator"]); assert.equal(roleOut.length, 2);
+  const NP = await import("../src/lib/newProjectSms.js");
+  const np = { projectId: "p1", name: "9 Fairfax Street, Blairgowrie VIC 3942 — Residence", client: "Acme Builders", from: "Jo <jo@acme.com.au>", deadline: "2026-11-27", deadlineSource: "email", attachments: 3, via: null };
+  assert.equal(NP.smsDay("2026-11-27"), "Fri 27 Nov"); assert.equal(NP.smsDay("nope"), "");
+  assert.equal(NP.newProjectSmsForEstimator(np), "New tender in the portal: 9 Fairfax Street, Blairgowrie VIC 3942 - Residence from Acme Builders. Closes Fri 27 Nov. 3 files attached. Please check it. Grady has been asked if he wants to price it.");
+  assert.equal(NP.newProjectSmsForGrady(np), "Hi Grady, new tender request: 9 Fairfax Street, Blairgowrie VIC 3942 - Residence from Acme Builders. Closes Fri 27 Nov. Is this one you want to price? Please let Boma know.");
+  const npDef = { ...np, deadlineSource: "default", attachments: 0 };
+  assert.match(NP.newProjectSmsForEstimator(npDef), /No closing date in the email - set to Fri 27 Nov \(2 weeks\)\. No files attached\./);
+  assert.match(NP.newProjectSmsForGrady(npDef), /No closing date given - pencilled for Fri 27 Nov\./);
+  const npFwd = { ...np, via: "grady@example.com.au" };
+  assert.match(NP.newProjectSmsForGrady(npFwd), /^Hi Grady, the request you forwarded for 9 Fairfax Street.* is now a project in the portal\. Closes Fri 27 Nov\. Boma will pick it up\.$/);
+  assert.ok(!/want to price/.test(NP.newProjectSmsForGrady(npFwd)), "a request Grady forwarded himself is confirmed, not asked about");
+  assert.match(NP.newProjectSmsForEstimator(npFwd), /\(forwarded by Grady\)\..*Grady has been told it is in\.$/);
+  [np, npDef, npFwd].forEach((i) => [NP.newProjectSmsForEstimator(i), NP.newProjectSmsForGrady(i)].forEach((t) => { assert.ok(/^[\x20-\x7E]*$/.test(t), `plain SMS characters only: ${t}`); assert.ok(t.length <= 320 && S.smsSegments(t) <= 2, `${t.length} chars`); }));
+  assert.equal(NP.newProjectTexts([np]).length, 2); assert.equal(NP.newProjectTexts([np, npDef, npFwd]).length, 6);
+  const many = NP.newProjectTexts([np, npDef, npFwd, { ...np, projectId: "p4", name: "4 Fourth St" }]);
+  assert.equal(many.length, 2, "more than three projects in one scan: ONE summary text each"); assert.match(many[0].text, /^4 new tenders in the portal: /); assert.match(many[1].text, /^Hi Grady, 4 new tender requests: .*Which would you like to price\?/);
+  assert.deepEqual(NP.newProjectTexts([]), []); assert.ok(!/undefined|null/.test(NP.newProjectSmsForEstimator({ name: "X" }) + NP.newProjectSmsForGrady({ name: "X" })), "a fact the entry lacks is left out");
+  assert.equal(NP.newProjectSmsOn({}), false); assert.equal(NP.newProjectSmsOn({ NEW_PROJECT_SMS: "off" }), false); assert.equal(NP.newProjectSmsOn({ NEW_PROJECT_SMS: " On " }), true);
   // the browser side posts only the text and reads the reply; an error throws with the server's words
   let b = null;
   const r = await NG.requestSms("Costings ready.", { base: "https://portal.test", fetchImpl: async (url, init) => { b = { url, body: JSON.parse(init.body) }; return { ok: true, status: 200, json: async () => ({ ok: true, provider: "clicksend", id: "CS1", to: "+614••• ••• 678", segments: 1 }) }; } });
@@ -3963,6 +4000,23 @@ check("Project Geometry carries a COUNT: $/no. leads the benchmark rates, sums a
       assertTrue(third.status === 200 && third.body.created.length === 3 && !third.body.created.some((c) => /Ocean St/.test(c.name)) && kv["gradcon-tender-inbox"].value.handled.m6.outcome === "skipped" && /AI review/.test(kv["gradcon-tender-inbox"].value.handled.m6.reason), JSON.stringify(third.body.created.map((c) => c.name)));
       const st = await TI.runTenderInbox({ action: "status" }, genv, fetchMock);
       assertTrue(st.status === 200 && st.body.record.created.length === 3 && st.body.configured === true);
+      // 16 Nov 2026 — texts on a new project: OFF unless NEW_PROJECT_SMS is on; on, each project texts the estimator (the details) and Grady (the question)
+      assertTrue(first.body.summary.sms.on === false && first.body.summary.sms.sent === 0, "with the switch off the scan texts nobody");
+      assertTrue(st.body.sms && st.body.sms.on === false, "the status says the switch is off");
+      const kv3 = JSON.parse(JSON.stringify({ "gradcon-google-mail": kv["gradcon-google-mail"], "gradcon-projects": { value: [], updated_at: "2026-10-20T00:00:00Z" } }));
+      Object.keys(kv).forEach((k) => { if (!kv3[k] && k !== "gradcon-tender-inbox" && !/^gradcon-quote-/.test(k)) kv3[k] = kv[k]; });
+      Object.keys(kv).forEach((k) => delete kv[k]); Object.assign(kv, kv3);
+      G.resetTokenCache();
+      const texted = [];
+      const fourth = await TI.runTenderInbox({ action: "scan", by: "test" }, { ...genv, NEW_PROJECT_SMS: "on", SMS_COPY_NAME: "Sam" }, fetchMock, { now: () => now, review: async (list) => { const out = {}; list.forEach((c) => { out[c.messageId] = c.messageId === "m6" ? { tender: false, confidence: "high", reason: "a budget enquiry" } : { tender: true, confidence: "high", projectName: "", client: "", deadline: null }; }); return out; },
+        sendSms: async (msgs) => msgs.map((m, i) => { texted.push(m); return i === 1 ? { role: m.role, to: "+614••• ••• 000", ok: false, error: "Twilio said no" } : { role: m.role, to: "+614••• ••• 111", ok: true, id: "SM" + i }; }) });
+      assertTrue(fourth.status === 200 && fourth.body.created.length === 3 && texted.length === 6, `created ${fourth.body.created.length}, texts ${texted.length}`);
+      assertTrue(texted.filter((m) => m.role === "copy").length === 3 && texted.filter((m) => m.role === "grady").length === 3);
+      const beachCopy = texted.find((m) => m.role === "copy" && /12 Beach Road/.test(m.text)), beachGrady = texted.find((m) => m.role === "grady" && /12 Beach Road/.test(m.text));
+      assertTrue(/^New tender in the portal: 12 Beach Road, Rye VIC 3941 - Concrete works/.test(beachCopy.text) && /Closes Sat 14 Nov\./.test(beachCopy.text) && /2 files attached\./.test(beachCopy.text) && /Please check it\./.test(beachCopy.text), beachCopy.text);
+      assertTrue(/^Hi Grady, /.test(beachGrady.text) && /Please let Sam know\.$|Sam will pick it up\.$/.test(beachGrady.text), beachGrady.text);
+      assertTrue(fourth.body.summary.sms.on === true && fourth.body.summary.sms.sent === 5 && fourth.body.summary.sms.failed === 1 && fourth.body.errors.some((e) => /Text to \+614••• ••• 000 not sent: Twilio said no/.test(e)), JSON.stringify(fourth.body.summary.sms));
+      assertTrue(kv["gradcon-tender-inbox"].value.created.length === 3, "a refused text never fails the scan or its record");
       assertTrue((await TI.runTenderInbox({ action: "scan" }, {}, fetchMock)).status === 503, "unconfigured → 503");
       G.resetTokenCache();
     });

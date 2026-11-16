@@ -1156,6 +1156,39 @@ it automatically sends to him"; "lets do both at once". Rules:
    Twilio's own error page (13 Nov 2026, the first live send: 572002 — a TRIAL
    account may only send from the trial number Twilio assigned to that
    verified recipient; the panel had shown the bare "(572002)").
+   **A COPY of every text goes to `SMS_COPY_TO`** (Boma, 16 Nov 2026: "sending
+   sms should be sent to me also"): one or more mobiles, comma-separated, read
+   on the server like `GRADY_MOBILE` and shown masked (`smsCopyNumbers` —
+   Grady's own number and repeats dropped, an unreadable entry reported in
+   `smsStatus().copyWarning`; `smsStatus().copyTo`). `sendSmsTo(number, text)`
+   is the ONE per-number send; `sendSms` = Grady first (a refusal throws and no
+   copy goes), then each copy — a refused COPY is reported in `copies:
+   [{to, ok, id | error}]`, never thrown. The checklist's status line reads
+   "… · copy to +614…", the confirmation names the copy, and the record on the
+   quote carries `copies`. `sendSmsByRole([{role: "grady" | "copy", text}])`
+   sends different words to the two readers and never throws.
+   **A project the inbox scan creates is texted to both** (same day: "when a
+   new project comes in, an sms should be sent to both of us with the project
+   details so i can check and attend to it and ask Grady if it is a project he
+   would like to do"): `src/lib/newProjectSms.js` (pure, verify-covered) —
+   `newProjectSmsForEstimator(item)` ("New tender in the portal: <name> from
+   <client>. Closes <day>. N files attached. Please check it. Grady has been
+   asked if he wants to price it.") to the copy numbers and
+   `newProjectSmsForGrady(item, {estimator})` ("Hi Grady, new tender request:
+   … Is this one you want to price? Please let <SMS_COPY_NAME> know." — a reply
+   to the sending number reaches nobody) to Grady; a request Grady forwarded
+   himself (`forwardedByGrady`) is CONFIRMED to him, not asked about; a default
+   deadline says so; every word comes from the scan's created entry, plain GSM
+   characters only (`gsmSafe`), at most two segments; more than
+   `NEW_PROJECT_SMS_EACH_MAX` = 3 projects in one scan send ONE summary text
+   each (`newProjectTexts`). `api/tender-inbox.js` sends them after the
+   projects are created ONLY when `NEW_PROJECT_SMS` is on (`newProjectSmsOn`;
+   default off — the one text that goes without a tick, so it is switched on
+   deliberately); a refused text is an error line and `summary.sms = {on, sent,
+   failed}`, never a failed scan. Settings → Tender inbox scan states the
+   switch and the masked numbers (`inbox-sms-line`, from the status's `sms`).
+   `test-sms-copy.mjs` proves the checklist copy, the record and the Settings
+   line.
 2. **`api/notify.js`** (same-origin check as the other functions; `maxDuration`
    30): `GET` → `{sms: smsStatus()}` (the checklist panel reads it), `POST
    {action: "sms", text}` → one text to Grady; `runNotify(body, env,
