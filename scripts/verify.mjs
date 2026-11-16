@@ -1001,6 +1001,17 @@ checkAsync("notify Grady: the text is built from the quote's own figures, segmen
   assert.equal((await N.runNotify({ action: "sms", text: "" }, cs)).status, 400);
   assert.equal((await N.runNotify({ action: "sms", text: "x".repeat(481) }, cs)).status, 400);
   assert.equal((await N.runNotify({ action: "nope" }, cs)).status, 400);
+  { // "sms-copy": the copy numbers ONLY — Grady is never texted on this path (Boma, 16 Nov 2026: "fire one sms to me now")
+    const twc = { SMS_PROVIDER: "twilio", TWILIO_ACCOUNT_SID: "AC1", TWILIO_AUTH_TOKEN: "t", TWILIO_FROM: "+61468000120", GRADY_MOBILE: "0412 000 555", SMS_COPY_TO: "0416 000 176" };
+    const tos = [];
+    const okCopy = await N.runNotify({ action: "sms-copy", text: "Test.", to: "+61499999999" }, twc, async (url, init) => { tos.push(new URLSearchParams(init.body).get("To")); return { ok: true, status: 201, json: async () => ({ sid: "SMc", status: "queued" }) }; });
+    assert.equal(okCopy.status, 200); assert.deepEqual(tos, ["+61416000176"], "one text, to the copy number — not Grady, not a number in the body");
+    assert.deepEqual(okCopy.body, { ok: true, copies: [{ to: "+614••• ••• 176", ok: true, id: "SMc" }] });
+    assert.equal((await N.runNotify({ action: "sms-copy", text: "Test." }, { ...twc, SMS_COPY_TO: "" }, async () => { throw new Error("must not send"); })).status, 400);
+    assert.equal((await N.runNotify({ action: "sms-copy", text: "" }, twc)).status, 400); assert.equal((await N.runNotify({ action: "sms-copy", text: "x" }, {})).status, 503);
+    const refused = await N.runNotify({ action: "sms-copy", text: "Test." }, twc, async () => ({ ok: false, status: 400, json: async () => ({ code: 21608, message: "The number is unverified." }) }));
+    assert.equal(refused.status, 502); assert.ok(refused.body.ok === false && /21608/.test(refused.body.copies[0].error) && /unverified/.test(refused.body.copies[0].error), "a refused copy carries Twilio's own words");
+  }
   assert.deepEqual((await N.runNotify({ action: "status" }, cs)).body.sms.to, "+614••• ••• 678");
   let posted = null;
   const okCs = await N.runNotify({ action: "sms", text: "Costings ready.", to: "+61499999999" }, cs, async (url, init) => { posted = { url, init, body: JSON.parse(init.body) }; return { ok: true, status: 200, json: async () => ({ data: { messages: [{ status: "SUCCESS", message_id: "CS1", message_price: 0.0794 }] } }) }; });

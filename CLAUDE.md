@@ -1166,7 +1166,10 @@ it automatically sends to him"; "lets do both at once". Rules:
    [{to, ok, id | error}]`, never thrown. The checklist's status line reads
    "… · copy to +614…", the confirmation names the copy, and the record on the
    quote carries `copies`. `sendSmsByRole([{role: "grady" | "copy", text}])`
-   sends different words to the two readers and never throws.
+   sends different words to the two readers and never throws. `api/notify.js`
+   action `sms-copy` {text} texts the COPY numbers only, never Grady (Boma,
+   16 Nov 2026: "fire one sms to me now" — the test of the copy number on its
+   own; 400 with no `SMS_COPY_TO`, 502 with the provider's words when refused).
    **A project the inbox scan creates is texted to both** (same day: "when a
    new project comes in, an sms should be sent to both of us with the project
    details so i can check and attend to it and ask Grady if it is a project he

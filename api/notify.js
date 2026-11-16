@@ -3,10 +3,12 @@
  * click inform grady from the checklist, it automatically sends to him").
  *   GET            → {sms: {configured, provider, to (masked), missing}}
  *   POST {action: "sms", text}  → one text to GRADY_MOBILE through api/_sms.js
+ *   POST {action: "sms-copy", text} → one text to the SMS_COPY_TO numbers ONLY — never Grady (Boma, 16 Nov 2026:
+ *                                     "fire one sms to me now"; the way to test the copy number on its own)
  * The recipient is fixed server-side; the browser sends only the text a person
  * approved on the checklist. Same-origin check as the other functions.
  */
-import { smsStatus, sendSms } from "./_sms.js";
+import { smsStatus, sendSms, sendSmsByRole } from "./_sms.js";
 
 export const config = { maxDuration: 30 };
 
@@ -31,7 +33,17 @@ export async function runNotify(body, env = process.env, fetchImpl = fetch) {
       return { status: e.status && e.status >= 400 && e.status < 600 ? e.status : 502, body: { error: e.message, detail: e.detail || null } };
     }
   }
-  return { status: 400, body: { error: 'Body must carry action "sms" or "status"' } };
+  if (action === "sms-copy") { // the copy numbers alone: Grady is never texted on this path
+    const text = String((body && body.text) || "").trim();
+    if (!text) return { status: 400, body: { error: 'sms-copy needs text: "…"' } };
+    if (text.length > 480) return { status: 400, body: { error: "The text is over 480 characters (three segments) — shorten it." } };
+    const st = smsStatus(env);
+    if (!st.configured) return { status: 503, body: { error: `SMS is not configured — set ${st.missing.join(" and ")} in the Vercel project's Environment Variables.` } };
+    if (!st.copyTo || !st.copyTo.length) return { status: 400, body: { error: "No copy number is set — put it in SMS_COPY_TO in the Vercel project's Environment Variables." } };
+    const sent = (await sendSmsByRole([{ role: "copy", text }], env, fetchImpl)).map(({ to, ok, id, error }) => ({ to, ok, ...(ok ? { id } : { error }) }));
+    return { status: sent.some((s) => s.ok) ? 200 : 502, body: { ok: sent.every((s) => s.ok), copies: sent } };
+  }
+  return { status: 400, body: { error: 'Body must carry action "sms", "sms-copy" or "status"' } };
 }
 
 export default async function handler(req, res) {
