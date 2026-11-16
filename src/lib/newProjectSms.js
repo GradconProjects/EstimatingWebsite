@@ -4,7 +4,8 @@
  * project he would like to do"). Two texts per project, written for their reader:
  *   - the ESTIMATOR's (the copy numbers): what arrived, from whom, the closing date and how it was set, the files —
  *     "please check it";
- *   - GRADY's: the same facts, shorter, and the question — is this one he wants to price.
+ *   - GRADY's: the same facts, shorter, and the ask in Boma's words (16 Nov 2026: "the message is please let boma
+ *     know if it is something we want to price or not").
  * Pure and verify-covered. Every word comes from the created entry the scan recorded (name, client, sender, deadline,
  * attachments) — nothing is invented, and a fact the entry lacks is left out. Plain GSM characters only (a hyphen,
  * never an em dash: one non-GSM character more than halves what fits in a segment). A reply to the sending number is
@@ -48,7 +49,7 @@ export function newProjectSmsForEstimator(item, { gradyAsked = true } = {}) {
   const dl = deadlineSentence(item); if (dl) parts.push(dl);
   const n = Number(item.attachments) || 0;
   parts.push(n ? `${n} file${n === 1 ? "" : "s"} attached.` : "No files attached.");
-  parts.push(fwd ? "Please check it. Grady has been told it is in." : gradyAsked ? "Please check it. Grady has been asked if he wants to price it." : "Please check it.");
+  parts.push(fwd ? "Please check it. Grady has been told it is in." : gradyAsked ? "Please check it. Grady has been asked if we want to price it." : "Please check it.");
   return parts.join(" ");
 }
 /** To Grady: the question. `estimator` is who he should tell (a reply to the sending number reaches nobody). */
@@ -62,7 +63,7 @@ export function newProjectSmsForGrady(item, { estimator = "Boma" } = {}) {
   }
   const parts = [`Hi Grady, new tender request: ${clip(gsmSafe(item.name), 90)}${from ? ` from ${clip(from, 40)}` : ""}.`];
   const dl = deadlineSentence(item, { short: true }); if (dl) parts.push(dl);
-  parts.push(`Is this one you want to price? Please let ${gsmSafe(estimator) || "the estimator"} know.`);
+  parts.push(`Please let ${name} know if it is something we want to price or not.`); // Boma's wording, 16 Nov 2026
   return parts.join(" ");
 }
 
@@ -80,8 +81,8 @@ export function newProjectTexts(items, { estimator = "Boma", gradyAsked = true }
   }
   const names = list.map((i) => clip(gsmSafe(i.name), 45)).join("; ");
   return [
-    { role: "copy", text: clip(`${list.length} new tenders in the portal: ${names}. Please check them.${gradyAsked ? " Grady has been asked which he wants to price." : ""}`, 470), projectIds: ids(list) },
-    ...(gradyAsked ? [{ role: "grady", text: clip(`Hi Grady, ${list.length} new tender requests: ${names}. Which would you like to price? Please let ${gsmSafe(estimator) || "the estimator"} know.`, 470), projectIds: ids(list) }] : []),
+    { role: "copy", text: clip(`${list.length} new tenders in the portal: ${names}. Please check them.${gradyAsked ? " Grady has been asked which we want to price." : ""}`, 470), projectIds: ids(list) },
+    ...(gradyAsked ? [{ role: "grady", text: clip(`Hi Grady, ${list.length} new tender requests: ${names}. Please let ${gsmSafe(estimator) || "the estimator"} know which of these we want to price.`, 470), projectIds: ids(list) }] : []),
   ];
 }
 /** The switch: off until the wording is approved and `NEW_PROJECT_SMS` is set to on. */

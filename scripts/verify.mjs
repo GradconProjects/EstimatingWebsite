@@ -1057,8 +1057,8 @@ checkAsync("notify Grady: the text is built from the quote's own figures, segmen
   const NP = await import("../src/lib/newProjectSms.js");
   const np = { projectId: "p1", name: "9 Fairfax Street, Blairgowrie VIC 3942 — Residence", client: "Acme Builders", from: "Jo <jo@acme.com.au>", deadline: "2026-11-27", deadlineSource: "email", attachments: 3, via: null };
   assert.equal(NP.smsDay("2026-11-27"), "Fri 27 Nov"); assert.equal(NP.smsDay("nope"), "");
-  assert.equal(NP.newProjectSmsForEstimator(np), "New tender in the portal: 9 Fairfax Street, Blairgowrie VIC 3942 - Residence from Acme Builders. Closes Fri 27 Nov. 3 files attached. Please check it. Grady has been asked if he wants to price it.");
-  assert.equal(NP.newProjectSmsForGrady(np), "Hi Grady, new tender request: 9 Fairfax Street, Blairgowrie VIC 3942 - Residence from Acme Builders. Closes Fri 27 Nov. Is this one you want to price? Please let Boma know.");
+  assert.equal(NP.newProjectSmsForEstimator(np), "New tender in the portal: 9 Fairfax Street, Blairgowrie VIC 3942 - Residence from Acme Builders. Closes Fri 27 Nov. 3 files attached. Please check it. Grady has been asked if we want to price it.");
+  assert.equal(NP.newProjectSmsForGrady(np), "Hi Grady, new tender request: 9 Fairfax Street, Blairgowrie VIC 3942 - Residence from Acme Builders. Closes Fri 27 Nov. Please let Boma know if it is something we want to price or not.");
   const npDef = { ...np, deadlineSource: "default", attachments: 0 };
   assert.match(NP.newProjectSmsForEstimator(npDef), /No closing date in the email - set to Fri 27 Nov \(2 weeks\)\. No files attached\./);
   assert.match(NP.newProjectSmsForGrady(npDef), /No closing date given - pencilled for Fri 27 Nov\./);
@@ -1069,8 +1069,17 @@ checkAsync("notify Grady: the text is built from the quote's own figures, segmen
   [np, npDef, npFwd].forEach((i) => [NP.newProjectSmsForEstimator(i), NP.newProjectSmsForGrady(i)].forEach((t) => { assert.ok(/^[\x20-\x7E]*$/.test(t), `plain SMS characters only: ${t}`); assert.ok(t.length <= 320 && S.smsSegments(t) <= 2, `${t.length} chars`); }));
   assert.equal(NP.newProjectTexts([np]).length, 2); assert.equal(NP.newProjectTexts([np, npDef, npFwd]).length, 6);
   const many = NP.newProjectTexts([np, npDef, npFwd, { ...np, projectId: "p4", name: "4 Fourth St" }]);
-  assert.equal(many.length, 2, "more than three projects in one scan: ONE summary text each"); assert.match(many[0].text, /^4 new tenders in the portal: /); assert.match(many[1].text, /^Hi Grady, 4 new tender requests: .*Which would you like to price\?/);
+  assert.equal(many.length, 2, "more than three projects in one scan: ONE summary text each"); assert.match(many[0].text, /^4 new tenders in the portal: /); assert.match(many[1].text, /^Hi Grady, 4 new tender requests: .*Please let Boma know which of these we want to price\.$/);
   assert.deepEqual(NP.newProjectTexts([]), []); assert.ok(!/undefined|null/.test(NP.newProjectSmsForEstimator({ name: "X" }) + NP.newProjectSmsForGrady({ name: "X" })), "a fact the entry lacks is left out");
+  { // the scan's schedule (Boma, 16 Nov 2026: "at least twice during work hours melbourne time"): every entry once a day on the scan's path, and at least two inside 8 am-5 pm Melbourne in daylight time (UTC+11) AND in winter (UTC+10)
+    const crons = JSON.parse(fs.readFileSync(new URL("../vercel.json", import.meta.url), "utf8")).crons.filter((c) => c.path === "/api/tender-inbox");
+    assert.ok(crons.length >= 3 && crons.every((c) => /^0 \d{1,2} \* \* \*$/.test(c.schedule)), "each scan entry is a once-a-day schedule on the hour");
+    const hoursUtc = crons.map((c) => Number(c.schedule.split(" ")[1])); assert.equal(new Set(hoursUtc).size, hoursUtc.length, "no two entries at the same hour");
+    [11, 10].forEach((off) => { const inWork = hoursUtc.map((h) => (h + off) % 24).filter((h) => h >= 8 && h <= 17); assert.ok(inWork.length >= 2, `UTC+${off}: ${inWork.length} scans in work hours`); });
+    const shellSrc = fs.readFileSync(new URL("../portal/portal-shell.html", import.meta.url), "utf8");
+    assert.ok(/data-testid="inbox-scan-times"/.test(shellSrc) && /7 am, 10 am, 1 pm and 4 pm Melbourne/.test(shellSrc) && !/Daily at 7 am|once a day \(7 am Melbourne\)/.test(shellSrc), "Settings states the scan times");
+    assert.deepEqual(hoursUtc.map((h) => (h + 11) % 24).sort((a, b) => a - b), [7, 10, 13, 16], "the times Settings states are the times scheduled");
+  }
   assert.equal(NP.newProjectSmsOn({}), false); assert.equal(NP.newProjectSmsOn({ NEW_PROJECT_SMS: "off" }), false); assert.equal(NP.newProjectSmsOn({ NEW_PROJECT_SMS: " On " }), true);
   // the browser side posts only the text and reads the reply; an error throws with the server's words
   let b = null;
@@ -4014,7 +4023,7 @@ check("Project Geometry carries a COUNT: $/no. leads the benchmark rates, sums a
       assertTrue(texted.filter((m) => m.role === "copy").length === 3 && texted.filter((m) => m.role === "grady").length === 3);
       const beachCopy = texted.find((m) => m.role === "copy" && /12 Beach Road/.test(m.text)), beachGrady = texted.find((m) => m.role === "grady" && /12 Beach Road/.test(m.text));
       assertTrue(/^New tender in the portal: 12 Beach Road, Rye VIC 3941 - Concrete works/.test(beachCopy.text) && /Closes Sat 14 Nov\./.test(beachCopy.text) && /2 files attached\./.test(beachCopy.text) && /Please check it\./.test(beachCopy.text), beachCopy.text);
-      assertTrue(/^Hi Grady, /.test(beachGrady.text) && /Please let Sam know\.$|Sam will pick it up\.$/.test(beachGrady.text), beachGrady.text);
+      assertTrue(/^Hi Grady, /.test(beachGrady.text) && /Please let Sam know if it is something we want to price or not\.$|Sam will pick it up\.$/.test(beachGrady.text), beachGrady.text);
       assertTrue(fourth.body.summary.sms.on === true && fourth.body.summary.sms.sent === 5 && fourth.body.summary.sms.failed === 1 && fourth.body.errors.some((e) => /Text to \+614••• ••• 000 not sent: Twilio said no/.test(e)), JSON.stringify(fourth.body.summary.sms));
       assertTrue(kv["gradcon-tender-inbox"].value.created.length === 3, "a refused text never fails the scan or its record");
       assertTrue((await TI.runTenderInbox({ action: "scan" }, {}, fetchMock)).status === 503, "unconfigured → 503");

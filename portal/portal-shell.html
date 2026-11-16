@@ -860,7 +860,7 @@
     <div id="settings-google" class="field"><span class="ai-result">Checking…</span></div>
     <p class="sub" style="margin-top:4px;">The same connection reads the office's <b>project files folder in Google Drive</b> (read-only) so every project's files are in the app — the Files button on a quote, "From Drive" on element cards and in the AI Engine. A mailbox connected before Drive was added needs one reconnect to grant it.</p>
     <div id="settings-drive" class="field"><span class="ai-result">Checking…</span></div>
-    <p class="sub" style="margin-top:8px;"><b>Tender inbox scan</b> — once a day (7 am Melbourne) the app reads this mailbox for requests for tender or quote and makes each one a <b>Queued</b> project in Quotes: name and client from the email, deadline from the email or 14 days from receipt, the email's drawings and documents copied under the project's Files. The same email, thread or address never makes a second project. A tender sent to grady@ is picked up when it is forwarded or copied to projects@ (the original sender becomes the client). Read-only — nothing is labelled, moved or sent.</p>
+    <p class="sub" style="margin-top:8px;"><b>Tender inbox scan</b> — four times a day (about 7 am, 10 am, 1 pm and 4 pm Melbourne; an hour earlier in winter) the app reads this mailbox for requests for tender or quote and makes each one a <b>Queued</b> project in Quotes: name and client from the email, deadline from the email or 14 days from receipt, the email's drawings and documents copied under the project's Files. The same email, thread or address never makes a second project. A tender sent to grady@ is picked up when it is forwarded or copied to projects@ (the original sender becomes the client). Read-only — nothing is labelled, moved or sent.</p>
     <div id="settings-inbox" class="field"><span class="ai-result">Checking…</span></div>
 
     <div class="settings-section">Quotes — pricing</div>
@@ -2148,7 +2148,7 @@
       var nums = [sm.to].concat(sm.copyTo || []).filter(Boolean).map(escapeHtml).join(' and ');
       smsLine = '<div class="ai-result" data-testid="inbox-sms-line">Text when a project is created: ' + (sm.on ? (sm.configured ? '<b>on</b> — to ' + nums : '<b>on</b>, but SMS is not configured') : '<b>off</b> — set NEW_PROJECT_SMS to on in the Vercel project to switch it on' + (nums ? ' (it would go to ' + nums + ')' : '')) + (sm.copyWarning ? ' · ' + escapeHtml(sm.copyWarning) : '') + '</div>';
     }
-    host.innerHTML = '<div class="ai-row"><div class="name">Daily at 7 am<small>' + line + '</small></div><button type="button" id="inbox-scan-now" data-testid="inbox-scan-now"' + (d && d.configured === false ? ' disabled' : '') + '>Scan now</button><span class="ai-result" id="inbox-scan-result"></span></div>' + smsLine + errs + (created ? '<div style="margin-top:6px">' + created + '</div>' : '');
+    host.innerHTML = '<div class="ai-row"><div class="name" data-testid="inbox-scan-times">4 scans a day · 7 am, 10 am, 1 pm, 4 pm<small>' + line + '</small></div><button type="button" id="inbox-scan-now" data-testid="inbox-scan-now"' + (d && d.configured === false ? ' disabled' : '') + '>Scan now</button><span class="ai-result" id="inbox-scan-result"></span></div>' + smsLine + errs + (created ? '<div style="margin-top:6px">' + created + '</div>' : '');
   }
   document.getElementById('settings-inbox').addEventListener('click', function(e){
     var b = e.target.closest('#inbox-scan-now'); if(!b) return;

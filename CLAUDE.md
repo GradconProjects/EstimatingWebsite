@@ -1173,10 +1173,11 @@ it automatically sends to him"; "lets do both at once". Rules:
    would like to do"): `src/lib/newProjectSms.js` (pure, verify-covered) —
    `newProjectSmsForEstimator(item)` ("New tender in the portal: <name> from
    <client>. Closes <day>. N files attached. Please check it. Grady has been
-   asked if he wants to price it.") to the copy numbers and
+   asked if we want to price it.") to the copy numbers and
    `newProjectSmsForGrady(item, {estimator})` ("Hi Grady, new tender request:
-   … Is this one you want to price? Please let <SMS_COPY_NAME> know." — a reply
-   to the sending number reaches nobody) to Grady; a request Grady forwarded
+   … Please let <SMS_COPY_NAME> know if it is something we want to price or
+   not." — Boma's own wording, 16 Nov 2026; a reply to the sending number
+   reaches nobody) to Grady; a request Grady forwarded
    himself (`forwardedByGrady`) is CONFIRMED to him, not asked about; a default
    deadline says so; every word comes from the scan's created entry, plain GSM
    characters only (`gsmSafe`), at most two segments; more than
@@ -2300,8 +2301,14 @@ a daily scheduled scan and yes create the project straight away making sure
 no duplicate projects are present and yes copy email attachments". Rules:
 
 1. **`src/lib/tenderInbox.js` is pure and verify-covered; `api/tender-inbox.js`
-   runs it.** `vercel.json` `crons` fires `GET /api/tender-inbox` daily at
-   20:00 UTC (7 am Melbourne in daylight time); `isCronCall` accepts the
+   runs it.** `vercel.json` `crons` fires `GET /api/tender-inbox` FOUR times a
+   day (Boma, 16 Nov 2026: "let the scan be at least twice during work hours
+   melbourne time") — four once-a-day entries on the same path at 20:00, 23:00,
+   02:00 and 05:00 UTC = 7 am, 10 am, 1 pm and 4 pm Melbourne in daylight time,
+   an hour earlier in winter (Vercel schedules are UTC), so three fall inside
+   8 am–5 pm in either season (`verify.mjs` pins that; Settings states the
+   times, `inbox-scan-times`). A re-scan is safe by rule 5 — a handled message
+   or thread never makes a second project. `isCronCall` accepts the
    `CRON_SECRET` bearer when that variable is set (set it in Vercel — then
    nothing else can start a scan from outside), else Vercel's `vercel-cron/`
    user agent. The portal's own origin may `POST {action:"scan"}` ("Scan now"

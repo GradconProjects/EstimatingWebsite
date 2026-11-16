@@ -3,6 +3,18 @@
     {
       "path": "/api/tender-inbox",
       "schedule": "0 20 * * *"
+    },
+    {
+      "path": "/api/tender-inbox",
+      "schedule": "0 23 * * *"
+    },
+    {
+      "path": "/api/tender-inbox",
+      "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/tender-inbox",
+      "schedule": "0 5 * * *"
     }
   ],
   "functions": {
