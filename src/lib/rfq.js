@@ -89,6 +89,48 @@ export function rfqContact(org) {
   return { name, email, firstName, role: c ? c.role || "" : "", contactId: c ? c.id : null };
 }
 
+/* A contractor's OWN copies (Trevor, DMAC Contracting, 17 Nov 2026: "Can you please add the following emails on
+ * your end for when you send us RFQs — danny@…, estimating@…"). A Register contact ticked "RFQ copy"
+ * (`contact.rfqCc === true`) is cc'd on every RFQ that goes to that organisation's primary contact — on THAT
+ * contractor's message only, never another's. `rfqCopies(org)` is the ONE reading.
+ * RFQ_STANDING_COPIES are the requests coded in: applied ONCE to a stored register (`rfqStandingVersion`), after
+ * which the Register's ticks govern (untick one there and it stays unticked). The Register page carries a mirror
+ * of this list and writes the ticks into the cloud row; `applyStandingRfqCopies` gives the same answer to a
+ * reader (the RFQ composer) that meets a register the page has not moved yet — it never writes. */
+export const RFQ_STANDING_VER = 1;
+export const RFQ_STANDING_COPIES = [
+  { orgId: "org-dmac-contracting", domain: "dmacpiling.com.au", emails: ["danny@dmacpiling.com.au", "estimating@dmacpiling.com.au"], asked: "Trevor, DMAC Contracting, 17 Nov 2026" },
+];
+const validEmail = (e) => /^[^\s@<>,;]+@[^\s@<>,;]+\.[^\s@<>,;]+$/.test(String(e || "").trim());
+const lc = (e) => String(e || "").trim().toLowerCase();
+const orgOnDomain = (o, domain) => [...(o.emails || []), ...((o.contacts || []).map((c) => c && c.email))].some((e) => lc(e).split("@")[1] === domain);
+const nameFromEmail = (e) => { const p = lc(e).split("@")[0].replace(/[._-]+/g, " ").trim(); return p ? p.replace(/\b\w/g, (ch) => ch.toUpperCase()) : ""; };
+/** The register's organisations with the standing RFQ copies ticked — the stored ones untouched (copies returned). */
+export function applyStandingRfqCopies(register) {
+  const orgs = register && Array.isArray(register.orgs) ? register.orgs : [];
+  if (!orgs.length || (Number(register.rfqStandingVersion) || 0) >= RFQ_STANDING_VER) return orgs;
+  return orgs.map((o) => {
+    const rule = RFQ_STANDING_COPIES.find((r) => r.orgId === o.id) || RFQ_STANDING_COPIES.find((r) => !orgs.some((x) => x.id === r.orgId) && orgOnDomain(o, r.domain));
+    if (!rule) return o;
+    const contacts = (Array.isArray(o.contacts) ? o.contacts : []).map((c) => ({ ...c }));
+    for (const email of rule.emails) {
+      const c = contacts.find((x) => lc(x.email) === email);
+      if (c) c.rfqCc = true; else contacts.push({ id: `c-rfq-${email.replace(/[^a-z0-9]+/g, "-")}`, name: nameFromEmail(email), role: "", email, phone: "", mobile: "", primary: false, rfqCc: true, source: "standing" });
+    }
+    return { ...o, contacts };
+  });
+}
+/** The addresses cc'd on this organisation's RFQ: its "RFQ copy" contacts, never the address the RFQ goes To. */
+export function rfqCopies(org) {
+  const to = lc(rfqContact(org).email);
+  return [...new Set((org && Array.isArray(org.contacts) ? org.contacts : []).filter((c) => c && c.rfqCc === true && validEmail(c.email)).map((c) => lc(c.email)))].filter((e) => e !== to);
+}
+/** What one message carries as Cc: the contractor's own copies first, then Gradcon's — deduped, never the To address, at most `max`. */
+export function draftCc(draft, gradconCc = [], max = 10) {
+  const to = lc(draft && draft.email);
+  return [...new Set([...((draft && draft.cc) || []), ...(gradconCc || [])].map(lc))].filter((e) => validEmail(e) && e !== to).slice(0, max);
+}
+
 export function dayPlus(days, from = new Date()) { const d = new Date(from); d.setDate(d.getDate() + days); while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; }
 export const fmtDay = (day) => { if (!day) return ""; const d = new Date(day + "T00:00:00"); return Number.isFinite(+d) ? d.toLocaleDateString("en-AU", { weekday: "long", day: "numeric", month: "long", year: "numeric" }) : day; };
 
@@ -188,7 +230,7 @@ export function rfqDrafts({ orgs, projectName, siteAddress, pkgLabel, scopes, du
     const contact = rfqContact(org);
     const head = rfqHead({ pkgLabel, org, contact });
     const body = rfqBody({ projectName, siteAddress, pkgLabel, scopes, due, leadDays, requestedOn, sender, attachments, links, extraNotes });
-    return { id: `d-${org.id}`, orgId: org.id, orgName: org.name, trade: org.trade || "", contactName: contact.name, contactId: contact.contactId, email: contact.email, subject: rfqSubject({ pkgLabel, projectName }), head, body, text: joinDraft(head, body), approved: false, status: "draft" };
+    return { id: `d-${org.id}`, orgId: org.id, orgName: org.name, trade: org.trade || "", contactName: contact.name, contactId: contact.contactId, email: contact.email, cc: rfqCopies(org), subject: rfqSubject({ pkgLabel, projectName }), head, body, text: joinDraft(head, body), approved: false, status: "draft" };
   });
 }
 /* The name guard: everything a draft would carry (subject, head, body) is searched for ANOTHER
@@ -199,7 +241,7 @@ const nameTokens = (d) => {
   const out = new Set();
   const add = (s) => { s = String(s || "").trim(); if (s.length >= 4) out.add(s.toLowerCase()); };
   add(d.orgName); for (const part of String(d.orgName || "").split(/\s*\/\s*|\s+-\s+|\s*\(|\)\s*/)) add(part);
-  add(d.contactName); add(d.email);
+  add(d.contactName); add(d.email); for (const c of d.cc || []) add(c); // a contractor's own copy addresses are its own names too
   const dom = String(d.email || "").split("@")[1]; if (dom && !/^(gmail|outlook|hotmail|bigpond|yahoo|live|icloud)\./i.test(dom)) add(dom);
   return out;
 };
@@ -218,7 +260,7 @@ export function draftNameIssues(draft, allDrafts) {
 }
 /** What a project remembers of an RFQ round, and the 05 checklist step it ticks. */
 export function rfqRecord({ pkgKey, pkgLabel, elementIds, due, by, sent, attachments = [] }, at = new Date().toISOString()) {
-  return { id: `rfq-${at.replace(/[^0-9]/g, "").slice(0, 14)}-${pkgKey}`, at, by: by || null, package: pkgLabel, packageKey: pkgKey, elementIds: elementIds || [], due: due || null, attachments: attachments.map((a) => a.name), recipients: (sent || []).map((d) => ({ orgId: d.orgId, orgName: d.orgName, contactName: d.contactName, email: d.email, subject: d.subject, messageId: d.messageId || null, threadId: d.threadId || null, status: d.status || "sent", error: d.error || null })) };
+  return { id: `rfq-${at.replace(/[^0-9]/g, "").slice(0, 14)}-${pkgKey}`, at, by: by || null, package: pkgLabel, packageKey: pkgKey, elementIds: elementIds || [], due: due || null, attachments: attachments.map((a) => a.name), recipients: (sent || []).map((d) => ({ orgId: d.orgId, orgName: d.orgName, contactName: d.contactName, email: d.email, cc: Array.isArray(d.cc) ? d.cc : [], subject: d.subject, messageId: d.messageId || null, threadId: d.threadId || null, status: d.status || "sent", error: d.error || null })) };
 }
 export function rfqPatch(quote, record) {
   const rfqs = Array.isArray(quote && quote.rfqs) ? quote.rfqs : [];

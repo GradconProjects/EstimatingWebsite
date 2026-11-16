@@ -39,6 +39,23 @@ export function twilioSender(raw) {
   if (num) return { field: "From", value: num, kind: "number" };
   return { field: "From", value: v, kind: /^[\d\s+()\-.]+$/.test(v) ? "unreadable" : "alpha" };
 }
+/* What is wrong with TWILIO_FROM, in words, or null. A NAME as the sender ("Gradcon" instead of the number — Boma,
+ * 17 Nov 2026: "i wanted to use Gradcon Estimates instead of the number") is an alphanumeric sender ID; the limits are
+ * Twilio's own, read off twilio.com/docs/trust-hub/registrations/alphanumeric-sender-id and Twilio's Australian Sender
+ * ID help page on that day: at most 11 characters, letters / digits / spaces, at least one letter, paid accounts only,
+ * and for Australian recipients the name must be registered on the ACMA Sender ID Register through the Twilio Console
+ * (an unregistered one is overwritten "Unverified"). The friendly name of a number in the Twilio console is a label
+ * there and changes nothing a recipient sees. */
+export const ALPHA_SENDER_MAX = 11;
+export function twilioSenderWarning(raw) {
+  const t = twilioSender(raw);
+  if (!t) return null;
+  if (t.kind === "unreadable") return "TWILIO_FROM is not a phone number the function can read — use the Twilio number as +61…, or an MG… Messaging Service SID";
+  if (t.kind !== "alpha") return null;
+  if (t.value.length > ALPHA_SENDER_MAX) return `TWILIO_FROM "${t.value}" is ${t.value.length} characters — a sender name may be at most ${ALPHA_SENDER_MAX} (Twilio's limit). Shorten it, e.g. to one word.`;
+  if (!/^[A-Za-z0-9 ]+$/.test(t.value) || !/[A-Za-z]/.test(t.value)) return `TWILIO_FROM "${t.value}" is not a sender name Twilio accepts — letters, digits and spaces only, with at least one letter.`;
+  return null;
+}
 /** What a page may show of the Twilio sender: a number masked like the recipient, a service SID shortened, an alpha id as typed. */
 export function twilioFromLabel(raw) {
   const t = twilioSender(raw);
@@ -90,7 +107,7 @@ export function smsStatus(env = process.env) {
     copyWarning: copies.unreadable.length ? `SMS_COPY_TO holds ${copies.unreadable.length === 1 ? "a number" : "numbers"} the function cannot read (${copies.unreadable.join(", ")})` : null,
     from: provider === "twilio" ? twilioFromLabel(env.TWILIO_FROM) : (env.SMS_FROM || null), missing,
     // a sender the function cannot read as a number is said here, before a send is refused by Twilio
-    warning: provider === "twilio" && (twilioSender(env.TWILIO_FROM) || {}).kind === "unreadable" ? "TWILIO_FROM is not a phone number the function can read — use the Twilio number as +61…, or an MG… Messaging Service SID" : null };
+    warning: provider === "twilio" ? twilioSenderWarning(env.TWILIO_FROM) : null };
 }
 
 /** GSM-7 segments: 160 in one, 153 each after; a non-GSM character (an em dash, a curly quote) makes it UCS-2 — 70 / 67. */

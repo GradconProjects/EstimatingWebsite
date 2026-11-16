@@ -1139,7 +1139,19 @@ it automatically sends to him"; "lets do both at once". Rules:
    ANY Australian spelling goes to Twilio as E.164 — 13 Nov 2026, it was typed
    "04xx xxx xxx" and Twilio takes E.164 only — an alphanumeric id as typed,
    and digits it cannot read set `smsStatus().warning`; the status shows the
-   sender masked through `twilioFromLabel`, never whole). Every variable is SERVER-SIDE ONLY (Vercel →
+   sender masked through `twilioFromLabel`, never whole). **A NAME as the
+   sender is an alphanumeric sender ID** (Boma, 17 Nov 2026: "i wanted to use
+   Gradcon Estimates instead of the number"; then "you can use Gradcon"):
+   `TWILIO_FROM=Gradcon` is sent as typed; `twilioSenderWarning(raw)` is the
+   ONE check — over `ALPHA_SENDER_MAX` = 11 characters, or anything but
+   letters, digits and spaces with at least one letter, sets
+   `smsStatus().warning`. The limits were read off Twilio's own pages that
+   day (never from memory): paid accounts only, no replies to a name, and for
+   Australian recipients the name must be registered on the ACMA Sender ID
+   Register through the Twilio Console (Trust Hub → Registrations →
+   Alphanumeric Sender IDs) or it is overwritten "Unverified". The friendly
+   name of a number in the Twilio console is a label there and changes
+   nothing a recipient sees. The variable is the office's to set in Vercel. Every variable is SERVER-SIDE ONLY (Vercel →
    Settings → Environment Variables, never `VITE_`; `.env.example` lists them).
    **The recipient is `GRADY_MOBILE`, read on the server** — `normalizeMobile`
    turns any Australian spelling into E.164 (0412 → +61412…; a full +… number
@@ -2286,6 +2298,43 @@ bare minimum should be archi, struct, soil report". Rules:
    message, `/api/gmail` send), recorded on the organisation the same way.
    Nothing is sent without the approval tick; an edit after approval clears
    it.
+6. **A contractor's OWN copies are a tick on the Register** (Trevor, DMAC
+   Contracting, 17 Nov 2026: "Can you please add the following emails on your
+   end for when you send us RFQs — danny@dmacpiling.com.au,
+   estimating@dmacpiling.com.au"; Boma: "code in the following instructions"):
+   a Register contact carries `rfqCc: true` — the "RFQ copy" column of an
+   organisation's people table (`rfq-copy`, `data-rfqcc`; the primary contact,
+   who the RFQ goes TO, is disabled; a tick or untick is logged).
+   `rfqCopies(org)` in `rfq.js` is the ONE reading (ticked contacts with a
+   valid address, once each, never the To address); `rfqDrafts` puts them on
+   THAT contractor's draft as `d.cc`, and `draftCc(draft, gradconCc)` is what
+   one message carries — the contractor's own copies first, then Gradcon's
+   (the composer's Cc box), deduped, never the To address, at most 10
+   (`api/gmail.js` takes ≤ 10 cc). Still ONE `To:` per message and one
+   message per contractor; a contractor's copies never ride on another
+   contractor's email (verify: nothing of DMAC anywhere in BCS's draft), and
+   the name guard counts a draft's copy addresses as that contractor's own
+   names — so DMAC's copy address typed into BCS's text holds BCS's draft.
+   The composer shows them on the contractor's row (`rfq-org-copies-<id>`,
+   "+ cc …") and in the draft header (`rfq-own-cc`, "Cc (their own): …");
+   `rfqRecord` keeps `cc` per recipient. **A request coded in is a STANDING
+   copy**: `RFQ_STANDING_COPIES` in `rfq.js` (`{orgId, domain, emails, asked}`,
+   today DMAC's two addresses) with a MIRROR in `register.html` (`verify.mjs`
+   fails on drift). The Register page ticks them ONCE per `RFQ_STANDING_VER`
+   on the stored register (`applyStandingRfqCopies(state)` on load —
+   `state.rfqStandingVersion`, kept through `mergeStates`, logged with who
+   asked; the organisation found by id, else by its mail domain; a missing
+   contact is added), after which the ticks govern: untick one there and it
+   stays unticked. The composer reads through the pure
+   `applyStandingRfqCopies(register)` in `rfq.js`, which gives the same answer
+   for a register the page has not moved yet and never writes. A new request
+   of this kind is a new entry in BOTH lists and a bump of the version in
+   both. The seed file is not edited. **`register.html`'s script is
+   parse-checked by `verify.mjs`** (an apostrophe inside a single-quoted
+   string stopped the whole Register loading that day; only a browser run
+   showed it). `test-rfq-copies.mjs` proves the Register's ticks, the
+   composer's row and header, the two sends (DMAC's with its copies, BCS's
+   without), the record and an untick surviving a reload.
 `test-rfq.mjs` proves both buttons, the suggestion, the contractor groups,
 the auto-attach from a mocked Drive folder (match → list → subfolder; the
 missing-class note), the two independent drafts, the read-only block, the

@@ -1,8 +1,8 @@
 import { serverDownReason, readServerReply, failureReason } from "../lib/serverStatus.js";
 import { useEffect, useMemo, useState } from "react";
 import { X, Send, Check, ChevronLeft, Paperclip, Loader2, AlertTriangle, Mail } from "lucide-react";
-import { RFQ_PACKAGES, RFQ_LEAD, packageByKey, packageLabel, suggestPackages, contractorsFor, rfqContact, rfqDrafts, rfqSubject, elementScope, dayPlus, rfqRecord, attachmentOptions, driveFolderOptions, missingAttachClasses, planAttachments, driveFileIdFrom, localFileCheck, localFileOption, driveLinkOption, LOCAL_FILE_ACCEPT, fmtBytes, ATTACH_PLAN_BYTES, DEFAULT_CC, parseCc, rfqHead, rfqBody, joinDraft, draftNameIssues } from "../lib/rfq.js";
-import { readRegister, registerOrgs } from "../lib/registerStore.js";
+import { RFQ_PACKAGES, RFQ_LEAD, packageByKey, packageLabel, suggestPackages, contractorsFor, rfqContact, rfqCopies, draftCc, applyStandingRfqCopies, rfqDrafts, rfqSubject, elementScope, dayPlus, rfqRecord, attachmentOptions, driveFolderOptions, missingAttachClasses, planAttachments, driveFileIdFrom, localFileCheck, localFileOption, driveLinkOption, LOCAL_FILE_ACCEPT, fmtBytes, ATTACH_PLAN_BYTES, DEFAULT_CC, parseCc, rfqHead, rfqBody, joinDraft, draftNameIssues } from "../lib/rfq.js";
+import { readRegister } from "../lib/registerStore.js";
 import { readTakeoffForProject } from "../lib/estimatesRead.js";
 import { driveApi } from "../lib/driveFiles.js";
 import { markupSrc, uploadRfqFile, markupStoreEnabled } from "../lib/markupStore.js";
@@ -76,7 +76,8 @@ export default function RfqModal({ quote, items, rates, projectScope, elementTyp
   const pkgKeyList = useMemo(() => pkgs.map((p) => p.key), [pkgs]);
   const labelOf = (p) => packageLabel(p.key, pkgCustom);
   const pkgLabelNow = pkgs.map(labelOf).join(", ") || "—";
-  const orgs = registerOrgs(register);
+  // the Register's organisations, with the coded-in "RFQ copy" requests applied when the Register page has not moved this row yet
+  const orgs = useMemo(() => applyStandingRfqCopies(register), [register]);
   const groupsFor = useMemo(() => Object.fromEntries(pkgs.map((p) => [p.key, contractorsFor(orgs, p)])), [orgs, pkgs]);
   const picked = (key) => picks[key] || new Set();
   const togglePick = (key, id) => setPicks((cur) => { const n = new Set(cur[key] || []); n.has(id) ? n.delete(id) : n.add(id); return { ...cur, [key]: n }; });
@@ -225,7 +226,7 @@ export default function RfqModal({ quote, items, rates, projectScope, elementTyp
       const text = textOf(d);
       patchDraft(i, { status: "sending", text });
       try {
-        const r = await fetch(`${apiBase()}/api/gmail`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "send", to: d.email, toName: d.contactName, fromName: sender.name, subject: d.subject, text, attachments: resolvedFiles.map((f) => ({ name: f.name, url: f.url })), cc: ccList }), signal: AbortSignal.timeout(120000) });
+        const r = await fetch(`${apiBase()}/api/gmail`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "send", to: d.email, toName: d.contactName, fromName: sender.name, subject: d.subject, text, attachments: resolvedFiles.map((f) => ({ name: f.name, url: f.url })), cc: draftCc(d, ccList) }), signal: AbortSignal.timeout(120000) });
         const body = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(body.error || `HTTP ${r.status}`);
         const sent = { ...d, text, status: "sent", messageId: body.sent && body.sent.id, threadId: body.sent && body.sent.threadId };
@@ -240,13 +241,14 @@ export default function RfqModal({ quote, items, rates, projectScope, elementTyp
     setStep("done");
   }
 
-  const OrgRow = ({ o, tag, pkgKey }) => { const c = rfqContact(o); const on = picked(pkgKey).has(o.id); return (
+  const OrgRow = ({ o, tag, pkgKey }) => { const c = rfqContact(o); const copies = rfqCopies(o); const on = picked(pkgKey).has(o.id); return (
     <label className={`flex items-start gap-2 px-2 py-1.5 rounded border ${on ? "border-orange-400 bg-orange-50" : "border-neutral-200 bg-white"} ${c.email ? "cursor-pointer" : "opacity-60"}`} data-testid={`rfq-org-${pkgKey}-${o.id}`}>
       <input type="checkbox" className="mt-1" checked={on} disabled={!c.email} onChange={() => togglePick(pkgKey, o.id)} />
       <span className="min-w-0 flex-1 text-[12.5px]">
         <span className="font-semibold">{o.name}</span>{tag && <span className={`ml-1.5 text-[10px] font-bold uppercase tracking-wider px-1.5 rounded ${tag === "does" ? "bg-emerald-100 text-emerald-800" : tag === "not" ? "bg-red-100 text-red-700" : "bg-neutral-100 text-neutral-500"}`}>{tag === "does" ? "does this" : tag === "not" ? "says they don't" : "not stated"}</span>}
         <span className="block text-neutral-500">{o.trade}</span>
         <span className="block text-neutral-600">{c.email ? `${c.name ? c.name + " · " : ""}${c.email}` : "no email address on the register — add one there first"}</span>
+        {c.email && copies.length > 0 && <span className="block text-neutral-500" title="Their own addresses, ticked 'RFQ copy' on the Register — copied on this contractor's RFQ only" data-testid={`rfq-org-copies-${o.id}`}>+ cc {copies.join(", ")}</span>}
       </span>
     </label>
   ); };
@@ -381,7 +383,7 @@ export default function RfqModal({ quote, items, rates, projectScope, elementTyp
             </div>
             {(() => { const d = drafts[current]; if (!d) return null; const issues = issuesOf(d); const sharers = drafts.filter((x) => x.pkgKey === d.pkgKey).length; return (
               <div className="space-y-2">
-                <div className="text-[12px] text-neutral-600" data-testid="rfq-head"><b>{d.pkgLabel}</b> · To: <b>{d.contactName || d.orgName}</b> &lt;{d.email}&gt; — {d.orgName}{d.trade ? ` · ${d.trade}` : ""}{ccList.length ? ` · Cc: ${ccList.join(", ")}` : ""}{resolvedFiles.length ? ` · ${resolvedFiles.length} attachment${resolvedFiles.length === 1 ? "" : "s"}` : ""}{resolvedLinks.length ? ` · ${resolvedLinks.length} as download link${resolvedLinks.length === 1 ? "" : "s"}` : ""}</div>
+                <div className="text-[12px] text-neutral-600" data-testid="rfq-head"><b>{d.pkgLabel}</b> · To: <b>{d.contactName || d.orgName}</b> &lt;{d.email}&gt; — {d.orgName}{d.trade ? ` · ${d.trade}` : ""}{(d.cc || []).length ? <span data-testid="rfq-own-cc"> · Cc (their own): <b>{d.cc.join(", ")}</b></span> : null}{ccList.length ? ` · Cc: ${ccList.join(", ")}` : ""}{resolvedFiles.length ? ` · ${resolvedFiles.length} attachment${resolvedFiles.length === 1 ? "" : "s"}` : ""}{resolvedLinks.length ? ` · ${resolvedLinks.length} as download link${resolvedLinks.length === 1 ? "" : "s"}` : ""}</div>
                 <input value={d.subject} onChange={(e) => patchDraft(current, { subject: e.target.value, approved: false })} className="w-full border border-neutral-300 rounded px-2 py-1.5 text-[13px] font-semibold" data-testid="rfq-subject" />
                 <pre className="m-0 whitespace-pre-wrap border border-neutral-200 bg-neutral-50 rounded px-3 py-2 text-[12.5px] font-mono leading-snug text-neutral-800" title="Written for this contractor from the Register — not editable, so it can never be pasted into another contractor's email" data-testid="rfq-head-lines">{d.head}</pre>
                 <div className="text-[11px] text-neutral-500 -mt-1">↑ greeting written for <b>{d.orgName}</b> (locked) · ↓ the wording below goes to {sharers === 1 ? "this contractor" : `all ${sharers} ${d.pkgLabel} contractors`} — edit it once{sharers > 1 ? ", never copy it between drafts" : ""}</div>

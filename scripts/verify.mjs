@@ -1037,6 +1037,11 @@ checkAsync("notify Grady: the text is built from the quote's own figures, segmen
   const stTw = S.smsStatus({ ...tw, TWILIO_FROM: "0400 000 000" });
   assert.equal(stTw.configured, true); assert.equal(stTw.from, "+614••• ••• 000", "the sender is shown masked, never whole"); assert.equal(stTw.warning, null);
   assert.match(S.smsStatus({ ...tw, TWILIO_FROM: "12345" }).warning, /TWILIO_FROM is not a phone number/);
+  // a NAME as the sender (Boma, 17 Nov 2026: "Gradcon Estimates instead of the number"): Twilio's limit is 11 characters, letters / digits / spaces
+  assert.match(S.smsStatus({ ...tw, TWILIO_FROM: "Gradcon Estimates" }).warning, /17 characters — a sender name may be at most 11/);
+  assert.equal(S.smsStatus({ ...tw, TWILIO_FROM: "Gradcon" }).warning, null); assert.equal(S.smsStatus({ ...tw, TWILIO_FROM: "Gradcon Est" }).warning, null); assert.equal(S.smsStatus({ ...tw, TWILIO_FROM: "Gradcon" }).from, "Gradcon");
+  assert.match(S.smsStatus({ ...tw, TWILIO_FROM: "Gradcon-Est" }).warning, /letters, digits and spaces only/);
+  assert.equal(S.twilioSenderWarning("+61468004120"), null); assert.equal(S.twilioSenderWarning("MG" + "a".repeat(32)), null); assert.equal(S.ALPHA_SENDER_MAX, 11);
   assert.equal(S.smsStatus({ ...tw, TWILIO_FROM: "MG" + "a".repeat(32) }).from, "MGaaaa…");
   // a Twilio refusal carries the code, Twilio's own words and, for a code read off its error page, what to do (13 Nov 2026: 572002)
   const trial = await N.runNotify({ action: "sms", text: "x" }, tw, async () => ({ ok: false, status: 400, json: async () => ({ code: 572002, message: "The 'From' number isn't assigned to this verified Messaging recipient", status: 400 }) }));
@@ -4297,6 +4302,46 @@ await checkAsync("RFQ (src/lib/rfq.js, api/gmail.js send): one draft per contrac
   assert.deepEqual(opts.map((o) => [o.name.split(" ")[0], o.auto, o.tags.join(",")]), [["A-101", true, "archi"], ["Geotechnical", true, "soil"], ["Pile", true, "pkg"], ["S01", true, "struct"], ["Energy", false, ""]], "archi / struct / soil always, the package's own words too, folders never");
   assert.deepEqual(R.missingAttachClasses(opts, new Set(["drive:a", "drive:s"])).map((c) => c.key), ["soil"], "an unticked soil report is reported missing");
   assert.deepEqual(R.ATTACH_CLASSES.filter((c) => c.required).map((c) => c.key), ["archi", "struct", "soil"]);
+  { // A contractor's OWN copies (Trevor, DMAC, 17 Nov 2026: "add the following emails on your end for when you send us RFQs"): ticked "RFQ copy" on the Register, cc'd on THAT contractor's RFQ only
+    assert.deepEqual(drafts.map((d) => d.cc), [[], []], "no contact ticked → no contractor copies");
+    const dmacFull = { ...dmac, id: "org-dmac-contracting", contacts: [{ id: "c1", name: "Trevor Carr", email: "trevor@dmacpiling.com.au", primary: true }, { id: "c4", name: "Estimating Team", email: "estimating@dmacpiling.com.au" }, { id: "c5", name: "Danny McChesney", email: "Danny@dmacpiling.com.au" }, { id: "c6", name: "Kale", email: "kale@dmacpiling.com.au" }] };
+    const reg = { orgs: [dmacFull, bcs] };
+    const moved = R.applyStandingRfqCopies(reg);
+    assert.deepEqual(R.rfqCopies(moved[0]), ["estimating@dmacpiling.com.au", "danny@dmacpiling.com.au"], "the two addresses Trevor asked for — Kale is not copied, Trevor is the To");
+    assert.deepEqual(R.rfqCopies(moved[1]), []); assert.equal(moved[1], bcs, "an organisation with no standing request is the stored object, untouched");
+    assert.ok(!dmacFull.contacts.some((c) => c.rfqCc), "the stored register is never mutated by the reader");
+    assert.equal(R.applyStandingRfqCopies({ orgs: [dmacFull], rfqStandingVersion: R.RFQ_STANDING_VER })[0], dmacFull, "once the Register page has moved the row, its ticks govern — an unticked copy stays unticked");
+    const byDomain = R.applyStandingRfqCopies({ orgs: [{ ...dmac, id: "org-renamed", contacts: [{ id: "c1", name: "Trevor Carr", email: "trevor@dmacpiling.com.au", primary: true }] }] });
+    assert.deepEqual(R.rfqCopies(byDomain[0]), ["danny@dmacpiling.com.au", "estimating@dmacpiling.com.au"], "found by its mail domain when the id differs; a missing contact is added");
+    assert.deepEqual(R.rfqCopies({ contacts: [{ email: "a@x.com", primary: true, rfqCc: true }, { email: "b@x.com", rfqCc: true }, { email: "B@x.com", rfqCc: true }, { email: "nope", rfqCc: true }, { email: "c@x.com" }] }), ["b@x.com"], "never the To address, once each, valid addresses only, ticked only");
+    const round = R.rfqDrafts({ orgs: [moved[0], bcs], projectName: "11 Skelton Place, Sorrento VIC 3943", pkgLabel: "Bored Pier Works", scopes: [scope], due: "2026-10-30", leadDays: 7, requestedOn: "2026-10-23", sender: { name: "Boma" }, attachments: [] });
+    assert.deepEqual(round[0].cc, ["estimating@dmacpiling.com.au", "danny@dmacpiling.com.au"]); assert.deepEqual(round[1].cc, [], "BCS's draft carries none of DMAC's addresses");
+    assert.equal(round[0].email, "trevor@dmacpiling.com.au", "the RFQ still goes TO the primary contact");
+    assert.deepEqual(R.draftCc(round[0], ["grady@gradcon.com.au", "Danny@dmacpiling.com.au", "trevor@dmacpiling.com.au"]), ["estimating@dmacpiling.com.au", "danny@dmacpiling.com.au", "grady@gradcon.com.au"], "their own copies, then Gradcon's — once each, never the To address");
+    assert.deepEqual(R.draftCc(round[1], ["grady@gradcon.com.au"]), ["grady@gradcon.com.au"]);
+    assert.ok(!/dmacpiling|danny|trevor/i.test(JSON.stringify(round[1])), "nothing of DMAC anywhere in BCS's draft");
+    assert.equal(R.draftNameIssues({ ...round[1], body: "copy danny@dmacpiling.com.au" }, round).length, 1, "a DMAC copy address typed into BCS's text is caught by the name guard");
+    assert.equal(R.draftNameIssues({ ...round[0], body: "also to estimating@dmacpiling.com.au" }, round).length, 0, "and is DMAC's own in DMAC's draft");
+    const recCc = R.rfqRecord({ pkgKey: "bored", pkgLabel: "Bored Pier Works", elementIds: ["e1"], due: "2026-10-30", by: "boma", sent: [{ ...round[0], status: "sent" }] }, "2026-11-17T00:00:00.000Z");
+    assert.deepEqual(recCc.recipients[0].cc, ["estimating@dmacpiling.com.au", "danny@dmacpiling.com.au"], "the round's record keeps who was copied");
+    // the Register page: the same list (a mirror), the one-off move, the tick and its handler; the composer reads through the ONE functions
+    const regSrc = fs.readFileSync(new URL("../portal/register.html", import.meta.url), "utf8");
+    { // the page's script must PARSE (17 Nov 2026: an apostrophe inside a single-quoted string stopped the whole Register loading; only a browser run showed it)
+      const vm = await import("node:vm"); const body = [...regSrc.matchAll(/<script(?![^>]*src)[^>]*>([\s\S]*?)<\/script>/g)].map((m) => m[1]).sort((a, b) => b.length - a.length)[0];
+      assert.doesNotThrow(() => new vm.Script(body, { filename: "register.html" }), "portal/register.html's script parses");
+    }
+    const mirror = regSrc.match(/const RFQ_STANDING_COPIES = (\[[\s\S]*?\]);\n/); assert.ok(mirror, "register.html carries the list");
+    assert.deepEqual(new Function("return " + mirror[1])(), R.RFQ_STANDING_COPIES, "register.html's standing RFQ copies mirror src/lib/rfq.js");
+    assert.ok(new RegExp("const RFQ_STANDING_VER = " + R.RFQ_STANDING_VER + ";").test(regSrc) && /function applyStandingRfqCopies\(state\)/.test(regSrc) && /applyStandingRfqCopies\(STATE\)/.test(regSrc) && /out\.rfqStandingVersion = Math\.max/.test(regSrc) && /data-rfqcc=/.test(regSrc) && /t\.dataset\.rfqcc != null/.test(regSrc), "the page moves a stored register once, keeps the version through a merge and carries the RFQ copy tick");
+    const modalSrc = fs.readFileSync(new URL("../src/components/RfqModal.jsx", import.meta.url), "utf8");
+    assert.ok(/applyStandingRfqCopies\(register\)/.test(modalSrc) && /cc: draftCc\(d, ccList\)/.test(modalSrc) && /rfq-own-cc/.test(modalSrc) && /rfq-org-copies-/.test(modalSrc) && !/cc: ccList \}/.test(modalSrc), "the composer sends each draft's own copies beside Gradcon's and shows them");
+    // the real seed: DMAC is there under the id the rule names, with both addresses on record
+    const seedSrc = fs.readFileSync(new URL("../portal/register-seed.js", import.meta.url), "utf8"); const seedM = seedSrc.match(/const REGISTER_SEED = (\{[\s\S]*?\});\n/);
+    const seedOrgs = R.applyStandingRfqCopies({ orgs: JSON.parse(seedM[1]).orgs });
+    const seedDmac = seedOrgs.find((o) => o.id === "org-dmac-contracting");
+    assert.deepEqual([...R.rfqCopies(seedDmac)].sort(), ["danny@dmacpiling.com.au", "estimating@dmacpiling.com.au"]); assert.equal(R.rfqContact(seedDmac).email, "trevor@dmacpiling.com.au");
+    assert.equal(seedOrgs.filter((o) => R.rfqCopies(o).length).length, 1, "only DMAC carries copies");
+  }
   const rec = R.rfqRecord({ pkgKey: "bored", pkgLabel: "Bored Pier Works", elementIds: ["e1"], due: "2026-10-30", by: "grady", sent: [{ ...drafts[0], status: "sent", messageId: "m1", threadId: "t1" }], attachments: [{ name: "S-01.pdf" }] }, "2026-10-23T04:00:00.000Z");
   assert.ok(rec.recipients.length === 1 && rec.recipients[0].email === "trevor@dmacpiling.com.au" && rec.attachments[0] === "S-01.pdf" && R.rfqPatch({ rfqs: [] }, rec).rfqs.length === 1);
   // the send path

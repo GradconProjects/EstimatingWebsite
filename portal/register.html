@@ -186,6 +186,32 @@ function resyncSeedCapabilities(state){
   state.log.push({ at: nowIso(), by: userKey(), text: "Capabilities re-read from the built-in seed v" + SEED_VERSION + " on " + n + " organisation(s) — only mailbox-read and unstated entries; hand-set ones kept" });
   return true;
 }
+// "RFQ copy" contacts (Trevor, DMAC Contracting, 17 Nov 2026: "add the following emails on your end for when you
+// send us RFQs"): a contact ticked RFQ copy is cc'd on every RFQ to its organisation, on that contractor's message
+// only. RFQ_STANDING_COPIES is a MIRROR of src/lib/rfq.js (verify.mjs fails on drift): the requests coded in,
+// ticked ONCE per version on a stored register — afterwards the ticks here govern.
+const RFQ_STANDING_VER = 1;
+const RFQ_STANDING_COPIES = [
+  { orgId: "org-dmac-contracting", domain: "dmacpiling.com.au", emails: ["danny@dmacpiling.com.au", "estimating@dmacpiling.com.au"], asked: "Trevor, DMAC Contracting, 17 Nov 2026" },
+];
+function applyStandingRfqCopies(state){
+  if ((Number(state.rfqStandingVersion) || 0) >= RFQ_STANDING_VER) return false;
+  const lc = (e) => String(e || "").trim().toLowerCase();
+  const onDomain = (o, d) => (o.emails || []).concat((o.contacts || []).map((c) => c && c.email)).some((e) => lc(e).split("@")[1] === d);
+  for (const rule of RFQ_STANDING_COPIES) {
+    const o = state.orgs.find((x) => x.id === rule.orgId) || state.orgs.find((x) => onDomain(x, rule.domain)); if (!o) continue;
+    o.contacts = Array.isArray(o.contacts) ? o.contacts : [];
+    let n = 0;
+    for (const email of rule.emails) {
+      let c = o.contacts.find((x) => lc(x.email) === email);
+      if (!c) { const p = email.split("@")[0].replace(/[._-]+/g, " ").trim(); c = { id: "c-rfq-" + email.replace(/[^a-z0-9]+/g, "-"), name: p.replace(/\b\w/g, (ch) => ch.toUpperCase()), role: "", email, phone: "", mobile: "", primary: false, source: "standing" }; o.contacts.push(c); }
+      if (c.rfqCc !== true) { c.rfqCc = true; n++; }
+    }
+    if (n) { o.updatedAt = nowIso(); o.updatedBy = "standing request"; state.log.push({ at: nowIso(), by: userKey(), orgId: o.id, org: o.name, text: "RFQ copy ticked for " + rule.emails.join(", ") + " — asked by " + rule.asked }); }
+  }
+  state.rfqStandingVersion = RFQ_STANDING_VER;
+  return true;
+}
 function blankState(){ return { version: 1, orgs: [], tombstones: [], log: [], updatedAt: nowIso(), updatedBy: userKey() }; }
 function seedState(){ const s = blankState(); s.seedVersion = SEED_VERSION; const seed = (typeof REGISTER_SEED !== "undefined" && REGISTER_SEED) ? REGISTER_SEED : { orgs: [] }; s.orgs = JSON.parse(JSON.stringify(seed.orgs || [])); s.log.push({ at: nowIso(), by: userKey(), text: "Register seeded with " + s.orgs.length + " organisations (projects@ mailbox, the 23 Oct 2026 workbook and the Project Management register)" }); return s; }
 function normalize(s){
@@ -204,6 +230,7 @@ function mergeStates(a, b){
   const seen = new Set(); out.log = [...(a.log || []), ...(b.log || [])].filter((l) => { const k = l.at + "|" + l.text; if (seen.has(k)) return false; seen.add(k); return true; }).sort((x, y) => x.at.localeCompare(y.at)).slice(-600);
   out.updatedAt = (a.updatedAt || "") > (b.updatedAt || "") ? a.updatedAt : b.updatedAt; out.updatedBy = (a.updatedAt || "") > (b.updatedAt || "") ? a.updatedBy : b.updatedBy;
   out.seedVersion = Math.max(a.seedVersion || 0, b.seedVersion || 0) || undefined;
+  out.rfqStandingVersion = Math.max(a.rfqStandingVersion || 0, b.rfqStandingVersion || 0) || undefined;
   return out;
 }
 const fingerprint = (s) => JSON.stringify({ o: s.orgs.map((o) => [o.id, o.updatedAt]).sort(), t: s.tombstones.map((t) => [t.id, t.at]).sort(), l: s.log.length });
@@ -243,8 +270,8 @@ async function load(){
   const local = readLocal();
   const row = await kvFetch(KEY);
   if (row === KV_FAILED) { STATE = local || seedState(); cloudState = "offline"; paintCloud("Cloud: not reachable — showing " + (local ? "this browser's copy" : "the built-in seed") + "; nothing is written until the cloud answers", "err"); setTimeout(retryLoad, 15000); }
-  else if (row) { const cloud = normalize(row.value); STATE = local ? normalize(mergeStates(local, cloud)) : cloud; if (!STATE.seedVersion && cloud.seedVersion) STATE.seedVersion = cloud.seedVersion; RECONCILED = true; SYNCED_AT = row.updated_at; cloudState = "ok"; const resynced = resyncSeedCapabilities(STATE); if (resynced || fingerprint(STATE) !== fingerprint(cloud)) { writeLocal(); pushNow(); } else { writeLocal(); markSaved("Cloud: in sync · " + STATE.orgs.length + " organisations · last change by " + (STATE.updatedBy || "—")); } }
-  else { STATE = local || seedState(); resyncSeedCapabilities(STATE); RECONCILED = true; SYNCED_AT = null; cloudState = "ok"; writeLocal(); pushNow(); }
+  else if (row) { const cloud = normalize(row.value); STATE = local ? normalize(mergeStates(local, cloud)) : cloud; if (!STATE.seedVersion && cloud.seedVersion) STATE.seedVersion = cloud.seedVersion; RECONCILED = true; SYNCED_AT = row.updated_at; cloudState = "ok"; const resyncedCaps = resyncSeedCapabilities(STATE); const resyncedRfq = applyStandingRfqCopies(STATE); const resynced = resyncedCaps || resyncedRfq; if (resynced || fingerprint(STATE) !== fingerprint(cloud)) { writeLocal(); pushNow(); } else { writeLocal(); markSaved("Cloud: in sync · " + STATE.orgs.length + " organisations · last change by " + (STATE.updatedBy || "—")); } }
+  else { STATE = local || seedState(); resyncSeedCapabilities(STATE); applyStandingRfqCopies(STATE); RECONCILED = true; SYNCED_AT = null; cloudState = "ok"; writeLocal(); pushNow(); }
   render();
   setInterval(pollCloud, 20000);
 }
@@ -427,9 +454,10 @@ function renderDetail(o){
   const more = UI.more.has(o.id); const fam = familyOf(o); const showAll = UI.allCaps.has(o.id) || !fam.length;
   const capGroups = []; for (const c of CAPS) { if (!showAll && !fam.includes(c.group)) continue; let g = capGroups.find((x) => x.name === c.group); if (!g) capGroups.push(g = { name: c.group, items: [] }); g.items.push(c); }
   const capHtml = capGroups.map((g) => '<div class="g">' + esc(g.name) + "</div>" + g.items.map((c) => { const cur = o.capabilities[c.key] || { status: "unknown", evidence: "" }; return '<div class="c"><span class="l">' + esc(c.label) + '</span><select class="' + cur.status + '" data-cap="' + c.key + '" data-org="' + o.id + '"><option value="unknown"' + (cur.status === "unknown" ? " selected" : "") + '>not stated</option><option value="yes"' + (cur.status === "yes" ? " selected" : "") + '>does</option><option value="no"' + (cur.status === "no" ? " selected" : "") + ">does NOT</option></select>" + (cur.evidence ? '<div class="e">' + esc(cur.evidence) + "</div>" : "") + "</div>"; }).join("")).join("");
-  const contacts = '<table class="inner"><tr><th>Primary</th><th>Name</th><th>Role</th><th>Email</th><th>Phone</th><th>Mobile</th><th>Last contact</th><th></th></tr>' + o.contacts.map((c, i) => "<tr>" +
+  const contacts = '<table class="inner"><tr><th>Primary</th><th>Name</th><th>Role</th><th>Email</th><th>Phone</th><th>Mobile</th><th title="Ticked: this address is copied (cc) on every RFQ sent to the primary contact of this organisation — on the email to this contractor only">RFQ copy</th><th>Last contact</th><th></th></tr>' + o.contacts.map((c, i) => "<tr>" +
     '<td class="right"><input type="radio" name="primary-' + o.id + '" data-primary="' + i + '" data-org="' + o.id + '"' + (c.primary ? " checked" : "") + "></td>" +
     ["name", "role", "email", "phone", "mobile"].map((f) => "<td>" + '<input type="text" data-contact="' + i + '" data-field="' + f + '" data-org="' + o.id + '" value="' + esc(c[f] || "") + '"></td>').join("") +
+    '<td class="right"><input type="checkbox" data-rfqcc="' + i + '" data-org="' + o.id + '" data-testid="rfq-copy"' + (c.rfqCc === true ? " checked" : "") + (c.primary ? ' disabled title="The primary contact is who the RFQ goes to"' : ' title="Copy this address on every RFQ to ' + esc(o.name) + '"') + "></td>" +
     '<td class="nowrap small">' + (c.lastContact ? fmtDay(c.lastContact) : "—") + "</td>" +
     '<td><button class="btn sm danger" data-delcontact="' + i + '" data-org="' + o.id + '" title="Remove this person">✕</button></td></tr>').join("") + "</table>" + '<button class="btn sm" data-addcontact="' + o.id + '" style="margin-top:6px">+ Add person</button>';
   const threads = o.threads.length ? '<ul class="threads" style="margin:6px 0 0;padding-left:16px">' + o.threads.slice(0, 6).map((t) => '<li><span class="d">' + fmtDay(t.day) + "</span>" + (t.threadId ? '<a href="' + gmailLink(t.threadId) + '" target="_blank" rel="noopener">' + esc(t.subject) + "</a>" : esc(t.subject)) + "</li>").join("") + "</ul>" : '<div class="muted small">No subjects on record yet.</div>';
@@ -559,6 +587,7 @@ main.addEventListener("change", (e) => {
   const o = t.dataset.org && orgById(t.dataset.org); if (!o) return;
   if (t.dataset.cap) { const key = t.dataset.cap; const prev = o.capabilities[key] || {}; o.capabilities[key] = { status: t.value, evidence: (prev.by === "mail" && prev.evidence ? prev.evidence + " · " : "") + "set by " + userKey() + " on " + fmtDay(today()), by: userKey() }; if (t.value === "unknown" && prev.by !== "mail") delete o.capabilities[key]; touch(o); log(o, (CAP[key] ? CAP[key].label : key) + ": " + (t.value === "yes" ? "does" : t.value === "no" ? "does NOT" : "not stated")); save(); render(); return; }
   if (t.dataset.primary != null) { o.contacts.forEach((c, i) => { c.primary = i === Number(t.dataset.primary); }); touch(o); save(); render(); return; }
+  if (t.dataset.rfqcc != null) { const c = o.contacts[Number(t.dataset.rfqcc)]; if (c) { if (t.checked) c.rfqCc = true; else delete c.rfqCc; touch(o); log(o, "RFQ copy " + (t.checked ? "ticked" : "unticked") + " for " + (c.email || c.name || "a contact")); save(); render(); } return; }
   if (t.dataset.path) { if (t.dataset.path === "category") { o.side = (CAT[o.category] || CAT.other).side; o.confidence = ""; } if (t.dataset.path in LOGGED_FIELDS) log(o, LOGGED_FIELDS[t.dataset.path] + " → " + (t.value || "—")); if (t.tagName === "SELECT" || t.type === "date") { save(); render(); } else render(); return; }
   if (t.dataset.list || t.dataset.contact != null) { render(); }
 });
