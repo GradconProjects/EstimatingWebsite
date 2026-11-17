@@ -22,10 +22,12 @@ export default function HandoverBanner({ quote, items, elementTypes, onPrefill, 
   const applied = !!(h && !h.undoneAt);
   const live = liveHandoverApplies(quote);
   // shown on a locked project, while the live prefill is on and there is something to fill, and after an Undo (so the live prefill can be turned back on)
-  if (!applied && !isRatesLocked(quote.status) && !(live && (quote.items || []).length) && !(h && h.undoneAt)) return null;
+  // a COPY whose live prefill was switched off by the duplicate (lib/projectDuplicate.js) — shown so it can be turned on
+  const copyOff = !!(quote.copiedFrom && quote.handoverMode === "off" && (quote.items || []).length);
+  if (!applied && !isRatesLocked(quote.status) && !(live && (quote.items || []).length) && !(h && h.undoneAt) && !copyOff) return null;
   const issues = handoverIssues(items, elementTypes);
   // cleared until the prefill moves, the status changes or an issue comes or goes (lib/notices.js)
-  const sig = noticeSig(quote.status, h && h.at, h && h.updatedAt, h && h.undoneAt, live ? "live" : "", issues.unpricedQuoteRows.length, issues.halfEnteredAdditional.length, issues.labelSuggestions.length);
+  const sig = noticeSig(quote.status, h && h.at, h && h.updatedAt, h && h.undoneAt, live ? "live" : "", copyOff ? "copy-off" : "", issues.unpricedQuoteRows.length, issues.halfEnteredAdditional.length, issues.labelSuggestions.length);
   if (isNoticeCleared(cleared, NOTICE_IDS.handover, sig)) return null;
   const oh = Number(quote.overheadPct) || 0, cont = Number(quote.contingencyPct) || 0;
   const presets = [[0, 0], [0, 0.1], [0.08, 0.05]].filter(([a, b]) => Math.abs(a - oh) > 1e-9 || Math.abs(b - cont) > 1e-9);
@@ -36,6 +38,8 @@ export default function HandoverBanner({ quote, items, elementTypes, onPrefill, 
           <b>{live ? "Live handover prefill" : "Handover prefill"}</b>{" "}
           {live && applied ? (
             <span data-testid="handover-live">— the crew sheets follow the quantities as you type them: {handoverSummary(h)} (last moved {fmtDay(h.updatedAt || h.at)}). Every figure is yours to change — prefilled cells are tinted on each crew sheet; a cell you retype is yours, a cell you clear stays clear. Undo switches the live prefill off.</span>
+          ) : copyOff && !live ? (
+            <span data-testid="handover-copy-off">— switched off on this copy of {quote.copiedFrom.name}, so no crew cell changes on its own. "{applied ? "Prefill again" : "Prefill crew sheets now"}" turns it on (blank cells only; what is typed stays).</span>
           ) : live ? (
             <span data-testid="handover-live">— on: the crew sheets will fill from the handover bands the moment an element carries concrete or reinforcement, and follow the quantities as you type them.</span>
           ) : applied ? (

@@ -4217,6 +4217,59 @@ check("Project Geometry carries a COUNT: $/no. leads the benchmark rates, sums a
   });
 }
 
+await checkAsync("Duplicate a project (lib/projectDuplicate.js; Boma, 17 Nov 2026): the copy keeps the WORK and drops the record of what happened to the original; an open source keeps its status and kept rates, a finished one becomes open work at today's rates with the crew prefill off; the name is unique; the row is written before the index entry", async () => {
+  const D = await import("../src/lib/projectDuplicate.js");
+  const H = await import("../src/lib/handover.js");
+  // names
+  assert.equal(D.copyName("9 Fairfax Street, Blairgowrie VIC 3942"), "9 Fairfax Street, Blairgowrie VIC 3942 (copy)");
+  assert.equal(D.copyName("Shed (copy)", ["Shed", "Shed (copy)"]), "Shed (copy 2)", "never '(copy) (copy)', never a name already taken");
+  assert.equal(D.copyName("Shed (copy 2)", ["shed (COPY)", "Shed (copy 2)"]), "Shed (copy 3)"); assert.equal(D.copyName(""), "Untitled project (copy)");
+  const type = ELEMENT_TYPES.find((t) => t.id === "strip_footings") || ELEMENT_TYPES.find((t) => /strip/i.test(t.name));
+  const el = { ...newElementItem(type), id: "e1", label: "Strip footings", packageId: "pk1", done: { by: "grady", at: "2026-11-01T00:00:00Z" }, markups: [{ id: "m1", name: "S01.png", path: "quote-markups/src/m1.png" }], rowMargins: { k: 0.08 } };
+  const concreteKey = Object.keys(defaultRates()).find((k) => /^CONCRETE::.*32/.test(k)); el.qtys = { ...el.qtys, [concreteKey]: 12 };
+  const base = { projectName: "9 Fairfax Street, Blairgowrie VIC 3942", clientName: "Acme", siteAddress: "9 Fairfax Street, Blairgowrie VIC 3942", projectDate: "2026-10-01", overheadPct: 0.08, contingencyPct: 0.05, marginPct: 0.25, scope: "both", items: [el], packages: [{ id: "pk1", name: "Main works", marginPct: 0.2 }], assumptions: [{ id: "a1", text: "Rock excluded" }], planner: { deadline: "2026-11-27", priority: "High" }, storageFolders: { drive: { id: "f1", name: "9 Fairfax" } }, files: [{ id: "x", provider: "drive", fileId: "d1", name: "A-101.pdf" }], tenderQuote: { items: [{ id: "t1", stage: "ground", lines: [{ id: "l1", elementId: "e1", text: "Strip footings", price: "$1" }] }], elementStages: { e1: "ground" } },
+    checklist: { received: { done: true, at: "2026-10-02" } }, rfqs: [{ id: "r1", package: "Formwork" }], notifications: [{ id: "n1", kind: "sms" }], source: { kind: "mail", messageId: "m9" }, clearedNotices: { trail: { sig: "trail" } }, importFlags: ["x"] };
+  // an OPEN source: status kept, kept (library) rates travel, the live prefill stays as it was
+  const open = { ...base, status: "Estimating", handoverMode: "live", handoverLive: false, ratesFrozen: { at: "2026-10-05", reason: "library", rates: { [concreteKey]: { unitCost: 300 } } }, ratesAck: { at: "2026-10-05" } };
+  const before = JSON.stringify(open);
+  const a = D.duplicateQuote(open, { existingNames: [open.projectName], today: "2026-11-17", defaultStatus: "Queued", by: "boma", sourceId: "src", at: "2026-11-17T01:00:00.000Z" });
+  assert.equal(JSON.stringify(open), before, "the source is never mutated");
+  assert.equal(a.name, "9 Fairfax Street, Blairgowrie VIC 3942 (copy)"); assert.equal(a.quote.projectName, a.name); assert.equal(a.quote.nameReviewedFor, a.name, "the address review never asks about the copy's name");
+  assert.equal(a.quote.status, "Estimating"); assert.equal(a.repriced, false); assert.equal(a.prefillOff, false); assert.equal(a.quote.handoverMode, "live");
+  assert.deepEqual(a.quote.ratesFrozen, open.ratesFrozen, "figures the project KEPT against the library travel with the copy"); assert.deepEqual(a.quote.ratesAck, open.ratesAck);
+  assert.deepEqual(a.quote.items, open.items, "every element exactly as it stands — ids, quantities, drawings, done ticks, row margins");
+  for (const k of ["packages", "assumptions", "planner", "storageFolders", "files", "tenderQuote", "clientName", "siteAddress", "overheadPct", "contingencyPct", "marginPct", "scope"]) assert.deepEqual(a.quote[k], open[k], k + " is carried");
+  for (const k of D.COPY_DROPS.filter((x) => x !== "copiedFrom")) assert.ok(!(k in a.quote), k + " is not carried onto a copy");
+  assert.equal(a.quote.projectDate, "2026-11-17"); assert.deepEqual(a.quote.copiedFrom, { projectId: "src", name: open.projectName, status: "Estimating", at: "2026-11-17T01:00:00.000Z", by: "boma" });
+  a.quote.items[0].label = "changed"; assert.equal(open.items[0].label, "Strip footings", "the copy shares no object with the source");
+  // a SUBMITTED source with a status pin: open work at today's rates, the prefill off, the day it went out not carried
+  const pinnedRates = { ...defaultRates(), [concreteKey]: { ...defaultRates()[concreteKey], unitCost: 111 } };
+  const sent = { ...base, status: "Submitted", submittedAt: "2026-10-20", completedAt: "2026-10-18", handoverMode: "live", handoverLive: false, handover: { at: "2026-10-18", cells: [], rules: 1 }, ratesFrozen: { at: "2026-10-18", status: "Completed Estimating", rates: pinnedRates } };
+  const b = D.duplicateQuote(sent, { existingNames: [], today: "2026-11-17", defaultStatus: "Queued" });
+  assert.equal(b.quote.status, "Queued"); assert.equal(b.quote.ratesFrozen, null); assert.equal(b.repriced, true); assert.ok(!("submittedAt" in b.quote) && !("completedAt" in b.quote));
+  assert.equal(b.prefillOff, true); assert.equal(b.quote.handoverMode, "off"); assert.equal(H.liveHandoverApplies(b.quote), false, "opening the copy never fills a crew cell on its own");
+  assert.deepEqual(b.quote.handover, sent.handover, "the prefill record travels, so tinted cells stay tinted");
+  const live = defaultRates();
+  assert.equal(computeGrandTotal(b.quote.items, live), computeGrandTotal(sent.items, live), "the copy at today's rates = the original's elements at today's rates");
+  assert.notEqual(computeGrandTotal(sent.items, pinnedRates), computeGrandTotal(b.quote.items, live), "…which is not the pinned figure — hence 'repriced'");
+  // a status renamed since (Measuring), an unknown / missing status, On Hold kept, nothing to copy
+  assert.equal(D.duplicateQuote({ ...base, status: "Measuring" }, {}).quote.status, "Taking Off"); assert.equal(D.duplicateQuote({ ...base, status: "" }, { defaultStatus: "Estimating" }).quote.status, "Estimating");
+  const hold = D.duplicateQuote({ ...base, status: "On Hold" }, {}); assert.equal(hold.quote.status, "On Hold"); assert.equal(hold.prefillOff, true, "the prefill was not running on a held project");
+  assert.equal(D.duplicateQuote(null), null);
+  // wiring: the full row is read, the copy's row is confirmed before the index entry, the Dashboard carries the button and the band
+  const app = fs.readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8"); const dash = fs.readFileSync(new URL("../src/components/Dashboard.jsx", import.meta.url), "utf8"); const proj = fs.readFileSync(new URL("../src/lib/projects.js", import.meta.url), "utf8"); const hb = fs.readFileSync(new URL("../src/components/HandoverBanner.jsx", import.meta.url), "utf8");
+  const dup = app.slice(app.indexOf("const duplicateProject = async"), app.indexOf("const deleteProject ="));
+  assert.ok(/await readQuote\(target\.storageKey\)/.test(dup) && /if \(!source\) return \{ ok: false/.test(dup) && dup.indexOf("await writeQuoteChecked(") < dup.indexOf("setProjects(") && /if \(!landed\) return \{ ok: false/.test(dup), "read in full; an unread source or an unsaved copy adds nothing");
+  assert.ok(/export async function writeQuoteChecked/.test(proj) && /onDuplicate=\{duplicateProject\}/.test(app));
+  assert.ok(/data-testid="project-duplicate"/.test(dash) && /data-testid="project-duplicated"/.test(dash) && /project-duplicated-open/.test(dash) && /onDuplicate\(id, names\)/.test(dash));
+  assert.ok(/copyOff/.test(hb) && /handover-copy-off/.test(hb), "the handover band shows on a copy whose prefill was switched off, so it can be turned on");
+  // opening a project must not rewrite it: the old-rows swap never runs on an element already on the current crew sheet (its row names match the old-name test)
+  const card = fs.readFileSync(new URL("../src/components/ElementCard.jsx", import.meta.url), "utf8");
+  const swap = card.slice(card.indexOf("if (item.tasksVer >= CREW_TASKS_VER) return;"), card.indexOf("LABOUR_TEMPLATES.footing.map"));
+  assert.ok(swap.length > 0 && /const legacy = item\.tasks\.some/.test(swap), "the crew-sheet version guard sits BEFORE the legacy rows swap");
+  assert.ok(catalogAll.GRADY_CREW_TASKS.some((n) => /formwork|setout|blinding|lay poly|cart spoil|backfill|factory/i.test(n)), "…because the current sheet's own names match the old-name test");
+});
+
 check("Register (tile 08): the seed, its categories and sides, the piling capability facts (BCS no screw piles, Allstate screw not bored, DMAC bored/CFA/retention with screw unstated), no personal addresses, and the shell / assembler wiring", () => {
   const sandbox = { module: { exports: {} } };
   runInNewContext(fs.readFileSync(new URL("../portal/register-seed.js", import.meta.url), "utf8"), sandbox, { filename: "register-seed.js" });

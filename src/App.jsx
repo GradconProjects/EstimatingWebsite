@@ -37,7 +37,8 @@ import { DEADLINE_SOURCE_LABEL, mailFiles } from "./lib/tenderInbox.js";
 import RateValidityBanner from "./components/RateValidityBanner.jsx";
 import { buildQuoteExcelHtml, quoteExcelFilename, buildQuoteCsv } from "./lib/exportQuote.js";
 import { useStoredState } from "./lib/storage.js";
-import { PROJECTS_INDEX_KEY, newProjectEntry, migrateLegacyQuote, deleteQuote, writeQuote, readQuote, readQuoteSummariesDetailed, publishQuoteToCostPlanner, mirrorQuoteSummary } from "./lib/projects.js";
+import { duplicateQuote } from "./lib/projectDuplicate.js";
+import { PROJECTS_INDEX_KEY, newProjectEntry, migrateLegacyQuote, deleteQuote, writeQuote, writeQuoteChecked, readQuote, readQuoteSummariesDetailed, publishQuoteToCostPlanner, mirrorQuoteSummary } from "./lib/projects.js";
 import { ESTIMATE_EXPORT_KEY, buildImportFromEstimate } from "./lib/estimateImport.js";
 import { SaveBadge } from "./components/atoms.jsx";
 import AddElementBar from "./components/AddElementBar.jsx";
@@ -476,6 +477,25 @@ export default function App() {
     setActiveId(entry.id);
   };
 
+  // "Duplicate" on a Dashboard row (Boma, 17 Nov 2026): the FULL row is read — never the summary copy,
+  // which has no drawings — `duplicateQuote` (lib/projectDuplicate.js) decides what a copy keeps, and the
+  // copy's row is written and CONFIRMED before it joins the index, so the index never points at a row that
+  // is not there. A source that cannot be read, or a write that does not land, copies nothing and says so.
+  const duplicateProject = async (id, existingNames = []) => {
+    const target = projects.find((p) => p.id === id);
+    if (!target) return { ok: false, error: "That project is no longer in the list." };
+    const source = await readQuote(target.storageKey);
+    if (!source) return { ok: false, error: "The project could not be read just now, so nothing was copied. Try again in a moment." };
+    const now = new Date();
+    const made = duplicateQuote(source, { existingNames, today: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`, defaultStatus: prefStatus(), by: workUser(portalUser()) || null, sourceId: id, at: now.toISOString() });
+    if (!made) return { ok: false, error: "There was nothing to copy." };
+    const entry = newProjectEntry();
+    const landed = await writeQuoteChecked(entry.storageKey, made.quote);
+    if (!landed) return { ok: false, error: "The copy could not be saved, so no project was added. Try again in a moment." };
+    setProjects((ps) => [...ps, entry]);
+    return { ok: true, id: entry.id, name: made.name, repriced: made.repriced, prefillOff: made.prefillOff, from: made.quote.copiedFrom.name };
+  };
+
   // Dashboard.jsx gates this behind its own two-click confirm UI (not a
   // native confirm() dialog — those can be silently blocked in a
   // sandboxed/embedded iframe, see its comment) before ever calling this.
@@ -537,7 +557,7 @@ export default function App() {
           </div>
         </div>
         {view === "dashboard" && (
-          <Dashboard projects={projects} rates={rates} rateChanges={rateChanges} onOpen={setActiveId} onCreate={createProject} onDelete={deleteProject} onImportFile={importQuoteFile} onPrune={pruneProjects} />
+          <Dashboard projects={projects} rates={rates} rateChanges={rateChanges} onOpen={setActiveId} onCreate={createProject} onDelete={deleteProject} onDuplicate={duplicateProject} onImportFile={importQuoteFile} onPrune={pruneProjects} />
         )}
         {view === "planner" && <PlannerView projects={projects} onOpen={setActiveId} />}
         {view === "folder" && (

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Plus, Trash2, ArrowRight, LayoutDashboard, Loader2, FolderOpen, ArrowUp, ArrowDown, ArrowUpDown, MapPin } from "lucide-react";
+import { Plus, Trash2, ArrowRight, Copy, LayoutDashboard, Loader2, FolderOpen, ArrowUp, ArrowDown, ArrowUpDown, MapPin } from "lucide-react";
 import { QUOTE_STATUSES, QUOTE_STATUS_STYLES, normalizeStatus } from "../data/catalog.js";
 import { computeGrandTotal, computeMarginLadder, computeMarginRegister, money, getDefaultMargin, getMarginSteps, scopeLabel } from "../lib/costing.js";
 import { packageList } from "../lib/packages.js";
@@ -95,7 +95,7 @@ function StatTile({ label, value, highlight }) {
   );
 }
 
-export default function Dashboard({ projects, rates, rateChanges, onOpen, onCreate, onDelete, onImportFile, onPrune }) {
+export default function Dashboard({ projects, rates, rateChanges, onOpen, onCreate, onDelete, onDuplicate, onImportFile, onPrune }) {
   // First paint comes from the last-known summary mirror (instant), then the
   // effect below replaces it with what the database actually holds. An
   // install without a mirror yet starts empty exactly as before.
@@ -116,6 +116,20 @@ export default function Dashboard({ projects, rates, rateChanges, onOpen, onCrea
     } catch { /* fall through to the confirm flow */ }
     setConfirmDeleteId(id);
     setTimeout(() => setConfirmDeleteId((cur) => (cur === id ? null : cur)), 3000);
+  };
+
+  // Duplicate (Boma, 17 Nov 2026): one click copies the project as a new open one. The button is busy while
+  // the full row is read and the copy written; the band under the header then says what was made (and that
+  // it re-prices at today's rates when the original's were pinned) with an Open button — or why nothing was.
+  const [duplicatingId, setDuplicatingId] = useState(null);
+  const [duplicated, setDuplicated] = useState(null); // {ok, id, name, from, repriced} | {ok: false, error}
+  const duplicate = async (id) => {
+    if (!onDuplicate || duplicatingId) return;
+    setDuplicatingId(id); setDuplicated(null);
+    const names = Object.values(quotesByKey).map((q) => (q && q.projectName) || "").filter(Boolean);
+    let result;
+    try { result = await onDuplicate(id, names); } catch (e) { result = { ok: false, error: (e && e.message) || "The copy failed." }; }
+    setDuplicatingId(null); setDuplicated(result || { ok: false, error: "The copy failed." });
   };
 
   // Rows that could not be read this time (never treated as missing) and
@@ -345,6 +359,19 @@ export default function Dashboard({ projects, rates, rateChanges, onOpen, onCrea
       </div>
       {renaming && <RenameProjectsModal rows={renameRows} onRename={renameProject} onClose={() => setRenaming(false)} />}
       <SummaryLoadNotice failedCount={failedCount} onRetry={() => setReloadTick((t) => t + 1)} />
+      {duplicated && (
+        <div className={`mb-3 border rounded-lg px-3 py-2 text-[12.5px] flex flex-wrap items-center gap-2 ${duplicated.ok ? "border-emerald-300 bg-emerald-50 text-emerald-950" : "border-red-300 bg-red-50 text-red-900"}`} role="status" data-testid="project-duplicated" data-ok={duplicated.ok ? "1" : "0"}>
+          {duplicated.ok ? (
+            <>
+              <span><b>{duplicated.from}</b> copied as <b>{duplicated.name}</b> — an open project with the same elements, packages, margins and tender text. The checklist, RFQs sent and notifications were not copied.{duplicated.repriced ? " The original's rates were pinned; the copy prices at today's rates." : ""}{duplicated.prefillOff ? " The live crew prefill is off on the copy, so no crew cell changes on its own." : ""}</span>
+              <button type="button" onClick={() => onOpen(duplicated.id)} className="px-2.5 py-1 rounded-md bg-orange-600 hover:bg-orange-700 text-white text-[12px] font-semibold" data-testid="project-duplicated-open">Open the copy</button>
+            </>
+          ) : (
+            <span>{duplicated.error}</span>
+          )}
+          <button type="button" onClick={() => setDuplicated(null)} className="ml-auto px-1.5 text-neutral-500 hover:text-neutral-900" aria-label="Dismiss" title="Dismiss">✕</button>
+        </div>
+      )}
       <RateValidityBanner rates={rates} cleared={clearedNotices} onClear={(id, sig) => setClearedNotices(writeBrowserNotices(clearNotice(clearedNotices, id, sig)))} />
       {clearedCount(clearedNotices) > 0 && (
         <div className="text-[11px] text-neutral-500 px-1 flex items-center gap-2" data-testid="notices-cleared">
@@ -511,6 +538,20 @@ export default function Dashboard({ projects, rates, rateChanges, onOpen, onCrea
                     >
                       <ArrowRight size={14} />
                     </button>
+                    {onDuplicate && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          duplicate(project.id);
+                        }}
+                        disabled={!!duplicatingId}
+                        className="p-1.5 rounded hover:bg-neutral-200 text-neutral-500 disabled:opacity-50"
+                        title="Duplicate this project — a new open project with the same elements, packages, margins and tender text"
+                        data-testid="project-duplicate"
+                      >
+                        {duplicatingId === project.id ? <Loader2 size={14} className="animate-spin" /> : <Copy size={14} />}
+                      </button>
+                    )}
                     {confirmDeleteId === project.id ? (
                       <button
                         onClick={(e) => {

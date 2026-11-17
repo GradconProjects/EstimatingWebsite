@@ -2785,6 +2785,58 @@ multi-project support (a single quote under the old fixed `gradcon-quote`
 key) auto-migrates into project #1 the first time the index loads empty —
 see `migrateLegacyQuote`.
 
+**A project can be DUPLICATED from its Dashboard row** (Boma, 17 Nov 2026: "i
+want to be able to duplicate projects in quote section"): the Copy button
+beside Open and Delete (`project-duplicate`; busy while it works). `src/lib/
+projectDuplicate.js` is pure and verify-covered — `duplicateQuote(quote,
+{existingNames, today, defaultStatus, by, sourceId, at})` → `{quote, name,
+repriced, prefillOff}` is the ONE rule of what a copy is:
+- **Kept — the work**: every element exactly as it stands (SAME element and
+  crew-row ids, so the packages, tender stages, row margins and the prefill
+  record that point at them still do; quantities, typed quote amounts, crew
+  cells, drawings — the bucket path is shared, nothing is copied there — done
+  ticks and who-typed stamps), packages, assumptions, margins, scope,
+  on-costs, the Tender / External quote text, client, site address, deadline
+  and planner fields, the Drive folder and attached files.
+- **Dropped — what HAPPENED to the original** (`COPY_DROPS`): the checklist's
+  ticks, RFQ rounds, notifications, `submittedAt` / `completedAt`, the inbox
+  `source`, cleared notices, import flags. A new record field of that kind
+  goes into `COPY_DROPS`.
+- **Status**: a copy is open work — an open status (Queued, Taking Off,
+  Estimating, On Hold) is kept, a rates-locked one becomes the new-project
+  status (Settings), read through `normalizeStatus`.
+- **Rates**: a STATUS pin is dropped, so the copy prices at today's live rates
+  (`repriced` — the band says so; the original keeps its pin); a "library" pin
+  (figures the project chose to keep) and its `ratesAck` travel with the copy.
+- **Crew prefill**: where `liveHandoverApplies(source)` was false (sent,
+  closed, on hold, switched off, or worked by hand before the prefill
+  existed) the copy carries `HANDOVER_LIVE_OFF` (`prefillOff`) — otherwise
+  opening it, now open work, would fill the original's blank crew cells.
+  `HandoverBanner` shows on such a copy (`copyOff`, `handover-copy-off`) so
+  "Prefill crew sheets now" can turn it on.
+- **Name**: `copyName` — "<name> (copy)", then "(copy 2)" …, never "(copy)
+  (copy)", never a name another project holds (the Dashboard passes its
+  names); `nameReviewedFor` is set so the address review never asks.
+  `copiedFrom = {projectId, name, status, at, by}` is recorded on the copy.
+`duplicateProject` in App reads the FULL row (`readQuote` — never the summary
+copy, which has no drawings), writes the copy through `writeQuoteChecked`
+(`projects.js`, answers whether the row landed) and only THEN adds the index
+entry; an unread source or an unsaved copy adds nothing and the band says why.
+The Dashboard stays where it is and shows `project-duplicated` (what was
+copied as what, the re-price / prefill sentences when they apply, **Open the
+copy** `project-duplicated-open`). `test-duplicate-project.mjs` proves an open
+project (same cost and sell, checklist / RFQ / notification not carried, the
+original untouched), "(copy 2)", a submitted pinned project (Queued, no pin,
+today's rates, prefill off, the original's status, pin and day kept), opening
+the copy and its crew rows unchanged after it opens.
+**Opening a project never rewrites it** (same day, found by that test): the
+old-rows swap in `ElementCard` (elements from before the crew sheet, nothing
+entered → the crew sheet's rows) tested the row NAMES, and the current
+sheet's own "Blinding concrete" and "Stripping (formwork)" match it — so every
+untouched element had its crew rows rebuilt with new ids each time its card
+mounted, and merely opening a project saved it. The swap now returns first
+on `item.tasksVer >= CREW_TASKS_VER` (`verify.mjs` pins the guard's place).
+
 **Project names follow ONE address convention** (Grady, 22 Oct 2026: "use
 the API to rename the projects maintaining a proper convention, full address
 and suburbs. when project is entered, the actual address convention should

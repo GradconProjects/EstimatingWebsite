@@ -55,7 +55,12 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
   // (formwork / setout / blinding etc.). If NOTHING was ever entered on
   // them, swap the rows for the crew sheet once — entered data is never
   // touched (those elements keep their rows; delete any by hand).
+  // NEVER on an element already on the current crew sheet (tasksVer): its own rows are named "Blinding
+  // concrete" and "Stripping (formwork)", which the old-name test below also matches — so until 17 Nov 2026
+  // every untouched element had its crew rows rebuilt with NEW ids each time its card mounted, and merely
+  // opening a project rewrote it (found when a duplicated project's rows changed ids on its first open).
   useEffect(() => {
+    if (item.tasksVer >= CREW_TASKS_VER) return;
     const legacy = item.tasks.some((t) => /formwork|setout|blinding|lay poly|cart spoil|backfill|factory/i.test(t.name));
     const untouched = item.tasks.every((t) => Object.keys(t.qtys || {}).length === 0 && (t.qty === undefined || t.qty === "") && !t.notes);
     if (legacy && untouched) {

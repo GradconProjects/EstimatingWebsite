@@ -383,6 +383,28 @@ export async function writeQuote(storageKey, quote) {
   }
 }
 
+/** As `writeQuote`, but ANSWERS whether the row landed — for a caller that must not add an index entry
+ * for a row that is not there (duplicating a project). */
+export async function writeQuoteChecked(storageKey, quote) {
+  if (supabaseEnabled) {
+    try {
+      const stamp = new Date().toISOString();
+      const { error } = await supabase.from(TABLE).upsert({ key: storageKey, value: quote, updated_at: stamp });
+      if (error) return false;
+      writeMirror(summaryMirrorKey(storageKey), stripForSummary(quote), stamp);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  try {
+    window.localStorage.setItem(storageKey, JSON.stringify(quote));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function deleteQuote(storageKey) {
   if (supabaseEnabled) {
     clearMirror(summaryMirrorKey(storageKey));
