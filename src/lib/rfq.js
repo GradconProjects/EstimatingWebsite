@@ -125,6 +125,50 @@ export function rfqCopies(org) {
   const to = lc(rfqContact(org).email);
   return [...new Set((org && Array.isArray(org.contacts) ? org.contacts : []).filter((c) => c && c.rfqCc === true && validEmail(c.email)).map((c) => lc(c.email)))].filter((e) => e !== to);
 }
+/* The composer's per-contractor Cc box (Boma, 17 Nov 2026: "make it a cc like the one to grady and prefill those
+ * information when Dmac is chosen so that if others give emails, we would manually input them and the option of
+ * saving the manually inputing them should be coded in"). The box is prefilled with `rfqCopies(org)`; what is typed
+ * is read by `contractorCc`, an address that belongs to ANOTHER organisation on the Register is refused by
+ * `ccConflicts` (contractors are never copied on each other), and "Save to Register" stores the typed list as that
+ * organisation's RFQ copies through `setRfqCopies` — so it is prefilled next time. */
+const FREE_MAIL = /^(gmail|googlemail|outlook|hotmail|bigpond|yahoo|live|icloud|me|optusnet|tpg|iinet|internode|westnet)\./i;
+const orgAddresses = (o) => [...new Set([...((o && o.emails) || []), ...(((o && o.contacts) || []).map((c) => c && c.email))].map(lc).filter(validEmail))];
+const orgDomains = (o) => [...new Set(orgAddresses(o).map((e) => e.split("@")[1]).filter((d) => d && !FREE_MAIL.test(d)))];
+/** The Cc typed for one contractor → valid addresses, lower-case, once each, never the address the RFQ goes To. */
+export function contractorCc(org, typedText) {
+  const to = lc(rfqContact(org).email);
+  return parseCc(typedText).filter((e) => e !== to);
+}
+/** Typed addresses that belong to ANOTHER organisation on the Register (its own address, or its company domain). */
+export function ccConflicts(org, emails, orgs) {
+  const ownDomains = new Set(orgDomains(org)); const ownAddr = new Set(orgAddresses(org));
+  const out = [];
+  for (const email of emails || []) {
+    const e = lc(email); if (ownAddr.has(e)) continue;
+    const dom = e.split("@")[1] || "";
+    const other = (orgs || []).find((o) => o && o.id !== (org && org.id) && (orgAddresses(o).includes(e) || (!ownDomains.has(dom) && orgDomains(o).includes(dom))));
+    if (other) out.push({ email: e, orgId: other.id, orgName: other.name });
+  }
+  return out;
+}
+/** `emails` become the organisation's RFQ copies: ticked on the contacts that hold them (a new contact is added for an
+ * address not on record), unticked everywhere else. → `{org, changed, added, on, off}`; the organisation is not mutated. */
+export function setRfqCopies(org, emails) {
+  const to = lc(rfqContact(org).email);
+  const want = [...new Set((emails || []).map(lc).filter(validEmail))].filter((e) => e !== to);
+  const before = rfqCopies(org);
+  const contacts = (Array.isArray(org && org.contacts) ? org.contacts : []).map((c) => ({ ...c }));
+  const added = [];
+  for (const c of contacts) { if (want.includes(lc(c.email)) && lc(c.email) !== to) c.rfqCc = true; else delete c.rfqCc; }
+  for (const e of want) if (!contacts.some((c) => lc(c.email) === e)) { contacts.push({ id: `c-rfq-${e.replace(/[^a-z0-9]+/g, "-")}`, name: nameFromEmail(e), role: "", email: e, phone: "", mobile: "", primary: false, rfqCc: true, source: "rfq" }); added.push(e); }
+  const next = { ...org, contacts, emails: [...new Set([...(((org && org.emails) || []).map(lc)), ...added])] };
+  const after = rfqCopies(next);
+  return { org: next, changed: added.length > 0 || JSON.stringify([...before].sort()) !== JSON.stringify([...after].sort()), added, on: after.filter((e) => !before.includes(e)), off: before.filter((e) => !after.includes(e)) };
+}
+const sameList = (a, b) => JSON.stringify([...(a || [])].map(lc).sort()) === JSON.stringify([...(b || [])].map(lc).sort());
+/** Does the typed list differ from what the Register holds for this organisation? (the Save button shows when it does) */
+export const ccDiffersFromRegister = (org, emails) => !sameList(rfqCopies(org), emails);
+
 /** What one message carries as Cc: the contractor's own copies first, then Gradcon's — deduped, never the To address, at most `max`. */
 export function draftCc(draft, gradconCc = [], max = 10) {
   const to = lc(draft && draft.email);
@@ -225,12 +269,12 @@ export function rfqBody({ projectName, siteAddress = "", pkgLabel, scopes = [], 
   return lines.join("\n");
 }
 /** One independent draft per organisation — built from the same facts, never shared text objects. */
-export function rfqDrafts({ orgs, projectName, siteAddress, pkgLabel, scopes, due, leadDays, requestedOn, sender, attachments, links = [], extraNotes }) {
+export function rfqDrafts({ orgs, projectName, siteAddress, pkgLabel, scopes, due, leadDays, requestedOn, sender, attachments, links = [], extraNotes, ccByOrg = null }) {
   return (orgs || []).map((org) => {
     const contact = rfqContact(org);
     const head = rfqHead({ pkgLabel, org, contact });
     const body = rfqBody({ projectName, siteAddress, pkgLabel, scopes, due, leadDays, requestedOn, sender, attachments, links, extraNotes });
-    return { id: `d-${org.id}`, orgId: org.id, orgName: org.name, trade: org.trade || "", contactName: contact.name, contactId: contact.contactId, email: contact.email, cc: rfqCopies(org), subject: rfqSubject({ pkgLabel, projectName }), head, body, text: joinDraft(head, body), approved: false, status: "draft" };
+    return { id: `d-${org.id}`, orgId: org.id, orgName: org.name, trade: org.trade || "", contactName: contact.name, contactId: contact.contactId, email: contact.email, cc: ccByOrg && Array.isArray(ccByOrg[org.id]) ? [...new Set(ccByOrg[org.id].map(lc).filter(validEmail))].filter((e) => e !== lc(contact.email)) : rfqCopies(org), subject: rfqSubject({ pkgLabel, projectName }), head, body, text: joinDraft(head, body), approved: false, status: "draft" };
   });
 }
 /* The name guard: everything a draft would carry (subject, head, body) is searched for ANOTHER

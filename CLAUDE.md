@@ -2335,6 +2335,40 @@ bare minimum should be archi, struct, soil report". Rules:
    showed it). `test-rfq-copies.mjs` proves the Register's ticks, the
    composer's row and header, the two sends (DMAC's with its copies, BCS's
    without), the record and an untick surviving a reload.
+7. **The composer carries an editable Cc box per ticked contractor** (Boma,
+   17 Nov 2026, on the static "+ cc …" line under DMAC: "make it a cc like the
+   one to grady and prefill those information when Dmac is chosen so that if
+   others give emails, we would manually input them and the option of saving
+   the manually inputing them should be coded in"): ticking a contractor opens
+   "Cc at <organisation>" under its row (`rfq-org-cc-<pkg>-<id>`, the input
+   `rfq-org-cc-input-<id>`), PREFILLED with `rfqCopies(org)` — DMAC opens on
+   estimating@ and danny@ — and editable; an unticked row keeps the static
+   "+ cc" preview. `contractorCc(org, typed)` is the ONE reading of the box
+   (valid addresses, lower-case, once each, never the To address) and
+   `rfqDrafts({…, ccByOrg})` puts the boxes' lists on the drafts in place of
+   the Register's. **An address that belongs to ANOTHER organisation on the
+   Register is refused** — `ccConflicts(org, emails, orgs)`: that
+   organisation's own address or its company domain (free-mail domains never
+   count; the contractor's own domain never conflicts) — shown in red
+   (`rfq-org-cc-conflict-<id>`: "… belongs to DMAC Contracting — contractors
+   are never copied on each other") and left off the message. **Save to
+   Register** (`rfq-org-cc-save-<id>`, shown only while the box differs from
+   the Register — `ccDiffersFromRegister`) calls `saveRfqCopies(orgId, emails,
+   by)` in `registerStore.js`: the row is read fresh, the standing copies are
+   applied first when the Register page has not moved the row yet (so the
+   one-off move can never undo a save), `setRfqCopies(org, emails)` (pure)
+   ticks the contacts that hold the addresses, ADDS a contact for an address
+   not on record and unticks the rest, the change is logged ("… saved from the
+   RFQ composer") and every organisation touched takes a new `updatedAt` so
+   the Register page's per-organisation merge keeps it; the box then reads
+   "✓ Saved on the Register — filled in next time", or says so when the
+   Register could not be read or the cloud did not take the write. Addresses
+   typed and NOT saved still go on that RFQ. The contractor row is a plain
+   function (`orgRow`), never a component defined inside the modal — that
+   would remount the box and drop the cursor on every keystroke (`verify.mjs`
+   pins it). `test-rfq-copies.mjs` proves the prefill, typing with the cursor
+   kept, the refused address, the save, the drafts, the two sends and the
+   record.
 `test-rfq.mjs` proves both buttons, the suggestion, the contractor groups,
 the auto-attach from a mocked Drive folder (match → list → subfolder; the
 missing-class note), the two independent drafts, the read-only block, the

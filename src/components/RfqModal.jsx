@@ -1,8 +1,8 @@
 import { serverDownReason, readServerReply, failureReason } from "../lib/serverStatus.js";
 import { useEffect, useMemo, useState } from "react";
 import { X, Send, Check, ChevronLeft, Paperclip, Loader2, AlertTriangle, Mail } from "lucide-react";
-import { RFQ_PACKAGES, RFQ_LEAD, packageByKey, packageLabel, suggestPackages, contractorsFor, rfqContact, rfqCopies, draftCc, applyStandingRfqCopies, rfqDrafts, rfqSubject, elementScope, dayPlus, rfqRecord, attachmentOptions, driveFolderOptions, missingAttachClasses, planAttachments, driveFileIdFrom, localFileCheck, localFileOption, driveLinkOption, LOCAL_FILE_ACCEPT, fmtBytes, ATTACH_PLAN_BYTES, DEFAULT_CC, parseCc, rfqHead, rfqBody, joinDraft, draftNameIssues } from "../lib/rfq.js";
-import { readRegister } from "../lib/registerStore.js";
+import { RFQ_PACKAGES, RFQ_LEAD, packageByKey, packageLabel, suggestPackages, contractorsFor, rfqContact, rfqCopies, draftCc, applyStandingRfqCopies, contractorCc, ccConflicts, ccDiffersFromRegister, rfqDrafts, rfqSubject, elementScope, dayPlus, rfqRecord, attachmentOptions, driveFolderOptions, missingAttachClasses, planAttachments, driveFileIdFrom, localFileCheck, localFileOption, driveLinkOption, LOCAL_FILE_ACCEPT, fmtBytes, ATTACH_PLAN_BYTES, DEFAULT_CC, parseCc, rfqHead, rfqBody, joinDraft, draftNameIssues } from "../lib/rfq.js";
+import { readRegister, saveRfqCopies } from "../lib/registerStore.js";
 import { readTakeoffForProject } from "../lib/estimatesRead.js";
 import { driveApi } from "../lib/driveFiles.js";
 import { markupSrc, uploadRfqFile, markupStoreEnabled } from "../lib/markupStore.js";
@@ -30,6 +30,8 @@ const defaultSender = () => {
 export default function RfqModal({ quote, items, rates, projectScope, elementTypes = [], initialItemIds = null, user = "", projectId = "", onClose, onSent }) {
   const [step, setStep] = useState("setup");
   const [register, setRegister] = useState(null);
+  const [orgCc, setOrgCc] = useState({});       // orgId → the text typed in its Cc box (absent = the Register's own copies)
+  const [ccSave, setCcSave] = useState({});     // orgId → "saving" | "saved" | an error sentence
   const [takeoff, setTakeoff] = useState(null);
   const [mail, setMail] = useState(null); // /api/google-auth status
   const [selected, setSelected] = useState(() => new Set(initialItemIds || items.map((i) => i.id)));
@@ -200,7 +202,7 @@ export default function RfqModal({ quote, items, rates, projectScope, elementTyp
       const all = [];
       for (const p of pkgs) {
         const pickedOrgs = orgs.filter((o) => picked(p.key).has(o.id));
-        for (const d of rfqDrafts({ orgs: pickedOrgs, projectName: quote.projectName || "Untitled project", siteAddress: quote.siteAddress || "", pkgLabel: labelOf(p), scopes, due, leadDays: RFQ_LEAD[complexity].days, requestedOn: today(), sender, attachments: planned.attach, links: planned.link, extraNotes })) all.push({ ...d, id: `d-${p.key}-${d.orgId}`, pkgKey: p.key, pkgLabel: labelOf(p) });
+        for (const d of rfqDrafts({ orgs: pickedOrgs, projectName: quote.projectName || "Untitled project", siteAddress: quote.siteAddress || "", pkgLabel: labelOf(p), scopes, due, leadDays: RFQ_LEAD[complexity].days, requestedOn: today(), sender, attachments: planned.attach, links: planned.link, extraNotes, ccByOrg: Object.fromEntries(pickedOrgs.map((o) => [o.id, ccFor(o).list])) })) all.push({ ...d, id: `d-${p.key}-${d.orgId}`, pkgKey: p.key, pkgLabel: labelOf(p) });
       }
       const nextBodies = {}; for (const d of all) if (nextBodies[d.pkgKey] == null) nextBodies[d.pkgKey] = d.body;
       setBodies(nextBodies); setDrafts(all);
@@ -241,16 +243,51 @@ export default function RfqModal({ quote, items, rates, projectScope, elementTyp
     setStep("done");
   }
 
-  const OrgRow = ({ o, tag, pkgKey }) => { const c = rfqContact(o); const copies = rfqCopies(o); const on = picked(pkgKey).has(o.id); return (
+  // The contractor's own Cc (Boma, 17 Nov 2026): one box per ticked contractor, prefilled with the addresses ticked
+  // "RFQ copy" on the Register (DMAC: estimating@, danny@), editable here, and "Save to Register" keeps what was typed
+  // so it is prefilled next time. An address that belongs to another organisation on the Register is never copied.
+  const ccTextFor = (o) => (orgCc[o.id] !== undefined ? orgCc[o.id] : rfqCopies(o).join(", "));
+  const ccFor = (o) => { const typed = contractorCc(o, ccTextFor(o)); const conflicts = ccConflicts(o, typed, orgs); const bad = new Set(conflicts.map((x) => x.email)); return { list: typed.filter((e) => !bad.has(e)), conflicts }; };
+  const saveCc = async (o) => {
+    const { list } = ccFor(o);
+    setCcSave((m) => ({ ...m, [o.id]: "saving" }));
+    let reg = null;
+    try { reg = await saveRfqCopies(o.id, list, String(user || "").split("@")[0] || "quotes"); } catch { reg = null; }
+    if (!reg) { setCcSave((m) => ({ ...m, [o.id]: "The Register could not be read just now, so nothing was saved. The addresses still go on this RFQ." })); return; }
+    setRegister(reg);
+    setOrgCc((m) => { const n = { ...m }; delete n[o.id]; return n; });
+    setCcSave((m) => ({ ...m, [o.id]: reg.saved === false ? "Saved in this browser only — the cloud did not take it; the Register will retry when it is next opened." : "saved" }));
+  };
+  // A plain function (not a component): a component defined in here is a new type on every render, which would
+  // remount the Cc box and drop the cursor on each keystroke.
+  const orgRow = (o, tag, pkgKey) => { const c = rfqContact(o); const copies = rfqCopies(o); const on = picked(pkgKey).has(o.id); const cc = on ? ccFor(o) : null; const note = ccSave[o.id]; const dirty = on && ccDiffersFromRegister(o, cc.list); return (
+    <div key={o.id} className="space-y-0">
     <label className={`flex items-start gap-2 px-2 py-1.5 rounded border ${on ? "border-orange-400 bg-orange-50" : "border-neutral-200 bg-white"} ${c.email ? "cursor-pointer" : "opacity-60"}`} data-testid={`rfq-org-${pkgKey}-${o.id}`}>
       <input type="checkbox" className="mt-1" checked={on} disabled={!c.email} onChange={() => togglePick(pkgKey, o.id)} />
       <span className="min-w-0 flex-1 text-[12.5px]">
         <span className="font-semibold">{o.name}</span>{tag && <span className={`ml-1.5 text-[10px] font-bold uppercase tracking-wider px-1.5 rounded ${tag === "does" ? "bg-emerald-100 text-emerald-800" : tag === "not" ? "bg-red-100 text-red-700" : "bg-neutral-100 text-neutral-500"}`}>{tag === "does" ? "does this" : tag === "not" ? "says they don't" : "not stated"}</span>}
         <span className="block text-neutral-500">{o.trade}</span>
         <span className="block text-neutral-600">{c.email ? `${c.name ? c.name + " · " : ""}${c.email}` : "no email address on the register — add one there first"}</span>
-        {c.email && copies.length > 0 && <span className="block text-neutral-500" title="Their own addresses, ticked 'RFQ copy' on the Register — copied on this contractor's RFQ only" data-testid={`rfq-org-copies-${o.id}`}>+ cc {copies.join(", ")}</span>}
+        {c.email && !on && copies.length > 0 && <span className="block text-neutral-500" title="Their own addresses, ticked 'RFQ copy' on the Register — copied on this contractor's RFQ only" data-testid={`rfq-org-copies-${o.id}`}>+ cc {copies.join(", ")}</span>}
       </span>
     </label>
+    {on && (
+      <div className="ml-7 mr-1 -mt-px mb-1 px-2 py-1.5 rounded-b border border-t-0 border-orange-300 bg-orange-50/60 text-[12px] text-neutral-700" data-testid={`rfq-org-cc-${pkgKey}-${o.id}`}>
+        <label className="block">Cc at {o.name} <span className="text-neutral-400">(their own people — on this contractor's email only)</span>
+          <input value={ccTextFor(o)} onChange={(e) => { const v = e.target.value; setOrgCc((m) => ({ ...m, [o.id]: v })); setCcSave((m) => { if (!m[o.id]) return m; const n = { ...m }; delete n[o.id]; return n; }); }} placeholder="name@theircompany.com.au, …" className="mt-0.5 w-full border border-neutral-300 rounded px-2 py-1 text-[12.5px] bg-white" data-testid={`rfq-org-cc-input-${o.id}`} />
+        </label>
+        {cc.conflicts.length > 0 && <div className="mt-1 text-red-700" data-testid={`rfq-org-cc-conflict-${o.id}`}>Not copied: {cc.conflicts.map((x) => `${x.email} belongs to ${x.orgName}`).join("; ")} — contractors are never copied on each other.</div>}
+        <div className="mt-1 flex flex-wrap items-center gap-2 text-[11.5px] text-neutral-500">
+          {cc.list.length ? <span data-testid={`rfq-org-cc-count-${o.id}`}>{cc.list.length} cop{cc.list.length === 1 ? "y" : "ies"} on this RFQ</span> : <span>No copies at {o.name}.</span>}
+          {dirty && note !== "saving" && <button type="button" onClick={() => saveCc(o)} className="px-2 py-0.5 rounded border border-orange-400 bg-white hover:bg-orange-100 text-orange-900 font-semibold" title={`Keep these addresses as ${o.name}'s RFQ copies on the Register, so they are filled in next time`} data-testid={`rfq-org-cc-save-${o.id}`}>Save to Register</button>}
+          {note === "saving" && <span>Saving…</span>}
+          {note === "saved" && !dirty && <span className="text-emerald-700" data-testid={`rfq-org-cc-saved-${o.id}`}>✓ Saved on the Register — filled in next time</span>}
+          {note && note !== "saving" && note !== "saved" && <span className="text-red-700" data-testid={`rfq-org-cc-error-${o.id}`}>{note}</span>}
+          {!dirty && !note && cc.list.length > 0 && <span>· as saved on the Register</span>}
+        </div>
+      </div>
+    )}
+    </div>
   ); };
 
   return (
@@ -346,12 +383,12 @@ export default function RfqModal({ quote, items, rates, projectScope, elementTyp
                   <div key={p.key} className="rounded-lg border border-neutral-200 p-2 space-y-1" data-testid={`rfq-contractors-${p.key}`}>
                     <div className="text-[11px] uppercase tracking-wider text-neutral-500 font-semibold">Contractors for {labelOf(p)} <span className="normal-case tracking-normal font-normal text-neutral-400">· {picked(p.key).size} ticked</span></div>
                     {register && g.does.length + g.unknown.length + g.not.length === 0 && <div className="text-[12px] text-neutral-500">The Register has nobody in this trade yet — search below, or add them in the Register first.</div>}
-                    {g.does.map((o) => <OrgRow key={o.id} o={o} tag={p.cap ? "does" : ""} pkgKey={p.key} />)}
-                    {g.unknown.map((o) => <OrgRow key={o.id} o={o} tag="unknown" pkgKey={p.key} />)}
+                    {g.does.map((o) => orgRow(o, p.cap ? "does" : "", p.key))}
+                    {g.unknown.map((o) => orgRow(o, "unknown", p.key))}
                     {g.not.length > 0 && <button onClick={() => setShowNot(notOpen ? "" : p.key)} className="text-[11.5px] text-neutral-500 underline">{notOpen ? "Hide" : "Show"} {g.not.length} who said they do not do this</button>}
-                    {notOpen && g.not.map((o) => <OrgRow key={o.id} o={o} tag="not" pkgKey={p.key} />)}
+                    {notOpen && g.not.map((o) => orgRow(o, "not", p.key))}
                     <input value={searches[p.key] || ""} onChange={(e) => setSearches({ ...searches, [p.key]: e.target.value })} placeholder={`Add any organisation for ${labelOf(p)}…`} className="w-full border border-neutral-300 rounded px-2 py-1 text-[12px]" data-testid={`rfq-search-${p.key}`} />
-                    {hitsFor(p.key).map((o) => <OrgRow key={o.id} o={o} tag="" pkgKey={p.key} />)}
+                    {hitsFor(p.key).map((o) => orgRow(o, "", p.key))}
                   </div>
                 ); })}
               </div>
