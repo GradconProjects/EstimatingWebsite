@@ -1334,6 +1334,7 @@ function ProjectEditor({ project, allProjects, rates: liveRates, setRates: setLi
               <div className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-[12px] text-sky-950 flex items-start gap-2" data-testid="inbox-source">
                 <div className="flex-1 min-w-0">
                   <span className="font-semibold">Created from the inbox</span>
+                  {src.internal && <span className="ml-1 rounded bg-sky-200 px-1.5 py-0.5 text-[11px] font-semibold" data-testid="inbox-source-internal">{src.requestKind === "takeoff" ? "takeoff request" : "request"} from within Gradcon</span>}
                   {" — "}<span>{src.from}{src.via ? ` (forwarded by ${src.via})` : ""}{when ? `, ${when}` : ""}</span>
                   {src.subject && <span className="text-sky-800">{" · "}“{src.subject}”</span>}
                   <div className="text-[11.5px] text-sky-900 mt-0.5">

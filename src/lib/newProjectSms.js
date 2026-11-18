@@ -42,19 +42,49 @@ export function forwardedByGrady(item) {
   return /^grady@/i.test(String((item && item.via) || "").trim());
 }
 
+/** A request a colleague sent the estimators directly (18 Nov 2026: "flag projects even if it is from within the organisation"). */
+export const isInternalItem = (item) => !!(item && item.internal);
+/** Did Grady write the internal request himself? Then he is told it has landed, not asked about it. */
+export function sentByGrady(item) {
+  return isInternalItem(item) && /^grady@/i.test(String((item && item.fromEmail) || parseEmail(item && item.from)).trim());
+}
+const parseEmail = (from) => (/([^\s<>"]+@[^\s<>"]+)/.exec(String(from || "")) || ["", ""])[1].toLowerCase();
+/** What arrived, in two words: a tender, a colleague's takeoff request, or another request from within Gradcon. */
+export function requestWords(item) {
+  if (!isInternalItem(item)) return "tender";
+  return item.requestKind === "takeoff" ? "takeoff request" : "request";
+}
+const senderName = (item) => gsmSafe(String((item && item.from) || "").replace(/<[^>]*>/g, "").replace(/["']/g, "").trim()) || parseEmail(item && item.from);
+
 /** To the estimator: check it and attend to it. */
 export function newProjectSmsForEstimator(item, { gradyAsked = true } = {}) {
-  const from = who(item); const fwd = forwardedByGrady(item);
+  const fwd = forwardedByGrady(item); const n = Number(item.attachments) || 0;
+  const files = n ? `${n} file${n === 1 ? "" : "s"} attached.` : "No files attached.";
+  if (isInternalItem(item)) { // a colleague asked: say who, and that nobody is waiting on Grady's yes or no
+    const by = senderName(item);
+    const parts = [`New ${requestWords(item)} in the portal: ${clip(gsmSafe(item.name), 90)}${by ? ` from ${clip(by, 40)}` : ""}.`];
+    const dl0 = deadlineSentence(item); if (dl0) parts.push(dl0);
+    parts.push(files, "Please check it.");
+    return parts.join(" ");
+  }
+  const from = who(item);
   const parts = [`New tender in the portal: ${clip(gsmSafe(item.name), 90)}${from ? ` from ${clip(from, 40)}` : ""}${fwd ? " (forwarded by Grady)" : ""}.`];
   const dl = deadlineSentence(item); if (dl) parts.push(dl);
-  const n = Number(item.attachments) || 0;
-  parts.push(n ? `${n} file${n === 1 ? "" : "s"} attached.` : "No files attached.");
+  parts.push(files);
   parts.push(fwd ? "Please check it. Grady has been told it is in." : gradyAsked ? "Please check it. Grady has been asked if we want to price it." : "Please check it.");
   return parts.join(" ");
 }
 /** To Grady: the question. `estimator` is who he should tell (a reply to the sending number reaches nobody). */
 export function newProjectSmsForGrady(item, { estimator = "Boma" } = {}) {
   const from = who(item); const name = gsmSafe(estimator) || "the estimator";
+  if (isInternalItem(item)) { // asked for from within Gradcon: nothing to decide — he is told it is in (his own request, or a colleague's)
+    const what = requestWords(item); const by = senderName(item);
+    const parts = [sentByGrady(item)
+      ? `Hi Grady, your ${what} for ${clip(gsmSafe(item.name), 90)} is now a project in the portal.`
+      : `Hi Grady, ${by ? `${clip(by, 40)} sent the estimators a ${what}` : `a ${what} came in from within Gradcon`}: ${clip(gsmSafe(item.name), 90)}. It is now a project in the portal.`];
+    parts.push(`${name} will pick it up.`);
+    return parts.join(" ");
+  }
   if (forwardedByGrady(item)) { // he sent it in himself: confirm it landed, do not ask him whether he wants it
     const parts = [`Hi Grady, the request you forwarded for ${clip(gsmSafe(item.name), 90)}${from ? ` (${clip(from, 40)})` : ""} is now a project in the portal.`];
     const dl0 = deadlineSentence(item, { short: true }); if (dl0) parts.push(dl0);
@@ -80,10 +110,21 @@ export function newProjectTexts(items, { estimator = "Boma", gradyAsked = true }
     ]);
   }
   const names = list.map((i) => clip(gsmSafe(i.name), 45)).join("; ");
+  const mixed = list.some(isInternalItem); // a colleague's request among them: "requests", never "tenders"
   return [
-    { role: "copy", text: clip(`${list.length} new tenders in the portal: ${names}. Please check them.${gradyAsked ? " Grady has been asked which we want to price." : ""}`, 470), projectIds: ids(list) },
-    ...(gradyAsked ? [{ role: "grady", text: clip(`Hi Grady, ${list.length} new tender requests: ${names}. Please let ${gsmSafe(estimator) || "the estimator"} know which of these we want to price.`, 470), projectIds: ids(list) }] : []),
+    { role: "copy", text: clip(`${list.length} new ${mixed ? "requests" : "tenders"} in the portal: ${names}. Please check them.${gradyAsked ? " Grady has been asked which we want to price." : ""}`, 470), projectIds: ids(list) },
+    ...(gradyAsked ? [{ role: "grady", text: clip(`Hi Grady, ${list.length} new ${mixed ? "requests" : "tender requests"}: ${names}. Please let ${gsmSafe(estimator) || "the estimator"} know which of these we want to price.`, 470), projectIds: ids(list) }] : []),
   ];
+}
+/** A request about a project the portal ALREADY holds (the same address or name, another email thread): no second project is
+ *  made, so the estimator is told to look — otherwise the request would be recorded as a duplicate and nobody would hear of it.
+ *  To the copy numbers only; Grady is not texted about a project he already knows. `flags` = [{existingName, subject, from, internal, requestKind, projectId}]. */
+export function existingProjectTexts(flags) {
+  const list = (Array.isArray(flags) ? flags : []).filter((f) => f && (f.existingName || f.subject));
+  if (!list.length) return [];
+  const one = (f) => { const by = senderName(f); return `New ${isInternalItem(f) ? requestWords(f) : "request"} about a project already in the portal (${clip(gsmSafe(f.existingName || "existing project"), 70)})${by ? ` from ${clip(by, 40)}` : ""}${f.subject ? `: "${clip(gsmSafe(f.subject), 70)}"` : ""}. No new project was made - please check the email.`; };
+  if (list.length <= NEW_PROJECT_SMS_EACH_MAX) return list.map((f) => ({ role: "copy", text: one(f), projectIds: [f.projectId].filter(Boolean) }));
+  return [{ role: "copy", text: clip(`${list.length} new emails about projects already in the portal: ${list.map((f) => clip(gsmSafe(f.existingName || f.subject), 40)).join("; ")}. No new projects were made - please check the mailbox.`, 470), projectIds: list.map((f) => f.projectId).filter(Boolean) }];
 }
 /** The switch: off until the wording is approved and `NEW_PROJECT_SMS` is set to on. */
 export function newProjectSmsOn(env = {}) {

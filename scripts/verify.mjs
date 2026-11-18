@@ -1087,14 +1087,17 @@ checkAsync("notify Grady: the text is built from the quote's own figures, segmen
   const many = NP.newProjectTexts([np, npDef, npFwd, { ...np, projectId: "p4", name: "4 Fourth St" }]);
   assert.equal(many.length, 2, "more than three projects in one scan: ONE summary text each"); assert.match(many[0].text, /^4 new tenders in the portal: /); assert.match(many[1].text, /^Hi Grady, 4 new tender requests: .*Please let Boma know which of these we want to price\.$/);
   assert.deepEqual(NP.newProjectTexts([]), []); assert.ok(!/undefined|null/.test(NP.newProjectSmsForEstimator({ name: "X" }) + NP.newProjectSmsForGrady({ name: "X" })), "a fact the entry lacks is left out");
-  { // the scan's schedule (Boma, 16 Nov 2026: "at least twice during work hours melbourne time"): every entry once a day on the scan's path, and at least two inside 8 am-5 pm Melbourne in daylight time (UTC+11) AND in winter (UTC+10)
+  { // the scan's schedule (Boma, 16 Nov 2026: "at least twice during work hours melbourne time"; 18 Nov 2026: "i want the mailbox scanned for new emails always"): every entry a ONCE-A-DAY schedule on the scan's path (the only kind every Vercel plan accepts; 100 a project), four an hour, covering 8 am-5 pm Melbourne in daylight time (UTC+11) AND in winter (UTC+10)
     const crons = JSON.parse(fs.readFileSync(new URL("../vercel.json", import.meta.url), "utf8")).crons.filter((c) => c.path === "/api/tender-inbox");
-    assert.ok(crons.length >= 3 && crons.every((c) => /^0 \d{1,2} \* \* \*$/.test(c.schedule)), "each scan entry is a once-a-day schedule on the hour");
-    const hoursUtc = crons.map((c) => Number(c.schedule.split(" ")[1])); assert.equal(new Set(hoursUtc).size, hoursUtc.length, "no two entries at the same hour");
-    [11, 10].forEach((off) => { const inWork = hoursUtc.map((h) => (h + off) % 24).filter((h) => h >= 8 && h <= 17); assert.ok(inWork.length >= 2, `UTC+${off}: ${inWork.length} scans in work hours`); });
+    assert.ok(crons.length >= 40 && crons.length <= 100 && crons.every((c) => /^(?:0|15|30|45) \d{1,2} \* \* \*$/.test(c.schedule)), "each scan entry is a once-a-day schedule on a quarter hour, and the project stays inside Vercel's 100");
+    assert.equal(new Set(crons.map((c) => c.schedule)).size, crons.length, "no schedule twice");
+    const slots = crons.map((c) => { const [m, h] = c.schedule.split(" ").map(Number); return h * 60 + m; });
+    [11, 10].forEach((off) => { for (let t = 8 * 60; t < 17 * 60; t += 15) assert.ok(slots.includes((t - off * 60 + 1440) % 1440), `UTC+${off}: a scan at ${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")} Melbourne`); });
+    const local = slots.map((t) => ((t + 11 * 60) % 1440) / 60); assert.ok(Math.min(...local) === 7 && Math.max(...local) === 20.75, `daylight time: the scans run 7 am to 9 pm (${Math.min(...local)}–${Math.max(...local)})`);
     const shellSrc = fs.readFileSync(new URL("../portal/portal-shell.html", import.meta.url), "utf8");
-    assert.ok(/data-testid="inbox-scan-times"/.test(shellSrc) && /7 am, 10 am, 1 pm and 4 pm Melbourne/.test(shellSrc) && !/Daily at 7 am|once a day \(7 am Melbourne\)/.test(shellSrc), "Settings states the scan times");
-    assert.deepEqual(hoursUtc.map((h) => (h + 11) % 24).sort((a, b) => a - b), [7, 10, 13, 16], "the times Settings states are the times scheduled");
+    assert.ok(/data-testid="inbox-scan-times">Every 15 min · 7 am – 9 pm · and every 3 min while signed in/.test(shellSrc) && /every 15 minutes from 7 am to 9 pm Melbourne/.test(shellSrc) && !/four times a day|4 scans a day/.test(shellSrc), "Settings states the scan times");
+    // the portal's own check: one small POST {auto:true}, never while hidden, on a dead host or on a copy that is not the live site, from one tab at a time
+    assert.ok(/function inboxAutoScan\(force\)\{\s*if\(!currentUser \|\| document\.hidden \|\| inboxAutoBusy \|\| window\.gradconHostingOff \|\| window\.gradconNotLive\)/.test(shellSrc) && /action:'scan', auto:true, by:'portal'/.test(shellSrc) && /INBOX_AUTO_MS = 3 \* 60 \* 1000/.test(shellSrc) && /localStorage\.setItem\(INBOX_AUTO_KEY/.test(shellSrc), "the shell asks for a scan every three minutes while someone is signed in");
   }
   assert.equal(NP.newProjectSmsOn({}), false); assert.equal(NP.newProjectSmsOn({ NEW_PROJECT_SMS: "off" }), false); assert.equal(NP.newProjectSmsOn({ NEW_PROJECT_SMS: " On " }), true);
   // the browser side posts only the text and reads the reply; an error throws with the server's words
@@ -4053,6 +4056,124 @@ check("Project Geometry carries a COUNT: $/no. leads the benchmark rates, sums a
       const racy = async (url, init = {}) => { const method = (init.method || "GET").toUpperCase(); calls.push(method); if (method === "GET") { reads += 1; return { ok: true, json: async () => [{ value: [{ id: "a" }], updated_at: `2026-10-28T00:00:0${reads}Z` }] }; } if (method === "PATCH") return { ok: true, json: async () => [] }; return { ok: false, status: 500, json: async () => ({}) }; };
       const r = await TI.appendProjectEntry({ id: "new", storageKey: "gradcon-quote-new", createdAt: "x" }, racy, { attempts: 3 });
       assertTrue(!r.ok && reads === 3 && calls.filter((c) => c === "PATCH").length === 3 && !calls.includes("POST"));
+    });
+    // ---- 18 Nov 2026 (Boma: "a new take off rfq just arrived and we werent notified. i want the mailbox scanned for new emails always and flag projects even if it is from within the organisation")
+    const NPS = await import("../src/lib/newProjectSms.js");
+    // Grady's email, as the mailbox holds it
+    const takeoff = { id: "k1", threadId: "k1", from: "Grady Fink <grady@gradcon.com.au>", subject: "Takeoff - 22 Junction Rd, Merricks", date: "2026-11-18T23:19:21.000Z", body: "Hey Mate, \n\nCan I please get you to measure/ mark up the following areas as per my markup. It’s to assist me with some variation works that have been completed onsite. \n\nRelevant drawings attached\n\nCheers", attachments: [{ attachmentId: "a", filename: "19112026101719-0001.pdf", size: 2010244 }, { attachmentId: "b", filename: "001_Ground Floor Plan_RevR.pdf", size: 1200554 }, { attachmentId: "c", filename: "Grady.png", size: 59923 }] };
+    check("Tender inbox: a colleague's request to the estimators IS a request (Grady's 'Takeoff - 22 Junction Rd, Merricks … measure / mark up' — skipped until 18 Nov 2026 as Gradcon's own message); the mailbox's own mail, a colleague's ordinary reply and a forwarded supplier notice are not", () => {
+      const c = T.classifyMessage(takeoff);
+      assertTrue(c.candidate && c.internal && c.excluded === null && c.reasons.includes("from within Gradcon") && c.reasons.includes("a takeoff asked for"), JSON.stringify(c));
+      assertTrue(T.classifyMessage({ ...takeoff, from: "Boma Ipalibo <projects@gradcon.com.au>" }).excluded === "Gradcon's own message" && T.classifyMessage({ ...takeoff, from: "projects@gradcon.com.au" }).excluded === "Gradcon's own message", "the scanned mailbox's own message is never a request");
+      assertTrue(T.classifyMessage({ ...takeoff, from: "Boma <projects@gradcon.com.au>" }, { mailbox: "estimating@gradcon.com.au" }).candidate, "the mailbox is the one the scan reads, not a fixed address");
+      const hours = T.classifyMessage({ from: "Georgie Keach <accounts@gradcon.com.au>", subject: "Re: Hours Log for the week ending 15 November, 2026", body: "Thanks Boma, can you please send the hours for Friday too" });
+      assertTrue(!hours.candidate && hours.internal && hours.excluded === null, JSON.stringify(hours));
+      assertTrue(!T.classifyMessage({ from: "Narelle Higgins <admin@gradcon.com.au>", subject: "Fwd: Fuel Surcharge Adjustment - Effective 16th November 2026 - VIC", body: "---------- Forwarded message ---------\nFrom: Holcim <x@holcim.com>\nSubject: Fuel Surcharge\n\nplease see attached pricing" }).candidate);
+      assertTrue(T.classifyMessage(fwd).candidate && !T.classifyMessage(fwd).internal, "a tender a colleague FORWARDS is still the builder's request");
+      assertTrue(T.classifyMessage({ ...takeoff, from: "Trevor <trevor@dmacpiling.com.au>", subject: "Re: RFQ – Bored Pier Works – 514 Park Street", body: "see our takeoff attached" }).excluded === "a reply to Gradcon's own RFQ");
+      assertTrue(T.parseAddress("projects@gradcon.com.au").email === "projects@gradcon.com.au" && T.parseAddress("<a.b@x.com.au>").email === "a.b@x.com.au" && T.parseAddress("Boma Ipalibo <projects@gradcon.com.au>").name === "Boma Ipalibo", "a bare address is read whole (it used to split into a name and a tail)");
+    });
+    const ck = T.candidateFromMessage(takeoff, { now: new Date("2026-11-18T23:40:00Z") });
+    check("Tender inbox: the colleague's request becomes a project named by its address ('Takeoff -' is furniture), with no client (a colleague is not the client), marked internal · takeoff, the two drawings kept and the signature picture left in the email", () => {
+      assertTrue(ck.projectName === "22 Junction Rd, Merricks" && ck.client === "" && ck.internal === true && ck.requestKind === "takeoff" && ck.fromEmail === "grady@gradcon.com.au" && ck.deadline === "2026-12-02" && ck.deadlineSource === "default", JSON.stringify([ck.projectName, ck.client, ck.requestKind, ck.deadline]));
+      assertTrue(ck.attachments.length === 2 && !ck.attachments.some((a) => /Grady\.png/.test(a.filename)) && T.isSignatureImage({ filename: "logo.png", size: 4000 }) && !T.isSignatureImage({ filename: "site photo.jpg", size: 900000 }) && !T.isSignatureImage({ filename: "S-01.pdf", size: 4000 }), "an image under 100 kB is a signature, not a drawing");
+      const q = T.tenderQuoteFrom(ck, { today: "2026-11-19" });
+      assertTrue(q.status === "Queued" && q.source.internal === true && q.source.requestKind === "takeoff" && q.clientName === "" && T.tenderQuoteFrom(c1).source.internal === false && T.tenderQuoteFrom(c1).source.requestKind === "tender");
+      assertTrue(T.requestKindOf({ subject: "New job to price - 4 High St", body: "can you price this one" }, true) === "internal" && T.requestKindOf(takeoff, false) === "tender");
+      const prompt = T.tenderReviewPrompt([ck], { today: "2026-11-19" });
+      assertTrue(/"internal":true/.test(prompt.replace(/\s+/g, "")) && /from a colleague at Gradcon/.test(prompt) && /sender is NOT the client/.test(prompt), "the AI review is told what an internal request is");
+      assertTrue(T.applyReview(ck, { tender: true, confidence: "high", projectName: "", client: "Gradcon Concrete Constructions", deadline: null }).cand.client === "", "the review never makes Gradcon its own client");
+    });
+    check("Tender inbox: the texts for a colleague's request — the estimator is told who asked and what, Grady is told his own request is in (never asked whether to price it), another colleague's request is reported to him; a request about a project already in the portal texts the estimator only", () => {
+      const item = { projectId: "pk", name: ck.projectName, client: ck.client, deadline: ck.deadline, deadlineSource: ck.deadlineSource, from: ck.from, fromEmail: ck.fromEmail, via: ck.via, internal: true, requestKind: "takeoff", attachments: 2 };
+      const texts = NPS.newProjectTexts([item], { estimator: "Boma" });
+      assertTrue(texts.length === 2 && texts[0].role === "copy" && texts[0].text === "New takeoff request in the portal: 22 Junction Rd, Merricks from Grady Fink. No closing date in the email - set to Wed 2 Dec (2 weeks). 2 files attached. Please check it.", texts[0].text);
+      assertTrue(texts[1].role === "grady" && texts[1].text === "Hi Grady, your takeoff request for 22 Junction Rd, Merricks is now a project in the portal. Boma will pick it up.", texts[1].text);
+      assertTrue(NPS.sentByGrady(item) && !NPS.sentByGrady({ ...item, internal: false }) && !NPS.sentByGrady({ ...item, from: "Narelle Higgins <admin@gradcon.com.au>", fromEmail: "admin@gradcon.com.au" }));
+      const other = NPS.newProjectSmsForGrady({ ...item, requestKind: "internal", from: "Narelle Higgins <admin@gradcon.com.au>", fromEmail: "admin@gradcon.com.au" }, { estimator: "Boma" });
+      assertTrue(other === "Hi Grady, Narelle Higgins sent the estimators a request: 22 Junction Rd, Merricks. It is now a project in the portal. Boma will pick it up.", other);
+      assertTrue(!/price it|want to price/.test(texts.map((t) => t.text).join(" ")) && texts.every((t) => !/[^\x00-\x7f]/.test(t.text) && t.text.length <= 306), "plain GSM characters, two segments at most, nothing asked of Grady");
+      const tA = { projectId: "t1", name: "1 First St", client: "Buildco", deadline: "2026-11-27", deadlineSource: "email", from: "Fred <fred@buildco.com.au>", attachments: 1 };
+      assertTrue(/^4 new requests in the portal: /.test(NPS.newProjectTexts([item, tA, { ...tA, projectId: "t2", name: "2 Second St" }, { ...tA, projectId: "t3", name: "3 Third St" }])[0].text) && /^4 new tenders in the portal: /.test(NPS.newProjectTexts([tA, { ...tA, projectId: "t2", name: "2 Second St" }, { ...tA, projectId: "t3", name: "3 Third St" }, { ...tA, projectId: "t4", name: "4 Fourth St" }])[0].text), "a colleague's request among several makes them 'requests'");
+      const flags = NPS.existingProjectTexts([{ projectId: "old1", existingName: "22 Junction Road, Merricks VIC 3916", subject: "Takeoff - 22 Junction Rd, Merricks", from: "Grady Fink <grady@gradcon.com.au>", internal: true, requestKind: "takeoff" }]);
+      assertTrue(flags.length === 1 && flags[0].role === "copy" && flags[0].text === 'New takeoff request about a project already in the portal (22 Junction Road, Merricks VIC 3916) from Grady Fink: "Takeoff - 22 Junction Rd, Merricks". No new project was made - please check the email.' && flags[0].projectIds[0] === "old1", flags[0] && flags[0].text);
+      assertTrue(NPS.existingProjectTexts([]).length === 0 && NPS.existingProjectTexts([1, 2, 3, 4].map((i) => ({ existingName: `Job ${i}`, subject: "x" }))).length === 1 && NPS.existingProjectTexts([{ existingName: "A", subject: "B", from: "x@y.com" }]).every((t) => t.role === "copy"), "more than three → one text; never to Grady");
+    });
+    check("Tender inbox: a message the old rule skipped as 'Gradcon's own message' is looked at again unless the mailbox itself wrote it; the lock, the night hours and the three-minute throttle", () => {
+      const rec = { ...T.emptyRecord(), handled: { k1: { outcome: "skipped", reason: "Gradcon's own message", at: "x" }, k2: { outcome: "skipped", reason: "Gradcon's own message", at: "x" }, k3: { outcome: "skipped", reason: "not a request (score 1)", at: "x" } } };
+      assertTrue(!T.wasHandled(rec, { id: "k1", from: "Grady Fink <grady@gradcon.com.au>" }) && T.wasHandled(rec, { id: "k2", from: "Boma <projects@gradcon.com.au>" }) && T.wasHandled(rec, { id: "k3", from: "Grady Fink <grady@gradcon.com.au>" }) && T.wasHandled(rec, { id: "k1" }), "only a colleague's message is re-read, and only for that reason");
+      const t0 = new Date("2026-11-19T00:00:00Z");   // 11 am in Melbourne
+      assertTrue(T.scanLockHeld({ scanning: { at: "2026-11-18T23:57:00Z", by: "cron" } }, t0) && !T.scanLockHeld({ scanning: { at: "2026-11-18T23:50:00Z", by: "cron" } }, t0) && !T.scanLockHeld({ scanning: null }, t0) && !T.scanLockHeld(T.emptyRecord(), t0), "a lock older than six minutes is a scan that died");
+      assertTrue(T.applyScan({ ...T.emptyRecord(), scanning: { at: "x", by: "y" } }, { at: "2026-11-19T00:00:00Z" }).scanning === null, "a finished scan lets go of the record");
+      assertTrue(T.melbourneHour(t0) === 11 && T.melbourneHour(new Date("2026-06-19T00:00:00Z")) === 10 && T.melbourneHour(new Date("2026-11-19T13:30:00Z")) === 0);
+      assertTrue(T.autoScanHold({ lastScanAt: "2026-11-18T23:58:30Z" }, t0) === "scanned a moment ago" && T.autoScanHold({ lastScanAt: "2026-11-18T23:50:00Z" }, t0) === null && T.autoScanHold(T.emptyRecord(), t0) === null);
+      assertTrue(/outside 6 am - 9 pm/.test(T.autoScanHold(T.emptyRecord(), new Date("2026-11-19T12:00:00Z"))) && /outside/.test(T.autoScanHold(T.emptyRecord(), new Date("2026-11-18T18:30:00Z"))) && T.autoScanHold(T.emptyRecord(), new Date("2026-11-18T19:00:00Z")) === null, "11 pm and 5:30 am stand down, 6 am runs");
+      assertTrue(T.AUTO_SCAN_MIN_MS === 180000 && T.SCAN_LOCK_MS === 360000);
+    });
+    await checkAsync("Tender inbox function: Grady's takeoff request makes ONE project and both texts; a scan that finds the record held, an automatic one inside three minutes or at night, stands down without reading the mailbox; the automatic answer carries no record; a record that cannot be read scans nothing; a request about a project already in the portal texts the estimator only", async () => {
+      const stored = { email: "projects@gradcon.com.au", refresh: G.encryptText("1//r", genv) };
+      const gm = (m) => ({ id: m.id, threadId: m.threadId, internalDate: String(Date.parse(m.date)), snippet: m.body.slice(0, 120), labelIds: [], payload: { headers: [{ name: "From", value: m.from }, { name: "Subject", value: m.subject }, { name: "Date", value: m.date }], parts: [{ mimeType: "text/plain", body: { data: Buffer.from(m.body).toString("base64url") } }, ...m.attachments.map((a) => ({ mimeType: a.mimeType || "application/octet-stream", filename: a.filename, body: { attachmentId: a.attachmentId, size: a.size || 10 } }))] } });
+      const mail = { k1: gm(takeoff), k2: gm({ id: "k2", threadId: "k2", from: "Boma Ipalibo <projects@gradcon.com.au>", subject: "RFQ – Bored Pier Works – 62-66 Withers Street", date: "2026-11-17T23:27:48Z", body: "Dear Trevor, Gradcon invites DMAC to quote", attachments: [] }), k3: gm({ id: "k3", threadId: "k3", from: "Georgie Keach <accounts@gradcon.com.au>", subject: "Re: Hours Log for the week ending 15 November, 2026", date: "2026-11-17T22:53:16Z", body: "Thanks", attachments: [] }) };
+      // the record as the live one stood: the two colleagues' messages skipped by the old rule
+      const kv = { "gradcon-google-mail": { value: stored, updated_at: "2026-10-01T00:00:00Z" }, "gradcon-projects": { value: [], updated_at: "2026-10-20T00:00:00Z" }, "gradcon-tender-inbox": { value: { ...T.emptyRecord(), watermarkMs: Date.parse("2026-11-18T23:00:19Z"), lastScanAt: "2026-11-18T23:00:45Z", handled: { k1: { outcome: "skipped", reason: "Gradcon's own message", at: "2026-11-19T02:00:00Z" }, k3: { outcome: "skipped", reason: "Gradcon's own message", at: "2026-11-17T23:00:45Z" } } }, updated_at: "2026-11-18T23:00:46Z" } };
+      const calls = []; let failRecord = false;
+      const fetchMock = async (url, init = {}) => { const u = String(url); const method = (init.method || "GET").toUpperCase(); calls.push(`${method} ${u}`);
+        if (/oauth2\.googleapis\.com\/token/.test(u)) return { ok: true, json: async () => ({ access_token: "at", expires_in: 3600 }) };
+        if (/estimator_kv\?key=like\.gradcon-quote-/.test(u)) return { ok: true, json: async () => Object.keys(kv).filter((k) => /^gradcon-quote-/.test(k)).map((k) => ({ key: k, updated_at: kv[k].updated_at, name: kv[k].value.projectName, client: kv[k].value.clientName, status: kv[k].value.status, source: kv[k].value.source || null })) };
+        let m = /estimator_kv\?key=eq\.([^&]+)(?:&updated_at=eq\.([^&]+))?/.exec(u);
+        if (m && method === "GET") { const k = decodeURIComponent(m[1]); if (failRecord && k === "gradcon-tender-inbox") return { ok: false, status: 503, json: async () => ({}) }; return { ok: true, json: async () => (kv[k] ? [kv[k]] : []) }; }
+        if (m && method === "PATCH") { const k = decodeURIComponent(m[1]); const stamp = decodeURIComponent(m[2] || ""); if (!kv[k] || kv[k].updated_at !== stamp) return { ok: true, json: async () => [] }; const b = JSON.parse(init.body); kv[k] = { value: b.value, updated_at: b.updated_at }; return { ok: true, json: async () => [{ key: k }] }; }
+        if (/\/rest\/v1\/estimator_kv$/.test(u) && method === "POST") { const b = JSON.parse(init.body); kv[b.key] = { value: b.value, updated_at: b.updated_at }; return { ok: true, json: async () => ({}) }; }
+        if (/\/messages\?/.test(u)) return { ok: true, json: async () => ({ messages: Object.keys(mail).map((id) => ({ id })) }) };
+        m = /\/messages\/([^/?]+)\/attachments\/([^/?]+)/.exec(u); if (m) return { ok: true, json: async () => ({ data: Buffer.from(`%PDF-${m[2]}`).toString("base64url") }) };
+        m = /\/messages\/([^/?]+)\?format=(metadata|full)/.exec(u); if (m) { const msg = mail[m[1]]; if (!msg) return { ok: false, status: 404, json: async () => ({}) }; if (m[2] === "metadata") { const { payload, ...rest } = msg; return { ok: true, json: async () => ({ ...rest, payload: { headers: payload.headers } }) }; } return { ok: true, json: async () => msg }; }
+        if (/storage\/v1\/object\/gradcon-files\//.test(u) && method === "POST") return { ok: true, json: async () => ({}) };
+        return { ok: false, status: 404, json: async () => ({}) }; };
+      const envOn = { ...genv, NEW_PROJECT_SMS: "on" };
+      const day = new Date("2026-11-18T23:40:00Z");   // 10:40 am Melbourne
+      G.resetTokenCache();
+      // an automatic scan inside three minutes of the last one, and one at night: neither reads the mailbox
+      const soon = await TI.runTenderInbox({ action: "scan", by: "portal", auto: true }, envOn, fetchMock, { now: () => new Date("2026-11-18T23:02:00Z"), review: null });
+      const night = await TI.runTenderInbox({ action: "scan", by: "portal", auto: true }, envOn, fetchMock, { now: () => new Date("2026-11-19T13:00:00Z"), review: null });
+      assertTrue(soon.status === 200 && soon.body.skipped === "scanned a moment ago" && /outside 6 am/.test(night.body.skipped) && !("record" in soon.body) && !calls.some((c) => /\/messages/.test(c) || /oauth2/.test(c)), JSON.stringify([soon.body, night.body]));
+      // a record another scan holds: stood down, nothing read, nothing written
+      const before = JSON.stringify(kv["gradcon-tender-inbox"]);
+      kv["gradcon-tender-inbox"].value.scanning = { at: "2026-11-18T23:38:00Z", by: "cron" };
+      const held = await TI.runTenderInbox({ action: "scan", by: "boma" }, envOn, fetchMock, { now: () => day, review: null });
+      assertTrue(held.status === 200 && held.body.skipped === "another scan is running" && held.body.created.length === 0 && !calls.some((c) => /\/messages/.test(c)), JSON.stringify(held.body).slice(0, 200));
+      kv["gradcon-tender-inbox"] = JSON.parse(before);
+      // a record that cannot be read: nothing scanned, nothing saved over it
+      failRecord = true;
+      const unread = await TI.runTenderInbox({ action: "scan", by: "cron" }, envOn, fetchMock, { now: () => day, review: null });
+      failRecord = false;
+      assertTrue(unread.status === 502 && /could not read the scan record/.test(unread.body.error) && JSON.stringify(kv["gradcon-tender-inbox"]) === before && !calls.some((c) => /\/messages/.test(c)), JSON.stringify(unread.body));
+      // the scan itself — the portal's own (automatic), in the day
+      const texted = [];
+      const sendSms = async (msgs) => msgs.map((mm, i) => { texted.push(mm); return { role: mm.role, to: "+614••• ••• 111", ok: true, id: "SM" + i }; });
+      const run = await TI.runTenderInbox({ action: "scan", by: "portal", auto: true }, envOn, fetchMock, { now: () => day, review: null, sendSms });
+      assertTrue(run.status === 200 && run.body.created.length === 1 && run.body.created[0].name === "22 Junction Rd, Merricks" && run.body.created[0].internal === true && run.body.created[0].requestKind === "takeoff" && run.body.created[0].attachments === 2, JSON.stringify(run.body).slice(0, 400));
+      assertTrue(!("record" in run.body) && JSON.stringify(run.body).length < 1500, "the automatic answer carries no record");
+      assertTrue(calls.some((c) => /PATCH .*key=eq\.gradcon-tender-inbox&updated_at=eq\./.test(c)), "the record is taken with a conditional update before the mailbox is read");
+      const rec = kv["gradcon-tender-inbox"].value;
+      assertTrue(rec.scanning === null && rec.handled.k1.outcome === "created" && rec.handled.k2.outcome === "skipped" && rec.handled.k2.reason === "Gradcon's own message" && rec.created.length === 1 && rec.lastScanBy === "portal", JSON.stringify(rec.handled));
+      assertTrue(!rec.handled.k3 || rec.handled.k3.outcome === "skipped", "the hours-log reply never becomes a project");
+      const made = kv[run.body.created[0].storageKey].value;
+      assertTrue(made.status === "Queued" && made.source.internal === true && made.source.requestKind === "takeoff" && made.clientName === "" && made.files.length === 2 && !made.files.some((f) => /Grady\.png/.test(f.name)), JSON.stringify(made.files.map((f) => f.name)));
+      assertTrue(texted.length === 2 && texted[0].role === "copy" && /^New takeoff request in the portal: 22 Junction Rd, Merricks from Grady Fink\./.test(texted[0].text) && texted[1].role === "grady" && /^Hi Grady, your takeoff request for 22 Junction Rd, Merricks is now a project in the portal\./.test(texted[1].text) && run.body.summary.sms.sent === 2, JSON.stringify(texted));
+      // the same scan again: nothing new, nobody texted
+      const again = await TI.runTenderInbox({ action: "scan", by: "cron" }, envOn, fetchMock, { now: () => new Date("2026-11-18T23:55:00Z"), review: null, sendSms });
+      assertTrue(again.status === 200 && again.body.created.length === 0 && texted.length === 2 && kv["gradcon-projects"].value.length === 1, "a second scan makes nothing and texts nobody");
+      // a second email about the same address, on another thread: no project, the estimator alone is told
+      mail.k4 = gm({ ...takeoff, id: "k4", threadId: "k4", subject: "Takeoff - 22 Junction Road, Merricks - balcony", date: "2026-11-19T00:10:00Z" });
+      const flag = await TI.runTenderInbox({ action: "scan", by: "cron" }, envOn, fetchMock, { now: () => new Date("2026-11-19T00:15:00Z"), review: null, sendSms });
+      assertTrue(flag.status === 200 && flag.body.created.length === 0 && flag.body.flagged.length === 1 && flag.body.summary.flagged === 1 && kv["gradcon-projects"].value.length === 1 && kv["gradcon-tender-inbox"].value.handled.k4.outcome === "duplicate", JSON.stringify(flag.body.summary));
+      assertTrue(texted.length === 3 && texted[2].role === "copy" && /^New takeoff request about a project already in the portal \(22 Junction Rd, Merricks\) from Grady Fink: "Takeoff - 22 Junction Road, Merricks - balcony"\. No new project was made/.test(texted[2].text), texted[2] && texted[2].text);
+      G.resetTokenCache();
+    });
+    check("Tender inbox function: the handler passes `auto` only when the body says true, and the record is read with its stamp (a failed read throws, never an empty record)", () => {
+      const src = fs.readFileSync(new URL("../api/tender-inbox.js", import.meta.url), "utf8");
+      assertTrue(/auto: body\.auto === true/.test(src) && /if \(!r\.ok\) throw new Error\(`could not read the scan record/.test(src) && !/readRow\(INBOX_ROW_KEY/.test(src), "no scan path reads the record through the null-on-failure reader");
+      assertTrue(/if \(auto\) \{ const hold = autoScanHold\(row\.record, now\)/.test(src) && /if \(scanLockHeld\(row\.record, now\)\) return stoodDown/.test(src) && src.indexOf("takeScanLock(row.record") < src.indexOf("Gm.listMessages("), "the throttle and the lock come before the mailbox is listed");
     });
   }
   await checkAsync("AI chat: recent mail joins the context when Google is configured, a mail failure never fails the chat, and no Google means no mail key", async () => {

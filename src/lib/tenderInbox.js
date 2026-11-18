@@ -32,8 +32,17 @@ export const FIRST_SCAN_DAYS = 14;
 export const SCAN_OVERLAP_MS = 60 * 60 * 1000;
 export const MAX_ATTACHMENTS_PER_PROJECT = 12;
 export const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
-/** Mail from these domains is Gradcon's own — never a tender request unless it forwards one. */
+/** Mail from these domains is Gradcon's own: a forward is read for the request inside it, and anything else is a request
+ *  only when a colleague ASKS the estimators for something (INTERNAL below) — never the scanned mailbox's own mail. */
 export const OWN_DOMAINS = ["gradcon.com.au"];
+/** The scanned mailbox. Its own messages (the app's RFQs and notifications, the estimator's replies) are never a request. */
+export const DEFAULT_MAILBOX = "projects@gradcon.com.au";
+/** A scan the portal asks for on its own (someone is signed in) runs at most this often … */
+export const AUTO_SCAN_MIN_MS = 3 * 60 * 1000;
+/** … and only between these Melbourne hours, so nobody is texted at night because a tab was left open. */
+export const AUTO_SCAN_HOURS = { from: 6, to: 21 };
+/** A scan holds the record this long at most; a second scan that finds it held stands down. */
+export const SCAN_LOCK_MS = 6 * 60 * 1000;
 /** The seen-stamp a browser keeps per account for the welcome band: `gradcon-inbox-seen:<account>`. */
 export const INBOX_SEEN_PREFIX = "gradcon-inbox-seen:";
 /** The attachment kinds copied onto the project (extension → {kind, mime}). */
@@ -58,6 +67,8 @@ const CANDIDATE_SCORE = 3;
 /* ---------- senders ---------- */
 export function parseAddress(s) {
   const str = String(s || "").trim();
+  const bare = /^<?([^\s<>@"]+@[^\s<>"]+?)>?$/.exec(str);   // an address with no display name ("projects@gradcon.com.au") — read whole, never split into a "name" and a tail
+  if (bare) { const e = bare[1].toLowerCase().replace(/[>,;]+$/, ""); return { name: "", email: e, domain: e.split("@")[1] || "" }; }
   const m = /^(?:"?([^"<]*)"?\s*)?<?([^\s<>@"]+@[^\s<>"]+)>?\s*$/.exec(str) || /([^\s<>@"]+@[^\s<>"]+)/.exec(str);
   if (!m) return { name: str, email: "", domain: "" };
   const email = (m[2] || m[1] || "").toLowerCase().replace(/[>,;]+$/, "");
@@ -127,6 +138,18 @@ const WEAK = [
   [/\b(?:drawings?|plans|documents?|specifications?)\s+(?:are\s+)?(?:attached|enclosed|below|linked)/i, "drawings attached"],
   [/\b(?:footings?|slabs?|concrete|piling|formwork|retaining\s+walls?|basement)\b/i, "concrete scope words"],
 ];
+/** What a COLLEAGUE writes when asking the estimators for work (Boma, 18 Nov 2026: "flag projects even if it is from within
+ *  the organisation" — Grady's "Takeoff - 22 Junction Rd, Merricks … can I please get you to measure / mark up the following
+ *  areas" was skipped as Gradcon's own message). Read ONLY on mail from an own domain that is not the mailbox itself. */
+const INTERNAL = [
+  [/\btake[\s-]?offs?\b/i, "a takeoff asked for"],
+  [/\b(?:can|could|would)\s+(?:i\s+|we\s+)?(?:please\s+)?(?:get\s+)?you\s+(?:please\s+)?(?:to\s+)?(?:measure|mark[\s-]?up|price|quote|estimate|cost|take[\s-]?off|do\s+(?:a|an|the)\s+(?:take[\s-]?off|quote|price|estimate|measure))/i, "asked to measure / price"],
+  [/\bplease\s+(?:measure|mark[\s-]?up|price\s+up|estimate|take[\s-]?off)\b/i, "please measure / price"],
+  [/\b(?:measure|mark[\s-]?up)\b[\s\S]{0,80}\b(?:as\s+per|drawings?|plans?|areas?)\b/i, "something to measure off the drawings"],
+  [/\b(?:need|needs|want|wants|after)\s+(?:a|an|the|some)\s+(?:take[\s-]?off|quote|price|estimate|costing)\b/i, "a price asked for"],
+  [/\b(?:new|another)\s+(?:job|project|tender)\s+(?:to|for)\s+(?:price|quote|estimate|measure|take\s*off|look\s+at)/i, "a new job to price"],
+];
+const TAKEOFF_WORDS = /\btake[\s-]?offs?\b|\bmeasure\b|\bmark[\s-]?up\b/i;
 const NOISE = [
   [/\bunsubscribe\b/i, "newsletter"],
   [/\bwebinar\b|\bspecial\s+offer\b|\bpromo(?:tion)?\b/i, "marketing"],
@@ -137,30 +160,46 @@ const NOISE = [
 ];
 const DRAWING_FILE = /\b(?:arch(?:itectural)?|struct(?:ural)?|eng(?:ineering)?|drawing|dwg|plan|spec(?:ification)?|geotech|soil|tender|boq|scope|schedule|survey|[AS]\s?-?\d{2,4}[A-Z]?)\b/i;
 export const attachExt = (name) => String(name || "").toLowerCase().match(/\.([a-z0-9]{2,5})$/)?.[1] || "";
+/** A small picture riding in an email is a signature or a logo, not a drawing: an image under 100 kB is left in the email. */
+export const SIGNATURE_IMAGE_MAX_BYTES = 100 * 1024;
+export const isSignatureImage = (att) => !!att && MAIL_ATTACH_KINDS[attachExt(att.filename || att.name)]?.kind === "image" && Number(att.size) > 0 && Number(att.size) < SIGNATURE_IMAGE_MAX_BYTES;
 export const isAttachable = (att) => !!att && !!MAIL_ATTACH_KINDS[attachExt(att.filename || att.name)] && (att.attachmentId || att.body);
 
-/** Does this message ask Gradcon to price something? → {candidate, score, reasons, excluded}. */
-export function classifyMessage(msg) {
+/** Is this the scanned mailbox writing (the app's RFQs and notifications, the estimator's own replies)? */
+export const isMailboxAddress = (from, mailbox = DEFAULT_MAILBOX) => !!parseAddress(from).email && parseAddress(from).email === String(mailbox || DEFAULT_MAILBOX).trim().toLowerCase();
+/** A colleague asking the estimators directly: an own-domain sender that is not the mailbox and is not passing on someone else's request. */
+export function isInternalRequest(msg, { mailbox = DEFAULT_MAILBOX } = {}) {
+  if (!isOwnAddress(msg && msg.from) || isMailboxAddress(msg && msg.from, mailbox)) return false;
+  const s = effectiveSender(msg);
+  return !(s.forwarded && parseAddress(s.from).email && !isOwnAddress(s.from));
+}
+/** Does this message ask Gradcon to price something — or a colleague ask the estimators for a takeoff or a price? → {candidate, score, reasons, excluded, internal}. */
+export function classifyMessage(msg, { mailbox = DEFAULT_MAILBOX } = {}) {
   const subject = String((msg && msg.subject) || ""), body = String((msg && msg.body) || msg?.snippet || "");
   const text = `${subject}\n${body}`.slice(0, 20000);
   const reasons = [];
   let score = 0;
-  const sender = effectiveSender(msg);
-  const fromOwn = isOwnAddress(msg && msg.from);
-  if (fromOwn && !sender.forwarded) return { candidate: false, score: 0, reasons: [], excluded: "Gradcon's own message" };
-  if (fromOwn && sender.forwarded && !parseAddress(sender.from).email) return { candidate: false, score: 0, reasons: [], excluded: "forwarded with no readable original sender" };
-  if (/^\s*re\s*:\s*rfq\s*[–—-]/i.test(subject)) return { candidate: false, score: 0, reasons: [], excluded: "a reply to Gradcon's own RFQ" };
+  if (isMailboxAddress(msg && msg.from, mailbox) && !effectiveSender(msg).forwarded) return { candidate: false, score: 0, reasons: [], excluded: "Gradcon's own message", internal: false };
+  if (/^\s*re\s*:\s*rfq\s*[–—-]/i.test(subject)) return { candidate: false, score: 0, reasons: [], excluded: "a reply to Gradcon's own RFQ", internal: false };
+  const internal = isInternalRequest(msg, { mailbox });
   if (/^\s*(?:re|aw|sv)\s*:/i.test(subject)) { score -= 1; reasons.push("a reply (−1)"); }
   let strongHits = 0;
-  STRONG.forEach(([re, why]) => { if (re.test(text) && strongHits < 2) { strongHits += 1; score += 3; reasons.push(why); } });
+  const strong = internal ? [...INTERNAL, ...STRONG] : STRONG;
+  if (internal) reasons.push("from within Gradcon");
+  strong.forEach(([re, why]) => { if (re.test(text) && strongHits < 2) { strongHits += 1; score += 3; reasons.push(why); } });
   WEAK.forEach(([re, why]) => { if (re.test(text)) { score += 1; reasons.push(why); } });
-  if (STRONG.some(([re]) => re.test(subject))) { score += 1; reasons.push("in the subject"); }
+  if (strong.some(([re]) => re.test(subject))) { score += 1; reasons.push("in the subject"); }
   const atts = Array.isArray(msg && msg.attachments) ? msg.attachments : [];
   if (atts.some((a) => isAttachable(a) && DRAWING_FILE.test(a.filename || a.name || ""))) { score += 2; reasons.push("drawings / documents attached"); }
   else if (atts.some(isAttachable)) { score += 1; reasons.push("attachments"); }
   NOISE.forEach(([re, why]) => { if (re.test(text)) { score -= 3; reasons.push(`${why} (−3)`); } });
   if (/no-?reply@|donotreply@|notifications?@/i.test(String(msg && msg.from))) { score -= 1; reasons.push("automated sender (−1)"); }
-  return { candidate: strongHits > 0 && score >= CANDIDATE_SCORE, score, reasons, excluded: null };
+  return { candidate: strongHits > 0 && score >= CANDIDATE_SCORE, score, reasons, excluded: null, internal };
+}
+/** What kind of request a candidate is: a colleague's takeoff, another request from within Gradcon, or a tender. */
+export function requestKindOf(msg, internal) {
+  if (!internal) return "tender";
+  return TAKEOFF_WORDS.test(`${(msg && msg.subject) || ""}\n${String((msg && msg.body) || "").slice(0, 4000)}`) ? "takeoff" : "internal";
 }
 
 /* ---------- the project name and the site ---------- */
@@ -180,7 +219,7 @@ export function addressIn(text) {
   return tail ? `${street}, ${tail}` : street;
 }
 const PREFIXES = /^\s*(?:(?:fwd?|fw|re|tr|wg|aw)\s*:\s*)+/i;
-const LEADS = /^\s*(?:(?:rfq|rft|itt|rfp|eoi|rfi|tender(?:\s+invitation| documents| package)?|request\s+for\s+(?:quot(?:e|ation)|tender|pricing|proposal)|invitation\s+to\s+(?:tender|quote)|quote\s+request|quotation\s+request|pricing\s+request|call\s+for\s+tenders?)\s*(?:[-–—:|]|for|–)\s*)+/i;
+const LEADS = /^\s*(?:(?:rfq|rft|itt|rfp|eoi|rfi|take[\s-]?off|measure(?:\s+up)?|mark[\s-]?up|tender(?:\s+invitation| documents| package)?|request\s+for\s+(?:quot(?:e|ation)|tender|pricing|proposal)|invitation\s+to\s+(?:tender|quote)|quote\s+request|quotation\s+request|pricing\s+request|call\s+for\s+tenders?)\s*(?:[-–—:|]|for|–)\s*)+/i;
 const TAILS = /\s*(?:[-–—:|]\s*)?(?:tender\s+documents?|for\s+pricing|for\s+quot(?:e|ation)|rfq|rft|quote\s+request|request\s+for\s+quot(?:e|ation))\s*$/i;
 /** "<number> <street> <type>" of an address, normalised — the part two spellings of one site share. */
 export const streetKey = (addr) => normName(String(addr || "").split(",")[0]).replace(/\b(street|st|road|rd|avenue|ave|av|drive|dr|court|ct|crescent|cres|cr|place|pl|lane|ln|boulevard|blvd|bvd|highway|hwy|parade|pde|close|cl|terrace|tce|grove|gr|esplanade|esp|circuit|cct|square|sq)\b/g, "").replace(/\s+/g, " ").trim();
@@ -268,20 +307,22 @@ export function extractDeadline(text, receivedISO, { defaultDays = DEFAULT_TENDE
 
 /* ---------- a candidate and its project ---------- */
 /** One parsed Gmail message (api/_google.js parseMessage) → the facts a project is made from, or null when it is not a request. */
-export function candidateFromMessage(msg, { now = new Date() } = {}) {
-  const cls = classifyMessage(msg);
+export function candidateFromMessage(msg, { now = new Date(), mailbox = DEFAULT_MAILBOX } = {}) {
+  const cls = classifyMessage(msg, { mailbox });
   if (!cls.candidate) return null;
   const sender = effectiveSender(msg);
   const a = parseAddress(sender.from);
   const receivedAt = msg.date && !Number.isNaN(Date.parse(msg.date)) ? new Date(msg.date).toISOString() : now.toISOString();
   const body = String(msg.body || msg.snippet || "");
   const dl = extractDeadline(`${msg.subject || ""}\n${body}`, receivedAt);
-  const attachments = (Array.isArray(msg.attachments) ? msg.attachments : []).filter(isAttachable).slice(0, MAX_ATTACHMENTS_PER_PROJECT)
+  const attachments = (Array.isArray(msg.attachments) ? msg.attachments : []).filter(isAttachable).filter((x) => !isSignatureImage(x)).slice(0, MAX_ATTACHMENTS_PER_PROJECT)
     .map((x) => ({ attachmentId: x.attachmentId || null, filename: x.filename, mimeType: x.mimeType || MAIL_ATTACH_KINDS[attachExt(x.filename)].mime, size: Number(x.size) || 0, kind: MAIL_ATTACH_KINDS[attachExt(x.filename)].kind }));
   return {
     messageId: msg.id, threadId: msg.threadId || msg.id, subject: String(msg.subject || "").trim(), receivedAt,
     from: sender.from, fromEmail: a.email, fromName: a.name, via: sender.via, forwarded: sender.forwarded,
-    client: orgFromSender(sender.from), projectName: projectNameFrom(msg, sender), siteAddress: siteAddressOf(msg, sender),
+    // a colleague is not the client: the client of an internal request is whoever the job is for, which the email may not say
+    client: cls.internal ? "" : orgFromSender(sender.from), projectName: projectNameFrom(msg, sender), siteAddress: siteAddressOf(msg, sender),
+    internal: !!cls.internal, requestKind: requestKindOf(msg, cls.internal),
     deadline: dl.date, deadlineSource: dl.source, deadlineText: dl.text,
     attachments, snippet: body.replace(/\s+/g, " ").trim().slice(0, 600), score: cls.score, reasons: cls.reasons,
   };
@@ -293,7 +334,7 @@ export function tenderQuoteFrom(cand, { today = isoDay(new Date()), files = [], 
     overheadPct, contingencyPct, status: "Queued", items: [],
     siteAddress: cand.siteAddress || "",
     planner: { deadline: cand.deadline, priority: null },
-    source: { kind: "mail", messageId: cand.messageId, threadId: cand.threadId, from: cand.from, fromEmail: cand.fromEmail, via: cand.via || "", subject: cand.subject, receivedAt: cand.receivedAt, scannedAt, deadlineSource: cand.deadlineSource, deadlineText: cand.deadlineText || "", snippet: cand.snippet, reasons: cand.reasons },
+    source: { kind: "mail", messageId: cand.messageId, threadId: cand.threadId, from: cand.from, fromEmail: cand.fromEmail, via: cand.via || "", internal: !!cand.internal, requestKind: cand.requestKind || "tender", subject: cand.subject, receivedAt: cand.receivedAt, scannedAt, deadlineSource: cand.deadlineSource, deadlineText: cand.deadlineText || "", snippet: cand.snippet, reasons: cand.reasons },
     files: files.map((f) => ({ id: f.id || uid(), provider: "mail", name: f.name, kind: f.kind, mimeType: f.mimeType, size: f.size, url: f.url, path: f.path, attachedAt: scannedAt, fromMail: { messageId: cand.messageId, attachmentId: f.attachmentId || null } })),
   };
 }
@@ -321,7 +362,25 @@ export function findDuplicate(cand, existing) {
 }
 
 /* ---------- the scan record (estimator_kv row INBOX_ROW_KEY) ---------- */
-export const emptyRecord = () => ({ version: 1, lastScanAt: null, lastScanBy: null, watermarkMs: 0, handled: {}, created: [], lastResult: null, errors: [] });
+export const emptyRecord = () => ({ version: 1, lastScanAt: null, lastScanBy: null, watermarkMs: 0, handled: {}, created: [], lastResult: null, errors: [], scanning: null });
+/** Is another scan holding the record right now? (`scanning = {at, by}`, set when a scan starts, cleared by applyScan; a lock older than SCAN_LOCK_MS is a scan that died.) */
+export function scanLockHeld(record, now = new Date()) {
+  const at = record && record.scanning && Date.parse(record.scanning.at);
+  return !!at && now.getTime() - at < SCAN_LOCK_MS && now.getTime() - at > -60000;
+}
+/** The hour of the day in Melbourne (0–23), whatever zone the server runs in. */
+export function melbourneHour(now = new Date()) {
+  try { const h = new Intl.DateTimeFormat("en-AU", { timeZone: "Australia/Melbourne", hour: "numeric", hourCycle: "h23" }).format(now); return Number(String(h).replace(/\D/g, "")) % 24; }
+  catch { return (now.getUTCHours() + 10) % 24; }
+}
+/** May a scan the portal started on its own run now? Not at night, and not within AUTO_SCAN_MIN_MS of the last one. → null (yes) or the reason it stands down. */
+export function autoScanHold(record, now = new Date()) {
+  const h = melbourneHour(now);
+  if (h < AUTO_SCAN_HOURS.from || h >= AUTO_SCAN_HOURS.to) return "outside 6 am - 9 pm Melbourne";
+  const last = record && record.lastScanAt ? Date.parse(record.lastScanAt) : 0;
+  if (last && now.getTime() - last < AUTO_SCAN_MIN_MS) return "scanned a moment ago";
+  return null;
+}
 /** The Gmail search for the next scan: everything since the watermark (less an hour's overlap), the first time the last FIRST_SCAN_DAYS days; never spam, trash, sent or drafts. */
 export function scanQuery(record, now = new Date()) {
   const wm = Number(record && record.watermarkMs) || 0;
@@ -336,17 +395,24 @@ export function applyScan(record, { at = new Date().toISOString(), by = "cron", 
   const keys = Object.keys(h).sort((a, b) => String(h[b].at).localeCompare(String(h[a].at))).slice(0, 1000);
   const handledOut = {}; keys.forEach((k) => { handledOut[k] = h[k]; });
   const createdOut = [...created.map((c) => ({ ...c, at })), ...(r.created || [])].slice(0, 200);
-  return { ...r, version: 1, lastScanAt: at, lastScanBy: by, watermarkMs: Math.max(Number(r.watermarkMs) || 0, Number(seenMaxMs) || 0), handled: handledOut, created: createdOut, lastResult: { at, by, ...summary }, errors: errors.slice(0, 20) };
+  return { ...r, version: 1, scanning: null, lastScanAt: at, lastScanBy: by, watermarkMs: Math.max(Number(r.watermarkMs) || 0, Number(seenMaxMs) || 0), handled: handledOut, created: createdOut, lastResult: { at, by, ...summary }, errors: errors.slice(0, 20) };
 }
-export const wasHandled = (record, msg) => !!(record && record.handled && msg && (record.handled[msg.id] || Object.values(record.handled).some((h) => h && h.outcome === "created" && h.threadId && h.threadId === msg.threadId)));
+/** Was this message dealt with by an earlier scan (or its thread made a project)? One exception: a colleague's message that the
+ *  rule before 18 Nov 2026 skipped as "Gradcon's own message" is looked at again — only the mailbox's own mail keeps that outcome. */
+export const wasHandled = (record, msg, { mailbox = DEFAULT_MAILBOX } = {}) => {
+  if (!record || !record.handled || !msg) return false;
+  const own = record.handled[msg.id];
+  if (own && !(own.outcome === "skipped" && own.reason === "Gradcon's own message" && msg.from && !isMailboxAddress(msg.from, mailbox))) return true;
+  return Object.values(record.handled).some((h) => h && h.outcome === "created" && h.threadId && h.threadId === msg.threadId);
+};
 /** The projects the scan created after `sinceISO` (what the welcome band shows an account that cleared it then). */
 export const newSince = (record, sinceISO) => ((record && record.created) || []).filter((c) => !sinceISO || String(c.at) > String(sinceISO));
 
 /* ---------- the AI second opinion (optional; the rules decide when no provider answers) ---------- */
 export function tenderReviewPrompt(cands, { today = isoDay(new Date()) } = {}) {
-  const rows = cands.map((c) => ({ id: c.messageId, from: c.from, subject: c.subject, received: c.receivedAt.slice(0, 10), attachments: c.attachments.map((a) => a.filename), text: c.snippet }));
+  const rows = cands.map((c) => ({ id: c.messageId, from: c.from, ...(c.internal ? { internal: true } : {}), subject: c.subject, received: c.receivedAt.slice(0, 10), attachments: c.attachments.map((a) => a.filename), text: c.snippet }));
   return [
-    `Today is ${today}. Gradcon Concrete Constructions is a concrete subcontractor in Melbourne. Each email below reached its estimating inbox. For EACH one decide whether it is a REQUEST for Gradcon to tender, quote or price work (a builder, client, consultant or tender portal asking for a price), as opposed to anything else (a supplier quoting Gradcon, a reply about Gradcon's own quote, an invoice, a newsletter, a site notice).`,
+    `Today is ${today}. Gradcon Concrete Constructions is a concrete subcontractor in Melbourne. Each email below reached its estimating inbox. For EACH one decide whether it is a REQUEST for Gradcon to tender, quote or price work (a builder, client, consultant or tender portal asking for a price), as opposed to anything else (a supplier quoting Gradcon, a reply about Gradcon's own quote, an invoice, a newsletter, a site notice). An email marked "internal": true is from a colleague at Gradcon: it counts as a request ("tender": true) when it asks the estimators to take off, measure, mark up, price, quote or estimate a job, and its sender is NOT the client.`,
     `Reply with ONE JSON object and nothing else: {"reviews":[{"id":"<id>","tender":true|false,"confidence":"high"|"medium"|"low","projectName":"<site address in the form '<number> <Street> <Type>, <Suburb> VIC <postcode>' when the email states one, else a short project name, never invented>","client":"<the organisation asking, from the email>","deadline":"YYYY-MM-DD or null — ONLY a closing / due / submission date the email itself states, never a guess","reason":"<ten words>"}]}.`,
     `Never invent an address, a street number, a date or a company. Keep the ids exactly.`,
     `EMAILS:\n${JSON.stringify(rows, null, 1)}`,
@@ -371,7 +437,7 @@ export function applyReview(cand, review) {
   if (review.tender === false && review.confidence !== "low") return { cand, drop: true, why: review.reason || "the AI review read it as not a request" };
   const next = { ...cand };
   if (review.projectName && (!addressIn(cand.projectName) || addressIn(review.projectName))) next.projectName = review.projectName;
-  if (review.client && (!cand.client || cand.client === cand.fromName || /^[a-z0-9]+$/i.test(cand.client))) next.client = review.client;
+  if (review.client && !(cand.internal && /gradcon/i.test(review.client)) && (!cand.client || cand.client === cand.fromName || /^[a-z0-9]+$/i.test(cand.client))) next.client = review.client;
   if (review.deadline && review.deadline >= cand.receivedAt.slice(0, 10) && (cand.deadlineSource === "default" || review.deadline === cand.deadline)) { next.deadline = review.deadline; next.deadlineSource = cand.deadlineSource === "default" ? "ai" : cand.deadlineSource; }
   next.siteAddress = next.siteAddress || addressIn(next.projectName);
   return { cand: next, drop: false };

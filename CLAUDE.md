@@ -1203,6 +1203,19 @@ it automatically sends to him"; "lets do both at once". Rules:
    deliberately); a refused text is an error line and `summary.sms = {on, sent,
    failed}`, never a failed scan. Settings → Tender inbox scan states the
    switch and the masked numbers (`inbox-sms-line`, from the status's `sms`).
+   **A colleague's request is texted in its own words** (18 Nov 2026):
+   `requestWords(item)` — the estimator's text reads "New takeoff request in
+   the portal: <name> from <colleague>. … Please check it." and Grady is TOLD,
+   never asked ("Hi Grady, your takeoff request for <name> is now a project in
+   the portal. <estimator> will pick it up." when he wrote it — `sentByGrady`
+   — else "<colleague> sent the estimators a request: …"). **A request about a
+   project the portal ALREADY holds is still flagged**: a candidate that
+   duplicates an existing project by address or name on ANOTHER thread makes
+   no project (rule 5) but goes on the scan's `flagged` list and
+   `existingProjectTexts(flags)` texts the copy numbers only — "New … about a
+   project already in the portal (<existing name>) from <who>: "<subject>". No
+   new project was made - please check the email." — so a duplicate is never
+   the reason nobody heard; a follow-up on the same thread texts nobody.
    `test-sms-copy.mjs` proves the checklist copy, the record and the Settings
    line.
 2. **`api/notify.js`** (same-origin check as the other functions; `maxDuration`
@@ -2387,14 +2400,43 @@ a daily scheduled scan and yes create the project straight away making sure
 no duplicate projects are present and yes copy email attachments". Rules:
 
 1. **`src/lib/tenderInbox.js` is pure and verify-covered; `api/tender-inbox.js`
-   runs it.** `vercel.json` `crons` fires `GET /api/tender-inbox` FOUR times a
-   day (Boma, 16 Nov 2026: "let the scan be at least twice during work hours
-   melbourne time") — four once-a-day entries on the same path at 20:00, 23:00,
-   02:00 and 05:00 UTC = 7 am, 10 am, 1 pm and 4 pm Melbourne in daylight time,
-   an hour earlier in winter (Vercel schedules are UTC), so three fall inside
-   8 am–5 pm in either season (`verify.mjs` pins that; Settings states the
-   times, `inbox-scan-times`). A re-scan is safe by rule 5 — a handled message
-   or thread never makes a second project. `isCronCall` accepts the
+   runs it.** `vercel.json` `crons` fires `GET /api/tender-inbox` EVERY 15
+   MINUTES through the day (Boma, 16 Nov 2026: "let the scan be at least twice
+   during work hours melbourne time"; 18 Nov 2026: "i want the mailbox scanned
+   for new emails always" — Grady's takeoff request landed nineteen minutes
+   after the 10 am scan and would have sat three hours): 56 once-a-day entries
+   on the same path, :00 / :15 / :30 / :45 of 20:00–09:45 UTC = 7 am–9 pm
+   Melbourne in daylight time, an hour earlier in winter (Vercel schedules are
+   UTC). **Every entry is a once-a-day expression** — read off Vercel's cron
+   usage page that day: every plan takes 100 cron jobs a project, a Hobby
+   account refuses an expression that runs more than once a day (the deploy
+   FAILS) and fires each within its hour, not on the minute; the plan of this
+   project cannot be seen from here, so never write `*/15`. `verify.mjs` pins
+   the quarter hours, 8 am–5 pm covered in both seasons and the count under
+   100; Settings states the times (`inbox-scan-times`). **The portal asks too**:
+   while someone is signed in the shell posts `{action:"scan", auto:true,
+   by:"portal"}` every `INBOX_AUTO_MS` = 3 min (`inboxAutoScan`: on sign-in, a
+   minute tick, the tab becoming visible; ONE tab of a browser — the stamp
+   `gradcon-inbox-auto-at` is shared; never hidden, never on a copy that is not
+   the live site, never with the hosting off; `window.gradconInboxAuto` is the
+   test seam). The server decides: `autoScanHold(record, now)` stands an
+   automatic scan down inside `AUTO_SCAN_MIN_MS` = 3 min of the last scan and
+   outside 6 am–9 pm Melbourne (`melbourneHour` — nobody is texted at night
+   because a tab was left open; the cron keeps its own hours and "Scan now"
+   always runs), and an automatic scan is answered WITHOUT the record
+   (`{created, flagged, summary, lastScanAt}` — a few hundred bytes every few
+   minutes, never the handled list); a project it creates repaints the band.
+   **Two scans never run at once**: a scan reads the record WITH its stamp
+   (`readRecordRow` — a read that fails is a 502 and nothing is scanned, never
+   an empty record saved over the real one), stands down when `scanLockHeld`
+   (`record.scanning = {at, by}` younger than `SCAN_LOCK_MS` = 6 min) and takes
+   the record with a CONDITIONAL update on that stamp (`takeScanLock`) before
+   the mailbox is listed — of two that start together one goes on, the other
+   answers `skipped: "another scan is running"`; `applyScan` clears the lock
+   and an early failure releases it. Without this the cron and a signed-in tab
+   would each read the same unhandled email, make the project and send the
+   texts. A re-scan is safe by rule 5 — a handled message or thread never makes
+   a second project. `isCronCall` accepts the
    `CRON_SECRET` bearer when that variable is set (set it in Vercel — then
    nothing else can start a scan from outside), else Vercel's `vercel-cron/`
    user agent. The portal's own origin may `POST {action:"scan"}` ("Scan now"
@@ -2405,8 +2447,31 @@ no duplicate projects are present and yes copy email attachments". Rules:
    forwarded or copied to projects@: `forwardedFrom` / `effectiveSender` read
    the forwarded header block ("From: … / Subject: …" after the "Forwarded
    message" marker or an "Fwd:" subject) and the ORIGINAL sender becomes the
-   client, `source.via` = grady@. A message from an own domain that is not a
-   forward is never a request ("Gradcon's own message"); "Re: RFQ – …" is a
+   client, `source.via` = grady@. **A colleague's request to the estimators IS
+   a request** (Boma, 18 Nov 2026: "flag projects even if it is from within the
+   organisation" — Grady's "Takeoff - 22 Junction Rd, Merricks … can I please
+   get you to measure / mark up the following areas" was skipped as Gradcon's
+   own message): `isInternalRequest(msg, {mailbox})` = an own-domain sender
+   that is NOT the scanned mailbox (`isMailboxAddress`; the scan passes the
+   connected mailbox, `DEFAULT_MAILBOX` projects@) and is not passing on an
+   outsider's request; such a message is also read against `INTERNAL` (a
+   takeoff, "can I get you to measure / mark up / price …", "please measure",
+   "need a quote", "a new job to price") and, when it is a candidate, carries
+   `internal: true` and `requestKind` ("takeoff" when it says takeoff /
+   measure / mark up, else "internal"; a tender is "tender") on the candidate,
+   the created entry and `quote.source`; its client is BLANK (a colleague is
+   not the client; the AI review is told what "internal" means and may never
+   answer Gradcon as the client) and "Takeoff -" is subject furniture
+   (`LEADS`), so the project is named by its address. The band, the editor's
+   inbox band (`inbox-source-internal`) and the texts say "takeoff request
+   from within Gradcon". Only the MAILBOX's own mail (the app's RFQs and
+   notifications, the estimator's replies) is "Gradcon's own message" — a
+   colleague's ordinary mail simply scores no request; `wasHandled` re-reads a
+   colleague's message the rule before 18 Nov 2026 recorded under that reason.
+   `parseAddress` reads a bare address whole (it used to split
+   "projects@gradcon.com.au" into a name and "s@gradcon.com.au"). An image
+   under `SIGNATURE_IMAGE_MAX_BYTES` = 100 kB is a signature or logo and is
+   left in the email (`isSignatureImage`). "Re: RFQ – …" is a
    contractor's reply to Gradcon's own RFQ and is skipped. To cover grady@
    automatically, a Gmail filter in grady@ forwarding tender mail to projects@
    is the office's setting; the app reads nothing but projects@.
@@ -2504,6 +2569,11 @@ the duplicate test, the quote shape, the record, the AI review, the whole
 scan on a fake mailbox and store (three projects, the files, the conditional
 index append, every outcome, a second scan creating nothing, the review
 dropping one), the cron check and the lost-race append;
+`test-inbox-auto.mjs` proves the sign-in check (one automatic POST, the band
+repainted with the takeoff request, no second ping inside three minutes, the
+guards, Settings, the editor band); `verify.mjs` runs Grady's email through
+the rules and the scan (one project, both texts, the lock, the throttle, the
+night hours, the unread record, the flag on an existing project).
 `test-tender-inbox.mjs` proves the band, Settings and Scan now, the editor
 band, the Files drawer, the Dashboard chip and Dismiss across a reload.
 
