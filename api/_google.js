@@ -288,11 +288,11 @@ export async function mailSummaries(env = process.env, { days = 14, max = 25 } =
 
 /* ---------- Google Drive reading (drive.readonly) — the ONE adapter ---------- */
 const D = "https://www.googleapis.com/drive/v3";
-export const DRIVE_FILE_FIELDS = "id,name,mimeType,size,modifiedTime,webViewLink,iconLink,thumbnailLink,parents,md5Checksum,driveId,shortcutDetails,trashed";
+export const DRIVE_FILE_FIELDS = "id,name,mimeType,size,modifiedTime,webViewLink,iconLink,thumbnailLink,parents,md5Checksum,driveId,shortcutDetails,trashed,permissionIds";
 const FOLDER_MIME = "application/vnd.google-apps.folder";
-export async function driveGet(path, token, fetchImpl = fetch, { raw = false } = {}) {
+export async function driveGet(path, token, fetchImpl = fetch, { raw = false, timeoutMs = 25000 } = {}) {
   const sep = path.includes("?") ? "&" : "?";
-  const r = await fetchImpl(`${D}${path}${sep}supportsAllDrives=true`, { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(25000) });
+  const r = await fetchImpl(`${D}${path}${sep}supportsAllDrives=true`, { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(timeoutMs) });
   if (raw) {
     if (!r.ok) { const e = new Error(`Drive ${r.status}`); e.status = r.status === 401 ? 401 : r.status === 404 ? 404 : 502; throw e; }
     return r;
@@ -317,7 +317,9 @@ const isGoogleNative = (m) => /^application\/vnd\.google-apps\./.test(String(m |
 /** One Drive file in the plain shape the portal shows. The ONE reading of a file. */
 export function normalizeFile(f) {
   if (!f) return null;
-  return { id: f.id, name: f.name || "", mimeType: f.mimeType || "", kind: fileKind(f.mimeType, f.name), size: f.size != null ? Number(f.size) : null, modifiedTime: f.modifiedTime || null, webViewLink: f.webViewLink || `https://drive.google.com/${f.mimeType === FOLDER_MIME ? "drive/folders" : "file/d"}/${f.id}`, iconLink: f.iconLink || null, thumbnailLink: f.thumbnailLink || null, parents: f.parents || [], md5: f.md5Checksum || null, driveId: f.driveId || null, native: isGoogleNative(f.mimeType) };
+  return { id: f.id, name: f.name || "", mimeType: f.mimeType || "", kind: fileKind(f.mimeType, f.name), size: f.size != null ? Number(f.size) : null, modifiedTime: f.modifiedTime || null, webViewLink: f.webViewLink || `https://drive.google.com/${f.mimeType === FOLDER_MIME ? "drive/folders" : "file/d"}/${f.id}`, iconLink: f.iconLink || null, thumbnailLink: f.thumbnailLink || null, parents: f.parents || [], md5: f.md5Checksum || null, driveId: f.driveId || null, native: isGoogleNative(f.mimeType),
+    // can someone OUTSIDE the office open the Drive link? true = shared "anyone with the link"; false = Drive listed who has access and that is not among them; null = Drive did not say (a shared-drive item)
+    linkShared: Array.isArray(f.permissionIds) ? f.permissionIds.includes("anyoneWithLink") : null };
 }
 export async function driveFile(id, token, fetchImpl = fetch) {
   return normalizeFile(await driveGet(`/files/${encodeURIComponent(id)}?fields=${encodeURIComponent(DRIVE_FILE_FIELDS)}`, token, fetchImpl));
@@ -369,17 +371,23 @@ export async function driveSearch({ text, within, max = 40 }, token, fetchImpl =
 }
 /** The bytes of a file — a Google Doc / Sheet / Slides exported as PDF, anything else as stored. Capped. */
 export const DRIVE_COPY_MAX_BYTES = 30 * 1024 * 1024;
+/** A copy made only to be LINKED from an email (never attached, previewed or read by a model) may be this big
+ *  (Boma, 19 Nov 2026, on an RFQ build that stopped at "file over 30 MB": "rather than say file over 30mb it should
+ *  rather have the link attached a readable one"). */
+export const DRIVE_LINK_MAX_BYTES = 200 * 1024 * 1024;
 /** The name a Drive file is stored under in the bucket (a Doc / Sheet / Slides exports as PDF). */
 export function driveCopyName(meta) { return meta.native && !/\.pdf$/i.test(meta.name) ? `${meta.name}.pdf` : meta.name; }
-export async function driveDownload(id, token, fetchImpl = fetch) {
+export async function driveDownload(id, token, fetchImpl = fetch, { maxBytes = DRIVE_COPY_MAX_BYTES } = {}) {
   const meta = await driveFile(id, token, fetchImpl);
   if (meta.kind === "folder") { const e = new Error("that is a folder"); e.status = 400; throw e; }
-  if (meta.size != null && meta.size > DRIVE_COPY_MAX_BYTES) { const e = new Error(`file over ${Math.round(DRIVE_COPY_MAX_BYTES / 1048576)} MB`); e.status = 413; throw e; }
+  const tooBig = () => { const e = new Error(`file over ${Math.round(maxBytes / 1048576)} MB`); e.status = 413; e.tooLarge = true; return e; };
+  if (meta.size != null && meta.size > maxBytes) throw tooBig();
+  const big = maxBytes > DRIVE_COPY_MAX_BYTES;   // a big copy is given the time a big download takes
   const r = meta.native
-    ? await driveGet(`/files/${encodeURIComponent(id)}/export?mimeType=application%2Fpdf`, token, fetchImpl, { raw: true })
-    : await driveGet(`/files/${encodeURIComponent(id)}?alt=media`, token, fetchImpl, { raw: true });
+    ? await driveGet(`/files/${encodeURIComponent(id)}/export?mimeType=application%2Fpdf`, token, fetchImpl, { raw: true, timeoutMs: big ? 120000 : 25000 })
+    : await driveGet(`/files/${encodeURIComponent(id)}?alt=media`, token, fetchImpl, { raw: true, timeoutMs: big ? 120000 : 25000 });
   const bytes = Buffer.from(await r.arrayBuffer());
-  if (bytes.length > DRIVE_COPY_MAX_BYTES) { const e = new Error(`file over ${Math.round(DRIVE_COPY_MAX_BYTES / 1048576)} MB`); e.status = 413; throw e; }
+  if (bytes.length > maxBytes) throw tooBig();
   const mimeType = meta.native ? "application/pdf" : (r.headers && r.headers.get && r.headers.get("content-type")) || meta.mimeType || "application/octet-stream";
   const name = driveCopyName(meta);
   return { bytes, mimeType, name, meta };

@@ -132,12 +132,16 @@ export async function runDrive(body, env = process.env, fetchImpl = fetch) {
           } catch { /* a failed look is no answer — copy as before */ }
         }
       }
-      const dl = await Gm.driveDownload(id, token, fetchImpl);
+      // `big: true` (the RFQ composer) = this copy is for a LINK in an email, so it may be far larger than a preview —
+      // never a job copy (a model reads those). A file even that cannot take, or the storage refuses, is the caller's
+      // to link from Drive instead; the answer names the reason.
+      const big = body.big === true && target !== "job";
+      const dl = await Gm.driveDownload(id, token, fetchImpl, big ? { maxBytes: Gm.DRIVE_LINK_MAX_BYTES } : {});
       const name = safeName(dl.name);
       const stamp = safeId(dl.meta.md5 || (dl.meta.modifiedTime || "").replace(/[^0-9]/g, "")) || "v";
       const path = target === "job" ? `ai-engine/${safeId(body.jobId)}/${name}` : `drive/${id}/${stamp}/${name}`;
-      const up = await fetchImpl(`${SUPABASE_URL}/storage/v1/object/${BUCKET}/${path}`, { method: "POST", headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}`, "Content-Type": dl.mimeType, "x-upsert": "true" }, body: dl.bytes, signal: AbortSignal.timeout(50000) });
-      if (!up.ok) return { status: 502, body: { error: `could not store the copy (${up.status})` } };
+      const up = await fetchImpl(`${SUPABASE_URL}/storage/v1/object/${BUCKET}/${path}`, { method: "POST", headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}`, "Content-Type": dl.mimeType, "x-upsert": "true" }, body: dl.bytes, signal: AbortSignal.timeout(big ? 150000 : 50000) });
+      if (!up.ok) return { status: up.status === 413 ? 413 : 502, body: { error: up.status === 413 ? `the portal's storage does not take a file this size (${Math.round(dl.bytes.length / 1048576)} MB)` : `could not store the copy (${up.status})`, tooLarge: up.status === 413 } };
       return { status: 200, body: { file: { name, size: dl.bytes.length, mimeType: dl.mimeType, kind: Gm.fileKind(dl.mimeType, name), path, url: `${SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${path}`, uploadedAt: new Date().toISOString(), fromDrive: { id: dl.meta.id, name: dl.meta.name, webViewLink: dl.meta.webViewLink, modifiedTime: dl.meta.modifiedTime, md5: dl.meta.md5 } } } };
     }
     return { status: 400, body: { error: "unknown action" } };

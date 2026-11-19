@@ -218,11 +218,23 @@ export const ATTACH_UNKNOWN_BYTES = 2 * 1024 * 1024;
 export function planAttachments(files, cap = ATTACH_PLAN_BYTES) {
   const attach = [], link = []; let total = 0;
   for (const f of files || []) {
+    if (f && f.driveLink) { link.push(f); continue; }   // no copy exists to attach: its Drive link goes in the body
     const size = Number(f.size) > 0 ? Number(f.size) : ATTACH_UNKNOWN_BYTES;
     if (total + size <= cap) { attach.push(f); total += size; } else link.push(f);
   }
   return { attach, link, total };
 }
+/** The link to a Drive file as a person opens it. */
+export const driveViewLink = (opt) => (opt && opt.webViewLink) || (opt && opt.fileId ? `https://drive.google.com/file/d/${opt.fileId}/view` : "");
+/** A ticked Drive file that could NOT be copied into the portal's storage (too large, or the copy failed) still goes on the
+ *  RFQ — as its own Drive link in the body, never an error that stops the build (Boma, 19 Nov 2026: "rather than say file
+ *  over 30mb it should rather have the link attached a readable one"). `linkShared` says whether a contractor can open it:
+ *  true = shared "anyone with the link", false = not, null = Drive did not say. */
+export function driveLinkFile(opt, reason = "") {
+  return { name: opt.name, url: driveViewLink(opt), tags: opt.tags || [], size: Number(opt.size) || 0, driveLink: true, linkShared: opt.linkShared === true ? true : opt.linkShared === false ? false : null, fileId: opt.fileId || null, reason: String(reason || "") };
+}
+/** The Drive links of a round that a contractor may not be able to open (not known to be shared with anyone who has the link). */
+export const unsharedDriveLinks = (links) => (links || []).filter((f) => f && f.driveLink && f.linkShared !== true);
 export const fmtBytes = (n) => (n >= 1024 * 1024 ? (n / 1024 / 1024).toFixed(1) + " MB" : Math.max(1, Math.round(n / 1024)) + " KB");
 export const DEFAULT_CC = ["grady@gradcon.com.au"];
 export const parseCc = (s) => [...new Set(String(s || "").split(/[,;\s]+/).map((x) => x.trim().toLowerCase()).filter((x) => /^[^\s@<>,;]+@[^\s@<>,;]+\.[^\s@<>,;]+$/.test(x)))];
@@ -255,7 +267,7 @@ export function rfqBody({ projectName, siteAddress = "", pkgLabel, scopes = [], 
   if (extraNotes && extraNotes.trim()) lines.push("", "NOTES", ...extraNotes.trim().split(/\r?\n/).map((l) => "  " + l));
   lines.push("", "DOCUMENTS");
   if (attachments.length) { lines.push("  Attached to this email:"); for (const a of attachments) lines.push(`  - ${attachmentLabel(a)}`); }
-  if (links.length) { lines.push(attachments.length ? "  Too large to attach — download from these links:" : "  Download from these links (too large to attach):"); for (const a of links) lines.push(`  - ${attachmentLabel(a)}${a.size ? ` (${fmtBytes(a.size)})` : ""}: ${a.url}`); }
+  if (links.length) { lines.push(attachments.length ? "  Too large to attach — download from these links:" : "  Download from these links (too large to attach):"); for (const a of links) lines.push(`  - ${attachmentLabel(a)}${a.size ? ` (${fmtBytes(a.size)})` : ""}${a.driveLink ? " — Google Drive" : ""}: ${a.url}`); }
   if (!attachments.length && !links.length) lines.push("  No documents are attached to this email — they will follow separately.");
   lines.push("", "PLEASE INCLUDE IN YOUR QUOTATION",
     "  - Lump sum and unit rates, ex GST, with the basis of measurement",
@@ -339,7 +351,7 @@ export function driveFolderOptions(files, pkgKey = "") {
   for (const f of files || []) {
     if (!f || f.kind === "folder" || !ATTACHABLE_KINDS.has(f.kind || "other")) continue;
     const tags = classifyFile(f.name, f.folderName || "", pkgKey);
-    out.push({ id: `drive:${f.id}`, kind: "drive", name: f.name, fileId: f.id, mimeType: f.mimeType || "", url: "", size: Number(f.size) || 0, folderName: f.folderName || "", tags, auto: tags.length > 0 });
+    out.push({ id: `drive:${f.id}`, kind: "drive", name: f.name, fileId: f.id, mimeType: f.mimeType || "", url: "", size: Number(f.size) || 0, folderName: f.folderName || "", tags, auto: tags.length > 0, webViewLink: f.webViewLink || "", linkShared: f.linkShared === true ? true : f.linkShared === false ? false : null });
   }
   out.sort((a, b) => (b.auto - a.auto) || String(a.name).localeCompare(String(b.name)));
   return out;
@@ -397,5 +409,5 @@ export function localFileOption(up, pkgKey = "") {
 export function driveLinkOption(meta, pkgKey = "") {
   if (!meta || !meta.id || meta.kind === "folder") return null;
   const tags = classifyFile(meta.name, "", pkgKey);
-  return { id: `drive:${meta.id}`, kind: "drive", name: meta.name || "file", fileId: meta.id, mimeType: meta.mimeType || "", url: "", size: Number(meta.size) || 0, folderName: "Drive link", tags, auto: true, added: true };
+  return { id: `drive:${meta.id}`, kind: "drive", name: meta.name || "file", fileId: meta.id, mimeType: meta.mimeType || "", url: "", size: Number(meta.size) || 0, folderName: "Drive link", tags, auto: true, added: true, webViewLink: meta.webViewLink || "", linkShared: meta.linkShared === true ? true : meta.linkShared === false ? false : null };
 }

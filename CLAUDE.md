@@ -2151,7 +2151,30 @@ bare minimum should be archi, struct, soil report". Rules:
    size (`rfq-attach-bytes`, "as a link" on the oversize ones) and the
    running total against the cap (`rfq-attach-size`), and the draft header
    counts "N as download links". A send therefore never fails on size; the
-   server cap is the hard stop behind it. The done screen claims the
+   server cap is the hard stop behind it. **A Drive file too large to copy is a
+   LINK, never an error that stops the build** (Boma, 19 Nov 2026, on a
+   Formwork round that stopped at a red "file over 30 MB": "rather than say
+   file over 30mb it should rather have the link attached a readable one"):
+   the composer asks `api/drive` `copy` with `big: true` — a copy that is only
+   ever LINKED may be `DRIVE_LINK_MAX_BYTES` = 200 MB (`driveDownload(…,
+   {maxBytes})`; a preview, a markup and a job copy keep `DRIVE_COPY_MAX_BYTES`
+   = 30 MB; `api/drive.js` runs up to 300 s and the browser waits 280 s for a
+   big copy), so the email links the portal's own PUBLIC copy, which anyone
+   can open. A file even that cannot take, one the storage refuses (413) or a
+   copy that fails for any reason but a Drive reconnect becomes
+   `driveLinkFile(opt, reason)` (`{driveLink: true, url: the file's Drive
+   link, linkShared}`): `planAttachments` always puts it under the links, the
+   body line reads "- <name> (<size>) — Google Drive: <link>", and the drafts
+   step shows `rfq-drive-links` — each file by name with whether a contractor
+   can open it (`linkShared`, read off Drive's `permissionIds` including
+   "anyoneWithLink": true / false / null = Drive did not say, e.g. a
+   shared-drive item) and, when it is not known to be shared, "open it in
+   Drive → Share → General access → Anyone with the link · Viewer" (the app
+   reads Drive only and cannot change sharing; contractors had been sending
+   "Share request" mails for Drive links they could not open).
+   `test-rfq-biglink.mjs` proves the build going through, the three link
+   copies asked as `big`, the body line, the note in both sharing states and
+   the storage link when the copy fits. The done screen claims the
    record ("Recorded on this project … checklist step 05 ticked …") ONLY
    when at least one RFQ went; with none it reads "Nothing was sent …" in
    red and "Nothing was recorded" (`onSent` was never called). Reply-To is

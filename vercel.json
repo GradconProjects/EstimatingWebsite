@@ -239,7 +239,7 @@
       "maxDuration": 60
     },
     "api/drive.js": {
-      "maxDuration": 60
+      "maxDuration": 300
     },
     "api/industry-news.js": {
       "maxDuration": 30

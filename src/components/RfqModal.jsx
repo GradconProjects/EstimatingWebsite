@@ -9,7 +9,7 @@ import { markupSrc, uploadRfqFile, markupStoreEnabled } from "../lib/markupStore
 /** Run async jobs at most `n` at a time, in order of start; resolves when all have settled (a throw rejects at once). */
 async function runPool(jobs, n) { let next = 0; const workers = Array.from({ length: Math.min(n, jobs.length) }, async () => { while (next < jobs.length) { const j = jobs[next++]; await j(); } }); await Promise.all(workers); }
 
-import { classifyFile } from "../lib/rfq.js";
+import { classifyFile, driveLinkFile, unsharedDriveLinks } from "../lib/rfq.js";
 const classifyTags = (name, pkgKey) => classifyFile(name, "", pkgKey);
 const apiBase = () => (typeof window !== "undefined" && window.location ? window.location.origin : "");
 const SENDER_KEY = "gradcon-rfq-sender";
@@ -187,8 +187,16 @@ export default function RfqModal({ quote, items, rates, projectScope, elementTyp
         if (opt.kind === "markup" || opt.kind === "local") { files[i] = { name: opt.name, url: opt.url, tags: opt.kind === "local" && opt.tags && opt.tags.length ? opt.tags : ["pkg"], size: Number(opt.size) || 0 }; }
         else {
           setCopyNote(`Copying ${Math.min(done + 1, ticked.length)} of ${ticked.length} — ${opt.name}`);
-          const r = await driveApi({ action: "copy", id: opt.fileId, target: "preview" });
-          files[i] = { name: opt.name, url: r.file.url, tags: opt.tags || [], size: Number(opt.size) || Number(r.file && r.file.size) || 0 };
+          // `big`: the copy may only ever be LINKED, so it may be far larger than a preview. A file the storage still
+          // cannot take (or a copy that fails) goes on the RFQ as its own Drive link — it never stops the build
+          // (Boma, 19 Nov 2026: "rather than say file over 30mb it should rather have the link attached a readable one").
+          try {
+            const r = await driveApi({ action: "copy", id: opt.fileId, target: "preview", big: true });
+            files[i] = { name: opt.name, url: r.file.url, tags: opt.tags || [], size: Number(opt.size) || Number(r.file && r.file.size) || 0 };
+          } catch (e) {
+            if (e && e.needsReconnect) throw e;   // nothing can be read from Drive at all: say so, once
+            files[i] = driveLinkFile(opt, (e && e.message) || "the copy failed");
+          }
         }
         done++; setCopyNote(done < ticked.length ? `Copied ${done} of ${ticked.length}` : "");
       }), 4);
@@ -402,6 +410,24 @@ export default function RfqModal({ quote, items, rates, projectScope, elementTyp
           </div>
         )}
 
+        {step === "drafts" && resolvedLinks.some((f) => f.driveLink) && (() => {
+          // files the portal's storage could not take: the email carries their Drive links — say which a contractor can open
+          const dl = resolvedLinks.filter((f) => f.driveLink); const closed = unsharedDriveLinks(dl);
+          return (
+            <div className={`mx-5 mt-3 rounded-lg border px-3 py-2 text-[12px] ${closed.length ? "border-amber-300 bg-amber-50 text-amber-900" : "border-neutral-200 bg-neutral-50 text-neutral-700"}`} data-testid="rfq-drive-links">
+              <div className="font-semibold">{dl.length === 1 ? "One file is" : `${dl.length} files are`} too large to copy, so the email carries {dl.length === 1 ? "its" : "their"} Google Drive link{dl.length === 1 ? "" : "s"} instead of an attachment.</div>
+              <ul className="mt-1 space-y-0.5">
+                {dl.map((f) => (
+                  <li key={f.url} data-testid="rfq-drive-link" data-shared={f.linkShared === true ? "yes" : f.linkShared === false ? "no" : "unknown"}>
+                    <a href={f.url} target="_blank" rel="noreferrer" className="underline font-semibold">{f.name}</a>{f.size ? ` (${fmtBytes(f.size)})` : ""}
+                    {" — "}{f.linkShared === true ? "shared with anyone who has the link: the contractor can open it." : f.linkShared === false ? "NOT shared outside the office: the contractor will be asked to request access." : "Drive did not say who can open it."}
+                  </li>
+                ))}
+              </ul>
+              {closed.length > 0 && <div className="mt-1">Before sending, open {closed.length === 1 ? "it" : "each one"} in Drive → Share → General access → <b>Anyone with the link · Viewer</b>, so the contractor can read it. The app only reads Drive and cannot change sharing.</div>}
+            </div>
+          );
+        })()}
         {step === "drafts" && drafts.length > 0 && (
           <div className="grid md:grid-cols-[16rem_1fr] gap-4 p-5">
             <div className="space-y-1">

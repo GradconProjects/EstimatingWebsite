@@ -4767,6 +4767,43 @@ check("bridge: an L-series trench-mesh line in lineal metres (a joint dowel stri
 // ---------------------------------------------------------------------------------------------------------------
 // RFQ attachments added BY HAND (4 Nov 2026): a local file uploaded into the bucket, a pasted Drive file link —
 // and the "not attached" note is information, never a stop.
+await checkAsync("RFQ: a Drive file too large to copy goes on the email as a link, never an error that stops the build (19 Nov 2026) — the link-only copy may be 200 MB, a file the storage cannot take becomes its Drive link, and the composer knows whether a contractor can open it", async () => {
+  const R = await import("../src/lib/rfq.js");
+  const Gm = await import("../api/_google.js");
+  const D = await import("../api/drive.js");
+  // the option carries the Drive link and who can open it
+  const opt = R.driveFolderOptions([{ id: "big1", name: "S-01 Structural set.pdf", kind: "pdf", mimeType: "application/pdf", size: 64 * 1048576, webViewLink: "https://drive.google.com/file/d/big1/view?usp=drivesdk", linkShared: false }], "formwork")[0];
+  assert.ok(opt.webViewLink === "https://drive.google.com/file/d/big1/view?usp=drivesdk" && opt.linkShared === false, "a folder option keeps the file's Drive link and its sharing");
+  assert.ok(R.driveLinkOption({ id: "x9", name: "Geo.pdf", kind: "pdf", webViewLink: "https://drive.google.com/file/d/x9/view", linkShared: true }).linkShared === true && R.driveLinkOption({ id: "x9", name: "Geo.pdf", kind: "pdf" }).linkShared === null);
+  const f = R.driveLinkFile(opt, "file over 200 MB");
+  assert.deepEqual({ name: f.name, url: f.url, driveLink: f.driveLink, linkShared: f.linkShared, size: f.size, reason: f.reason }, { name: "S-01 Structural set.pdf", url: "https://drive.google.com/file/d/big1/view?usp=drivesdk", driveLink: true, linkShared: false, size: 64 * 1048576, reason: "file over 200 MB" });
+  assert.equal(R.driveLinkFile({ name: "a.pdf", fileId: "abc" }).url, "https://drive.google.com/file/d/abc/view", "no stored link → the file's own view address");
+  // the plan: a Drive link is never attached and never counted against Gmail's size
+  const small = { name: "A-101.pdf", url: "https://x/a.pdf", size: 2 * 1048576, tags: ["archi"] };
+  const plan = R.planAttachments([f, small]);
+  assert.ok(plan.attach.length === 1 && plan.attach[0] === small && plan.link.length === 1 && plan.link[0] === f && plan.total === 2 * 1048576, "the Drive link goes in the body, the small file is attached");
+  assert.ok(R.unsharedDriveLinks([f, { ...f, linkShared: true }, { ...f, linkShared: null }, small]).length === 2, "not shared and not known both need the estimator's eye; a bucket link never does");
+  // the body names the file, its size, that it is on Google Drive, and the link
+  const body = R.rfqBody({ projectName: "3206 Point Nepean Road, Sorrento", pkgLabel: "Formwork", due: "2026-11-23", attachments: plan.attach, links: plan.link });
+  assert.ok(body.includes("  - S-01 Structural set.pdf (structural drawings) (64.0 MB) — Google Drive: https://drive.google.com/file/d/big1/view?usp=drivesdk") && /Too large to attach — download from these links:/.test(body) && !/file over/.test(body), body.split("\n").filter((l) => /S-01|Too large/.test(l)).join(" | "));
+  // Drive's own answer: "anyoneWithLink" among the permission ids = a contractor can open it
+  assert.equal(Gm.normalizeFile({ id: "1", name: "a.pdf", mimeType: "application/pdf", permissionIds: ["0123", "anyoneWithLink"] }).linkShared, true);
+  assert.equal(Gm.normalizeFile({ id: "1", name: "a.pdf", mimeType: "application/pdf", permissionIds: ["0123"] }).linkShared, false);
+  assert.equal(Gm.normalizeFile({ id: "1", name: "a.pdf", mimeType: "application/pdf" }).linkShared, null, "a shared-drive item lists no permission ids: unknown, never 'shared'");
+  assert.ok(/permissionIds/.test(Gm.DRIVE_FILE_FIELDS) && Gm.DRIVE_COPY_MAX_BYTES === 30 * 1048576 && Gm.DRIVE_LINK_MAX_BYTES === 200 * 1048576);
+  // the download: 40 MB is refused for a preview / job copy and taken for a link copy; 250 MB is refused for both, as tooLarge
+  const sized = (mb) => async (url) => { const u = String(url); if (/alt=media/.test(u)) return { ok: true, arrayBuffer: async () => new ArrayBuffer(8), headers: { get: () => "application/pdf" } }; return { ok: true, json: async () => ({ id: "f", name: "set.pdf", mimeType: "application/pdf", size: String(mb * 1048576), md5Checksum: "m" }) }; };
+  await assert.rejects(() => Gm.driveDownload("f", "t", sized(40)), (e) => e.status === 413 && e.tooLarge === true && /file over 30 MB/.test(e.message));
+  assert.equal((await Gm.driveDownload("f", "t", sized(40), { maxBytes: Gm.DRIVE_LINK_MAX_BYTES })).name, "set.pdf");
+  await assert.rejects(() => Gm.driveDownload("f", "t", sized(250), { maxBytes: Gm.DRIVE_LINK_MAX_BYTES }), (e) => e.status === 413 && /file over 200 MB/.test(e.message));
+  // the wiring: only `big: true` on a non-job copy lifts the cap; the composer asks for it and catches a refusal per file
+  const driveSrc = fs.readFileSync(new URL("../api/drive.js", import.meta.url), "utf8");
+  assert.ok(/const big = body\.big === true && target !== "job";/.test(driveSrc) && /big \? \{ maxBytes: Gm\.DRIVE_LINK_MAX_BYTES \} : \{\}/.test(driveSrc) && /up\.status === 413 \? 413 : 502/.test(driveSrc), "the copy action lifts the cap for a link copy only, and names a storage refusal");
+  const modal = fs.readFileSync(new URL("../src/components/RfqModal.jsx", import.meta.url), "utf8");
+  assert.ok(/action: "copy", id: opt\.fileId, target: "preview", big: true/.test(modal) && /if \(e && e\.needsReconnect\) throw e;/.test(modal) && /files\[i\] = driveLinkFile\(opt,/.test(modal) && /data-testid="rfq-drive-links"/.test(modal), "a copy that fails becomes a Drive link; only a reconnect stops the build");
+  assert.equal(JSON.parse(fs.readFileSync(new URL("../vercel.json", import.meta.url), "utf8")).functions["api/drive.js"].maxDuration, 300, "a 200 MB copy has the time it needs");
+  assert.ok(/body && body\.big \? 280000 : 60000/.test(fs.readFileSync(new URL("../src/lib/driveFiles.js", import.meta.url), "utf8")));
+});
 await checkAsync("RFQ attachments by hand (rfq.js, markupStore.uploadRfqFile): the Drive FILE id from every link form, the local-file check, the bucket path, the two option builders, and the missing-class note satisfied by a local file", async () => {
   const R = await import("../src/lib/rfq.js");
   const MS = await import("../src/lib/markupStore.js");

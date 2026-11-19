@@ -22,7 +22,7 @@ export function driveApiUrl() {
 }
 /** POST one action to the Drive function; throws an Error carrying `status` and `needsReconnect`. */
 export async function driveApi(body, fetchImpl = typeof fetch === "function" ? fetch : null) {
-  const r = await fetchImpl(driveApiUrl(), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body || {}), signal: AbortSignal.timeout(60000) });
+  const r = await fetchImpl(driveApiUrl(), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body || {}), signal: AbortSignal.timeout(body && body.big ? 280000 : 60000) });   // a big copy (a file only ever linked from an email) is given the time it takes
   const reply = await readServerReply(r); const d = reply.body || {};
   if (!r.ok || !reply.body) { const e = new Error(failureReason(reply, `Drive request failed (${r.status})`)); e.status = r.status; e.needsReconnect = !!d.needsReconnect; e.serverDown = !reply.body; throw e; }
   return d;
