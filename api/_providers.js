@@ -138,7 +138,7 @@ export const DOCUMENT_PROVIDERS = ["anthropic", "openai"];
  * and fails with 501 so the caller can say "switch provider" instead of
  * sending the model nothing.
  */
-export async function callDocuments(id, { system, prompt, documents = [], maxTokens = 8000, timeoutMs = 280000, env = process.env } = {}) {
+export async function callDocuments(id, { system, prompt, documents = [], maxTokens = 8000, timeoutMs = 280000, env = process.env, cacheDocuments = false } = {}) {
   const p = spec(id);
   if (!p) throw fail(`Unknown provider "${id}"`, 400);
   if (!DOCUMENT_PROVIDERS.includes(p.id)) throw fail(`${p.label} cannot read PDF documents — switch to Claude or OpenAI in Settings → AI providers for this job.`, 501);
@@ -160,9 +160,14 @@ export async function callDocuments(id, { system, prompt, documents = [], maxTok
           role: "user",
           content: [
             // a PDF is a document block; a screenshot or photo (kind "image") an image block, read by URL the same way
-            ...documents.map((d) => (d.kind === "image"
-              ? { type: "image", source: { type: "url", url: d.url } }
-              : { type: "document", source: { type: "url", url: d.url }, title: String(d.name || "document").slice(0, 200) })),
+            // `cacheDocuments` marks the end of the document set as a cache breakpoint: a job read in several parts
+            // (the Scope finder's continuation) re-sends the same documents and pays the cached rate for them.
+            ...documents.map((d, i) => ({
+              ...(d.kind === "image"
+                ? { type: "image", source: { type: "url", url: d.url } }
+                : { type: "document", source: { type: "url", url: d.url }, title: String(d.name || "document").slice(0, 200) }),
+              ...(cacheDocuments && i === documents.length - 1 ? { cache_control: { type: "ephemeral" } } : {}),
+            })),
             { type: "text", text: prompt },
           ],
         }],

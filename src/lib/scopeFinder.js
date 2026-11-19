@@ -52,6 +52,23 @@ export const SCOPE_MAX_FILES = 12;
 export const SCOPE_MAX_TEXT_CHARS = 150000;
 export const SCOPE_MAX_ITEMS = 160;
 export const SCOPE_RESULT_KEYS = ["items", "gaps", "exclusions", "questions", "documents", "unreadable"];
+/**
+ * A long set is read IN PARTS (20 Nov 2026 — five drawings in one read ran the
+ * reply into the model's output limit: 45 items were kept and everything after
+ * them, the whole "possibly missing" list included, was lost). One reply lists
+ * at most this many items and says `"more": true` when scope remains; the page
+ * asks again with the titles ALREADY LISTED until a reply says there is no
+ * more, and only that last reply carries the gaps, exclusions and questions —
+ * for the whole set.
+ */
+export const SCOPE_ITEMS_PER_REPLY = 30;
+export const SCOPE_MAX_ALREADY = 400;
+/** The titles a continuation is told not to repeat: trimmed, deduped, capped. */
+export function scopeAlreadyList(already) {
+  const seen = new Set(); const out = [];
+  (Array.isArray(already) ? already : []).forEach((t) => { const c = clean(t, 160); const k = c.toLowerCase(); if (c && !seen.has(k)) { seen.add(k); out.push(c); } });
+  return out.slice(0, SCOPE_MAX_ALREADY);
+}
 
 const clean = (v, max = 240) => String(v == null ? "" : v).replace(/\s+/g, " ").trim().slice(0, max);
 
@@ -63,11 +80,12 @@ export function scopeId(prefix, ...parts) {
   return prefix + ("00000000" + h.toString(16)).slice(-8);
 }
 
-export function scopePrompt({ projectName, types = [], hasDocuments = false, text = "" } = {}) {
+export function scopePrompt({ projectName, types = [], hasDocuments = false, text = "", already = [] } = {}) {
+  const done = scopeAlreadyList(already);
   const typeList = (types || []).slice(0, 220).map((t) => `${t.id} = ${t.label}${t.group ? ` (${t.group})` : ""}`).join("\n");
   return `Read EVERYTHING supplied for "${clean(projectName, 160) || "this project"}" as the estimator of a concrete subcontractor preparing a tender${hasDocuments ? ": the attached drawings, specification pages, screenshots and other documents" : ""}${text ? `${hasDocuments ? ", and" : ":"} the emails, messages and notes pasted at the end of this message` : ""}. Find the scope of work these put on the concrete subcontractor, with the specification each document gives for it, and point out what could be missing or overlooked.
 
-Return ONE JSON object in this shape (compact: omit null and empty keys; quotes under 140 characters):
+Return ONE JSON object in this shape. Keep it COMPACT so the whole list fits: omit null and empty keys, omit "basis" when it is "stated", "party" when it is "ours" and "type" when no id fits; quotes under 100 characters; at most 8 "specs" per item, each a few words.
 {
  "documents": [{"name": string, "kind": "structural drawings"|"architectural drawings"|"civil drawings"|"specification"|"geotechnical report"|"email"|"message"|"schedule"|"other", "title": string|null, "revision": string|null, "date": string|null}],
  "items": [{
@@ -80,9 +98,9 @@ Return ONE JSON object in this shape (compact: omit null and empty keys; quotes 
    "basis": "stated"|"implied",  // stated = a document draws or says it; implied = not written, but required by something that is
    "because": string|null,       // for "implied": what in the documents requires it
    "party": "ours"|"others"|"unclear",   // who the documents make responsible ("by builder", "by others", "NIC" = others)
-   "doc": string|null, "page": string|null, "quote": string|null,   // where it was read
-   "confidence": number          // 0 to 1
+   "doc": string|null, "page": string|null, "quote": string|null    // where it was read
  }],
+ "more": boolean,                // true when scope items remain that this reply did not list (see PARTS below)
  "gaps": [{
    "title": string,              // worded as something to CHECK: "No vapour barrier or sub-base shown under the ground slab — confirm"
    "why": string,                // what it could cost or cause if missed
@@ -102,7 +120,14 @@ RULES
 - Every item needs its "doc", "page" and "quote", or "basis": "implied" with "because". Never write a dimension, grade, bar size, spacing, cover or finish that is not on the documents — leave "specs" short rather than fill it from typical practice.
 - "gaps" are QUESTIONS, never findings of fact. "documents" basis: two documents disagree; a detail, schedule, section or report is referred to and not in the set; an element is drawn with no size, grade or reinforcement; a message asks for work no drawing shows; responsibility is unclear. "practice" basis: work that normally accompanies an item you listed and that NO document mentions either way (for example a slab on ground with no membrane or sub-base noted, a suspended slab with no back-propping note, a retaining wall with no drainage, no allowance stated for pumping, cranage, access or testing). List only gaps that relate to something in these documents; do not pad the list.
 - "exclusions": every statement that work is by others, not in contract, excluded or supplied by the builder.
-- At most ${SCOPE_MAX_ITEMS} items; put the costly and the easily missed ones first within each category.
+- Put the costly and the easily missed items first.
+
+PARTS
+- List at most ${SCOPE_ITEMS_PER_REPLY} items in this reply. If the documents hold more scope items than that, stop at ${SCOPE_ITEMS_PER_REPLY}, set "more": true and leave "gaps", "exclusions" and "questions" out — you will be asked to continue and they belong in the last reply only.
+- When this reply completes the list, set "more": false and give the "gaps", "exclusions" and "questions" for the WHOLE set${done.length ? ", counting the items already listed below as part of it" : ""}.${done.length ? `
+
+ALREADY LISTED — earlier replies listed these ${done.length} items. Do NOT repeat them; list only scope items that are NOT in this list (there may be none — then "items" is empty and "more" is false):
+${done.map((t) => `- ${t}`).join("\n")}` : ""}
 
 ELEMENT TYPE IDS ("type")
 ${typeList || "(none supplied — use null)"}${text ? `
@@ -176,8 +201,10 @@ export function parseScopeResult(raw, { types = [] } = {}) {
   const documents = arr(raw.documents).map((d) => ({ name: clean(d && d.name, 160), kind: clean(d && d.kind, 40) || "other", title: clean(d && d.title, 160) || null, revision: clean(d && d.revision, 40) || null, date: clean(d && d.date, 40) || null })).filter((d) => d.name || d.title).slice(0, 40);
   const unreadable = arr(raw.unreadable).map((u) => clean(u, 240)).filter(Boolean).slice(0, 40);
   const items = [...byId.values()];
-  if (!items.length && !gaps.length && !exclusions.length && !questions.length) return null;
-  return { items, gaps, exclusions, questions, documents, unreadable };
+  const more = raw.more === true;
+  // a continuation may honestly hold nothing new ("items": [], "more": false) — that is an answer, not an unreadable reply
+  if (!items.length && !gaps.length && !exclusions.length && !questions.length && raw.more === undefined) return null;
+  return { items, gaps, exclusions, questions, documents, unreadable, more };
 }
 
 const PDF_RE = /\.pdf(\?|$)/i, IMAGE_RE = /\.(png|jpe?g|webp|gif)(\?|$)/i;

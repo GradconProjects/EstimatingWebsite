@@ -36,7 +36,7 @@ import { callDocuments, callText, callWebSearch, resolveProviderId, parseJsonLoo
 import { tenderWordingPrompt, parseTenderWording, tenderItemsPrompt, parseTenderItems, parseTenderExtras, parseTenderPlacement } from "../src/lib/tenderWording.js";
 import { addressPrompt, parseAddressReply } from "../src/lib/projectNaming.js";
 import { marginAdvicePrompt, parseMarginAdvice } from "../src/lib/marginAdvice.js";
-import { scopePrompt, parseScopeResult, scopeRequestError, scopeFileKind, SCOPE_RESULT_KEYS } from "../src/lib/scopeFinder.js";
+import { scopePrompt, parseScopeResult, scopeRequestError, scopeFileKind, scopeAlreadyList, SCOPE_RESULT_KEYS } from "../src/lib/scopeFinder.js";
 
 export const config = { maxDuration: 300 };
 
@@ -287,11 +287,13 @@ export async function runAiJob(body, env = process.env) {
     const id = resolveProviderId(provider, env);
     if (!id) return { status: 503, body: { error: "No AI provider is configured — set ANTHROPIC_API_KEY or OPENAI_API_KEY in the Vercel project's Environment Variables." } };
     const sTypes = Array.isArray(types) ? types.slice(0, MAX_TYPES) : [];
-    const prompt = scopePrompt({ projectName, types: sTypes, hasDocuments: sFiles.length > 0, text });
+    // a long set is read in parts: `already` are the titles earlier replies listed, so this one continues from there
+    const already = scopeAlreadyList(body.already);
+    const prompt = scopePrompt({ projectName, types: sTypes, hasDocuments: sFiles.length > 0, text, already });
     let r;
     try {
       r = sFiles.length
-        ? await callDocuments(id, { system: SYSTEM, prompt, documents: sFiles.map((f) => ({ url: f.url, name: f.name, kind: scopeFileKind(f.url) })), maxTokens: 16000, env })
+        ? await callDocuments(id, { system: SYSTEM, prompt, documents: sFiles.map((f) => ({ url: f.url, name: f.name, kind: scopeFileKind(f.url) })), maxTokens: 16000, env, cacheDocuments: true })
         : await callText(id, { system: SYSTEM, prompt, maxTokens: 16000, timeoutMs: 280000, env });
     } catch (e) {
       const st = providerStatus(env).find((p) => p.id === id);
@@ -302,12 +304,14 @@ export async function runAiJob(body, env = process.env) {
       const got = salvageArrays(r.text, SCOPE_RESULT_KEYS);
       if (got && ((got.items || []).length || (got.gaps || []).length)) {
         raw = got;
-        partial = { reason: r.truncated ? "The reply was cut off at the model's output limit" : "The reply was not a complete JSON object", kept: (got.items || []).length, advice: "What was read is shown. Run again with fewer documents at a time — each run adds to the checklist." };
+        // a cut-off part still counts: its complete items are kept and the page asks for the rest
+        raw = { ...got, more: true };
+        partial = { reason: r.truncated ? "The reply was cut off at the model's output limit" : "The reply was not a complete JSON object", kept: (got.items || []).length, advice: "What was read is kept and the rest is asked for in the next part." };
       }
     }
     const result = parseScopeResult(raw, { types: sTypes });
-    if (!result) return { status: 502, body: { error: `${id} replied without a readable scope list${r.truncated ? " (the reply was cut off — fewer documents per run)" : ""}`, provider: r.provider, model: r.model, raw: String(r.text || "").slice(0, 2000) } };
-    return { status: 200, body: { result, provider: r.provider, model: r.model, latencyMs: r.latencyMs, usage: r.usage || null, truncated: !!r.truncated, partial } };
+    if (!result) return { status: 502, body: { error: `${id} replied without a readable scope list${r.truncated ? " (the reply was cut off before any item was complete)" : ""}`, provider: r.provider, model: r.model, raw: String(r.text || "").slice(0, 2000) } };
+    return { status: 200, body: { result, more: result.more === true, provider: r.provider, model: r.model, latencyMs: r.latencyMs, usage: r.usage || null, truncated: !!r.truncated, partial } };
   }
   const DOC_ACTIONS = { takeoff: null, spec: specPrompt, geotech: geotechPrompt, contract: contractPrompt };
   if (!(action in DOC_ACTIONS)) return { status: 400, body: { error: 'Body must carry action "takeoff", "spec", "geotech", "contract", "scope", "qa", "benchmarks", "margin" or "tender-wording"' } };

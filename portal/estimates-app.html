@@ -12454,8 +12454,12 @@ async function scopeMailAdd(){
   }
   SCOPE.busy=""; SCOPE.error=problems.length? "Not added — "+problems.join(" · ") : ""; if(SCOPE.mail) SCOPE.mail.picked={}; scopeSave(); scopeRender();
 }
-/** The read. New sources only by default (a run ADDS to the checklist); "Read everything again" sends the lot. Files go twelve at a time; the pasted text rides with the first set. */
-async function scopeRun(all){
+/** The read. New sources only by default (a run ADDS to the checklist); "Read everything again" sends the lot. Files go
+ * twelve at a time; the pasted text rides with the first set. A long set is read IN PARTS: the server lists up to 30
+ * items a reply and says when more remain, and each further part is told what is ALREADY LISTED — so the read finishes
+ * on its own instead of being cut off (20 Nov 2026). `resume` continues a read that was cut off earlier: every source
+ * again, with the checklist's own titles as the already-listed set. */
+async function scopeRun(all, resume){
   if(SCOPE.busy) return;
   const doc=SCOPE.doc;
   let files=doc.files.filter(f=>all || !f.readAt), notes=doc.notes.filter(n=>all || !n.readAt);
@@ -12465,23 +12469,38 @@ async function scopeRun(all){
   if(text.length>SCOPE_TEXT_MAX_CHARS){ SCOPE.error=`The text to read is ${text.length.toLocaleString("en-AU")} characters; one read takes up to ${SCOPE_TEXT_MAX_CHARS.toLocaleString("en-AU")}. Remove some of it — nothing is cut off silently.`; scopeRender(); return; }
   const types=[]; LIBRARY.forEach(g=>g.items.forEach(it=>types.push({ id:it.id, label:it.label, group:g.group })));
   const sets=[]; for(let i=0;i<files.length;i+=SCOPE_FILES_PER_RUN) sets.push(files.slice(i,i+SCOPE_FILES_PER_RUN)); if(!sets.length) sets.push([]);
-  SCOPE.error=""; let added=0, failed="";
-  for(let s=0;s<sets.length;s++){
-    SCOPE.busy = sets.length>1? `Reading set ${s+1} of ${sets.length} — this can take a few minutes` : "Reading — this can take a few minutes"; scopeRender();
-    const body={ action:"scope", provider:portalPref("aiProvider")||undefined, projectName:PROJECT.name||"", types, files:sets[s].map(f=>({ url:f.url, name:f.name })), text: s===0? text : "" };
-    if(!body.files.length && !body.text) continue;
-    const r=await scopeApi("/api/ai-engine", body, 295000);
-    if(!r.ok){ failed=r.error; break; }
-    const before=(doc.result && doc.result.items.length)||0;
-    doc.result=mergeScopeResult(doc.result, r.body.result);
-    added+=doc.result.items.length-before;
+  SCOPE.error=""; SCOPE.status=""; let added=0, failed="", unfinished=false;
+  const startCount=(doc.result && doc.result.items.length)||0;
+  for(let s=0;s<sets.length && !failed;s++){
+    const setFiles=sets[s].map(f=>({ url:f.url, name:f.name })), setText = s===0? text : "";
+    if(!setFiles.length && !setText) continue;
+    let already = resume? scopeAlreadyTitles(doc) : [], more=true, part=0, cutOff=null;
+    const setStart=(doc.result && doc.result.items.length)||0;
+    while(more && part<SCOPE_MAX_PARTS){
+      part++;
+      const soFar=((doc.result && doc.result.items.length)||0)-startCount;
+      SCOPE.busy = `Reading${sets.length>1? ` set ${s+1} of ${sets.length}` : ""}${part>1? ` — part ${part} (${soFar} item${soFar===1?"":"s"} so far; a long set is read in parts)` : " — this can take a few minutes"}`; scopeRender();
+      const r=await scopeApi("/api/ai-engine", { action:"scope", provider:portalPref("aiProvider")||undefined, projectName:PROJECT.name||"", types, files:setFiles, text:setText, already }, 295000);
+      if(!r.ok){ failed=r.error; break; }
+      const before=(doc.result && doc.result.items.length)||0;
+      doc.result=mergeScopeResult(doc.result, r.body.result);
+      const gained=doc.result.items.length-before;
+      cutOff = r.body.partial? r.body.partial.reason : null;
+      more = r.body.more===true && gained>0;            // a part that adds nothing ends the read, whatever it says
+      if(r.body.more===true && gained===0 && cutOff) unfinished=true;
+      already = scopeAlreadyTitles(doc);
+      scopeSave();
+    }
+    if(failed) break;
+    if(more) unfinished=true;                            // ran out of parts with scope still unlisted
     const at=new Date().toISOString();
     sets[s].forEach(f=>{ f.readAt=at; }); if(s===0) notes.forEach(n=>{ n.readAt=at; });
-    doc.runs.push({ at, by:scopeBy(), provider:r.body.provider||null, model:r.body.model||null, files:sets[s].length, notes:s===0? notes.length : 0, items:(r.body.result.items||[]).length, gaps:(r.body.result.gaps||[]).length, partial:r.body.partial? r.body.partial.reason : null });
-    if(r.body.partial) SCOPE.error=`${r.body.partial.reason} — ${r.body.partial.kept} items were kept. ${r.body.partial.advice||""}`;
+    doc.runs.push({ at, by:scopeBy(), files:sets[s].length, notes:s===0? notes.length : 0, parts:part, items:doc.result.items.length-setStart, gaps:(doc.result.gaps||[]).length, partial: unfinished? (cutOff || "The list was not finished in the parts allowed") : null });
     scopeSave();
   }
+  added=((doc.result && doc.result.items.length)||0)-startCount;
   SCOPE.busy=""; if(failed) SCOPE.error=failed;
+  else if(unfinished) SCOPE.error="The read stopped before the list was complete — press “Finish the read” to carry on from where it stopped. What was read is kept.";
   SCOPE.status = failed? "" : `Read ${files.length} file${files.length===1?"":"s"}${notes.length? ` and ${notes.length} text${notes.length===1?"":"s"}` : ""}: ${added} new scope item${added===1?"":"s"} on the checklist.`;
   scopeRender();
 }
@@ -12550,6 +12569,7 @@ function scopeRender(){
     <p class="small" data-testid="scope-totals">${doc.files.length} file${doc.files.length===1?"":"s"} · ${doc.notes.length} text${doc.notes.length===1?"":"s"} · ${chars.toLocaleString("en-AU")} of ${SCOPE_TEXT_MAX_CHARS.toLocaleString("en-AU")} characters${unread && res? ` · <b>${unread} not read yet</b>` : ""}</p>
     <button type="button" class="btn primary" data-scope-act="run" data-testid="scope-run" ${SCOPE.busy || !any?'disabled':''}>${SCOPE.busy? "Working…" : res? (unread? `🔎 Read the ${unread} new` : "🔎 Read everything again") : "🔎 Find the scope"}</button>
     ${res && unread && !SCOPE.busy? ` <button type="button" class="btn small" data-scope-act="runall" data-testid="scope-run-all">Read everything again</button>` : ""}
+    ${scopeLastReadPartial(doc) && !SCOPE.busy? `<p class="small sc-err" data-testid="scope-partial-note">The last read was cut off before the list was complete, so some scope items and the “possibly missing” list may not be there yet.</p><button type="button" class="btn primary" data-scope-act="runfinish" data-testid="scope-run-finish">🔎 Finish the read</button>` : ""}
     ${SCOPE.busy? `<p class="small sc-busy" data-testid="scope-busy">${bpEsc(SCOPE.busy)}</p>` : ""}${SCOPE.error? `<p class="small sc-err" data-testid="scope-error">${bpEsc(SCOPE.error)}</p>` : ""}${SCOPE.status? `<p class="small sc-ok" data-testid="scope-status">${bpEsc(SCOPE.status)}</p>` : ""}
     ${last? `<p class="small">Last read ${bpEsc(scopeWhen(last.at))}${last.by? ` by ${bpEsc(last.by)}` : ""}. A read adds to the checklist — ticks are kept.</p>` : ""}
    </div></div>`;
@@ -12595,6 +12615,7 @@ function scopeInit(){
     else if(act==="rmsrc") scopeRemoveSource(id);
     else if(act==="run") scopeRun(false);
     else if(act==="runall") scopeRun(true);
+    else if(act==="runfinish") scopeRun(true, true);
     else if(act==="mailsearch") scopeMailSearch();
     else if(act==="mailadd") scopeMailAdd();
     else if(act==="na") scopeSetState(id,"na");

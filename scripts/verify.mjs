@@ -2192,6 +2192,58 @@ await checkAsync("Scope finder (19 Nov 2026): the reading rules, the reply parse
   assert.match(est, /table\.rows\.barsets select\{max-width:150px;\}/, "the anchorage selects are capped");
   assert.equal((est.match(/class="rows barsets"/g) || []).length, 2, "both bar-set tables carry the class");
 });
+await checkAsync("Scope finder reads a long set IN PARTS (20 Nov 2026 — five drawings in one read were cut off at 45 items and the 'possibly missing' list was lost): a reply lists a bounded number of items and says when more remain, a continuation is told what is already listed, a cut-off part keeps its items and asks for the rest, and a read that could not finish offers 'Finish the read'", async () => {
+  const SF = await import("../src/lib/scopeFinder.js");
+  assert.ok(SF.SCOPE_ITEMS_PER_REPLY >= 20 && SF.SCOPE_ITEMS_PER_REPLY <= 45, "one reply stays well inside the output limit");
+  const first = SF.scopePrompt({ projectName: "x", types: [], hasDocuments: true });
+  assert.match(first, new RegExp(`List at most ${SF.SCOPE_ITEMS_PER_REPLY} items in this reply`), "the reply is bounded");
+  assert.match(first, /set "more": true and leave "gaps", "exclusions" and "questions" out/, "an unfinished part carries no gaps — they belong to the last one");
+  assert.match(first, /set "more": false and give the "gaps", "exclusions" and "questions" for the WHOLE set/, "the last part answers for the whole set");
+  assert.ok(!/ALREADY LISTED/.test(first), "a first part names nothing as already listed");
+  assert.match(first, /"more": boolean/, "the shape carries the flag");
+  assert.ok(!/"confidence"/.test(first), "the reply is compact: no confidence figure is asked for");
+  const cont = SF.scopePrompt({ projectName: "x", types: [], hasDocuments: true, already: ["Strip footings SF1", " strip footings sf1 ", "Raft slab", "", null] });
+  assert.match(cont, /ALREADY LISTED — earlier replies listed these 2 items\. Do NOT repeat them/, "a continuation is told what is listed (deduped, blanks dropped)");
+  assert.match(cont, /\n- Strip footings SF1\n- Raft slab\n/);
+  assert.match(cont, /counting the items already listed below as part of it/, "the gaps of the last part cover the earlier parts' items too");
+  assert.equal(SF.scopeAlreadyList(Array.from({ length: 900 }, (_, i) => `Item ${i}`)).length, SF.SCOPE_MAX_ALREADY, "the list is capped");
+  assert.deepEqual(SF.scopeAlreadyList("nope"), []);
+  // the parser
+  assert.equal(SF.parseScopeResult({ items: [{ title: "A", category: "footings" }], more: true }).more, true);
+  assert.equal(SF.parseScopeResult({ items: [{ title: "A", category: "footings" }] }).more, false, "no flag = the list is complete (an older reply)");
+  const none = SF.parseScopeResult({ items: [], more: false });
+  assert.ok(none && none.items.length === 0 && none.more === false, "a continuation with nothing new is an answer, not an unreadable reply");
+  assert.equal(SF.parseScopeResult({ items: [] }), null, "…while a reply with nothing and no flag is still nothing");
+  // the server
+  const eng = fs.readFileSync(new URL("../api/ai-engine.js", import.meta.url), "utf8");
+  assert.match(eng, /const already = scopeAlreadyList\(body\.already\);\s*\n\s*const prompt = scopePrompt\(\{ projectName, types: sTypes, hasDocuments: sFiles\.length > 0, text, already \}\);/, "the request's already-listed titles reach the prompt");
+  assert.match(eng, /raw = \{ \.\.\.got, more: true \};/, "a cut-off part keeps its complete items and asks for the rest");
+  assert.match(eng, /body: \{ result, more: result\.more === true,/, "the reply says whether more remain");
+  assert.match(eng, /maxTokens: 16000, env, cacheDocuments: true \}/, "the documents are cached across the parts");
+  const prov = fs.readFileSync(new URL("../api/_providers.js", import.meta.url), "utf8");
+  assert.match(prov, /cacheDocuments && i === documents\.length - 1 \? \{ cache_control: \{ type: "ephemeral" \} \} : \{\}/, "the cache breakpoint sits on the last document");
+  // the page
+  const box = { console }; box.globalThis = box;
+  runInNewContext(fs.readFileSync(new URL("../portal/estimates-scope.js", import.meta.url), "utf8"), box, { filename: "estimates-scope.js" });
+  assert.ok(box.SCOPE_MAX_PARTS * SF.SCOPE_ITEMS_PER_REPLY >= SF.SCOPE_MAX_ITEMS, "the parts allowed cover the longest list the reader keeps");
+  const doc = { result: { items: [{ title: "A" }, { title: "" }, { title: "B" }] }, runs: [{ at: "1", partial: null }] };
+  assert.deepEqual(JSON.parse(JSON.stringify(box.scopeAlreadyTitles(doc))), ["A", "B"]);
+  assert.equal(box.scopeLastReadPartial(doc), false);
+  assert.equal(box.scopeLastReadPartial({ runs: [{ partial: null }, { partial: "The reply was cut off at the model's output limit" }] }), true, "the newest read decides");
+  assert.equal(box.scopeLastReadPartial({ runs: [{ partial: "cut" }, { partial: null }] }), false, "a later complete read clears it");
+  assert.equal(box.scopeLastReadPartial({}), false);
+  const est = fs.readFileSync(new URL("../portal/estimates-app.html", import.meta.url), "utf8");
+  const run = est.slice(est.indexOf("async function scopeRun(all, resume){"), est.indexOf("function scopeSetState(id, state)"));
+  assert.match(run, /while\(more && part<SCOPE_MAX_PARTS\)\{/, "the page keeps asking while more remain, up to the parts allowed");
+  assert.match(run, /files:setFiles, text:setText, already \}/, "every part carries the already-listed titles");
+  assert.match(run, /more = r\.body\.more===true && gained>0;/, "a part that adds nothing ends the read");
+  assert.match(run, /let already = resume\? scopeAlreadyTitles\(doc\) : \[\]/, "'Finish the read' starts from the checklist's own titles");
+  assert.match(run, /scopeSave\(\);\s*\n\s*\}\s*\n\s*if\(failed\) break;/, "every part is saved as it lands");
+  assert.match(est, /scopeLastReadPartial\(doc\) && !SCOPE\.busy\? `<p class="small sc-err" data-testid="scope-partial-note">/, "a cut-off read is said on the panel");
+  assert.match(est, /data-scope-act="runfinish" data-testid="scope-run-finish"/, "…with the button that finishes it");
+  assert.match(est, /else if\(act==="runfinish"\) scopeRun\(true, true\);/);
+  assert.ok(!/Run again with fewer documents/.test(eng + est), "the estimator is never told to re-run with fewer documents");
+});
 check("clearable notices (22 Oct 2026): a notice cleared at its signature stays cleared, comes back when its content changes, restore one or all; the browser store survives a bad value", () => {
   const N = NOTICES;
   const sig = N.noticeSig("a@1", null, "", ["b@2", "c@3"]); assert.equal(sig, "a@1|b@2|c@3");

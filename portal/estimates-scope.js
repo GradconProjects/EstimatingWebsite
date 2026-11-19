@@ -33,6 +33,7 @@
   const SCOPE_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
   const SCOPE_TEXT_MAX_CHARS = 150000;                // mirrors SCOPE_MAX_TEXT_CHARS in src/lib/scopeFinder.js
   const SCOPE_FILES_PER_RUN = 12;                     // mirrors SCOPE_MAX_FILES
+  const SCOPE_MAX_PARTS = 8;                          // one set is asked for in at most this many parts (30 items a part)
 
   function scopeDocKey(takeoffId) { return SCOPE_DOC_PREFIX + String(takeoffId || "draft"); }
   function emptyScopeDoc(takeoffId, name) {
@@ -141,6 +142,10 @@
     return { byItem, unmatched: inst.filter((i) => !used.has(i.id)).map((i) => ({ id: i.id, label: i.label, typeLabel: i.typeLabel })) };
   }
 
+  /** The titles a continuation is told not to repeat — every item the checklist already holds. */
+  function scopeAlreadyTitles(doc) { return (((doc && doc.result && doc.result.items) || []).map((it) => it.title)).filter(Boolean).slice(0, 400); }
+  /** True while the newest read was cut off before the list was complete (a read from before the parts existed, or one that ran out of parts). */
+  function scopeLastReadPartial(doc) { const runs = (doc && doc.runs) || []; const last = runs[runs.length - 1]; return !!(last && last.partial); }
   const stateOf = (doc, id) => { const r = doc && doc.review && doc.review[id]; return (r && r.state) || ""; };
   /** Every row of the checklist in one list: the read items, then the estimator's own. */
   function scopeAllItems(doc) {
@@ -191,6 +196,7 @@
   return {
     SCOPE_DOC_PREFIX, SCOPE_DOC_VERSION, SCOPE_FILE_MAX_BYTES, SCOPE_IMAGE_MAX_BYTES, SCOPE_TEXT_MAX_CHARS, SCOPE_FILES_PER_RUN,
     scopeDocKey, emptyScopeDoc, normalizeScopeDoc, scopeFileClass, scopeTextFromFile, scopeRunText,
+    SCOPE_MAX_PARTS, scopeAlreadyTitles, scopeLastReadPartial,
     mergeScopeResult, mergeScopeDocs, scopeCompareToTakeoff, scopeAllItems, scopeProgress, scopeReviewPatch, scopeFilterItems, scopeCsvRows,
   };
 });

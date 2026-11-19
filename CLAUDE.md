@@ -2881,11 +2881,46 @@ could possibly be missing or overlooked". Rules:
    never "off".
 8. A server reply that is not JSON reads as what it is ("hosting switched
    off by Vercel (402 …)"), never as "not configured".
+9. **A long set is read IN PARTS, never cut off** (Boma, 20 Nov 2026, pasting
+   the panel's own words after a five-file read: "The reply was cut off at the
+   model's output limit — 45 items were kept … Run again with fewer documents
+   at a time" — everything after the 45th item was lost, the whole "possibly
+   missing" list included, because that list comes last in a reply). One reply
+   is 16,000 output tokens (the function's 300 s limit bounds it, and the
+   model's thinking is spent from the same allowance), so the READ is split,
+   not the reply lengthened: `scopePrompt` asks for at most
+   `SCOPE_ITEMS_PER_REPLY` = 30 compact items (no confidence figure; `basis` /
+   `party` / `type` left out at their defaults; quotes under 100 characters),
+   `"more": true` while scope remains — with NO gaps, exclusions or questions,
+   which belong to the last part and answer for the WHOLE set — and takes
+   `already` (`scopeAlreadyList`: the titles earlier parts listed, deduped,
+   capped `SCOPE_MAX_ALREADY` = 400) under "ALREADY LISTED … Do NOT repeat
+   them". `parseScopeResult` returns `more`; a continuation with nothing new
+   (`items: []`, `more: false`) is an answer, a reply with nothing and no flag
+   is still null. The server passes `body.already` to the prompt, returns
+   `more`, turns a cut-off part into `{…salvaged, more: true}` (its complete
+   items are kept and the rest asked for) and sends the documents with
+   `cacheDocuments: true` (`callDocuments` puts `cache_control` on the last
+   document block, so parts 2+ re-read the set at the cached rate). The page's
+   `scopeRun(all, resume)` loops per set of twelve files: merge, save, send the
+   checklist's titles (`scopeAlreadyTitles`) as `already`, up to
+   `SCOPE_MAX_PARTS` = 8, the busy line reading "part N (M items so far; a
+   long set is read in parts)"; a part that adds nothing ends the read. A run
+   is recorded with `parts` and `partial` (set only when the list could not be
+   finished). **`scopeLastReadPartial(doc)`** — the newest run is partial, as
+   every read cut off before this rule is — shows `scope-partial-note` and
+   **🔎 Finish the read** (`scope-run-finish` → `scopeRun(true, true)`: every
+   source again with the checklist's own titles as already listed, so only
+   what is missing and the gaps come back; ticks are kept). The estimator is
+   never told to run again with fewer documents (`verify.mjs` pins the phrase
+   out).
 `verify.mjs` covers the prompt's rules, the parser, the request refusals, the
 server's 400 / 503, the image blocks, the pure module (merge of results and of
-documents, the comparison, progress, file classes, the run text), the mirrors
-and the wiring; `test-scope-finder.mjs` proves the whole flow on a mocked
-server, storage and mailbox (28 checks).
+documents, the comparison, progress, file classes, the run text), the mirrors,
+the wiring and the read in parts (prompt, parser, server, page loop, the
+button); `test-scope-finder.mjs` proves the whole flow on a mocked server,
+storage and mailbox, a two-part read with the first part cut off, and Finish
+the read (32 checks).
 
 ## Version history for the chat (what changed, who changed it)
 
