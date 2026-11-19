@@ -191,7 +191,7 @@ export function elementScope(item, rates, projectScope, typeName = "", takeoffIn
   if (qtyOf(item.measureM2) > 0) measures.push(`${n2(qtyOf(item.measureM2))} m²`);
   if (cost && cost.concreteQty > 0) measures.push(`${n2(cost.concreteQty)} m³ concrete`);
   const matches = takeoffInstances ? takeoffMatches(takeoffInstances, item.label) : [];
-  const takeoff = matches.map((inst) => takeoffElementSpec(inst, 12));
+  const takeoff = matches.map((inst) => takeoffElementSpec(inst, 80));   // every line: the package's own are picked out when the scope is written
   return { id: item.id, label: String(item.label || "").trim(), type: typeName, measures, items: subcontractRows(item).map((r) => r.name), description: String(item.description || "").trim(), takeoff };
 }
 const FIELD_LABELS = { grade: "concrete grade", beamGrade: "beam grade", blindingGrade: "blinding grade", cover: "cover", thickness: "thickness", depth: "depth", width: "width", length: "length", height: "height", dia: "diameter", diameter: "diameter", D: "depth", L: "length", W: "width", shape: "shape", meshType: "mesh", botMeshType: "bottom mesh", topMeshType: "top mesh", meshLayers: "mesh layers", botXDia: "bottom bars X", botXSpacing: "bottom X spacing", botYDia: "bottom bars Y", botYSpacing: "bottom Y spacing", topXDia: "top bars X", topXSpacing: "top X spacing", topYDia: "top bars Y", topYSpacing: "top Y spacing", qty: "number", count: "number", bars: "bars", barDia: "bar", ligDia: "ligatures", ligSpacing: "ligature spacing", spacing: "spacing" };
@@ -201,6 +201,74 @@ function takeoffLines(t) {
   if (fields.length) out.push(`    As taken off (${t.type || "element"}): ${fields.join(", ")}`);
   for (const l of t.lines || []) out.push(`    ${l.group}: ${l.material}${l.spec ? " " + l.spec : ""} — ${n2(l.qty)} ${l.unit}`);
   return out;
+}
+/* ---------- the scope a package is given (Boma, 19 Nov 2026, on a Formwork RFQ that listed steel fixing, every concrete
+ * volume, every bar run and the formwork areas: "dont give too much details. dont give measurements especially for formwork
+ * so we dont preempt … don add elements that are not related. formwork scope should be for formwork only") ----------
+ * Two rules. (1) A package's scope names ONLY that package's work: the subcontract rows that are the package's own and the
+ * takeoff lines of its own material groups — a formworker is never told the steel or the concrete. (2) No measurement goes
+ * out unless the estimator ticks it on for the round: the contractor measures from the documents, so Gradcon's own take-off
+ * never sets their figure. Off, a scope line is the element's name and the KINDS of work on it ("soffit formwork, edgeform"). */
+const STEEL_MATERIAL = /^\s*(?:\d+\s*bar[-\s])?[NRYL]\d|^\s*(?:SL|RL)\d|mesh|ligature|\bbars?\b|starter|dowel/i;
+const PILING_GROUPS = /concrete|reinforc|connection|excavat|spoil|casing/i;
+const PACKAGE_LINE_TESTS = {
+  screw: (l) => PILING_GROUPS.test(l.group), bored: (l) => PILING_GROUPS.test(l.group), cfa: (l) => PILING_GROUPS.test(l.group),
+  retention: (l) => PILING_GROUPS.test(l.group) || /formwork/i.test(l.group),
+  formwork: (l) => /formwork/i.test(l.group),
+  steelfix: (l) => /reinforc|connection|joint/i.test(l.group) && STEEL_MATERIAL.test(l.material || ""),
+  steelsupply: (l) => /reinforc|connection|joint/i.test(l.group) && STEEL_MATERIAL.test(l.material || ""),
+  excavation: (l) => /excavat/i.test(l.group),
+  pumping: (l) => /^concrete$/i.test(l.group),
+  premix: (l) => /^concrete$|blinding/i.test(l.group) && /concrete/i.test(`${l.group} ${l.material || ""}`),
+  concrete: (l) => /^concrete$|blinding|finish/i.test(l.group),
+  pt: (l) => /post[- ]?tension|tendon|strand/i.test(`${l.group} ${l.material || ""} ${l.spec || ""}`),
+  waterproofing: (l) => /membrane|waterproof|vapour|tanking/i.test(`${l.group} ${l.material || ""}`),
+  screed: (l) => /finish|screed|topping/i.test(`${l.group} ${l.material || ""}`),
+};
+/** Is this takeoff line part of the package's own work? An unknown or "other" package takes every line. */
+export function packageTakesLine(pkgKey, line) {
+  const t = PACKAGE_LINE_TESTS[pkgKey];
+  return t ? !!t(line || {}) : true;
+}
+/** The package's own subcontract rows on an element (a Formwork RFQ never lists "Steel fix"). */
+export function packageItems(pkgKey, items) {
+  const list = Array.isArray(items) ? items : [];
+  if (!pkgKey || pkgKey === "other") return list;
+  const p = packageByKey(pkgKey);
+  return p.rows ? list.filter((n) => p.rows.test(String(n || ""))) : [];
+}
+/** Does the package price the concrete itself? (Only then does an element's m³ belong on its line.) */
+export const packageTakesConcrete = (pkgKey) => packageTakesLine(pkgKey, { group: "Concrete", material: "N32 concrete" });
+/** A line's material as a KIND of work — its name with any dimension taken out ("Profile formwork (both sides)", "N16"). */
+export function workKind(line) {
+  return String((line && line.material) || "").replace(/\b\d+(?:\.\d+)?\s*[x×]\s*\d+(?:\.\d+)?(?:\s*[x×]\s*\d+(?:\.\d+)?)?\s*(?:mm|m)?\b/gi, " ").replace(/\b\d+(?:\.\d+)?\s*mm\b/gi, " ").replace(/\s+/g, " ").replace(/\s+([,)])/g, "$1").trim();
+}
+/** The kinds of the package's work an element carries, each once, in the takeoff's order — never a quantity. */
+export function scopeKinds(scope, pkgKey, pkgLabel = "") {
+  const seen = new Set(); const out = [];
+  const add = (name) => { const n = String(name || "").trim(); const k = n.toLowerCase(); if (!n || seen.has(k) || k === String(pkgLabel || "").trim().toLowerCase()) return; seen.add(k); out.push(n); };
+  packageItems(pkgKey, scope && scope.items).forEach(add);
+  for (const t of (scope && scope.takeoff) || []) for (const l of t.lines || []) if (packageTakesLine(pkgKey, l)) add(workKind(l));
+  return out;
+}
+/** The lines of the SCOPE OF WORKS for one package. `showQuantities` (off unless ticked for the round) adds Gradcon's own
+ *  measures and the package's takeoff lines with their figures; off, nothing with a number in it is written. */
+export function scopeLines(scopes, { pkgKey = "", pkgLabel = "", showQuantities = false } = {}) {
+  const list = Array.isArray(scopes) ? scopes : [];
+  if (!list.length) return ["  As per the attached documents."];
+  const lines = [showQuantities
+    ? `  Please price the ${pkgLabel || "package"} package for the following. Quantities are Gradcon's own measure, for guidance only — please confirm them from the documents.`
+    : `  Please price the ${pkgLabel || "package"} package for the following, measured by you from the documents provided.`];
+  for (const s of list) {
+    if (!showQuantities) { const kinds = scopeKinds(s, pkgKey, pkgLabel); lines.push(`  - ${s.label}${kinds.length ? `: ${kinds.join(", ")}` : ""}`); continue; }
+    const measures = (s.measures || []).filter((m) => packageTakesConcrete(pkgKey) || !/m³ concrete$/.test(m));
+    lines.push(`  - ${s.label}${s.type && s.type !== s.label ? ` (${s.type})` : ""}${measures.length ? ` — ${measures.join(", ")}` : ""}`);
+    const items = packageItems(pkgKey, s.items);
+    if (items.length) lines.push(`    Items to price: ${items.join("; ")}`);
+    if (s.description) lines.push(`    ${s.description}`);
+    for (const t of s.takeoff || []) lines.push(...takeoffLines({ ...t, fields: PACKAGE_LINE_TESTS[pkgKey] && !/^(screw|bored|cfa|retention)$/.test(pkgKey) ? {} : t.fields, lines: (t.lines || []).filter((l) => packageTakesLine(pkgKey, l)) }));
+  }
+  return lines;
 }
 /** The body of ONE RFQ: this contractor's name and contact, nobody else's. */
 /* The lead time Gradcon asks for (Grady, 23 Oct 2026: "ask for min of 3 days from request for simple
@@ -249,7 +317,7 @@ export function rfqHead({ pkgLabel, org, contact }) {
 }
 export const joinDraft = (head, body) => `${head}\n\n${body}`;
 export function rfqText(args) { return joinDraft(rfqHead(args), rfqBody(args)); }
-export function rfqBody({ projectName, siteAddress = "", pkgLabel, scopes = [], due, leadDays = 0, requestedOn = "", sender = {}, attachments = [], links = [], extraNotes = "" }) {
+export function rfqBody({ projectName, siteAddress = "", pkgLabel, pkgKey = "", showQuantities = false, scopes = [], due, leadDays = 0, requestedOn = "", sender = {}, attachments = [], links = [], extraNotes = "" }) {
   const lines = [];
   lines.push(`Project: ${projectName}`);
   if (siteAddress && siteAddress !== projectName) lines.push(`Site: ${siteAddress}`);
@@ -257,13 +325,7 @@ export function rfqBody({ projectName, siteAddress = "", pkgLabel, scopes = [], 
   if (requestedOn) lines.push(`Request issued: ${fmtDay(requestedOn)}`);
   if (due) { lines.push(`Quotation required by: ${fmtDay(due)}, 5:00 pm${leadDays ? ` (${leadDays} days from this request)` : ""}`); lines.push("If you can submit sooner, please do. If that date cannot be met, please reply with the date you can submit by."); }
   lines.push("", "SCOPE OF WORKS");
-  if (!scopes.length) lines.push("  As per the attached documents.");
-  for (const s of scopes) {
-    lines.push(`  ${s.label}${s.type && s.type !== s.label ? ` (${s.type})` : ""}${s.measures.length ? ` — ${s.measures.join(", ")}` : ""}`);
-    if (s.items.length) lines.push(`    Items to price: ${s.items.join("; ")}`);
-    if (s.description) lines.push(`    ${s.description}`);
-    for (const t of s.takeoff || []) lines.push(...takeoffLines(t));
-  }
+  lines.push(...scopeLines(scopes, { pkgKey, pkgLabel, showQuantities }));
   if (extraNotes && extraNotes.trim()) lines.push("", "NOTES", ...extraNotes.trim().split(/\r?\n/).map((l) => "  " + l));
   lines.push("", "DOCUMENTS");
   if (attachments.length) { lines.push("  Attached to this email:"); for (const a of attachments) lines.push(`  - ${attachmentLabel(a)}`); }
@@ -281,11 +343,11 @@ export function rfqBody({ projectName, siteAddress = "", pkgLabel, scopes = [], 
   return lines.join("\n");
 }
 /** One independent draft per organisation — built from the same facts, never shared text objects. */
-export function rfqDrafts({ orgs, projectName, siteAddress, pkgLabel, scopes, due, leadDays, requestedOn, sender, attachments, links = [], extraNotes, ccByOrg = null }) {
+export function rfqDrafts({ orgs, projectName, siteAddress, pkgLabel, pkgKey = "", showQuantities = false, scopes, due, leadDays, requestedOn, sender, attachments, links = [], extraNotes, ccByOrg = null }) {
   return (orgs || []).map((org) => {
     const contact = rfqContact(org);
     const head = rfqHead({ pkgLabel, org, contact });
-    const body = rfqBody({ projectName, siteAddress, pkgLabel, scopes, due, leadDays, requestedOn, sender, attachments, links, extraNotes });
+    const body = rfqBody({ projectName, siteAddress, pkgLabel, pkgKey, showQuantities, scopes, due, leadDays, requestedOn, sender, attachments, links, extraNotes });
     return { id: `d-${org.id}`, orgId: org.id, orgName: org.name, trade: org.trade || "", contactName: contact.name, contactId: contact.contactId, email: contact.email, cc: ccByOrg && Array.isArray(ccByOrg[org.id]) ? [...new Set(ccByOrg[org.id].map(lc).filter(validEmail))].filter((e) => e !== lc(contact.email)) : rfqCopies(org), subject: rfqSubject({ pkgLabel, projectName }), head, body, text: joinDraft(head, body), approved: false, status: "draft" };
   });
 }

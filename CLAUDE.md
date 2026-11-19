@@ -2208,7 +2208,37 @@ bare minimum should be archi, struct, soil report". Rules:
    are attached to this email — they will follow separately" (never
    "available on request": documents are always attached), what to include
    — rates ex GST, inclusions / exclusions, validity, lead time, site
-   requirements, insurances and ABN — and the signature). `RFQ_LEAD` is the
+   requirements, insurances and ABN — and the signature). **The scope is the
+   package's OWN work, and carries no measurement unless it is ticked on**
+   (Boma, 19 Nov 2026, on a Formwork RFQ that listed "Items to price: Steel
+   fix", every concrete volume, every bar run and the formed areas: "dont give
+   too much details. dont give measurements especially for formwork so we dont
+   preempt … don add elements that are not related. formwork scope should be
+   for formwork only"): `scopeLines(scopes, {pkgKey, pkgLabel, showQuantities})`
+   is the ONE writer of SCOPE OF WORKS. `packageTakesLine(pkgKey, line)` says
+   which takeoff lines are the package's (`PACKAGE_LINE_TESTS`: Formwork →
+   the Formwork group; Steel Fixing / Reinforcement Supply → steel in
+   Reinforcement / Connections / Joints, never a counted joint; pumping /
+   premix / concrete works → Concrete; excavation, waterproofing, screed, PT
+   their own; the piling packages concrete, steel and the dig; "other" or no
+   key → every line) and `packageItems(pkgKey, items)` keeps only the
+   subcontract rows the package's `rows` pattern names. With the composer's
+   **"Include our measured quantities"** tick OFF (`rfq-show-qty`, off on every
+   open — `showQty` in `RfqModal`, passed to `rfqDrafts` and the re-draft as
+   `showQuantities`) a line is the element's name and the KINDS of its work
+   (`scopeKinds` / `workKind`: "- Suspended Slab - Roof: Soffit formwork,
+   Edgeform" — a material name with any dimension stripped, each once), under
+   "Please price the <package> package for the following, measured by you from
+   the documents provided." — no count, run, area, volume, depth, takeoff
+   field or typed description. Ticked, the round states Gradcon's figures as
+   "for guidance only": the element's measures (its m³ only where the package
+   prices concrete — `packageTakesConcrete`), the package's rows, the typed
+   description and the package's takeoff lines with their quantities (the
+   takeoff FIELDS only on a piling or "other" package). `elementScope` now
+   carries up to 80 takeoff lines so a package's own are never cut off by
+   another trade's. `verify.mjs` runs the Formwork example (no digit in the
+   scope, nothing of another trade), steel, premix and the ticked form;
+   `test-rfq-scope.mjs` proves the tick off and on in the composer. `RFQ_LEAD` is the
    lead time Grady picks per round ("How heavy is this quote?": simple 3
    days, complex 7 — business days through `dayPlus`, the date still
    editable); `rfqDrafts` builds ONE

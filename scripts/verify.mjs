@@ -4450,7 +4450,7 @@ await checkAsync("RFQ (src/lib/rfq.js, api/gmail.js send): one draft per contrac
   const takeoff = [{ label: "Bored piers to boundary", typeKey: "pier", data: { dia: 450, depth: 6000, qty: 12 }, results: { lines: [{ materialGroup: "Concrete", material: "N32", finalQty: 9.54, unit: "m³" }] } }];
   const scope = R.elementScope(item, defaultRates(), "both", "Piles - Bored Piers", takeoff);
   assert.ok(scope.measures.includes("12 no.") && scope.items[0] === "Bored Piers (subcontract)" && scope.takeoff.length === 1 && scope.takeoff[0].fields.dia === 450, JSON.stringify(scope));
-  const drafts = R.rfqDrafts({ orgs: [dmac, bcs], projectName: "11 Skelton Place, Sorrento VIC 3943", pkgLabel: "Bored Pier Works", scopes: [scope], due: "2026-10-30", leadDays: 7, requestedOn: "2026-10-23", sender: { name: "Grady Fink" }, attachments: [{ name: "S-01.pdf", tags: ["struct"] }, { name: "Geotech.pdf", tags: ["soil"] }] });
+  const drafts = R.rfqDrafts({ orgs: [dmac, bcs], projectName: "11 Skelton Place, Sorrento VIC 3943", pkgLabel: "Bored Pier Works", pkgKey: "bored", showQuantities: true, scopes: [scope], due: "2026-10-30", leadDays: 7, requestedOn: "2026-10-23", sender: { name: "Grady Fink" }, attachments: [{ name: "S-01.pdf", tags: ["struct"] }, { name: "Geotech.pdf", tags: ["soil"] }] });
   assert.equal(drafts.length, 2);
   assert.equal(drafts[0].subject, "RFQ – Bored Pier Works – 11 Skelton Place, Sorrento VIC 3943", "industry subject form");
   assert.ok(drafts[0].email === "trevor@dmacpiling.com.au" && drafts[0].text.startsWith("Dear Trevor,") && /invites DMAC Contracting/.test(drafts[0].text) && !/Will|BCS/.test(drafts[0].text), "DMAC's draft carries only DMAC");
@@ -4767,6 +4767,48 @@ check("bridge: an L-series trench-mesh line in lineal metres (a joint dowel stri
 // ---------------------------------------------------------------------------------------------------------------
 // RFQ attachments added BY HAND (4 Nov 2026): a local file uploaded into the bucket, a pasted Drive file link —
 // and the "not attached" note is information, never a stop.
+await checkAsync("RFQ scope: a package is told ONLY its own work and no measurement unless the estimator ticks it on (19 Nov 2026 — a Formwork RFQ had listed steel fixing, every concrete volume, every bar run and the formed areas)", async () => {
+  const R = await import("../src/lib/rfq.js");
+  const TK = (lines) => [{ type: "suspslab", fields: { grade: 50, cover: 25, thickness: 150 }, lines }];
+  const scopes = [
+    { label: "Lift Core / Shear Wall", type: "Core / Shear Wall", measures: ["6.13 m³ concrete"], items: [], description: "", takeoff: [] },
+    { label: "Ground RC Columns", type: "RC Columns - Fence Post Columns", measures: ["9 no.", "3.81 m³ concrete"], items: [], description: "", takeoff: [] },
+    { label: "Suspended Slab - Roof", type: "Suspended Slab", measures: ["21 m²", "7.47 m³ concrete"], items: ["Steel fix"], description: "200 thick, N12 @ 200 each way", takeoff: TK([{ group: "Concrete", material: "N50 concrete", spec: "Suspended Slab 150mm", qty: 3.31, unit: "m³" }, { group: "Reinforcement", material: "N12", spec: "Bottom X bars — Section 1", qty: 158.36, unit: "m" }, { group: "Formwork", material: "Soffit formwork", qty: 22.05, unit: "m²" }, { group: "Formwork", material: "Edgeform", spec: "perimeter edge formwork 270mm high edge", qty: 127.05, unit: "m" }, { group: "Formwork", material: "Soffit formwork", qty: 114.45, unit: "m²" }]) },
+    { label: "Post-Tensioned Slab - Including HOBS/Bench", type: "Post-Tensioned Slab", measures: ["590 m²", "195.41 m³ concrete"], items: ["Steel fix"], description: "", takeoff: TK([{ group: "Concrete", material: "N32 concrete", spec: "150x300 kerb", qty: 2.16, unit: "m³" }, { group: "Joints", material: "Construction joints @12m", qty: 3, unit: "no." }, { group: "Joints", material: "N12", spec: "Joint dowels", qty: 5.04, unit: "m" }, { group: "Formwork", material: "Profile formwork (both sides)", spec: "150x300 kerb", qty: 25.2, unit: "m²" }]) },
+  ];
+  const fw = R.scopeLines(scopes, { pkgKey: "formwork", pkgLabel: "Formwork" });
+  assert.deepEqual(fw, [
+    "  Please price the Formwork package for the following, measured by you from the documents provided.",
+    "  - Lift Core / Shear Wall",
+    "  - Ground RC Columns",
+    "  - Suspended Slab - Roof: Soffit formwork, Edgeform",
+    "  - Post-Tensioned Slab - Including HOBS/Bench: Profile formwork (both sides)",
+  ]);
+  assert.ok(!/\d/.test(fw.join("\n")), "the Formwork scope carries no figure at all: no area, no run, no depth, no count");
+  assert.ok(!/steel fix|concrete|N12|N50|reinforc|joint|dowel|As taken off|Items to price|200 thick/i.test(fw.join("\n")), "nothing of another trade, no takeoff fields, no typed description");
+  // each package takes its own lines
+  const sf = R.scopeLines(scopes, { pkgKey: "steelfix", pkgLabel: "Steel Fixing" }).join("\n");
+  assert.ok(/Suspended Slab - Roof: Steel fix, N12/.test(sf) && !/formwork|Edgeform|concrete|Construction joints|\d{2,}\.\d|m²|m³/i.test(sf), sf);
+  const pm = R.scopeLines(scopes, { pkgKey: "premix", pkgLabel: "Premixed Concrete Supply" }).join("\n");
+  assert.ok(/Suspended Slab - Roof: N50 concrete/.test(pm) && /HOBS\/Bench: N32 concrete/.test(pm) && !/formwork|Steel fix|N12\b/i.test(pm), pm);
+  assert.ok(R.packageTakesLine("formwork", { group: "Formwork", material: "Edgeform" }) && !R.packageTakesLine("formwork", { group: "Reinforcement", material: "N12" }) && !R.packageTakesLine("steelfix", { group: "Joints", material: "Construction joints @12m" }) && R.packageTakesLine("steelfix", { group: "Joints", material: "N12" }) && R.packageTakesLine("other", { group: "Formwork" }) && R.packageTakesLine("", { group: "Concrete" }));
+  assert.deepEqual(R.packageItems("formwork", ["Steel fix", "Formwork (subcontract)"]), ["Formwork (subcontract)"]);
+  assert.deepEqual(R.packageItems("steelfix", ["Steel fix", "Formwork (subcontract)"]), ["Steel fix"]);
+  assert.deepEqual(R.packageItems("premix", ["Steel fix"]), []); assert.deepEqual(R.packageItems("other", ["Steel fix"]), ["Steel fix"]);
+  assert.equal(R.workKind({ material: "Profile formwork 150x300 (both sides)" }), "Profile formwork (both sides)"); assert.equal(R.workKind({ material: "Edgeform 270mm" }), "Edgeform"); assert.equal(R.workKind({ material: "N16" }), "N16");
+  // ticked on for the round: the package's own measures and lines, still nothing of another trade, and the m³ only where the package prices concrete
+  const fwQ = R.scopeLines(scopes, { pkgKey: "formwork", pkgLabel: "Formwork", showQuantities: true }).join("\n");
+  assert.ok(/Quantities are Gradcon's own measure, for guidance only/.test(fwQ) && /Ground RC Columns \(RC Columns - Fence Post Columns\) — 9 no\./.test(fwQ) && /Formwork: Edgeform perimeter edge formwork 270mm high edge — 127\.05 m/.test(fwQ) && /Formwork: Soffit formwork — 114\.45 m²/.test(fwQ) && /200 thick, N12 @ 200 each way/.test(fwQ) && !/m³ concrete|Steel fix|As taken off|Reinforcement:|Concrete:|Joints:/.test(fwQ), fwQ);
+  const pmQ = R.scopeLines(scopes, { pkgKey: "premix", pkgLabel: "Premixed Concrete Supply", showQuantities: true }).join("\n");
+  assert.ok(/Lift Core \/ Shear Wall \(Core \/ Shear Wall\) — 6\.13 m³ concrete/.test(pmQ) && /Concrete: N50 concrete Suspended Slab 150mm — 3\.31 m³/.test(pmQ) && !/Formwork:|Reinforcement:/.test(pmQ), pmQ);
+  // the body and the drafts carry the rule; the default is OFF
+  const body = R.rfqBody({ projectName: "3206 Point Nepean Road, Sorrento", pkgLabel: "Formwork", pkgKey: "formwork", scopes, due: "2026-11-23" });
+  const scopeBlock = body.split("SCOPE OF WORKS")[1].split("DOCUMENTS")[0];
+  assert.ok(/- Suspended Slab - Roof: Soffit formwork, Edgeform/.test(scopeBlock) && !/\d/.test(scopeBlock), scopeBlock);
+  assert.deepEqual(R.scopeLines([], { pkgKey: "formwork", pkgLabel: "Formwork" }), ["  As per the attached documents."]);
+  const modal = fs.readFileSync(new URL("../src/components/RfqModal.jsx", import.meta.url), "utf8");
+  assert.ok(/const \[showQty, setShowQty\] = useState\(false\)/.test(modal) && /data-testid="rfq-show-qty"/.test(modal) && (modal.match(/showQuantities: showQty/g) || []).length === 2 && /pkgKey: p\.key, showQuantities: showQty/.test(modal) && /pkgKey: d\.pkgKey, showQuantities: showQty/.test(modal), "the composer's tick is off by default and reaches both the build and the re-draft");
+});
 await checkAsync("RFQ: a Drive file too large to copy goes on the email as a link, never an error that stops the build (19 Nov 2026) — the link-only copy may be 200 MB, a file the storage cannot take becomes its Drive link, and the composer knows whether a contractor can open it", async () => {
   const R = await import("../src/lib/rfq.js");
   const Gm = await import("../api/_google.js");

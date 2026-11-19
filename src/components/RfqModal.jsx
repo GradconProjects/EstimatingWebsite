@@ -44,6 +44,7 @@ export default function RfqModal({ quote, items, rates, projectScope, elementTyp
   const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
   const [sender, setSender] = useState(() => defaultSender());
   const [extraNotes, setExtraNotes] = useState("");
+  const [showQty, setShowQty] = useState(false);   // off: the contractor measures from the documents — Gradcon's own take-off never pre-empts their figure
   const [attach, setAttach] = useState(() => new Set());
   const [drafts, setDrafts] = useState([]);
   // ONE body per package, shared by every contractor's draft of that package; a draft's own text is its
@@ -210,7 +211,7 @@ export default function RfqModal({ quote, items, rates, projectScope, elementTyp
       const all = [];
       for (const p of pkgs) {
         const pickedOrgs = orgs.filter((o) => picked(p.key).has(o.id));
-        for (const d of rfqDrafts({ orgs: pickedOrgs, projectName: quote.projectName || "Untitled project", siteAddress: quote.siteAddress || "", pkgLabel: labelOf(p), scopes, due, leadDays: RFQ_LEAD[complexity].days, requestedOn: today(), sender, attachments: planned.attach, links: planned.link, extraNotes, ccByOrg: Object.fromEntries(pickedOrgs.map((o) => [o.id, ccFor(o).list])) })) all.push({ ...d, id: `d-${p.key}-${d.orgId}`, pkgKey: p.key, pkgLabel: labelOf(p) });
+        for (const d of rfqDrafts({ orgs: pickedOrgs, projectName: quote.projectName || "Untitled project", siteAddress: quote.siteAddress || "", pkgLabel: labelOf(p), pkgKey: p.key, showQuantities: showQty, scopes, due, leadDays: RFQ_LEAD[complexity].days, requestedOn: today(), sender, attachments: planned.attach, links: planned.link, extraNotes, ccByOrg: Object.fromEntries(pickedOrgs.map((o) => [o.id, ccFor(o).list])) })) all.push({ ...d, id: `d-${p.key}-${d.orgId}`, pkgKey: p.key, pkgLabel: labelOf(p) });
       }
       const nextBodies = {}; for (const d of all) if (nextBodies[d.pkgKey] == null) nextBodies[d.pkgKey] = d.body;
       setBodies(nextBodies); setDrafts(all);
@@ -220,7 +221,7 @@ export default function RfqModal({ quote, items, rates, projectScope, elementTyp
   }
   const patchDraft = (i, patch) => setDrafts((ds) => ds.map((d, j) => (j === i ? { ...d, ...patch } : d)));
   // Re-draft rebuilds the package's shared body (every draft of the package follows, approvals cleared) and this draft's head
-  const redraft = (i) => { const d = drafts[i]; const org = orgs.find((o) => o.id === d.orgId); if (!org) return; const scopes = chosenItems.map((item) => elementScope(item, rates, projectScope, typeName(item), takeoff ? takeoff.instances : null)); const body = rfqBody({ projectName: quote.projectName || "Untitled project", siteAddress: quote.siteAddress || "", pkgLabel: d.pkgLabel, scopes, due, leadDays: RFQ_LEAD[complexity].days, requestedOn: today(), sender, attachments: resolvedFiles, links: resolvedLinks, extraNotes }); setBodies((b) => ({ ...b, [d.pkgKey]: body })); setDrafts((ds) => ds.map((x) => (x.pkgKey === d.pkgKey ? { ...x, body, subject: rfqSubject({ pkgLabel: x.pkgLabel, projectName: quote.projectName || "Untitled project" }), approved: false, ...(x.id === d.id ? { head: rfqHead({ pkgLabel: d.pkgLabel, org, contact: rfqContact(org) }) } : {}) } : x))); };
+  const redraft = (i) => { const d = drafts[i]; const org = orgs.find((o) => o.id === d.orgId); if (!org) return; const scopes = chosenItems.map((item) => elementScope(item, rates, projectScope, typeName(item), takeoff ? takeoff.instances : null)); const body = rfqBody({ projectName: quote.projectName || "Untitled project", siteAddress: quote.siteAddress || "", pkgLabel: d.pkgLabel, pkgKey: d.pkgKey, showQuantities: showQty, scopes, due, leadDays: RFQ_LEAD[complexity].days, requestedOn: today(), sender, attachments: resolvedFiles, links: resolvedLinks, extraNotes }); setBodies((b) => ({ ...b, [d.pkgKey]: body })); setDrafts((ds) => ds.map((x) => (x.pkgKey === d.pkgKey ? { ...x, body, subject: rfqSubject({ pkgLabel: x.pkgLabel, projectName: quote.projectName || "Untitled project" }), approved: false, ...(x.id === d.id ? { head: rfqHead({ pkgLabel: d.pkgLabel, org, contact: rfqContact(org) }) } : {}) } : x))); };
   const editBody = (pkgKey, body) => { setBodies((b) => ({ ...b, [pkgKey]: body })); setDrafts((ds) => ds.map((x) => (x.pkgKey === pkgKey && x.status !== "sent" ? { ...x, approved: false } : x))); };
 
   async function sendApproved() {
@@ -351,6 +352,10 @@ export default function RfqModal({ quote, items, rates, projectScope, elementTyp
                 <label className="text-[12px] text-neutral-600">Signed<input value={sender.name} onChange={(e) => setSender({ ...sender, name: e.target.value })} className="mt-0.5 w-full border border-neutral-300 rounded px-2 py-1.5 text-[13px]" data-testid="rfq-sender" /></label>
               </div>
               <label className="block text-[12px] text-neutral-600">Cc on every email <span className="text-neutral-400">(Gradcon's own copies — contractors are never cc'd on each other)</span><input value={ccText} onChange={(e) => setCcText(e.target.value)} placeholder="grady@gradcon.com.au, …" className="mt-0.5 w-full border border-neutral-300 rounded px-2 py-1.5 text-[13px]" data-testid="rfq-cc" /></label>
+              <label className="flex items-start gap-2 text-[12px] text-neutral-700" data-testid="rfq-show-qty-row">
+                <input type="checkbox" checked={showQty} onChange={(e) => setShowQty(e.target.checked)} className="mt-0.5" data-testid="rfq-show-qty" />
+                <span><b>Include our measured quantities</b> in the scope <span className="text-neutral-500">(off: each RFQ names the elements and the kinds of work for its own package only, and the contractor measures from the documents)</span></span>
+              </label>
               <label className="block text-[12px] text-neutral-600">Notes for every contractor (optional)<textarea value={extraNotes} onChange={(e) => setExtraNotes(e.target.value)} rows={2} className="mt-0.5 w-full border border-neutral-300 rounded px-2 py-1.5 text-[12.5px]" placeholder="e.g. Site access from Esplanade only; geotech report attached; program start February" /></label>
               <div>
                 <div className="text-[11px] uppercase tracking-wider text-neutral-500 font-semibold mb-1 flex items-center gap-1"><Paperclip size={12} /> Attach to every email <span className="normal-case tracking-normal font-normal text-neutral-400">— {driveFolder ? (driveFolder.id ? `from the project's Drive folder “${driveFolder.name}”: the architectural, structural and soil-report files are ticked on their own` : "no Drive folder") : "reading the project's Drive folder…"}</span></div>
