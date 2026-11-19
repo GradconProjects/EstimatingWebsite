@@ -4452,6 +4452,54 @@ element families waits on the owner's approval of the pad footing.
   callers and the stock-bar branch; `test-reentrant.mjs` proves bars /
   strips / stock bars / sheets on a slab, the wall's 8 corners from two
   openings and a typed 6, the untick, the composite and the saved fields.
+- **Rebates are a table on every Formwork tab — where it runs is a choice,
+  and every figure stays editable** (Grady, 19 Nov 2026, on the typical
+  external beam detail with a brick rebate cast into the edge beam's outer
+  top corner: "add rebates in the slab beams and all beams for that matter
+  including the overlying slabs. ask for rebate dimensions and the run should
+  ask if its the entire beam length or slab perimeter and option to add
+  manually so we can capture the formwork right"; "user should be able to
+  select rebate to slab and then the beams. this should be totally flexible
+  to edit and select"): `inst.data.rebates[] = {name, on, runM, count,
+  widthMm, depthMm, deduct}`, rendered by `rebateSection(inst, where)`
+  (`data-testid="rebates"`, `data-where`) at the foot of EVERY element's
+  Formwork tab and, on a slab, on its Edge Beams and Internal Beams tabs too
+  (the same rows, one array — the note says so). `rebateTargets(inst)` is the
+  ONE list of where a rebate can run: a slab → "Slab — whole perimeter"
+  (`slabPerimM`) and "<beam> — entire run" for every beam switched on
+  (`slabBeamsForFormwork`: the edge beam `beam:edgeBeam`, the internal strips
+  `beam:beamStrips`, each extra group `beam:edgeBeamGroups.N` /
+  `beam:intBeamGroups.N`); a standalone beam → "Entire beam length" (qty × L);
+  a strip footing → "Entire footing run"; every element → "Typed length"
+  (`REBATE_MANUAL`). `rebateCalc(r, targets)` is the ONE arithmetic: run = the
+  typed Run when there is one (a rebate along PART of an edge — it always
+  wins), else the chosen target's run (no `on` = the first option), × No.
+  (blank = 1; both sides of a beam = 2); formed girth = width + depth; volume
+  = run × width × depth. `applyRebates` runs in `computeInstance` right after
+  `applyConcreteOverride` and before a steel rate reads the concrete: ONE
+  Formwork line per row through `formworkLines` (material "Rebate formwork",
+  face = the larger of width / depth, so an ordinary rebate is lineal metres
+  with the girth's m² as `m2Equiv`, and a 400 mm+ rebate is m²; `rebate:
+  true` on the line) and, unless the row's "Off concrete" tick is cleared or
+  the element carries a concrete volume override, the volume comes off the
+  concrete line of the part it sits in (a beam's rebate off THAT beam's line
+  by its spec, else the element's first concrete line; waste re-applied,
+  `rebateM3` and the formula state it). A row with nothing typed is nothing;
+  a row with no run, no width / depth, or whose beam was removed is a
+  completeness warning and no line. The add buttons name the run
+  (`rebate-add`, action `addRebate` with `data-basis`; on a beam tab only
+  that tab's beams), ⧉ duplicates a row (`dupRebate`), ✕ is the ordinary
+  `delRow`; the Result cell (`data-rebate-out`) follows the typing through
+  `refreshRebateRows`. **The table never creates the array on render** — an
+  untouched element's content, and so its cloud hash, is unchanged. The
+  bridge lands the lm line on FORMWORK "Edgeform" (m) and a 400 mm+ rebate on
+  "Edgeform >400mm deep" (`EDGE_FACE_RE` carries "rebate"). `verify.mjs` runs
+  the arithmetic out of the page source and pins the targets, the three
+  tabs, the pass order and the bridge; `test-rebates.mjs` proves the raft
+  (perimeter 60 m, edge beam 40 m, ribs × 2, the extra beam, a typed 25 m,
+  three rows at once, a 450 mm rebate in m², a removed beam), a ground beam,
+  a strip footing, the warnings and the real clicks (add on the Edge Beams
+  tab, type, switch to the slab, duplicate, delete).
 - **A sheet-mesh line WEIGHS** (26 Oct 2026, Grady's pad footing PF1-3 with
   two layers of SL92 read "0kg reo"): `lineWeightKg` returns final m² ×
   `MESHTYPES[material]` (kg/m²) for an m² Reinforcement line, so the element

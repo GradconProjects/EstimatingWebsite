@@ -206,7 +206,7 @@ export function edgeProductForDepth(depthMm) {
 // m² with its `faceMm` and lands on "Edgeform >400mm deep" (m²) — the edge is
 // formed over the material's full depth. Walls, columns, soffits and casings
 // keep their own products below.
-const EDGE_FACE_RE = /edgeform|trench formwork|side formwork|beam formwork|step-down|footing formwork|footing \+ stem|reveal/i;
+const EDGE_FACE_RE = /edgeform|trench formwork|side formwork|beam formwork|step-down|footing formwork|footing \+ stem|reveal|rebate/i;
 export function isEdgeFaceLine(l) {
   return !!l && l.materialGroup === "Formwork" && EDGE_FACE_RE.test(`${l.material || ""} ${l.spec || ""}`) && !/wall formwork|column formwork|soffit|casing/i.test(String(l.material || ""));
 }

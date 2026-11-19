@@ -126,6 +126,10 @@ table.rows.extra-conn .extra-conn-setout{display:flex;align-items:center;gap:3px
 .pane[data-pane="addl"] > .pane-body{flex-direction:column;}
 .pane[data-pane="addl"] > .pane-body > .pane-fields{flex:none !important;width:100%;}   /* the inline "flex:2 1 280px" basis would be a HEIGHT in a column and clip the rows */
 .pane[data-pane="addl"] > .pane-body > .diag-host{flex:none !important;max-width:520px;}
+table.rows.rebates{font-size:11.5px;}
+table.rows.rebates th{padding:3px 3px;font-size:9.5px;letter-spacing:.03em;white-space:nowrap;}
+table.rows.rebates td{padding:2px 2px;}
+table.rows.rebates input[type="text"],table.rows.rebates select{padding:3px 4px;font-size:11.5px;}
 table.rows.addl{font-size:11.5px;}
 table.rows.addl th{padding:3px 3px;font-size:9.5px;letter-spacing:.03em;white-space:nowrap;}
 table.rows.addl td{padding:2px 2px;white-space:nowrap;}
@@ -9291,6 +9295,113 @@ function reoRateArea(d){ return num(d._autoAreaM2) || num(d._autoInsArea) || num
  * (grade) so pour schedules still group by grade. Formwork has its own
  * override on the Formwork tab; reinforcement by rate uses the entered
  * volume because it runs after this. 0 / blank = geometry as before. */
+/* REBATES (Grady, 19 Nov 2026, on the typical external beam detail — a brick
+ * rebate cast into the outer top corner of the edge beam: "add rebates in the
+ * slab beams and all beams for that matter including the overlying slabs. ask
+ * for rebate dimensions and the run should ask if its the entire beam length
+ * or slab perimeter and option to add manually so we can capture the formwork
+ * right"; "user should be able to select rebate to slab and then the beams.
+ * this should be totally flexible to edit and select"). One table of rows
+ * (`inst.data.rebates[] = {name, on, runM, count, widthMm, depthMm, deduct}`)
+ * on EVERY Formwork tab, and on a slab's Edge Beams and Internal Beams tabs
+ * (the same rows, one array). `rebateTargets(inst)` is the ONE list of where
+ * a rebate can run — a slab's whole perimeter and the entire run of each of
+ * its beams, a beam's or strip footing's entire length, and "typed length" on
+ * every element; `rebateCalc(r, targets)` the ONE arithmetic: run = the typed
+ * Run when there is one (a rebate along PART of an edge), else the chosen
+ * target's run, × the number of rebates along it (blank = 1; both sides of a
+ * beam = 2). `applyRebates` emits ONE Formwork line per row through
+ * formworkLines (face = the larger of width / depth, so an ordinary rebate is
+ * lineal metres; the formed girth width + depth rides as the m²) and, unless
+ * the row's "off concrete" tick is cleared, takes run × width × depth off the
+ * concrete line of the part it sits in. A row with nothing typed is nothing;
+ * a row missing its run or a dimension is a completeness warning. */
+const REBATE_MANUAL="manual";
+function rebateRows(d){ return Array.isArray(d.rebates)? d.rebates : []; }
+function rebateTargets(inst){
+  const def=LIB_INDEX[inst.typeKey]||{}, d=inst.data||{}, out=[];
+  if(def.calc==="slab"){
+    out.push({key:"perim", label:"Slab — whole perimeter", short:"slab perimeter", runM:slabPerimM(d), tab:"form"});
+    slabBeamsForFormwork(d).forEach(b=>{
+      out.push({key: b.base? "beam:"+b.base.replace(/\.$/,"") : "beam:"+b.p, label:`${b.name} — entire run`, short:b.name, runM:num(b.runM),
+        concSpec: b.base? b.name : (b.p==="edgeBeam"? "Edge beam" : "Internal beam strips (raft ribs)"), tab:/Edge/.test(b.where)? "edgebeams" : "intbeams"});
+    });
+  } else if(def.calc==="beam"){
+    out.push({key:"run", label:"Entire beam length", short:"beam length", runM:num(d.qty,1)*num(d.length)/1000, tab:"form"});
+  } else if(def.calc==="stripfooting"){
+    const g=stripGeom(d); out.push({key:"run", label:"Entire footing run", short:"footing run", runM:num(g.N,1)*num(g.Lm), tab:"form"});
+  }
+  out.push({key:REBATE_MANUAL, label:"Typed length", short:"typed length", runM:0, tab:"form"});
+  return out;
+}
+function rebateTargetOf(r, targets){ const k=(r&&r.on)||targets[0].key; return targets.find(t=>t.key===k)||null; }
+function rebateCalc(r, targets){
+  const t=rebateTargetOf(r,targets), typed=num(r.runM)>0, base=typed? num(r.runM) : (t? num(t.runM) : 0);
+  const n=num(r.count)>0? num(r.count) : 1, W=num(r.widthMm), D=num(r.depthMm), runM=base*n;
+  const any=typed || W>0 || D>0 || !!String(r.name||"").trim();
+  return {target:t, typed, baseRunM:base, n, runM, W, D, areaM2:runM*(W+D)/1000, volM3:runM*W*D/1e6, deduct:r.deduct!==false, any, ok:runM>0 && W>0 && D>0};
+}
+function rebateOutText(c){
+  if(!c.target) return "the beam this rebate ran along is gone — pick where it runs";
+  if(!(c.W>0) || !(c.D>0)) return c.any? "type the width and depth" : "—";
+  if(!(c.runM>0)) return c.target.key===REBATE_MANUAL? "type the run (m)" : `${c.target.short} has no length yet — type the run`;
+  return `${fmt(c.runM,2)} m formed · ≈ ${fmt(c.areaM2,2)} m²${c.deduct? ` · −${fmt(c.volM3,3)} m³` : ""}`;
+}
+function rebateSection(inst, where){
+  const d=inst.data, rows=rebateRows(d), targets=rebateTargets(inst);   // never creates the array on render — an untouched element's content is unchanged
+  const body=rows.map((r,i)=>{
+    const c=rebateCalc(r,targets), cur=(r.on)||targets[0].key, known=targets.some(t=>t.key===cur);
+    const opts=targets.map(t=>`<option value="${t.key}" ${t.key===cur?'selected':''}>${t.label}${t.key!==REBATE_MANUAL? ` (${fmt(num(t.runM),2)} m)` : ""}</option>`).join('')+(known? "" : `<option value="${cur}" selected>— beam removed, pick again —</option>`);
+    const ph=c.target && c.target.key!==REBATE_MANUAL? fmt(num(c.target.runM),2) : "m";
+    const numIn=(f,v,phx,w)=>`<input type="text" inputmode="decimal" data-num="1" data-step="" data-field="rebates.${i}.${f}" data-rerender="true" value="${v===undefined||v===null?'':v}" placeholder="${phx}" style="width:${w}px;min-width:${w}px">`;
+    return `<tr data-row="rebates.${i}" data-testid="rebate-row">
+     <td style="min-width:110px"><input type="text" data-field="rebates.${i}.name" value="${String(r.name||"").replace(/"/g,'&quot;')}" placeholder="e.g. Brick rebate"></td>
+     <td><select data-field="rebates.${i}.on" data-rerender="true" data-testid="rebate-on" style="max-width:210px">${opts}</select></td>
+     <td>${numIn("runM",r.runM,ph,64)}</td>
+     <td>${numIn("count",r.count,"1",40)}</td>
+     <td>${numIn("widthMm",r.widthMm,"mm",56)}</td>
+     <td>${numIn("depthMm",r.depthMm,"mm",56)}</td>
+     <td style="text-align:center"><input type="checkbox" data-field="rebates.${i}.deduct" data-rerender="true" ${r.deduct!==false?'checked':''} title="Take the rebate's volume (run × width × depth) off the concrete"></td>
+     <td class="small" style="white-space:nowrap" data-rebate-out="${i}">${rebateOutText(c)}</td>
+     <td style="white-space:nowrap"><button type="button" class="btn small" data-action="dupRebate" data-idx="${i}" title="Duplicate this rebate row">⧉</button> <button type="button" class="btn small danger" data-action="delRow" data-target="rebates" data-idx="${i}" title="Remove this rebate">✕</button></td>
+    </tr>`; }).join('');
+  const mine=targets.filter(t=> where==="form"? true : (t.tab===where));
+  const adds=(mine.length? mine : targets).map(t=>`<button type="button" class="btn small ${t.key===REBATE_MANUAL?'':'primary'}" data-action="addRebate" data-basis="${t.key}" data-testid="rebate-add">+ ${t.key===REBATE_MANUAL? "Typed length" : t.short.charAt(0).toUpperCase()+t.short.slice(1)}</button>`).join(' ');
+  const note = where==="form"? "" : `<p class="small">The same rows are listed on the <b>Formwork</b> tab; a row typed on either tab is one row.</p>`;
+  return `<div class="subsec" data-testid="rebates" data-where="${where||"form"}"><div class="sechead">Rebates — a step cast into an edge (brick rebate, set-down edge)</div>${note}
+  <p class="small">One row per rebate. Pick <b>where it runs</b> — ${targets.length>1? "the options this element offers (its whole run is filled in for you)" : "this element takes a typed length"} — or type a <b>Run</b> to override it for a rebate along part of the edge. <b>No.</b> is how many rebates run along that length (both sides of a beam = 2). <b>Width × depth</b> are the rebate's own. Formwork = run × no., by the lineal metre while the rebate is under ${FORMWORK_LM_MAX_MM} mm (the formed girth, width + depth, is kept as the m²); ticked, the rebate's volume comes off the concrete.</p>
+  <div style="overflow-x:auto"><table class="rows rebates"><thead><tr><th>Rebate</th><th>Where it runs</th><th>Run (m)</th><th>No.</th><th>Width (mm)</th><th>Depth (mm)</th><th>Off concrete</th><th>Result</th><th></th></tr></thead>
+  <tbody>${body||`<tr><td colspan="9" class="small">No rebates yet.</td></tr>`}</tbody></table></div>
+  <div style="margin-top:4px"><span class="small">Add a rebate to: </span>${adds}</div></div>`;
+}
+function refreshRebateRows(card,inst,field){
+  if(!/^rebates\.\d+\./.test(field||"")) return;
+  const targets=rebateTargets(inst);
+  rebateRows(inst.data).forEach((r,i)=>{ const t=rebateOutText(rebateCalc(r,targets)); card.querySelectorAll(`[data-rebate-out="${i}"]`).forEach(td=>{ td.textContent=t; }); });
+}
+function applyRebates(inst,def,out){
+  const d=inst.data, rows=rebateRows(d); if(!rows.length) return;
+  const targets=rebateTargets(inst);
+  out.lines=out.lines||[]; out.warnings=out.warnings||[];
+  rows.forEach((r,i)=>{
+    const c=rebateCalc(r,targets), nm=String(r.name||"").trim()||`Rebate ${i+1}`;
+    if(!c.any && !(c.runM>0 && (c.W>0||c.D>0))) return;                 // an untouched row is nothing
+    if(!c.target){ out.warnings.push({text:`${nm}: the beam it ran along has been removed — pick where it runs on the Formwork tab`,section:"form",level:"completeness"}); return; }
+    if(!(c.W>0) || !(c.D>0)){ out.warnings.push({text:`${nm}: type the rebate's width and depth — nothing of it is priced until both are in`,section:"form",level:"completeness"}); return; }
+    if(!(c.runM>0)){ out.warnings.push({text:`${nm}: the rebate has no run length — ${c.target.key===REBATE_MANUAL? "type its run (m)" : `the ${c.target.short} has no length yet; enter it, or type the rebate's run (m)`}`,section:"form",level:"completeness"}); return; }
+    const whereTxt=c.typed? (c.target.key===REBATE_MANUAL? "typed run" : `typed run on the ${c.target.short}`) : c.target.short;
+    formworkLines(inst,def,{material:"Rebate formwork",spec:`${nm} — ${fmt(c.W,0)} wide × ${fmt(c.D,0)} deep — ${whereTxt}`,
+      faces:[{name:"rebate, larger face",runM:c.runM,faceMm:Math.max(c.W,c.D),areaM2:c.areaM2}],
+      formula:`${fmt(c.baseRunM,2)} m${c.n!==1? ` × ${fmt(c.n,0)}` : ""}`,notes:`girth ${fmt(c.W+c.D,0)} mm (width + depth)`}).forEach(l=>{ l.rebate=true; out.lines.push(l); });
+    if(!c.deduct || num(d.concVolOverride)>0) return;                    // a measured concrete volume stands as typed
+    const own=out.lines.filter(l=>l.materialGroup==="Concrete" && l.unit==="m³" && !l.manualOverride && !/reference only/i.test(l.material||""));
+    const line=(c.target.concSpec && own.find(l=>l.spec===c.target.concSpec)) || own[0];
+    if(!line) return;
+    const take=Math.min(num(line.qty),c.volM3);
+    line.qty=num(line.qty)-take; line.finalQty=withWaste(line.qty,num(line.waste)); line.rebateM3=num(line.rebateM3)+take;
+    line.formula=`${line.formula||""} − ${nm} ${fmt(take,3)} m³`;
+  });
+}
 function concreteOverrideSection(inst){
   let d=inst.data, on=num(d.concVolOverride)>0;
   return `<div class="sechead">Irregular shape</div>
@@ -9465,7 +9576,9 @@ function buildCard(inst){
        ${F("Formwork area override (m², 0 = auto from element)",inpNum("genFormArea",fd.genFormArea))}
      </div><p class="small">Auto formwork comes from the element's own maths (faces × height, soffit + risers, both kerb sides…). Untick to exclude formwork from this element entirely, or enter an area to override the auto figure.</p></div>`;
   }
-  parts.form = formworkSystemSelect(inst.data) + parts.form;
+  parts.form = formworkSystemSelect(inst.data) + parts.form + rebateSection(inst,"form");   // rebates on EVERY Formwork tab
+  if(parts.edgebeams!==undefined) parts.edgebeams += rebateSection(inst,"edgebeams");       // …and beside the slab's own beams (the same rows)
+  if(parts.intbeams!==undefined) parts.intbeams += rebateSection(inst,"intbeams");
   // EVERY element with a Concrete tab can be an irregular shape: a measured
   // concrete volume replaces the geometry's concrete line(s) (see
   // applyConcreteOverride) — blinding stays, formwork has its own override
@@ -9847,13 +9960,14 @@ function attachCardEvents(card,inst){
       // is too tight and doesnt allow me see what has been entered and also
       // doesnt allow decimals"). The value is stored and costed at once; only
       // the rebuild waits.
-      if(e.target.dataset.num!==undefined){ e.target.dataset.rerenderPending="1"; computeAllAndRefresh(); refreshExtraConnCount(card,inst,f); return; }
+      if(e.target.dataset.num!==undefined){ e.target.dataset.rerenderPending="1"; computeAllAndRefresh(); refreshExtraConnCount(card,inst,f); refreshRebateRows(card,inst,f); return; }
       computeAllAndRefresh();
       rerenderCardKeepTab(card,inst);
       return;
     }
     refreshExtraConnCount(card,inst,f);
     refreshAddlRowTotal(card,inst,f);
+    refreshRebateRows(card,inst,f);
     if(e.target.dataset.toggle){
       card.querySelectorAll(`[data-show-if="${e.target.dataset.toggle}"]`).forEach(sec=>sec.classList.toggle('hidden',!val));
       let offSecs=card.querySelectorAll(`[data-show-if="${e.target.dataset.toggle}_off"]`);
@@ -9985,6 +10099,13 @@ function attachCardEvents(card,inst){
        : {zone:"Zone",length:1000,dia:"N10",spacing:200};
       arr.push(template);
       rerenderCardKeepTab(card,inst);
+    } else if(act==="addRebate" || act==="dupRebate"){
+      // a rebate row: added on the chosen run (the slab perimeter, one of its beams, a typed length), or a copy of a row
+      let arr=inst.data.rebates; if(!Array.isArray(arr)) arr=inst.data.rebates=[];
+      if(act==="dupRebate"){ let i=parseInt(e.target.dataset.idx,10); if(arr[i]) arr.splice(i+1,0,JSON.parse(JSON.stringify(arr[i]))); }
+      else arr.push({name:"", on:e.target.dataset.basis||"", runM:"", count:"", widthMm:"", depthMm:"", deduct:true});
+      markEntered(inst,"rebates");
+      computeAllAndRefresh(); rerenderCardKeepTab(card,inst);
     } else if(act==="dupBeam"){
       // a raft's extra edge / internal beam added as a COPY of a beam already
       // worked on (the primary one above, or an extra group) — run length blank
@@ -10094,6 +10215,7 @@ function computeInstance(inst){
   let out=calc.compute(inst,def);
   applyCogs(inst,def,out);                                           // cogs on the main bars first, so waste / lap cover them and a by-rate mat still replaces them
   applyConcreteOverride(inst,def,out);                               // an entered volume replaces the geometry's concrete first…
+  applyRebates(inst,def,out);                                        // rebates: their formwork, and their volume off the concrete, before a steel rate reads it
   if(reoMethodOf(inst.data)==="rate") applyReoRate(inst,def,out);   // …so a rate follows it; before connections are added, so they are never replaced
   else if(reoMethodOf(inst.data)==="area") applyReoArea(inst,def,out);
   computeExtraConnections(inst,def,out);

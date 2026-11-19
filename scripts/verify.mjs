@@ -2007,6 +2007,42 @@ check("formwork by face size (22 Oct 2026): an Estimates face under 400 mm arriv
   assert.ok(importAll.isEdgeFaceLine({ materialGroup: "Formwork", material: "Side formwork", spec: "" }) && !importAll.isEdgeFaceLine({ materialGroup: "Formwork", material: "Column formwork", spec: "" }));
   assert.ok(!(flags || []).some((f) => /Strip Footing/.test(f)), "neither footing line is flagged");
 });
+check("rebates (19 Nov 2026): a rebate row runs along the slab perimeter, a beam's whole run or a typed length; run × number is its formwork, run × width × depth comes off the concrete; the bridge lands it on Edgeform", () => {
+  const est = fs.readFileSync(new URL("../portal/estimates-app.html", import.meta.url), "utf8");
+  const grab = (name, args) => { const m = new RegExp("function " + name + "\\(" + args + "\\)\\{[\\s\\S]*?\\n\\}").exec(est); assert.ok(m, name + " in estimates-app.html"); return m[0]; };
+  const num = (v, d) => { const n = parseFloat(v); return Number.isFinite(n) ? n : (d === undefined ? 0 : d); };
+  const fns = new Function("num", "fmt", 'const REBATE_MANUAL="manual";\n' + grab("rebateTargetOf", "r, targets") + "\n" + grab("rebateCalc", "r, targets") + "\n" + grab("rebateOutText", "c") + "\nreturn {rebateCalc, rebateOutText};")(num, (n, dp) => String(+Number(n).toFixed(dp === undefined ? 2 : dp)));
+  const targets = [{ key: "perim", short: "slab perimeter", runM: 60 }, { key: "beam:edgeBeam", short: "Edge beam", runM: 40 }, { key: "manual", short: "typed length", runM: 0 }];
+  let c = fns.rebateCalc({ on: "beam:edgeBeam", widthMm: 120, depthMm: 150 }, targets);
+  assert.deepEqual([c.runM, +c.areaM2.toFixed(3), +c.volM3.toFixed(3), c.deduct, c.ok], [40, 10.8, 0.72, true, true], "the whole edge beam: 40 m, girth 270 mm, 0.72 m³");
+  c = fns.rebateCalc({ widthMm: 120, depthMm: 150 }, targets); assert.equal(c.runM, 60, "no 'where' chosen = the first option (the slab perimeter)");
+  c = fns.rebateCalc({ on: "perim", runM: 25, count: 2, widthMm: 100, depthMm: 100, deduct: false }, targets); assert.deepEqual([c.runM, c.typed, c.deduct], [50, true, false], "a typed run wins, × the number along it; the concrete tick can be cleared");
+  c = fns.rebateCalc({ on: "manual", widthMm: 100, depthMm: 100 }, targets); assert.ok(!c.ok && /type the run/.test(fns.rebateOutText(c)), "a typed-length rebate with no run is not priced and says so");
+  c = fns.rebateCalc({ on: "beam:gone", widthMm: 100, depthMm: 100 }, targets); assert.ok(!c.target && !c.ok, "a rebate whose beam was removed has no run");
+  assert.ok(!fns.rebateCalc({ on: "perim" }, targets).any, "an untouched row is nothing");
+  // the source: ONE target list, the table on three tabs, the pass order, never an array created on render
+  assert.match(est, /out\.push\(\{key:"perim", label:"Slab — whole perimeter", short:"slab perimeter", runM:slabPerimM\(d\), tab:"form"\}\);\n\s*slabBeamsForFormwork\(d\)\.forEach/, "a slab offers its perimeter, then every beam switched on");
+  assert.match(est, /else if\(def\.calc==="beam"\)\{\n\s*out\.push\(\{key:"run", label:"Entire beam length"/, "a beam offers its whole length");
+  assert.match(est, /out\.push\(\{key:REBATE_MANUAL, label:"Typed length"/, "every element takes a typed length");
+  assert.match(est, /parts\.form = formworkSystemSelect\(inst\.data\) \+ parts\.form \+ rebateSection\(inst,"form"\);/, "the table closes every Formwork tab");
+  assert.match(est, /if\(parts\.edgebeams!==undefined\) parts\.edgebeams \+= rebateSection\(inst,"edgebeams"\);/, "…and the slab's Edge Beams tab");
+  assert.match(est, /if\(parts\.intbeams!==undefined\) parts\.intbeams \+= rebateSection\(inst,"intbeams"\);/, "…and its Internal Beams tab");
+  assert.match(est, /applyConcreteOverride\(inst,def,out\);[^\n]*\n\s*applyRebates\(inst,def,out\);[^\n]*\n\s*if\(reoMethodOf\(inst\.data\)==="rate"\)/, "rebates run after a concrete override and before a steel rate reads the concrete");
+  assert.match(est, /const d=inst\.data, rows=rebateRows\(d\), targets=rebateTargets\(inst\);/, "the table never creates the array on render");
+  assert.match(est, /formworkLines\(inst,def,\{material:"Rebate formwork"/, "rebate formwork goes through formworkLines (lineal metres under 400 mm)");
+  assert.match(est, /if\(!c\.deduct \|\| num\(d\.concVolOverride\)>0\) return;/, "a measured concrete volume stands as typed");
+  assert.match(est, /const line=\(c\.target\.concSpec && own\.find\(l=>l\.spec===c\.target\.concSpec\)\) \|\| own\[0\];/, "a beam's rebate comes off that beam's concrete line");
+  assert.match(est, /refreshExtraConnCount\(card,inst,f\); refreshRebateRows\(card,inst,f\); return; \}/, "the Result cell follows the typing");
+  // the bridge
+  const { quote, flags } = buildImportFromEstimate({ project: { name: "Rebates" }, lines: [
+    estLine({ elementId: "R1", element: "Raft Slab 1", category: "Raft Slab", materialGroup: "Formwork", material: "Rebate formwork", spec: "Brick rebate — 120 wide × 150 deep — Edge beam — rebate, larger face 150 mm — under 400 mm — lineal metres", qty: 40, finalQty: 42, unit: "m", faceMm: 150, m2Equiv: 10.8 }),
+    estLine({ elementId: "R1", element: "Raft Slab 1", category: "Raft Slab", materialGroup: "Formwork", material: "Rebate formwork", spec: "Deep set-down — 200 wide × 450 deep — slab perimeter — rebate, larger face 450 mm", qty: 39, finalQty: 40.95, unit: "m²", faceMm: 450 }),
+  ], elementGeometry: {} });
+  const sum = (key) => quote.items.reduce((t, it) => t + (Number(it.qtys[key]) || 0), 0);
+  assert.equal(sum(rateKey("FORMWORK", "Edgeform", "m")), 42, "a rebate under 400 mm lands on Edgeform by the metre");
+  assert.equal(sum(rateKey("FORMWORK", "Edgeform >400mm deep", "m2")), 40.95, "a 450 mm rebate lands on the over-400 m² row");
+  assert.ok(!(flags || []).some((f) => /rebate/i.test(f)), "neither rebate line is flagged");
+});
 check("clearable notices (22 Oct 2026): a notice cleared at its signature stays cleared, comes back when its content changes, restore one or all; the browser store survives a bad value", () => {
   const N = NOTICES;
   const sig = N.noticeSig("a@1", null, "", ["b@2", "c@3"]); assert.equal(sig, "a@1|b@2|c@3");
