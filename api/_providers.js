@@ -159,7 +159,10 @@ export async function callDocuments(id, { system, prompt, documents = [], maxTok
         messages: [{
           role: "user",
           content: [
-            ...documents.map((d) => ({ type: "document", source: { type: "url", url: d.url }, title: String(d.name || "document").slice(0, 200) })),
+            // a PDF is a document block; a screenshot or photo (kind "image") an image block, read by URL the same way
+            ...documents.map((d) => (d.kind === "image"
+              ? { type: "image", source: { type: "url", url: d.url } }
+              : { type: "document", source: { type: "url", url: d.url }, title: String(d.name || "document").slice(0, 200) })),
             { type: "text", text: prompt },
           ],
         }],
@@ -188,7 +191,7 @@ export async function callDocuments(id, { system, prompt, documents = [], maxTok
         input: [{
           role: "user",
           content: [
-            ...documents.map((d) => ({ type: "input_file", file_url: d.url })),
+            ...documents.map((d) => (d.kind === "image" ? { type: "input_image", image_url: d.url } : { type: "input_file", file_url: d.url })),
             { type: "input_text", text: prompt },
           ],
         }],

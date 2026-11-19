@@ -171,6 +171,12 @@ let estimatesHtml = fs.readFileSync(estimatesPath, "utf8");
   if (!ordersTag.test(estimatesHtml)) throw new Error("estimates-app.html no longer loads estimates-orders.js — inline step out of date");
   const ordersSrc = fs.readFileSync(path.join(root, "portal", "estimates-orders.js"), "utf8").replace(/<\/script/gi, "<\\/script");
   estimatesHtml = estimatesHtml.replace(ordersTag, () => `<script>${ordersSrc}</script>`);
+  // estimates-scope.js: the Scope finder's checklist logic (merge, compare
+  // with the takeoff, progress) — same pure-module contract, same inline step.
+  const scopeTag = /<script src="estimates-scope\.js"><\/script>/;
+  if (!scopeTag.test(estimatesHtml)) throw new Error("estimates-app.html no longer loads estimates-scope.js — inline step out of date");
+  const scopeSrc = fs.readFileSync(path.join(root, "portal", "estimates-scope.js"), "utf8").replace(/<\/script/gi, "<\\/script");
+  estimatesHtml = estimatesHtml.replace(scopeTag, () => `<script>${scopeSrc}</script>`);
   estimatesHtml = estimatesHtml.replaceAll("__BUILD_STAMP__", buildStamp() + (process.env.PORTAL_STAMP_SUFFIX || ""));
   // 3D viewer bundle: the hosted portal fetches /assets/estimates-3d.js on
   // demand (nothing embedded, the page stays small); a standalone copy has

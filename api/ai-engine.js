@@ -13,6 +13,12 @@
  *                     ranges for the products the caller names and returns
  *                     SUGGESTED benchmark rows with their sources — rows count
  *                     only once a person accepts them in the AI Engine.
+ *   action "scope"    the Estimates Scope finder: reads drawings, screenshots
+ *                     and pasted emails / messages and lists every scope item
+ *                     with the specification and source each document gives,
+ *                     the exclusions, the questions to send and what could be
+ *                     missing or overlooked (src/lib/scopeFinder.js) — a
+ *                     checklist for a person to tick, never a takeoff.
  *   action "spec"     reads a specification / tender document and lists the
  *                     applicable standards, the requirements that change how
  *                     an element is measured or priced (grade, cover, exposure,
@@ -30,6 +36,7 @@ import { callDocuments, callText, callWebSearch, resolveProviderId, parseJsonLoo
 import { tenderWordingPrompt, parseTenderWording, tenderItemsPrompt, parseTenderItems, parseTenderExtras, parseTenderPlacement } from "../src/lib/tenderWording.js";
 import { addressPrompt, parseAddressReply } from "../src/lib/projectNaming.js";
 import { marginAdvicePrompt, parseMarginAdvice } from "../src/lib/marginAdvice.js";
+import { scopePrompt, parseScopeResult, scopeRequestError, scopeFileKind, SCOPE_RESULT_KEYS } from "../src/lib/scopeFinder.js";
 
 export const config = { maxDuration: 300 };
 
@@ -270,8 +277,40 @@ export async function runAiJob(body, env = process.env) {
       return { status: e.status && e.status >= 400 && e.status < 600 ? e.status : 502, body: { error: e.message, detail: e.detail || null, provider: id } };
     }
   }
+  if (action === "scope") {
+    // The Estimates Scope finder: drawings, screenshots, pasted emails and messages → the scope items with their
+    // specifications and sources, and what could be missing. Files are optional (emails alone can be read).
+    const sFiles = Array.isArray(body.files) ? body.files : [];
+    const text = String(body.text || "");
+    const bad = scopeRequestError({ files: sFiles, text });
+    if (bad) return { status: 400, body: { error: bad } };
+    const id = resolveProviderId(provider, env);
+    if (!id) return { status: 503, body: { error: "No AI provider is configured — set ANTHROPIC_API_KEY or OPENAI_API_KEY in the Vercel project's Environment Variables." } };
+    const sTypes = Array.isArray(types) ? types.slice(0, MAX_TYPES) : [];
+    const prompt = scopePrompt({ projectName, types: sTypes, hasDocuments: sFiles.length > 0, text });
+    let r;
+    try {
+      r = sFiles.length
+        ? await callDocuments(id, { system: SYSTEM, prompt, documents: sFiles.map((f) => ({ url: f.url, name: f.name, kind: scopeFileKind(f.url) })), maxTokens: 16000, env })
+        : await callText(id, { system: SYSTEM, prompt, maxTokens: 16000, timeoutMs: 280000, env });
+    } catch (e) {
+      const st = providerStatus(env).find((p) => p.id === id);
+      return { status: e.status && e.status >= 400 && e.status < 600 ? e.status : 502, body: { error: e.message, detail: e.detail || null, provider: id, model: st ? st.model : null } };
+    }
+    let raw = parseJsonLoose(r.text), partial = null;
+    if (!raw) {
+      const got = salvageArrays(r.text, SCOPE_RESULT_KEYS);
+      if (got && ((got.items || []).length || (got.gaps || []).length)) {
+        raw = got;
+        partial = { reason: r.truncated ? "The reply was cut off at the model's output limit" : "The reply was not a complete JSON object", kept: (got.items || []).length, advice: "What was read is shown. Run again with fewer documents at a time — each run adds to the checklist." };
+      }
+    }
+    const result = parseScopeResult(raw, { types: sTypes });
+    if (!result) return { status: 502, body: { error: `${id} replied without a readable scope list${r.truncated ? " (the reply was cut off — fewer documents per run)" : ""}`, provider: r.provider, model: r.model, raw: String(r.text || "").slice(0, 2000) } };
+    return { status: 200, body: { result, provider: r.provider, model: r.model, latencyMs: r.latencyMs, usage: r.usage || null, truncated: !!r.truncated, partial } };
+  }
   const DOC_ACTIONS = { takeoff: null, spec: specPrompt, geotech: geotechPrompt, contract: contractPrompt };
-  if (!(action in DOC_ACTIONS)) return { status: 400, body: { error: 'Body must carry action "takeoff", "spec", "geotech", "contract", "qa", "benchmarks", "margin" or "tender-wording"' } };
+  if (!(action in DOC_ACTIONS)) return { status: 400, body: { error: 'Body must carry action "takeoff", "spec", "geotech", "contract", "scope", "qa", "benchmarks", "margin" or "tender-wording"' } };
   const bad = validFiles(files);
   if (bad) return { status: 400, body: { error: bad } };
   if (action === "takeoff" && (!Array.isArray(types) || types.length === 0 || types.length > MAX_TYPES)) return { status: 400, body: { error: "takeoff needs the element type list (types: [{id, label, group}])" } };

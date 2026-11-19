@@ -2796,6 +2796,97 @@ login and on the main dashboard". Rules:
 the review edits, the export into AI drafts with the field mapping and the
 profile, the chat on both accounts and the provider switch.
 
+## Scope finder (Estimates): the scope checklist read from the documents
+
+Boma, 19 Nov 2026: "i want extra accuracy and would like to build in a scope
+finder and analyser and place it in the estimates section. so i can upload
+project drawing and emails chats etc and it should hightlight all the scope
+items and their specifications where applicable. it should live behind a
+button i can press and possibly tick a checklist. it should list all the
+salient and obvious scope items required and if possible flag something that
+could possibly be missing or overlooked". Rules:
+
+1. **It lives behind the Estimates header's "🔎 Scope finder" button**
+   (`#scopeBtn`, `scope-button`; panel `#scopeFinder`, `scope-finder`) and is
+   about the OPEN takeoff. The button counts that takeoff's checklist
+   ("🔎 Scope 2/7 · 1 to check", `data-state` none / open / attention /
+   complete; `scopeBtnRefresh`, called from `renderTakeoffsBar` too, reads
+   this browser's copy only).
+2. **Its document is its OWN row, never the takeoff.** `gradcon-scope::<takeoffId>`
+   in `estimator_kv` with a localStorage mirror under the same key
+   (`scopeDocKey`; `{files, notes, result, runs, custom, review, removed,
+   updatedAt, updatedBy}` — `portal/estimates-scope.js`, the third pure module
+   inlined by the assembler, asserted, and run in Node by `verify.mjs`).
+   Nothing of it is in `estimateStateSnapshot`, it never calls
+   `saveEstimateState` / `pushTakeoffToCloud`, and a tick cannot touch the
+   takeoff's sync rules. Its cloud write is read → `mergeScopeDocs` → write
+   (ticks by time per item, lists by id less the `removed` tombstones, both
+   devices' readings unioned); a cloud read that FAILS is never "no row" (the
+   local copy stands and the next change tries again). **The ONE thing that
+   changes the takeoff is the estimator's own "+ Add to takeoff" click**
+   (`scopeAddElement` → `addInstance(type)`, the element named after the
+   item); `verify.mjs` pins that the block calls `addInstance` exactly once.
+3. **Sources** (left column): PDFs and images are uploaded to the bucket
+   under `scope-finder/<takeoffId>/…` (`scopeUpload`; PDF ≤ 32 MB, image ≤
+   5 MB — `scopeFileClass` names what is refused and what to do: .msg, Word /
+   Excel, CAD); .eml / .txt / .html files and pasted emails, chats and notes
+   are TEXT (`scopeTextFromFile`), each kept as a named note; "From the
+   projects@ mailbox" searches (`/api/gmail` list, prefilled with the
+   project's street) and adds the ticked emails' text (`read`) — read-only,
+   nothing else. `scopeRunText` sends every text under a header naming it
+   ("=== EMAIL — <subject> — from … ===") so the reader can cite it.
+   **Over-long text is REFUSED, never cut** (`SCOPE_TEXT_MAX_CHARS` 150,000 =
+   the server's `SCOPE_MAX_TEXT_CHARS`; verify pins the mirror).
+4. **The read** (`api/ai-engine.js` action **`scope`**, rules in
+   `src/lib/scopeFinder.js`): files optional (text alone runs through
+   `callText`; with files `callDocuments`, where a `kind: "image"` document
+   is an image block — `api/_providers.js`), `scopeRequestError` (nothing to
+   read / over 12 files / not an https PDF or image / over-long text → 400),
+   no provider → 503, a cut-off reply salvaged (`SCOPE_RESULT_KEYS`) with
+   `partial`. `scopePrompt` holds three rules: a specification is ONLY what
+   is written (never a typical value) and every item carries document, page
+   and quote or is "implied" with what implies it; a scope asked for in an
+   email or message counts as a drawing does; **a gap is a QUESTION**,
+   labelled `documents` (a conflict, a referenced detail / schedule not in
+   the set, an element with no size or grade, unclear responsibility) or
+   `practice` (work that normally accompanies a listed item and no document
+   mentions). `parseScopeResult` → `{items, gaps, exclusions, questions,
+   documents, unreadable}`: categories from `SCOPE_CATEGORIES` (else
+   "other"; the page's `SCOPE_CATS` is a verify-checked mirror), `type` only
+   from the Estimates `LIBRARY` ids the page sent, strings capped, the same
+   item twice merged, gaps deduped and sorted high first, and **ids that are
+   STABLE across runs** (`scopeId` — a hash of category and title), so a tick
+   survives the next read.
+5. **A read ADDS to the checklist** (`mergeScopeResult`): a known item keeps
+   its place and its tick and gains new specifications / a source; the run
+   button reads only the sources not read yet ("🔎 Read the N new"), "Read
+   everything again" sends the lot; files go twelve at a time, the text with
+   the first set.
+6. **The checklist** (right column): tiles (allowed for, possibly missing,
+   in the documents and not on the takeoff, by others), filters and a search,
+   the items grouped by category — each a tick ("allowed for"), an N/A, a
+   note, its specification chips, quantity only where a document states one,
+   "implied by …", "by others" / "responsibility unclear", and the source
+   line; then **Possibly missing or overlooked** (severity, basis, "→ Add to
+   the checklist"), the takeoff's elements no scope item accounts for,
+   exclusions as stated, the questions to send (Copy), what was read and what
+   could not be; an item can be typed by hand; **Export checklist (CSV)**
+   (`scopeCsvRows`). `scopeProgress` counts a tick or an N/A as settled and
+   never counts a by-others item.
+7. **Against the takeoff** (`scopeCompareToTakeoff`, deterministic — never
+   the model's opinion): an item with an element type is "on" (the takeoff's
+   elements of that type, or one whose name carries most of the item's words)
+   or "off" — in the documents and not taken off — with the Add button; an
+   item with no element (a membrane, a test) is not compared; by-others is
+   never "off".
+8. A server reply that is not JSON reads as what it is ("hosting switched
+   off by Vercel (402 …)"), never as "not configured".
+`verify.mjs` covers the prompt's rules, the parser, the request refusals, the
+server's 400 / 503, the image blocks, the pure module (merge of results and of
+documents, the comparison, progress, file classes, the run text), the mirrors
+and the wiring; `test-scope-finder.mjs` proves the whole flow on a mocked
+server, storage and mailbox (28 checks).
+
 ## Version history for the chat (what changed, who changed it)
 
 Grady, 11 Oct 2026: "I want this chat to not have this limitation … i want to
@@ -3957,7 +4048,11 @@ element families waits on the owner's approval of the pad footing.
   all entries in one view"): on the Additional / Allowances pane the sketch
   stacks UNDER the fields (`.pane[data-pane="addl"] > .pane-body` is a column;
   the fields pane's inline `flex:2 1 280px` basis is overridden with
-  `!important`, or in a column it becomes a 280 px HEIGHT and clips the rows)
+  `!important`, or in a column it becomes a 280 px HEIGHT and clips the rows;
+  since 19 Nov 2026 — "DETAILS CUT towards the right" on a raft's edge beam
+  bar sets — the slab's Edge Beams and Internal Beams panes stack the same
+  way, and both bar-set tables carry `class="rows barsets"` with the
+  anchorage selects capped at 150 px so the lap tick and ✕ are never cut off)
   so the table takes the card's whole width, and `table.rows.addl` sizes each
   cell to its figure (52 px numbers, 62 px lengths, 42 px waste / ×, selects
   capped at 118 px, the description cell takes the rest). `test-addl-fit.mjs`

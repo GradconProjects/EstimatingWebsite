@@ -2083,6 +2083,115 @@ check("retaining wall parameters (19 Nov 2026): a core-filled blockwork stem at 
   assert.match(est, /materialGroup:"Drainage",material:"Agi drain pipe"/, "the agi drain is a line of its own");
   assert.match(est, /spec:`Footing mesh — sheets ×\$\{n\} layer\(s\)`/, "the footing mesh");
 });
+await checkAsync("Scope finder (19 Nov 2026): the reading rules, the reply parser with stable ids, the server's refusals, the checklist's merge / compare / progress, and its place in Estimates — its own row, never the takeoff", async () => {
+  const SF = await import("../src/lib/scopeFinder.js");
+  const E = await import("../api/ai-engine.js");
+  const types = [{ id: "stripfooting", label: "Strip Footing", group: "Foundations" }, { id: "column", label: "Column", group: "Vertical" }];
+  // the prompt holds the three rules
+  const prompt = SF.scopePrompt({ projectName: "12 Beach Rd", types, hasDocuments: true, text: "=== NOTE — chat ===\nscrew piles by others" });
+  assert.match(prompt, /Never write a dimension, grade, bar size, spacing, cover or finish that is not on the documents/, "a specification is only what is written");
+  assert.match(prompt, /"gaps" are QUESTIONS, never findings of fact/, "a gap is a question");
+  assert.match(prompt, /Scope asked for or changed in an EMAIL or MESSAGE counts exactly as a drawing does/, "emails and chats count as drawings do");
+  assert.match(prompt, /stripfooting = Strip Footing \(Foundations\)/, "the element types are offered by id");
+  assert.match(prompt, /PASTED EMAILS, MESSAGES AND NOTES\n=== NOTE — chat ===/, "the pasted text rides at the end");
+  assert.ok(!/PASTED EMAILS/.test(SF.scopePrompt({ projectName: "x", types, hasDocuments: true })), "no text section when nothing was pasted");
+  // the parser
+  const raw = { items: [
+    { title: "Strip footings SF1", category: "footings", type: "stripfooting", specs: ["N32", " 450 × 300 "], basis: "stated", party: "ours", doc: "S-01", page: 2, quote: "SF1 450x300", confidence: 1.4 },
+    { title: "strip  footings sf1", category: "footings", type: "stripfooting", specs: ["N32", "50 cover"] },
+    { title: "Mystery", category: "nonsense", type: "madeup", basis: "implied", because: "detail 5", party: "unclear" },
+    { title: "", category: "footings" }, null ],
+    gaps: [{ title: "Low one", severity: "low" }, { title: "High one", severity: "high", basis: "practice" }, { title: "High one", severity: "high" }],
+    exclusions: ["Piles by others", { text: "Pump by builder", doc: "email" }], questions: ["Issue S-05?", ""], documents: [{ name: "S-01.pdf", kind: "structural drawings" }], unreadable: ["S-09 blurred"] };
+  const r = SF.parseScopeResult(raw, { types });
+  assert.equal(r.items.length, 2, "blank and null entries are dropped; the same item twice is one");
+  assert.deepEqual(r.items[0].specs, ["N32", "450 × 300", "50 cover"], "a repeat's new specification joins the first");
+  assert.deepEqual([r.items[0].type, r.items[0].page, r.items[0].confidence, r.items[0].basis, r.items[0].party], ["stripfooting", "2", 1, "stated", "ours"]);
+  assert.deepEqual([r.items[1].category, r.items[1].type, r.items[1].basis, r.items[1].party, r.items[1].because], ["other", null, "implied", "unclear", "detail 5"], "an unknown category is 'other' and a type that was not offered is dropped");
+  assert.equal(r.items[0].id, SF.scopeId("sc_", "footings", "STRIP FOOTINGS — SF1"), "the id is a hash of category and title, whatever the spelling — a tick survives the next read");
+  assert.equal(SF.parseScopeResult(raw, { types }).items[0].id, r.items[0].id, "…and is the same on every run");
+  assert.deepEqual(r.gaps.map((g) => [g.title, g.severity, g.basis]), [["High one", "high", "practice"], ["Low one", "low", "documents"]], "gaps are deduped and the costly ones come first");
+  assert.deepEqual([r.exclusions.length, r.exclusions[1].doc, r.questions.length, r.unreadable.length], [2, "email", 1, 1]);
+  assert.equal(SF.parseScopeResult({ items: [], gaps: [] }), null, "an empty reply is nothing");
+  assert.equal(SF.parseScopeResult(null), null);
+  // what one request may carry
+  assert.match(SF.scopeRequestError({ files: [], text: " " }), /Nothing to read/);
+  assert.match(SF.scopeRequestError({ files: Array.from({ length: 13 }, (_, i) => ({ url: `https://x.co/${i}.pdf` })) }), /At most 12 files/);
+  assert.match(SF.scopeRequestError({ files: [{ url: "https://x.co/a.docx", name: "a.docx" }] }), /Not a PDF or an image/);
+  assert.match(SF.scopeRequestError({ files: [{ url: "http://x.co/a.pdf" }] }), /Not a PDF or an image/, "https only");
+  assert.match(SF.scopeRequestError({ text: "x".repeat(SF.SCOPE_MAX_TEXT_CHARS + 1) }), /nothing is cut off silently/, "over-long text is refused, never truncated");
+  assert.equal(SF.scopeRequestError({ files: [{ url: "https://x.co/a.PDF?x=1" }, { url: "https://x.co/chat.jpeg" }], text: "" }), null);
+  assert.deepEqual([SF.scopeFileKind("https://x.co/a.pdf"), SF.scopeFileKind("https://x.co/a.webp"), SF.scopeFileKind("https://x.co/a.dwg")], ["pdf", "image", null]);
+  // the server
+  assert.equal((await E.runAiJob({ action: "scope" }, {})).status, 400, "nothing to read → 400");
+  assert.equal((await E.runAiJob({ action: "scope", files: [{ url: "https://x.co/a.docx" }] }, {})).status, 400);
+  const noProv = await E.runAiJob({ action: "scope", text: "the builder asks for a slab" }, {});
+  assert.equal(noProv.status, 503, "text alone may be read; with no provider configured it is a 503, never a made-up list");
+  assert.match((await E.runAiJob({ action: "nope" }, {})).body.error, /"scope"/, "the action list names scope");
+  const prov = fs.readFileSync(new URL("../api/_providers.js", import.meta.url), "utf8");
+  assert.match(prov, /d\.kind === "image"\s*\n\s*\? \{ type: "image", source: \{ type: "url", url: d\.url \} \}/, "a screenshot goes to Claude as an image block read by URL");
+  assert.match(prov, /d\.kind === "image" \? \{ type: "input_image", image_url: d\.url \} : \{ type: "input_file", file_url: d\.url \}/, "…and to OpenAI as an input_image");
+  // the checklist's own logic (the pure module the page inlines)
+  const box = { console }; box.globalThis = box;
+  runInNewContext(fs.readFileSync(new URL("../portal/estimates-scope.js", import.meta.url), "utf8"), box, { filename: "estimates-scope.js" });
+  assert.equal(box.SCOPE_TEXT_MAX_CHARS, SF.SCOPE_MAX_TEXT_CHARS, "the page and the server agree on the text limit");
+  assert.equal(box.SCOPE_FILES_PER_RUN, SF.SCOPE_MAX_FILES, "…and on the files per read");
+  assert.equal(box.scopeDocKey("proj_1"), "gradcon-scope::proj_1");
+  const res1 = SF.parseScopeResult({ items: [{ title: "Strip footings SF1", category: "footings", type: "stripfooting", specs: ["N32"] }, { title: "Columns C1", category: "vertical", type: "column" }, { title: "Vapour barrier", category: "waterproofing" }, { title: "Screw piles", category: "piling", type: "column", party: "others" }], gaps: [{ title: "No drainage shown", severity: "high" }] }, { types });
+  const res2 = SF.parseScopeResult({ items: [{ title: "Strip footings SF1", category: "footings", type: "stripfooting", specs: ["50 cover"], doc: "S-02" }, { title: "Stair", category: "stairs" }], gaps: [{ title: "No drainage shown", severity: "high" }] }, { types });
+  const merged = box.mergeScopeResult(res1, res2);
+  assert.equal(merged.items.length, 5, "a second read ADDS: known items stay, new ones are appended");
+  assert.deepEqual(JSON.parse(JSON.stringify(merged.items[0].specs)), ["N32", "50 cover"], "a known item gains the new specification");
+  assert.equal(merged.items[0].doc, "S-02", "…and a source it lacked");
+  assert.equal(merged.gaps.length, 1, "the same gap is listed once");
+  const inst = [{ id: "EL01", label: "Strip Footing 1", typeKey: "stripfooting" }, { id: "EL02", label: "Raft Slab 1", typeKey: "raftslab" }];
+  const cmp = box.scopeCompareToTakeoff(res1.items, inst, { stripfooting: { label: "Strip Footing" }, raftslab: { label: "Raft Slab" } });
+  assert.deepEqual(res1.items.map((it) => cmp.byItem[it.id].state), ["on", "off", "na", "others"], "on the takeoff / in the documents and not on it / a work item is not compared / by others is never 'off'");
+  assert.deepEqual(JSON.parse(JSON.stringify(cmp.unmatched.map((u) => u.id))), ["EL02"], "takeoff elements no scope item accounts for");
+  const fid = res1.items[0].id, gid = res1.gaps[0].id;
+  let doc = box.normalizeScopeDoc({ result: res1 }, "proj_1", "X");
+  let p = box.scopeProgress(doc, cmp);
+  assert.deepEqual([p.total, p.done, p.others, p.gapsOpen, p.highOpen, p.offTakeoff, p.complete], [3, 0, 1, 1, 1, 1, false]);
+  doc.review = box.scopeReviewPatch(doc, fid, { state: "done" }, "boma", "2026-11-19T01:00:00Z");
+  doc.review = box.scopeReviewPatch(doc, res1.items[1].id, { state: "na" }, "boma", "2026-11-19T01:00:00Z");
+  doc.review = box.scopeReviewPatch(doc, res1.items[2].id, { state: "done" }, "boma", "2026-11-19T01:00:00Z");
+  doc.review = box.scopeReviewPatch(doc, gid, { state: "done" }, "boma", "2026-11-19T01:00:00Z");
+  p = box.scopeProgress(doc, cmp);
+  assert.deepEqual([p.done, p.gapsOpen, p.offTakeoff, p.complete], [3, 0, 0, true], "ticked or not-applicable settles a row; an N/A item is no longer 'not on the takeoff'");
+  assert.ok(!(fid in box.scopeReviewPatch(doc, fid, { state: "" }, "boma")), "clearing a tick with no note removes the entry");
+  // two copies of the document: ticks by time, lists by id less the removals, the reading unioned
+  const a = Object.assign(box.normalizeScopeDoc({ result: res1 }, "proj_1", "X"), { updatedAt: "2026-11-19T02:00:00Z", files: [{ id: "f1", name: "a.pdf" }, { id: "f2", name: "b.pdf" }], review: { [fid]: { state: "done", at: "2026-11-19T02:00:00Z", by: "boma" } }, removed: {} });
+  const b = Object.assign(box.normalizeScopeDoc({ result: res2 }, "proj_1", "X"), { updatedAt: "2026-11-19T03:00:00Z", files: [{ id: "f1", name: "a.pdf" }, { id: "f3", name: "c.pdf" }], review: { [fid]: { state: "na", at: "2026-11-19T01:00:00Z", by: "grady" }, [gid]: { state: "done", at: "2026-11-19T03:00:00Z", by: "grady" } }, removed: { f2: "2026-11-19T02:30:00Z" } });
+  const m = box.mergeScopeDocs(a, b);
+  assert.deepEqual(JSON.parse(JSON.stringify(m.files.map((f) => f.id).sort())), ["f1", "f3"], "a file removed on one device does not come back from the other");
+  assert.equal(m.review[fid].state, "done", "the later tick wins, whichever copy is newer overall");
+  assert.equal(m.review[gid].by, "grady");
+  assert.equal(m.result.items.length, 5, "both devices' readings are kept");
+  assert.deepEqual(JSON.parse(JSON.stringify([box.scopeFileClass("a.pdf", "", 10).kind, box.scopeFileClass("chat.PNG", "", 10).kind, box.scopeFileClass("mail.eml", "", 10).kind, box.scopeFileClass("x.msg", "", 10).kind, box.scopeFileClass("a.pdf", "", 0).kind])), ["pdf", "image", "text", null, null]);
+  assert.match(box.scopeFileClass("plan.dwg", "", 10).error, /export the sheets to PDF/);
+  assert.match(box.scopeRunText([{ kind: "email", name: "RE: scope", from: "sam", date: "2026-11-12T03:00:00Z", text: "hi" }, { kind: "paste", name: "chat", text: "yo" }, { kind: "paste", text: " " }]), /^=== EMAIL — RE: scope — from sam — 2026-11-12 ===\nhi\n\n=== NOTE — chat ===\nyo$/, "every text is sent under a header naming it; a blank one is left out");
+  assert.equal(box.scopeTextFromFile("a.html", "<html><style>x{}</style><p>Hello&nbsp;<b>there</b></p></html>").replace(/\s+/g, " "), "Hello there");
+  // its place in Estimates
+  const est = fs.readFileSync(new URL("../portal/estimates-app.html", import.meta.url), "utf8");
+  assert.match(est, /<script src="estimates-scope\.js"><\/script>/, "the page loads the pure module");
+  assert.match(fs.readFileSync(new URL("./assemble-portal.mjs", import.meta.url), "utf8"), /estimates-app\.html no longer loads estimates-scope\.js — inline step out of date/, "…and the assembler inlines it, asserted");
+  assert.match(est, /id="scopeBtn" type="button" data-testid="scope-button"/, "the header button");
+  assert.match(est, /scopeInit\(\);\napplyAiHandoff\(\);/, "the panel is wired at boot");
+  const cats = JSON.parse(/const SCOPE_CATS=(\[\[[\s\S]*?\]\]);/.exec(est)[1]);
+  assert.deepEqual(cats, SF.SCOPE_CATEGORIES, "the page's category list mirrors the reader's");
+  assert.ok(!/scope/i.test(/function estimateStateSnapshot\(\)\{[\s\S]*?\n\}/.exec(est)[0]), "the checklist is never part of the takeoff snapshot");
+  const ui = est.slice(est.indexOf("/* ===================== SCOPE FINDER"), est.indexOf("scopeInit();\napplyAiHandoff();"));
+  assert.equal((ui.match(/addInstance\(/g) || []).length, 1, "the ONE place the Scope finder changes the takeoff is the estimator's own Add click");
+  assert.ok(!/saveEstimateState\(|pushTakeoffToCloud\(/.test(ui), "it never saves or pushes the takeoff itself");
+  assert.match(ui, /const merged = row && row\.value\? mergeScopeDocs\(local, row\.value\) : local;/, "its cloud write is read → merge → write");
+  assert.match(ui, /if\(kvFetchFailed\(row\)\) return;/, "a cloud read that fails is never read as 'no row'");
+  assert.match(ui, /res\.status===402\? "The app's hosting has been switched off by Vercel/, "a switched-off server is said in those words");
+  assert.match(ui, /nothing is cut off silently/, "over-long text is refused in the page too");
+  // the bar-set table fits (19 Nov 2026: "DETAILS CUT towards the right")
+  assert.match(est, /\.pane\[data-pane="edgebeams"\] > \.pane-body,\.pane\[data-pane="intbeams"\] > \.pane-body\{flex-direction:column;\}/, "the slab's beam tabs stack the sketch under the fields");
+  assert.match(est, /table\.rows\.barsets select\{max-width:150px;\}/, "the anchorage selects are capped");
+  assert.equal((est.match(/class="rows barsets"/g) || []).length, 2, "both bar-set tables carry the class");
+});
 check("clearable notices (22 Oct 2026): a notice cleared at its signature stays cleared, comes back when its content changes, restore one or all; the browser store survives a bad value", () => {
   const N = NOTICES;
   const sig = N.noticeSig("a@1", null, "", ["b@2", "c@3"]); assert.equal(sig, "a@1|b@2|c@3");

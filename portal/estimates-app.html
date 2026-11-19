@@ -123,9 +123,87 @@ table.rows.extra-conn .extra-conn-setout{display:flex;align-items:center;gap:3px
 /* Additional / Allowances: every column in one view, no sideways scroll (1 Nov 2026, Grady: "i dont want to scroll
    sideways but see all entries in one view") — the pane stacks the sketch UNDER the table so the fields take the
    whole card width, and the table's cells are sized to the figures they hold. */
+/* The slab's beam tabs carry wide tables too (bar sets with two anchorage selects, ligature zones, rebates): the
+   sketch stacks under the fields there as well, and the bar-set table sizes its cells to their figures, so the lap
+   tick and the remove button are never cut off at the right (19 Nov 2026: "DETAILS CUT towards the right"). */
+.pane[data-pane="edgebeams"] > .pane-body,.pane[data-pane="intbeams"] > .pane-body{flex-direction:column;}
+.pane[data-pane="edgebeams"] > .pane-body > .pane-fields,.pane[data-pane="intbeams"] > .pane-body > .pane-fields{flex:none !important;width:100%;}
+.pane[data-pane="edgebeams"] > .pane-body > .diag-host,.pane[data-pane="intbeams"] > .pane-body > .diag-host{flex:none !important;max-width:520px;}
+table.rows.barsets th{white-space:nowrap;padding:3px 4px;}
+table.rows.barsets td{padding:2px 3px;}
+table.rows.barsets select{max-width:150px;}
+table.rows.barsets td:nth-child(1) input{min-width:84px;}
+table.rows.barsets td:nth-child(2) input,table.rows.barsets td:nth-child(4) input{width:58px;min-width:0;}
 .pane[data-pane="addl"] > .pane-body{flex-direction:column;}
 .pane[data-pane="addl"] > .pane-body > .pane-fields{flex:none !important;width:100%;}   /* the inline "flex:2 1 280px" basis would be a HEIGHT in a column and clip the rows */
 .pane[data-pane="addl"] > .pane-body > .diag-host{flex:none !important;max-width:520px;}
+/* ---- Scope finder ---- */
+#scopeBtn[data-state="open"]{border-color:var(--accent2);}
+#scopeBtn[data-state="attention"]{border-color:var(--danger);color:var(--danger);}
+#scopeBtn[data-state="complete"]{border-color:var(--good);color:var(--good);}
+#scopeFinder{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:85;align-items:stretch;justify-content:center;padding:18px;}
+#scopeFinder .sc-panel{background:var(--panel);color:var(--text);border-radius:var(--radius);width:100%;max-width:1380px;display:flex;flex-direction:column;overflow:hidden;box-shadow:var(--shadow-pin);}
+#scopeFinder .sc-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--panel2);}
+#scopeFinder .sc-head h2{margin:0;font-size:17px;}
+#scopeFinder .sc-headbtns{margin-left:auto;white-space:nowrap;}
+#scopeFinder .sc-body{display:flex;flex:1;min-height:0;}
+#scopeFinder .sc-col{padding:12px 16px;overflow-y:auto;min-width:0;}
+#scopeFinder .sc-col h3{margin:0 0 6px;font-size:14px;}
+#scopeFinder .sc-sources{flex:0 0 340px;border-right:1px solid var(--line);background:rgba(0,0,0,.02);}
+#scopeFinder .sc-list{flex:1;}
+#scopeFinder .sc-sources input[type="text"],#scopeFinder .sc-sources textarea{width:100%;box-sizing:border-box;margin:3px 0;padding:5px 7px;font:inherit;font-size:12px;border:1px solid var(--line);border-radius:6px;background:var(--input);color:var(--text);}
+#scopeFinder .sc-drop{border:1.5px dashed var(--line);border-radius:8px;padding:10px;margin:6px 0;text-align:center;}
+#scopeFinder .sc-sub{font-weight:700;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:12px 0 2px;}
+#scopeFinder .sc-srcrow{display:flex;align-items:center;gap:6px;font-size:12px;padding:3px 0;border-bottom:1px dotted var(--line);}
+#scopeFinder .sc-srcrow a,#scopeFinder .sc-srcrow > span[title]{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);}
+#scopeFinder .sc-mailq{display:flex;gap:6px;align-items:center;}
+#scopeFinder .sc-maillist{max-height:220px;overflow-y:auto;border:1px solid var(--line);border-radius:6px;margin:4px 0;}
+#scopeFinder .sc-mail{display:flex;gap:6px;align-items:flex-start;padding:4px 6px;font-size:12px;border-bottom:1px dotted var(--line);cursor:pointer;}
+#scopeFinder .sc-run{margin-top:14px;padding-top:10px;border-top:1px solid var(--line);}
+#scopeFinder .sc-err{color:var(--danger);}
+#scopeFinder .sc-ok{color:var(--good);}
+#scopeFinder .sc-busy{color:var(--accent);font-weight:600;}
+#scopeFinder .sc-empty{border:1px dashed var(--line);border-radius:8px;padding:14px 16px;margin:8px 0;}
+#scopeFinder .sc-tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:6px 0 8px;}
+#scopeFinder .sc-tile{border:1px solid var(--line);border-radius:8px;padding:6px 10px;background:var(--input);}
+#scopeFinder .sc-tile b{display:block;font-size:18px;font-variant-numeric:tabular-nums;}
+#scopeFinder .sc-tile span{font-size:11px;color:var(--muted);}
+#scopeFinder .sc-tile.warn{border-color:var(--accent2);}
+#scopeFinder .sc-tile.warn b{color:#9a6a12;}
+#scopeFinder .sc-filters{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px;}
+#scopeFinder .sc-filter{border:1px solid var(--line);background:var(--input);color:var(--text);border-radius:999px;padding:3px 10px;font:inherit;font-size:12px;cursor:pointer;}
+#scopeFinder .sc-filter.active{background:var(--accent);color:#fff;border-color:var(--accent);}
+#scopeFinder #scopeSearch{margin-left:auto;padding:4px 8px;font:inherit;font-size:12px;border:1px solid var(--line);border-radius:6px;background:var(--input);color:var(--text);min-width:160px;}
+#scopeFinder .sc-grouphead,#scopeFinder .sc-sechead{font-weight:700;font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--accent);border-bottom:2px solid var(--line);padding:8px 0 3px;margin-top:6px;}
+#scopeFinder .sc-sechead.warn{color:#9a6a12;border-color:var(--accent2);}
+#scopeFinder .sc-section{margin-top:14px;}
+#scopeFinder .sc-row{display:flex;gap:8px;padding:6px 4px;border-bottom:1px dotted var(--line);}
+#scopeFinder .sc-row.done{background:rgba(85,116,95,.10);}
+#scopeFinder .sc-row.na{opacity:.55;}
+#scopeFinder .sc-row.gap[data-severity="high"]{border-left:3px solid var(--danger);padding-left:6px;}
+#scopeFinder .sc-tick input{width:17px;height:17px;margin-top:2px;cursor:pointer;}
+#scopeFinder .sc-main{flex:1;min-width:0;}
+#scopeFinder .sc-title{font-weight:600;font-size:13px;}
+#scopeFinder .sc-row.done .sc-title{text-decoration:none;}
+#scopeFinder .sc-where{font-weight:400;color:var(--muted);font-size:12px;}
+#scopeFinder .sc-specs{display:flex;flex-wrap:wrap;gap:4px;margin:3px 0;}
+#scopeFinder .sc-spec{background:#fff6d6;border:1px solid #e6cf7a;border-radius:4px;padding:1px 6px;font-size:11.5px;font-family:ui-monospace,Menlo,Consolas,monospace;color:#3d3200;}
+#scopeFinder .sc-spec.qty{background:#e6f0ea;border-color:#a9c6b3;color:#1d3a2a;}
+#scopeFinder .sc-src{font-size:11.5px;color:var(--muted);margin:2px 0;}
+#scopeFinder .sc-tools{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:3px;}
+#scopeFinder .sc-note{flex:1;min-width:120px;max-width:340px;padding:2px 6px;font:inherit;font-size:11.5px;border:1px solid var(--line);border-radius:5px;background:var(--input);color:var(--text);}
+#scopeFinder .sc-by{font-size:11px;color:var(--muted);}
+#scopeFinder .sc-chip{display:inline-block;border:1px solid var(--line);border-radius:999px;padding:0 7px;font-size:10.5px;font-weight:600;color:var(--muted);white-space:nowrap;vertical-align:middle;}
+#scopeFinder .sc-chip.on{border-color:var(--good);color:var(--good);white-space:normal;}
+#scopeFinder .sc-chip.off,#scopeFinder .sc-chip.sev-high{border-color:var(--danger);color:var(--danger);}
+#scopeFinder .sc-chip.implied,#scopeFinder .sc-chip.unclear,#scopeFinder .sc-chip.sev-medium,#scopeFinder .sc-chip.practice{border-color:var(--accent2);color:#9a6a12;}
+#scopeFinder .sc-chip.others{border-color:var(--berry);color:var(--berry);}
+#scopeFinder .sc-plain{font-size:12.5px;padding:3px 0;}
+#scopeFinder .sc-own{display:flex;gap:6px;align-items:center;margin:10px 0 2px;}
+#scopeFinder .sc-own input{flex:1;padding:4px 8px;font:inherit;font-size:12px;border:1px solid var(--line);border-radius:6px;background:var(--input);color:var(--text);}
+#scopeFinder .sc-own select{padding:4px 6px;font:inherit;font-size:12px;max-width:210px;}
+@media (max-width:900px){ #scopeFinder .sc-body{flex-direction:column;overflow-y:auto;} #scopeFinder .sc-sources{flex:none;border-right:0;border-bottom:1px solid var(--line);} #scopeFinder .sc-col{overflow:visible;} #scopeFinder .sc-tiles{grid-template-columns:repeat(2,minmax(0,1fr));} }
+@media print{ #scopeFinder{display:none !important;} }
 table.rows.rebates{font-size:11.5px;}
 table.rows.rebates th{padding:3px 3px;font-size:9.5px;letter-spacing:.03em;white-space:nowrap;}
 table.rows.rebates td{padding:2px 2px;}
@@ -534,6 +612,7 @@ table.results th:nth-child(3),table.results td:nth-child(3){position:sticky;left
     <button class="btn small" id="undoBtn" type="button" title="Undo (Ctrl+Z)" disabled>↶ Undo</button>
     <button class="btn small" id="redoBtn" type="button" title="Redo (Ctrl+Shift+Z / Ctrl+Y)" disabled>↷ Redo</button>
     <button class="btn primary" id="saveBtn" type="button">💾 Save</button>
+    <button class="btn small" id="scopeBtn" type="button" data-testid="scope-button" data-state="none" title="Scope finder — read this project's drawings, emails and chats, list every scope item with its specification and source, and tick them off; flags what could be missing and what is not on the takeoff yet">🔎 Scope finder</button>
     <button class="btn small" id="helpBtn" type="button" title="Tutorials and tips for the page you are on" style="display:none;">? Help</button>
     <button class="btn small" id="shellToggle" type="button" title="Switch between the classic layout and the new blueprint layout — nothing about the takeoff changes, only how it is laid out">⇄ New layout</button>
   </div>
@@ -746,6 +825,13 @@ table.results th:nth-child(3),table.results td:nth-child(3){position:sticky;left
 
 <!-- Export preview (Phase 5): every export opens here first — the exact rows,
      columns and report metadata the file will carry — then downloads. -->
+<!-- Scope finder (19 Nov 2026): the open takeoff's scope checklist, read from its drawings, emails and chats. -->
+<div id="scopeFinder" role="dialog" aria-modal="true" aria-labelledby="scopeTitle" data-testid="scope-finder" style="display:none;">
+  <div class="sc-panel">
+    <div class="sc-head"><h2 id="scopeTitle">🔎 Scope finder</h2><span class="small">Reads the documents and lists the scope — an aid to the estimator, never a substitute for the drawings.</span><span class="sc-headbtns"><button type="button" class="btn small" data-scope-act="export" data-testid="scope-export">Export checklist (CSV)</button> <button type="button" class="btn small" data-scope-act="close" data-testid="scope-close">✕ Close</button></span></div>
+    <div class="sc-body" id="scopeBody"></div>
+  </div>
+</div>
 <div id="wasteApply" role="dialog" aria-modal="true" aria-labelledby="wasteApplyTitle" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:80;align-items:center;justify-content:center;padding:24px;">
   <div style="background:var(--panel);border:1px solid var(--line);border-radius:10px;max-width:980px;width:100%;max-height:88vh;display:flex;flex-direction:column;">
     <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line);">
@@ -803,6 +889,7 @@ table.results th:nth-child(3),table.results td:nth-child(3){position:sticky;left
 <!-- __GRADCON_3D_BUNDLE__ -->
 <script src="estimates-schema.js"></script>
 <script src="estimates-orders.js"></script>
+<script src="estimates-scope.js"></script>
 <script>
 const ESTIMATES_BUILD = "__BUILD_STAMP__"; // replaced by scripts/assemble-portal.mjs
 /* ============================= STATE ============================= */
@@ -1030,6 +1117,7 @@ function deleteTakeoff(id){
   }
 }
 function renderTakeoffsBar(){
+  try{ scopeBtnRefresh(); }catch(e){}   // the Scope finder button counts the OPEN takeoff's checklist
   let host = document.getElementById("takeoffsBar");
   if(!host) return;
   // The saved takeoffs ROLLED UP into one dropdown (Grady, 22 Oct 2026: "i
@@ -4738,7 +4826,7 @@ function renderBeam(inst,def){
   <p class="small">Trench mesh is priced and ordered by the metre (a welded strip of longitudinal bars run the length of the beam), not by sheet area — this counts it the same way as any other run of bars. Same named types as Strip Footing and Quotes' own Trench Mesh catalog, for a ground beam reinforced the same way. Layers &gt; 1 stacks that many mesh strips — each layer can be its own product, and steel quantities follow per material. Lap allowance is off by default — turn it on if this beam's run is spliced from more than one length and needs the project's lap % added.</p></div>
   <div class="subsec ${d.trenchMesh?'hidden':''}" data-show-if="trenchMesh_off">
   <p class="small">Layers &gt; 1 stacks that many identical bar sets in the same position (e.g. 2 layers of 4N28 bottom, common on heavily loaded transfer/cap beams) — steel quantity multiplies accordingly.</p>
-  <table class="rows" id="reoRows_${inst.id}"><thead><tr><th>Position</th><th>Qty/layer</th><th>Size</th><th>Layers</th><th>Start anchorage</th><th>End anchorage</th><th>Lap %</th><th></th></tr></thead>
+  <table class="rows barsets" id="reoRows_${inst.id}"><thead><tr><th>Position</th><th>Qty/layer</th><th>Size</th><th>Layers</th><th>Start anchorage</th><th>End anchorage</th><th>Lap %</th><th></th></tr></thead>
   <tbody>${d.reoRows.map((r,i)=>reoRowHtml(inst.id,r,i)).join('')}</tbody></table>
   <button class="btn small" data-action="addRow" data-target="reoRows">+ Add reinforcement set</button>
   </div>
@@ -4785,7 +4873,7 @@ function ligRowHtml(id,r,i,arr){
  * internal beam strips) — the SAME parameter set as a standalone Ground
  * Beam, backed by prefixed arrays on the slab's own data. */
 function raftBeamReoTable(inst,rows,arr){
-  return `<table class="rows"><thead><tr><th>Position</th><th>Qty/layer</th><th>Size</th><th>Layers</th><th>Start anchorage</th><th>End anchorage</th><th>Lap %</th><th></th></tr></thead>
+  return `<table class="rows barsets"><thead><tr><th>Position</th><th>Qty/layer</th><th>Size</th><th>Layers</th><th>Start anchorage</th><th>End anchorage</th><th>Lap %</th><th></th></tr></thead>
   <tbody>${(rows||[]).map((r,i)=>reoRowHtml(inst.id,r,i,arr)).join('')}</tbody></table>
   <button class="btn small" data-action="addRow" data-target="${arr}">+ Add reinforcement set</button>`;
 }
@@ -12235,6 +12323,302 @@ if(!restoredFromSave){
     if(b) b.click();
   }
 })();
+/* ===================== SCOPE FINDER (19 Nov 2026) =====================
+ * Boma: "i want extra accuracy and would like to build in a scope finder and
+ * analyser and place it in the estimates section. so i can upload project
+ * drawing and emails chats etc and it should hightlight all the scope items
+ * and their specifications where applicable. it should live behind a button i
+ * can press and possibly tick a checklist … and if possible flag something
+ * that could possibly be missing or overlooked".
+ * The header's "🔎 Scope finder" opens a panel for the OPEN takeoff: drawings,
+ * screenshots, text files, pasted emails / chats and emails found in projects@
+ * go in on the left; one read (api/ai-engine action "scope") lists every scope
+ * item with the specification and the source each document gives, what is by
+ * others, the questions to send, and what could be missing. Every row is a
+ * tick. The checklist is ALSO laid against this takeoff's elements
+ * (scopeCompareToTakeoff — deterministic): "in the documents, not on the
+ * takeoff" is one click from becoming an element. Its document lives in its
+ * OWN row (gradcon-scope::<takeoffId>, estimates-scope.js) and never inside
+ * the takeoff, so nothing here can touch the takeoff's sync; the only thing
+ * that changes the takeoff is the estimator pressing "+ Add to takeoff". */
+var SCOPE = { open:false, key:null, doc:null, filter:"all", search:"", busy:"", status:"", error:"", mail:null, saveTimer:null, cloudAsked:null };
+const SCOPE_BUCKET_PREFIX = "scope-finder/";
+function scopeTakeoffId(){ return activeTakeoffId() || (String(CURRENT_PROJECT_KEY||"").split("::")[1]) || "default"; }
+function scopeReadLocal(key){ try{ const v=JSON.parse(localStorage.getItem(key)||"null"); return v && typeof v==="object"? v : null; }catch(e){ return null; } }
+function scopeWriteLocal(){ try{ localStorage.setItem(SCOPE.key, JSON.stringify(SCOPE.doc)); return true; }catch(e){ return false; } }
+function scopeBy(){ const u=portalSignedInUser(); return u? String(u).split("@")[0] : null; }
+function scopeCompare(){ return scopeCompareToTakeoff((SCOPE.doc && SCOPE.doc.result && SCOPE.doc.result.items)||[], INSTANCES, LIB_INDEX); }
+function scopeWhen(iso){ if(!iso) return ""; try{ return new Date(iso).toLocaleString("en-AU",{day:"numeric",month:"short",hour:"numeric",minute:"2-digit"}); }catch(e){ return String(iso).slice(0,16); } }
+function scopeBytes(n){ n=Number(n)||0; return n>=1048576? (n/1048576).toFixed(1)+" MB" : Math.max(1,Math.round(n/1024))+" kB"; }
+/** The header button's count — read from this browser's copy, so it costs nothing and never waits on the cloud. */
+function scopeBtnRefresh(){
+  try{
+    const btn=document.getElementById("scopeBtn"); if(!btn) return;
+    const doc = SCOPE.open && SCOPE.doc? SCOPE.doc : scopeReadLocal(scopeDocKey(scopeTakeoffId()));
+    const d = doc? normalizeScopeDoc(doc, scopeTakeoffId(), PROJECT.name) : null;
+    const p = d && d.result? scopeProgress(d, scopeCompareToTakeoff(d.result.items, INSTANCES, LIB_INDEX)) : null;
+    btn.textContent = p && p.total? `🔎 Scope ${p.done}/${p.total}${p.gapsOpen? ` · ${p.gapsOpen} to check` : ""}` : "🔎 Scope finder";
+    btn.dataset.state = !p || !p.total? "none" : p.complete? "complete" : p.highOpen? "attention" : "open";
+  }catch(e){}
+}
+async function scopeOpen(){
+  SCOPE.open=true; SCOPE.key=scopeDocKey(scopeTakeoffId()); SCOPE.error=""; SCOPE.status=""; SCOPE.mail=null; SCOPE.mailQ=null; SCOPE.filter="all"; SCOPE.search="";
+  SCOPE.doc=normalizeScopeDoc(scopeReadLocal(SCOPE.key), scopeTakeoffId(), PROJECT.name);
+  document.getElementById("scopeFinder").style.display="flex";
+  scopeRender();
+  // the cloud copy (another device's ticks, or this takeoff's checklist on a browser that never opened it)
+  const key=SCOPE.key; const row=await kvFetch(key);
+  if(!SCOPE.open || SCOPE.key!==key) return;
+  SCOPE.cloudAsked = kvFetchFailed(row)? "failed" : "ok";
+  if(row && !kvFetchFailed(row) && row.value){ SCOPE.doc=normalizeScopeDoc(mergeScopeDocs(SCOPE.doc, normalizeScopeDoc(row.value, scopeTakeoffId(), PROJECT.name)), scopeTakeoffId(), PROJECT.name); scopeWriteLocal(); }
+  scopeRender(); scopeBtnRefresh();
+}
+function scopeClose(){ SCOPE.open=false; document.getElementById("scopeFinder").style.display="none"; scopeBtnRefresh(); }
+/** Every change: stamped, kept in this browser at once, and merged into the cloud row shortly after (read → merge → write, never a blind overwrite). */
+function scopeSave(){
+  if(!SCOPE.doc) return;
+  SCOPE.doc.updatedAt=new Date().toISOString(); SCOPE.doc.updatedBy=scopeBy(); SCOPE.doc.name=PROJECT.name||SCOPE.doc.name||"";
+  scopeWriteLocal(); scopeBtnRefresh();
+  clearTimeout(SCOPE.saveTimer);
+  const key=SCOPE.key;
+  SCOPE.saveTimer=setTimeout(async()=>{
+    const row=await kvFetch(key);
+    if(kvFetchFailed(row)) return;                       // nothing is known about the cloud copy: keep the local one, try again on the next change
+    const local=scopeReadLocal(key); if(!local) return;
+    const merged = row && row.value? mergeScopeDocs(local, row.value) : local;
+    const ok=await kvPush(key, merged);
+    if(ok && SCOPE.open && SCOPE.key===key && !SCOPE.busy){ SCOPE.doc=normalizeScopeDoc(merged, scopeTakeoffId(), PROJECT.name); scopeWriteLocal(); }
+  }, 900);
+}
+async function scopeUpload(file, kind){
+  const tid=scopeTakeoffId();
+  let safe=String(file.name||"file").replace(/[^A-Za-z0-9._-]+/g,"_").slice(-90);
+  if(kind==="pdf" && !/\.pdf$/i.test(safe)) safe+=".pdf";
+  const path=`${SCOPE_BUCKET_PREFIX}${tid}/${Date.now().toString(36)}-${safe}`;
+  const res=await fetch(`${SUPABASE_URL}/storage/v1/object/${VERSION_BUCKET}/${path}`, { method:"POST", headers:{ apikey:SUPABASE_ANON_KEY, Authorization:`Bearer ${SUPABASE_ANON_KEY}`, "Content-Type": file.type || (kind==="pdf"? "application/pdf" : "application/octet-stream"), "x-upsert":"true" }, body:file, signal:AbortSignal.timeout(180000) });
+  if(!res.ok) throw new Error(`the upload was refused (${res.status})`);
+  return { path, url:`${SUPABASE_URL}/storage/v1/object/public/${VERSION_BUCKET}/${path}` };
+}
+async function scopeAddFiles(list){
+  const files=Array.from(list||[]); if(!files.length) return;
+  const problems=[]; let n=0;
+  for(const f of files){
+    const c=scopeFileClass(f.name, f.type, f.size);
+    if(!c.kind){ problems.push(`${f.name}: ${c.error}`); continue; }
+    SCOPE.busy=`Adding ${++n} of ${files.length} — ${f.name}`; scopeRender();
+    try{
+      if(c.kind==="text"){ const raw=await f.text(); const text=scopeTextFromFile(f.name, raw); if(!text){ problems.push(`${f.name}: no readable text`); continue; }
+        SCOPE.doc.notes.push({ id:"n_"+Date.now().toString(36)+n, name:f.name, kind:"file", text, addedAt:new Date().toISOString() }); }
+      else { const up=await scopeUpload(f, c.kind); SCOPE.doc.files.push({ id:"f_"+Date.now().toString(36)+n, name:f.name, url:up.url, path:up.path, size:f.size, kind:c.kind, addedAt:new Date().toISOString() }); }
+    }catch(e){ problems.push(`${f.name}: ${e.message||"could not be added"}`); }
+  }
+  SCOPE.busy=""; SCOPE.error=problems.length? "Not added — "+problems.join(" · ") : ""; scopeSave(); scopeRender();
+}
+function scopeTextChars(){ return scopeRunText(SCOPE.doc.notes).length; }
+function scopeAddPaste(){
+  const ta=document.getElementById("scopePasteText"), nm=document.getElementById("scopePasteName"); const text=String(ta&&ta.value||"").trim();
+  if(!text){ SCOPE.error="Paste the email, chat or note text first."; scopeRender(); return; }
+  SCOPE.doc.notes.push({ id:"n_"+Date.now().toString(36), name:String(nm&&nm.value||"").trim()||"Pasted text", kind:"paste", text, addedAt:new Date().toISOString() });
+  SCOPE.error=""; SCOPE.clearPaste=true; scopeSave(); scopeRender();
+}
+function scopeRemoveSource(id){
+  SCOPE.doc.files=SCOPE.doc.files.filter(f=>f.id!==id); SCOPE.doc.notes=SCOPE.doc.notes.filter(n=>n.id!==id); SCOPE.doc.custom=SCOPE.doc.custom.filter(c=>c.id!==id);
+  SCOPE.doc.removed[id]=new Date().toISOString(); scopeSave(); scopeRender();
+}
+/** One call to a portal server function; a reply that is not JSON (the hosting switched off, a gateway page) is said in those words, never read as "not configured". */
+async function scopeApi(path, body, timeoutMs){
+  let res;
+  try{ res=await fetch(location.origin+path, { method:"POST", headers:{ "content-type":"application/json" }, body:JSON.stringify(body), signal:AbortSignal.timeout(timeoutMs||60000) }); }
+  catch(e){ return { ok:false, status:0, error: e && e.name==="TimeoutError"? "The read took too long and was stopped — try fewer documents in one go." : "The server could not be reached — check the connection and try again." }; }
+  let json=null; try{ json=await res.json(); }catch(e){}
+  if(!json) return { ok:false, status:res.status, error: res.status===402? "The app's hosting has been switched off by Vercel (402 Payment required) — nothing can be read until it is back." : `The server did not answer (${res.status}).` };
+  return res.ok? { ok:true, status:res.status, body:json } : { ok:false, status:res.status, body:json, error: json.error || `The server answered ${res.status}.` };
+}
+async function scopeMailSearch(){
+  const q=String((document.getElementById("scopeMailQ")||{}).value||"").trim(); if(!q) return;
+  SCOPE.mail={ q, busy:true, list:[], picked:{} }; scopeRender();
+  const r=await scopeApi("/api/gmail", { action:"list", q, max:15 }, 60000);
+  SCOPE.mail = r.ok? { q, list:(r.body.messages||[]), picked:{} } : { q, list:[], picked:{}, error:r.error };
+  scopeRender();
+}
+async function scopeMailAdd(){
+  const m=SCOPE.mail; if(!m) return; const ids=Object.keys(m.picked).filter(id=>m.picked[id]); if(!ids.length) return;
+  const problems=[]; let n=0;
+  for(const id of ids){
+    SCOPE.busy=`Reading email ${++n} of ${ids.length}`; scopeRender();
+    const r=await scopeApi("/api/gmail", { action:"read", id }, 60000);
+    const msg=r.ok && r.body.message; const text=msg? scopeTextFromFile("", msg.body||msg.snippet||"") : "";
+    if(!msg || !text){ problems.push(r.error || "an email had no readable text"); continue; }
+    if(SCOPE.doc.notes.some(x=>x.mailId===id)) continue;
+    SCOPE.doc.notes.push({ id:"n_"+Date.now().toString(36)+n, mailId:id, name:msg.subject||"(no subject)", kind:"email", from:msg.from||"", date:msg.date||"", text, addedAt:new Date().toISOString() });
+  }
+  SCOPE.busy=""; SCOPE.error=problems.length? "Not added — "+problems.join(" · ") : ""; if(SCOPE.mail) SCOPE.mail.picked={}; scopeSave(); scopeRender();
+}
+/** The read. New sources only by default (a run ADDS to the checklist); "Read everything again" sends the lot. Files go twelve at a time; the pasted text rides with the first set. */
+async function scopeRun(all){
+  if(SCOPE.busy) return;
+  const doc=SCOPE.doc;
+  let files=doc.files.filter(f=>all || !f.readAt), notes=doc.notes.filter(n=>all || !n.readAt);
+  if(!files.length && !notes.length){ files=doc.files.slice(); notes=doc.notes.slice(); }
+  if(!files.length && !notes.length){ SCOPE.error="Add a drawing, a document or some pasted text first."; scopeRender(); return; }
+  const text=scopeRunText(notes);
+  if(text.length>SCOPE_TEXT_MAX_CHARS){ SCOPE.error=`The text to read is ${text.length.toLocaleString("en-AU")} characters; one read takes up to ${SCOPE_TEXT_MAX_CHARS.toLocaleString("en-AU")}. Remove some of it — nothing is cut off silently.`; scopeRender(); return; }
+  const types=[]; LIBRARY.forEach(g=>g.items.forEach(it=>types.push({ id:it.id, label:it.label, group:g.group })));
+  const sets=[]; for(let i=0;i<files.length;i+=SCOPE_FILES_PER_RUN) sets.push(files.slice(i,i+SCOPE_FILES_PER_RUN)); if(!sets.length) sets.push([]);
+  SCOPE.error=""; let added=0, failed="";
+  for(let s=0;s<sets.length;s++){
+    SCOPE.busy = sets.length>1? `Reading set ${s+1} of ${sets.length} — this can take a few minutes` : "Reading — this can take a few minutes"; scopeRender();
+    const body={ action:"scope", provider:portalPref("aiProvider")||undefined, projectName:PROJECT.name||"", types, files:sets[s].map(f=>({ url:f.url, name:f.name })), text: s===0? text : "" };
+    if(!body.files.length && !body.text) continue;
+    const r=await scopeApi("/api/ai-engine", body, 295000);
+    if(!r.ok){ failed=r.error; break; }
+    const before=(doc.result && doc.result.items.length)||0;
+    doc.result=mergeScopeResult(doc.result, r.body.result);
+    added+=doc.result.items.length-before;
+    const at=new Date().toISOString();
+    sets[s].forEach(f=>{ f.readAt=at; }); if(s===0) notes.forEach(n=>{ n.readAt=at; });
+    doc.runs.push({ at, by:scopeBy(), provider:r.body.provider||null, model:r.body.model||null, files:sets[s].length, notes:s===0? notes.length : 0, items:(r.body.result.items||[]).length, gaps:(r.body.result.gaps||[]).length, partial:r.body.partial? r.body.partial.reason : null });
+    if(r.body.partial) SCOPE.error=`${r.body.partial.reason} — ${r.body.partial.kept} items were kept. ${r.body.partial.advice||""}`;
+    scopeSave();
+  }
+  SCOPE.busy=""; if(failed) SCOPE.error=failed;
+  SCOPE.status = failed? "" : `Read ${files.length} file${files.length===1?"":"s"}${notes.length? ` and ${notes.length} text${notes.length===1?"":"s"}` : ""}: ${added} new scope item${added===1?"":"s"} on the checklist.`;
+  scopeRender();
+}
+function scopeSetState(id, state){ const cur=((SCOPE.doc.review||{})[id]||{}).state||""; SCOPE.doc.review=scopeReviewPatch(SCOPE.doc, id, { state: cur===state? "" : state }, scopeBy()); scopeSave(); scopeRender(); }
+function scopeSetNote(id, note){ SCOPE.doc.review=scopeReviewPatch(SCOPE.doc, id, { note }, scopeBy()); scopeSave(); }
+function scopeAddCustom(title, category, fromGap){
+  title=String(title||"").trim(); if(!title) return;
+  SCOPE.doc.custom.push({ id:"cu_"+Date.now().toString(36), title, category:category||"other", specs:[], addedAt:new Date().toISOString(), by:scopeBy(), fromGap:fromGap||null });
+  if(fromGap) SCOPE.doc.review=scopeReviewPatch(SCOPE.doc, fromGap, { state:"done" }, scopeBy());
+  scopeSave(); scopeRender();
+}
+/** The ONE place the Scope finder changes the takeoff: the estimator's own click adds an element of the item's type, named after the item. */
+function scopeAddElement(id){
+  const it=scopeAllItems(SCOPE.doc).find(x=>x.id===id); if(!it || !it.type || !LIB_INDEX[it.type]) return;
+  addInstance(it.type);
+  const inst=INSTANCES[INSTANCES.length-1]; if(inst){ inst.label=String(it.title).slice(0,80); renderWorkspace(); computeAllAndRefresh(); }
+  SCOPE.status=`Added "${it.title}" to the takeoff as a ${LIB_INDEX[it.type].label} — fill in its dimensions on the Workspace.`; scopeRender(); scopeBtnRefresh();
+}
+function scopeExport(){
+  const rows=scopeCsvRows(SCOPE.doc, scopeCompare(), scopeCatLabel);
+  triggerDownload(`${String(PROJECT.name||"takeoff").replace(/[^A-Za-z0-9 ._-]+/g,"").trim()||"takeoff"} - scope checklist.csv`, rows.map(r=>r.map(csvEscape).join(",")).join("\r\n"), "text/csv;charset=utf-8;");
+}
+const SCOPE_CATS=[["prelims","Preliminaries, access & site"],["earthworks","Earthworks & excavation"],["piling","Piling & retention"],["footings","Footings & ground beams"],["groundslabs","Slabs on ground"],["suspended","Suspended slabs & beams"],["vertical","Columns & walls"],["stairs","Stairs & ramps"],["precast","Precast & tilt-up"],["reinforcement","Reinforcement"],["formwork","Formwork"],["concrete","Concrete supply, placing & curing"],["waterproofing","Waterproofing & membranes"],["joints","Joints, dowels & finishes"],["drainage","Drainage & backfill"],["external","External works & paving"],["testing","Testing & compliance"],["other","Other"]];
+function scopeCatLabel(k){ const c=SCOPE_CATS.find(x=>x[0]===k); return c? c[1] : "Other"; }
+function scopeSrc(o){ if(!o.doc && !o.page && !o.quote) return ""; return `<div class="sc-src">📄 ${bpEsc(o.doc||"document")}${o.page? ` · p. ${bpEsc(o.page)}` : ""}${o.quote? ` — “${bpEsc(o.quote)}”` : ""}</div>`; }
+function scopeItemRow(it, cmp){
+  const rv=(SCOPE.doc.review||{})[it.id]||{}, st=rv.state||"", c=cmp.byItem[it.id];
+  const chip = it.party==="others"? "" : !c? "" : c.state==="on"? `<span class="sc-chip on" title="This takeoff carries ${bpEsc(c.instances.map(i=>i.label).join(", "))}">✓ on the takeoff: ${bpEsc(c.instances.map(i=>i.id+" "+i.label).join(", "))}</span>` : c.state==="off"? `<span class="sc-chip off">not on the takeoff</span>${it.type && LIB_INDEX[it.type]? ` <button type="button" class="btn small" data-scope-act="addel" data-id="${it.id}" data-testid="scope-add-element" title="Add a ${bpEsc(LIB_INDEX[it.type].label)} named after this item to the takeoff">+ Add to takeoff</button>` : ""}` : "";
+  return `<div class="sc-row ${st}" data-testid="scope-item" data-id="${it.id}" data-state="${st}">
+   <label class="sc-tick" title="Tick when this is allowed for"><input type="checkbox" data-scope-act="done" data-id="${it.id}" ${st==="done"?'checked':''}></label>
+   <div class="sc-main"><div class="sc-title">${bpEsc(it.title)}${it.where? ` <span class="sc-where">${bpEsc(it.where)}</span>` : ""}${it.custom? ` <span class="sc-chip">added by hand</span>` : ""}${it.basis==="implied"? ` <span class="sc-chip implied" title="${bpEsc(it.because||"Not written on a document, but required by something that is")}">implied</span>` : ""}${it.party==="others"? ` <span class="sc-chip others">by others</span>` : it.party==="unclear"? ` <span class="sc-chip unclear">responsibility unclear</span>` : ""}</div>
+    ${(it.specs&&it.specs.length) || it.quantity? `<div class="sc-specs">${(it.specs||[]).map(s=>`<span class="sc-spec">${bpEsc(s)}</span>`).join("")}${it.quantity? `<span class="sc-spec qty" title="A quantity a document states — not a measurement">${bpEsc(it.quantity)}</span>` : ""}</div>` : ""}
+    ${it.basis==="implied" && it.because? `<div class="sc-src">Implied by: ${bpEsc(it.because)}</div>` : ""}${scopeSrc(it)}
+    <div class="sc-tools">${chip} <button type="button" class="btn small ${st==="na"?'primary':''}" data-scope-act="na" data-id="${it.id}" title="Not applicable to this tender / not ours">N/A</button>${it.custom? ` <button type="button" class="btn small danger" data-scope-act="rmsrc" data-id="${it.id}" title="Remove this item">✕</button>` : ""} <input type="text" class="sc-note" data-scope-note="${it.id}" value="${bpEsc(rv.note||"")}" placeholder="note">${rv.by && st? ` <span class="sc-by">${st==="done"?"ticked":"marked"} by ${bpEsc(rv.by)} ${bpEsc(scopeWhen(rv.at))}</span>` : ""}</div>
+   </div></div>`;
+}
+function scopeGapRow(g){
+  const rv=(SCOPE.doc.review||{})[g.id]||{}, st=rv.state||"";
+  return `<div class="sc-row gap ${st}" data-testid="scope-gap" data-id="${g.id}" data-state="${st}" data-severity="${g.severity}">
+   <label class="sc-tick" title="Tick when you have considered this"><input type="checkbox" data-scope-act="done" data-id="${g.id}" ${st==="done"?'checked':''}></label>
+   <div class="sc-main"><div class="sc-title"><span class="sc-chip sev-${g.severity}">${g.severity}</span> ${bpEsc(g.title)} <span class="sc-chip ${g.basis}">${g.basis==="practice"? "common practice — check" : "from the documents"}</span></div>
+    ${g.why? `<div class="sc-src">${bpEsc(g.why)}${g.relatesTo? ` · relates to: ${bpEsc(g.relatesTo)}` : ""}</div>` : ""}${scopeSrc(g)}
+    <div class="sc-tools"><button type="button" class="btn small" data-scope-act="gap2item" data-id="${g.id}" data-testid="scope-gap-add" title="Put this on the checklist as a scope item of its own">→ Add to the checklist</button> <button type="button" class="btn small ${st==="na"?'primary':''}" data-scope-act="na" data-id="${g.id}">N/A</button> <input type="text" class="sc-note" data-scope-note="${g.id}" value="${bpEsc(rv.note||"")}" placeholder="note"></div>
+   </div></div>`;
+}
+function scopeRender(){
+  const host=document.getElementById("scopeBody"); if(!host || !SCOPE.doc) return;
+  const doc=SCOPE.doc, res=doc.result, cmp=scopeCompare(), p=scopeProgress(doc, cmp);
+  const chars=scopeTextChars(), unread=doc.files.filter(f=>!f.readAt).length+doc.notes.filter(n=>!n.readAt).length, any=doc.files.length+doc.notes.length;
+  const last=doc.runs.length? doc.runs[doc.runs.length-1] : null;
+  const m=SCOPE.mail;
+  const sources=`<div class="sc-col sc-sources" data-testid="scope-sources">
+   <h3>1 · What to read</h3>
+   <p class="small">Drawings and documents as <b>PDF</b>, screenshots as <b>images</b>, emails as <b>.eml / .txt</b> — or paste the text. Everything stays with this takeoff.</p>
+   <div class="sc-drop" id="scopeDrop"><button type="button" class="btn small primary" data-scope-act="pick" data-testid="scope-add-files">+ Add files</button> <span class="small">or drop them here</span><input type="file" id="scopeFileInput" data-testid="scope-file-input" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.txt,.eml,.md,.csv,.html,.htm" style="display:none"></div>
+   ${doc.files.map(f=>`<div class="sc-srcrow" data-testid="scope-file"><span class="sc-chip">${f.kind==="image"?"image":"PDF"}</span> <a href="${bpEsc(f.url)}" target="_blank" rel="noopener">${bpEsc(f.name)}</a> <span class="small">${scopeBytes(f.size)}${f.readAt? " · read" : " · not read yet"}</span><button type="button" class="btn small danger" data-scope-act="rmsrc" data-id="${f.id}" title="Remove">✕</button></div>`).join("")}
+   <div class="sc-sub">Paste emails, chats or notes</div>
+   <input type="text" id="scopePasteName" placeholder="What it is — e.g. Email from the builder, 12 Nov" data-testid="scope-paste-name">
+   <textarea id="scopePasteText" rows="5" placeholder="Paste the text here…" data-testid="scope-paste-text"></textarea>
+   <button type="button" class="btn small" data-scope-act="paste" data-testid="scope-paste-add">+ Add this text</button>
+   ${doc.notes.map(n=>`<div class="sc-srcrow" data-testid="scope-note"><span class="sc-chip">${n.kind==="email"?"email":n.kind==="file"?"file":"text"}</span> <span title="${bpEsc(String(n.text).slice(0,600))}">${bpEsc(n.name)}</span> <span class="small">${String(n.text).length.toLocaleString("en-AU")} chars${n.readAt? " · read" : " · not read yet"}</span><button type="button" class="btn small danger" data-scope-act="rmsrc" data-id="${n.id}" title="Remove">✕</button></div>`).join("")}
+   <div class="sc-sub">From the projects@ mailbox</div>
+   <div class="sc-mailq"><input type="text" id="scopeMailQ" value="${bpEsc(SCOPE.mailQ!=null? SCOPE.mailQ : m? m.q : (PROJECT.name? `"${String(PROJECT.name).split(/[,—]/)[0].trim()}"` : ""))}" placeholder="Search words — a street name, a builder" data-testid="scope-mail-q"><button type="button" class="btn small" data-scope-act="mailsearch" data-testid="scope-mail-search">Search</button></div>
+   ${m? (m.busy? `<p class="small">Searching…</p>` : m.error? `<p class="small sc-err">${bpEsc(m.error)}</p>` : !m.list.length? `<p class="small">No emails matched.</p>` : `<div class="sc-maillist" data-testid="scope-mail-list">${m.list.map(x=>`<label class="sc-mail"><input type="checkbox" data-scope-mail="${bpEsc(x.id)}" ${m.picked[x.id]?'checked':''} ${doc.notes.some(n=>n.mailId===x.id)?'disabled':''}> <span><b>${bpEsc(x.subject||"(no subject)")}</b><br><span class="small">${bpEsc(String(x.from||"").replace(/<.*>/,"").trim())} · ${bpEsc(scopeWhen(x.date))}${doc.notes.some(n=>n.mailId===x.id)? " · added" : ""}</span></span></label>`).join("")}</div><button type="button" class="btn small" data-scope-act="mailadd" data-testid="scope-mail-add">+ Add the ticked emails</button><p class="small">The email text is added; attach its drawings as files above.</p>`) : ""}
+   <div class="sc-run">
+    <p class="small" data-testid="scope-totals">${doc.files.length} file${doc.files.length===1?"":"s"} · ${doc.notes.length} text${doc.notes.length===1?"":"s"} · ${chars.toLocaleString("en-AU")} of ${SCOPE_TEXT_MAX_CHARS.toLocaleString("en-AU")} characters${unread && res? ` · <b>${unread} not read yet</b>` : ""}</p>
+    <button type="button" class="btn primary" data-scope-act="run" data-testid="scope-run" ${SCOPE.busy || !any?'disabled':''}>${SCOPE.busy? "Working…" : res? (unread? `🔎 Read the ${unread} new` : "🔎 Read everything again") : "🔎 Find the scope"}</button>
+    ${res && unread && !SCOPE.busy? ` <button type="button" class="btn small" data-scope-act="runall" data-testid="scope-run-all">Read everything again</button>` : ""}
+    ${SCOPE.busy? `<p class="small sc-busy" data-testid="scope-busy">${bpEsc(SCOPE.busy)}</p>` : ""}${SCOPE.error? `<p class="small sc-err" data-testid="scope-error">${bpEsc(SCOPE.error)}</p>` : ""}${SCOPE.status? `<p class="small sc-ok" data-testid="scope-status">${bpEsc(SCOPE.status)}</p>` : ""}
+    ${last? `<p class="small">Last read ${bpEsc(scopeWhen(last.at))}${last.by? ` by ${bpEsc(last.by)}` : ""}. A read adds to the checklist — ticks are kept.</p>` : ""}
+   </div></div>`;
+  let checklist;
+  if(!res){
+    checklist=`<div class="sc-col sc-list"><h3>2 · The scope checklist</h3><div class="sc-empty" data-testid="scope-empty"><p><b>Nothing read yet.</b> Add the project's drawings, specification pages and the emails or chats that set the scope, then press <b>Find the scope</b>.</p><p class="small">You get every scope item the documents show or ask for, with the specification and the page it came from; what is by others; the questions worth sending; and what could be missing or overlooked. The list is laid against this takeoff's ${INSTANCES.length} element${INSTANCES.length===1?"":"s"}, so anything in the documents and not yet taken off stands out. The read is an aid — the documents govern.</p></div>${scopeOwnItemForm()}${doc.custom.length? scopeAllItems(doc).map(it=>scopeItemRow(it,cmp)).join("") : ""}</div>`;
+  } else {
+    const q=SCOPE.search.trim().toLowerCase();
+    let rows=scopeFilterItems(doc, cmp, SCOPE.filter); if(q) rows=rows.filter(it=>(it.title+" "+(it.where||"")+" "+(it.specs||[]).join(" ")+" "+(it.doc||"")).toLowerCase().includes(q));
+    const groups=SCOPE_CATS.map(c=>({ key:c[0], label:c[1], rows:rows.filter(it=>(it.category||"other")===c[0] || (c[0]==="other" && !SCOPE_CATS.some(x=>x[0]===it.category))) })).filter(g=>g.rows.length);
+    const fl=(k,label,n)=>`<button type="button" class="sc-filter ${SCOPE.filter===k?'active':''}" data-scope-act="filter" data-filter="${k}" data-testid="scope-filter-${k}">${label}${n!==undefined? ` <b>${n}</b>` : ""}</button>`;
+    const all=scopeAllItems(doc);
+    checklist=`<div class="sc-col sc-list">
+     <h3>2 · The scope checklist <span class="small">— ${bpEsc(PROJECT.name||"this takeoff")}</span></h3>
+     <div class="sc-tiles" data-testid="scope-tiles"><div class="sc-tile"><b>${p.done}/${p.total}</b><span>scope items allowed for</span></div><div class="sc-tile ${p.gapsOpen?'warn':''}"><b>${p.gapsOpen}</b><span>possibly missing — to check${p.highOpen? ` (${p.highOpen} high)` : ""}</span></div><div class="sc-tile ${p.offTakeoff?'warn':''}"><b>${p.offTakeoff}</b><span>in the documents, not on the takeoff</span></div><div class="sc-tile"><b>${p.others}</b><span>by others</span></div></div>
+     <div class="sc-filters">${fl("all","All",all.length)}${fl("open","Still open",all.filter(it=>it.party!=="others" && !((doc.review[it.id]||{}).state)).length)}${fl("off","Not on the takeoff",p.offTakeoff)}${fl("implied","Implied",all.filter(it=>it.basis==="implied").length)}${fl("others","By others / unclear",all.filter(it=>it.party!=="ours").length)} <input type="text" id="scopeSearch" value="${bpEsc(SCOPE.search)}" placeholder="Search the list" data-testid="scope-search"></div>
+     ${groups.map(g=>`<div class="sc-group" data-testid="scope-group" data-cat="${g.key}"><div class="sc-grouphead">${bpEsc(g.label)} <span class="small">${g.rows.filter(it=>((doc.review[it.id]||{}).state)).length}/${g.rows.length}</span></div>${g.rows.map(it=>scopeItemRow(it,cmp)).join("")}</div>`).join("") || `<p class="small">Nothing matches this filter.</p>`}
+     ${scopeOwnItemForm()}
+     <div class="sc-section" data-testid="scope-gaps"><div class="sc-sechead warn">Possibly missing or overlooked <span class="small">— questions to check, not findings</span></div>${res.gaps.length? res.gaps.map(scopeGapRow).join("") : `<p class="small">Nothing flagged.</p>`}</div>
+     ${cmp.unmatched.length? `<div class="sc-section" data-testid="scope-unmatched"><div class="sc-sechead">On the takeoff, not found in the documents read</div><p class="small">${cmp.unmatched.map(u=>`${bpEsc(u.id)} ${bpEsc(u.label)}`).join(" · ")}</p><p class="small">Either the sheet that shows them was not in the set, or they are not in this scope.</p></div>` : ""}
+     ${res.exclusions.length? `<div class="sc-section" data-testid="scope-exclusions"><div class="sc-sechead">By others / excluded, as the documents state</div>${res.exclusions.map(e=>`<div class="sc-plain">• ${bpEsc(e.text)}${scopeSrc(e)}</div>`).join("")}</div>` : ""}
+     ${res.questions.length? `<div class="sc-section" data-testid="scope-questions"><div class="sc-sechead">Questions worth sending <button type="button" class="btn small" data-scope-act="copyq">Copy</button></div>${res.questions.map((x,i)=>`<div class="sc-plain">${i+1}. ${bpEsc(x)}</div>`).join("")}</div>` : ""}
+     ${res.documents.length || res.unreadable.length? `<div class="sc-section"><div class="sc-sechead">What was read</div>${res.documents.map(d=>`<div class="sc-plain">• ${bpEsc(d.name||d.title)} <span class="small">${bpEsc(d.kind)}${d.title && d.name? ` · ${bpEsc(d.title)}` : ""}${d.revision? ` · rev ${bpEsc(d.revision)}` : ""}${d.date? ` · ${bpEsc(d.date)}` : ""}</span></div>`).join("")}${res.unreadable.map(u=>`<div class="sc-plain sc-err">Could not be read: ${bpEsc(u)}</div>`).join("")}</div>` : ""}
+    </div>`;
+  }
+  const scroll=host.querySelector(".sc-list"), top=scroll? scroll.scrollTop : 0, sscroll=host.querySelector(".sc-sources"), stop=sscroll? sscroll.scrollTop : 0;
+  const pn=document.getElementById("scopePasteName"), pt=document.getElementById("scopePasteText"); const keep={ n:pn? pn.value : "", t:pt? pt.value : "" };
+  host.innerHTML=sources+checklist;
+  const nl=host.querySelector(".sc-list"); if(nl) nl.scrollTop=top; const ns=host.querySelector(".sc-sources"); if(ns) ns.scrollTop=stop;
+  // typed-but-not-added paste text survives a repaint (it is cleared only once it has been added)
+  if(SCOPE.clearPaste) SCOPE.clearPaste=false; else { const a=document.getElementById("scopePasteName"), b=document.getElementById("scopePasteText"); if(a) a.value=keep.n; if(b) b.value=keep.t; }
+}
+function scopeOwnItemForm(){ return `<div class="sc-own" data-testid="scope-own"><input type="text" id="scopeOwnTitle" placeholder="Add a scope item of your own" data-testid="scope-own-title"><select id="scopeOwnCat">${SCOPE_CATS.map(c=>`<option value="${c[0]}">${bpEsc(c[1])}</option>`).join("")}</select><button type="button" class="btn small" data-scope-act="own" data-testid="scope-own-add">+ Add</button></div>`; }
+function scopeInit(){
+  const btn=document.getElementById("scopeBtn"), root=document.getElementById("scopeFinder"); if(!btn || !root) return;
+  btn.addEventListener("click", scopeOpen);
+  root.addEventListener("click", e=>{
+    if(e.target===root){ scopeClose(); return; }
+    const t=e.target.closest("[data-scope-act]"); if(!t) return; const act=t.dataset.scopeAct, id=t.dataset.id;
+    if(act==="close") scopeClose();
+    else if(act==="pick") document.getElementById("scopeFileInput").click();
+    else if(act==="paste") scopeAddPaste();
+    else if(act==="rmsrc") scopeRemoveSource(id);
+    else if(act==="run") scopeRun(false);
+    else if(act==="runall") scopeRun(true);
+    else if(act==="mailsearch") scopeMailSearch();
+    else if(act==="mailadd") scopeMailAdd();
+    else if(act==="na") scopeSetState(id,"na");
+    else if(act==="addel") scopeAddElement(id);
+    else if(act==="gap2item"){ const g=((SCOPE.doc.result||{}).gaps||[]).find(x=>x.id===id); if(g) scopeAddCustom(g.title, "other", g.id); }
+    else if(act==="own"){ const ti=document.getElementById("scopeOwnTitle"), ca=document.getElementById("scopeOwnCat"); scopeAddCustom(ti.value, ca.value); }
+    else if(act==="filter"){ SCOPE.filter=t.dataset.filter; scopeRender(); }
+    else if(act==="export") scopeExport();
+    else if(act==="copyq"){ try{ navigator.clipboard.writeText(((SCOPE.doc.result||{}).questions||[]).map((x,i)=>`${i+1}. ${x}`).join("\n")); t.textContent="Copied"; }catch(x){} }
+  });
+  root.addEventListener("change", e=>{
+    const t=e.target;
+    if(t.id==="scopeFileInput"){ scopeAddFiles(t.files); t.value=""; }
+    else if(t.dataset.scopeAct==="done") scopeSetState(t.dataset.id,"done");
+    else if(t.dataset.scopeNote) scopeSetNote(t.dataset.scopeNote, t.value);
+    else if(t.dataset.scopeMail && SCOPE.mail) SCOPE.mail.picked[t.dataset.scopeMail]=t.checked;
+  });
+  root.addEventListener("input", e=>{ if(e.target.id==="scopeMailQ"){ SCOPE.mailQ=e.target.value; return; } if(e.target.id==="scopeSearch"){ SCOPE.search=e.target.value; const pos=e.target.selectionStart; scopeRender(); const s=document.getElementById("scopeSearch"); if(s){ s.focus(); try{ s.setSelectionRange(pos,pos); }catch(x){} } } });
+  root.addEventListener("keydown", e=>{ if(e.key==="Escape") scopeClose(); else if(e.key==="Enter" && e.target.id==="scopeMailQ") scopeMailSearch(); else if(e.key==="Enter" && e.target.id==="scopeOwnTitle"){ const ca=document.getElementById("scopeOwnCat"); scopeAddCustom(e.target.value, ca.value); } });
+  root.addEventListener("dragover", e=>{ if(e.target.closest("#scopeDrop, .sc-sources")){ e.preventDefault(); } });
+  root.addEventListener("drop", e=>{ if(e.target.closest("#scopeDrop, .sc-sources") && e.dataTransfer && e.dataTransfer.files.length){ e.preventDefault(); scopeAddFiles(e.dataTransfer.files); } });
+  scopeBtnRefresh();
+}
+scopeInit();
 applyAiHandoff(); // an AI Engine export waiting in localStorage becomes a NEW takeoff under AI drafts (never touches the one that was open)
 syncFromCloud().then(prefetchTakeoffBlobs).then(syncTemplatesFromCloud); // pull the open takeoff first, then warm every other saved session so the whole list is ready to resume
 window.addEventListener("focus", syncFromCloud);
