@@ -2043,6 +2043,46 @@ check("rebates (19 Nov 2026): a rebate row runs along the slab perimeter, a beam
   assert.equal(sum(rateKey("FORMWORK", "Edgeform >400mm deep", "m2")), 40.95, "a 450 mm rebate lands on the over-400 m² row");
   assert.ok(!(flags || []).some((f) => /rebate/i.test(f)), "neither rebate line is flagged");
 });
+check("retaining wall parameters (19 Nov 2026): a core-filled blockwork stem at the CMAA's published grout volumes, the thicker lower section (H4), Y starters, stem bars on one face or two, footing mesh, agi drain, battered backfill; distribution bars counted across the footing", () => {
+  const est = fs.readFileSync(new URL("../portal/estimates-app.html", import.meta.url), "utf8");
+  // the published figures (CMAA CM01 Concrete Masonry Handbook 2019, section 7) — pinned so they are never retyped from memory
+  const m = /const RET_BLOCKS=\[([\s\S]*?)\];/.exec(est); assert.ok(m, "RET_BLOCKS");
+  const blocks = [...m[1].matchAll(/\{key:"([\d.]+)", label:"[^"]*", mm:(\d+), grout:([\d.]+)\}/g)].map((x) => [x[1], +x[2], +x[3]]);
+  assert.deepEqual(blocks, [["15.01", 140, 0.054], ["20.01", 190, 0.083], ["20.48", 190, 0.1], ["30.48", 290, 0.18]], "grout to fill 1 m² of wall, by block");
+  assert.match(est, /const BLOCKS_PER_M2=12\.5;/, "12.5 blocks per m²");
+  assert.match(est, /CM01 Concrete Masonry\s*\n?\s*\*? ?Handbook, 2019/, "the source is stated beside the figures");
+  // the geometry out of the page source
+  const grab = (name, args) => { const mm = new RegExp("function " + name + "\\(" + args + "\\)\\{[\\s\\S]*?\\n\\}").exec(est); assert.ok(mm, name + " in estimates-app.html"); return mm[0]; };
+  const num = (v, d) => { const n = parseFloat(v); return Number.isFinite(n) ? n : (d === undefined ? 0 : d); };
+  const fns = new Function("num", "elevGeom", m[0] + "\n" + /function retBlock\(key,dflt\)\{[^\n]*\}/.exec(est)[0] + "\n" + /function retIsBlock\(d\)\{[^\n]*\}/.exec(est)[0] + "\n" + /function retStemFaces\(d\)\{[^\n]*\}/.exec(est)[0] + "\n" + grab("retStemGeom", "d") + "\nreturn {retStemGeom, retStemFaces};")(num, () => null);
+  const r3 = (x) => +x.toFixed(3);
+  let g = fns.retStemGeom({ length: 10000, stemH: 1600, stemType: "block", blockUpper: "15.01", blockLower: "20.01", stemLowerH: 600, footL: 1000 });
+  assert.deepEqual([r3(g.area), r3(g.upperArea), r3(g.lowerArea), r3(g.groutVol), g.T, g.Tlow], [16, 10, 6, 1.038, 0.14, 0.19], "RW1 1201–1600: 10 m² of 140 over 6 m² of 190 → 1.038 m³ of core fill");
+  g = fns.retStemGeom({ length: 10000, stemH: 1600, stemType: "block", blockUpper: "15.01", blockLower: "20.01", stemLowerH: 600, coreFillPct: 50, groutUpperM2: 0.06 });
+  assert.equal(r3(g.groutVol), 0.549, "half the cores, a typed supplier figure on the upper block");
+  g = fns.retStemGeom({ length: 10000, stemH: 2400, stemT: 250 });
+  assert.deepEqual([r3(g.stemVol), g.block, g.lowerArea, r3(g.groutVol)], [6, false, 0, 0], "a wall saved before this — in-situ, one section, 10 × 2.4 × 0.25");
+  g = fns.retStemGeom({ length: 10000, stemH: 2400, stemT: 250, stemLowerH: 800, stemLowerT: 400 });
+  assert.equal(r3(g.stemVol), 7.2, "in-situ with an 800 × 400 base section: 10 × (1.6 × 0.25 + 0.8 × 0.4)");
+  g = fns.retStemGeom({ stemShape: "stepped", stemT: 200, stemLowerH: 500, stemLowerT: 300, segL1: 4000, segH1: 2000, segL2: 6000, segH2: 400 });
+  assert.equal(r3(g.stemVol), r3(4 * (1.5 * 0.2 + 0.5 * 0.3) + 6 * (0.4 * 0.3)), "stepped: each segment's lower part is capped at its own height");
+  assert.deepEqual([fns.retStemFaces({}), fns.retStemFaces({ stemType: "block" }), fns.retStemFaces({ stemType: "block", stemReoFaces: "2" }), fns.retStemFaces({ stemReoFaces: "1" })], [2, 1, 2, 1], "bars on two faces in-situ and one in blockwork unless chosen");
+  // the pricing source
+  assert.match(est, /let stemVol = incStem\? \(g\.block\? g\.groutVol : g\.stemVol\) : 0;/, "a blockwork stem's concrete is its core fill");
+  assert.match(est, /spec:"Footing \+ key \(blockwork stem\)"/, "the footing is its own pour under a blockwork stem");
+  assert.match(est, /materialGroup:"Masonry",material:`Blockwork \$\{b\.mm\} mm \(\$\{b\.key\}\)`/, "the blockwork is listed by width");
+  assert.match(est, /let stemFormed = incStem && !g\.block;/, "blockwork is never formed");
+  assert.match(est, /if\(!baseOff && incStem && d\.waterstop && !g\.block\) lines\.push\(/, "no waterstop under blockwork");
+  assert.match(est, /let yBars = !baseOff && !!d\.yOn;/, "Y starters belong to the base");
+  assert.match(est, /lapIn=yBars\? 0 : 0\.4;/, "with Y starters the stem bars carry no lap into the footing");
+  assert.match(est, /two && !yBars\? "Stem vertical bars \(both faces, incl\. lap into footing\)"/, "an older wall's vertical-bar spec (its override key) is unchanged");
+  assert.match(est, /if\(d\.footBotYOn!==false\) bars\(d\.footBotY,d\.footBotYSp,Lm,"Footing bottom Y bars \(distribution\)",d\.footBotYLap,footW\);/, "distribution bars are spaced across the footing width");
+  assert.match(est, /bars\(d\.footTopY\|\|"N16",num\(d\.footTopYSp,200\),Lm,"Footing top Y bars \(distribution\)",d\.footTopYLap,footW\);/, "…top mat too");
+  assert.match(est, /let backfillVol=Lm\*bfD\*\(bfW\+bfB\*bfD\/2\);/, "the backfill wedge");
+  assert.match(est, /material:`Backfill \(behind wall\)\$\{d\.backfillMat\?` — \$\{d\.backfillMat\}`:""\}`/, "the backfill keeps its name's lead, so excluding excavation still removes it");
+  assert.match(est, /materialGroup:"Drainage",material:"Agi drain pipe"/, "the agi drain is a line of its own");
+  assert.match(est, /spec:`Footing mesh — sheets ×\$\{n\} layer\(s\)`/, "the footing mesh");
+});
 check("clearable notices (22 Oct 2026): a notice cleared at its signature stays cleared, comes back when its content changes, restore one or all; the browser store survives a bad value", () => {
   const N = NOTICES;
   const sig = N.noticeSig("a@1", null, "", ["b@2", "c@3"]); assert.equal(sig, "a@1|b@2|c@3");

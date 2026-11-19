@@ -3817,6 +3817,63 @@ element families waits on the owner's approval of the pad footing.
   wall's own length and height still set the bar counts. Typing a side
   length or the override refreshes `.elevHost` live through the field
   handler, like the slab's `.outlineHost`.
+- **The retaining wall takes every parameter of a typical schedule** (Grady,
+  19 Nov 2026, on the RW1–RW3 details — 140 / 190 mm core-filled blockwork on
+  a keyed footing, with the schedule H1–H4, B1–B3, 'Y' bars, 'X' bars:
+  "retaining walls take off should capture all of these parameters"). All new
+  fields are off / blank on a new wall and absent on an older takeoff, which
+  prices as it did but for the one correction below.
+  **Stem construction** (`stemType`: "insitu", the default, or "block";
+  `retIsBlock(d)`): a BLOCKWORK stem's thickness is its block (`blockUpper`,
+  `RET_BLOCKS` — 140 mm 15.01, 190 mm 20.01, 190 mm H-block 20.48, 290 mm
+  30.48), its only concrete is the CORE FILL = face area × the grout to fill
+  1 m² of wall (0.054 / 0.083 / 0.100 / 0.180 m³, `BLOCKS_PER_M2` = 12.5 —
+  **the Concrete Masonry Association of Australia's published figures, CM01
+  Concrete Masonry Handbook 2019 section 7, never a remembered number**;
+  `groutUpperM2` / `groutLowerM2` type a supplier's own, `coreFillPct` the
+  share of cores filled, blank = 100) on its OWN concrete line at `coreGrade`
+  (blank = the footing grade), the footing + key on another ("Footing + key
+  (blockwork stem)"); the blockwork is listed by width under a `Masonry`
+  group in m² with the block count in the notes (`blockList`, unset = on); it
+  is never formed and takes no waterstop; the battered-thickness tick is
+  hidden. **A thicker lower section** (`stemLowerH` — the schedule's H4 —
+  with `blockLower` on blockwork or `stemLowerT` in-situ): `retStemGeom`
+  returns `lowerArea` / `upperArea` / `Tlow` / `groutVol`, the bottom H4 of
+  the stem at its own thickness (each stepped segment capped at its own
+  height), 0 = one section. **Reinforcement**: `retStemFaces(d)` — the stem's
+  'X' (vertical) and horizontal bars on one face or two (`stemReoFaces`; unset
+  = two in-situ as before, one in blockwork); `yOn` 'Y' starter bars cast into
+  the footing (`yDia`, `ySp`, `yLap` 600, `yLeg` 300, `yEmbed` blank = footing
+  depth − cover: one bar per spacing along the wall, each leg + embedment +
+  lap) — with Y bars on the vertical bars are the stem height only, off they
+  keep the 400 mm into the footing; the older spec strings ("Stem vertical
+  bars (both faces, incl. lap into footing)") are kept exactly where nothing
+  new is chosen, because the manual-override key is built from the spec;
+  `footMeshOn` a mesh over the footing footprint in whole sheets;
+  `footBotXOn` / `footBotYOn` (unset = on) switch each bottom bar set.
+  **Correction**: the footing's distribution bars ("Y", running along the
+  wall) are counted ACROSS the footing width (`bars(..., spanM)` with
+  `footW`) — until this day both bar sets were counted along the wall, so a
+  10 m wall on a 1.8 m footing read 51 distribution bars × 10 m instead of
+  10 × 10 m; an existing takeoff's distribution-bar metres drop accordingly
+  (review status flags it). **Behind the wall** (the Excavation tab):
+  `agiOn` / `agiRunM` an agi drain line in metres (`Drainage` group, blank =
+  the wall length; kept when excavation is excluded); `backfillMat` names the
+  backfill ("Backfill (behind wall) — free-draining granular" — the lead is
+  kept so `NATIVE_EXC_LINE` still strips it); `backfillBaseW` and
+  `backfillBatter` make it the wedge L × D × (base width + batter × D ÷ 2), a
+  vertical cut over the heel when both are blank, as before; `batterExcOn`
+  adds that wedge as "Bulk excavation — Batter behind the wall" with its
+  bulked spoil. `stemXypex` adds the waterproofing additive line at the
+  stem's (or core fill's) volume, as the shotcrete wall does. The Geometry
+  labels carry the schedule's letters (H1 stem height, H2 footing depth, H3
+  key depth, H4 lower section, B1 footing width) and say that engineers
+  letter the remaining B dimensions differently; one element per schedule
+  row. The bridge prices the core fill by grade and the bars and mesh as
+  usual; the blockwork, agi drain and backfill lines arrive flagged for a
+  manual pick (no catalog row). `verify.mjs` pins the published figures and
+  runs `retStemGeom` out of the page source; `test-retwall-params.mjs` prices
+  the RW1 1201–1600 row end to end.
 - **Retaining wall scope** (`incStem`, `incBase`, both true when absent):
   the estimator prices the stem alone or the base alone — `baseOff` (a
   linked footing OR base excluded) drops the footing concrete, key,

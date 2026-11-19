@@ -6279,7 +6279,31 @@ function retWallDefaults(){ return {
   stemVertDia:"N16",stemVertSp:200,stemVertLap:false, stemHorDia:"N12",stemHorSp:250,stemHorLap:false,
   waterstop:true, backfillDepth:2000,
   dowelsOut:"", outQty:0, outDia:"N16", outEmbed:500, outProj:600,
+  // 19 Nov 2026 — the schedule's other parameters: a core-filled BLOCKWORK stem, a thicker lower
+  // section (H4), 'Y' starter bars with their lap, the stem bars on one face or two, a mesh in the
+  // footing, the agi drain, the battered granular backfill. Every one is off / blank on a new wall,
+  // and an older takeoff (none of these fields) prices exactly as it did.
+  stemType:"insitu", blockUpper:"15.01", blockLower:"20.01", stemLowerH:0, stemLowerT:"", coreFillPct:100, groutUpperM2:"", groutLowerM2:"", coreGrade:"", stemXypex:false, blockList:true,
+  yOn:false, yDia:"N12", ySp:400, yLap:600, yLeg:300, yEmbed:"",
+  footMeshOn:false, footMeshType:"SL82", footMeshLayers:1, footMeshLap:false,
+  backfillMat:"", backfillBaseW:"", backfillBatter:"", batterExcOn:false, agiOn:false, agiRunM:"",
 };}
+/* A BLOCKWORK stem (Grady, 19 Nov 2026, on the typical RW1–RW3 details: 140 / 190 mm blockwork,
+ * cores filled with N32 concrete): the grout to fill 1 m² of wall and the 12.5 blocks per m² are
+ * the Concrete Masonry Association of Australia's published figures (CM01 Concrete Masonry
+ * Handbook, 2019, section 7 "Estimating Data") — never a remembered number; each is editable on
+ * the card for a supplier's own block. */
+const RET_BLOCKS=[
+  {key:"15.01", label:"140 mm block (15.01 / 15.42)", mm:140, grout:0.054},
+  {key:"20.01", label:"190 mm block (20.01 / 20.42)", mm:190, grout:0.083},
+  {key:"20.48", label:"190 mm H-block (20.48)", mm:190, grout:0.100},
+  {key:"30.48", label:"290 mm H-block (30.48)", mm:290, grout:0.180},
+];
+const BLOCKS_PER_M2=12.5;
+function retBlock(key,dflt){ return RET_BLOCKS.find(b=>b.key===key) || RET_BLOCKS.find(b=>b.key===dflt) || RET_BLOCKS[0]; }
+function retIsBlock(d){ return d.stemType==="block"; }
+/** Stem bars on one face (blockwork cores, a thin wall) or two — unset = one for blockwork, two for in-situ (as before). */
+function retStemFaces(d){ const v=String(d.stemReoFaces||""); return v==="1"? 1 : v==="2"? 2 : (retIsBlock(d)? 1 : 2); }
 /* Stem elevation geometry for every retaining-wall shape → metres/m²:
  *   L     wall length along the footing (Σ segment lengths when stepped)
  *   area  stem face area (one face)
@@ -6312,26 +6336,47 @@ function retStemGeom(d){
   else area=L*H;
   let hAvg=L>0? area/L : 0;
   let footArea = (d.footShape||"rect")==="area"? num(d.footPlanArea) : L*num(d.footL)/1000;   // footing footprint (m²)
-  let stemVol = segs.length? segs.reduce((a,g)=>a+g.l*g.h*g.t,0) : area*T;                  // per-segment sections when stepped
-  return {shape,plan,L,T,area,hMax,hAvg,segs,footArea,stemVol,battered:!!d.stemBatter};
+  // Blockwork: the block IS the thickness. A thicker LOWER section (the schedule's H4 — 190 block under 140, or a
+  // thickened in-situ base) takes the bottom lowH of the stem at its own thickness; lowH 0 = one section, as before.
+  const block=retIsBlock(d), bU=retBlock(d.blockUpper,"15.01"), bL=retBlock(d.blockLower,"20.01");
+  if(block) T=bU.mm/1000;
+  const lowH=Math.max(0,num(d.stemLowerH))/1000;
+  const Tlow = !(lowH>0)? T : block? bL.mm/1000 : (num(d.stemLowerT)>0? num(d.stemLowerT)/1000 : T);
+  const lowerArea = !(lowH>0)? 0 : segs.length? segs.reduce((a,g)=>a+g.l*Math.min(g.h,lowH),0) : Math.min(area, L*Math.min(lowH, hAvg||hMax));
+  const upperArea = Math.max(0,area-lowerArea);
+  let stemVol = segs.length? segs.reduce((a,g)=>{ const hl=Math.min(g.h,lowH); return a+g.l*((g.h-hl)*(block?T:g.t)+hl*Tlow); },0) : upperArea*T+lowerArea*Tlow;   // per-segment sections when stepped
+  const fill = !block? 0 : Math.min(1,Math.max(0,(d.coreFillPct===""||d.coreFillPct===undefined||d.coreFillPct===null? 100 : num(d.coreFillPct))/100));
+  const gU=num(d.groutUpperM2)>0? num(d.groutUpperM2) : bU.grout, gL=num(d.groutLowerM2)>0? num(d.groutLowerM2) : bL.grout;
+  const groutVol = block? (upperArea*gU+lowerArea*gL)*fill : 0;                               // core fill — the only concrete in a blockwork stem
+  return {shape,plan,L,T,area,hMax,hAvg,segs,footArea,stemVol,battered:!!d.stemBatter && !block, block,bU,bL,lowH,Tlow,lowerArea,upperArea,fill,gU,gL,groutVol};
 }
 function retShapeLabel(shape){ return {rect:"uniform height",taper:"tapered",stepped:"stepped",manual:"irregular (entered area)",sketch:"irregular (sketched elevation)"}[shape]||"uniform height"; }
 function renderRetWall(inst){
   let d=inst.data;
   let shape=d.stemShape||"rect";
-  let thickFields = `${F(d.stemBatter?"Stem thickness at base (mm)":"Stem thickness (mm)",inpNum("stemT",d.stemT))}${d.stemBatter?F("Stem thickness at top (mm)",inpNum("stemTt",d.stemTt===undefined?d.stemT:d.stemTt)):""}`;
+  const isBlock=retIsBlock(d), blockOpts=RET_BLOCKS.map(b=>[b.key,b.label]);
+  let thickFields = isBlock? F("Block — whole stem, or its upper part",selOpts("blockUpper",d.blockUpper||"15.01",blockOpts,true))
+    : `${F(d.stemBatter?"Stem thickness at base (mm)":"Stem thickness (mm)",inpNum("stemT",d.stemT))}${d.stemBatter?F("Stem thickness at top (mm)",inpNum("stemTt",d.stemTt===undefined?d.stemT:d.stemTt)):""}`;
   let shapeFields = shape==="taper"? `<div class="grid cols4">${LF("Stem height at start (mm)","stemH",d.stemH)}${LF("Stem height at end (mm)","stemH2",d.stemH2===undefined?1200:d.stemH2)}${thickFields}</div><p class="small">Sloping top: the stem face area is length × the average of the two heights; horizontal bars are taken over that area, vertical bars average the two heights.</p>`
    : shape==="stepped"? `${[1,2,3,4,5,6].map(i=>`<div class="grid cols4">${LF(`Segment ${i} length (mm)`,"segL"+i,d["segL"+i]===undefined?0:d["segL"+i])}${LF(`Segment ${i} height (mm)`,"segH"+i,d["segH"+i]===undefined?0:d["segH"+i])}${F(`Segment ${i} ${d.stemBatter?"base ":""}thickness (mm, blank = ${num(d.stemT)})`,inpNum("segT"+i,d["segT"+i]===undefined?"":d["segT"+i]))}${d.stemBatter?F(`Segment ${i} top thickness (mm, blank = ${num(d.stemTt,num(d.stemT))})`,inpNum("segTt"+i,d["segTt"+i]===undefined?"":d["segTt"+i])):""}</div>`).join('')}<div class="grid cols3">${thickFields}</div><p class="small">Up to six sections along the run, each with its own height and thickness (tick battered for a base and top thickness per section) — a segment with a blank length is ignored, a blank thickness uses the wall thickness above. Stem concrete is the sum of the segments; the wall length becomes the sum of their lengths (the footing, backfill, waterstop and horizontal bars follow it); split a longer wall into two elements if six sections are not enough.</p>`
    : shape==="sketch"? `${elevationSketchUI(inst,"stem elevation","Price the stem off the sketched face (length and tallest height come from the sketch)")}<div class="grid cols4">${thickFields}</div>`
    : shape==="manual"? `<div class="grid cols4">${F("Stem face area (m², one face, measured off the drawing)",inpNum("stemArea",d.stemArea))}${LF("Tallest stem height (mm)","stemH",d.stemH)}${thickFields}</div><p class="small">Irregular walls — curved tops, raking ends, cut-outs: measure the stem face area straight off the elevation (or a 3D takeoff) and enter it. Stem concrete = area × thickness, stem formwork = 2 × area, vertical bars spread along the wall length at their spacing (average height = area ÷ length), horizontal bars = area ÷ spacing per face. The tallest height only sizes the drawing and the starter lap.</p>`
-   : `<div class="grid cols3">${LF("Stem height (mm)","stemH",d.stemH)}${thickFields}</div>`;
+   : `<div class="grid cols3">${LF("Stem height — H1 (mm)","stemH",d.stemH)}${thickFields}</div>`;
   let g=retStemGeom(d), plan=d.planShape||"straight";
+  // the stem's construction, its thicker lower section (H4) and — for blockwork — the core fill
+  let lowerFields = `<div class="grid cols3">${LF("Thicker lower section, height — H4 (mm, 0 = none)","stemLowerH",d.stemLowerH===undefined?0:d.stemLowerH)}${isBlock? F("Block of the lower section",selOpts("blockLower",d.blockLower||"20.01",blockOpts,true)) : F(`Lower section thickness (mm, blank = ${num(d.stemT)})`,inpNum("stemLowerT",d.stemLowerT===undefined?"":d.stemLowerT))}</div>`;
+  let blockFields = !isBlock? "" : `<div class="grid cols4">${F("Cores filled (% of the wall, blank = 100)",inpNum("coreFillPct",d.coreFillPct===undefined?100:d.coreFillPct))}${F(`Grout per m² — upper block (m³, blank = ${g.bU.grout})`,inpNum("groutUpperM2",d.groutUpperM2===undefined?"":d.groutUpperM2))}${F(`Grout per m² — lower block (m³, blank = ${g.bL.grout})`,inpNum("groutLowerM2",d.groutLowerM2===undefined?"":d.groutLowerM2))}</div>
+   <div class="grid cols3">${chk("blockList",d.blockList!==false,"List the blockwork on the register (m² and blocks, by block width)")}</div>
+   <p class="small" data-testid="ret-block-note"><b>Blockwork stem:</b> ${fmt(g.upperArea,2)} m² of ${g.bU.label}${g.lowerArea>0? ` over ${fmt(g.lowerArea,2)} m² of ${g.bL.label}` : ""}. Its only concrete is the <b>core fill</b> — ${fmt(g.groutVol,3)} m³ (${fmt(g.gU,3)}${g.lowerArea>0? ` / ${fmt(g.gL,3)}` : ""} m³ of grout per m² of wall${g.fill<1? ` × ${fmt(g.fill*100,0)}% of the cores` : ""}; the grade is on the Concrete tab) — and it is not formed. Grout volumes and ${BLOCKS_PER_M2} blocks per m² are the Concrete Masonry Association of Australia's published figures (CM01 handbook, 2019); type your supplier's figure over them where it differs.</p>`;
+  let stemTypeBlock = `<div class="sechead">Stem construction</div>
+  <div class="grid cols3">${F("The stem is",selOpts("stemType",isBlock?"block":"insitu",[["insitu","In-situ reinforced concrete (formed both faces)"],["block","Core-filled blockwork (140 / 190 / 290 mm block)"]],true))}</div>`;
   let planFields = plan==="curved"? `<div class="grid cols4">${LF("Centreline radius (mm)","planRadius",d.planRadius===undefined?6000:d.planRadius)}${F("Angle swept (°)",inpNum("planAngle",d.planAngle===undefined?90:d.planAngle))}</div><p class="small">Developed length on the centreline = radius × angle = <b>${fmt(g.L,3)} m</b>; the footing, stem, backfill, waterstop and bars all follow it.</p>`
    : plan==="irregular"? `<div class="grid cols4">${LF("Developed length along the wall (mm)","length",d.length)}${coverField(inst)}</div><p class="small">Dog-legs, kinks, several arcs: enter the total length measured along the wall's centreline.</p>`
    : `<div class="grid cols4">${LF("Wall length (mm)","length",d.length)}${coverField(inst)}</div>`;
   let geom=`<div class="sechead">Scope — what this element prices</div>
   <div class="grid cols3">${chk("incStem",d.incStem!==false,"Include the stem",null,true)}${chk("incBase",d.incBase!==false,"Include the base / footing (and its key)",null,true)}</div>
   <p class="small">${d.incStem===false && d.incBase===false? "Nothing is priced — tick the stem, the base, or both." : d.incStem===false? "Base only: the stem is priced elsewhere (precast, shotcrete, another trade) — no stem concrete, bars, formwork or dowels out." : d.incBase===false? "Stem only: the base is priced elsewhere — no footing concrete, bars, key, excavation or footing formwork." : "Stem and base priced together as one compound element."}</p>
+  ${stemTypeBlock}
   <div class="sechead">Plan shape</div>
   <div class="grid cols3">${F("Plan",selOpts("planShape",plan,[["straight","Straight"],["curved","Curved — centreline radius and angle"],["irregular","Irregular — enter the developed length"]],true))}</div>
   ${planFields}${plan==="curved"?`<div class="grid cols4">${coverField(inst)}</div>`:""}
@@ -6346,24 +6391,42 @@ function renderRetWall(inst){
   <div class="subsec ${d.footingSource=='compound'?'':'hidden'}" data-show-if="footingSource_compound">
   <div class="sechead">Footing</div><div class="grid cols3">${F("Footing footprint",selOpts("footShape",d.footShape||"rect",[["rect","Rectangular — width × wall length"],["area","Irregular — enter the plan area"]],true))}</div>
   ${(d.footShape||"rect")==="area"? `<div class="grid cols4">${F("Footing plan area (m², measured off the drawing)",inpNum("footPlanArea",d.footPlanArea))}${F("Footing depth (mm)",inpNum("footD",d.footD))}${F("Heel width (mm, for backfill)",inpNum("heel",d.heel))}${F("Toe width (mm)",inpNum("toe",d.toe))}</div><p class="small">Splayed, stepped or curved footings: the entered plan area × depth is the footing concrete; excavation is that footprint oversized 150 mm all round and 150 mm deeper.</p>`
-   : `<div class="grid cols4">${F("Footing width (mm)",inpNum("footL",d.footL))}${F("Footing depth (mm)",inpNum("footD",d.footD))}${F("Heel width (mm)",inpNum("heel",d.heel))}${F("Toe width (mm)",inpNum("toe",d.toe))}</div>`}
+   : `<div class="grid cols4">${F("Footing width — B1 (mm)",inpNum("footL",d.footL))}${F("Footing depth — H2 (mm)",inpNum("footD",d.footD))}${F("Heel width — footing beyond the soil face (mm)",inpNum("heel",d.heel))}${F("Toe width (mm)",inpNum("toe",d.toe))}</div>`}
   <div class="grid cols3">${chk("key",d.key,"Shear key","key")}</div>
-  <div class="subsec ${d.key?'':'hidden'}" data-show-if="key"><div class="grid cols3">${F("Key depth (mm)",inpNum("keyD",d.keyD))}${F("Key width (mm)",inpNum("keyW",d.keyW))}</div></div>
+  <div class="subsec ${d.key?'':'hidden'}" data-show-if="key"><div class="grid cols3">${F("Key depth — H3 (mm)",inpNum("keyD",d.keyD))}${F("Key width (mm)",inpNum("keyW",d.keyW))}</div></div>
   </div>
-  <div class="sechead">Stem</div>${shapeFields}
-  <div class="grid cols3">${chk("stemBatter",d.stemBatter,"Battered / tapered stem thickness (different base and top thickness — the mean is used)",null,true)}</div>
-  <div class="grid cols3">${F("Backfill depth (mm)",inpNum("backfillDepth",d.backfillDepth))}</div>`;
-  let reo=`<div class="subsec ${d.footingSource=='compound'?'':'hidden'}" data-show-if="footingSource_compound"><div class="sechead">Footing Reinforcement</div><div class="grid cols4">${F("Bottom X dia",barSizeSel("footBotX",d.footBotX))}${F("Spacing",inpNum("footBotXSp",d.footBotXSp))}${F("Bottom Y dia",barSizeSel("footBotY",d.footBotY))}${F("Spacing",inpNum("footBotYSp",d.footBotYSp))}</div>
+  <div class="sechead">Stem</div>${shapeFields}${lowerFields}${blockFields}
+  ${isBlock? "" : `<div class="grid cols3">${chk("stemBatter",d.stemBatter,"Battered / tapered stem thickness (different base and top thickness — the mean is used)",null,true)}</div>`}
+  <div class="grid cols3">${F("Backfill depth (mm)",inpNum("backfillDepth",d.backfillDepth))}</div>
+  <p class="small">The schedule's letters: <b>H1</b> stem height, <b>H2</b> footing depth, <b>H3</b> key depth, <b>H4</b> the thicker lower section, <b>B1</b> footing width; the key width and the footing's projection past the wall (heel on the soil side, toe on the other) are the remaining B dimensions — read which is which off the detail, engineers letter them differently. One element per schedule row (duplicate the element for the next height band). Starter bars, the stem bars and the footing mesh are on Reinforcement; the agi drain and the backfill on Excavation.</p>`;
+  let reo=`<div class="subsec ${d.footingSource=='compound'?'':'hidden'}" data-show-if="footingSource_compound"><div class="sechead">Footing Reinforcement</div>
+  <div class="grid cols3">${chk("footBotXOn",d.footBotXOn!==false,"Bottom X bars — across the footing (transverse)")}${chk("footBotYOn",d.footBotYOn!==false,"Bottom Y bars — along the wall (distribution)")}</div>
+  <div class="grid cols4">${F("Bottom X dia",barSizeSel("footBotX",d.footBotX))}${F("Spacing",inpNum("footBotXSp",d.footBotXSp))}${F("Bottom Y dia",barSizeSel("footBotY",d.footBotY))}${F("Spacing",inpNum("footBotYSp",d.footBotYSp))}</div>
   <div class="grid cols3">${chk("footBotXLap",d.footBotXLap,"Bottom X — include lap allowance (%)","footBotXLap")}${chk("footBotYLap",d.footBotYLap,"Bottom Y — include lap allowance (%)","footBotYLap")}</div>
+  <div class="grid cols3">${chk("footMeshOn",d.footMeshOn,"Mesh in the footing (e.g. SL82 top)","footMeshOn")}</div>
+  <div class="subsec ${d.footMeshOn?'':'hidden'}" data-show-if="footMeshOn"><div class="grid cols4">${F("Mesh type",selOpts("footMeshType",d.footMeshType||"SL82",Object.keys(MESHTYPES).map(m=>[m,m])))}${F("Layers",inpNum("footMeshLayers",d.footMeshLayers===undefined?1:d.footMeshLayers))}</div>
+  <div class="grid cols3">${chk("footMeshLap",d.footMeshLap,"Mesh — include lap allowance (%)")}</div><p class="small">Sheets over the footing's footprint (width × wall length, or the entered plan area) × layers, in whole 6.0 × 2.4 m sheets.</p></div>
+  <div class="grid cols3">${chk("yOn",d.yOn,"'Y' starter bars — cast into the footing, lapping the stem bars","yOn")}</div>
+  <div class="subsec ${d.yOn?'':'hidden'}" data-show-if="yOn"><div class="grid cols4">${F("Y bar dia",barSizeSel("yDia",d.yDia||"N12"))}${F("Spacing along the wall (mm)",inpNum("ySp",d.ySp===undefined?400:d.ySp))}${F("Lap with the stem bars (mm)",inpNum("yLap",d.yLap===undefined?600:d.yLap))}${F("Leg in the footing (mm)",inpNum("yLeg",d.yLeg===undefined?300:d.yLeg))}${F(`Embedment in the footing (mm, blank = depth − cover = ${Math.max(0,num(d.footD)-num(d.cover))})`,inpNum("yEmbed",d.yEmbed===undefined?"":d.yEmbed))}</div>
+  <p class="small">One bar at every spacing along the wall (length ÷ spacing + 1), each = leg + embedment + lap. With Y bars on, the stem's vertical bars are the stem height only — their lap is carried by the Y bars; with Y bars off each vertical bar runs 400 mm into the footing, as before.</p></div>
   <div class="grid cols3">${chk("footTop",d.footTop,"Top mat — reinforced top and bottom, both ways","footTop")}</div>
   <div class="subsec ${d.footTop?'':'hidden'}" data-show-if="footTop"><div class="grid cols4">${F("Top X dia",barSizeSel("footTopX",d.footTopX||"N16"))}${F("Spacing",inpNum("footTopXSp",d.footTopXSp===undefined?200:d.footTopXSp))}${F("Top Y dia",barSizeSel("footTopY",d.footTopY||"N16"))}${F("Spacing",inpNum("footTopYSp",d.footTopYSp===undefined?200:d.footTopYSp))}</div>
   <div class="grid cols3">${chk("footTopXLap",d.footTopXLap,"Top X — include lap allowance (%)","footTopXLap")}${chk("footTopYLap",d.footTopYLap,"Top Y — include lap allowance (%)","footTopYLap")}</div></div></div>
-  <div class="sechead">Stem Reinforcement (each face)</div><div class="grid cols4">${F("Vertical dia",barSizeSel("stemVertDia",d.stemVertDia))}${F("Spacing",inpNum("stemVertSp",d.stemVertSp))}${F("Horizontal dia",barSizeSel("stemHorDia",d.stemHorDia))}${F("Spacing",inpNum("stemHorSp",d.stemHorSp))}</div>
+  <div class="sechead">Stem Reinforcement — 'X' bars (vertical) and horizontal bars</div>
+  <div class="grid cols3">${F("Bars on",selOpts("stemReoFaces",String(retStemFaces(d)),[["1","One face / one layer (blockwork cores, soil face)"],["2","Both faces"]]))}</div>
+  <div class="grid cols4">${F("Vertical dia",barSizeSel("stemVertDia",d.stemVertDia))}${F("Spacing",inpNum("stemVertSp",d.stemVertSp))}${F("Horizontal dia",barSizeSel("stemHorDia",d.stemHorDia))}${F("Spacing",inpNum("stemHorSp",d.stemHorSp))}</div>
   <div class="grid cols3">${chk("stemVertLap",d.stemVertLap,"Vertical — include lap allowance (%)","stemVertLap")}${chk("stemHorLap",d.stemHorLap,"Horizontal — include lap allowance (%)","stemHorLap")}</div>
-  <div class="grid cols3">${chk("waterstop",d.waterstop,"Waterstop at footing/stem joint")}</div>`;
+  ${isBlock? "" : `<div class="grid cols3">${chk("waterstop",d.waterstop,"Waterstop at footing/stem joint")}</div>`}`;
+  let exc=`<div class="sechead">Behind the wall — drain, backfill and the batter</div>
+  <div class="grid cols3">${chk("agiOn",d.agiOn,"Agi drain pipe behind the wall","agiOn")}</div>
+  <div class="subsec ${d.agiOn?'':'hidden'}" data-show-if="agiOn"><div class="grid cols3">${F(`Agi drain run (m, blank = wall length ${fmt(g.L,2)})`,inpNum("agiRunM",d.agiRunM===undefined?"":d.agiRunM))}</div></div>
+  <div class="grid cols4">${F("Backfill material",selOpts("backfillMat",d.backfillMat||"",[["","Backfill (not specified)"],["free-draining granular","Free-draining granular backfill"],["crushed rock","Crushed rock"],["site-won fill","Site-won fill"]]))}${F("Backfill depth (mm)",inpNum("backfillDepth",d.backfillDepth))}${F(`Width at the base (mm, blank = heel ${num(d.heel)})`,inpNum("backfillBaseW",d.backfillBaseW===undefined?"":d.backfillBaseW))}${F("Batter of the cut (horizontal per 1 vertical, blank = vertical)",inpNum("backfillBatter",d.backfillBatter===undefined?"":d.backfillBatter))}</div>
+  <div class="grid cols3">${chk("batterExcOn",d.batterExcOn,"Excavate the batter behind the wall (the same wedge, with its spoil)")}</div>
+  <p class="small">Backfill = wall length × depth × (width at the base + batter × depth ÷ 2) — a vertical cut over the heel when the batter is blank, as before. Take the batter from the soil report. The agi drain, the backfill and the batter are stated lines of their own; unticking "Include excavation" above removes the dig and the backfill, never the drain.</p>`;
   let conns=`<div class="subsec"><div class="sechead">Dowels out (to slab, wall or element above the stem)</div><div class="grid cols4">${F("Connects to",targetSelect("dowelsOut",d.dowelsOut,inst.id))}${F("Qty",inpNum("outQty",d.outQty))}${F("Dia",barSizeSel("outDia",d.outDia))}${F("Embedment (mm)",inpNum("outEmbed",d.outEmbed))}${F("Projection (mm)",inpNum("outProj",d.outProj))}</div></div>
   <div class="tip"><span class="ico">🏗️</span><div>Stem starters into an existing (linked) footing are set on the Geometry tab under Footing Source. This section is for what lands on <b>top</b> of the stem — a slab, upstand wall or balustrade continuing above.</div></div>`;
-  return {geom,conc:concSection(d, d.footingSource=='linked'? "<p class='small'>Concrete = stem only — footing belongs to the linked element.</p>" : "<p class='small'>Footing + stem + heel/toe + key, one compound element.</p>"),reo,conns};
+  let concExtra=`<div class="sechead">Stem concrete</div><div class="grid cols3">${isBlock? F(`Core-fill grade (N, blank = ${d.grade||PROJECT.grade})`,inpNum("coreGrade",d.coreGrade===undefined?"":d.coreGrade)) : ""}${chk("stemXypex",d.stemXypex,isBlock? "Waterproofing additive (Xypex / Penetron) in the core fill" : "Waterproofing additive (Xypex / Penetron) in the stem concrete")}</div>`;
+  return {geom,conc:concSection(d, d.footingSource=='linked'? "<p class='small'>Concrete = stem only — footing belongs to the linked element.</p>" : isBlock? "<p class='small'>Footing + key at the grade above; the blockwork's core fill is its own line at the core-fill grade.</p>" : "<p class='small'>Footing + stem + heel/toe + key, one compound element.</p>")+concExtra,reo,exc,conns};
 }
 function computeRetWall(inst,def){
   let d=inst.data, lines=[];
@@ -6379,7 +6442,7 @@ function computeRetWall(inst,def){
   let footVol = baseOff? 0 : g.footArea*(num(d.footD)/1000);
   d._autoBlindArea = baseOff? 0 : g.footArea;   // the footing's footprint — the shared Blinding & Vapour Barrier tab blinds under it
   d._autoAreaM2 = incStem? g.area : g.footArea;  // Project Geometry: the stem's face area (the base's footprint when only the base is priced)
-  let stemVol = incStem? g.stemVol : 0;
+  let stemVol = incStem? (g.block? g.groutVol : g.stemVol) : 0;   // a blockwork stem's concrete is its core fill
   let keyVol = (!baseOff && d.key)? Lm*(num(d.keyD)/1000)*(num(d.keyW)/1000) : 0;
   let totVol=footVol+stemVol+keyVol;
   let stemNote = (g.shape==="rect" && !g.battered && g.plan==="straight")? "stem vol"
@@ -6387,7 +6450,21 @@ function computeRetWall(inst,def){
     : `stem face area ${fmt(g.area,2)} m² (${retShapeLabel(g.shape)}${g.plan!=="straight"?`, ${g.plan} plan ${fmt(Lm,2)} m`:""}) × ${fmt(g.T*1000,0)} ${g.battered?"mean ":""}thick`;
   let footNote = (d.footShape||"rect")==="area"? `footing plan area ${fmt(g.footArea,2)} m² × ${fmt(num(d.footD),0)} deep` : "footing vol";
   let scopeSpec = linked? "Stem only (footing linked)" : (!incStem? "Base only (stem excluded)" : (d.incBase===false? "Stem only (base excluded)" : "Footing+stem+key"));
-  if(totVol>0) lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:scopeSpec,qty:totVol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(totVol,concWastePct(d)),formula:linked?`${stemNote} only`:`${footNote} + ${stemNote} + key vol`}));
+  if(g.block){
+    // BLOCKWORK: the footing (+ key) at the footing grade and the core fill at its own grade are separate pours
+    let baseVol=footVol+keyVol;
+    if(baseVol>0) lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:"Footing + key (blockwork stem)",qty:baseVol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(baseVol,concWastePct(d)),formula:`${footNote} + key vol`}));
+    if(stemVol>0){
+      let cg=num(d.coreGrade)>0? num(d.coreGrade) : d.grade;
+      lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${cg} concrete`,spec:`Core fill to blockwork stem — ${g.bU.mm}${g.lowerArea>0?` / ${g.bL.mm}`:""} mm block`,qty:stemVol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(stemVol,concWastePct(d)),
+        formula:`${fmt(g.upperArea,2)} m² × ${fmt(g.gU,3)}${g.lowerArea>0?` + ${fmt(g.lowerArea,2)} m² × ${fmt(g.gL,3)}`:""} m³/m²${g.fill<1?` × ${fmt(g.fill*100,0)}% of cores`:""}`,notes:"grout per m² of wall — CMAA CM01 (2019) unless typed"}));
+    }
+    if(incStem && d.blockList!==false && g.area>0){
+      let parts = g.lowerArea>0 && g.bL.key!==g.bU.key? [[g.bU,g.upperArea],[g.bL,g.lowerArea]] : [[g.bU,g.area]];
+      parts.forEach(([b,a])=>{ if(a>0) lines.push(baseLine(inst,def,{materialGroup:"Masonry",material:`Blockwork ${b.mm} mm (${b.key})`,spec:"Retaining wall stem — core-filled",qty:a,unit:"m²",waste:0,finalQty:a,formula:`stem face ${fmt(a,2)} m²`,notes:`${Math.ceil(a*BLOCKS_PER_M2)} blocks at ${BLOCKS_PER_M2} per m²`})); });
+    }
+  } else if(totVol>0) lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:`N${d.grade} concrete`,spec:scopeSpec,qty:totVol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(totVol,concWastePct(d)),formula:linked?`${stemNote} only`:`${footNote} + ${stemNote} + key vol`}));
+  if(incStem && d.stemXypex && stemVol>0) lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:"Penetron (Xypex) additive",spec:g.block?"Waterproofing admixture — core fill":"Waterproofing admixture — stem",qty:stemVol,unit:"m³",waste:0,finalQty:stemVol,formula:g.block?"same volume as the core fill":"same volume as the stem"}));
   if(linked){
     let tgt=targetLabelOf(d.footingTarget);
     lines.push(baseLine(inst,def,{materialGroup:"Concrete",material:"(reference only)",spec:"Footing concrete/reinforcement/excavation counted at linked element — not duplicated here",qty:0,unit:"",waste:0,finalQty:0,formula:"",linkedElement:tgt}));
@@ -6401,10 +6478,29 @@ function computeRetWall(inst,def){
     lines.push(baseLine(inst,def,{materialGroup:"Excavation",material:"Bulk excavation",spec:"",qty:excVol,unit:"m³",waste:0,finalQty:excVol,formula:"oversized footing envelope"}));
     lines.push(spoilLine(inst,def,excVol));
   }
-  let backfillVol=Lm*(num(d.heel||1)/1000)*(num(d.backfillDepth)/1000);
-  lines.push(baseLine(inst,def,{materialGroup:"Excavation",material:"Backfill (behind wall)",spec:"",qty:backfillVol,unit:"m³",waste:0,finalQty:backfillVol,formula:"heel width × backfill depth × length"}));
-  function bars(dia,sp,len,label,lapFlag){
-    let d2=barDiaOf(dia); let count=Math.floor(Lm*1000/sp)+1;
+  // Backfill: a vertical cut over the heel (as before) unless a base width or a batter is typed —
+  // then the wedge L × D × (base width + batter × D ÷ 2). The material name keeps its
+  // "Backfill (behind wall)" lead so unticking "Include excavation" still removes it.
+  let bfD=num(d.backfillDepth)/1000, bfW=(num(d.backfillBaseW)>0? num(d.backfillBaseW) : num(d.heel||1))/1000, bfB=Math.max(0,num(d.backfillBatter));
+  let backfillVol=Lm*bfD*(bfW+bfB*bfD/2);
+  let bfPlain = !(num(d.backfillBaseW)>0) && !(bfB>0);
+  lines.push(baseLine(inst,def,{materialGroup:"Excavation",material:`Backfill (behind wall)${d.backfillMat?` — ${d.backfillMat}`:""}`,spec:"",qty:backfillVol,unit:"m³",waste:0,finalQty:backfillVol,formula:bfPlain? "heel width × backfill depth × length" : `${fmt(Lm,2)} m × ${fmt(bfD,2)} deep × (${fmt(bfW*1000,0)} at the base + batter ${fmt(bfB,2)} × ${fmt(bfD,2)} ÷ 2)`}));
+  if(d.batterExcOn && backfillVol>0){
+    lines.push(baseLine(inst,def,{materialGroup:"Excavation",material:"Bulk excavation",spec:"Batter behind the wall",qty:backfillVol,unit:"m³",waste:0,finalQty:backfillVol,formula:"the backfill wedge — length × depth × (base width + batter × depth ÷ 2)"}));
+    let bk=PROJECT.bulking, sv=backfillVol*(1+bk/100);
+    lines.push(baseLine(inst,def,{materialGroup:"Excavation",material:"Spoil disposal (loose, bulked)",spec:`Batter behind the wall — bulking ${bk}%`,qty:sv,unit:"m³",waste:0,finalQty:sv,formula:`batter exc × (1+${bk}%)`}));
+  }
+  if(d.agiOn){
+    let run=num(d.agiRunM)>0? num(d.agiRunM) : Lm;
+    if(run>0) lines.push(baseLine(inst,def,{materialGroup:"Drainage",material:"Agi drain pipe",spec:"Behind the wall — connected to stormwater",qty:run,unit:"m",waste:0,finalQty:run,formula:num(d.agiRunM)>0? "entered run" : "wall length"}));
+  }
+  // count = the SPAN the bars are spaced across ÷ spacing + 1: transverse bars are spaced along the wall,
+  // distribution bars ACROSS the footing width (until 19 Nov 2026 both were counted along the wall, so
+  // the distribution bars of a 10 m wall on a 1.8 m footing read 51 bars × 10 m instead of 10 × 10 m)
+  let footW = (d.footShape||"rect")==="area"? (Lm>0? g.footArea/Lm : 0) : num(d.footL)/1000;
+  let yBars = !baseOff && !!d.yOn;
+  function bars(dia,sp,len,label,lapFlag,spanM){
+    let d2=barDiaOf(dia); let count=Math.floor((spanM===undefined? Lm : spanM)*1000/sp)+1;
     let totLen=count*len; let wt=totLen*massPerM(d2);
     let lapPct=lapFlag?PROJECT.lapPct:0;
     lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:dia,spec:label,bars:count,qty:totLen,unit:"m",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,lapPct),formula:`count(${count})×len(${fmt(len,2)})`,notes:`${fmt(wt,1)} kg`}));
@@ -6417,30 +6513,45 @@ function computeRetWall(inst,def){
   //                this is (H/sp + 1) rows × L per face, exactly the drawing.
   function stemBars(dia,sp,vertical,label,lapFlag){
     let d2=barDiaOf(dia); let spM=num(sp,200)/1000; let totLen, formula, bars=0;
-    if(vertical){ let count=Math.floor(Lm*1000/num(sp,200))+1; bars=2*count; totLen=2*count*(g.hAvg+0.4); formula=`2 faces × ${count} bars × (avg height ${fmt(g.hAvg,2)} + 0.4 lap)`; }
-    else { totLen=2*(g.area/spM+Lm); formula=`2 faces × (face area ${fmt(g.area,2)} m² ÷ ${fmt(spM,3)} m + bottom row ${fmt(Lm,2)})`; }
+    let fc=retStemFaces(d), fTxt=fc===2? "2 faces" : "1 face", lapIn=yBars? 0 : 0.4;   // with 'Y' starters the lap is theirs
+    if(vertical){ let count=Math.floor(Lm*1000/num(sp,200))+1; bars=fc*count; totLen=fc*count*(g.hAvg+lapIn); formula=`${fTxt} × ${count} bars × (avg height ${fmt(g.hAvg,2)}${lapIn? " + 0.4 lap" : ""})`; }
+    else { totLen=fc*(g.area/spM+Lm); formula=`${fTxt} × (face area ${fmt(g.area,2)} m² ÷ ${fmt(spM,3)} m + bottom row ${fmt(Lm,2)})`; }
     let wt=totLen*massPerM(d2); let lapPct=lapFlag?PROJECT.lapPct:0;
     lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:dia,spec:label,bars,qty:totLen,unit:"m",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,lapPct),formula,notes:`${fmt(wt,1)} kg`}));
   }
   if(!baseOff){
-    bars(d.footBotX,d.footBotXSp,(num(d.footL))/1000,"Footing bottom X bars",d.footBotXLap);
-    bars(d.footBotY,d.footBotYSp,Lm,"Footing bottom Y bars (distribution)",d.footBotYLap);
+    if(d.footBotXOn!==false) bars(d.footBotX,d.footBotXSp,footW,"Footing bottom X bars",d.footBotXLap);
+    if(d.footBotYOn!==false) bars(d.footBotY,d.footBotYSp,Lm,"Footing bottom Y bars (distribution)",d.footBotYLap,footW);
     if(d.footTop){
-      bars(d.footTopX||"N16",num(d.footTopXSp,200),(num(d.footL))/1000,"Footing top X bars",d.footTopXLap);
-      bars(d.footTopY||"N16",num(d.footTopYSp,200),Lm,"Footing top Y bars (distribution)",d.footTopYLap);
+      bars(d.footTopX||"N16",num(d.footTopXSp,200),footW,"Footing top X bars",d.footTopXLap);
+      bars(d.footTopY||"N16",num(d.footTopYSp,200),Lm,"Footing top Y bars (distribution)",d.footTopYLap,footW);
+    }
+    if(d.footMeshOn && g.footArea>0){
+      let n=Math.max(1,Math.round(num(d.footMeshLayers,1))), type=d.footMeshType||"SL82", lapPct=d.footMeshLap?MESH_LAP_PCT:0;
+      let area=g.footArea*n, wasted=withWasteLap(area,REO_WASTE_PCT,lapPct), sheets=Math.ceil(wasted/MESH_SHEET_AREA_M2-1e-9);
+      lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:type,spec:`Footing mesh — sheets ×${n} layer(s)`,qty:area,unit:"m²",waste:REO_WASTE_PCT,lap:lapPct,finalQty:wasted,sheets,formula:`footing ${fmt(g.footArea,2)} m² × ${n} layer(s) (+${REO_WASTE_PCT}% waste${lapPct?`, +${lapPct}% lap`:''}) → ceil(/${MESH_SHEET_AREA_M2}m²) = ${sheets} sheets`,notes:`${sheets} sheets (6.0×2.4m nominal)`}));
+    }
+    if(yBars){
+      // 'Y' starters: one at every spacing along the wall, each = leg in the footing + embedment + lap with the stem bars
+      let yd=d.yDia||"N12", sp=num(d.ySp,400), count=Math.floor(Lm*1000/Math.max(1,sp))+1;
+      let embed=num(d.yEmbed)>0? num(d.yEmbed) : Math.max(0,num(d.footD)-num(d.cover));
+      let len=(num(d.yLeg)+embed+num(d.yLap))/1000, totLen=count*len, wt=totLen*massPerM(barDiaOf(yd));
+      if(totLen>0) lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:yd,spec:"'Y' starter bars — footing into the stem",qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`${count} bars @ ${fmt(sp,0)} × (leg ${fmt(num(d.yLeg),0)} + embed ${fmt(embed,0)} + lap ${fmt(num(d.yLap),0)})/1000`,notes:`${fmt(wt,1)} kg`}));
     }
   }
   if(incStem){
-    stemBars(d.stemVertDia,d.stemVertSp,true,"Stem vertical bars (both faces, incl. lap into footing)",d.stemVertLap);
-    stemBars(d.stemHorDia,d.stemHorSp,false,"Stem horizontal bars (both faces)",d.stemHorLap);
+    let two=retStemFaces(d)===2;
+    stemBars(d.stemVertDia,d.stemVertSp,true, two && !yBars? "Stem vertical bars (both faces, incl. lap into footing)" : `Stem vertical 'X' bars (${two?"both faces":"one face"}${yBars?", lapped by the Y starters":", incl. lap into footing"})`,d.stemVertLap);
+    stemBars(d.stemHorDia,d.stemHorSp,false, two? "Stem horizontal bars (both faces)" : "Stem horizontal bars (one face)",d.stemHorLap);
   }
-  if(!baseOff && incStem && d.waterstop) lines.push(baseLine(inst,def,{materialGroup:"Joints",material:"PVC waterstop",spec:"Footing/stem joint",qty:Lm,unit:"m",waste:5,finalQty:withWaste(Lm,5),formula:"wall length"}));
-  let formArea = (incStem? 2*g.area : 0) + (baseOff? 0 : 2*Lm*(num(d.footD)/1000));
-  let formName = incStem && !baseOff? "Footing + stem formwork" : (incStem? "Stem formwork" : "Footing formwork");
+  if(!baseOff && incStem && d.waterstop && !g.block) lines.push(baseLine(inst,def,{materialGroup:"Joints",material:"PVC waterstop",spec:"Footing/stem joint",qty:Lm,unit:"m",waste:5,finalQty:withWaste(Lm,5),formula:"wall length"}));
+  let stemFormed = incStem && !g.block;   // blockwork is laid, never formed
+  let formArea = (stemFormed? 2*g.area : 0) + (baseOff? 0 : 2*Lm*(num(d.footD)/1000));
+  let formName = stemFormed && !baseOff? "Footing + stem formwork" : (stemFormed? "Stem formwork" : "Footing formwork");
   let fw=[];
-  if(incStem && g.area>0) fw.push({name:"stem faces",runM:2*Lm,faceMm:Math.max(1,(Lm>0? g.area/Lm : g.hAvg||0)*1000),areaM2:2*g.area});
+  if(stemFormed && g.area>0) fw.push({name:"stem faces",runM:2*Lm,faceMm:Math.max(1,(Lm>0? g.area/Lm : g.hAvg||0)*1000),areaM2:2*g.area});
   if(!baseOff && num(d.footD)>0) fw.push({name:"footing sides",runM:2*Lm,faceMm:num(d.footD)});
-  if(formArea>0) lines.push(...formworkLines(inst,def,{material:formName,spec:"",faces:fw,formula:linked?`2 × stem face area ${fmt(g.area,2)} m²`:`2 × stem face area ${fmt(g.area,2)} m² + 2×L×footD`}));
+  if(formArea>0) lines.push(...formworkLines(inst,def,{material:formName,spec:"",faces:fw,formula:linked?`2 × stem face area ${fmt(g.area,2)} m²`:stemFormed?`2 × stem face area ${fmt(g.area,2)} m² + 2×L×footD`:`2×L×footD (blockwork stem is not formed)`}));
   let tgtOut=targetLabelOf(d.dowelsOut);
   if(incStem && tgtOut && num(d.outQty)>0){
     let dia=barDiaOf(d.outDia); let outLen=(num(d.outEmbed)+num(d.outProj))/1000;
@@ -7646,7 +7757,8 @@ function diagWall(inst){ let d=inst.data;
 
 function diagRetWall(inst){ let d=inst.data;
   const G=retStemGeom(d);
-  const FL=Math.max(300,N_(d.footL,1800)), FD=Math.max(100,N_(d.footD,500)), TOE=N_(d.toe,300), HEEL=N_(d.heel,900), ST=Math.max(100,N_(d.stemT,250)), SH=Math.max(300,Math.round(G.hMax*1000)||N_(d.stemH,2400)), cov=coverOf(d);
+  const FL=Math.max(300,N_(d.footL,1800)), FD=Math.max(100,N_(d.footD,500)), TOE=N_(d.toe,300), HEEL=N_(d.heel,900), ST=G.block? G.bU.mm : Math.max(100,N_(d.stemT,250)), SH=Math.max(300,Math.round(G.hMax*1000)||N_(d.stemH,2400)), cov=coverOf(d);
+  const LOWH=Math.min(SH,Math.round(G.lowH*1000)), LOWT=Math.round(G.Tlow*1000);
   const KEY=d.key?N_(d.keyD,200):0, KW=d.key?N_(d.keyW,200):0, BF=Math.min(SH,N_(d.backfillDepth,2000)), L=Math.max(300,Math.round(G.L*1000)||N_(d.length,10000));
   const sx=44, sy=40, s=DG.fit(FL, SH+FD+KEY, 150, 140), fw=FL*s, fd=FD*s, st=ST*s, sh=SH*s, toe=TOE*s, key=KEY*s, kw=KW*s, cv=Math.max(1.5,cov*s);
   const fy=sy+sh, stemX=sx+toe, bf=BF*s;
@@ -7658,13 +7770,15 @@ function diagRetWall(inst){ let d=inst.data;
    ${groundLine(sx-20,stemX,fy)}
    ${DG.rect(sx,fy,fw,fd)}
    ${G.battered? `<path d="M${stemX} ${fy+1} L${stemX} ${sy} L${stemX+Math.max(2,N_(d.stemTt,ST)*s)} ${sy} L${stemFace} ${fy+1} Z" fill="rgba(232,163,61,0.10)" stroke="${DWG.ink}" stroke-width="1.6"/>` : DG.rect(stemX,sy,st,sh+1)}
+   ${LOWH>0 && LOWT>ST? DG.rect(stemX,fy-LOWH*s,LOWT*s,LOWH*s+1) : ''}
+   ${LOWH>0? dimV(fy-LOWH*s,fy,stemX-26-toe,`H4 ${LOWH}`) : ''}
    ${KEY>0?DG.rect(stemX+st/2-kw/2,fy+fd,kw,key):''}
    <line x1="${stemFace-cv}" y1="${sy+cv}" x2="${stemFace-cv}" y2="${fy+fd-cv}" stroke="${DWG.bar}" stroke-width="1.3"/>
    <line x1="${stemX+cv}" y1="${sy+cv}" x2="${stemX+cv}" y2="${fy+fd-cv}" stroke="${DWG.bar}" stroke-width="0.9" opacity="0.8"/>
    ${DG.barsV(stemFace-cv,sy+cv+2,fy-2,Math.min(10,Math.max(2,Math.round(SH/N_(d.stemHorSp,250)))),1.1)}
    ${DG.bars(sx+cv,sx+fw-cv,fy+fd-cv,Math.min(12,Math.max(2,Math.round(FL/N_(d.footBotXSp,200))+1)))}
    ${d.footTop?DG.bars(sx+cv,sx+fw-cv,fy+cv,Math.min(12,Math.max(2,Math.round(FL/N_(d.footTopXSp,200))+1))):''}
-   ${d.waterstop?`<circle cx="${stemX+st/2}" cy="${fy}" r="2" fill="${DWG.gl}"/>`:''}
+   ${(d.waterstop && !G.block)?`<circle cx="${stemX+st/2}" cy="${fy}" r="2" fill="${DWG.gl}"/>`:''}
    ${d.dowelsOut&&N_(d.outQty,0)>0?DG.starters([stemX+st/2],sy-Math.min(20,N_(d.outProj,600)*s),sy+Math.min(sh*0.3,N_(d.outEmbed,500)*s)):''}
    ${dimV(sy,fy,stemX-12-toe,`STEM H ${SH}`)}
    ${dimH(stemX,stemFace,sy-8,`T ${ST}`)}
@@ -7692,7 +7806,7 @@ function diagRetWall(inst){ let d=inst.data;
    ${specLine(ex,ey+eh+38,`     ${d.stemHorDia||'N12'}@${N_(d.stemHorSp,250)} H`)}
    ${specLine(ex,ey+eh+48,`FTG ${d.footBotX||'N16'}@${N_(d.footBotXSp,200)} EW`)}
    ${d.footTop?specLine(ex,ey+eh+58,`TOP ${d.footTopX||'N16'}@${N_(d.footTopXSp,200)}`):''}
-   ${d.waterstop?specLine(ex,ey+eh+68,`WATERSTOP AT KICKER`):''}
+   ${(d.waterstop && !G.block)?specLine(ex,ey+eh+68,`WATERSTOP AT KICKER`):''}
    ${G.shape!=="rect"?specLine(ex,ey+eh+78,`STEM ${retShapeLabel(G.shape).toUpperCase()} · ${fmt(G.area,1)} m² FACE`):''}
    ${G.plan!=="straight"||G.battered||(d.footShape||"rect")==="area"?specLine(ex,ey+eh+88,`${G.plan==="curved"?`CURVED R${N_(d.planRadius,6000)} ${N_(d.planAngle,90)}°`:G.plan==="irregular"?"IRREGULAR PLAN":""}${G.battered?` · BATTER ${N_(d.stemT,250)}/${N_(d.stemTt,250)}`:""}${(d.footShape||"rect")==="area"?` · FTG ${fmt(G.footArea,1)} m²`:""}`):''}`;
   return sheetFrame(inst, "Retaining Wall", [316,Math.max(232,ey+eh+106)], section+elev);
@@ -9657,7 +9771,7 @@ function annotateProvenance(card,inst){
     } else if(rb) rb.remove();
   });
 }
-const RAIL_GROUP_TAB={Concrete:"conc",Reinforcement:"reo",Formwork:"form",Excavation:"exc","Base/Blinding":"blind","Vapour Barrier":"blind",Insulation:"blind",Connections:"conns",Finishes:"geom"};
+const RAIL_GROUP_TAB={Concrete:"conc",Reinforcement:"reo",Formwork:"form",Excavation:"exc","Base/Blinding":"blind","Vapour Barrier":"blind",Insulation:"blind",Connections:"conns",Finishes:"geom",Drainage:"exc",Masonry:"geom"};
 /** Which card section a register line belongs to (for subtotals and links). */
 function lineSection(l, avail){
   let has=(t)=>avail.indexOf(t)>=0;
