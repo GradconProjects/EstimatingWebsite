@@ -97,10 +97,10 @@ check("every element type has both a category and a section", () => {
   });
 });
 
-check("21 material categories, 412 products (incl. the R6 / R8 / R10 plain rounds on PROCESSED BAR, the 12-row Void formers group of FORMWORK, the 17-row FINISHED PAVEMENTS & CONCRETE FINISHES band, the 45-row SAW CUTS & DOWELS band, CONCRETE PUMPING, REINFORCEMENT BY RATE, the 32-board INSULATION range, 31 SCREEDS, 17 HYDRONIC HEATING, 48 SPECIALIST FINISHING CONCRETE, 45 PRELIMINARIES, the full 24-size TRENCH MESH grid, Bored Piers subcontract, minimum cartage, levy, surcharge)", () => {
+check("21 material categories, 416 products (incl. the R6 / R8 / R10 plain rounds on PROCESSED BAR, the 12-row Void formers group of FORMWORK, the 21-row FINISHED PAVEMENTS & CONCRETE FINISHES band (permeable paving and the P4 slip-resistant row added 20 Nov 2026), the 45-row SAW CUTS & DOWELS band, CONCRETE PUMPING, REINFORCEMENT BY RATE, the 32-board INSULATION range, 31 SCREEDS, 17 HYDRONIC HEATING, 48 SPECIALIST FINISHING CONCRETE, 45 PRELIMINARIES, the full 24-size TRENCH MESH grid, Bored Piers subcontract, minimum cartage, levy, surcharge)", () => {
   assert.equal(FULL_CATALOG.length, 21);
   const total = FULL_CATALOG.reduce((s, c) => s + c.products.length, 0);
-  assert.equal(total, 412);
+  assert.equal(total, 416);
   const pre = FULL_CATALOG.find((c) => c.key === "PRELIMINARIES");
   assert.equal(pre.products.length, 45);
   assert.ok(!pre.weightBasis && !pre.areaBasis && !pre.lengthBasis && !pre.volumeRateBasis, "preliminaries cost plain qty × rate");
@@ -3401,7 +3401,13 @@ check("SPECIALIST FINISHING CONCRETE: 27 VicMix mixes at the published $/m³, pl
 await checkAsync("FINISHED PAVEMENTS & CONCRETE FINISHES (Grady, 13 Oct 2026): $/m² installed allowances on every card, scope always, $180/m² recommended exposed-aggregate rate, the six build-up rows, and the Rates Library lists every product by the same name and price (finishRates is a priced section)", async () => {
   const cat = FULL_CATALOG.find((c) => c.key === "FINISHED PAVEMENTS & CONCRETE FINISHES");
   assert.ok(cat && !cat.weightBasis && !cat.areaBasis && !cat.volumeRateBasis && !cat.visibleFor && cat.scopeBucket === "always");
-  assert.ok(cat.products.every((p) => p.unit === "m2" && p.unitCost > 0));
+  assert.ok(cat.products.every((p) => p.unit === "m2" && (p.unitCost > 0 || (p.unitCost === 0 && /no published rate found/.test(p.name)))), "every row is priced, or says in its name that no rate is published");
+  // permeable paving (Boma, 20 Nov 2026 — EF 03 "Permeable Paving, sealer TBC, min. P4 slip rating"), from two published 2026 Melbourne guides
+  assert.equal(cat.products.length, 21);
+  assert.equal(cat.products.find((p) => /^Permeable paving — permeable pavers or permeable concrete/.test(p.name)).unitCost, 182, "$170–230 incl. GST, typ. $200 → $182 ex GST");
+  assert.equal(cat.products.find((p) => /^Permeable paving — resin-bound/.test(p.name)).unitCost, 175);
+  assert.equal(cat.products.find((p) => /^Permeable paving — gravel grid/.test(p.name)).unitCost, 110);
+  assert.equal(cat.products.find((p) => /^Slip-resistant finish to P4/.test(p.name)).unitCost, 0, "no guide publishes a P4 treatment rate — $0 and the name says so");
   assert.equal(cat.products.find((p) => /RECOMMENDED preliminary estimate rate/.test(p.name)).unitCost, 180);
   assert.equal(cat.products.find((p) => /^Exposed aggregate — standard/.test(p.name)).unitCost, 157.5);
   assert.equal(cat.products.find((p) => /^Ordinary grey/.test(p.name)).unitCost, 102.5);

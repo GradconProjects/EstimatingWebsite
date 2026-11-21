@@ -204,6 +204,16 @@ safety net silently. Keep all cost arithmetic in `lib/costing.js`.
    (`finishRates`, a `PRICED_SECTIONS` entry of `ratesLibrarySync.js`) lists
    the same names, so its figures govern Quotes; `verify.mjs` fails if the
    two lists drift.
+   **Permeable paving is on the band** (Boma, 20 Nov 2026, from a finishes
+   schedule — EF 03 driveway / carport "Permeable Paving, sealer TBC, min. P4
+   slip rating"; EF 04 crossover is the exposed aggregate already there):
+   permeable pavers / permeable concrete $182/m² (Antonio PrimeScape's
+   "Paving Prices Melbourne 2026", updated Nov 2026: $170–230 supplied and
+   laid INCLUDING GST, typ. $200 → ex GST), resin-bound stone $175 and gravel
+   grid $110 (Quartz Coatings' "Permeable Paving Guide 2026": $150–200 and
+   $90–130, GST basis not stated — the names say "confirm"), and "Slip-
+   resistant finish to P4" at $0 because no guide publishes a rate — the name
+   says so. The sources are in the catalog comment; the band is 21 rows.
 
 8. **Contract minimums bill through `computeRowTotal`.** A product can
    carry a `minQty` (the 7th field in its catalog row) — a "4 hour min"
