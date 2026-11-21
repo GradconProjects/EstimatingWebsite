@@ -117,7 +117,7 @@ export function libraryPrices(libraryState) {
     const hit = byName.get(norm(name));
     if (!hit || seen.has(hit.key)) return;
     seen.add(hit.key);
-    out.push({ key: hit.key, price, catalogCost: hit.unitCost, name, section: "global" });
+    out.push({ key: hit.key, price, catalogCost: hit.unitCost, name, section: "global", rowId: `global::${path[path.length - 1]}`, raw: price });
   });
   const named = (section, rows, perTonne) => {
     if (!rows || typeof rows !== "object") return;
@@ -129,6 +129,7 @@ export function libraryPrices(libraryState) {
       if (!hit) return;
       if (seen.has(hit.key)) return;                // the same product priced in two sections: first wins, never flip-flops
       let tolerance = 0;
+      const raw = price;                            // the library's own figure, in the library's unit (the document record compares on it)
       if (perTonne) {
         if (!(hit.unitWeight > 0)) return;          // no kg/m on the catalog row — cannot convert, leave it
         price = Math.round((price * 1000 / hit.unitWeight) * 100) / 100;
@@ -137,7 +138,7 @@ export function libraryPrices(libraryState) {
         tolerance = 1;
       }
       seen.add(hit.key);
-      out.push({ key: hit.key, price, catalogCost: hit.unitCost, name, section, tolerance });
+      out.push({ key: hit.key, price, catalogCost: hit.unitCost, name, section, tolerance, rowId: `${section}::${name}`, raw });
     });
   };
   PRICED_SECTIONS.forEach((section) => named(section, libraryState[section], false));
@@ -159,7 +160,7 @@ export function libraryPrices(libraryState) {
       }
       if (seen.has(key)) return;
       seen.add(key);
-      out.push({ key, price, catalogCost, name: `${name} (${unit})`, section: "labourPlant" });
+      out.push({ key, price, catalogCost, name: `${name} (${unit})`, section: "labourPlant", rowId: `labourPlant::${idx}`, raw: price });
     });
   }
   return out;
@@ -191,7 +192,8 @@ export function libraryGovernedKeys(libraryState) {
  */
 export function pendingRateUpdates(rates, libraryState /* , lastSynced: kept for callers, no longer consulted */) {
   const updates = [];
-  libraryPrices(libraryState).forEach(({ key, price, name, catalogCost, tolerance }) => {
+  const moves = libraryDocMoves(libraryState);
+  libraryPrices(libraryState).forEach(({ key, price, name, catalogCost, tolerance, rowId, raw }) => {
     if (excluded(name)) return;
     // A key the stored row does not carry yet (a product added to the
     // catalog after this install first saved its rates) prices at the
@@ -201,7 +203,14 @@ export function pendingRateUpdates(rates, libraryState /* , lastSynced: kept for
     const cur = rates && rates[key] && rates[key].unitCost != null ? rates[key].unitCost : catalogCost;
     if (cur == null) return;                        // nothing known on either side
     if (Math.abs(Number(cur) - Number(price)) <= (tolerance || 0)) return;   // already agrees
-    updates.push({ key, price, from: cur, name });  // from + name feed the change log (lib/rateChanges.js)
+    const update = { key, price, from: cur, name };  // from + name feed the change log (lib/rateChanges.js)
+    // A figure a supplier DOCUMENT set (and nobody retyped since) carries the
+    // document's rule: work that existed before the day it was applied keeps
+    // the figure it was priced on (Boma, 20 Nov 2026: "it shouldnt affect
+    // older works uptill yesterday").
+    const mv = rowId ? moves.get(rowId) : null;
+    if (mv && mv.keepOlder && typeof raw === "number" && Math.abs(raw - mv.to) < 0.0051) { update.keepBefore = mv.keepBefore; update.doc = mv.label; }
+    updates.push(update);
   });
   // Validity dates travel the same way: a date the library states for a
   // product lands on that product's rate as `validUntil` (a separate entry,
@@ -213,6 +222,21 @@ export function pendingRateUpdates(rates, libraryState /* , lastSynced: kept for
     updates.push({ key, validUntil });
   });
   return updates;
+}
+
+/**
+ * rowId (`<library map>::<row key>`, the ids portal/rates-docs.js writes) →
+ * the supplier document that last set that row: its figure, whether older
+ * work keeps its previous figures, and the day that rule starts from.
+ */
+export function libraryDocMoves(libraryState) {
+  const out = new Map();
+  const docs = libraryState && Array.isArray(libraryState.rateDocs) ? libraryState.rateDocs : [];
+  docs.slice().sort((a, b) => String(a.appliedAt || "").localeCompare(String(b.appliedAt || ""))).forEach((d) => {
+    const keepBefore = /^\d{4}-\d{2}-\d{2}$/.test(String(d.keepBefore || "")) ? d.keepBefore : "";
+    (d.rows || []).forEach((r) => { if (r && r.id && typeof r.to === "number") out.set(r.id, { docId: d.id, to: r.to, keepOlder: d.keepOlder !== false && !!keepBefore, keepBefore, label: [d.supplier, d.reference].filter(Boolean).join(" — ") }); });
+  });
+  return out;
 }
 
 /** Every {rateKey, validUntil} the library states a validity date for —

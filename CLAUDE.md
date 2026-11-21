@@ -695,6 +695,139 @@ lived in the one shared rate that two other projects also carried):
    only way a pinned project re-prices is its "Re-price with current rates"
    button (two clicks; a `before-reprice` version is kept first).
 
+## Supplier rate documents: the library is updated from the supplier's own paper
+
+Boma, 20 Nov 2026 (with AKZ Reinforcing's quotation 15011 — stock steel
+$1,800, processed steel $1,900, the SL sheets, the L-series trench meshes,
+"valid until 31/12/2026 and is exclusive of GST"): "in the rates library, i
+upload the documents for the new rates and it applies same flagging anything
+not clear and valid till the next rate update. steel usually comes like the
+uploaded, for concrete rates etc, it should also look at emails and set
+validity as usual"; then "it shouldnt affect older works uptill yesterday".
+Rules:
+
+1. **The reader LISTS; the page decides.** `api/ai-engine.js` action
+   **`rates`** (rules in `src/lib/rateDocs.js`, pure): files (https PDF /
+   image, ≤ `RATE_DOC_MAX_FILES` = 6) and / or text, plus the library's ROW
+   LIST — ids, sections, names, units, never a price (`rateDocRows`).
+   `rateDocPrompt` holds three rules: a price is copied as written (never
+   computed, rounded, GST-adjusted or filled in); a line is pointed at a row
+   only when it is the same product on the same unit, by the row's id copied
+   from the list, else omitted with what is unclear said in words ("never
+   pick the nearest row"); a validity date is only one the document states,
+   with its sentence. Dates are read day/month/year. The reply is FLAT so a
+   cut-off one salvages (`RATE_DOC_RESULT_KEYS`): `documents[]` (n, supplier,
+   reference, issued, validFrom, validUntil, validityQuote, gst ex / inc /
+   unknown, source), `lines[]` (doc, description, mode price /
+   increase_amount / increase_percent, price, per, kind, code, bars, target,
+   confidence, unclear, page, quote), `notes[]` (conditions that are not a
+   rate: transport per load, demurrage), `unreadable[]`. `parseRateDocs` →
+   `{docs: [{…, lines, notes}], unreadable}`: a target that is not a row of
+   the list is dropped and kept as `targetRefused`; a date that is not ISO is
+   no date. `rateDocRequestError` → 400; no provider → 503.
+2. **`portal/rates-docs.js` is the page's pure module** (inlined by the
+   assembler, asserted, run in Node by `verify.mjs` on the page's own tables).
+   `rateDocLibraryRows(state, tables)` is the ONE row list — ids
+   `<map>::<key>`: `concreteGrade::<name>`, `specialistConcrete::…`,
+   `trenchMesh::` / `squareMesh::` / `stockBar::` / `processedBar::<name>`,
+   `reinfAcc::`, `otherAcc::`, `otherAllow::`, `formworkLegacy::`,
+   `labourPlant::<row index>`, `global::concreteSurchargePerM3`,
+   `global::reinforcementDeliveryPerTonne`, and three GROUP rows
+   (`stockBar::*`, `processedBar::*`, `concreteGrade::*` = the mixes only).
+   The allowance tables (finishes, preliminaries) are not supplier rows.
+   **`proposeRateDoc(doc, rows, state, {today, overrides})`** maps BY RULE
+   before by the reader's word (`ruleRowsFor`): a trench mesh by its size and
+   bar count ("11mm wire trench mesh 3 bar" → `3 Bar-L11TM`), a sheet by its
+   code, STOCK STEEL → every stock bar = $/t × the bar's weight ÷ 1000 (2 dp),
+   PROCESSED STEEL → every processed size in $/m (4 dp); anything else takes
+   the reader's target. Every proposal carries `from`, `to`, the arithmetic
+   (`basis`) and its FLAGS — the reader's `unclear`, a target it was not
+   certain of, a unit not stated or different from the row's (`unitClass`),
+   GST included (shown ÷ 1.1) or not stated, a move over
+   `RATE_DOC_BIG_MOVE` = 25 %, a price not yet in effect (`validFrom`), a
+   figure worked out from a stated increase, a second line on the same row.
+   **`proposalTicked`: a proposal with no flag starts ticked, a flagged one
+   never** ("flagging anything not clear"). A steel rate with no unit is
+   read as $/tonne and SAYS so on the row — flagged only when the figure then
+   moves over 25 %. Lines with no row are `unmapped` with the reason ("The
+   library has no trench mesh row for 5 bar L15TM") and can be pointed at a
+   row by hand (`overrides`); a matched line can be re-pointed or left out.
+3. **Apply writes only what is ticked** — `applyRateDoc(state, doc, rows,
+   picked, meta)` is the ONE write (`verify.mjs` pins the single call):
+   `setRowValue` per row, then the record on `state.rateDocs[]` (≤ 60):
+   `{id, supplier, reference, issued, validFrom, validUntil, validityQuote,
+   gst, source: {names, files, mailIds}, appliedAt, by, keepOlder,
+   keepBefore, rows: [{id, name, section, unit, from, to}], notApplied:
+   [{description, price, per, reason}], notes}`. **Validity as usual**: a
+   time-limited row (the names of `VALIDITY_ITEMS`, and
+   `global::concreteSurchargePerM3` → "Production & transport surcharge")
+   takes the document's date in the library's `validity` block, so the
+   existing fee alarm and the Quotes sync follow. The ordinary `saveRates()`
+   then pushes the library; Quotes takes the figures through
+   `ratesLibrarySync` as for any library edit.
+4. **A document governs its rows until a later one re-prices them**
+   (`rateDocLatestByRow`). `rateDocStatus` → open (no end date — "until the
+   next rate update") / ok / expiring (≤ `RATE_DOC_WARN_DAYS` = 14) / expired
+   / superseded; `rateDocAlarms` heads the library page
+   (`ratedoc-alarm`: "ask the supplier for the next rates and upload them")
+   and `supplierDocAlarms(library)` in `src/lib/rateDocs.js` — the same
+   answer, `verify.mjs` holds the two together — gives `RateValidityBanner`
+   ONE line per lapsing document (`rate-doc-alarm`), never a line per rate.
+   The record's date is editable on the library page (`rateDocSetValidity`);
+   "remove record" removes the record only, never a rate.
+5. **The page** (`rates-library.html`, block "SUPPLIER RATE DOCUMENTS"):
+   header button **⬆ Update from supplier documents** (`rate-docs-button`)
+   and the first section "Supplier rate documents" (`ratedoc` records with
+   the rates set, the lines NOT applied — `ratedoc-notapplied` — and the
+   conditions). The panel (`rate-docs-panel`): upload PDF / pictures to the
+   bucket under `rate-docs/` (.eml / .txt / pasted text are text; .msg /
+   Excel are refused with what to do), **the projects@ mailbox is searched
+   for rate emails when the panel opens** (`RATE_DOC_MAIL_QUERY`, editable;
+   `api/gmail` list → read → attachment: a ticked email is added as text and
+   its PDFs as files; emails an applied document used read "already
+   applied"; read-only), **Read the rates** → one review card per document
+   (`rd-doc`: validity date editable `rd-valid`, the validity sentence, the
+   warnings, `rd-proposal` rows with tick / flags / "change" row select,
+   `rd-unmapped` with a row select, `rd-notes`), "tick the clear ones / all /
+   none", and **Apply N ticked rates** (`rd-apply`). Sources are
+   session-only; the record is what is kept.
+6. **Older work keeps its figures** (`keepOlder`, the tick beside Apply —
+   on by default; `keepBefore` = the local day of application). In Quotes
+   (`ratesLibrarySync.js` → `rateChanges.js`): `libraryPrices` entries carry
+   `rowId` and `raw`; `libraryDocMoves(library)` = the document that last set
+   each row; `pendingRateUpdates` tags an update `keepBefore` + `doc` ONLY
+   when the library's figure is still the document's (a figure retyped in
+   the library afterwards is an ordinary change) and `recordRateChanges`
+   keeps them on the log entry. **A project created before that day keeps
+   the previous figure without being asked**: `autoKeepChanges(quote, log,
+   createdAt)` (document-driven pending changes of an older project),
+   `promptRateChanges` (the rest — what `RateChangesPrompt` and the
+   Dashboard's waiting list now read), `ratesKeepingOlderWork(quote, rates,
+   log, createdAt)` (the reading the Dashboard's `summarizeQuote` and the
+   editor's `rates` memo price through, so an older project's totals never
+   move, opened or not) and `autoKeepPatch` (written once when the project is
+   opened: the ordinary library pin gains the keys, `ratesFrozen.auto` names
+   the document(s), `ratesAutoKept[key]` settles the change — the ack is left
+   alone, so other changes still ask; never from a stale-build tab).
+   `KeptRatesBanner` says "Kept on its own: this project existed before the
+   supplier's new rates (…) were applied" (`kept-rates-auto`), folds a list
+   over 8 (`kept-rates-show`) and releases one or all as before; a released
+   key is not kept again. A project created that day or later follows the new
+   rates (one created earlier the same day is asked, as for any change).
+   `firstWorkAck` (in `setItems`): the first element of an EMPTY project
+   acknowledges every library move before it — there was no work to keep, so
+   an old empty project (an inbox-made one) that starts today prices at
+   today's rates. Finished projects keep their status pin as always.
+`verify.mjs` covers the prompt, the parser, the request refusals, the AKZ
+quotation end to end on the page's real tables (every conversion, the flags,
+the unmapped reasons, by-hand mapping), apply, the validity block, the alarm
+(nearing, lapsed, superseded, both readings equal), the wiring, and the
+older-work rule (the tag, the log, keep / follow by creation day, the patch,
+release, a later typed figure, a finished project, the first-work ack);
+`test-rate-docs.mjs` proves the panel, the mailbox, the read, the review, the
+apply, the records and alarm, and in Quotes the Dashboard figures, the
+banner line, the kept figures and the project made today (29 checks).
+
 ## Variable margins and the Margin Register (read before touching a sell price)
 
 Grady, 1 Nov 2026: "variable application of margins especially for contractor

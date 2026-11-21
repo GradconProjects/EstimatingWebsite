@@ -2244,6 +2244,173 @@ await checkAsync("Scope finder reads a long set IN PARTS (20 Nov 2026 — five d
   assert.match(est, /else if\(act==="runfinish"\) scopeRun\(true, true\);/);
   assert.ok(!/Run again with fewer documents/.test(eng + est), "the estimator is never told to re-run with fewer documents");
 });
+await checkAsync("Rates Library reads supplier rate documents (20 Nov 2026): the reader lists lines as written and never decides a figure; the page maps by rule, converts $/tonne by each bar's weight, flags what is not clear and leaves it unticked; applying records the document with its validity date and alarms as it nears", async () => {
+  const RDL = await import("../src/lib/rateDocs.js");
+  const E = await import("../api/ai-engine.js");
+  const html = fs.readFileSync(new URL("../portal/rates-library.html", import.meta.url), "utf8");
+  const box = { console }; box.globalThis = box;
+  runInNewContext(html.slice(html.indexOf("const GLOBAL = {"), html.indexOf("/* ============================= CROSS-DEVICE SYNC")) + "\n;globalThis.__t={REINFORCEMENT_ITEMS,CONCRETE_GRADE_ITEMS,SPECIALIST_CONCRETE_ITEMS,REINFORCING_ACCESSORIES,OTHER_ACCESSORIES,OTHER_ALLOWANCES,LABOUR_PLANT_ITEMS,FORMWORK_LEGACY_ITEMS,freshRates};", box, { filename: "rates-library.html" });
+  runInNewContext(fs.readFileSync(new URL("../portal/rates-docs.js", import.meta.url), "utf8"), box, { filename: "rates-docs.js" });
+  const T = box.__t; const state = T.freshRates();
+  const tables = { reinforcement: T.REINFORCEMENT_ITEMS, concreteGrade: T.CONCRETE_GRADE_ITEMS, specialistConcrete: T.SPECIALIST_CONCRETE_ITEMS, reinfAcc: T.REINFORCING_ACCESSORIES, otherAcc: T.OTHER_ACCESSORIES, otherAllow: T.OTHER_ALLOWANCES, labourPlant: T.LABOUR_PLANT_ITEMS, formworkLegacy: T.FORMWORK_LEGACY_ITEMS };
+  const rows = box.rateDocLibraryRows(state, tables);
+  const ids = new Set(rows.map((r) => r.id));
+  assert.equal(ids.size, rows.length, "every row id is unique");
+  ["squareMesh::SL62", "trenchMesh::3 Bar-L11TM", "stockBar::N12 - 6.0m length", "processedBar::N12", "concreteGrade::32 mpa", "global::concreteSurchargePerM3", "labourPlant::5", "stockBar::*", "processedBar::*", "concreteGrade::*"].forEach((id) => assert.ok(ids.has(id), `the row list carries ${id}`));
+  assert.ok(!rows.some((r) => /^finishRates::|^prelim::/.test(r.id)), "allowance tables are not supplier rows");
+  const readerRows = box.rateDocRowsForReader(rows);
+  assert.ok(readerRows.every((r) => !("current" in r)), "the reader is sent ids, names and units — never a price");
+  // the prompt's three rules
+  const prompt = RDL.rateDocPrompt({ rows: readerRows, hasDocuments: true, today: "2026-11-20" });
+  assert.match(prompt, /Never compute, convert, round, add or remove GST, or fill in a price that is not there/, "a price is copied as written");
+  assert.match(prompt, /never pick the nearest row/, "a line is pointed at a row only when it is the same thing");
+  assert.match(prompt, /"validUntil" only when the document states the date its prices run to/, "a validity date is only one the document states");
+  assert.match(prompt, /Dates in these documents are day\/month\/year/, "06/11/2026 is read as 6 November");
+  assert.match(prompt, /squareMesh::SL62 \| Square Mesh \| SL62 \| sheet/, "the library rows are offered by id");
+  assert.match(prompt, /stockBar::\* \| Stock Bar \| .* \| tonne \| GROUP/);
+  // what one request may carry
+  assert.match(RDL.rateDocRequestError({ files: [], text: " ", rows: readerRows }), /Nothing to read/);
+  assert.match(RDL.rateDocRequestError({ files: Array.from({ length: 7 }, (_, i) => ({ url: `https://x.co/${i}.pdf` })), rows: readerRows }), /At most 6 files/);
+  assert.match(RDL.rateDocRequestError({ files: [{ url: "https://x.co/a.xlsx", name: "a.xlsx" }], rows: readerRows }), /Not a PDF or an image/);
+  assert.match(RDL.rateDocRequestError({ text: "x".repeat(RDL.RATE_DOC_MAX_TEXT_CHARS + 1), rows: readerRows }), /nothing is cut off silently/);
+  assert.match(RDL.rateDocRequestError({ text: "rates", rows: [] }), /row list is missing/);
+  assert.equal(RDL.rateDocRequestError({ files: [{ url: "https://x.co/quote.png" }], rows: readerRows }), null);
+  assert.equal((await E.runAiJob({ action: "rates" }, {})).status, 400);
+  assert.equal((await E.runAiJob({ action: "rates", text: "SL62 $58.54", rows: readerRows }, {})).status, 503, "no provider is a 503, never a made-up list");
+  assert.match((await E.runAiJob({ action: "nope" }, {})).body.error, /"rates"/);
+  assert.equal(box.RATE_DOC_FILES_PER_READ, RDL.RATE_DOC_MAX_FILES, "the page and the server agree on the files per read");
+  assert.equal(box.RATE_DOC_TEXT_MAX_CHARS, RDL.RATE_DOC_MAX_TEXT_CHARS);
+  // the AKZ quotation, as a reader would list it
+  const L = (description, price, kind, extra = {}) => ({ doc: 1, description, price, kind, per: "other", mode: "price", confidence: "high", ...extra });
+  const raw = { documents: [{ n: 1, supplier: "A.K.Z. Reinforcing Pty Ltd", reference: "15011", issued: "2026-11-06", validUntil: "2026-12-31", validityQuote: "The above pricing is valid until 31/12/2026 and is exclusive of GST.", gst: "ex", source: "AKZ 15011.png" }],
+    lines: [L("STOCK STEEL", "$1,800.00", "stock_steel"), L("PROCESSED STEEL", 1900, "processed_steel"),
+      L("FABRIC SL62 STANDARD SHEET", 58.54, "sheet_mesh", { code: "sl62", per: "sheet" }), L("FABRIC SL81 STANDARD SHEET", 186.37, "sheet_mesh", { per: "sheet" }),
+      L("11mmWIRE TRENCH MESH 3 BAR", 23.96, "trench_mesh", { code: "L11TM", bars: 3 }), L("12mm WIRE TRENCH MESH 5 BAR", 53.18, "trench_mesh"),
+      L("15mm WIRE TRENCH MESH 3 BAR (Sense)", 64.81, "trench_mesh", { unclear: "'(Sense)' is not explained" }), L("15mm WIRE TRENCH MESH 5 BAR", 99, "trench_mesh"),
+      L("Total Indicative Cost", null, "other"), L("Semi/Tray truck transport", 300, "fee", { per: "load", target: "reinfAcc::Delivery fee", confidence: "medium" }),
+      L("Demurrage", 150, "fee", { per: "hour", target: "madeup::row" }), null, { doc: 1, description: "" }],
+    notes: [{ doc: 1, text: "Demurrage $150/hour after 60 minutes on site." }, { doc: 1, text: "Demurrage $150/hour after 60 minutes on site." }], unreadable: [] };
+  const parsed = RDL.parseRateDocs(raw, { rows: readerRows });
+  const doc = parsed.docs[0];
+  assert.deepEqual([parsed.docs.length, doc.lines.length, doc.notes.length, doc.validUntil, doc.gst, doc.lines[0].price, doc.lines[2].code], [1, 11, 1, "2026-12-31", "ex", 1800, "SL62"], "blank lines dropped, the note once, '$1,800.00' read as 1800");
+  assert.deepEqual([doc.lines[9].target, doc.lines[10].target, doc.lines[10].targetRefused], ["reinfAcc::Delivery fee", null, "madeup::row"], "a row the library does not have is never a target");
+  assert.equal(RDL.parseRateDocs({ documents: [{ n: 1, supplier: "X", validUntil: "31/12/2026" }], lines: [L("a", 1, "other")] }, { rows: readerRows }).docs[0].validUntil, null, "a date that is not ISO is no date");
+  assert.equal(RDL.parseRateDocs({ lines: [] }), null); assert.equal(RDL.parseRateDocs(null), null);
+  const out = box.proposeRateDoc(doc, rows, state, { today: "2026-11-20" });
+  const P = (id) => out.proposals.find((p) => p.rowId === id);
+  assert.equal(out.proposals.filter((p) => p.rowId.startsWith("stockBar::")).length, T.REINFORCEMENT_ITEMS["Stock Bar"].items.length, "a stock steel rate prices every stock bar size");
+  assert.deepEqual([P("stockBar::N12 - 6.0m length").to, P("stockBar::N32 - 6.0m length").to], [9.83, 69.86], "$1,800/t × the bar's weight ÷ 1000, to the cent");
+  assert.equal(P("processedBar::N12").to, 1.729, "processed bar is $/m to four decimals: $1,900/t × 0.91 kg");
+  assert.match(P("stockBar::N12 - 6.0m length").basis, /\$1,800\.00\/t × 5\.46 kg \(no unit stated — read as \$\/tonne\)/, "the arithmetic and the assumption are said on the row");
+  assert.deepEqual([P("squareMesh::SL62").to, P("squareMesh::SL81").to, P("trenchMesh::3 Bar-L11TM").to, P("trenchMesh::5 Bar-L12TM").to], [58.54, 186.37, 23.96, 53.18], "mesh by its code — from the reader's code or the line's own wording");
+  assert.ok(box.proposalTicked(P("squareMesh::SL62")) && P("squareMesh::SL62").flags.length === 0, "a plain line is ticked");
+  const l15 = P("trenchMesh::3 bar-L15TM");
+  assert.ok(l15 && l15.from === null && !box.proposalTicked(l15) && /Sense/.test(l15.flags.join(" ")), "a line the reader found unclear is matched but flagged and unticked");
+  assert.ok(!box.proposalTicked(P("reinfAcc::Delivery fee")) && /not certain/.test(P("reinfAcc::Delivery fee").flags.join(" ")), "a row the reader was not sure of is unticked");
+  assert.deepEqual(JSON.parse(JSON.stringify(out.unmapped.map((u) => u.reason.replace(/ \(.*/, "")))), ["The library has no trench mesh row for 5 bar L15TM", "No price could be read on this line", "The reader named a row the library does not have"], "what cannot be matched is listed with its reason, never applied");
+  // not-clear cases
+  const flagsOf = (line, d = {}) => { const dd = RDL.parseRateDocs({ documents: [{ n: 1, supplier: "S", gst: "ex", ...d }], lines: [line] }, { rows: readerRows }).docs[0]; const o = box.proposeRateDoc(dd, rows, state, { today: "2026-11-20" }); return o.proposals.length ? o.proposals[0] : { flags: [o.unmapped[0].reason], to: null }; };
+  assert.match(flagsOf(L("32 MPa", 213, "concrete", { per: "tonne", target: "concreteGrade::32 mpa" })).flags.join(), /Priced per tonne; the library row is per m³/);
+  assert.match(flagsOf(L("32 MPa", 213, "concrete", { target: "concreteGrade::32 mpa" })).flags.join(), /does not state the unit/);
+  assert.match(flagsOf(L("FABRIC SL62", 120, "sheet_mesh", { per: "sheet" })).flags.join(), /Moves \+99% from the current rate/, "a big move is flagged");
+  const inc = flagsOf(L("32 MPa", 234.3, "concrete", { per: "m3", target: "concreteGrade::32 mpa" }), { gst: "inc" });
+  assert.ok(inc.to === 213 && /including GST/.test(inc.flags.join()), "a GST-inclusive price is shown ex GST and flagged");
+  assert.match(flagsOf(L("32 MPa", 213, "concrete", { per: "m3", target: "concreteGrade::32 mpa" }), { gst: "unknown" }).flags.join(), /GST basis not stated/);
+  assert.match(flagsOf(L("32 MPa", 220, "concrete", { per: "m3", target: "concreteGrade::32 mpa" }), { validFrom: "2027-01-01" }).flags.join(), /Takes effect 2027-01-01 — not yet/);
+  const up = RDL.parseRateDocs({ documents: [{ n: 1, supplier: "Holcim", gst: "ex" }], lines: [L("All grades increase", 8, "concrete", { mode: "increase_amount", per: "m3", target: "concreteGrade::*" })] }, { rows: readerRows }).docs[0];
+  const upOut = box.proposeRateDoc(up, rows, state, { today: "2026-11-20" });
+  assert.ok(upOut.proposals.length >= 8 && upOut.proposals.every((p) => !/cartage|levy|Penetron/i.test(p.name) && p.to === Math.round((p.from + 8) * 100) / 100 && !box.proposalTicked(p)), "an across-the-board increase lands on the mixes only, worked out from each current rate, and is never ticked for you");
+  assert.match(upOut.warnings.join(), /No validity date is stated/);
+  // by hand: an unmatched line pointed at a row, and a matched one left out
+  const hand = box.proposeRateDoc(doc, rows, state, { today: "2026-11-20", overrides: { 10: "reinfAcc::Delivery fee", 2: "" } });
+  assert.ok(hand.proposals.some((p) => p.line === 10 && p.byHand) && !hand.proposals.some((p) => p.line === 2) && hand.unmapped.some((u) => u.line === 2 && u.reason === "Left out by you"));
+  // apply
+  const picked = out.proposals.filter((p) => box.proposalTicked(p));
+  const rec = box.applyRateDoc(state, doc, rows, picked, { at: "2026-11-20T01:00:00Z", by: "projects", notApplied: out.unmapped, validityNames: ["Environment levy"] });
+  assert.deepEqual([state.reinforcementEstablished.stockBar["N12 - 6.0m length"], state.reinforcementEstablished.processedBar.N12, state.reinforcementEstablished.squareMesh.SL62], [9.83, 1.729, 58.54], "the ticked figures are on the library");
+  assert.equal(state.reinforcementEstablished.trenchMesh["3 bar-L15TM"], undefined, "an unticked line changes nothing");
+  assert.deepEqual([rec.rows.length, rec.supplier, rec.reference, rec.validUntil, rec.by, rec.keepOlder, rec.notApplied.length, state.rateDocs.length], [picked.length, "A.K.Z. Reinforcing Pty Ltd", "15011", "2026-12-31", "projects", true, 3, 1], "the document is recorded with what it set and what it did not");
+  assert.match(rec.keepBefore, /^2026-11-(19|20)$/, "older work is kept from the local day of application");
+  // validity as usual on a time-limited row
+  const levy = RDL.parseRateDocs({ documents: [{ n: 1, supplier: "Holcim", reference: "Notice 7", validUntil: "2027-01-31", gst: "ex" }], lines: [L("Environment levy", 3.1, "levy", { per: "m3", target: "concreteGrade::Environment levy" }), L("Production & transport surcharge", 9.6, "surcharge", { per: "m3", target: "global::concreteSurchargePerM3" })] }, { rows: readerRows }).docs[0];
+  const levyOut = box.proposeRateDoc(levy, box.rateDocLibraryRows(state, tables), state, { today: "2026-11-20" });
+  box.applyRateDoc(state, levy, box.rateDocLibraryRows(state, tables), levyOut.proposals, { at: "2026-11-21T01:00:00Z", validityNames: ["Environment levy"] });
+  assert.deepEqual([state.concreteGrade["Environment levy"].cost, state.global.concreteSurchargePerM3, state.validity["Environment levy"], state.validity["Production & transport surcharge"]], [3.1, 9.6, "2027-01-31", "2027-01-31"], "a levy and the surcharge take the document's date in the validity block, as usual");
+  // the alarm: nears, lapses, is superseded
+  assert.deepEqual(JSON.parse(JSON.stringify(box.rateDocAlarms(state, "2026-11-20"))), [], "nothing to say 41 days out");
+  const near = box.rateDocAlarms(state, "2026-12-20"), late = box.rateDocAlarms(state, "2027-01-05");
+  assert.deepEqual([near.length, near[0].state, near[0].daysLeft, near[0].rows, late[0].state, late[0].daysLeft], [1, "expiring", 11, picked.length, "expired", -5]);
+  assert.deepEqual(JSON.parse(JSON.stringify(near)), JSON.parse(JSON.stringify(RDL.supplierDocAlarms(state, new Date(2026, 11, 20)))), "the page's alarm and the Quotes banner's are the same answer");
+  const next = RDL.parseRateDocs({ ...raw, documents: [{ ...raw.documents[0], reference: "15102", validUntil: "2027-03-31" }], lines: raw.lines.slice(0, 6) }, { rows: readerRows }).docs[0];
+  const r2 = box.rateDocLibraryRows(state, tables); const nextOut = box.proposeRateDoc(next, r2, state, { today: "2027-01-05" });
+  assert.ok(nextOut.proposals.every((p) => p.same && box.proposalTicked(p)), "the same figures again are 'unchanged' and still ticked — the new document takes over their validity");
+  box.applyRateDoc(state, next, r2, nextOut.proposals, { at: "2027-01-05T01:00:00Z" });
+  assert.deepEqual(JSON.parse(JSON.stringify(box.rateDocAlarms(state, "2027-01-05"))), [], "a document every row of which a later one re-priced is superseded and says nothing");
+  assert.equal(box.rateDocStatus(state, "2027-01-05").find((d) => d.reference === "15011").state, "superseded");
+  assert.ok(box.rateDocSetValidity(state, state.rateDocs[2].id, "2027-01-10") && box.rateDocAlarms(state, "2027-01-05").length === 1, "a validity date retyped on the record moves the alarm");
+  // sources
+  assert.deepEqual(JSON.parse(JSON.stringify(["q.pdf", "q.PNG", "mail.eml", "x.msg", "r.xlsx"].map((n) => box.rateDocFileClass(n, "", 10).kind))), ["pdf", "image", "text", null, null]);
+  assert.match(box.rateDocRunText([{ kind: "email", name: "Holcim price notice", from: "sales@holcim", date: "2026-11-12T03:00:00Z", text: "hi" }]), /^=== EMAIL — Holcim price notice — from sales@holcim — 2026-11-12 ===\nhi$/);
+  // wiring
+  assert.match(html, /<script src="rates-docs\.js"><\/script>/, "the page loads the pure module");
+  assert.match(fs.readFileSync(new URL("./assemble-portal.mjs", import.meta.url), "utf8"), /rates-library\.html no longer loads rates-docs\.js — inline step out of date/, "…and the assembler inlines it");
+  assert.match(html, /id="rateDocsBtn" type="button" data-testid="rate-docs-button"/);
+  assert.match(html, /rateDocAlarmHtml\(\) \+ validityAlarmHtml\(\)/, "the document alarm heads the page beside the fee alarm");
+  const ui = html.slice(html.indexOf("/* ===================== SUPPLIER RATE DOCUMENTS"), html.indexOf("renderApp(); // instant render"));
+  assert.equal((ui.match(/applyRateDoc\(/g) || []).length, 1, "ONE place writes a document's rates: the Apply button");
+  assert.match(ui, /const picked=out\.proposals\.filter\(p=>proposalTicked\(p,RD\.ticks\)\);/, "…and only the ticked proposals");
+  assert.match(ui, /action:"rates", provider, today:rateDocLocalDay\(\), rows:rateDocRowsForReader\(rdRows\(\)\)/, "the read sends the row list without prices");
+  assert.match(ui, /if\(!RD\.mail\) rdMailSearch\(RATE_DOC_MAIL_QUERY\);/, "the mailbox is searched for rate emails when the panel opens");
+  assert.match(ui, /action:"attachment", id, attachmentId:a\.attachmentId, filename:a\.filename/, "a rate email's PDF is read too");
+  assert.ok(!/action:"send"/.test(ui), "nothing is sent");
+  assert.match(fs.readFileSync(new URL("../src/components/RateValidityBanner.jsx", import.meta.url), "utf8"), /supplierDocAlarms\(readLibraryState\(\)\)/, "Quotes shows the document alarm as one line");
+});
+await checkAsync("supplier-document rates never re-price older work (Boma, 20 Nov 2026: 'it shouldnt affect older works uptill yesterday'): a document-driven move is logged with its day; a project created before it keeps its figure on the Dashboard and in the editor without being asked; one created that day follows; a retyped figure asks as before", async () => {
+  const LS = await import("../src/lib/ratesLibrarySync.js"), RC = await import("../src/lib/rateChanges.js");
+  const key = LS.libraryPrices({ reinforcementEstablished: { squareMesh: { SL62: 58.54 } } })[0];
+  assert.equal(key.rowId, "squareMesh::SL62"); assert.equal(key.raw, 58.54);
+  const lib = (to, docs) => ({ reinforcementEstablished: { squareMesh: { SL62: to }, processedBar: { N12: 1.729 } }, rateDocs: docs });
+  const docRec = { id: "rd1", supplier: "AKZ", reference: "15011", appliedAt: "2026-11-20T01:00:00Z", keepOlder: true, keepBefore: "2026-11-20", rows: [{ id: "squareMesh::SL62", to: 58.54 }, { id: "processedBar::N12", to: 1.729 }] };
+  const rates = { [key.key]: { unitCost: 60.32 } };
+  const ups = LS.pendingRateUpdates(rates, lib(58.54, [docRec]));
+  const sl = ups.find((u) => u.key === key.key);
+  assert.deepEqual([sl.price, sl.from, sl.keepBefore, sl.doc], [58.54, 60.32, "2026-11-20", "AKZ — 15011"], "a figure the document set carries the document's day");
+  assert.ok(ups.find((u) => /PROCESSED BAR/.test(u.key) && u.keepBefore === "2026-11-20"), "processed bar is compared in the library's own $/m, whatever Quotes prices it in");
+  assert.equal(LS.pendingRateUpdates(rates, lib(59, [docRec])).find((u) => u.key === key.key).keepBefore, undefined, "a figure retyped in the library after the document is an ordinary change");
+  assert.equal(LS.pendingRateUpdates(rates, lib(58.54, [{ ...docRec, keepOlder: false }])).find((u) => u.key === key.key).keepBefore, undefined, "…and so is a document applied with the rule switched off");
+  const log = RC.recordRateChanges([], ups, "2026-11-20T02:00:00Z");
+  assert.equal(log.find((e) => e.key === key.key).keepBefore, "2026-11-20", "the log entry keeps the day");
+  const item = { id: "i1", qtys: { [key.key]: 28.8 } };
+  const older = { status: "Estimating", items: [item] }, live = { [key.key]: { unitCost: 58.54, sheetArea: 14.4 } };
+  const oldCreated = "2026-11-10T03:00:00Z", todayCreated = new Date(2026, 10, 20, 9, 0).toISOString();
+  assert.deepEqual(RC.autoKeepChanges(older, log, oldCreated).map((c) => [c.key, c.from, c.to]).filter((c) => c[0] === key.key), [[key.key, 60.32, 58.54]], "a project from before the day keeps the previous figure");
+  assert.equal(RC.promptRateChanges(older, log, oldCreated).length, 0, "…and is not asked");
+  assert.equal(RC.ratesKeepingOlderWork(older, live, log, oldCreated)[key.key].unitCost, 60.32, "the Dashboard prices it at the kept figure before the project is ever opened");
+  assert.equal(RC.ratesKeepingOlderWork(older, live, log, oldCreated)[key.key].sheetArea, 14.4, "…with the rest of the rate untouched");
+  assert.equal(RC.autoKeepChanges(older, log, todayCreated).length, 0, "a project created that day is today's work");
+  assert.equal(RC.ratesKeepingOlderWork(older, live, log, todayCreated), live, "…and prices at the new rate (the same object back: nothing to overlay)");
+  const patch = RC.autoKeepPatch(older, live, log, oldCreated, "2026-11-21T00:00:00Z");
+  assert.deepEqual([patch.ratesFrozen.reason, patch.ratesFrozen.rates[key.key].unitCost, patch.ratesFrozen.auto, patch.ratesAutoKept[key.key]], ["library", 60.32, "AKZ — 15011", "2026-11-20T02:00:00Z"], "opening the project records the kept figures as an ordinary library pin");
+  assert.equal(patch.ratesAck, undefined, "the ack is left alone, so other changes still ask");
+  const kept = { ...older, ...patch };
+  assert.equal(RC.pendingRateChanges(kept, log, oldCreated).length, 0, "once recorded it is settled — the effect cannot loop");
+  assert.deepEqual(RC.autoKeepPatch(kept, live, log, oldCreated), {}, "nothing more to write");
+  assert.equal(RC.keptRates(kept).length, patch.ratesFrozen && Object.keys(patch.ratesFrozen.rates).length, "'Previous rates kept' lists them");
+  const released = { ...kept, ...RC.releaseKeptRatesPatch(kept) };
+  assert.equal(released.ratesFrozen, null); assert.equal(RC.autoKeepChanges(released, log, oldCreated).length, 0, "released figures are not kept again");
+  const log2 = RC.recordRateChanges(log, [{ key: key.key, price: 61, from: 58.54, name: "SL62" }], "2026-12-01T00:00:00Z");
+  assert.deepEqual(RC.promptRateChanges(kept, log2, oldCreated).map((c) => [c.from, c.to]), [[60.32, 61]], "a later figure typed in the library asks, from the kept figure");
+  assert.equal(RC.autoKeepChanges(kept, log2, oldCreated).length, 0);
+  const frozen = { status: "Submitted", items: [item], ratesFrozen: { at: "x", status: "Submitted", rates: { [key.key]: { unitCost: 60.32 } } } };
+  assert.equal(RC.ratesKeepingOlderWork(frozen, frozen.ratesFrozen.rates, log, oldCreated), frozen.ratesFrozen.rates, "a finished project already holds its own rates");
+  assert.deepEqual(RC.firstWorkAck({ items: [] }, [item], "2026-11-22T00:00:00Z"), { ratesAck: { at: "2026-11-22T00:00:00Z", applied: [], kept: [] } }, "the first element of an empty project acknowledges every move before it — there was no work to keep");
+  assert.deepEqual(RC.firstWorkAck({ items: [item] }, [item, item]), {}); assert.deepEqual(RC.firstWorkAck({ items: [], ratesAck: { at: "x" } }, [item]), {});
+  assert.equal(RC.autoKeepChanges({ status: "Queued", items: [item], ratesAck: { at: "2026-11-22T00:00:00Z" } }, log, oldCreated).length, 0, "…so an old empty project that starts work today prices at today's rates");
+  const app = fs.readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
+  assert.match(app, /const rates = useMemo\(\(\) => ratesKeepingOlderWork\(quote, effectiveRates\(quote, liveRates\), rateChanges, project\.createdAt\)/, "the editor prices through the same reading");
+  assert.match(app, /staleBuild\(\)\) return;\n    if \(!autoKeepChanges\(quote, rateChanges, project\.createdAt\)\.length\) return;/, "the record is never written from a tab on an older build");
+  assert.match(fs.readFileSync(new URL("../src/components/Dashboard.jsx", import.meta.url), "utf8"), /ratesKeepingOlderWork\(quote, effectiveRates\(quote, liveRates\), rateChanges, createdAt\)/);
+});
 check("clearable notices (22 Oct 2026): a notice cleared at its signature stays cleared, comes back when its content changes, restore one or all; the browser store survives a bad value", () => {
   const N = NOTICES;
   const sig = N.noticeSig("a@1", null, "", ["b@2", "c@3"]); assert.equal(sig, "a@1|b@2|c@3");

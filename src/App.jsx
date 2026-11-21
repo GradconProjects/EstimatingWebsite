@@ -9,7 +9,7 @@ import { ELEMENT_TYPES, QUOTE_STATUSES, QUOTE_STATUS_STYLES, QUOTE_SCOPES, norma
 import { defaultRates, newElementItem, computeGrandTotal, uid, money, rateKey, isManualQuoteKey, SCOPE_KEYS, scopeLabel, elementMarginPatch, rowMarginPatch, projectMarginPatch } from "./lib/costing.js";
 import { pendingRateUpdates, readLibraryState, readLastSynced, writeLastSynced, RATES_LIBRARY_KEY } from "./lib/ratesLibrarySync.js";
 import { effectiveRates, statusChangePatch, needsFreeze, freezeRates, frozenRateDrift, hasFrozenRates, isRatesLocked } from "./lib/rateFreeze.js";
-import { RATE_CHANGES_KEY, recordRateChanges, pendingRateChanges, elementRateChanges, decideRateChangesPatch, releaseKeptRatesPatch } from "./lib/rateChanges.js";
+import { RATE_CHANGES_KEY, recordRateChanges, promptRateChanges, autoKeepChanges, autoKeepPatch, ratesKeepingOlderWork, firstWorkAck, elementRateChanges, decideRateChangesPatch, releaseKeptRatesPatch } from "./lib/rateChanges.js";
 import RateChangesPrompt, { KeptRatesBanner } from "./components/RateChangesPrompt.jsx";
 import CloudStorageView from "./components/CloudStorageView.jsx";
 import { AddressOptions } from "./components/AddressNaming.jsx";
@@ -625,7 +625,10 @@ function ProjectEditor({ project, allProjects, rates: liveRates, setRates: setLi
   // to the live rates like any open project; `rates` lays its kept figures
   // over the live ones through effectiveRates.
   const locked = isRatesLocked(quote.status) && hasFrozenRates(quote);
-  const rates = useMemo(() => effectiveRates(quote, liveRates), [quote, liveRates]);
+  // Older work keeps its figures (lib/rateChanges.js, 20 Nov 2026): a rate a supplier document moved in the
+  // Rates Library never re-prices a project that existed before the day it was applied — read here at once,
+  // and recorded on the project as kept figures by the effect below.
+  const rates = useMemo(() => ratesKeepingOlderWork(quote, effectiveRates(quote, liveRates), rateChanges, project.createdAt), [quote, liveRates, rateChanges, project.createdAt]);
   const setRates = (updater) => {
     if (!locked) { setLiveRates(updater); return; }
     setQuote((q) => {
@@ -650,6 +653,14 @@ function ProjectEditor({ project, allProjects, rates: liveRates, setRates: setLi
     if (needsFreeze(quote)) setQuoteStored((q) => (needsFreeze(q) ? { ...q, ratesFrozen: freezeRates(effectiveRates(q, liveRates), q.status) } : q));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quoteStatus, ratesStatus, quote.status]);
+  // The kept figures are written once per document move (autoKeepPatch settles each key, so this cannot loop);
+  // never from a tab on an older build, and never before the row and the rates have loaded.
+  useEffect(() => {
+    if (quoteStatus === "loading" || ratesStatus === "loading" || ratesStatus === "syncing" || staleBuild()) return;
+    if (!autoKeepChanges(quote, rateChanges, project.createdAt).length) return;
+    setQuoteStored((q) => ({ ...q, ...autoKeepPatch(q, liveRates, rateChanges, project.createdAt) }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quoteStatus, ratesStatus, rateChanges, quote.ratesAutoKept, quote.ratesAck, quote.status, quote.items.length, project.createdAt]);
   // The LIVE handover prefill (lib/handover.js; Grady, 13 Oct 2026: "i want
   // the prefill to happen realtime and automatically as the values are
   // entered"): on every change to the elements — a quantity typed, an element
@@ -714,7 +725,7 @@ function ProjectEditor({ project, allProjects, rates: liveRates, setRates: setLi
   const [checklistOpen, setChecklistOpen] = useState(false); // the tender workflow checklist — rolled up on every open (lib/tenderChecklist.js)
   // Rates Library changes this project still has to decide (lib/rateChanges.js), and
   // which element each one touches — the cards name theirs (Grady, 22 Oct 2026).
-  const pendingChanges = useMemo(() => pendingRateChanges(quote, rateChanges, project.createdAt), [quote, rateChanges, project.createdAt]);
+  const pendingChanges = useMemo(() => promptRateChanges(quote, rateChanges, project.createdAt), [quote, rateChanges, project.createdAt]);
   const changesByElement = useMemo(() => elementRateChanges(quote, liveRates, pendingChanges), [quote, liveRates, pendingChanges]);
   const pickDriveFile = (accept) => new Promise((resolve) => setDrive({ mode: "pick", accept, resolve }));
   useEffect(() => {
@@ -937,7 +948,11 @@ function ProjectEditor({ project, allProjects, rates: liveRates, setRates: setLi
 
   const items = quote.items || [];
   const setItems = (updater) =>
-    setQuote((q) => ({ ...q, items: typeof updater === "function" ? updater(q.items) : updater }));
+    setQuote((q) => {
+      const items = typeof updater === "function" ? updater(q.items) : updater;
+      // the first element of an empty project acknowledges every library move before it (there was no work to keep)
+      return { ...q, items, ...firstWorkAck(q, items) };
+    });
 
   // Packages within the project (lib/packages.js, 4 Nov 2026): a new element
   // joins the package chosen on the Add bar (the first one until chosen).

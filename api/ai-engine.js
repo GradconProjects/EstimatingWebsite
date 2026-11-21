@@ -37,6 +37,7 @@ import { tenderWordingPrompt, parseTenderWording, tenderItemsPrompt, parseTender
 import { addressPrompt, parseAddressReply } from "../src/lib/projectNaming.js";
 import { marginAdvicePrompt, parseMarginAdvice } from "../src/lib/marginAdvice.js";
 import { scopePrompt, parseScopeResult, scopeRequestError, scopeFileKind, scopeAlreadyList, SCOPE_RESULT_KEYS } from "../src/lib/scopeFinder.js";
+import { rateDocPrompt, parseRateDocs, rateDocRequestError, rateDocRows, RATE_DOC_RESULT_KEYS } from "../src/lib/rateDocs.js";
 
 export const config = { maxDuration: 300 };
 
@@ -277,6 +278,39 @@ export async function runAiJob(body, env = process.env) {
       return { status: e.status && e.status >= 400 && e.status < 600 ? e.status : 502, body: { error: e.message, detail: e.detail || null, provider: id } };
     }
   }
+  if (action === "rates") {
+    // The Rates Library's supplier documents: a steel quotation, a concrete price list, a rate email → every priced
+    // line as written, with the library row it prices when that is plain. The reader LISTS; the page maps, converts
+    // and applies only what a person ticks (portal/rates-docs.js).
+    const rFiles = Array.isArray(body.files) ? body.files : [];
+    const text = String(body.text || "");
+    const rRows = rateDocRows(body.rows);
+    const bad = rateDocRequestError({ files: rFiles, text, rows: rRows });
+    if (bad) return { status: 400, body: { error: bad } };
+    const id = resolveProviderId(provider, env);
+    if (!id) return { status: 503, body: { error: "No AI provider is configured — set ANTHROPIC_API_KEY or OPENAI_API_KEY in the Vercel project's Environment Variables." } };
+    const prompt = rateDocPrompt({ rows: rRows, hasDocuments: rFiles.length > 0, text, today: String(body.today || "").slice(0, 10) });
+    let r;
+    try {
+      r = rFiles.length
+        ? await callDocuments(id, { system: SYSTEM, prompt, documents: rFiles.map((f) => ({ url: f.url, name: f.name, kind: scopeFileKind(f.url) })), maxTokens: 16000, env })
+        : await callText(id, { system: SYSTEM, prompt, maxTokens: 16000, timeoutMs: 280000, env });
+    } catch (e) {
+      const st = providerStatus(env).find((p) => p.id === id);
+      return { status: e.status && e.status >= 400 && e.status < 600 ? e.status : 502, body: { error: e.message, detail: e.detail || null, provider: id, model: st ? st.model : null } };
+    }
+    let raw = parseJsonLoose(r.text), partial = null;
+    if (!raw) {
+      const got = salvageArrays(r.text, RATE_DOC_RESULT_KEYS);
+      if (got && (got.lines || []).length) {
+        raw = got;
+        partial = { reason: r.truncated ? "The reply was cut off at the model's output limit" : "The reply was not a complete JSON object", kept: (got.lines || []).length, advice: "The lines read before the cut-off are shown — check the document's last lines by eye, or read it again on its own." };
+      }
+    }
+    const result = parseRateDocs(raw, { rows: rRows });
+    if (!result) return { status: 502, body: { error: `${id} replied without a readable list of rates`, provider: r.provider, model: r.model, raw: String(r.text || "").slice(0, 2000) } };
+    return { status: 200, body: { result, provider: r.provider, model: r.model, latencyMs: r.latencyMs, usage: r.usage || null, truncated: !!r.truncated, partial } };
+  }
   if (action === "scope") {
     // The Estimates Scope finder: drawings, screenshots, pasted emails and messages → the scope items with their
     // specifications and sources, and what could be missing. Files are optional (emails alone can be read).
@@ -314,7 +348,7 @@ export async function runAiJob(body, env = process.env) {
     return { status: 200, body: { result, more: result.more === true, provider: r.provider, model: r.model, latencyMs: r.latencyMs, usage: r.usage || null, truncated: !!r.truncated, partial } };
   }
   const DOC_ACTIONS = { takeoff: null, spec: specPrompt, geotech: geotechPrompt, contract: contractPrompt };
-  if (!(action in DOC_ACTIONS)) return { status: 400, body: { error: 'Body must carry action "takeoff", "spec", "geotech", "contract", "scope", "qa", "benchmarks", "margin" or "tender-wording"' } };
+  if (!(action in DOC_ACTIONS)) return { status: 400, body: { error: 'Body must carry action "takeoff", "spec", "geotech", "contract", "scope", "rates", "qa", "benchmarks", "margin" or "tender-wording"' } };
   const bad = validFiles(files);
   if (bad) return { status: 400, body: { error: bad } };
   if (action === "takeoff" && (!Array.isArray(types) || types.length === 0 || types.length > MAX_TYPES)) return { status: 400, body: { error: "takeoff needs the element type list (types: [{id, label, group}])" } };

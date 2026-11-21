@@ -196,6 +196,15 @@ let estimatesHtml = fs.readFileSync(estimatesPath, "utf8");
 }
 let costPlannerHtml = fs.readFileSync(costPlannerPath, "utf8");
 let ratesLibraryHtml = fs.readFileSync(ratesLibraryPath, "utf8");
+{
+  // rates-docs.js: the supplier-document logic (row list, mapping, apply,
+  // validity alarm) — the same pure-module contract as estimates-scope.js:
+  // inlined here, run in Node by scripts/verify.mjs.
+  const rdTag = /<script src="rates-docs\.js"><\/script>/;
+  if (!rdTag.test(ratesLibraryHtml)) throw new Error("rates-library.html no longer loads rates-docs.js — inline step out of date");
+  const rdSrc = fs.readFileSync(path.join(root, "portal", "rates-docs.js"), "utf8").replace(/<\/script/gi, "<\\/script");
+  ratesLibraryHtml = ratesLibraryHtml.replace(rdTag, () => `<script>${rdSrc}</script>`);
+}
 let aiEngineHtml = fs.readFileSync(aiEnginePath, "utf8").replaceAll("__BUILD_STAMP__", buildStamp() + (process.env.PORTAL_STAMP_SUFFIX || ""));
 if (!/const AI_TYPES = \[/.test(aiEngineHtml)) throw new Error("ai-engine.html has no AI_TYPES mirror — the AI Engine cannot propose element types");
 // The Register (tile 08) loads its built-in seed from portal/register-seed.js, inlined here the

@@ -108,11 +108,17 @@ export function KeptRatesBanner({ quote, liveRates, onRelease, cleared, onClear 
   // cleared until a kept figure or its library figure changes (lib/notices.js); the rates stay kept
   const sig = noticeSig(kept.map((k) => `${k.key}@${k.unitCost}@${liveRates && liveRates[k.key] ? liveRates[k.key].unitCost : ""}`));
   if (isNoticeCleared(cleared, NOTICE_IDS.keptRates, sig)) return null;
+  // a long list (a whole steel quotation kept for an older project) folds; a short one stays open
+  const Wrap = kept.length > 8 ? "details" : "div";
+  const auto = quote && quote.ratesFrozen && quote.ratesFrozen.auto;
   return (
     <div className="border border-blue-200 bg-blue-50 rounded-lg px-3 py-2 text-[12px] text-blue-950" role="status" data-testid="kept-rates-banner">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-[16rem] flex-1">
           <b>Previous rates kept</b> — this project prices {kept.length} rate{kept.length === 1 ? "" : "s"} at the figure{kept.length === 1 ? "" : "s"} it was estimated with; every other rate follows the Rates Library.
+          {auto && <span data-testid="kept-rates-auto"> Kept on its own: this project existed before the supplier's new rates{typeof auto === "string" && auto ? ` (${auto})` : ""} were applied, so its work stays at the figures it was priced on.</span>}
+          <Wrap>
+          {kept.length > 8 && <summary className="cursor-pointer underline text-[11.5px] mt-1" data-testid="kept-rates-show">Show the {kept.length} kept rates</summary>}
           <table className="mt-1 text-[11.5px]">
             <tbody>
               {kept.map((k) => {
@@ -128,6 +134,7 @@ export function KeptRatesBanner({ quote, liveRates, onRelease, cleared, onClear 
               })}
             </tbody>
           </table>
+          </Wrap>
         </div>
         <div className="flex items-start gap-2 flex-none">
         <button type="button" onClick={() => onRelease()} className="flex-none px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-blue-900 hover:bg-blue-800 text-white" data-testid="kept-rates-release-all">

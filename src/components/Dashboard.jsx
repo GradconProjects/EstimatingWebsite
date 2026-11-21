@@ -11,7 +11,7 @@ import { effectiveRates, statusChangePatch, completedDay } from "../lib/rateFree
 import { PROJECT_SORTS, sortProjects, defaultSortDir, preferredSortKey } from "../lib/projectSort.js";
 import RateValidityBanner from "./RateValidityBanner.jsx";
 import { clearNotice, restoreNotices, clearedCount, readBrowserNotices, writeBrowserNotices } from "../lib/notices.js";
-import { pendingRateChanges } from "../lib/rateChanges.js";
+import { promptRateChanges, ratesKeepingOlderWork } from "../lib/rateChanges.js";
 import { RenameProjectsModal } from "./AddressNaming.jsx";
 import { applyNamePatch, isConventionName } from "../lib/projectNaming.js";
 
@@ -42,11 +42,12 @@ function SortTh({ sortKey, label, align = "left", sort, onSort, className = "" }
  * the portfolio totals) needs. Mirrors the same costing calls
  * QuoteSummary.jsx uses so the figures always agree with what you'd see
  * inside the project itself. */
-function summarizeQuote(quote, liveRates) {
+function summarizeQuote(quote, liveRates, rateChanges, createdAt) {
   quote = quote || {};
   const items = quote.items || [];
-  // A finished project costs off its own pinned rates, exactly as its editor does (lib/rateFreeze.js).
-  const rates = effectiveRates(quote, liveRates);
+  // A finished project costs off its own pinned rates, exactly as its editor does (lib/rateFreeze.js); a project
+  // older than a supplier document's rates keeps the figures it was priced on (lib/rateChanges.js, 20 Nov 2026).
+  const rates = ratesKeepingOlderWork(quote, effectiveRates(quote, liveRates), rateChanges, createdAt);
   const directCost = computeGrandTotal(items, rates, quote.scope);
   const { subtotal, rows } = computeMarginLadder(
     directCost,
@@ -186,8 +187,8 @@ export default function Dashboard({ projects, rates, rateChanges, onOpen, onCrea
   }, [projects, reloadTick]);
 
   const summaries = useMemo(
-    () => projects.filter((p) => !orphanKeys.has(p.storageKey)).map((p) => ({ project: p, ...summarizeQuote(quotesByKey[p.storageKey], rates) })),
-    [projects, quotesByKey, rates, orphanKeys]
+    () => projects.filter((p) => !orphanKeys.has(p.storageKey)).map((p) => ({ project: p, ...summarizeQuote(quotesByKey[p.storageKey], rates, rateChanges, p.createdAt) })),
+    [projects, quotesByKey, rates, orphanKeys, rateChanges]
   );
 
   // Sort: the ONE rule in lib/projectSort.js (shared with Project Management
@@ -384,7 +385,7 @@ export default function Dashboard({ projects, rates, rateChanges, onOpen, onCrea
       {(() => {
         const waiting = projects
           .map((p) => ({ p, q: quotesByKey[p.storageKey] }))
-          .filter(({ p, q }) => q && pendingRateChanges(q, rateChanges, p.createdAt).length > 0);
+          .filter(({ p, q }) => q && promptRateChanges(q, rateChanges, p.createdAt).length > 0);
         if (!waiting.length) return null;
         return (
           <div className="border border-orange-300 bg-orange-50 rounded-lg px-3 py-2 text-[12px] text-neutral-900 flex flex-wrap items-center gap-2" role="status" data-testid="rate-changes-waiting">

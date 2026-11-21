@@ -36,7 +36,8 @@ export function recordRateChanges(log, updates, at = new Date().toISOString()) {
     if (Number(u.from) === Number(u.price)) return;
     const dup = base.concat(fresh).some((e) => e.key === u.key && Number(e.from) === Number(u.from) && Number(e.to) === Number(u.price) && Math.abs(Date.parse(e.at) - Date.parse(at)) < 10 * 60 * 1000);
     if (dup) return;
-    fresh.push({ at, key: u.key, name: u.name || u.key, from: Number(u.from), to: Number(u.price) });
+    // `keepBefore` (+ the document's name) rides on a move a supplier document made: projects created before that day keep `from`
+    fresh.push({ at, key: u.key, name: u.name || u.key, from: Number(u.from), to: Number(u.price), ...(u.keepBefore ? { keepBefore: u.keepBefore, doc: u.doc || "" } : {}) });
   });
   if (!fresh.length) return base;
   const next = base.concat(fresh);
@@ -79,9 +80,66 @@ export function pendingRateChanges(quote, log, createdAt) {
     const cur = byKey.get(e.key);
     if (!cur) byKey.set(e.key, { key: e.key, name: e.name || e.key, from: e.from, to: e.to, at: e.at });
     else { cur.to = e.to; cur.at = e.at; }
+    // the LATEST move decides whether older work keeps its figure: a figure retyped in the library after a document is an ordinary change
+    const c = byKey.get(e.key);
+    if (e.keepBefore) { c.keepBefore = e.keepBefore; c.doc = e.doc || ""; } else { delete c.keepBefore; delete c.doc; }
   });
   byKey.forEach((c) => { if (kept[c.key] && kept[c.key].unitCost != null) c.from = kept[c.key].unitCost; });
-  return [...byKey.values()].filter((c) => Number(c.from) !== Number(c.to));
+  // a change this project already kept on its own (autoKeepPatch) is settled until the library moves that key again
+  const autoKept = (quote.ratesAutoKept && typeof quote.ratesAutoKept === "object") ? quote.ratesAutoKept : {};
+  return [...byKey.values()].filter((c) => Number(c.from) !== Number(c.to) && !(autoKept[c.key] && Date.parse(autoKept[c.key]) >= Date.parse(c.at)));
+}
+
+/* ---------- older work keeps its figures (Boma, 20 Nov 2026) ----------
+ * "it shouldnt affect older works uptill yesterday": a rate a supplier
+ * DOCUMENT set in the Rates Library (portal/rates-docs.js, `keepOlder`)
+ * carries `keepBefore` — the local day it was applied. A project created
+ * BEFORE that day keeps the figure it was priced on, without being asked:
+ * the Dashboard reads it that way (`ratesKeepingOlderWork`) and the editor
+ * records it as kept figures the first time the project is opened
+ * (`autoKeepPatch` — the ordinary library pin, so "Previous rates kept"
+ * lists them and releases them). A project created on or after that day
+ * follows the new rate like any other change. */
+const dayStartMs = (iso) => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || "")); return m ? new Date(+m[1], +m[2] - 1, +m[3]).getTime() : NaN; };
+/** The pending changes this project keeps on its own: document-driven, and the project older than the document's day. */
+export function autoKeepChanges(quote, log, createdAt) {
+  const created = Date.parse(createdAt || "");
+  const born = Number.isFinite(created) ? created : 0;       // an unknown creation day is older work
+  return pendingRateChanges(quote, log, createdAt).filter((c) => c.keepBefore && born < dayStartMs(c.keepBefore));
+}
+/** The pending changes to ASK about — everything the project does not keep on its own. */
+export function promptRateChanges(quote, log, createdAt) {
+  const auto = new Set(autoKeepChanges(quote, log, createdAt).map((c) => c.key));
+  const all = pendingRateChanges(quote, log, createdAt);
+  return auto.size ? all.filter((c) => !auto.has(c.key)) : all;
+}
+/** The rates an older project prices at before its kept figures are recorded: `rates` with each auto-kept key back at its previous figure. Returns `rates` itself when nothing applies. */
+export function ratesKeepingOlderWork(quote, rates, log, createdAt) {
+  const auto = autoKeepChanges(quote, log, createdAt);
+  if (!auto.length) return rates;
+  const out = { ...(rates || {}) };
+  auto.forEach((c) => { out[c.key] = { ...(out[c.key] || {}), unitCost: c.from }; });
+  return out;
+}
+/** Records the auto-kept figures on the project: the library pin gains the keys, and `ratesAutoKept[key]` the change they settle — the ack is left alone, so other changes still ask. {} when nothing applies. */
+export function autoKeepPatch(quote, liveRates, log, createdAt, at = new Date().toISOString()) {
+  const auto = autoKeepChanges(quote, log, createdAt);
+  if (!auto.length) return {};
+  const rates = { ...(isLibraryPin(quote) ? quote.ratesFrozen.rates : {}) };
+  const names = { ...((isLibraryPin(quote) && quote.ratesFrozen.names) || {}) };
+  const settled = { ...((quote && quote.ratesAutoKept) || {}) };
+  auto.forEach((c) => {
+    rates[c.key] = { ...((liveRates || {})[c.key] || {}), unitCost: c.from };
+    names[c.key] = c.name || c.key;
+    settled[c.key] = c.at;
+  });
+  return { ratesFrozen: { at, status: quote && quote.status, reason: "library", rates, names, auto: [...new Set(auto.map((c) => c.doc).filter(Boolean))].join("; ") || true }, ratesAutoKept: settled };
+}
+/** The first element of an empty project acknowledges every library move before it: there was no work to keep or ask about. */
+export function firstWorkAck(quote, nextItems, at = new Date().toISOString()) {
+  const had = quote && Array.isArray(quote.items) && quote.items.length > 0;
+  const has = Array.isArray(nextItems) && nextItems.length > 0;
+  return !had && has && !(quote && quote.ratesAck) ? { ratesAck: { at, applied: [], kept: [] } } : {};
 }
 
 /** The project's rates with each change's figure chosen: `to` for a key in
