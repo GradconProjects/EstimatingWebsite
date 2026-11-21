@@ -5884,7 +5884,7 @@ check("Compile assumptions (21 Nov 2026): what was measured comes off the takeof
   assert.equal(EB.basisEntryText({ kind: "assumption", text: " Net  quantities. " }), "Net quantities.");
   const mine = [{ id: "a1", text: "Access via the rear lane", tenderText: "Access is assumed via the rear lane.", tenderSource: "Access via the rear lane" }];
   const r1 = EB.mergeBasisAssumptions(mine, payload);
-  assert.equal(r1.added, payload.lines.length); assert.equal(r1.updated + r1.removed + r1.kept + r1.unchanged, 0);
+  assert.equal(r1.added, payload.lines.length); assert.equal(r1.updated + r1.left + r1.kept + r1.unchanged, 0);
   assert.deepEqual(r1.assumptions[0], mine[0], "an assumption typed in Quotes keeps its place, its text and its tender wording");
   assert.ok(r1.assumptions.slice(1).every((a) => a.source === "estimates" && a.id.startsWith("est:") && a.pushedText === a.text && a.takeoffId === "t1"));
   const r1b = EB.mergeBasisAssumptions(r1.assumptions, payload);
@@ -5894,18 +5894,39 @@ check("Compile assumptions (21 Nov 2026): what was measured comes off the takeof
   const inQuotes = r1.assumptions.map((a) => (a.id === totalsEntry.id ? { ...a, text: "Measured: totals are indicative only." } : a.id === netEntry.id ? { ...a, tenderText: "Our price is based on net measured quantities.", tenderSource: a.text } : a));
   const p2 = { ...payload, at: "2026-11-21T04:00:00Z", lines: payload.lines.filter((l) => !/Waterproofing/.test(l.text)).map((l) => (/^SF1 \(/.test(l.text) ? { ...l, text: "SF1 (Strip Footing) — 72 lm; N25 concrete 10.8 m³." } : /^Totals/.test(l.text) ? { ...l, text: "Totals as measured, net — concrete 53.3 m³." } : l)) };
   const r2 = EB.mergeBasisAssumptions(inQuotes, p2);
-  assert.deepEqual([r2.added, r2.updated, r2.removed, r2.kept], [0, 1, 1, 1]);
+  assert.deepEqual([r2.added, r2.updated, r2.left, r2.kept], [0, 1, 1, 1]);
   assert.equal(r2.assumptions.find((a) => a.id === sfEntry.id).text, "Measured: SF1 (Strip Footing) — 72 lm; N25 concrete 10.8 m³.", "a pushed line follows the takeoff");
   assert.equal(r2.assumptions.find((a) => a.id === totalsEntry.id).text, "Measured: totals are indicative only.", "a line retyped in Quotes stands");
-  assert.ok(!r2.assumptions.some((a) => /Waterproofing/.test(a.text)), "a line no longer sent leaves the project");
+  assert.ok(r2.assumptions.some((a) => /Waterproofing/.test(a.text)), "a line no longer sent STAYS — a push never deletes what is already there (Boma, 21 Nov 2026)");
+  assert.equal(r2.assumptions.length, inQuotes.length, "…so the list never gets shorter");
+  assert.deepEqual(r2.assumptions.map((a) => a.id), inQuotes.map((a) => a.id), "…and every entry keeps its place");
   assert.equal(r2.assumptions.find((a) => a.id === netEntry.id).tenderText, "Our price is based on net measured quantities.", "accepted tender wording is kept");
   assert.equal(new Set(r2.assumptions.map((a) => a.id)).size, r2.assumptions.length);
-  // a retyped line that is no longer sent becomes the estimator's own
-  const r3 = EB.mergeBasisAssumptions(r2.assumptions, { ...p2, lines: p2.lines.filter((l) => !/^Totals/.test(l.text)) });
-  const own = r3.assumptions.find((a) => a.text === "Measured: totals are indicative only.");
-  assert.ok(own && !own.source && !own.pushedText && r3.kept === 1 && r3.removed === 0);
-  assert.equal(EB.mergeBasisAssumptions(r2.assumptions, { ...p2, lines: [] }).assumptions.filter((a) => a.source === "estimates").length, 0, "an empty push clears what was pushed — and nothing else");
-  assert.match(EB.basisResultText(r2), /^1 updated, 1 removed, \d+ unchanged, 1 kept as retyped here$/);
+  const empty = EB.mergeBasisAssumptions(r2.assumptions, { ...p2, lines: [] });
+  assert.ok(empty.assumptions.length === r2.assumptions.length && empty.left === r2.assumptions.length - 1 && empty.added === 0, "an empty push removes nothing");
+  // a line the list has never held goes on the END, after everything already there
+  const r3 = EB.mergeBasisAssumptions(r2.assumptions, { ...p2, lines: [...p2.lines, { id: "bx_new", kind: "exclusion", text: "Traffic management" }] });
+  assert.ok(r3.added === 1 && r3.assumptions[r3.assumptions.length - 1].text === "Excluded: Traffic management");
+  assert.match(EB.basisResultText(r2), /^1 updated, \d+ unchanged, 1 kept as retyped here, 1 pushed earlier left in place$/);
+  // WHERE it goes: a project with packages is always asked; the write is one list of the quote, nothing else
+  const packed = { projectName: "57 Back Beach Road", assumptions: [{ id: "pa1", text: "Ligatures to raft beams not included" }],
+    packages: [{ id: "pkA", name: "MAIN BUILDING", assumptions: [{ id: "ka1", text: "Kooltherm K3 adopted" }] }, { id: "pkB", name: "EXTERNAL WORKS", assumptions: [{ id: "kb1", text: "Sealers not included" }] }] };
+  assert.ok(EB.basisNeedsDestination(packed) && !EB.basisNeedsDestination({ assumptions: [] }) && !EB.basisNeedsDestination({ packages: [] }));
+  assert.deepEqual(EB.basisDestinations(packed).map((d) => [d.id, d.kind, d.count]), [["pkA", "package", 1], ["pkB", "package", 1], ["", "project", 1]], "each package, then the project-wide list");
+  assert.equal(EB.basisLastDestination(packed, payload), null, "a first push suggests nothing");
+  const toPkg = EB.applyBasisToQuote(packed, payload, "pkA");
+  assert.deepEqual(Object.keys(toPkg.patch), ["packages"], "a push to a package writes the packages only");
+  const afterPkg = { ...packed, ...toPkg.patch };
+  assert.deepEqual(afterPkg.packages[0].assumptions[0], packed.packages[0].assumptions[0], "the package's own assumption is first and untouched");
+  assert.equal(afterPkg.packages[0].assumptions.length, 1 + payload.lines.length);
+  assert.deepEqual(afterPkg.packages[1], packed.packages[1], "the other package is not touched"); assert.deepEqual(afterPkg.assumptions, packed.assumptions, "nor the project-wide list");
+  assert.deepEqual(toPkg.where, { packageId: "pkA", name: "MAIN BUILDING" });
+  assert.equal(EB.basisLastDestination(afterPkg, payload), "pkA", "the next push suggests where the last one went — and still asks");
+  const toProject = EB.applyBasisToQuote(afterPkg, payload, EB.BASIS_PROJECT_WIDE);
+  assert.deepEqual(Object.keys(toProject.patch), ["assumptions"]);
+  assert.ok(toProject.patch.assumptions[0].id === "pa1" && toProject.patch.assumptions.length === 1 + payload.lines.length && toProject.result.added === payload.lines.length, "another destination only ADDS there — the package keeps its lines");
+  assert.equal(EB.applyBasisToQuote(packed, payload, "gone"), null, "a package that is not on the quote is never written");
+  assert.equal(EB.applyBasisToQuote(packed, { lines: "x" }, "pkA"), null);
   // which project: the takeoff's own published project, else ONE of that name; anything else is asked
   const projects = [{ id: "p1", name: "12 Beach Road, Rye VIC 3941", nameSource: "12 Beach Road", estimateSessionId: null }, { id: "p2", name: "5 Other Street", estimateSessionId: "S1" }, { id: "p3", name: "12 beach road", estimateSessionId: null }];
   assert.equal(EB.matchBasisProject(payload, projects).match.id, "p2", "the project this takeoff was published to wins");
@@ -5930,9 +5951,19 @@ check("Compile assumptions (21 Nov 2026): what was measured comes off the takeof
   assert.equal((blk.match(/localStorage\.setItem\(BASIS_HANDOFF_KEY/g) || []).length, 1, "ONE hand-off write");
   assert.match(blk, /function basisTextChanged\(t\)\{[\s\S]*?basisSave\(\);/, "a reworded line is saved without repainting the panel under the click");
   const app = fs.readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
-  assert.match(app, /const result = mergeBasisAssumptions\(q\.assumptions, payload\);\s*\n\s*const stamp = await patchQuoteFields\(target\.storageKey, \{ assumptions: result\.assumptions \}\);/, "Quotes lays the push over the project's assumptions and patches ONLY that field");
   assert.match(app, /if \(!found\.match\) \{\s*\n\s*setBasisPush\(\{ stage: "choose"/, "no single project: the estimator picks");
-  assert.match(app, /if \(!q \|\| failed\.includes\(target\.storageKey\)\)/, "a project that could not be read is never written from nothing");
+  // the write is the OPEN EDITOR's own (21 Nov 2026: a patch behind the editor was overwritten by its next save and 29 lines were lost)
+  const recv = app.slice(app.indexOf("const receiveBasis = async"), app.indexOf("const dropBasisHandoff"));
+  assert.ok(recv.length > 300 && !/patchQuoteFields|writeQuote|mergeBasisAssumptions|applyBasisToQuote/.test(recv), "the App level only finds the project and opens it — it never writes the row behind the editor");
+  assert.match(recv, /setBasisPush\(\{ stage: "apply", payload, projectId: found\.match\.id, projectName: found\.match\.name \}\);\s*\n\s*setActiveId\(found\.match\.id\);/);
+  assert.ok(!/patchQuoteFields/.test(app.slice(0, app.indexOf("function ProjectEditor("))), "…and no other App-level path patches a quote for a push");
+  assert.match(app, /const basisReady = !!basisPush && quoteLoaded && quoteStatus !== "loading";/, "the editor waits for the project's row before it applies anything");
+  assert.match(app, /const basisAsk = basisReady && basisNeedsDestination\(quote\) && basisDoneRef\.current !== basisPush\.payload\.at;/, "a project with packages is ALWAYS asked which package");
+  assert.match(app, /setQuote\(\(q\) => \{ const o = applyBasisToQuote\(q, payload, packageId\); return o \? \{ \.\.\.q, \.\.\.o\.patch \} : q; \}\);/, "the lines are written through the editor's own setQuote, on the state as it stands");
+  assert.match(app, /if \(basisReady && !basisNeedsDestination\(quote\)\) applyBasis\(BASIS_PROJECT_WIDE\);/, "a plain project has the one list and is not asked");
+  assert.match(app, /if \(packageId\) openPkg\(packageId\); else setProjGeoOpen\(true\);/, "the destination is unfolded so the lines are in view");
+  const bn = fs.readFileSync(new URL("../src/components/BasisPushNotice.jsx", import.meta.url), "utf8");
+  assert.match(bn, /data-testid="basis-push-where"/); assert.match(bn, /disabled=\{value === null\} onClick=\{\(\) => onWhere\(value\)\}/, "nothing is added until a destination is picked");
   const pg = fs.readFileSync(new URL("../src/components/ProjectGeometryPanel.jsx", import.meta.url), "utf8");
   assert.match(pg, /a\.source === "estimates" && \(\s*\n\s*<div[^>]*data-testid="assumption-from-estimates"/, "the Assumptions list marks a pushed line");
 });

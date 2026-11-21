@@ -3257,45 +3257,82 @@ actual take off". Rules:
    compute when absent). A reworded line is saved WITHOUT repainting
    (`basisTextChanged`) — the change event fires on blur, and a repaint there
    would replace the button being clicked.
-4. **The push is ONE hand-off, and Quotes UPDATES — never doubles**
-   (`src/lib/estimateBasis.js`, pure): `localStorage["gradcon-estimate-basis"]`
-   = `{takeoffId, estimateSessionId, projectName, at, by, lines: [{id, kind,
-   text}]}` (the TICKED lines) + `gradcon:open-app` quotes. `App.jsx`
-   (`receiveBasis`, on mount and on the storage event) finds the project —
-   `matchBasisProject`: the takeoff's own published project
-   (`importMeta.estimateSessionId`), else the ONE project of that name (as it
-   reads now or as first typed, `nameSource`); none or several →
-   `BasisPushNotice` asks (`basis-push-choose` / `-select` / `-add` /
-   `-discard`), **never a guess**, and the hand-off waits in localStorage
-   until applied or discarded. `mergeBasisAssumptions(existing, payload)`:
-   each line becomes an entry of `quote.assumptions` — `{id: "est:<line id>",
-   text, source: "estimates", kind, pushedText, takeoffId, pushedAt}`, the
-   text prefixed "Measured: " / "Excluded: " (`basisEntryText`; the tender
-   reads one flat list) — placed AFTER the assumptions typed in Quotes, which
-   are never touched. A second push: a line still sent follows the new
-   wording unless it was RETYPED in Quotes (`text !== pushedText` — it
-   stands); a line no longer sent is removed, unless retyped — then it
-   becomes the estimator's own; accepted tender wording is kept (the existing
-   "original changed since" flag says when to redo it). The write is
-   `patchQuoteFields(storageKey, {assumptions})` — that one field — from the
-   project's fresh summary; a project that cannot be read is an error band
-   (`basis-push-error`, Try again / Discard), never a write from nothing. The
-   project then opens with `basis-push-note` ("N lines from the takeoff — a
-   added, u updated, r removed …"; `gradcon-estimate-basis-result` carries the
-   notice across the shell's reload of the Quotes frame), and the Assumptions
-   list under Project Geometry marks each pushed line "from Estimates ·
-   measured / assumption / exclusion" (`assumption-from-estimates`). From
-   there the lines flow to the quote report and both Tender Notes like any
-   assumption.
+4. **The push is ONE hand-off; Quotes asks WHERE, writes through the open
+   editor, and only adds and updates** (`src/lib/estimateBasis.js`, pure):
+   `localStorage["gradcon-estimate-basis"]` = `{takeoffId, estimateSessionId,
+   projectName, at, by, lines: [{id, kind, text}]}` (the TICKED lines) +
+   `gradcon:open-app` quotes. Three rules, each from the first push on a real
+   project (57 Back Beach Road, 21 Nov 2026 — "29 added" was shown and Boma
+   could not find a line: "i pushed and they dont exist. always ask what
+   package to send it to and dont delete already existing ones"):
+   - **The write is the OPEN EDITOR's own.** The first build patched the row
+     from the App level (`patchQuoteFields`) while `ProjectEditor`, restored on
+     the same load of the Quotes frame, already held the project — its next
+     save put its older copy back and all 29 lines were gone within the minute
+     (the live row was read afterwards: none left anywhere, every assumption
+     there was typed by hand — nothing was removed by hand). Now `App.jsx`
+     (`receiveBasis`, on mount and on the storage event) ONLY finds the
+     project — `matchBasisProject`: the takeoff's own published project
+     (`importMeta.estimateSessionId`), else the ONE project of that name (as it
+     reads now or as first typed, `nameSource`); none or several →
+     `BasisPushNotice` stage `choose` (`basis-push-choose` / `-select` /
+     `-add`), never a guess — sets `basisPush = {stage: "apply", payload,
+     projectId}` and opens it. `ProjectEditor` (`applyBasis`) applies it
+     through its own `setQuote` once the row has loaded (`basisReady`), so the
+     lines are in the state the editor saves. **Never patch a quote row for a
+     project the editor may have open** (`verify.mjs` pins that the App level
+     calls no `patchQuoteFields` / `writeQuote` for a push).
+   - **A project with packages is ALWAYS asked where the lines go**
+     (`basisNeedsDestination`; stage `where`, `basis-push-where`): a radio per
+     package and "Whole project — the project-wide assumptions"
+     (`basisDestinations`: each with how many are there now; `basis-push-dest`,
+     `data-dest`), nothing preselected on a first push, the destination of the
+     last push from that takeoff suggested afterwards (`basisLastDestination`)
+     — it still asks —, **Add N lines here** (`basis-push-apply`, disabled
+     until one is picked) and Discard. Nothing is written while it is being
+     asked and the hand-off waits in localStorage. A plain project has the one
+     list and is not asked. `applyBasisToQuote(quote, payload, packageId)` is
+     the ONE write — `{assumptions}` for the project-wide list
+     (`BASIS_PROJECT_WIDE`), `{packages}` with that one package's
+     `assumptions` otherwise; a package that is not on the quote is never
+     written. The destination is then UNFOLDED and its Assumptions list
+     scrolled into view (`openPkg` / `setProjGeoOpen` + `ProjectGeometryPanel`
+     `openToken`, a one-shot), and `basis-push-note` says where: "the package
+     MAIN BUILDING — its Assumptions list … is open below".
+   - **A push never deletes.** `mergeBasisAssumptions(existing, payload)` →
+     `{assumptions, added, updated, kept, unchanged, left, total}`: every entry
+     already in the list keeps its PLACE; a line pushed before and sent again
+     takes the new wording unless it was RETYPED in Quotes (`text !==
+     pushedText` — it stands, `kept`); a line pushed before and not sent this
+     time stays (`left`) — it is removed in Quotes by hand, like any
+     assumption; a line the list has never held goes on the END, after
+     everything there; an assumption typed in Quotes is never touched;
+     accepted tender wording is kept (the existing "original changed since"
+     flag says when to redo it). A push to another destination only adds
+     there. Entries are `{id: "est:<line id>", text, source: "estimates",
+     kind, pushedText, takeoffId, pushedAt}`, the text prefixed "Measured: " /
+     "Excluded: " (`basisEntryText`; the tender reads one flat list); the
+     Assumptions list marks each "from Estimates · measured / assumption /
+     exclusion" (`assumption-from-estimates`). From there the lines flow to
+     the quote report and both Tender Notes like any assumption (a package's
+     prefixed with its name).
 `verify.mjs` runs the compiler on a five-element takeoff (every line's
 wording, net steel, the override, the unticked inferred lines, stable ids),
 the document (edit, stale, quantities off, merge), the payload, the Quotes
-merge (first push, same push twice, reworded / unticked / retyped / tender
-wording, adoption, an empty push), the project match and the wiring;
-`test-basis.mjs` proves the panel on a real takeoff, the push, the notice,
-the stored assumptions and the list's chips, a second push after a retype in
-Quotes, the takeoff left untouched, a reload of Estimates and the project
-picker (35 checks).
+merge (first push, same push twice, reworded / unticked-and-left / retyped /
+tender wording, an empty push removing nothing, places kept), the
+destinations (a package, the project-wide list, the suggestion, an unknown
+package), the project match and the wiring (no App-level row write, the
+editor's apply, the ask). `test-basis.mjs` proves the panel on a real takeoff,
+the push to a plain project, the notice, the stored assumptions and the
+list's chips, a second push after a retype in Quotes, the takeoff left
+untouched, a reload of Estimates and the project picker (35 checks);
+`test-basis-packages.mjs` boots Quotes ALREADY on the project (the case that
+lost the lines) and proves the ask, nothing written until picked, the lines
+after the package's own assumption, the unfolded list, the lines still there
+eight seconds on, a second push asking again with the suggestion, an unticked
+line left in place, the project-wide destination, a plain project not asked
+and Discard (23 checks).
 
 ## Version history for the chat (what changed, who changed it)
 

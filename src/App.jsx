@@ -39,9 +39,9 @@ import RateValidityBanner from "./components/RateValidityBanner.jsx";
 import { buildQuoteExcelHtml, quoteExcelFilename, buildQuoteCsv } from "./lib/exportQuote.js";
 import { useStoredState } from "./lib/storage.js";
 import { duplicateQuote } from "./lib/projectDuplicate.js";
-import { PROJECTS_INDEX_KEY, newProjectEntry, migrateLegacyQuote, deleteQuote, writeQuote, writeQuoteChecked, readQuote, readQuoteSummariesDetailed, patchQuoteFields, publishQuoteToCostPlanner, mirrorQuoteSummary } from "./lib/projects.js";
+import { PROJECTS_INDEX_KEY, newProjectEntry, migrateLegacyQuote, deleteQuote, writeQuote, writeQuoteChecked, readQuote, readQuoteSummariesDetailed, publishQuoteToCostPlanner, mirrorQuoteSummary } from "./lib/projects.js";
 import { ESTIMATE_EXPORT_KEY, buildImportFromEstimate } from "./lib/estimateImport.js";
-import { ESTIMATE_BASIS_KEY, ESTIMATE_BASIS_RESULT_KEY, validBasisPayload, mergeBasisAssumptions, matchBasisProject } from "./lib/estimateBasis.js";
+import { ESTIMATE_BASIS_KEY, BASIS_PROJECT_WIDE, validBasisPayload, matchBasisProject, applyBasisToQuote, basisDestinations, basisNeedsDestination, basisLastDestination } from "./lib/estimateBasis.js";
 import BasisPushNotice from "./components/BasisPushNotice.jsx";
 import { SaveBadge } from "./components/atoms.jsx";
 import AddElementBar from "./components/AddElementBar.jsx";
@@ -427,18 +427,22 @@ export default function App() {
 
   // Estimates' "Compile assumptions" push (lib/estimateBasis.js, 21 Nov 2026):
   // what was measured, the assumptions and the exclusions, compiled from the
-  // takeoff, land on ONE project's Assumptions list. The project is the
-  // takeoff's own published project, else the one project of that name;
-  // anything else is asked (BasisPushNotice) — never guessed. The hand-off
-  // stays in localStorage until it is applied or discarded, so a reload of
-  // this frame (the shell reloads Quotes when it switches to it) picks it up.
+  // takeoff. THIS level only finds the project — the takeoff's own published
+  // project, else the one project of that name; anything else is asked
+  // (BasisPushNotice), never guessed — and opens it. The WRITE is the open
+  // editor's own (ProjectEditor.applyBasis, through its setQuote): the first
+  // build patched the row from here while the editor, restored on the same
+  // load, already held the project — its next save put its older copy back
+  // and the pushed lines were gone the same minute. The hand-off stays in
+  // localStorage until it is applied or discarded.
   const [basisPush, setBasisPush] = useState(null);
   const basisBusy = useRef(false);
+  const basisHeld = useRef(null); // the hand-off already being asked about / applied (its `at`), so a re-run of the effect does not restart it
   const receiveBasis = async (payload, forcedId) => {
     if (basisBusy.current) return;
     basisBusy.current = true;
     try {
-      const { map, failed } = await readQuoteSummariesDetailed(projects.map((p) => p.storageKey));
+      const { map } = await readQuoteSummariesDetailed(projects.map((p) => p.storageKey));
       const list = projects.map((p) => {
         const q = map[p.storageKey] || {};
         return { id: p.id, storageKey: p.storageKey, name: q.projectName || "", nameSource: q.nameSource || "", estimateSessionId: (q.importMeta && q.importMeta.estimateSessionId) || null };
@@ -448,29 +452,17 @@ export default function App() {
         setBasisPush({ stage: "choose", payload, options: list.filter((p) => p.name).map((p) => ({ id: p.id, name: p.name })), candidates: found.candidates || [] });
         return;
       }
-      const target = found.match;
-      const q = map[target.storageKey];
-      if (!q || failed.includes(target.storageKey)) {
-        setBasisPush({ stage: "error", payload, forcedId: target.id, message: `${target.name || "The project"} could not be read from the cloud just now.` });
-        return;
-      }
-      const result = mergeBasisAssumptions(q.assumptions, payload);
-      const stamp = await patchQuoteFields(target.storageKey, { assumptions: result.assumptions });
-      if (!stamp) {
-        setBasisPush({ stage: "error", payload, forcedId: target.id, message: `${target.name || "The project"} could not be saved just now.` });
-        return;
-      }
-      const done = { stage: "done", projectId: target.id, projectName: target.name, result, total: result.total, at: Date.now() };
-      try { window.localStorage.removeItem(ESTIMATE_BASIS_KEY); window.localStorage.setItem(ESTIMATE_BASIS_RESULT_KEY, JSON.stringify(done)); } catch { /* best-effort */ }
-      setBasisPush(done);
-      setActiveId(target.id);
+      setBasisPush({ stage: "apply", payload, projectId: found.match.id, projectName: found.match.name });
+      setActiveId(found.match.id);
     } catch (e) {
       setBasisPush({ stage: "error", payload, forcedId, message: "The projects could not be read just now." });
     } finally {
       basisBusy.current = false;
     }
   };
-  const discardBasis = () => { try { window.localStorage.removeItem(ESTIMATE_BASIS_KEY); } catch { /* best-effort */ } setBasisPush(null); };
+  const dropBasisHandoff = () => { try { window.localStorage.removeItem(ESTIMATE_BASIS_KEY); } catch { /* best-effort */ } };
+  const discardBasis = () => { dropBasisHandoff(); setBasisPush(null); };
+  const basisApplied = (info) => { dropBasisHandoff(); setBasisPush({ stage: "done", ...info }); };
   useEffect(() => {
     if (!settled(projectsStatus)) return;
     const consumeBasis = () => {
@@ -479,18 +471,12 @@ export default function App() {
       if (!raw) return;
       let payload = null;
       try { payload = JSON.parse(raw); } catch { payload = null; }
-      if (!validBasisPayload(payload)) { try { window.localStorage.removeItem(ESTIMATE_BASIS_KEY); } catch { /* best-effort */ } return; }
+      if (!validBasisPayload(payload)) { dropBasisHandoff(); return; }
+      const stamp = String(payload.at || raw.length);
+      if (basisHeld.current === stamp) return;
+      basisHeld.current = stamp;
       receiveBasis(payload);
     };
-    // a push this frame applied just before the shell reloaded it: show what landed and open the project
-    try {
-      const raw = window.localStorage.getItem(ESTIMATE_BASIS_RESULT_KEY);
-      if (raw) {
-        window.localStorage.removeItem(ESTIMATE_BASIS_RESULT_KEY);
-        const done = JSON.parse(raw);
-        if (done && done.stage === "done" && Date.now() - Number(done.at || 0) < 120000 && projects.some((p) => p.id === done.projectId)) { setBasisPush(done); setActiveId(done.projectId); }
-      }
-    } catch { /* storage blocked */ }
     consumeBasis();
     const onStorage = (e) => { if (e.key === ESTIMATE_BASIS_KEY && e.newValue) consumeBasis(); };
     window.addEventListener("storage", onStorage);
@@ -679,6 +665,9 @@ export default function App() {
       sectionOrder={allSectionOrder}
       customTypes={customTypes}
       setCustomTypes={setCustomTypes}
+      basisPush={basisPush && basisPush.stage === "apply" && basisPush.projectId === activeProject.id ? basisPush : null}
+      onBasisApplied={basisApplied}
+      onBasisDiscard={discardBasis}
     />
     </>
   );
@@ -691,7 +680,7 @@ function staleBuild() {
   try { return !!(window.parent && window.parent.gradconStaleBuild); } catch { return false; }
 }
 
-function ProjectEditor({ project, allProjects, rates: liveRates, setRates: setLiveRates, ratesStatus, rateChanges, saveProjectsNow, onBack, isDraft, onPromote, elementTypes, categoryOrder, sectionOrder, customTypes, setCustomTypes }) {
+function ProjectEditor({ project, allProjects, rates: liveRates, setRates: setLiveRates, ratesStatus, rateChanges, saveProjectsNow, onBack, isDraft, onPromote, elementTypes, categoryOrder, sectionOrder, customTypes, setCustomTypes, basisPush, onBasisApplied, onBasisDiscard }) {
   const [quote, setQuoteStored, quoteStatus, saveQuoteNow, quoteLoaded] = useStoredState(project.storageKey, blankQuote());
   // Every write made IN THIS TAB goes through setQuote and is counted; a copy
   // that arrives from another device (the hook's own remote apply) is not.
@@ -1097,6 +1086,32 @@ function ProjectEditor({ project, allProjects, rates: liveRates, setRates: setLi
   // reads the TICKED packages' elements only — the packages act individually and come together by the summary ticks
   const [projGeoOpen, setProjGeoOpen] = useState(false);
   const tickedItems = useMemo(() => itemsInPackages(quote, items, summaryExcluded), [quote, items, summaryExcluded]);
+  // Estimates' compiled assumptions (lib/estimateBasis.js) are written HERE, through this editor's own state, once the
+  // project's row has loaded — never patched into the row behind it. On a project with packages the estimator is
+  // ALWAYS asked where they go (a package's own Assumptions, or the project-wide list); a plain project has the one
+  // list. A push only adds and updates — nothing already there is removed. The destination is unfolded and its
+  // Assumptions list scrolled into view, so the lines are where the eye lands.
+  const basisDoneRef = useRef(null);
+  const [basisOpen, setBasisOpen] = useState({ where: null, n: 0 });
+  const basisReady = !!basisPush && quoteLoaded && quoteStatus !== "loading";
+  const basisAsk = basisReady && basisNeedsDestination(quote) && basisDoneRef.current !== basisPush.payload.at;
+  const applyBasis = (packageId) => {
+    if (!basisReady || basisDoneRef.current === basisPush.payload.at) return;
+    const out = applyBasisToQuote(quote, basisPush.payload, packageId);
+    if (!out) return;
+    basisDoneRef.current = basisPush.payload.at;
+    const payload = basisPush.payload;
+    setQuote((q) => { const o = applyBasisToQuote(q, payload, packageId); return o ? { ...q, ...o.patch } : q; });
+    if (packageId) openPkg(packageId); else setProjGeoOpen(true);
+    setBasisOpen((b) => ({ where: packageId || "project", n: b.n + 1 }));
+    setTimeout(() => setBasisOpen((b) => ({ ...b, where: null })), 2500); // a one-shot: folding and reopening the panel later does not scroll again
+    onBasisApplied && onBasisApplied({ projectId: project.id, projectName: quote.projectName || "", result: out.result, total: out.result.total, where: out.where, packaged: basisNeedsDestination(quote) });
+  };
+  useEffect(() => {
+    if (basisReady && !basisNeedsDestination(quote)) applyBasis(BASIS_PROJECT_WIDE);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [basisReady, basisPush]);
+  const basisOpenToken = (where) => (basisOpen.where === where ? basisOpen.n : 0);
   const addElement = (typeId) => {
     const type = elementTypes.find((t) => t.id === typeId);
     if (!type) return;
@@ -1605,6 +1620,7 @@ function ProjectEditor({ project, allProjects, rates: liveRates, setRates: setLi
               onChangeItem={updateItem}
               assumptions={quote.assumptions}
               onChangeAssumptions={(assumptions) => setQuote((q) => ({ ...q, assumptions }))}
+              openToken={basisOpenToken("project")}
             />
           )}
           {itemsByPackage(quote, items).map(({ pkg, items: group }, gi, groups) => (
@@ -1629,6 +1645,7 @@ function ProjectEditor({ project, allProjects, rates: liveRates, setRates: setLi
                   title={`Package geometry — ${packageName(pkg)}`} subtitle="This package's counts, lengths and areas — its own $/no., $/lm, $/m² and $/m³"
                   accent={packageColour(quote, pkg)} totalLabel="Package total" testId="package-geometry"
                   assumptions={packageAssumptions(pkg)} onChangeAssumptions={(a) => setPackageAssumptions(pkg.id, a)}
+                  openToken={basisOpenToken(pkg.id)}
                   assumptionsTitle={`Assumptions — ${packageName(pkg)}`} assumptionsNote="What this package's figures assume. They print under the package on the quote report and reach the Tender Notes prefixed with the package's name; the project-wide assumptions stay on the Project Geometry panel above."
                 />
               )}
@@ -1684,6 +1701,7 @@ function ProjectEditor({ project, allProjects, rates: liveRates, setRates: setLi
                   onChangeItem={updateItem}
                   assumptions={quote.assumptions}
                   onChangeAssumptions={(assumptions) => setQuote((q) => ({ ...q, assumptions }))}
+                  openToken={basisOpenToken("project")}
                   title="Project geometry — whole project"
                   subtitle="The ticked packages combined — untick a package on the Quote Summary and its elements leave this panel; every package keeps its own geometry under its band"
                   totalLabel="Project total"
@@ -1775,6 +1793,13 @@ function ProjectEditor({ project, allProjects, rates: liveRates, setRates: setLi
         />
       )}
 
+      {basisAsk && (
+        <BasisPushNotice
+          push={{ stage: "where", payload: basisPush.payload, projectName: quote.projectName || basisPush.projectName, destinations: basisDestinations(quote), suggested: basisLastDestination(quote, basisPush.payload) }}
+          onWhere={applyBasis}
+          onDiscard={onBasisDiscard}
+        />
+      )}
       {ratesOpen && <RatesModal rates={rates} setRates={setRates} lockedFor={locked && hasFrozenRates(quote) ? quote.ratesFrozen : null} onClose={() => setRatesOpen(false)} />}
 
       {downloadOpen && <DownloadProjectModal quote={quote} items={items} rates={rates} project={project} elementTypes={elementTypes} onClose={() => setDownloadOpen(false)} />}

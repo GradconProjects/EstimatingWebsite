@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { wordingState, clearTenderWording } from "../lib/tenderWording.js";
 import { ChevronDown, ChevronRight, Wand2, Plus, Trash2 } from "lucide-react";
 import { geometryForLabel } from "../lib/estimateImport.js";
@@ -24,7 +24,7 @@ import { computeProjectUnitRates, money2 } from "../lib/costing.js";
 let assumptionSeq = 0;
 const newAssumptionId = () => `a${Date.now().toString(36)}${(assumptionSeq++).toString(36)}`;
 
-export default function ProjectGeometryPanel({ items, rates, estimateGeometry, onChangeItem, assumptions, onChangeAssumptions, scope, title, subtitle, accent, totalLabel, testId, assumptionsTitle, assumptionsNote }) {
+export default function ProjectGeometryPanel({ items, rates, estimateGeometry, onChangeItem, assumptions, onChangeAssumptions, scope, title, subtitle, accent, totalLabel, testId, assumptionsTitle, assumptionsNote, openToken }) {
   // Elements still waiting on a length or an area — until every element has
   // one the table opens itself, so the figures are asked for rather than
   // hidden behind a fold nobody thinks to open.
@@ -33,6 +33,15 @@ export default function ProjectGeometryPanel({ items, rates, estimateGeometry, o
   ).length;
   const hasMissing = missing > 0;
   const [open, setOpen] = useState(false);
+  // `openToken` (a number that rises) unfolds the panel and brings its Assumptions list into view — used when lines
+  // pushed from Estimates have just landed here, so they are not left folded away under a closed panel.
+  const assumptionsRef = useRef(null);
+  useEffect(() => {
+    if (!openToken) return undefined;
+    setOpen(true);
+    const t = setTimeout(() => { try { assumptionsRef.current && assumptionsRef.current.scrollIntoView({ block: "center", behavior: "smooth" }); } catch { /* not laid out yet */ } }, 250);
+    return () => clearTimeout(t);
+  }, [openToken]);
   // Opens itself the moment something is unmeasured, and then STAYS open —
   // filling in the last cell must never fold the table away mid-edit. Once
   // it's open the estimator closes it by hand, and it only re-opens if a new
@@ -188,7 +197,7 @@ export default function ProjectGeometryPanel({ items, rates, estimateGeometry, o
               typical detail, an access restriction priced in. They live with
               the project, print on its quote report, and are the first thing
               to check when a number is queried weeks later. */}
-          <div className={`rounded-lg border border-neutral-200 bg-white p-3 space-y-2 ${onChangeAssumptions ? "" : "hidden"}`}>
+          <div ref={assumptionsRef} data-testid="assumptions-block" className={`rounded-lg border border-neutral-200 bg-white p-3 space-y-2 ${onChangeAssumptions ? "" : "hidden"}`}>
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="text-[13px] font-semibold text-neutral-800" data-testid="assumptions-title">{assumptionsTitle || "Assumptions"}</div>

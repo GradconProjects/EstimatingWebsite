@@ -870,7 +870,7 @@ table.results th:nth-child(3),table.results td:nth-child(3){position:sticky;left
 <!-- Compile assumptions (21 Nov 2026): what was measured, assumed and excluded, compiled from the open takeoff and pushed to the Quotes project's Assumptions. -->
 <div id="basisPanel" role="dialog" aria-modal="true" aria-labelledby="basisTitle" data-testid="basis-panel" style="display:none;">
   <div class="bs-panel">
-    <div class="bs-head"><h2 id="basisTitle">📋 Assumptions, exclusions &amp; what was measured</h2><span class="small">Compiled from this takeoff — tick, reword or add lines, then push them to the project's Assumptions in Quotes.</span><span class="bs-headbtns"><button type="button" class="btn small" data-basis-act="copy" data-testid="basis-copy">Copy ticked</button> <button type="button" class="btn small" data-basis-act="close" data-testid="basis-close">✕ Close</button></span></div>
+    <div class="bs-head"><h2 id="basisTitle">📋 Assumptions, exclusions &amp; what was measured</h2><span class="small">Compiled from this takeoff — tick, reword or add lines, then push them to Quotes, which asks which package's Assumptions take them.</span><span class="bs-headbtns"><button type="button" class="btn small" data-basis-act="copy" data-testid="basis-copy">Copy ticked</button> <button type="button" class="btn small" data-basis-act="close" data-testid="basis-close">✕ Close</button></span></div>
     <div class="bs-body" id="basisBody"></div>
     <div class="bs-foot" id="basisFoot"></div>
   </div>
@@ -12964,7 +12964,7 @@ function basisRender(){
   foot.innerHTML = `<span data-testid="basis-counts">${basisCountsHtml(c)}</span>
     ${pushed? `<span class="small" data-testid="basis-pushed">Last pushed ${bpEsc(basisWhen(pushed.at))}${pushed.by? " by "+bpEsc(pushed.by):""} — ${pushed.count} line${pushed.count===1?"":"s"}${pushed.project? " to “"+bpEsc(pushed.project)+"”":""}</span>` : ""}
     ${BASIS.error? `<span class="bs-error" data-testid="basis-error">${bpEsc(BASIS.error)}</span>` : BASIS.status? `<span class="bs-status" data-testid="basis-status">${bpEsc(BASIS.status)}</span>` : ""}
-    <button type="button" class="btn primary bs-push" data-basis-act="push" data-testid="basis-push" ${c.total? "" : "disabled"} title="Adds the ticked lines to the Assumptions of this takeoff's project in Quotes (the list under Project Geometry, which prints in the Tender Notes). Pushing again updates the lines pushed before — it never doubles them, and never touches an assumption typed in Quotes.">${basisPushLabel(c)}</button>`;
+    <button type="button" class="btn primary bs-push" data-basis-act="push" data-testid="basis-push" ${c.total? "" : "disabled"} title="Hands the ticked lines to this takeoff's project in Quotes. On a project with packages Quotes asks which package's Assumptions take them (or the project-wide list) — every time. Pushing again updates the lines pushed before; it never doubles them and never removes anything already there.">${basisPushLabel(c)}</button>`;
   body.querySelectorAll("textarea").forEach(basisFitText);
 }
 function basisFitText(t){ t.style.height="auto"; t.style.height=Math.max(30, t.scrollHeight+2)+"px"; }
