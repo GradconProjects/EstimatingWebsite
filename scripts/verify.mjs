@@ -2308,6 +2308,13 @@ await checkAsync("Rates Library reads supplier rate documents (20 Nov 2026): the
   assert.ok(l15 && l15.from === null && !box.proposalTicked(l15) && /Sense/.test(l15.flags.join(" ")), "a line the reader found unclear is matched but flagged and unticked");
   assert.ok(!box.proposalTicked(P("reinfAcc::Delivery fee")) && /not certain/.test(P("reinfAcc::Delivery fee").flags.join(" ")), "a row the reader was not sure of is unticked");
   assert.deepEqual(JSON.parse(JSON.stringify(out.unmapped.map((u) => u.reason.replace(/ \(.*/, "")))), ["The library has no trench mesh row for 5 bar L15TM", "No price could be read on this line", "The reader named a row the library does not have"], "what cannot be matched is listed with its reason, never applied");
+  // "unit not stated" is the page's to settle on a steel quotation's lines, never a reason to untick them (the live reader said it on every AKZ line)
+  const liveLike = RDL.parseRateDocs({ documents: [{ n: 1, supplier: "AKZ", gst: "ex" }], lines: [L("STOCK STEEL", 1800, "stock_steel", { confidence: "medium", target: "stockBar::*", unclear: "Unit not stated; the library group is priced per tonne" }), L("11mmWIRE TRENCH MESH 3 BAR", 23.96, "trench_mesh", { confidence: "medium", unclear: "Unit not stated; the library row is priced per length" }), L("15mm WIRE TRENCH MESH 3 BAR (Sense)", 64.81, "trench_mesh", { confidence: "low", unclear: "Unit not stated; meaning of '(Sense)' unclear" })] }, { rows: readerRows }).docs[0];
+  const liveOut = box.proposeRateDoc(liveLike, rows, T.freshRates(), { today: "2026-11-20" });
+  assert.ok(liveOut.proposals.filter((p) => p.rowId.startsWith("stockBar::") || p.rowId === "trenchMesh::3 Bar-L11TM").every((p) => box.proposalTicked(p) && p.flags.length === 0), "a steel line whose only doubt is the unprinted unit stays ticked");
+  const sense = liveOut.proposals.find((p) => p.rowId === "trenchMesh::3 bar-L15TM");
+  assert.ok(!box.proposalTicked(sense) && /Sense/.test(sense.flags.join()) && !/Unit not stated/.test(sense.flags.join()), "…while a real doubt on the same kind of line still flags it");
+  assert.match(prompt, /do NOT report the missing unit in "unclear"/, "the reader is told the same");
   // not-clear cases
   const flagsOf = (line, d = {}) => { const dd = RDL.parseRateDocs({ documents: [{ n: 1, supplier: "S", gst: "ex", ...d }], lines: [line] }, { rows: readerRows }).docs[0]; const o = box.proposeRateDoc(dd, rows, state, { today: "2026-11-20" }); return o.proposals.length ? o.proposals[0] : { flags: [o.unmapped[0].reason], to: null }; };
   assert.match(flagsOf(L("32 MPa", 213, "concrete", { per: "tonne", target: "concreteGrade::32 mpa" })).flags.join(), /Priced per tonne; the library row is per m³/);

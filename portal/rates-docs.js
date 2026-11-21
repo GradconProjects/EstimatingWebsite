@@ -132,6 +132,14 @@
     return null;
   }
   const KIND_UNIT = { sheet_mesh: "sheet", trench_mesh: "length", stock_steel: "tonne", processed_steel: "tonne" };
+  /* What the reader found unclear, less the one doubt the page settles itself: a steel quotation prints no unit on its
+   * stock steel, processed steel, sheet and trench mesh lines (they are by the tonne, the sheet and the length — the
+   * 25% move check catches a figure that is not), so "unit not stated" alone never leaves such a line unticked. */
+  function readerDoubt(l) {
+    let u = String(l.unclear || "").trim(); if (!u) return "";
+    if (KIND_UNIT[l.kind]) u = u.split(/;\s*/).filter((part) => !(/\bunit\b/i.test(part) && /not stated|unstated|not given|no unit|missing|not printed|not shown/i.test(part)) && !/^\s*(the\s+)?library (row|group) is priced per/i.test(part)).join("; ").trim();
+    return u;
+  }
 
   /**
    * One document's lines → `{proposals, unmapped, warnings}`.
@@ -156,11 +164,12 @@
       let ids = hand ? (overrides[l.i] ? [overrides[l.i]] : []) : rule ? rule.ids : l.target ? [l.target] : [];
       ids = ids.filter((id) => idx.has(id));
       if (!ids.length) {
-        const reason = hand ? "Left out by you" : rule && rule.missing ? rule.missing : l.targetRefused ? `The reader named a row the library does not have (${l.targetRefused})` : l.unclear ? `Not clear: ${l.unclear}` : "No library row is the same product on the same unit";
+        const reason = hand ? "Left out by you" : rule && rule.missing ? rule.missing : l.targetRefused ? `The reader named a row the library does not have (${l.targetRefused})` : readerDoubt(l) ? `Not clear: ${readerDoubt(l)}` : "No library row is the same product on the same unit";
         unmapped.push(Object.assign({ reason, unclear: l.unclear || null }, base)); return;
       }
       const lineFlags = [];
-      if (l.unclear) lineFlags.push(`Reader: ${l.unclear}`);
+      const doubt = readerDoubt(l);
+      if (doubt) lineFlags.push(`Reader: ${doubt}`);
       if (!hand && !rule && l.confidence !== "high") lineFlags.push("The reader was not certain this is the row");
       if (d.gst === "inc") lineFlags.push("Stated including GST — shown ex GST (÷ 1.1)");
       if (d.gst === "unknown") lineFlags.push("GST basis not stated");
@@ -330,7 +339,7 @@
 
   return {
     RATE_DOC_BUCKET_PREFIX, RATE_DOC_FILES_PER_READ, RATE_DOC_TEXT_MAX_CHARS, RATE_DOC_KEEP, RATE_DOC_WARN_DAYS, RATE_DOC_BIG_MOVE, RATE_DOC_MAIL_QUERY, VALIDITY_NAME_OF_ROW,
-    unitClass, rateDocLibraryRows, rateDocRowsForReader, setRowValue, ruleRowsFor, proposeRateDoc, proposalTicked, applyRateDoc,
+    unitClass, readerDoubt, rateDocLibraryRows, rateDocRowsForReader, setRowValue, ruleRowsFor, proposeRateDoc, proposalTicked, applyRateDoc,
     rateDocLatestByRow, rateDocStatus, rateDocAlarms, rateDocSetValidity, rateDocFileClass, rateDocTextOf, rateDocRunText, rateDocUsedMailIds, rateDocLocalDay: localDay,
   };
 });
