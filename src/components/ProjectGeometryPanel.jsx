@@ -221,6 +221,14 @@ export default function ProjectGeometryPanel({ items, rates, estimateGeometry, o
                         placeholder="e.g. Slab thickness scaled from Section A — not dimensioned on the structural set"
                         className="w-full border border-neutral-200 rounded px-2 py-1.5 text-sm resize-y focus:outline-none focus:ring-2 focus:ring-orange-400"
                       />
+                      {a.source === "estimates" && (
+                        <div className="mt-0.5 text-[11px] text-neutral-500" data-testid="assumption-from-estimates" data-kind={a.kind || ""}>
+                          <span className="px-1.5 py-0.5 rounded bg-sky-100 text-sky-800 font-semibold">from Estimates · {a.kind === "measured" ? "measured" : a.kind === "exclusion" ? "exclusion" : "assumption"}</span>
+                          {typeof a.pushedText === "string" && a.pushedText.trim() !== String(a.text || "").trim()
+                            ? <span className="ml-1.5">retyped here — the next push from Estimates leaves it as it is</span>
+                            : <span className="ml-1.5">compiled from the takeoff — a new push from Estimates updates it</span>}
+                        </div>
+                      )}
                       {wordingState(a) !== "none" && (
                         <div className="mt-1 flex items-start gap-2 text-[11px]" data-testid="assumption-tender-wording">
                           <span className={`flex-none px-1.5 py-0.5 rounded font-semibold ${wordingState(a) === "stale" ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"}`}>

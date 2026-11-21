@@ -3193,6 +3193,110 @@ states, the merges, the read-only action set) and `test-scope-scan.mjs`
 proves the look on open, the ticks, the scan, the filter, the by-source view,
 the references and a reload (22 checks).
 
+## Compile assumptions (Estimates → the Quotes Assumptions list)
+
+Boma, 21 Nov 2026: "in estimates, i want to include a button that compiles
+assumptions, exclusions and what was measure so we can push to the
+assumptions section of the quotes. what was measured should derive from the
+actual take off". Rules:
+
+1. **`portal/estimates-basis.js` is the ONE compiler** (the fourth pure
+   module inlined by the assembler, asserted, run in Node by `verify.mjs`).
+   `compileBasis({project, elements, scope})` → `{lines, notes}`; a line is
+   `{id, kind: "measured" | "assumption" | "exclusion", text, plain, sure,
+   elementId?}`. **Nothing is composed and no figure is invented** — every
+   line is a reading of something the takeoff holds:
+   - **What was measured**: "Measured from: drawings …; specification …" (the
+     standards profile's revisions), ONE line per element summed from ITS OWN
+     register lines (`elementMeasure`: concrete by grade, steel — every
+     Reinforcement line plus a Connections / Joints line that weighs —, mesh
+     m², formwork m² / lm, excavation / spoil / backfill, base / blinding,
+     vapour barrier, any other group by material) with its published geometry
+     (`elementGeometry`: no., lm, m²), and a totals line. **Quantities are
+     NET** (`qty`; a manual override IS the figure; the kg comes back off the
+     waste) — the waste and laps the price carries are stated once, as an
+     assumption. An element with nothing measured is not listed; the panel
+     says so (`notes`), as it says which elements are not marked reviewed.
+   - **Assumptions**: net quantities + the waste / lap allowances; spoil
+     bulking; a concrete grade / cover still on the DEFAULT
+     (`fieldProvenance === "default"`, grouped by value, elements named);
+     reinforcement by rate (kg/m³) or by area in place of a schedule; a
+     concrete volume override; every manual override with its reason; every
+     "Scoped allowance" line.
+   - **Exclusions**: excavation switched off on an element that digs
+     (`excOn === false`), a retaining wall's stem or base left out, a pad
+     footing assembly item decided Excluded (N/A is not an exclusion), and —
+     from the Scope finder's document for the same takeoff — the exclusions
+     the documents state and the items "by others". **Inferred lines** (a
+     ground element with concrete and no excavation, concrete with no steel,
+     concrete with no formwork — "none measured on the takeoff") carry
+     `sure: false` and START UNTICKED: a line read from a switch or a figure
+     starts ticked, one read from an absence never.
+   `id` is a hash of the kind and the rule (and the element / value), so a
+   tick or a rewording survives the next compile; `plain` is the line with no
+   quantity (the "State the measured quantities" tick; the totals line drops
+   out).
+2. **The estimator's ticks, wording and own lines are their OWN row** —
+   `gradcon-basis::<takeoffId>` in `estimator_kv` with a localStorage mirror
+   (`{showQty, edits: {id: {on, text, base, at}}, custom: [{id, kind, text}],
+   removed, pushed}`; `basisLines` lays them over the compile, `basisEditPatch`
+   / `basisAddCustom` / `basisRemoveCustom` are the writes, `mergeBasisDocs`
+   the cloud merge — read → merge → write, a failed read is never "no row").
+   Never inside the takeoff snapshot: the block calls no `saveEstimateState`,
+   `pushTakeoffToCloud`, `addInstance` or `computeAllAndRefresh` (verify pins
+   it). A reworded line whose takeoff wording later moves reads "reworded —
+   the takeoff changed since" with "use the takeoff's wording".
+3. **The panel** (`estimates-app.html`, block "COMPILE ASSUMPTIONS"): header
+   button **📋 Assumptions** (`basis-button`) → `basis-panel`: the notes, the
+   quantities tick (`basis-show-qty`), three sections (`basis-section`), each
+   line a tick + an editable textarea (`basis-line`, `data-kind` / `data-on` /
+   `data-sure`) with its chips (inferred, Scope finder, typed, reworded),
+   "+ Add …" per section (`basis-add-<kind>`), **Copy ticked**, the counts and
+   **➜ Push N lines to Quotes assumptions** (`basis-push`). `basisInput()`
+   builds the compiler's input from `INSTANCES` AS THEY STAND (results, or a
+   compute when absent). A reworded line is saved WITHOUT repainting
+   (`basisTextChanged`) — the change event fires on blur, and a repaint there
+   would replace the button being clicked.
+4. **The push is ONE hand-off, and Quotes UPDATES — never doubles**
+   (`src/lib/estimateBasis.js`, pure): `localStorage["gradcon-estimate-basis"]`
+   = `{takeoffId, estimateSessionId, projectName, at, by, lines: [{id, kind,
+   text}]}` (the TICKED lines) + `gradcon:open-app` quotes. `App.jsx`
+   (`receiveBasis`, on mount and on the storage event) finds the project —
+   `matchBasisProject`: the takeoff's own published project
+   (`importMeta.estimateSessionId`), else the ONE project of that name (as it
+   reads now or as first typed, `nameSource`); none or several →
+   `BasisPushNotice` asks (`basis-push-choose` / `-select` / `-add` /
+   `-discard`), **never a guess**, and the hand-off waits in localStorage
+   until applied or discarded. `mergeBasisAssumptions(existing, payload)`:
+   each line becomes an entry of `quote.assumptions` — `{id: "est:<line id>",
+   text, source: "estimates", kind, pushedText, takeoffId, pushedAt}`, the
+   text prefixed "Measured: " / "Excluded: " (`basisEntryText`; the tender
+   reads one flat list) — placed AFTER the assumptions typed in Quotes, which
+   are never touched. A second push: a line still sent follows the new
+   wording unless it was RETYPED in Quotes (`text !== pushedText` — it
+   stands); a line no longer sent is removed, unless retyped — then it
+   becomes the estimator's own; accepted tender wording is kept (the existing
+   "original changed since" flag says when to redo it). The write is
+   `patchQuoteFields(storageKey, {assumptions})` — that one field — from the
+   project's fresh summary; a project that cannot be read is an error band
+   (`basis-push-error`, Try again / Discard), never a write from nothing. The
+   project then opens with `basis-push-note` ("N lines from the takeoff — a
+   added, u updated, r removed …"; `gradcon-estimate-basis-result` carries the
+   notice across the shell's reload of the Quotes frame), and the Assumptions
+   list under Project Geometry marks each pushed line "from Estimates ·
+   measured / assumption / exclusion" (`assumption-from-estimates`). From
+   there the lines flow to the quote report and both Tender Notes like any
+   assumption.
+`verify.mjs` runs the compiler on a five-element takeoff (every line's
+wording, net steel, the override, the unticked inferred lines, stable ids),
+the document (edit, stale, quantities off, merge), the payload, the Quotes
+merge (first push, same push twice, reworded / unticked / retyped / tender
+wording, adoption, an empty push), the project match and the wiring;
+`test-basis.mjs` proves the panel on a real takeoff, the push, the notice,
+the stored assumptions and the list's chips, a second push after a retype in
+Quotes, the takeoff left untouched, a reload of Estimates and the project
+picker (35 checks).
+
 ## Version history for the chat (what changed, who changed it)
 
 Grady, 11 Oct 2026: "I want this chat to not have this limitation … i want to

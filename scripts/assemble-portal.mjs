@@ -177,6 +177,12 @@ let estimatesHtml = fs.readFileSync(estimatesPath, "utf8");
   if (!scopeTag.test(estimatesHtml)) throw new Error("estimates-app.html no longer loads estimates-scope.js — inline step out of date");
   const scopeSrc = fs.readFileSync(path.join(root, "portal", "estimates-scope.js"), "utf8").replace(/<\/script/gi, "<\\/script");
   estimatesHtml = estimatesHtml.replace(scopeTag, () => `<script>${scopeSrc}</script>`);
+  // estimates-basis.js: "Compile assumptions" — what was measured, assumed and
+  // excluded, compiled from the takeoff (same pure-module contract).
+  const basisTag = /<script src="estimates-basis\.js"><\/script>/;
+  if (!basisTag.test(estimatesHtml)) throw new Error("estimates-app.html no longer loads estimates-basis.js — inline step out of date");
+  const basisSrc = fs.readFileSync(path.join(root, "portal", "estimates-basis.js"), "utf8").replace(/<\/script/gi, "<\\/script");
+  estimatesHtml = estimatesHtml.replace(basisTag, () => `<script>${basisSrc}</script>`);
   estimatesHtml = estimatesHtml.replaceAll("__BUILD_STAMP__", buildStamp() + (process.env.PORTAL_STAMP_SUFFIX || ""));
   // 3D viewer bundle: the hosted portal fetches /assets/estimates-3d.js on
   // demand (nothing embedded, the page stays small); a standalone copy has

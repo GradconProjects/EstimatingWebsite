@@ -39,8 +39,10 @@ import RateValidityBanner from "./components/RateValidityBanner.jsx";
 import { buildQuoteExcelHtml, quoteExcelFilename, buildQuoteCsv } from "./lib/exportQuote.js";
 import { useStoredState } from "./lib/storage.js";
 import { duplicateQuote } from "./lib/projectDuplicate.js";
-import { PROJECTS_INDEX_KEY, newProjectEntry, migrateLegacyQuote, deleteQuote, writeQuote, writeQuoteChecked, readQuote, readQuoteSummariesDetailed, publishQuoteToCostPlanner, mirrorQuoteSummary } from "./lib/projects.js";
+import { PROJECTS_INDEX_KEY, newProjectEntry, migrateLegacyQuote, deleteQuote, writeQuote, writeQuoteChecked, readQuote, readQuoteSummariesDetailed, patchQuoteFields, publishQuoteToCostPlanner, mirrorQuoteSummary } from "./lib/projects.js";
 import { ESTIMATE_EXPORT_KEY, buildImportFromEstimate } from "./lib/estimateImport.js";
+import { ESTIMATE_BASIS_KEY, ESTIMATE_BASIS_RESULT_KEY, validBasisPayload, mergeBasisAssumptions, matchBasisProject } from "./lib/estimateBasis.js";
+import BasisPushNotice from "./components/BasisPushNotice.jsx";
 import { SaveBadge } from "./components/atoms.jsx";
 import AddElementBar from "./components/AddElementBar.jsx";
 import ElementCard from "./components/ElementCard.jsx";
@@ -423,6 +425,88 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectsStatus, projects]);
 
+  // Estimates' "Compile assumptions" push (lib/estimateBasis.js, 21 Nov 2026):
+  // what was measured, the assumptions and the exclusions, compiled from the
+  // takeoff, land on ONE project's Assumptions list. The project is the
+  // takeoff's own published project, else the one project of that name;
+  // anything else is asked (BasisPushNotice) — never guessed. The hand-off
+  // stays in localStorage until it is applied or discarded, so a reload of
+  // this frame (the shell reloads Quotes when it switches to it) picks it up.
+  const [basisPush, setBasisPush] = useState(null);
+  const basisBusy = useRef(false);
+  const receiveBasis = async (payload, forcedId) => {
+    if (basisBusy.current) return;
+    basisBusy.current = true;
+    try {
+      const { map, failed } = await readQuoteSummariesDetailed(projects.map((p) => p.storageKey));
+      const list = projects.map((p) => {
+        const q = map[p.storageKey] || {};
+        return { id: p.id, storageKey: p.storageKey, name: q.projectName || "", nameSource: q.nameSource || "", estimateSessionId: (q.importMeta && q.importMeta.estimateSessionId) || null };
+      });
+      const found = forcedId ? { match: list.find((p) => p.id === forcedId) || null, candidates: [] } : matchBasisProject(payload, list);
+      if (!found.match) {
+        setBasisPush({ stage: "choose", payload, options: list.filter((p) => p.name).map((p) => ({ id: p.id, name: p.name })), candidates: found.candidates || [] });
+        return;
+      }
+      const target = found.match;
+      const q = map[target.storageKey];
+      if (!q || failed.includes(target.storageKey)) {
+        setBasisPush({ stage: "error", payload, forcedId: target.id, message: `${target.name || "The project"} could not be read from the cloud just now.` });
+        return;
+      }
+      const result = mergeBasisAssumptions(q.assumptions, payload);
+      const stamp = await patchQuoteFields(target.storageKey, { assumptions: result.assumptions });
+      if (!stamp) {
+        setBasisPush({ stage: "error", payload, forcedId: target.id, message: `${target.name || "The project"} could not be saved just now.` });
+        return;
+      }
+      const done = { stage: "done", projectId: target.id, projectName: target.name, result, total: result.total, at: Date.now() };
+      try { window.localStorage.removeItem(ESTIMATE_BASIS_KEY); window.localStorage.setItem(ESTIMATE_BASIS_RESULT_KEY, JSON.stringify(done)); } catch { /* best-effort */ }
+      setBasisPush(done);
+      setActiveId(target.id);
+    } catch (e) {
+      setBasisPush({ stage: "error", payload, forcedId, message: "The projects could not be read just now." });
+    } finally {
+      basisBusy.current = false;
+    }
+  };
+  const discardBasis = () => { try { window.localStorage.removeItem(ESTIMATE_BASIS_KEY); } catch { /* best-effort */ } setBasisPush(null); };
+  useEffect(() => {
+    if (!settled(projectsStatus)) return;
+    const consumeBasis = () => {
+      let raw = null;
+      try { raw = window.localStorage.getItem(ESTIMATE_BASIS_KEY); } catch { return; }
+      if (!raw) return;
+      let payload = null;
+      try { payload = JSON.parse(raw); } catch { payload = null; }
+      if (!validBasisPayload(payload)) { try { window.localStorage.removeItem(ESTIMATE_BASIS_KEY); } catch { /* best-effort */ } return; }
+      receiveBasis(payload);
+    };
+    // a push this frame applied just before the shell reloaded it: show what landed and open the project
+    try {
+      const raw = window.localStorage.getItem(ESTIMATE_BASIS_RESULT_KEY);
+      if (raw) {
+        window.localStorage.removeItem(ESTIMATE_BASIS_RESULT_KEY);
+        const done = JSON.parse(raw);
+        if (done && done.stage === "done" && Date.now() - Number(done.at || 0) < 120000 && projects.some((p) => p.id === done.projectId)) { setBasisPush(done); setActiveId(done.projectId); }
+      }
+    } catch { /* storage blocked */ }
+    consumeBasis();
+    const onStorage = (e) => { if (e.key === ESTIMATE_BASIS_KEY && e.newValue) consumeBasis(); };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectsStatus, projects]);
+  const basisNotice = (
+    <BasisPushNotice
+      push={basisPush}
+      onChoose={(id) => basisPush && receiveBasis(basisPush.payload, id)}
+      onRetry={() => basisPush && receiveBasis(basisPush.payload, basisPush.forcedId)}
+      onDiscard={discardBasis}
+      onDismiss={() => setBasisPush(null)}
+    />
+  );
+
   // A new project is a DRAFT until it has a name or an element: it lives
   // only in this state, not in the persisted index, so an "Untitled project"
   // that was opened and abandoned never appears on anyone's dashboard. The
@@ -570,11 +654,14 @@ export default function App() {
         {elementTypesOpen && (
           <ManageElementTypesModal customTypes={customTypes} setCustomTypes={setCustomTypes} onClose={() => setElementTypesOpen(false)} />
         )}
+        {basisNotice}
       </div>
     );
   }
 
   return (
+    <>
+    {basisNotice}
     <ProjectEditor
       rateChanges={rateChanges}
       key={activeProject.id}
@@ -593,6 +680,7 @@ export default function App() {
       customTypes={customTypes}
       setCustomTypes={setCustomTypes}
     />
+    </>
   );
 }
 

@@ -141,6 +141,28 @@ table.rows.barsets td:nth-child(2) input,table.rows.barsets td:nth-child(4) inpu
 #scopeBtn[data-state="open"]{border-color:var(--accent2);}
 #scopeBtn[data-state="attention"]{border-color:var(--danger);color:var(--danger);}
 #scopeBtn[data-state="complete"]{border-color:var(--good);color:var(--good);}
+#basisPanel{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:85;align-items:stretch;justify-content:center;padding:18px;}
+#basisPanel .bs-panel{background:var(--panel);color:var(--text);border-radius:var(--radius);width:100%;max-width:1080px;display:flex;flex-direction:column;overflow:hidden;box-shadow:var(--shadow-pin);}
+#basisPanel .bs-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--panel2);}
+#basisPanel .bs-head h2{margin:0;font-size:17px;} #basisPanel .bs-headbtns{margin-left:auto;white-space:nowrap;}
+#basisPanel .bs-body{flex:1;min-height:0;overflow-y:auto;padding:12px 16px;}
+#basisPanel .bs-foot{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 16px;border-top:1px solid var(--line);background:var(--panel2);font-size:12.5px;}
+#basisPanel .bs-foot .bs-push{margin-left:auto;}
+#basisPanel .bs-note{border:1px solid #d9a400;background:rgba(217,164,0,.1);border-radius:8px;padding:6px 10px;margin:0 0 8px;font-size:12.5px;}
+#basisPanel .bs-opts{display:flex;flex-wrap:wrap;gap:14px;align-items:center;font-size:12.5px;margin:0 0 4px;}
+#basisPanel .bs-sec{margin:14px 0 4px;display:flex;align-items:baseline;gap:10px;border-bottom:1px solid var(--line);padding-bottom:3px;}
+#basisPanel .bs-sec h3{margin:0;font-size:14px;} #basisPanel .bs-sec .small{margin-left:auto;}
+#basisPanel .bs-row{display:flex;align-items:flex-start;gap:8px;padding:5px 0;border-bottom:1px dotted var(--line);}
+#basisPanel .bs-row.off textarea{opacity:.55;}
+#basisPanel .bs-row input[type="checkbox"]{margin-top:7px;flex:none;}
+#basisPanel .bs-row .bs-main{flex:1;min-width:0;}
+#basisPanel .bs-row textarea{width:100%;box-sizing:border-box;padding:5px 7px;font:inherit;font-size:13px;line-height:1.35;border:1px solid var(--line);border-radius:6px;background:var(--input);color:var(--text);resize:vertical;min-height:30px;}
+#basisPanel .bs-tags{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:11px;margin-top:2px;color:var(--muted);}
+#basisPanel .bs-chip{border:1px solid var(--line);border-radius:999px;padding:0 7px;white-space:nowrap;}
+#basisPanel .bs-chip.inferred{border-color:#b98900;color:#8a6500;} #basisPanel .bs-chip.stale{border-color:var(--bad,#b3261e);color:var(--bad,#b3261e);} #basisPanel .bs-chip.scope{border-color:var(--accent);color:var(--accent);}
+#basisPanel .bs-linkbtn{background:none;border:none;color:var(--accent);cursor:pointer;padding:0;font-size:inherit;text-decoration:underline;}
+#basisPanel .bs-add{margin:6px 0 0;} #basisPanel .bs-empty{font-size:12.5px;color:var(--muted);font-style:italic;padding:4px 0;}
+#basisPanel .bs-status{color:var(--good);} #basisPanel .bs-error{color:var(--bad,#b3261e);}
 #scopeFinder{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:85;align-items:stretch;justify-content:center;padding:18px;}
 #scopeFinder .sc-panel{background:var(--panel);color:var(--text);border-radius:var(--radius);width:100%;max-width:1380px;display:flex;flex-direction:column;overflow:hidden;box-shadow:var(--shadow-pin);}
 #scopeFinder .sc-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--panel2);}
@@ -625,6 +647,7 @@ table.results th:nth-child(3),table.results td:nth-child(3){position:sticky;left
     <button class="btn small" id="redoBtn" type="button" title="Redo (Ctrl+Shift+Z / Ctrl+Y)" disabled>↷ Redo</button>
     <button class="btn primary" id="saveBtn" type="button">💾 Save</button>
     <button class="btn small" id="scopeBtn" type="button" data-testid="scope-button" data-state="none" title="Scope finder — read this project's drawings, emails and chats, list every scope item with its specification and source, and tick them off; flags what could be missing and what is not on the takeoff yet">🔎 Scope finder</button>
+    <button class="btn small" id="basisBtn" type="button" data-testid="basis-button" title="Compile assumptions — what was measured (from this takeoff's own quantities), what was assumed and what is excluded; tick, reword or add lines, then push them to the project's Assumptions in Quotes">📋 Assumptions</button>
     <button class="btn small" id="helpBtn" type="button" title="Tutorials and tips for the page you are on" style="display:none;">? Help</button>
     <button class="btn small" id="shellToggle" type="button" title="Switch between the classic layout and the new blueprint layout — nothing about the takeoff changes, only how it is laid out">⇄ New layout</button>
   </div>
@@ -844,6 +867,14 @@ table.results th:nth-child(3),table.results td:nth-child(3){position:sticky;left
     <div class="sc-body" id="scopeBody"></div>
   </div>
 </div>
+<!-- Compile assumptions (21 Nov 2026): what was measured, assumed and excluded, compiled from the open takeoff and pushed to the Quotes project's Assumptions. -->
+<div id="basisPanel" role="dialog" aria-modal="true" aria-labelledby="basisTitle" data-testid="basis-panel" style="display:none;">
+  <div class="bs-panel">
+    <div class="bs-head"><h2 id="basisTitle">📋 Assumptions, exclusions &amp; what was measured</h2><span class="small">Compiled from this takeoff — tick, reword or add lines, then push them to the project's Assumptions in Quotes.</span><span class="bs-headbtns"><button type="button" class="btn small" data-basis-act="copy" data-testid="basis-copy">Copy ticked</button> <button type="button" class="btn small" data-basis-act="close" data-testid="basis-close">✕ Close</button></span></div>
+    <div class="bs-body" id="basisBody"></div>
+    <div class="bs-foot" id="basisFoot"></div>
+  </div>
+</div>
 <div id="wasteApply" role="dialog" aria-modal="true" aria-labelledby="wasteApplyTitle" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:80;align-items:center;justify-content:center;padding:24px;">
   <div style="background:var(--panel);border:1px solid var(--line);border-radius:10px;max-width:980px;width:100%;max-height:88vh;display:flex;flex-direction:column;">
     <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line);">
@@ -902,6 +933,7 @@ table.results th:nth-child(3),table.results td:nth-child(3){position:sticky;left
 <script src="estimates-schema.js"></script>
 <script src="estimates-orders.js"></script>
 <script src="estimates-scope.js"></script>
+<script src="estimates-basis.js"></script>
 <script>
 const ESTIMATES_BUILD = "__BUILD_STAMP__"; // replaced by scripts/assemble-portal.mjs
 /* ============================= STATE ============================= */
@@ -12821,6 +12853,166 @@ function scopeInit(){
   scopeBtnRefresh();
 }
 scopeInit();
+
+/* ===================== COMPILE ASSUMPTIONS (21 Nov 2026) =====================
+ * Boma: "in estimates, i want to include a button that compiles assumptions, exclusions and what was measure so we
+ * can push to the assumptions section of the quotes. what was measured should derive from the actual take off".
+ * The compile is portal/estimates-basis.js (pure): `basisInput()` hands it the takeoff AS IT STANDS — every element's
+ * register lines, geometry, defaults nobody typed over, switches and decisions — and the Scope finder's document for
+ * the same takeoff. The estimator's ticks, wording and own lines live in their OWN row (gradcon-basis::<takeoffId>),
+ * never in the takeoff snapshot: nothing here calls saveEstimateState, pushTakeoffToCloud or addInstance.
+ * "Push" writes ONE hand-off blob (BASIS_HANDOFF_KEY) and opens Quotes, which lays it over the project's Assumptions
+ * (src/lib/estimateBasis.js). */
+var BASIS={ open:false, key:"", doc:null, compiled:null, status:"", error:"", saveTimer:null };
+function basisReadLocal(key){ try{ const v=JSON.parse(localStorage.getItem(key)||"null"); return v && typeof v==="object"? v : null; }catch(e){ return null; } }
+function basisWriteLocal(){ try{ localStorage.setItem(BASIS.key, JSON.stringify(BASIS.doc)); return true; }catch(e){ return false; } }
+/** The takeoff as the compiler reads it — built from the same instance fields and result lines the register uses. */
+function basisInput(){
+  const st=standardsOf();
+  const elements=INSTANCES.map(inst=>{
+    const def=LIB_INDEX[inst.typeKey]||{}; const d=inst.data||{};
+    let out=inst.results; if(!out){ try{ out=computeInstance(inst); }catch(e){ out={lines:[]}; } }
+    const defaults=defaultDataFor(inst.typeKey)||{};
+    const isDefault=(f)=> (f in d) && fieldProvenance(inst,f,defaults)==="default";
+    let decisions=[];
+    if(def.calc==="padfooting" && inst.scope){
+      try{ decisions=padComponents(inst).filter(c=>inst.scope[c.id] && inst.scope[c.id].decision && inst.scope[c.id].decision!=="na").map(c=>({ label:c.label, decision:"excluded", reason:inst.scope[c.id].reason||"" })); }catch(e){ decisions=[]; }
+    }
+    return {
+      id:inst.id, label:inst.label, type:def.label||"", ground:isGroundElement(def), nativeExc:hasNativeExcavation(def),
+      formless: def.calc==="generic" || def.calc==="pier" || def.calc==="shotwall" || def.calc==="screed",
+      data:{ excOn:d.excOn, incStem:d.incStem, incBase:d.incBase, concVolOverride:d.concVolOverride },
+      lines:(out&&out.lines)||[], geometry:elementGeometry(inst),
+      assumed:{ grade:isDefault("grade")? num(d.grade):0, cover:isDefault("cover")? num(d.cover):0 },
+      reoRate:(out&&out.reoRate)||null, decisions, status:elementStatus(inst).state,
+    };
+  });
+  let scope={ exclusions:[], others:[] };
+  try{
+    const sd=scopeReadLocal(scopeDocKey(scopeTakeoffId()));
+    if(sd){ const nd=normalizeScopeDoc(sd, scopeTakeoffId(), PROJECT.name);
+      scope.exclusions=((nd.result&&nd.result.exclusions)||[]).map(e=>({ text:e.text, doc:e.doc||"" }));
+      scope.others=scopeAllItems(nd).filter(it=>it.party==="others").map(it=>({ title:it.title, where:it.where||"" })); }
+  }catch(e){}
+  return {
+    project:{ name:PROJECT.name||"", drawingRev:st.drawingRev||"", specRev:st.specRev||"", revision:PROJECT.revision||"", engineer:st.engineer||"",
+      wasteStr:basisWasteStr(), reoWastePct:REO_WASTE_PCT, barLapPct:BAR_LAP_PCT, meshLapPct:MESH_LAP_PCT, formWastePct:FORM_WASTE_PCT, bulkingPct:num(PROJECT.bulking) },
+    elements, scope,
+  };
+}
+/** The concrete waste basis in a few words: "5% flat", or the range of the work-type classes ("2.5–15% by work type"). */
+function basisWasteStr(){
+  if(concWasteFlat()) return num(PROJECT.concreteWaste)+"%";
+  const v=CONC_WASTE_CLASSES.map(c=>num(CONC_WASTE[c.key])).filter(x=>x>0); if(!v.length) return "";
+  const lo=Math.min.apply(null,v), hi=Math.max.apply(null,v);
+  return (lo===hi? lo+"%" : lo+"–"+hi+"%")+" by work type";
+}
+function basisCurrentLines(){ BASIS.compiled=compileBasis(basisInput()); return basisLines(BASIS.compiled, BASIS.doc); }
+async function basisOpen(){
+  BASIS.open=true; BASIS.key=basisDocKey(scopeTakeoffId()); BASIS.status=""; BASIS.error="";
+  BASIS.doc=normalizeBasisDoc(basisReadLocal(BASIS.key), scopeTakeoffId());
+  document.getElementById("basisPanel").style.display="flex";
+  basisRender();
+  // another device's ticks and wording for this takeoff
+  const key=BASIS.key; const row=await kvFetch(key);
+  if(!BASIS.open || BASIS.key!==key) return;
+  if(row && !kvFetchFailed(row) && row.value){ BASIS.doc=mergeBasisDocs(BASIS.doc, normalizeBasisDoc(row.value, scopeTakeoffId())); basisWriteLocal(); basisRender(); }
+}
+function basisClose(){ BASIS.open=false; document.getElementById("basisPanel").style.display="none"; }
+function basisSave(){
+  if(!BASIS.doc) return;
+  basisWriteLocal();
+  clearTimeout(BASIS.saveTimer);
+  const key=BASIS.key;
+  BASIS.saveTimer=setTimeout(async()=>{
+    const row=await kvFetch(key);
+    if(kvFetchFailed(row)) return;                       // nothing is known about the cloud copy: the local one stands, the next change tries again
+    const local=basisReadLocal(key); if(!local) return;
+    const merged = row && row.value? mergeBasisDocs(local, row.value) : local;
+    const ok=await kvPush(key, merged);
+    if(ok && BASIS.open && BASIS.key===key){ BASIS.doc=normalizeBasisDoc(merged, scopeTakeoffId()); basisWriteLocal(); }
+  }, 900);
+}
+function basisWhen(iso){ if(!iso) return ""; try{ return new Date(iso).toLocaleString("en-AU",{day:"numeric",month:"short",hour:"numeric",minute:"2-digit"}); }catch(e){ return String(iso).slice(0,16); } }
+function basisRowHtml(l){
+  const tags=[];
+  if(!l.sure) tags.push(`<span class="bs-chip inferred" title="Read from what is ABSENT on the takeoff — it starts unticked; tick it only if the work really is excluded">inferred — nothing measured</span>`);
+  if(l.from==="scope") tags.push(`<span class="bs-chip scope" title="From the Scope finder's reading of this project's documents">Scope finder</span>`);
+  if(l.custom) tags.push(`<span class="bs-chip">typed</span> <button type="button" class="bs-linkbtn" data-basis-act="rm" data-id="${bpEsc(l.id)}" data-testid="basis-remove">remove</button>`);
+  if(l.edited) tags.push(`<span class="bs-chip${l.stale?" stale":""}" title="${l.stale? "The takeoff's own wording has changed since this line was reworded" : "Reworded by hand — the takeoff's wording is kept underneath"}">${l.stale? "reworded — the takeoff changed since" : "reworded"}</span> <button type="button" class="bs-linkbtn" data-basis-act="reset" data-id="${bpEsc(l.id)}" data-testid="basis-reset">use the takeoff's wording</button>`);
+  return `<div class="bs-row${l.on?"":" off"}" data-testid="basis-line" data-id="${bpEsc(l.id)}" data-kind="${l.kind}" data-on="${l.on?1:0}" data-sure="${l.sure?1:0}">
+    <input type="checkbox" data-basis-on="${bpEsc(l.id)}" ${l.on?"checked":""} title="Ticked lines are pushed to Quotes" aria-label="Include this line">
+    <div class="bs-main"><textarea rows="1" data-basis-text="${bpEsc(l.id)}" data-auto="${bpEsc(l.auto)}" placeholder="${l.custom? "Type the line" : ""}">${bpEsc(l.text)}</textarea>${tags.length? `<div class="bs-tags">${tags.join(" ")}</div>` : ""}</div>
+  </div>`;
+}
+function basisRender(){
+  const body=document.getElementById("basisBody"), foot=document.getElementById("basisFoot"); if(!body || !foot) return;
+  const lines=basisCurrentLines(); const c=basisCounts(lines); const doc=BASIS.doc;
+  const notes=((BASIS.compiled&&BASIS.compiled.notes)||[]).map(n=>`<div class="bs-note" data-testid="basis-note" data-kind="${n.kind}">${bpEsc(n.text)}</div>`).join("");
+  const none = !INSTANCES.length? `<div class="bs-note" data-testid="basis-note" data-kind="none">This takeoff has no elements yet — there is nothing measured to compile. Lines you type yourself can still be pushed.</div>` : "";
+  body.innerHTML = none + notes +
+    `<div class="bs-opts"><label><input type="checkbox" id="basisShowQty" data-testid="basis-show-qty" ${doc.showQty?"checked":""}> State the measured quantities</label>
+      <span class="small">Every line is read from the takeoff as it stands now — the quantities are net, as measured. Untick a line to leave it out; reword it in place; add your own under each heading.</span></div>` +
+    BASIS_KINDS.map(k=>{
+      const rows=lines.filter(l=>l.kind===k.key);
+      const hint = k.key==="measured"? "from each element's own register lines" : k.key==="assumption"? "defaults nobody typed over, rates in place of a schedule, overrides, allowances" : "switched off on the takeoff, stated in the documents, or nothing measured";
+      return `<div class="bs-sec" data-testid="basis-section" data-kind="${k.key}"><h3>${bpEsc(k.label)}</h3><span class="small">${rows.filter(l=>l.on).length} of ${rows.length} ticked — ${hint}</span></div>
+        ${rows.length? rows.map(basisRowHtml).join("") : `<div class="bs-empty">Nothing found on the takeoff for this heading.</div>`}
+        <div class="bs-add"><button type="button" class="btn small" data-basis-act="add" data-kind="${k.key}" data-testid="basis-add-${k.key}">+ ${bpEsc(k.add)}</button></div>`;
+    }).join("");
+  const pushed=doc.pushed;
+  foot.innerHTML = `<span data-testid="basis-counts">${basisCountsHtml(c)}</span>
+    ${pushed? `<span class="small" data-testid="basis-pushed">Last pushed ${bpEsc(basisWhen(pushed.at))}${pushed.by? " by "+bpEsc(pushed.by):""} — ${pushed.count} line${pushed.count===1?"":"s"}${pushed.project? " to “"+bpEsc(pushed.project)+"”":""}</span>` : ""}
+    ${BASIS.error? `<span class="bs-error" data-testid="basis-error">${bpEsc(BASIS.error)}</span>` : BASIS.status? `<span class="bs-status" data-testid="basis-status">${bpEsc(BASIS.status)}</span>` : ""}
+    <button type="button" class="btn primary bs-push" data-basis-act="push" data-testid="basis-push" ${c.total? "" : "disabled"} title="Adds the ticked lines to the Assumptions of this takeoff's project in Quotes (the list under Project Geometry, which prints in the Tender Notes). Pushing again updates the lines pushed before — it never doubles them, and never touches an assumption typed in Quotes.">${basisPushLabel(c)}</button>`;
+  body.querySelectorAll("textarea").forEach(basisFitText);
+}
+function basisFitText(t){ t.style.height="auto"; t.style.height=Math.max(30, t.scrollHeight+2)+"px"; }
+function basisChange(id, change){ BASIS.doc=basisEditPatch(BASIS.doc, id, change, null, scopeBy()); BASIS.status=""; BASIS.error=""; basisSave(); basisRender(); }
+/* A reworded line is saved WITHOUT repainting the panel: the change event fires on blur, and a repaint there would
+ * replace the very button (Push, a tick) the estimator is in the middle of clicking. Only the counts are refreshed. */
+function basisTextChanged(t){
+  BASIS.doc=basisEditPatch(BASIS.doc, t.dataset.basisText, { text:t.value, auto:t.dataset.auto||"" }, null, scopeBy()); BASIS.status=""; BASIS.error=""; basisSave();
+  const c=basisCounts(basisCurrentLines());
+  const cn=document.querySelector('#basisFoot [data-testid="basis-counts"]'); if(cn) cn.innerHTML=basisCountsHtml(c);
+  const pb=document.querySelector('#basisFoot [data-testid="basis-push"]'); if(pb){ pb.disabled=!c.total; pb.textContent=basisPushLabel(c); }
+}
+function basisCountsHtml(c){ return `<b>${c.total}</b> line${c.total===1?"":"s"} ticked — ${c.measured} measured · ${c.assumption} assumption${c.assumption===1?"":"s"} · ${c.exclusion} exclusion${c.exclusion===1?"":"s"}`; }
+function basisPushLabel(c){ return `➜ Push ${c.total} line${c.total===1?"":"s"} to Quotes assumptions`; }
+function basisPush(){
+  const lines=basisCurrentLines();
+  const payload=basisPayload(lines, { takeoffId:scopeTakeoffId(), estimateSessionId:PROJECT.estimateSessionId||null, projectName:PROJECT.name||"", by:scopeBy() });
+  if(!payload.lines.length){ BASIS.error="Nothing is ticked — tick at least one line to push."; basisRender(); return; }
+  try{ localStorage.setItem(BASIS_HANDOFF_KEY, JSON.stringify(payload)); }
+  catch(e){ BASIS.error="Could not hand the lines to Quotes — this browser's storage refused the write ("+(e&&e.message||e)+")."; basisRender(); return; }
+  BASIS.doc=basisEditPatch(BASIS.doc, null, { pushed:{ at:payload.at, by:payload.by, project:payload.projectName, count:payload.lines.length } }, payload.at, scopeBy());
+  BASIS.error=""; BASIS.status=`Handed ${payload.lines.length} line${payload.lines.length===1?"":"s"} to Quotes — opening Quotes…`;
+  basisSave(); basisRender();
+  try{ window.parent.postMessage({type:"gradcon:open-app", target:"quotes"}, "*"); }catch(err){ /* not hosted in the portal — the hand-off still sits in localStorage for Quotes */ }
+}
+function basisInit(){
+  const btn=document.getElementById("basisBtn"), root=document.getElementById("basisPanel"); if(!btn || !root) return;
+  btn.addEventListener("click", basisOpen);
+  root.addEventListener("click", e=>{
+    if(e.target===root){ basisClose(); return; }
+    const t=e.target.closest("[data-basis-act]"); if(!t) return; const act=t.dataset.basisAct, id=t.dataset.id;
+    if(act==="close") basisClose();
+    else if(act==="push") basisPush();
+    else if(act==="add"){ BASIS.doc=basisAddCustom(BASIS.doc, t.dataset.kind, "", null, scopeBy()); basisSave(); basisRender(); const rows=root.querySelectorAll(`.bs-row[data-kind="${t.dataset.kind}"] textarea`); if(rows.length) rows[rows.length-1].focus(); }
+    else if(act==="rm"){ BASIS.doc=basisRemoveCustom(BASIS.doc, id, null, scopeBy()); basisSave(); basisRender(); }
+    else if(act==="reset") basisChange(id, { text:"" });
+    else if(act==="copy"){ try{ navigator.clipboard.writeText(basisText(basisCurrentLines())); t.textContent="Copied"; setTimeout(()=>{ t.textContent="Copy ticked"; }, 1500); }catch(x){} }
+  });
+  root.addEventListener("change", e=>{
+    const t=e.target;
+    if(t.id==="basisShowQty"){ BASIS.doc=basisEditPatch(BASIS.doc, null, { showQty:t.checked }, null, scopeBy()); basisSave(); basisRender(); }
+    else if(t.dataset.basisOn) basisChange(t.dataset.basisOn, { on:t.checked });
+    else if(t.dataset.basisText) basisTextChanged(t);
+  });
+  root.addEventListener("input", e=>{ if(e.target.dataset && e.target.dataset.basisText) basisFitText(e.target); });
+  root.addEventListener("keydown", e=>{ if(e.key==="Escape") basisClose(); });
+}
+basisInit();
 applyAiHandoff(); // an AI Engine export waiting in localStorage becomes a NEW takeoff under AI drafts (never touches the one that was open)
 syncFromCloud().then(prefetchTakeoffBlobs).then(syncTemplatesFromCloud); // pull the open takeoff first, then warm every other saved session so the whole list is ready to resume
 window.addEventListener("focus", syncFromCloud);

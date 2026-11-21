@@ -21,6 +21,7 @@ import {
   computeElementUnitRates, computeProjectUnitRates, rowContext, computeElementReinforcementTonnes, getMarginSteps, additionalRowsFor, autoPigmentWashout, autoSpecialistShortLoad, autoSpecialistFees, categoryAppliesTo } from "../src/lib/costing.js";
 import { buildImportFromEstimate, normalizeElementName, geometryForLabel, edgeDepthMm } from "../src/lib/estimateImport.js";
 import * as importAll from "../src/lib/estimateImport.js";
+import * as EB from "../src/lib/estimateBasis.js";
 import * as costingAll from "../src/lib/costing.js";
 import { PROJECT_SORTS, sortProjects, sortValue, defaultSortDir, preferredSortKey, isProjectSortKey } from "../src/lib/projectSort.js";
 
@@ -2176,7 +2177,7 @@ await checkAsync("Scope finder (19 Nov 2026): the reading rules, the reply parse
   assert.match(est, /<script src="estimates-scope\.js"><\/script>/, "the page loads the pure module");
   assert.match(fs.readFileSync(new URL("./assemble-portal.mjs", import.meta.url), "utf8"), /estimates-app\.html no longer loads estimates-scope\.js — inline step out of date/, "…and the assembler inlines it, asserted");
   assert.match(est, /id="scopeBtn" type="button" data-testid="scope-button"/, "the header button");
-  assert.match(est, /scopeInit\(\);\napplyAiHandoff\(\);/, "the panel is wired at boot");
+  assert.match(est, /\nscopeInit\(\);\n/, "the panel is wired at boot");
   const cats = JSON.parse(/const SCOPE_CATS=(\[\[[\s\S]*?\]\]);/.exec(est)[1]);
   assert.deepEqual(cats, SF.SCOPE_CATEGORIES, "the page's category list mirrors the reader's");
   assert.ok(!/scope/i.test(/function estimateStateSnapshot\(\)\{[\s\S]*?\n\}/.exec(est)[0]), "the checklist is never part of the takeoff snapshot");
@@ -5794,6 +5795,146 @@ await checkAsync("a server that does not answer is never 'not configured'; the b
   const cb = fs.readFileSync(new URL("../src/components/CategoryBlock.jsx", import.meta.url), "utf8");
   assert.match(cb, /const basis = columnBasis\(cat\);/); assert.match(cb, /data-testid="col-unit-cost" title=\{basis\.priceNote\}>\{basis\.price\}/);
   assert.match(cb, /data-testid="row-sum"/, "a whole-bar / whole-sheet row prints the sum behind its total");
+});
+
+check("Compile assumptions (21 Nov 2026): what was measured comes off the takeoff's own register lines (net), assumptions off defaults / rates / overrides, exclusions off switches and the Scope finder; inferred lines start unticked; the push UPDATES the project's Assumptions — never doubles, never touches a typed one", () => {
+  const box = { console }; box.globalThis = box;
+  runInNewContext(fs.readFileSync(new URL("../portal/estimates-basis.js", import.meta.url), "utf8"), box, { filename: "estimates-basis.js" });
+  assert.equal(box.BASIS_HANDOFF_KEY, EB.ESTIMATE_BASIS_KEY, "Estimates and Quotes agree on the hand-off key");
+  assert.equal(box.basisDocKey("t1"), "gradcon-basis::t1", "the estimator's ticks live in their own row, never in the takeoff");
+  const L = (g, m, q, u, x = {}) => ({ materialGroup: g, material: m, qty: q, finalQty: q * 1.05, unit: u, spec: "", ...x });
+  const input = () => ({
+    project: { name: "12 Beach Road", drawingRev: "S1-S6 Rev C", specRev: "Spec Rev B", revision: "Rev A", wasteStr: "2.5–15% by work type", reoWastePct: 5, barLapPct: 8, meshLapPct: 5, formWastePct: 5, bulkingPct: 15 },
+    elements: [
+      { id: "EL1", label: "Raft Slab A", type: "RC Raft Slab", ground: true, nativeExc: false, data: {}, geometry: { countNo: 1, runM: 0, areaM2: 120 }, assumed: { grade: 32, cover: 40 }, status: "reviewed",
+        lines: [L("Concrete", "N32 concrete", 36, "m³"), L("Reinforcement", "SL92", 120, "m²", { weightKg: 630 }), L("Reinforcement", "N12", 500, "m", { weightKg: 466.2 }), L("Connections", "Drill & epoxy", 30, "no.", { weightKg: 0 }), L("Formwork", "Edgeform", 44, "m"), L("Base/Blinding", "Blinding concrete", 6, "m³"), L("Vapour Barrier", "0.2mm poly", 120, "m²")] },
+      { id: "EL2", label: "SF1", type: "Strip Footing", ground: true, nativeExc: true, data: { excOn: false }, geometry: { countNo: 1, runM: 60, areaM2: 0 }, assumed: { grade: 0, cover: 0 }, status: "draft", reoRate: { basis: "m3", rate: 90, kg: 810 },
+        lines: [L("Concrete", "N25 concrete", 9, "m³"), L("Reinforcement", "N16", 513, "m", { weightKg: 850.5 })] },
+      { id: "EL3", label: "Pads", type: "Pad Footing", ground: true, nativeExc: true, data: {}, geometry: { countNo: 4 }, assumed: {}, status: "draft", decisions: [{ label: "Vapour barrier", decision: "excluded", reason: "not shown" }],
+        lines: [L("Concrete", "N32 concrete", 2, "m³", { manualOverride: true, finalQty: 2.5, calculatedQty: 2.1, overrideReason: "haunch", overrideKey: "k" }), L("Excavation", "Excavation", 5, "m³"), L("Excavation", "Spoil disposal (loose, bulked)", 5.75, "m³"), L("Excavation", "Rock breaking", 3, "m³", { spec: "Scoped allowance — estimating item, not design" })] },
+      { id: "EL4", label: "Empty wall", type: "Wall", lines: [], status: "draft" },
+      { id: "EL5", label: "RW1", type: "Retaining Wall", ground: true, nativeExc: true, data: { incBase: false }, geometry: {}, assumed: {}, status: "reviewed", lines: [L("Concrete", "N32 concrete", 4, "m³"), L("Reinforcement", "N16", 100, "m", { weightKg: 158 }), L("Formwork", "Walls", 30, "m²"), L("Excavation", "Excavation", 2, "m³")] },
+    ],
+    scope: { exclusions: [{ text: "Waterproofing membranes.", doc: "Tender letter" }], others: [{ title: "Site survey and set-out" }] },
+  });
+  const c = box.compileBasis(input());
+  const by = (k) => c.lines.filter((l) => l.kind === k).map((l) => l.text);
+  const M = by("measured"), A = by("assumption"), X = by("exclusion");
+  // what was measured — from the lines
+  assert.equal(M[0], "Measured from: drawings S1-S6 Rev C; specification Spec Rev B (takeoff Rev A).");
+  assert.equal(M[1], "Raft Slab A (RC Raft Slab) — 120 m²; N32 concrete 36 m³; reinforcement 1.04 t (incl. SL92 mesh 120 m²); formwork 44 lm; blinding concrete 6 m³; vapour barrier / membrane 120 m².", "NET quantities: the mesh and bar kg come back off the waste (630 + 466.2 = 1,096.2 kg final ÷ 1.05), the weightless holes are not steel");
+  assert.equal(M[2], "SF1 (Strip Footing) — 60 lm; N25 concrete 9 m³; reinforcement 810 kg.");
+  assert.match(M[3], /^Pads \(Pad Footing\) — 4 no\.; N32 concrete 2\.5 m³; excavation 8 m³ \(spoil 5\.8 m³ loose\)\.$/, "a manual override IS the measured figure");
+  assert.ok(!M.some((t) => /Empty wall/.test(t)), "an element with nothing measured is not listed…");
+  assert.ok(c.notes.some((n) => n.kind === "empty" && /Empty wall/.test(n.text)), "…the panel says so instead");
+  assert.ok(c.notes.some((n) => n.kind === "unreviewed" && /^3 of 5 elements not marked reviewed/.test(n.text)));
+  assert.match(M[M.length - 1], /^Totals as measured, net — concrete 51\.5 m³ \(N25 9, N32 42\.5\); reinforcement 2 t; formwork 30 m² \+ 44 lm; excavation 10 m³\.$/);
+  // assumptions
+  assert.ok(A.some((t) => t === "Quantities are net as measured from the documents; the price allows for ordering waste and laps on top (concrete waste 2.5–15% by work type; reinforcement 5% waste, 8% bar laps, 5% mesh laps; formwork 5% waste)."));
+  assert.ok(A.includes("Spoil is measured loose, bulked 15% over the in-ground volume."));
+  assert.ok(A.includes("Concrete grade N32 is assumed (the project default — not confirmed from the specification) for: Raft Slab A."), "only an element still on the default is named");
+  assert.ok(A.includes("Cover to reinforcement of 40 mm is assumed (default — exposure classification not confirmed) for: Raft Slab A."));
+  assert.ok(A.includes("SF1: reinforcement is allowed at 90 kg per m³ of concrete (810 kg) — no bar schedule was measured."));
+  assert.ok(A.includes("Pads: N32 concrete taken as 2.5 m³ in place of the calculated 2.1 — haunch."));
+  assert.ok(A.includes("Pads: an allowance is made for rock breaking — 3 m³ (an estimating allowance, not a design quantity)."));
+  // exclusions: switches and documents are sure; absence is inferred
+  const sure = c.lines.filter((l) => l.kind === "exclusion" && l.sure).map((l) => l.text), unsure = c.lines.filter((l) => l.kind === "exclusion" && !l.sure).map((l) => l.text);
+  assert.deepEqual([...sure], ["Pads: vapour barrier — not shown.", "The footing / base of RW1 — the wall stem only is measured.", "Excavation, spoil removal and backfill to: SF1.", "Waterproofing membranes (as stated in Tender letter).", "Site survey and set-out — by others."]);
+  assert.deepEqual([...unsure], ["Excavation and spoil removal to: Raft Slab A (none measured on the takeoff).", "Reinforcement to: Pads (none measured on the takeoff).", "Formwork to: SF1, Pads (none measured on the takeoff)."]);
+  assert.equal(new Set(c.lines.map((l) => l.id)).size, c.lines.length, "ids are unique");
+  assert.deepEqual(box.compileBasis(input()).lines.map((l) => l.id), c.lines.map((l) => l.id), "…and stable across compiles");
+  assert.equal(box.compileBasis({ elements: [] }).lines.length, 0, "an empty takeoff compiles to nothing — no line is invented");
+  // the estimator's document
+  let doc = box.emptyBasisDoc("t1");
+  let lines = box.basisLines(c, doc);
+  assert.ok(lines.filter((l) => !l.sure).every((l) => !l.on) && lines.filter((l) => l.sure).every((l) => l.on), "a line read from a switch or a figure starts ticked, an inferred one never");
+  const gradeId = c.lines.find((l) => /Concrete grade N32/.test(l.text)).id, coverId = c.lines.find((l) => /Cover to/.test(l.text)).id, sfId = c.lines.find((l) => /^SF1 \(/.test(l.text)).id;
+  doc = box.basisEditPatch(doc, gradeId, { text: "Grades as nominated on the drawings.", auto: lines.find((l) => l.id === gradeId).auto }, "2026-11-21T01:00:00Z", "boma");
+  doc = box.basisEditPatch(doc, coverId, { on: false }, "2026-11-21T01:00:01Z", "boma");
+  doc = box.basisAddCustom(doc, "exclusion", "Traffic management", "2026-11-21T01:00:02Z", "boma");
+  lines = box.basisLines(c, doc);
+  const g = lines.find((l) => l.id === gradeId);
+  assert.ok(g.edited && !g.stale && g.text === "Grades as nominated on the drawings." && !lines.find((l) => l.id === coverId).on);
+  assert.ok(lines.some((l) => l.custom && l.kind === "exclusion" && l.text === "Traffic management" && l.on));
+  // quantities off: the kinds of work, no figure; the totals line drops out; a reworded line is not called stale by the switch
+  const plainDoc = box.basisEditPatch(doc, null, { showQty: false }, "2026-11-21T01:00:03Z");
+  const plain = box.basisLines(c, plainDoc);
+  assert.equal(plain.find((l) => l.id === sfId).text, "SF1 (Strip Footing) — N25 concrete, reinforcement.");
+  assert.ok(!plain.some((l) => /^Totals as measured/.test(l.text)) && !plain.find((l) => l.id === gradeId).stale);
+  // the takeoff moves under a reworded line → flagged; putting the takeoff's wording back clears the edit
+  const moved = input(); moved.elements[1].assumed = { grade: 32, cover: 0 };
+  const g2 = box.basisLines(box.compileBasis(moved), doc).find((l) => l.id === gradeId);
+  assert.ok(g2.stale && g2.text === "Grades as nominated on the drawings." && /Raft Slab A, SF1/.test(g2.auto), "the estimator's wording stands, and the panel says the takeoff changed underneath");
+  assert.ok(!box.basisLines(c, box.basisEditPatch(doc, gradeId, { text: "" })).find((l) => l.id === gradeId).edited);
+  // two devices: the newer tick per line, typed lines by id less the removed ones
+  const other = box.basisRemoveCustom(box.basisEditPatch(doc, coverId, { on: true }, "2026-11-21T02:00:00Z"), doc.custom[0].id, "2026-11-21T02:00:01Z");
+  const merged = box.mergeBasisDocs(doc, other);
+  assert.ok(merged.edits[coverId].on === true && merged.custom.length === 0 && merged.edits[gradeId].text === "Grades as nominated on the drawings.");
+  // the push: ticked lines only, in the three kinds' order
+  const payload = box.basisPayload(lines, { takeoffId: "t1", estimateSessionId: "S1", projectName: "12 Beach Road", by: "boma", at: "2026-11-21T03:00:00Z" });
+  assert.ok(payload.lines.every((l) => l.id && l.text && ["measured", "assumption", "exclusion"].includes(l.kind)));
+  assert.equal(payload.lines.length, box.basisCounts(lines).total);
+  assert.ok(!payload.lines.some((l) => l.id === coverId || /none measured/.test(l.text)), "an unticked or inferred line is not sent");
+  assert.deepEqual([...new Set(payload.lines.map((l) => l.kind))], ["measured", "assumption", "exclusion"]);
+  assert.match(box.basisText(lines), /^WHAT WAS MEASURED\n- Measured from:[\s\S]*\n\nASSUMPTIONS\n- [\s\S]*\n\nEXCLUSIONS\n- /);
+  // ---- Quotes side ----
+  assert.equal(EB.basisEntryText({ kind: "measured", text: "SF1 — 9 m³." }), "Measured: SF1 — 9 m³.");
+  assert.equal(EB.basisEntryText({ kind: "measured", text: "Measured from: drawings Rev C." }), "Measured from: drawings Rev C.", "never 'Measured: Measured from'");
+  assert.equal(EB.basisEntryText({ kind: "exclusion", text: "Traffic management" }), "Excluded: Traffic management");
+  assert.equal(EB.basisEntryText({ kind: "assumption", text: " Net  quantities. " }), "Net quantities.");
+  const mine = [{ id: "a1", text: "Access via the rear lane", tenderText: "Access is assumed via the rear lane.", tenderSource: "Access via the rear lane" }];
+  const r1 = EB.mergeBasisAssumptions(mine, payload);
+  assert.equal(r1.added, payload.lines.length); assert.equal(r1.updated + r1.removed + r1.kept + r1.unchanged, 0);
+  assert.deepEqual(r1.assumptions[0], mine[0], "an assumption typed in Quotes keeps its place, its text and its tender wording");
+  assert.ok(r1.assumptions.slice(1).every((a) => a.source === "estimates" && a.id.startsWith("est:") && a.pushedText === a.text && a.takeoffId === "t1"));
+  const r1b = EB.mergeBasisAssumptions(r1.assumptions, payload);
+  assert.equal(r1b.unchanged, payload.lines.length); assert.equal(r1b.assumptions.length, r1.assumptions.length, "the same push twice doubles nothing");
+  // second push: one line reworded in Estimates, one unticked, one retyped in Quotes, one given tender wording
+  const totalsEntry = r1.assumptions.find((a) => /^Measured: Totals/.test(a.text)), sfEntry = r1.assumptions.find((a) => /^Measured: SF1/.test(a.text)), netEntry = r1.assumptions.find((a) => /^Quantities are net/.test(a.text));
+  const inQuotes = r1.assumptions.map((a) => (a.id === totalsEntry.id ? { ...a, text: "Measured: totals are indicative only." } : a.id === netEntry.id ? { ...a, tenderText: "Our price is based on net measured quantities.", tenderSource: a.text } : a));
+  const p2 = { ...payload, at: "2026-11-21T04:00:00Z", lines: payload.lines.filter((l) => !/Waterproofing/.test(l.text)).map((l) => (/^SF1 \(/.test(l.text) ? { ...l, text: "SF1 (Strip Footing) — 72 lm; N25 concrete 10.8 m³." } : /^Totals/.test(l.text) ? { ...l, text: "Totals as measured, net — concrete 53.3 m³." } : l)) };
+  const r2 = EB.mergeBasisAssumptions(inQuotes, p2);
+  assert.deepEqual([r2.added, r2.updated, r2.removed, r2.kept], [0, 1, 1, 1]);
+  assert.equal(r2.assumptions.find((a) => a.id === sfEntry.id).text, "Measured: SF1 (Strip Footing) — 72 lm; N25 concrete 10.8 m³.", "a pushed line follows the takeoff");
+  assert.equal(r2.assumptions.find((a) => a.id === totalsEntry.id).text, "Measured: totals are indicative only.", "a line retyped in Quotes stands");
+  assert.ok(!r2.assumptions.some((a) => /Waterproofing/.test(a.text)), "a line no longer sent leaves the project");
+  assert.equal(r2.assumptions.find((a) => a.id === netEntry.id).tenderText, "Our price is based on net measured quantities.", "accepted tender wording is kept");
+  assert.equal(new Set(r2.assumptions.map((a) => a.id)).size, r2.assumptions.length);
+  // a retyped line that is no longer sent becomes the estimator's own
+  const r3 = EB.mergeBasisAssumptions(r2.assumptions, { ...p2, lines: p2.lines.filter((l) => !/^Totals/.test(l.text)) });
+  const own = r3.assumptions.find((a) => a.text === "Measured: totals are indicative only.");
+  assert.ok(own && !own.source && !own.pushedText && r3.kept === 1 && r3.removed === 0);
+  assert.equal(EB.mergeBasisAssumptions(r2.assumptions, { ...p2, lines: [] }).assumptions.filter((a) => a.source === "estimates").length, 0, "an empty push clears what was pushed — and nothing else");
+  assert.match(EB.basisResultText(r2), /^1 updated, 1 removed, \d+ unchanged, 1 kept as retyped here$/);
+  // which project: the takeoff's own published project, else ONE of that name; anything else is asked
+  const projects = [{ id: "p1", name: "12 Beach Road, Rye VIC 3941", nameSource: "12 Beach Road", estimateSessionId: null }, { id: "p2", name: "5 Other Street", estimateSessionId: "S1" }, { id: "p3", name: "12 beach road", estimateSessionId: null }];
+  assert.equal(EB.matchBasisProject(payload, projects).match.id, "p2", "the project this takeoff was published to wins");
+  const noSession = { ...payload, estimateSessionId: null };
+  const amb = EB.matchBasisProject(noSession, projects);
+  assert.ok(amb.match === null && amb.candidates.length === 2, "two projects of that name: asked, never guessed");
+  assert.equal(EB.matchBasisProject(noSession, projects.slice(0, 2)).match.id, "p1", "one project first typed under that name");
+  assert.equal(EB.matchBasisProject({ ...noSession, projectName: "Somewhere else" }, projects).match, null);
+  assert.equal(EB.matchBasisProject({ ...noSession, projectName: "" }, projects).match, null, "an unnamed takeoff never matches by name");
+  assert.ok(EB.validBasisPayload(payload) && !EB.validBasisPayload({}) && !EB.validBasisPayload(null));
+  // ---- wiring ----
+  const est = fs.readFileSync(new URL("../portal/estimates-app.html", import.meta.url), "utf8");
+  assert.match(est, /<script src="estimates-basis\.js"><\/script>/, "the page loads the pure module");
+  assert.match(fs.readFileSync(new URL("./assemble-portal.mjs", import.meta.url), "utf8"), /estimates-app\.html no longer loads estimates-basis\.js — inline step out of date/, "…and the assembler inlines it, asserted");
+  assert.match(est, /id="basisBtn"[^>]*data-testid="basis-button"/); assert.match(est, /id="basisPanel"[^>]*data-testid="basis-panel"/);
+  const blk = est.slice(est.indexOf("COMPILE ASSUMPTIONS (21 Nov 2026)"), est.indexOf("basisInit();\napplyAiHandoff();"));
+  assert.ok(blk.length > 2000, "the block is found");
+  assert.ok(!/saveEstimateState\(|pushTakeoffToCloud\(|addInstance\(|computeAllAndRefresh\(/.test(blk.replace(/\/\*[\s\S]*?\*\//g, "")), "compiling and pushing never write the takeoff");
+  assert.match(blk, /lines:\(out&&out\.lines\)\|\|\[\], geometry:elementGeometry\(inst\)/, "what was measured is read off each element's own register lines and published geometry");
+  assert.match(blk, /fieldProvenance\(inst,f,defaults\)==="default"/, "an assumed grade / cover is one nobody typed over");
+  assert.match(blk, /localStorage\.setItem\(BASIS_HANDOFF_KEY, JSON\.stringify\(payload\)\)/); assert.match(blk, /type:"gradcon:open-app", target:"quotes"/);
+  assert.equal((blk.match(/localStorage\.setItem\(BASIS_HANDOFF_KEY/g) || []).length, 1, "ONE hand-off write");
+  assert.match(blk, /function basisTextChanged\(t\)\{[\s\S]*?basisSave\(\);/, "a reworded line is saved without repainting the panel under the click");
+  const app = fs.readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
+  assert.match(app, /const result = mergeBasisAssumptions\(q\.assumptions, payload\);\s*\n\s*const stamp = await patchQuoteFields\(target\.storageKey, \{ assumptions: result\.assumptions \}\);/, "Quotes lays the push over the project's assumptions and patches ONLY that field");
+  assert.match(app, /if \(!found\.match\) \{\s*\n\s*setBasisPush\(\{ stage: "choose"/, "no single project: the estimator picks");
+  assert.match(app, /if \(!q \|\| failed\.includes\(target\.storageKey\)\)/, "a project that could not be read is never written from nothing");
+  const pg = fs.readFileSync(new URL("../src/components/ProjectGeometryPanel.jsx", import.meta.url), "utf8");
+  assert.match(pg, /a\.source === "estimates" && \(\s*\n\s*<div[^>]*data-testid="assumption-from-estimates"/, "the Assumptions list marks a pushed line");
 });
 
 if (process.exitCode) {
