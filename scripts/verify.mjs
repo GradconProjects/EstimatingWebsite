@@ -97,10 +97,10 @@ check("every element type has both a category and a section", () => {
   });
 });
 
-check("21 material categories, 416 products (incl. the R6 / R8 / R10 plain rounds on PROCESSED BAR, the 12-row Void formers group of FORMWORK, the 21-row FINISHED PAVEMENTS & CONCRETE FINISHES band (permeable paving and the P4 slip-resistant row added 20 Nov 2026), the 45-row SAW CUTS & DOWELS band, CONCRETE PUMPING, REINFORCEMENT BY RATE, the 32-board INSULATION range, 31 SCREEDS, 17 HYDRONIC HEATING, 48 SPECIALIST FINISHING CONCRETE, 45 PRELIMINARIES, the full 24-size TRENCH MESH grid, Bored Piers subcontract, minimum cartage, levy, surcharge)", () => {
+check("21 material categories, 418 products (incl. the R6 / R8 / R10 plain rounds on PROCESSED BAR, the 12-row Void formers group of FORMWORK, the 23-row FINISHED PAVEMENTS & CONCRETE FINISHES band (permeable paving and the P4 slip-resistant row added 20 Nov 2026, the two recommended tender allowances 21 Nov 2026), the 45-row SAW CUTS & DOWELS band, CONCRETE PUMPING, REINFORCEMENT BY RATE, the 32-board INSULATION range, 31 SCREEDS, 17 HYDRONIC HEATING, 48 SPECIALIST FINISHING CONCRETE, 45 PRELIMINARIES, the full 24-size TRENCH MESH grid, Bored Piers subcontract, minimum cartage, levy, surcharge)", () => {
   assert.equal(FULL_CATALOG.length, 21);
   const total = FULL_CATALOG.reduce((s, c) => s + c.products.length, 0);
-  assert.equal(total, 416);
+  assert.equal(total, 418);
   const pre = FULL_CATALOG.find((c) => c.key === "PRELIMINARIES");
   assert.equal(pre.products.length, 45);
   assert.ok(!pre.weightBasis && !pre.areaBasis && !pre.lengthBasis && !pre.volumeRateBasis, "preliminaries cost plain qty × rate");
@@ -3500,7 +3500,15 @@ await checkAsync("FINISHED PAVEMENTS & CONCRETE FINISHES (Grady, 13 Oct 2026): $
   assert.ok(cat && !cat.weightBasis && !cat.areaBasis && !cat.volumeRateBasis && !cat.visibleFor && cat.scopeBucket === "always");
   assert.ok(cat.products.every((p) => p.unit === "m2" && (p.unitCost > 0 || (p.unitCost === 0 && /no published rate found/.test(p.name)))), "every row is priced, or says in its name that no rate is published");
   // permeable paving (Boma, 20 Nov 2026 — EF 03 "Permeable Paving, sealer TBC, min. P4 slip rating"), from two published 2026 Melbourne guides
-  assert.equal(cat.products.length, 21);
+  assert.equal(cat.products.length, 23);
+  // the two recommended tender allowances for that schedule (Boma's build-up, 21 Nov 2026): the components sum to the rate
+  const ef3 = cat.products.find((p) => /^Permeable paving, vehicle-rated, sealed, P4 slip rating — driveway \/ carport — RECOMMENDED tender allowance/.test(p.name));
+  const ef4 = cat.products.find((p) => /^Exposed aggregate concrete, sealed, P4 slip rating — crossover — RECOMMENDED tender allowance/.test(p.name));
+  assert.equal(ef3.unitCost, 85 + 65 + 40 + 15 + 10 + 15, "EF 03: $215 build-up + $15 contingency = $230/m²");
+  assert.equal(ef4.unitCost, 65 + 65 + 30 + 15 + 10 + 10, "EF 04: $185 build-up + $10 contingency = $195/m²");
+  assert.ok(ef3.unit === "m2" && ef4.unit === "m2");
+  assert.match(ef3.name, /\$215 \+ \$15 contingency/); assert.match(ef4.name, /\$185 \+ \$10 contingency/, "the name states the build-up, so the figure is never read as a published rate");
+  assert.equal(cat.products[0].unitCost, 180, "the $180 carport headline stays the first row");
   assert.equal(cat.products.find((p) => /^Permeable paving — permeable pavers or permeable concrete/.test(p.name)).unitCost, 182, "$170–230 incl. GST, typ. $200 → $182 ex GST");
   assert.equal(cat.products.find((p) => /^Permeable paving — resin-bound/.test(p.name)).unitCost, 175);
   assert.equal(cat.products.find((p) => /^Permeable paving — gravel grid/.test(p.name)).unitCost, 110);

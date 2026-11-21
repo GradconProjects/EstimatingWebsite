@@ -472,12 +472,28 @@ export const FULL_CATALOG = [
    * Coatings' "Permeable Paving Guide 2026" — resin-bound $150–200,
    * modular pavers $120–180, gravel grids $90–130 per m² (GST basis not
    * stated, so the names say "confirm"). No guide publishes a rate for a
-   * P4 slip-resistant treatment, so that row seeds $0 and says so. */
+   * P4 slip-resistant treatment, so that row seeds $0 and says so.
+   * RECOMMENDED TENDER ALLOWANCES for that schedule (Boma, 21 Nov 2026 — his
+   * own build-up, ex GST, direct construction allowances with a small
+   * contingency, before overhead and margin; NOT a published rate and not a
+   * subcontractor quotation):
+   *   EF 03 permeable paving, driveway / carport — materials $85, labour &
+   *   installation $65, bedding / base preparation $40, sealer & P4 $15,
+   *   waste, plant & sundries $10 = $215 + $15 contingency = $230/m²
+   *   (indicative $180–280); assumes vehicle-rated permeable pavers.
+   *   EF 04 exposed aggregate concrete, crossover — $65 + $65 + $30 + $15 +
+   *   $10 = $185 + $10 contingency = $195/m² (indicative $150–230); assumes
+   *   forming, placement, finishing and sealing; the crossover's thickness
+   *   and reinforcement are the council's to confirm.
+   * Both exclude major excavation, spoil, subgrade remediation, drainage,
+   * permits and traffic management; the P4 result depends on the product
+   * and sealer chosen. */
   { key: "FINISHED PAVEMENTS & CONCRETE FINISHES", label: "FINISHED PAVEMENTS & CONCRETE FINISHES", note: "$/m² supply & install — preliminary estimating allowances ex GST from 2026 Melbourne guides and Gradcon's build-up, not subcontractor quotes; $180/m² recommended for a standard 100 mm reinforced carport pavement", weightBasis: false, scopeBucket: "always", products: [
     ["Exposed aggregate pavement, 100 mm reinforced — RECOMMENDED preliminary estimate rate (budget allowance incl. estimating contingency; structural confirmation required)", "m2", null, 180],
     ["Exposed aggregate — standard, supply & install (2026 Melbourne guide $130–185/m²)", "m2", null, 157.5],
     ["Exposed aggregate — premium (2026 Melbourne guide $180–220/m²)", "m2", null, 200],
     ["Exposed aggregate — difficult access (2026 Melbourne guide $180–240+/m²)", "m2", null, 210],
+    ["Exposed aggregate concrete, sealed, P4 slip rating — crossover — RECOMMENDED tender allowance (build-up Nov 2026: $185 + $10 contingency; indicative $150–230/m²; council thickness & reinforcement to confirm)", "m2", null, 195],
     ["Ordinary grey concrete pavement, broom finish (2026 Melbourne guide $85–120/m²)", "m2", null, 102.5],
     ["Coloured concrete pavement (2026 Melbourne guide $100–210/m² incl. GST, typ. $145 ≈ $132 ex GST)", "m2", null, 132],
     ["Stamped / stencilled concrete pavement (2026 Melbourne guide $125–210/m² incl. GST, typ. $165 ≈ $150 ex GST)", "m2", null, 150],
@@ -485,6 +501,7 @@ export const FULL_CATALOG = [
     ["Burnished concrete finish — mechanical trowel burnish of a placed slab (guide $30–85/m²)", "m2", null, 57.5],
     ["Honed concrete finish — light grind & seal of a placed slab (no 2026 Melbourne guide found; seeded between burnished and polished — confirm)", "m2", null, 70],
     ["Sealer only — reseal of an existing pavement (indicative $6–16/m²; confirm with supplier)", "m2", null, 11],
+    ["Permeable paving, vehicle-rated, sealed, P4 slip rating — driveway / carport — RECOMMENDED tender allowance (build-up Nov 2026: $215 + $15 contingency; indicative $180–280/m²; excl. major excavation, drainage, permits & traffic management)", "m2", null, 230],
     ["Permeable paving — permeable pavers or permeable concrete, supply & install incl. open-graded base (2026 Melbourne guide $170–230/m² incl. GST, typ. $200 ≈ $182 ex GST)", "m2", null, 182],
     ["Permeable paving — resin-bound stone, supply & install (2026 Melbourne guide $150–200/m²; GST basis not stated — confirm)", "m2", null, 175],
     ["Permeable paving — gravel grid (2026 Melbourne guide $90–130/m²; GST basis not stated — confirm)", "m2", null, 110],

@@ -213,7 +213,19 @@ safety net silently. Keep all cost arithmetic in `lib/costing.js`.
    grid $110 (Quartz Coatings' "Permeable Paving Guide 2026": $150–200 and
    $90–130, GST basis not stated — the names say "confirm"), and "Slip-
    resistant finish to P4" at $0 because no guide publishes a rate — the name
-   says so. The sources are in the catalog comment; the band is 21 rows.
+   says so. The sources are in the catalog comment. **Two RECOMMENDED tender
+   allowances for that schedule** (Boma, 21 Nov 2026, his own build-up ex GST
+   — direct construction allowances with a small contingency, before overhead
+   and margin; never a published rate or a subcontractor quote, and the names
+   say "build-up"): permeable paving, vehicle-rated, sealed, P4 — driveway /
+   carport $230/m² (materials $85, labour $65, bedding / base $40, sealer &
+   P4 $15, waste / plant $10 = $215 + $15 contingency; indicative $180–280)
+   and exposed aggregate concrete, sealed, P4 — crossover $195/m² ($65 + $65 +
+   $30 + $15 + $10 = $185 + $10; indicative $150–230; council thickness and
+   reinforcement to confirm). Both exclude major excavation, drainage, permits
+   and traffic management. They are whole rates: the components are in the
+   catalog comment, not separate rows (an element carrying a rate AND its
+   components would buy the pavement twice). The band is 23 rows.
 
 8. **Contract minimums bill through `computeRowTotal`.** A product can
    carry a `minQty` (the 7th field in its catalog row) — a "4 hour min"
