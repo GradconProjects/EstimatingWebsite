@@ -51,7 +51,9 @@ export const scopeCategoryLabel = (key) => (SCOPE_CATEGORIES.find((c) => c[0] ==
 export const SCOPE_MAX_FILES = 12;
 export const SCOPE_MAX_TEXT_CHARS = 150000;
 export const SCOPE_MAX_ITEMS = 160;
-export const SCOPE_RESULT_KEYS = ["items", "gaps", "exclusions", "questions", "documents", "unreadable"];
+export const SCOPE_RESULT_KEYS = ["items", "gaps", "exclusions", "questions", "references", "documents", "unreadable"];
+export const SCOPE_MAX_REFERENCES = 80;
+export const SCOPE_REF_KINDS = ["drawing", "detail", "schedule", "report", "specification", "standard", "other"];
 /**
  * A long set is read IN PARTS (20 Nov 2026 — five drawings in one read ran the
  * reply into the model's output limit: 45 items were kept and everything after
@@ -98,7 +100,9 @@ Return ONE JSON object in this shape. Keep it COMPACT so the whole list fits: om
    "basis": "stated"|"implied",  // stated = a document draws or says it; implied = not written, but required by something that is
    "because": string|null,       // for "implied": what in the documents requires it
    "party": "ours"|"others"|"unclear",   // who the documents make responsible ("by builder", "by others", "NIC" = others)
-   "doc": string|null, "page": string|null, "quote": string|null    // where it was read
+   "doc": string|null, "page": string|null, "quote": string|null,   // where it was read
+   "via": "email"|"document",    // "document" = an attached file; "email" = anything in the EMAILS / MESSAGES text at the end (emails, chats, notes)
+   "also": [{"doc": string, "page": string|null, "quote": string|null, "via": "email"|"document"}]   // up to 2 OTHER places that mention the same item — a drawing and an email, two emails
  }],
  "more": boolean,                // true when scope items remain that this reply did not list (see PARTS below)
  "gaps": [{
@@ -107,7 +111,14 @@ Return ONE JSON object in this shape. Keep it COMPACT so the whole list fits: om
    "basis": "documents"|"practice",
    "relatesTo": string|null,     // the item title it concerns
    "severity": "high"|"medium"|"low",
-   "doc": string|null, "page": string|null, "quote": string|null
+   "doc": string|null, "page": string|null, "quote": string|null, "via": "email"|"document"
+ }],
+ "references": [{                // every drawing sheet, detail, schedule, report or specification that a document or message REFERS to by number or name
+   "ref": string,                // as written: "S-05", "Detail 7/S-05", "Geotechnical report by Civiltest ref 1234", "A-201 rev C"
+   "what": string|null,          // what it is said to contain, in a few words
+   "kind": "drawing"|"detail"|"schedule"|"report"|"specification"|"standard"|"other",
+   "doc": string|null, "page": string|null, "quote": string|null, "via": "email"|"document",   // where the reference is made
+   "found": {"doc": string, "page": string|null}|null   // where that sheet or document itself is in the set you read; null when it is referred to and NOT in the set
  }],
  "exclusions": [{"text": string, "doc": string|null, "page": string|null, "quote": string|null}],
  "questions": [string],          // the clarifications worth sending to the builder or engineer
@@ -120,11 +131,13 @@ RULES
 - Every item needs its "doc", "page" and "quote", or "basis": "implied" with "because". Never write a dimension, grade, bar size, spacing, cover or finish that is not on the documents — leave "specs" short rather than fill it from typical practice.
 - "gaps" are QUESTIONS, never findings of fact. "documents" basis: two documents disagree; a detail, schedule, section or report is referred to and not in the set; an element is drawn with no size, grade or reinforcement; a message asks for work no drawing shows; responsibility is unclear. "practice" basis: work that normally accompanies an item you listed and that NO document mentions either way (for example a slab on ground with no membrane or sub-base noted, a suspended slab with no back-propping note, a retaining wall with no drainage, no allowance stated for pumping, cranage, access or testing). List only gaps that relate to something in these documents; do not pad the list.
 - "exclusions": every statement that work is by others, not in contract, excluded or supplied by the builder.
+- "via": say for every item, gap and reference whether it was read in an attached file ("document") or in the emails / messages text ("email"). When both mention an item, give the clearer one as its source and the other under "also" — the estimator must be able to see every place a scope item is asked for.
+- "references": list each referred-to document once. A sheet number on a drawing's own title block is not a reference; "refer to detail 7 on S-05", "as per the geotechnical report", "see architectural drawings", "to engineer's specification" are. "found" only when you actually read that sheet or document in this set — never assume it is there.
 - Put the costly and the easily missed items first.
 
 PARTS
-- List at most ${SCOPE_ITEMS_PER_REPLY} items in this reply. If the documents hold more scope items than that, stop at ${SCOPE_ITEMS_PER_REPLY}, set "more": true and leave "gaps", "exclusions" and "questions" out — you will be asked to continue and they belong in the last reply only.
-- When this reply completes the list, set "more": false and give the "gaps", "exclusions" and "questions" for the WHOLE set${done.length ? ", counting the items already listed below as part of it" : ""}.${done.length ? `
+- List at most ${SCOPE_ITEMS_PER_REPLY} items in this reply. If the documents hold more scope items than that, stop at ${SCOPE_ITEMS_PER_REPLY}, set "more": true and leave "gaps", "references", "exclusions" and "questions" out — you will be asked to continue and they belong in the last reply only.
+- When this reply completes the list, set "more": false and give the "gaps", "references", "exclusions" and "questions" for the WHOLE set${done.length ? ", counting the items already listed below as part of it" : ""}.${done.length ? `
 
 ALREADY LISTED — earlier replies listed these ${done.length} items. Do NOT repeat them; list only scope items that are NOT in this list (there may be none — then "items" is empty and "more" is false):
 ${done.map((t) => `- ${t}`).join("\n")}` : ""}
@@ -149,6 +162,26 @@ function sourceOf(o) {
  * trimmed and capped, duplicates by id are merged (specs unioned), and every
  * entry gains its stable id. Returns null when the reply holds nothing usable.
  */
+/** "email" or "document": the reader's word, else read off the source's name (an email, a message, a chat or a note is "email"). */
+export function viaOf(via, doc) {
+  if (via === "email" || via === "document") return via;
+  return /\b(e-?mail|message|chat|whatsapp|sms|text|note|pasted)\b/i.test(String(doc || "")) ? "email" : "document";
+}
+const mentionKey = (m) => `${String(m.doc || "").toLowerCase()}|${String(m.page || "")}|${String(m.quote || "").toLowerCase()}`;
+function pushMention(list, m) {
+  if (!m || (!m.doc && !m.quote)) return list;
+  const one = { doc: m.doc || null, page: m.page || null, quote: m.quote || null, via: viaOf(m.via, m.doc) };
+  if (list.length < 6 && !list.some((x) => mentionKey(x) === mentionKey(one))) list.push(one);
+  return list;
+}
+/** Every place an item is mentioned: its own source first, then the others — each once, at most six. */
+function mentionsOf(item, also) {
+  const list = Array.isArray(item.mentions) ? item.mentions.slice() : [];
+  pushMention(list, { doc: item.doc, page: item.page, quote: item.quote, via: item.via });
+  (Array.isArray(also) ? also : []).forEach((a) => { if (a && typeof a === "object") pushMention(list, { doc: clean(a.doc, 160) || null, page: a.page == null ? null : clean(a.page, 20) || null, quote: clean(a.quote, 200) || null, via: a.via }); });
+  return list;
+}
+
 export function parseScopeResult(raw, { types = [] } = {}) {
   if (!raw || typeof raw !== "object") return null;
   const known = new Set((types || []).map((t) => t.id));
@@ -161,7 +194,7 @@ export function parseScopeResult(raw, { types = [] } = {}) {
     const id = scopeId("sc_", category, title);
     const specs = arr(it.specs).map((s) => clean(s, 160)).filter(Boolean);
     const prev = byId.get(id);
-    if (prev) { specs.forEach((s) => { if (!prev.specs.includes(s)) prev.specs.push(s); }); return; }
+    if (prev) { specs.forEach((s) => { if (!prev.specs.includes(s)) prev.specs.push(s); }); prev.mentions = mentionsOf(prev, [{ ...sourceOf(it), via: it.via }].concat(arr(it.also))); return; }
     if (byId.size >= SCOPE_MAX_ITEMS) return;
     const conf = Number(it.confidence);
     const item = {
@@ -176,6 +209,8 @@ export function parseScopeResult(raw, { types = [] } = {}) {
       confidence: Number.isFinite(conf) ? Math.min(1, Math.max(0, conf)) : null,
       ...sourceOf(it),
     };
+    item.via = viaOf(it.via, item.doc);
+    item.mentions = mentionsOf(item, it.also);
     byId.set(id, item);
   });
   const gapIds = new Set();
@@ -191,6 +226,7 @@ export function parseScopeResult(raw, { types = [] } = {}) {
       relatesTo: clean(g.relatesTo, 200) || null,
       severity: ["high", "medium", "low"].includes(g.severity) ? g.severity : "medium",
       ...sourceOf(g),
+      via: viaOf(g.via, sourceOf(g).doc),
     });
   });
   const rank = { high: 0, medium: 1, low: 2 };
@@ -198,13 +234,26 @@ export function parseScopeResult(raw, { types = [] } = {}) {
   const exclusions = arr(raw.exclusions).map((e) => (typeof e === "string" ? { text: clean(e, 300) } : { text: clean(e && e.text, 300), ...sourceOf(e) })).filter((e) => e.text).slice(0, 60)
     .map((e) => ({ id: scopeId("ex_", e.text), ...e }));
   const questions = arr(raw.questions).map((q) => clean(q, 300)).filter(Boolean).slice(0, 40);
+  const refById = new Map();
+  arr(raw.references).forEach((r) => {
+    if (!r || typeof r !== "object") return;
+    const ref = clean(r.ref, 160); if (!ref) return;
+    const id = scopeId("rf_", ref);
+    const cited = { ...sourceOf(r), via: viaOf(r.via, sourceOf(r).doc) };
+    const found = r.found && typeof r.found === "object" && clean(r.found.doc, 160) ? { doc: clean(r.found.doc, 160), page: r.found.page == null ? null : clean(r.found.page, 20) || null } : null;
+    const prev = refById.get(id);
+    if (prev) { if (cited.doc || cited.quote) pushMention(prev.cited, cited); if (!prev.found && found) prev.found = found; return; }
+    if (refById.size >= SCOPE_MAX_REFERENCES) return;
+    refById.set(id, { id, ref, what: clean(r.what, 200) || null, kind: SCOPE_REF_KINDS.includes(r.kind) ? r.kind : "other", cited: cited.doc || cited.quote ? [cited] : [], found });
+  });
+  const references = [...refById.values()];
   const documents = arr(raw.documents).map((d) => ({ name: clean(d && d.name, 160), kind: clean(d && d.kind, 40) || "other", title: clean(d && d.title, 160) || null, revision: clean(d && d.revision, 40) || null, date: clean(d && d.date, 40) || null })).filter((d) => d.name || d.title).slice(0, 40);
   const unreadable = arr(raw.unreadable).map((u) => clean(u, 240)).filter(Boolean).slice(0, 40);
   const items = [...byId.values()];
   const more = raw.more === true;
   // a continuation may honestly hold nothing new ("items": [], "more": false) — that is an answer, not an unreadable reply
-  if (!items.length && !gaps.length && !exclusions.length && !questions.length && raw.more === undefined) return null;
-  return { items, gaps, exclusions, questions, documents, unreadable, more };
+  if (!items.length && !gaps.length && !exclusions.length && !questions.length && !references.length && raw.more === undefined) return null;
+  return { items, gaps, exclusions, questions, references, documents, unreadable, more };
 }
 
 const PDF_RE = /\.pdf(\?|$)/i, IMAGE_RE = /\.(png|jpe?g|webp|gif)(\?|$)/i;

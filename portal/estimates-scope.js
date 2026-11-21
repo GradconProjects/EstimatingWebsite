@@ -37,14 +37,16 @@
 
   function scopeDocKey(takeoffId) { return SCOPE_DOC_PREFIX + String(takeoffId || "draft"); }
   function emptyScopeDoc(takeoffId, name) {
-    return { version: SCOPE_DOC_VERSION, takeoffId: String(takeoffId || "draft"), name: name || "", files: [], notes: [], result: null, runs: [], custom: [], review: {}, removed: {}, updatedAt: null, updatedBy: null };
+    return { version: SCOPE_DOC_VERSION, takeoffId: String(takeoffId || "draft"), name: name || "", files: [], notes: [], result: null, runs: [], custom: [], review: {}, removed: {}, updatedAt: null, updatedBy: null,
+      // the project's own sources, found automatically (20 Nov 2026): which kinds are wanted, the Drive folder, and what the last look found
+      auto: { mail: true, drive: true }, drive: null, found: null };
   }
   function normalizeScopeDoc(d, takeoffId, name) {
     const base = emptyScopeDoc(takeoffId, name);
     if (!d || typeof d !== "object") return base;
     const arr = (v) => (Array.isArray(v) ? v : []);
-    const res = d.result && typeof d.result === "object" ? { items: arr(d.result.items), gaps: arr(d.result.gaps), exclusions: arr(d.result.exclusions), questions: arr(d.result.questions), documents: arr(d.result.documents), unreadable: arr(d.result.unreadable) } : null;
-    return Object.assign(base, { name: d.name || base.name, files: arr(d.files), notes: arr(d.notes), result: res, runs: arr(d.runs), custom: arr(d.custom), review: d.review && typeof d.review === "object" ? d.review : {}, removed: d.removed && typeof d.removed === "object" ? d.removed : {}, updatedAt: d.updatedAt || null, updatedBy: d.updatedBy || null });
+    const res = d.result && typeof d.result === "object" ? { items: arr(d.result.items), gaps: arr(d.result.gaps), exclusions: arr(d.result.exclusions), questions: arr(d.result.questions), documents: arr(d.result.documents), unreadable: arr(d.result.unreadable), references: arr(d.result.references) } : null;
+    return Object.assign(base, { name: d.name || base.name, files: arr(d.files), notes: arr(d.notes), result: res, runs: arr(d.runs), custom: arr(d.custom), review: d.review && typeof d.review === "object" ? d.review : {}, removed: d.removed && typeof d.removed === "object" ? d.removed : {}, updatedAt: d.updatedAt || null, updatedBy: d.updatedBy || null , auto: { mail: !(d.auto && d.auto.mail === false), drive: !(d.auto && d.auto.drive === false) }, drive: d.drive && typeof d.drive === "object" && d.drive.id ? d.drive : null, found: d.found && typeof d.found === "object" ? d.found : null });
   }
 
   /** What a file dropped on the panel is: a document the reader opens by URL, text read in the browser, or refused (with why). */
@@ -76,6 +78,130 @@
   }
 
   /** A run's result folded into what the checklist already holds: known items gain new specs and keep their place; new ones are appended; gaps, exclusions, questions and documents are unioned. */
+  /* ---------- mentions, sources and the documents the scope refers to (20 Nov 2026) ----------
+   * Boma: "the scope finder should also automatically scan email box for that project and also the project folder in
+   * drive. it should have a checkbox to select scopes from emails only or drive only or both and clearly itemise the
+   * found scope mentions and directions on where and how to find the requested scope document references". */
+  const mentionKey = (m) => `${String(m.doc || "").toLowerCase()}|${String(m.page || "")}|${String(m.quote || "").toLowerCase()}`;
+  const viaGuess = (m) => (m.via === "email" || m.via === "document" ? m.via : /\b(e-?mail|message|chat|whatsapp|sms|note|pasted)\b/i.test(String(m.doc || "")) ? "email" : "document");
+  /** Every place an item (or a gap) is mentioned — its `mentions`, else its one source; [] for an item typed by hand. */
+  function scopeMentions(it) {
+    if (!it) return [];
+    const list = Array.isArray(it.mentions) && it.mentions.length ? it.mentions : (it.doc || it.quote) ? [{ doc: it.doc || null, page: it.page || null, quote: it.quote || null, via: it.via }] : [];
+    return list.map((m) => ({ doc: m.doc || null, page: m.page || null, quote: m.quote || null, via: viaGuess(m) }));
+  }
+  function unionMentions(a, b) { const seen = new Set(); return (a || []).concat(b || []).filter((m) => { const k = mentionKey(m); if (seen.has(k)) return false; seen.add(k); return true; }).slice(0, 8); }
+  function mergeReferences(a, b) {
+    const m = new Map();
+    (a || []).concat(b || []).forEach((r) => {
+      if (!r || !r.id) return;
+      const old = m.get(r.id);
+      if (!old) { m.set(r.id, Object.assign({}, r, { cited: (r.cited || []).slice() })); return; }
+      old.cited = unionMentions(old.cited, r.cited); if (!old.found && r.found) old.found = r.found; if (!old.what && r.what) old.what = r.what;
+    });
+    return Array.from(m.values());
+  }
+  /** "email" / "document": the kinds of source an item was found in. An item typed by hand has none and is always shown. */
+  function scopeItemVias(it) { return Array.from(new Set(scopeMentions(it).map((m) => m.via))); }
+  /** The source tick boxes as a filter: an item stays when one of its mentions is of a ticked kind. */
+  function scopeViaAllows(it, auto) {
+    const a = auto || {}; const mail = a.mail !== false, drive = a.drive !== false;
+    if (mail && drive) return true;
+    const vias = scopeItemVias(it); if (!vias.length) return true;
+    return (mail && vias.includes("email")) || (drive && vias.includes("document"));
+  }
+  /** The mentions laid out BY SOURCE: one group per document or email, with what each asks for. */
+  function scopeMentionsBySource(doc, auto) {
+    const groups = new Map();
+    const add = (m, entry) => {
+      if (!m.doc) return;
+      const a = auto || {}; if ((m.via === "email" && a.mail === false) || (m.via === "document" && a.drive === false)) return;
+      const k = m.via + "|" + m.doc.toLowerCase();
+      if (!groups.has(k)) groups.set(k, { source: m.doc, via: m.via, rows: [] });
+      groups.get(k).rows.push(Object.assign({ page: m.page, quote: m.quote }, entry));
+    };
+    scopeAllItems(doc).forEach((it) => scopeMentions(it).forEach((m) => add(m, { kind: "item", id: it.id, title: it.title, party: it.party || "ours", specs: (it.specs || []).slice(0, 6) })));
+    ((doc && doc.result && doc.result.gaps) || []).forEach((g) => scopeMentions(g).forEach((m) => add(m, { kind: "gap", id: g.id, title: g.title })));
+    ((doc && doc.result && doc.result.exclusions) || []).forEach((e) => scopeMentions(e).forEach((m) => add(m, { kind: "exclusion", id: e.id, title: e.text })));
+    return Array.from(groups.values()).sort((x, y) => (x.via === y.via ? x.source.localeCompare(y.source) : x.via === "email" ? -1 : 1));
+  }
+
+  /* ---------- the project's Drive folder ---------- */
+  const DRIVE_CLASSES = [
+    ["struct", "Structural", /struct|\bstr\b|engineer|\bS[-_ ]?\d{2,3}\b|footing|slab plan|reinforc/i],
+    ["archi", "Architectural", /archi|\barch\b|\bA[-_ ]?\d{2,3}\b|floor ?plan|elevation|working drawings|town planning|\bWD\b|\bTP\b/i],
+    ["geotech", "Soil / geotechnical", /geotech|soil|site investigation|site classification|civil ?test|bore ?(hole|log)/i],
+    ["spec", "Specification", /specif|\bspec\b|schedule of finishes|finishes schedule|scope of works/i],
+    ["civil", "Civil", /civil|drainage|stormwater|\bC[-_ ]?\d{2,3}\b|survey|levels/i],
+    ["scope", "Tender / scope", /tender|\brfq\b|\brft\b|scope|quote request|invitation|trade package|addend/i],
+  ];
+  const SCOPE_DRIVE_AUTO_MAX = 12;
+  /** What a Drive file is, from its name and the folder it sits in: {key, label} or null. */
+  function scopeDriveClass(name, path) {
+    const t = `${path || ""} ${name || ""}`;
+    for (const c of DRIVE_CLASSES) if (c[2].test(t)) return { key: c[0], label: c[1] };
+    return null;
+  }
+  /** A file the reader can take: a PDF, a picture, or a Google Doc (it is exported as a PDF). */
+  const scopeDriveReadable = (f) => !!f && (f.kind === "pdf" || f.kind === "image" || f.kind === "doc" || /\.pdf$/i.test(f.name || ""));
+  /** The files ticked on their own: readable ones that look like drawings, reports, specifications or the tender — at most twelve, the documents that set the scope first. */
+  function scopeDriveAutoPick(files, max) {
+    const order = DRIVE_CLASSES.map((c) => c[0]);
+    const ranked = (files || []).filter(scopeDriveReadable).map((f) => ({ f, cls: scopeDriveClass(f.name, f.path) })).filter((x) => x.cls)
+      .sort((a, b) => order.indexOf(a.cls.key) - order.indexOf(b.cls.key) || String(b.f.modifiedTime || "").localeCompare(String(a.f.modifiedTime || "")));
+    return ranked.slice(0, max || SCOPE_DRIVE_AUTO_MAX).map((x) => x.f.id);
+  }
+  /** The mailbox search for a project: its street as an exact phrase ("12 Beach Road"), else its name. */
+  function scopeMailQuery(projectName) {
+    const first = String(projectName || "").split(/[,—–]/)[0].trim();
+    return first ? `"${first.replace(/"/g, "")}"` : "";
+  }
+
+  /* ---------- where to find a document the scope refers to ---------- */
+  /** The patterns that find a reference in a file name: a sheet number in any spelling ("S-05", "S05", "S 5"), else its telling words. */
+  function scopeRefKeys(ref) {
+    const text = `${(ref && ref.ref) || ""}`;
+    const keys = [];
+    const re = /\b([A-Za-z]{1,3})[-_ ]?(0*)(\d{1,4})([A-Za-z]?)\b/g; let m;
+    while ((m = re.exec(text))) { if (/^(rev|no|ref|as|nzs|bs|iso|ncc|mpa|det)$/i.test(m[1])) continue; keys.push({ sheet: `${m[1].toUpperCase()}-${m[2]}${m[3]}${m[4].toUpperCase()}`, re: new RegExp(`(^|[^A-Za-z0-9])${m[1]}[-_ ]?0*${m[3]}${m[4]}([^0-9]|$)`, "i") }); }
+    if (!keys.length) {
+      const words = `${text} ${(ref && ref.what) || ""}`.toLowerCase().match(/[a-z]{5,}/g) || [];
+      const stop = new Set(["refer", "detail", "drawing", "drawings", "report", "document", "specification", "schedule", "engineer", "engineers", "architect", "architects", "prepared", "dated", "revision", "sheet", "section", "attached", "project"]);
+      const tell = Array.from(new Set(words.filter((w) => !stop.has(w)))).slice(0, 3);
+      const kindWord = ref && ref.kind === "report" ? /geotech|soil|investigation/.test(text.toLowerCase()) ? ["geotech", "soil"] : [] : [];
+      tell.concat(kindWord).forEach((w) => keys.push({ word: w, re: new RegExp(w.slice(0, 7), "i") }));
+    }
+    return keys;
+  }
+  /**
+   * WHERE a referred-to document is and HOW to get it — deterministic, from what the read saw and what the scan found:
+   *   read   it is in the set that was read (the reader saw the sheet itself, or a source file carries its number)
+   *   drive  a file of the project's Drive folder carries it — with its folder path and link
+   *   mail   an email in projects@ has it attached — with the email and its link
+   *   missing  none of those — who cited it and what to search for
+   */
+  function scopeLocateReference(ref, doc) {
+    const d = doc || {}; const keys = scopeRefKeys(ref); const hit = (name) => keys.length > 0 && keys.some((k) => k.re.test(String(name || "")));
+    const label = keys.filter((k) => k.sheet).map((k) => k.sheet).join(", ") || (ref && ref.ref) || "";
+    const cited = (ref && ref.cited && ref.cited[0]) || null;
+    if (ref && ref.found && ref.found.doc) {
+      const f = (d.files || []).find((x) => String(x.name || "").toLowerCase() === String(ref.found.doc).toLowerCase());
+      return { state: "read", where: `In the set that was read: ${ref.found.doc}${ref.found.page ? `, p. ${ref.found.page}` : ""}`, link: f ? f.url : null, linkLabel: f ? "Open the file" : null, how: "" };
+    }
+    const src = (d.files || []).find((x) => hit(x.name));
+    if (src) return { state: "read", where: `Among the files that were read: ${src.name} — open it and look for ${label}`, link: src.url || null, linkLabel: "Open the file", how: "" };
+    const drive = d.found && d.found.drive; const dfiles = (drive && drive.files) || [];
+    const df = dfiles.find((x) => hit(x.name)) || dfiles.find((x) => hit(x.path));
+    if (df) return { state: "drive", where: `In the project's Drive folder: ${[drive.folder && drive.folder.name, df.path].filter(Boolean).join(" › ")} › ${df.name}`, link: df.webViewLink || null, linkLabel: "Open in Drive", fileId: df.id, how: "Not read yet — add it to the sources and read it, so its scope is on the checklist." };
+    const mails = (d.found && d.found.mail) || [];
+    for (const mm of mails) { const a = (mm.attachments || []).find((x) => hit(x.filename || x)); if (a) return { state: "mail", where: `Attached to the email “${mm.subject || "(no subject)"}” from ${mm.from || "unknown"}${mm.date ? `, ${String(mm.date).slice(0, 10)}` : ""}: ${a.filename || a}`, link: `https://mail.google.com/mail/u/0/#all/${mm.id}`, linkLabel: "Open the email", mailId: mm.id, how: "Download the attachment from the email and add it to the sources, or save it to the project's Drive folder." }; }
+    const who = cited && cited.via === "email" ? ((d.notes || []).find((n) => n.kind === "email" && cited.doc && String(cited.doc).toLowerCase().includes(String(n.name || "").toLowerCase().slice(0, 30)) && n.from) || {}).from : null;
+    const looked = [drive && drive.folder ? `the Drive folder “${drive.folder.name}” (${dfiles.length} file${dfiles.length === 1 ? "" : "s"})` : null, mails.length ? `${mails.length} project email${mails.length === 1 ? "" : "s"}` : null].filter(Boolean);
+    return { state: "missing", where: looked.length ? `Not found in ${looked.join(" or ")}` : "Not found — the project's Drive folder and mailbox have not been scanned yet",
+      how: `Search Drive and the mailbox for “${keys.find((k) => k.sheet) ? keys.find((k) => k.sheet).sheet : (ref && ref.ref) || ""}”. If it is not there, ask ${who || (cited && cited.doc ? `whoever issued ${cited.doc}` : "the builder or the engineer")} for it — it is cited${cited && cited.doc ? ` in ${cited.doc}${cited.page ? `, p. ${cited.page}` : ""}` : ""}.`,
+      search: keys.find((k) => k.sheet) ? keys.find((k) => k.sheet).sheet : (ref && ref.ref) || "" };
+  }
+
   function mergeScopeResult(prev, next) {
     if (!next) return prev || null;
     if (!prev) return next;
@@ -84,7 +210,8 @@
       const old = byId.get(it.id);
       if (!old) { byId.set(it.id, it); return; }
       (it.specs || []).forEach((s) => { if (!old.specs.includes(s)) old.specs.push(s); });
-      ["where", "quantity", "because", "doc", "page", "quote", "type"].forEach((k) => { if (!old[k] && it[k]) old[k] = it[k]; });
+      ["where", "quantity", "because", "doc", "page", "quote", "type", "via"].forEach((k) => { if (!old[k] && it[k]) old[k] = it[k]; });
+      old.mentions = unionMentions(scopeMentions(old), scopeMentions(it));
       if (old.basis === "implied" && it.basis === "stated") { old.basis = "stated"; ["doc", "page", "quote"].forEach((k) => { if (it[k]) old[k] = it[k]; }); }
       if (old.party === "unclear" && it.party !== "unclear") old.party = it.party;
     });
@@ -96,6 +223,7 @@
       questions: union(prev.questions, next.questions, (q) => String(q).toLowerCase()),
       documents: union(prev.documents, next.documents, (x) => String(x.name || x.title).toLowerCase()),
       unreadable: union(prev.unreadable, next.unreadable, (u) => String(u).toLowerCase()),
+      references: mergeReferences(prev.references, next.references),
     };
   }
 
@@ -108,7 +236,9 @@
     const review = Object.assign({}, older.review || {});
     Object.keys(newer.review || {}).forEach((id) => { const n = newer.review[id], o = review[id]; if (!o || String(n.at || "") >= String(o.at || "")) review[id] = n; });
     const runs = (() => { const m = new Map(); (older.runs || []).concat(newer.runs || []).forEach((r) => { if (r && r.at && !m.has(r.at)) m.set(r.at, r); }); return Array.from(m.values()).sort((p, q) => String(p.at).localeCompare(String(q.at))).slice(-30); })();
+    const found = [newer.found, older.found].filter(Boolean).sort((x, y) => String(y.at || "").localeCompare(String(x.at || "")))[0] || null;
     return Object.assign({}, newer, {
+      found, drive: newer.drive || older.drive || null,
       files: unionById(newer.files, older.files), notes: unionById(newer.notes, older.notes), custom: unionById(newer.custom, older.custom),
       result: mergeScopeResult(older.result, newer.result), review, removed, runs,
     });
@@ -190,6 +320,9 @@
     ((doc.result && doc.result.gaps) || []).forEach((g) => { const r = (doc.review || {})[g.id] || {}; rows.push(["Possibly missing", g.basis === "practice" ? "Common practice" : "From the documents", g.title, g.relatesTo || "", g.why || "", "", g.severity, "", r.state === "done" ? "Considered" : r.state === "na" ? "Not applicable" : "Open", r.note || "", "", g.doc || "", g.page || "", g.quote || ""]); });
     ((doc.result && doc.result.exclusions) || []).forEach((e) => rows.push(["Exclusion / by others", "", e.text, "", "", "", "", "By others", "", "", "", e.doc || "", e.page || "", e.quote || ""]));
     ((doc.result && doc.result.questions) || []).forEach((q) => rows.push(["Question to send", "", q, "", "", "", "", "", "", "", "", "", "", ""]));
+    // every further place an item is mentioned, then the documents the scope refers to and where each is
+    scopeAllItems(doc).forEach((it) => scopeMentions(it).slice(1).forEach((m) => rows.push(["Also mentioned", m.via === "email" ? "Email / message" : "Document", it.title, "", "", "", "", "", "", "", "", m.doc || "", m.page || "", m.quote || ""])));
+    ((doc.result && doc.result.references) || []).forEach((r) => { const loc = scopeLocateReference(r, doc); const c = (r.cited || [])[0] || {}; rows.push(["Document referred to", r.kind || "", r.ref, r.what || "", loc.where, "", "", "", loc.state === "missing" ? "NOT FOUND" : "Found", loc.how || "", "", c.doc || "", c.page || "", c.quote || ""]); });
     return rows;
   }
 
@@ -197,6 +330,7 @@
     SCOPE_DOC_PREFIX, SCOPE_DOC_VERSION, SCOPE_FILE_MAX_BYTES, SCOPE_IMAGE_MAX_BYTES, SCOPE_TEXT_MAX_CHARS, SCOPE_FILES_PER_RUN,
     scopeDocKey, emptyScopeDoc, normalizeScopeDoc, scopeFileClass, scopeTextFromFile, scopeRunText,
     SCOPE_MAX_PARTS, scopeAlreadyTitles, scopeLastReadPartial,
+    SCOPE_DRIVE_AUTO_MAX, scopeMentions, scopeItemVias, scopeViaAllows, scopeMentionsBySource, scopeDriveClass, scopeDriveReadable, scopeDriveAutoPick, scopeMailQuery, scopeRefKeys, scopeLocateReference,
     mergeScopeResult, mergeScopeDocs, scopeCompareToTakeoff, scopeAllItems, scopeProgress, scopeReviewPatch, scopeFilterItems, scopeCsvRows,
   };
 });

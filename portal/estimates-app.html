@@ -153,6 +153,18 @@ table.rows.barsets td:nth-child(2) input,table.rows.barsets td:nth-child(4) inpu
 #scopeFinder .sc-list{flex:1;}
 #scopeFinder .sc-sources input[type="text"],#scopeFinder .sc-sources textarea{width:100%;box-sizing:border-box;margin:3px 0;padding:5px 7px;font:inherit;font-size:12px;border:1px solid var(--line);border-radius:6px;background:var(--input);color:var(--text);}
 #scopeFinder .sc-drop{border:1.5px dashed var(--line);border-radius:8px;padding:10px;margin:6px 0;text-align:center;}
+#scopeFinder .sc-auto{border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin:8px 0 12px;background:var(--panel2,rgba(127,127,127,.06));}
+#scopeFinder .sc-auto .sc-sub{margin-top:0;}
+#scopeFinder .sc-autopick{display:flex;flex-wrap:wrap;gap:10px;align-items:center;font-size:12.5px;margin:4px 0 6px;}
+#scopeFinder .sc-autolist{margin:4px 0 6px;font-size:12px;} #scopeFinder .sc-autolist summary{cursor:pointer;font-weight:600;}
+#scopeFinder .sc-autolist .sc-mail{display:flex;gap:6px;align-items:flex-start;padding:4px 0;border-bottom:1px dotted var(--line);} #scopeFinder .sc-autolist .sc-mail.dim{opacity:.6;}
+#scopeFinder .sc-autolist select{width:100%;}
+#scopeFinder .sc-linkbtn{background:none;border:none;color:var(--accent);cursor:pointer;padding:0;font-size:inherit;text-decoration:underline;}
+#scopeFinder .sc-viabar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;font-size:12.5px;margin:6px 0 8px;} #scopeFinder .sc-viewpick{margin-left:auto;display:flex;gap:4px;align-items:center;}
+#scopeFinder .sc-chip.via-email{border-color:#b98900;color:#8a6500;} #scopeFinder .sc-chip.via-document{border-color:var(--accent);color:var(--accent);}
+#scopeFinder .sc-chip.ref-read,#scopeFinder .sc-chip.ref-drive,#scopeFinder .sc-chip.ref-mail{border-color:var(--good);color:var(--good);} #scopeFinder .sc-chip.ref-missing{border-color:var(--bad,#b3261e);color:var(--bad,#b3261e);font-weight:700;}
+#scopeFinder .sc-where2{font-size:12px;margin-top:3px;} #scopeFinder .sc-refhits{margin-top:4px;border-left:2px solid var(--line);padding-left:8px;}
+#scopeFinder .sc-row.ref{padding-left:6px;} #scopeFinder .sc-row.ref.missing{border-left:3px solid var(--bad,#b3261e);}
 #scopeFinder .sc-sub{font-weight:700;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:12px 0 2px;}
 #scopeFinder .sc-srcrow{display:flex;align-items:center;gap:6px;font-size:12px;padding:3px 0;border-bottom:1px dotted var(--line);}
 #scopeFinder .sc-srcrow a,#scopeFinder .sc-srcrow > span[title]{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);}
@@ -12341,7 +12353,8 @@ if(!restoredFromSave){
  * OWN row (gradcon-scope::<takeoffId>, estimates-scope.js) and never inside
  * the takeoff, so nothing here can touch the takeoff's sync; the only thing
  * that changes the takeoff is the estimator pressing "+ Add to takeoff". */
-var SCOPE = { open:false, key:null, doc:null, filter:"all", search:"", busy:"", status:"", error:"", mail:null, saveTimer:null, cloudAsked:null };
+var SCOPE = { open:false, key:null, doc:null, filter:"all", search:"", busy:"", status:"", error:"", mail:null, saveTimer:null, cloudAsked:null,
+  view:"category", disc:{ busy:false, forKey:null, mailPick:{}, drivePick:{}, candidates:[], refSearch:{} } };
 const SCOPE_BUCKET_PREFIX = "scope-finder/";
 function scopeTakeoffId(){ return activeTakeoffId() || (String(CURRENT_PROJECT_KEY||"").split("::")[1]) || "default"; }
 function scopeReadLocal(key){ try{ const v=JSON.parse(localStorage.getItem(key)||"null"); return v && typeof v==="object"? v : null; }catch(e){ return null; } }
@@ -12372,6 +12385,154 @@ async function scopeOpen(){
   SCOPE.cloudAsked = kvFetchFailed(row)? "failed" : "ok";
   if(row && !kvFetchFailed(row) && row.value){ SCOPE.doc=normalizeScopeDoc(mergeScopeDocs(SCOPE.doc, normalizeScopeDoc(row.value, scopeTakeoffId(), PROJECT.name)), scopeTakeoffId(), PROJECT.name); scopeWriteLocal(); }
   scopeRender(); scopeBtnRefresh();
+  scopeDiscover(false);   // the project's own emails and Drive folder are looked for on every open (read-only)
+}
+
+/* ---------- the project's own sources, found automatically (20 Nov 2026) ----------
+ * Boma: "the scope finder should also automatically scan email box for that project and also the project folder in
+ * drive. it should have a checkbox to select scopes from emails only or drive only or both …". The LOOK is free and
+ * read-only (a mailbox search by the project's street, the matching folder of the office Drive and one level of its
+ * subfolders); what it finds is listed with ticks. The SCAN adds the ticked emails (as text) and Drive files (copied
+ * into the bucket, as a Drive attachment is everywhere else) to the sources and runs the ordinary read. */
+function scopeDriveFile(f, path){ return { id:f.id, name:f.name, kind:f.kind, size:f.size, mimeType:f.mimeType, modifiedTime:f.modifiedTime, webViewLink:f.webViewLink, path:path||"" }; }
+async function scopeDriveLook(found){
+  const doc=SCOPE.doc; let folder=doc.drive;
+  if(!folder){
+    const m=await scopeApi("/api/drive", { action:"match", projectName:PROJECT.name||"" }, 60000);
+    if(!m.ok){ found.errors.drive=m.error; return; }
+    SCOPE.disc.candidates=(m.body.candidates||[]).map(c=>({ id:c.id, name:c.name, webViewLink:c.webViewLink }));
+    if(!m.body.best){ found.errors.drive = SCOPE.disc.candidates.length? "choose" : "No folder in the office Drive matches this project's name — name the takeoff after the project, or pick the folder."; return; }
+    folder={ id:m.body.best.id, name:m.body.best.name, webViewLink:m.body.best.webViewLink }; doc.drive=folder;
+  }
+  const top=await scopeApi("/api/drive", { action:"list", folderId:folder.id }, 60000);
+  if(!top.ok){ found.errors.drive=top.error; return; }
+  const files=[], subs=[];
+  (top.body.files||[]).forEach(f=>{ if(f.kind==="folder") subs.push(f); else files.push(scopeDriveFile(f,"")); });
+  const lists=await Promise.all(subs.slice(0,12).map(sf=>scopeApi("/api/drive", { action:"list", folderId:sf.id }, 60000).then(r=>({ sf, r }))));
+  lists.forEach(({sf,r})=>{ if(r.ok) (r.body.files||[]).forEach(f=>{ if(f.kind!=="folder") files.push(scopeDriveFile(f, sf.name)); }); });
+  found.drive={ folder, files:files.slice(0,300), subfolders:subs.length };
+}
+async function scopeDiscover(force){
+  const doc=SCOPE.doc, d=SCOPE.disc; if(!doc || d.busy) return;
+  const key=SCOPE.key;
+  if(!force && d.forKey===key) return;                      // once per open takeoff per session, then on "Look again"
+  d.busy=true; d.forKey=key; scopeRender();
+  const found={ at:new Date().toISOString(), mail:(doc.found && doc.found.mail)||[], mailQ:"", drive:(doc.found && doc.found.drive)||null, errors:{} };
+  const jobs=[];
+  if(doc.auto.mail){
+    const q=scopeMailQuery(PROJECT.name); found.mailQ=q;
+    if(!q) found.errors.mail="Name the project (its street address) so the mailbox can be searched for it.";
+    else jobs.push(scopeApi("/api/gmail", { action:"list", q, max:25 }, 60000).then(r=>{ if(r.ok) found.mail=(r.body.messages||[]).map(m=>({ id:m.id, subject:m.subject||"", from:m.from||"", date:m.date||"", snippet:String(m.snippet||"").slice(0,200), attachments:(m.attachments||[]).map(a=>({ filename:a.filename })) })); else found.errors.mail=r.error; }));
+  }
+  if(doc.auto.drive) jobs.push(scopeDriveLook(found));
+  await Promise.all(jobs);
+  if(!SCOPE.open || SCOPE.key!==key){ d.busy=false; return; }
+  doc.found=found;
+  // ticked on their own: every email not added yet; the Drive files that look like drawings, reports, specifications or the tender (at most twelve)
+  d.mailPick={}; found.mail.forEach(m=>{ if(!doc.notes.some(n=>n.mailId===m.id)) d.mailPick[m.id]=true; });
+  d.drivePick={}; if(found.drive) scopeDriveAutoPick(found.drive.files.filter(f=>!doc.files.some(x=>x.driveId===f.id))).forEach(id=>{ d.drivePick[id]=true; });
+  d.busy=false; scopeSave(); scopeRender();
+}
+function scopeChooseFolder(id){
+  const c=SCOPE.disc.candidates.find(x=>x.id===id); if(!c) return;
+  SCOPE.doc.drive={ id:c.id, name:c.name, webViewLink:c.webViewLink }; scopeSave(); scopeDiscover(true);
+}
+function scopeScanCounts(){
+  const doc=SCOPE.doc, f=doc.found||{}, d=SCOPE.disc;
+  const mails = doc.auto.mail? (f.mail||[]).filter(m=>d.mailPick[m.id] && !doc.notes.some(n=>n.mailId===m.id)) : [];
+  const dfiles = doc.auto.drive && f.drive? f.drive.files.filter(x=>d.drivePick[x.id] && !doc.files.some(y=>y.driveId===x.id)) : [];
+  return { mails, dfiles };
+}
+/** Adds the ticked emails and Drive files to the sources, then runs the read on what is new. Nothing is cut: text over the limit waits for the next scan. */
+async function scopeScan(){
+  if(SCOPE.busy) return;
+  const doc=SCOPE.doc; const { mails, dfiles }=scopeScanCounts(); const problems=[];
+  if(!mails.length && !dfiles.length && !doc.files.some(f=>!f.readAt) && !doc.notes.some(n=>!n.readAt)){ SCOPE.error="Nothing new is ticked — tick the emails or the Drive files to read."; scopeRender(); return; }
+  SCOPE.error=""; SCOPE.status="";
+  let chars=scopeRunText(doc.notes.filter(n=>!n.readAt)).length, n=0;
+  for(const m of mails){
+    SCOPE.busy=`Reading email ${++n} of ${mails.length}`; scopeRender();
+    const r=await scopeApi("/api/gmail", { action:"read", id:m.id }, 60000);
+    const msg=r.ok && r.body.message; const text=msg? scopeTextFromFile("", msg.body||msg.snippet||"") : "";
+    if(!msg || !text){ problems.push(`${m.subject||"an email"}: ${r.error||"no readable text"}`); continue; }
+    if(chars+text.length+200>SCOPE_TEXT_MAX_CHARS){ problems.push(`“${m.subject||"an email"}” is left for the next scan — one read takes up to ${SCOPE_TEXT_MAX_CHARS.toLocaleString("en-AU")} characters of text`); continue; }
+    chars+=text.length+200;
+    doc.notes.push({ id:"n_"+Date.now().toString(36)+n, mailId:m.id, name:msg.subject||m.subject||"(no subject)", kind:"email", from:msg.from||m.from||"", date:msg.date||m.date||"", text, addedAt:new Date().toISOString(), auto:true });
+  }
+  let k=0;
+  for(const f of dfiles){
+    SCOPE.busy=`Copying Drive file ${++k} of ${dfiles.length} — ${f.name}`; scopeRender();
+    const r=await scopeApi("/api/drive", { action:"copy", id:f.id, target:"preview" }, 150000);
+    const file=r.ok && r.body.file;
+    if(!file){ problems.push(`${f.name}: ${r.status===413? "over 30 MB — too large to read; open it in Drive" : (r.error||"could not be copied")}`); continue; }
+    const kind=/\.pdf(\?|$)/i.test(file.url)||/\.pdf$/i.test(file.name||"")? "pdf" : /\.(png|jpe?g|webp|gif)(\?|$)/i.test(file.url)? "image" : null;
+    if(!kind){ problems.push(`${f.name}: not a PDF or a picture the reader can open`); continue; }
+    doc.files.push({ id:"f_"+Date.now().toString(36)+k, name:f.name, url:file.url, path:file.path||"", size:file.size||f.size||0, kind, driveId:f.id, driveLink:f.webViewLink||"", drivePath:f.path||"", addedAt:new Date().toISOString(), auto:true });
+  }
+  SCOPE.busy=""; scopeSave();
+  if(doc.files.some(f=>!f.readAt) || doc.notes.some(x=>!x.readAt)) await scopeRun(false);
+  if(problems.length){ SCOPE.error=(SCOPE.error? SCOPE.error+" · " : "")+"Not read — "+problems.join(" · "); }
+  scopeRender();
+}
+/** Adds ONE Drive file a reference points at to the sources (unread), so the next read takes it. */
+async function scopeAddDriveRef(fileId){
+  const doc=SCOPE.doc; const f=((doc.found||{}).drive||{ files:[] }).files.find(x=>x.id===fileId); if(!f || SCOPE.busy) return;
+  SCOPE.disc.drivePick={ [fileId]:true }; const keepMail=SCOPE.disc.mailPick; SCOPE.disc.mailPick={};
+  await scopeScan(); SCOPE.disc.mailPick=keepMail; scopeRender();
+}
+/** "How to find it": looks for a reference's sheet number in the project's Drive folder (then the whole office folder) and in the mailbox, and lists what turns up. */
+async function scopeRefSearch(refId){
+  const doc=SCOPE.doc; const ref=((doc.result||{}).references||[]).find(r=>r.id===refId); if(!ref) return;
+  const loc=scopeLocateReference(ref, doc); const q=loc.search||ref.ref;
+  SCOPE.disc.refSearch[refId]={ busy:true, q }; scopeRender();
+  const street=scopeMailQuery(PROJECT.name);
+  const [dr, ml]=await Promise.all([
+    scopeApi("/api/drive", Object.assign({ action:"search", q }, doc.drive? { folderId:doc.drive.id } : {}), 60000),
+    scopeApi("/api/gmail", { action:"list", q:`${street} ${q}`.trim(), max:8 }, 60000) ]);
+  SCOPE.disc.refSearch[refId]={ busy:false, q, drive: dr.ok? (dr.body.files||[]).filter(f=>f.kind!=="folder").slice(0,8) : [], driveError: dr.ok? "" : dr.error, mail: ml.ok? (ml.body.messages||[]).slice(0,8) : [], mailError: ml.ok? "" : ml.error };
+  scopeRender();
+}
+function scopeAutoHtml(){
+  const doc=SCOPE.doc, d=SCOPE.disc, f=doc.found||{ mail:[], errors:{} }, errs=f.errors||{};
+  const { mails, dfiles }=scopeScanCounts();
+  const mailRows=(f.mail||[]).map(m=>{ const added=doc.notes.some(n=>n.mailId===m.id); return `<label class="sc-mail"><input type="checkbox" data-scope-mailpick="${bpEsc(m.id)}" ${added?"disabled checked":d.mailPick[m.id]?"checked":""}> <span><b>${bpEsc(m.subject||"(no subject)")}</b>${added? ` <span class="sc-chip on">added</span>` : ""}<br><span class="small">${bpEsc(m.from)} · ${bpEsc(String(m.date).slice(0,10))}${(m.attachments||[]).length? ` · 📎 ${(m.attachments||[]).map(a=>bpEsc(a.filename)).join(", ")}` : ""}</span></span></label>`; }).join("");
+  const dr=f.drive;
+  const driveRows=dr? dr.files.map(x=>{ const added=doc.files.some(y=>y.driveId===x.id), cls=scopeDriveClass(x.name,x.path), ok=scopeDriveReadable(x); return `<label class="sc-mail ${ok?"":"dim"}"><input type="checkbox" data-scope-drivepick="${bpEsc(x.id)}" ${!ok?"disabled":added?"disabled checked":d.drivePick[x.id]?"checked":""}> <span><b>${bpEsc(x.name)}</b>${cls? ` <span class="sc-chip">${bpEsc(cls.label)}</span>` : ""}${added? ` <span class="sc-chip on">added</span>` : ""}${ok? "" : ` <span class="sc-chip">not readable — open in Drive</span>`}<br><span class="small">${x.path? bpEsc(x.path)+" · " : ""}${x.size? scopeBytes(x.size) : ""} <a href="${bpEsc(x.webViewLink||"#")}" target="_blank" rel="noopener">open</a></span></span></label>`; }).join("") : "";
+  return `<div class="sc-auto" data-testid="scope-auto">
+   <div class="sc-sub">This project's own sources — found automatically</div>
+   <div class="sc-autopick"><label><input type="checkbox" data-scope-auto="mail" data-testid="scope-src-mail" ${doc.auto.mail?"checked":""}> Emails (projects@)</label> <label><input type="checkbox" data-scope-auto="drive" data-testid="scope-src-drive" ${doc.auto.drive?"checked":""}> Drive folder</label> <button type="button" class="btn small" data-scope-act="rescan" data-testid="scope-rescan" ${d.busy?"disabled":""}>↻ Look again</button></div>
+   ${d.busy? `<p class="small sc-busy" data-testid="scope-auto-busy">Looking in the mailbox and the Drive folder…</p>` : ""}
+   ${doc.auto.mail? `<details class="sc-autolist" data-testid="scope-auto-mail" ${(f.mail||[]).length && (f.mail||[]).length<=6?"open":""}><summary>✉ ${errs.mail? `<span class="sc-err">${bpEsc(errs.mail)}</span>` : `${(f.mail||[]).length} email${(f.mail||[]).length===1?"":"s"} mention ${bpEsc(f.mailQ||"the project")} · ${mails.length} ticked to read`}</summary>${mailRows || `<p class="small">Nothing found in projects@ for this project yet.</p>`}</details>` : ""}
+   ${doc.auto.drive? (errs.drive==="choose"? `<div class="sc-autolist" data-testid="scope-auto-drive"><p class="small">More than one Drive folder could be this project — pick it:</p><select data-scope-folder="1" data-testid="scope-folder-pick"><option value="">— choose the project's folder —</option>${d.candidates.map(c=>`<option value="${bpEsc(c.id)}">${bpEsc(c.name)}</option>`).join("")}</select></div>`
+     : `<details class="sc-autolist" data-testid="scope-auto-drive" ${dr && dr.files.length<=8?"open":""}><summary>📁 ${errs.drive? `<span class="sc-err">${bpEsc(errs.drive)}</span>` : dr? `${bpEsc(dr.folder.name)} — ${dr.files.length} file${dr.files.length===1?"":"s"} · ${dfiles.length} ticked to read` : "Drive folder not looked at yet"}</summary>${dr? `<p class="small"><a href="${bpEsc(dr.folder.webViewLink||"#")}" target="_blank" rel="noopener">Open the folder in Drive</a> · <button type="button" class="sc-linkbtn" data-scope-act="refolder">not this folder</button></p>` : ""}${driveRows}</details>`) : ""}
+   <button type="button" class="btn primary" data-scope-act="scan" data-testid="scope-scan" ${SCOPE.busy || d.busy || (!mails.length && !dfiles.length)? "disabled" : ""}>🔎 Scan ${mails.length} email${mails.length===1?"":"s"} + ${dfiles.length} Drive file${dfiles.length===1?"":"s"}</button>
+  </div>`;
+}
+function scopeMentionList(it){
+  const ms=scopeMentions(it); if(!ms.length) return "";
+  return `<div class="sc-mentions" data-testid="scope-mentions">${ms.map(m=>`<div class="sc-src" data-via="${m.via}"><span class="sc-chip via-${m.via}">${m.via==="email"?"✉ email":"📄 document"}</span> ${bpEsc(m.doc||"")}${m.page? ` · p. ${bpEsc(m.page)}` : ""}${m.quote? ` — “${bpEsc(m.quote)}”` : ""}</div>`).join("")}</div>`;
+}
+/** The scope mentions laid out by SOURCE: each email and each document with what it asks for. */
+function scopeBySourceHtml(){
+  const doc=SCOPE.doc, groups=scopeMentionsBySource(doc, doc.auto);
+  if(!groups.length) return `<p class="small">No mention carries a source yet.</p>`;
+  return groups.map(g=>`<div class="sc-group" data-testid="scope-source-group" data-via="${g.via}"><div class="sc-grouphead"><span class="sc-chip via-${g.via}">${g.via==="email"?"✉ email / message":"📄 document"}</span> ${bpEsc(g.source)} <span class="small">${g.rows.length} mention${g.rows.length===1?"":"s"}</span></div>${g.rows.map(r=>`<div class="sc-plain" data-testid="scope-mention-row">• <b>${bpEsc(r.title)}</b>${r.kind==="gap"? ` <span class="sc-chip">to check</span>` : r.kind==="exclusion"? ` <span class="sc-chip others">excluded / by others</span>` : r.party==="others"? ` <span class="sc-chip others">by others</span>` : ""}${(r.specs||[]).length? ` <span class="small">${r.specs.map(bpEsc).join(" · ")}</span>` : ""}${r.page? ` <span class="small">· p. ${bpEsc(r.page)}</span>` : ""}${r.quote? `<div class="sc-src">“${bpEsc(r.quote)}”</div>` : ""}</div>`).join("")}</div>`).join("");
+}
+/** Every document the scope refers to: where it is cited, whether it was found, and how to get it. */
+function scopeRefsHtml(){
+  const doc=SCOPE.doc, refs=((doc.result||{}).references)||[]; if(!refs.length) return "";
+  const rows=refs.map(r=>{ const loc=scopeLocateReference(r, doc); const s=SCOPE.disc.refSearch[r.id];
+    const label={ read:"in the set read", drive:"in the Drive folder", mail:"attached to an email", missing:"NOT FOUND" }[loc.state];
+    return `<div class="sc-row ref ${loc.state}" data-testid="scope-ref" data-id="${r.id}" data-state="${loc.state}"><div class="sc-main">
+      <div class="sc-title">${bpEsc(r.ref)} <span class="sc-chip">${bpEsc(r.kind)}</span> <span class="sc-chip ref-${loc.state}">${label}</span>${r.what? ` <span class="sc-where">${bpEsc(r.what)}</span>` : ""}</div>
+      ${(r.cited||[]).map(c=>`<div class="sc-src">Referred to in <span class="sc-chip via-${c.via}">${c.via==="email"?"✉":"📄"}</span> ${bpEsc(c.doc||"")}${c.page? ` · p. ${bpEsc(c.page)}` : ""}${c.quote? ` — “${bpEsc(c.quote)}”` : ""}</div>`).join("")}
+      <div class="sc-where2" data-testid="scope-ref-where"><b>Where:</b> ${bpEsc(loc.where)}${loc.link? ` · <a href="${bpEsc(loc.link)}" target="_blank" rel="noopener">${bpEsc(loc.linkLabel||"open")}</a>` : ""}</div>
+      ${loc.how? `<div class="sc-where2" data-testid="scope-ref-how"><b>How:</b> ${bpEsc(loc.how)}</div>` : ""}
+      <div class="sc-tools">${loc.state==="drive" && loc.fileId? `<button type="button" class="btn small primary" data-scope-act="refadd" data-id="${bpEsc(loc.fileId)}" data-testid="scope-ref-add">+ Add it and read it</button> ` : ""}${loc.state==="missing"? `<button type="button" class="btn small" data-scope-act="refsearch" data-id="${r.id}" data-testid="scope-ref-search">🔎 Search Drive and the mailbox for “${bpEsc(loc.search||r.ref)}”</button>` : ""}</div>
+      ${s? (s.busy? `<p class="small">Searching…</p>` : `<div class="sc-refhits" data-testid="scope-ref-hits">${s.driveError? `<p class="small sc-err">Drive: ${bpEsc(s.driveError)}</p>` : ""}${s.mailError? `<p class="small sc-err">Mailbox: ${bpEsc(s.mailError)}</p>` : ""}${(s.drive||[]).map(f=>`<div class="sc-plain">📁 <a href="${bpEsc(f.webViewLink||"#")}" target="_blank" rel="noopener">${bpEsc(f.name)}</a></div>`).join("")}${(s.mail||[]).map(m=>`<div class="sc-plain">✉ <a href="https://mail.google.com/mail/u/0/#all/${bpEsc(m.id)}" target="_blank" rel="noopener">${bpEsc(m.subject||"(no subject)")}</a> <span class="small">${bpEsc(m.from||"")} · ${bpEsc(String(m.date||"").slice(0,10))}</span></div>`).join("")}${!(s.drive||[]).length && !(s.mail||[]).length && !s.driveError && !s.mailError? `<p class="small">Nothing in Drive or the mailbox mentions “${bpEsc(s.q)}” — ask whoever cited it.</p>` : ""}</div>`) : ""}
+    </div></div>`; }).join("");
+  const missing=refs.filter(r=>scopeLocateReference(r, doc).state==="missing").length;
+  return `<div class="sc-section" data-testid="scope-refs"><div class="sc-sechead ${missing?"warn":""}">Documents the scope refers to <span class="small">— ${refs.length} referred to, ${missing} not found: where each is and how to get it</span></div>${rows}</div>`;
 }
 function scopeClose(){ SCOPE.open=false; document.getElementById("scopeFinder").style.display="none"; scopeBtnRefresh(); }
 /** Every change: stamped, kept in this browser at once, and merged into the cloud row shortly after (read → merge → write, never a blind overwrite). */
@@ -12533,7 +12694,7 @@ function scopeItemRow(it, cmp){
    <label class="sc-tick" title="Tick when this is allowed for"><input type="checkbox" data-scope-act="done" data-id="${it.id}" ${st==="done"?'checked':''}></label>
    <div class="sc-main"><div class="sc-title">${bpEsc(it.title)}${it.where? ` <span class="sc-where">${bpEsc(it.where)}</span>` : ""}${it.custom? ` <span class="sc-chip">added by hand</span>` : ""}${it.basis==="implied"? ` <span class="sc-chip implied" title="${bpEsc(it.because||"Not written on a document, but required by something that is")}">implied</span>` : ""}${it.party==="others"? ` <span class="sc-chip others">by others</span>` : it.party==="unclear"? ` <span class="sc-chip unclear">responsibility unclear</span>` : ""}</div>
     ${(it.specs&&it.specs.length) || it.quantity? `<div class="sc-specs">${(it.specs||[]).map(s=>`<span class="sc-spec">${bpEsc(s)}</span>`).join("")}${it.quantity? `<span class="sc-spec qty" title="A quantity a document states — not a measurement">${bpEsc(it.quantity)}</span>` : ""}</div>` : ""}
-    ${it.basis==="implied" && it.because? `<div class="sc-src">Implied by: ${bpEsc(it.because)}</div>` : ""}${scopeSrc(it)}
+    ${it.basis==="implied" && it.because? `<div class="sc-src">Implied by: ${bpEsc(it.because)}</div>` : ""}${scopeMentionList(it) || scopeSrc(it)}
     <div class="sc-tools">${chip} <button type="button" class="btn small ${st==="na"?'primary':''}" data-scope-act="na" data-id="${it.id}" title="Not applicable to this tender / not ours">N/A</button>${it.custom? ` <button type="button" class="btn small danger" data-scope-act="rmsrc" data-id="${it.id}" title="Remove this item">✕</button>` : ""} <input type="text" class="sc-note" data-scope-note="${it.id}" value="${bpEsc(rv.note||"")}" placeholder="note">${rv.by && st? ` <span class="sc-by">${st==="done"?"ticked":"marked"} by ${bpEsc(rv.by)} ${bpEsc(scopeWhen(rv.at))}</span>` : ""}</div>
    </div></div>`;
 }
@@ -12554,6 +12715,7 @@ function scopeRender(){
   const m=SCOPE.mail;
   const sources=`<div class="sc-col sc-sources" data-testid="scope-sources">
    <h3>1 · What to read</h3>
+   ${scopeAutoHtml()}
    <p class="small">Drawings and documents as <b>PDF</b>, screenshots as <b>images</b>, emails as <b>.eml / .txt</b> — or paste the text. Everything stays with this takeoff.</p>
    <div class="sc-drop" id="scopeDrop"><button type="button" class="btn small primary" data-scope-act="pick" data-testid="scope-add-files">+ Add files</button> <span class="small">or drop them here</span><input type="file" id="scopeFileInput" data-testid="scope-file-input" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.txt,.eml,.md,.csv,.html,.htm" style="display:none"></div>
    ${doc.files.map(f=>`<div class="sc-srcrow" data-testid="scope-file"><span class="sc-chip">${f.kind==="image"?"image":"PDF"}</span> <a href="${bpEsc(f.url)}" target="_blank" rel="noopener">${bpEsc(f.name)}</a> <span class="small">${scopeBytes(f.size)}${f.readAt? " · read" : " · not read yet"}</span><button type="button" class="btn small danger" data-scope-act="rmsrc" data-id="${f.id}" title="Remove">✕</button></div>`).join("")}
@@ -12578,7 +12740,7 @@ function scopeRender(){
     checklist=`<div class="sc-col sc-list"><h3>2 · The scope checklist</h3><div class="sc-empty" data-testid="scope-empty"><p><b>Nothing read yet.</b> Add the project's drawings, specification pages and the emails or chats that set the scope, then press <b>Find the scope</b>.</p><p class="small">You get every scope item the documents show or ask for, with the specification and the page it came from; what is by others; the questions worth sending; and what could be missing or overlooked. The list is laid against this takeoff's ${INSTANCES.length} element${INSTANCES.length===1?"":"s"}, so anything in the documents and not yet taken off stands out. The read is an aid — the documents govern.</p></div>${scopeOwnItemForm()}${doc.custom.length? scopeAllItems(doc).map(it=>scopeItemRow(it,cmp)).join("") : ""}</div>`;
   } else {
     const q=SCOPE.search.trim().toLowerCase();
-    let rows=scopeFilterItems(doc, cmp, SCOPE.filter); if(q) rows=rows.filter(it=>(it.title+" "+(it.where||"")+" "+(it.specs||[]).join(" ")+" "+(it.doc||"")).toLowerCase().includes(q));
+    let rows=scopeFilterItems(doc, cmp, SCOPE.filter).filter(it=>scopeViaAllows(it, doc.auto)); if(q) rows=rows.filter(it=>(it.title+" "+(it.where||"")+" "+(it.specs||[]).join(" ")+" "+(it.doc||"")).toLowerCase().includes(q));
     const groups=SCOPE_CATS.map(c=>({ key:c[0], label:c[1], rows:rows.filter(it=>(it.category||"other")===c[0] || (c[0]==="other" && !SCOPE_CATS.some(x=>x[0]===it.category))) })).filter(g=>g.rows.length);
     const fl=(k,label,n)=>`<button type="button" class="sc-filter ${SCOPE.filter===k?'active':''}" data-scope-act="filter" data-filter="${k}" data-testid="scope-filter-${k}">${label}${n!==undefined? ` <b>${n}</b>` : ""}</button>`;
     const all=scopeAllItems(doc);
@@ -12586,9 +12748,13 @@ function scopeRender(){
      <h3>2 · The scope checklist <span class="small">— ${bpEsc(PROJECT.name||"this takeoff")}</span></h3>
      <div class="sc-tiles" data-testid="scope-tiles"><div class="sc-tile"><b>${p.done}/${p.total}</b><span>scope items allowed for</span></div><div class="sc-tile ${p.gapsOpen?'warn':''}"><b>${p.gapsOpen}</b><span>possibly missing — to check${p.highOpen? ` (${p.highOpen} high)` : ""}</span></div><div class="sc-tile ${p.offTakeoff?'warn':''}"><b>${p.offTakeoff}</b><span>in the documents, not on the takeoff</span></div><div class="sc-tile"><b>${p.others}</b><span>by others</span></div></div>
      <div class="sc-filters">${fl("all","All",all.length)}${fl("open","Still open",all.filter(it=>it.party!=="others" && !((doc.review[it.id]||{}).state)).length)}${fl("off","Not on the takeoff",p.offTakeoff)}${fl("implied","Implied",all.filter(it=>it.basis==="implied").length)}${fl("others","By others / unclear",all.filter(it=>it.party!=="ours").length)} <input type="text" id="scopeSearch" value="${bpEsc(SCOPE.search)}" placeholder="Search the list" data-testid="scope-search"></div>
-     ${groups.map(g=>`<div class="sc-group" data-testid="scope-group" data-cat="${g.key}"><div class="sc-grouphead">${bpEsc(g.label)} <span class="small">${g.rows.filter(it=>((doc.review[it.id]||{}).state)).length}/${g.rows.length}</span></div>${g.rows.map(it=>scopeItemRow(it,cmp)).join("")}</div>`).join("") || `<p class="small">Nothing matches this filter.</p>`}
+     <div class="sc-viabar" data-testid="scope-viabar">Scope from: <label><input type="checkbox" data-scope-auto="mail" data-testid="scope-via-mail" ${doc.auto.mail?"checked":""}> ✉ emails &amp; messages</label> <label><input type="checkbox" data-scope-auto="drive" data-testid="scope-via-drive" ${doc.auto.drive?"checked":""}> 📄 Drive &amp; other documents</label>
+       <span class="sc-viewpick">View: <button type="button" class="sc-filter ${SCOPE.view==="category"?"active":""}" data-scope-act="view" data-view="category" data-testid="scope-view-category">by category</button><button type="button" class="sc-filter ${SCOPE.view==="source"?"active":""}" data-scope-act="view" data-view="source" data-testid="scope-view-source">by source — every mention</button></span></div>
+     ${SCOPE.view==="source"? `<div data-testid="scope-by-source">${scopeBySourceHtml()}</div>` : ""}
+     ${SCOPE.view==="source"? "" : groups.map(g=>`<div class="sc-group" data-testid="scope-group" data-cat="${g.key}"><div class="sc-grouphead">${bpEsc(g.label)} <span class="small">${g.rows.filter(it=>((doc.review[it.id]||{}).state)).length}/${g.rows.length}</span></div>${g.rows.map(it=>scopeItemRow(it,cmp)).join("")}</div>`).join("") || `<p class="small">Nothing matches this filter.</p>`}
      ${scopeOwnItemForm()}
      <div class="sc-section" data-testid="scope-gaps"><div class="sc-sechead warn">Possibly missing or overlooked <span class="small">— questions to check, not findings</span></div>${res.gaps.length? res.gaps.map(scopeGapRow).join("") : `<p class="small">Nothing flagged.</p>`}</div>
+     ${scopeRefsHtml()}
      ${cmp.unmatched.length? `<div class="sc-section" data-testid="scope-unmatched"><div class="sc-sechead">On the takeoff, not found in the documents read</div><p class="small">${cmp.unmatched.map(u=>`${bpEsc(u.id)} ${bpEsc(u.label)}`).join(" · ")}</p><p class="small">Either the sheet that shows them was not in the set, or they are not in this scope.</p></div>` : ""}
      ${res.exclusions.length? `<div class="sc-section" data-testid="scope-exclusions"><div class="sc-sechead">By others / excluded, as the documents state</div>${res.exclusions.map(e=>`<div class="sc-plain">• ${bpEsc(e.text)}${scopeSrc(e)}</div>`).join("")}</div>` : ""}
      ${res.questions.length? `<div class="sc-section" data-testid="scope-questions"><div class="sc-sechead">Questions worth sending <button type="button" class="btn small" data-scope-act="copyq">Copy</button></div>${res.questions.map((x,i)=>`<div class="sc-plain">${i+1}. ${bpEsc(x)}</div>`).join("")}</div>` : ""}
@@ -12616,6 +12782,12 @@ function scopeInit(){
     else if(act==="run") scopeRun(false);
     else if(act==="runall") scopeRun(true);
     else if(act==="runfinish") scopeRun(true, true);
+    else if(act==="scan") scopeScan();
+    else if(act==="rescan") scopeDiscover(true);
+    else if(act==="refolder"){ SCOPE.doc.drive=null; if(SCOPE.doc.found) SCOPE.doc.found.drive=null; scopeSave(); scopeDiscover(true); }
+    else if(act==="refadd") scopeAddDriveRef(id);
+    else if(act==="refsearch") scopeRefSearch(id);
+    else if(act==="view"){ SCOPE.view=t.dataset.view; scopeRender(); }
     else if(act==="mailsearch") scopeMailSearch();
     else if(act==="mailadd") scopeMailAdd();
     else if(act==="na") scopeSetState(id,"na");
@@ -12632,6 +12804,15 @@ function scopeInit(){
     else if(t.dataset.scopeAct==="done") scopeSetState(t.dataset.id,"done");
     else if(t.dataset.scopeNote) scopeSetNote(t.dataset.scopeNote, t.value);
     else if(t.dataset.scopeMail && SCOPE.mail) SCOPE.mail.picked[t.dataset.scopeMail]=t.checked;
+    else if(t.dataset.scopeMailpick){ SCOPE.disc.mailPick[t.dataset.scopeMailpick]=t.checked; scopeRender(); }
+    else if(t.dataset.scopeDrivepick){ SCOPE.disc.drivePick[t.dataset.scopeDrivepick]=t.checked; scopeRender(); }
+    else if(t.dataset.scopeFolder){ if(t.value) scopeChooseFolder(t.value); }
+    else if(t.dataset.scopeAuto){
+      // ONE pair of ticks: which of the project's sources are looked in and scanned, and which the checklist shows
+      const k=t.dataset.scopeAuto; SCOPE.doc.auto=Object.assign({}, SCOPE.doc.auto, { [k]:t.checked });
+      if(!SCOPE.doc.auto.mail && !SCOPE.doc.auto.drive) SCOPE.doc.auto[k==="mail"?"drive":"mail"]=true;   // never neither: unticking one leaves the other
+      scopeSave(); scopeRender(); if(t.checked) scopeDiscover(true);
+    }
   });
   root.addEventListener("input", e=>{ if(e.target.id==="scopeMailQ"){ SCOPE.mailQ=e.target.value; return; } if(e.target.id==="scopeSearch"){ SCOPE.search=e.target.value; const pos=e.target.selectionStart; scopeRender(); const s=document.getElementById("scopeSearch"); if(s){ s.focus(); try{ s.setSelectionRange(pos,pos); }catch(x){} } } });
   root.addEventListener("keydown", e=>{ if(e.key==="Escape") scopeClose(); else if(e.key==="Enter" && e.target.id==="scopeMailQ") scopeMailSearch(); else if(e.key==="Enter" && e.target.id==="scopeOwnTitle"){ const ca=document.getElementById("scopeOwnCat"); scopeAddCustom(e.target.value, ca.value); } });

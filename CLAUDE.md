@@ -3057,13 +3057,74 @@ could possibly be missing or overlooked". Rules:
    what is missing and the gaps come back; ticks are kept). The estimator is
    never told to run again with fewer documents (`verify.mjs` pins the phrase
    out).
+10. **The project's OWN emails and Drive folder are looked for on every open,
+   and scanned on one button** (Boma, 20 Nov 2026: "the scope finder should
+   also automatically scan email box for that project and also the project
+   folder in drive. it should have a checkbox to select scopes from emails
+   only or drive only or both and clearly itemsie the found scope mentions
+   and directions on where and how to find the requested scope document
+   references"). `scopeOpen` ends with `scopeDiscover(false)`: the mailbox is
+   LISTED for the project's street as an exact phrase (`scopeMailQuery` —
+   "12 Beach Road", max 25) and the project's Drive folder is matched by name
+   (`/api/drive` `match`; several candidates → a select, `scope-folder-pick`;
+   the choice is kept on `doc.drive`) and listed with one level of subfolders;
+   the result is `doc.found = {at, mail, mailQ, drive: {folder, files,
+   subfolders}, errors}` (kept on the scope row, the newer look winning a
+   merge). The block "This project's own sources — found automatically"
+   (`scope-auto`) lists both with a tick each: every email is ticked, and of
+   the Drive files the drawings, reports and specifications
+   (`scopeDriveClass` / `scopeDriveAutoPick`, newest first, at most
+   `SCOPE_DRIVE_AUTO_MAX` = 12; a photo is not ticked, a spreadsheet or CAD
+   file cannot be — `scopeDriveReadable`). **🔎 Scan N emails + M Drive files**
+   (`scope-scan`) reads each ticked email in full (`/api/gmail` `read` → a
+   text note carrying `mailId`), copies each ticked Drive file into the
+   portal's own bucket (`/api/drive` `copy`, target `preview` → a file source
+   carrying `driveId`) and runs ONE ordinary read over what is new. Everything
+   is READ-ONLY — match, list, read, copy, search; nothing is sent, labelled
+   or written to Drive, and the scan never touches the takeoff (`verify.mjs`
+   pins the action set). **The two source ticks** (`scope-src-mail` /
+   `scope-src-drive`, mirrored above the checklist as `scope-via-mail` /
+   `scope-via-drive`; `doc.auto`, never neither) decide what is looked for AND
+   filter the checklist: `scopeViaAllows(it, auto)` keeps an item when one of
+   its mentions is of a ticked kind (an item both mention stays under either;
+   one typed by hand is never filtered away). **Every mention is itemised**:
+   the reader marks each item `via` "email" | "document" and lists up to two
+   other places in `also`; `parseScopeResult` builds `item.mentions[]`
+   (`{doc, page, quote, via}`, the same place once; `viaOf` reads a source
+   headed as an email as one), a later read ADDS mentions
+   (`unionMentions`), the item row prints each (`scope-mentions`), and the
+   "By source" view (`scope-view-source` → `scope-by-source`,
+   `scopeMentionsBySource`) lists under each email and each document what it
+   asks for, emails first, the words quoted. **Documents the scope refers to**
+   (`scope-refs`): the reader returns `references[]` (`{ref, what, kind, doc,
+   page, quote, via, found}` — a sheet, detail, schedule, report or
+   specification another source points at; with the last part of a long read,
+   for the whole set), the parser merges the same reference cited twice
+   (`cited[]`, ids stable — `rf_…`), and **`scopeLocateReference(ref, doc)`
+   is the ONE answer to where it is and how to get it** — deterministic,
+   never the model's: `read` (the reader found it in the set, or a source's
+   name carries the sheet number), `drive` (a file in the project's folder —
+   its path, a link, **+ Add it and read it** `scope-ref-add` copying and
+   reading that one file), `mail` (attached to a project email — which one,
+   from whom, when, a link to it, "download the attachment…") or `missing`
+   ("Not found in the Drive folder … or N project emails", who to ask — the
+   sender of the email that cites it, else whoever issued the citing
+   document — and **🔎 Search Drive and the mailbox for "L-03"**
+   `scope-ref-search`, listing what turns up with links). `scopeRefKeys`
+   reads a sheet number in any spelling (S-05 / S05 / S 5), never inside
+   another number; with nothing scanned it says so, never "not found". The
+   CSV export carries the mentions and the references.
 `verify.mjs` covers the prompt's rules, the parser, the request refusals, the
 server's 400 / 503, the image blocks, the pure module (merge of results and of
 documents, the comparison, progress, file classes, the run text), the mirrors,
 the wiring and the read in parts (prompt, parser, server, page loop, the
 button); `test-scope-finder.mjs` proves the whole flow on a mocked server,
 storage and mailbox, a two-part read with the first part cut off, and Finish
-the read (32 checks).
+the read (32 checks); `verify.mjs` also covers the
+scan (mentions, the source filter, by-source groups, the four reference
+states, the merges, the read-only action set) and `test-scope-scan.mjs`
+proves the look on open, the ticks, the scan, the filter, the by-source view,
+the references and a reload (22 checks).
 
 ## Version history for the chat (what changed, who changed it)
 

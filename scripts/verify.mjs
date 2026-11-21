@@ -2197,8 +2197,8 @@ await checkAsync("Scope finder reads a long set IN PARTS (20 Nov 2026 — five d
   assert.ok(SF.SCOPE_ITEMS_PER_REPLY >= 20 && SF.SCOPE_ITEMS_PER_REPLY <= 45, "one reply stays well inside the output limit");
   const first = SF.scopePrompt({ projectName: "x", types: [], hasDocuments: true });
   assert.match(first, new RegExp(`List at most ${SF.SCOPE_ITEMS_PER_REPLY} items in this reply`), "the reply is bounded");
-  assert.match(first, /set "more": true and leave "gaps", "exclusions" and "questions" out/, "an unfinished part carries no gaps — they belong to the last one");
-  assert.match(first, /set "more": false and give the "gaps", "exclusions" and "questions" for the WHOLE set/, "the last part answers for the whole set");
+  assert.match(first, /set "more": true and leave "gaps", "references", "exclusions" and "questions" out/, "an unfinished part carries no gaps — they belong to the last one");
+  assert.match(first, /set "more": false and give the "gaps", "references", "exclusions" and "questions" for the WHOLE set/, "the last part answers for the whole set");
   assert.ok(!/ALREADY LISTED/.test(first), "a first part names nothing as already listed");
   assert.match(first, /"more": boolean/, "the shape carries the flag");
   assert.ok(!/"confidence"/.test(first), "the reply is compact: no confidence figure is asked for");
@@ -2243,6 +2243,96 @@ await checkAsync("Scope finder reads a long set IN PARTS (20 Nov 2026 — five d
   assert.match(est, /data-scope-act="runfinish" data-testid="scope-run-finish"/, "…with the button that finishes it");
   assert.match(est, /else if\(act==="runfinish"\) scopeRun\(true, true\);/);
   assert.ok(!/Run again with fewer documents/.test(eng + est), "the estimator is never told to re-run with fewer documents");
+});
+await checkAsync("Scope finder scans the project's own emails and Drive folder (20 Nov 2026 — Boma: 'automatically scan email box for that project and also the project folder in drive … a checkbox to select scopes from emails only or drive only or both and clearly itemise the found scope mentions and directions on where and how to find the requested scope document references'): every mention is kept with where it came from, the source ticks filter the checklist, and a referred-to document says where it is and how to get it", async () => {
+  const SF = await import("../src/lib/scopeFinder.js");
+  // the reader
+  const prompt = SF.scopePrompt({ hasDocuments: true, text: "x", types: [{ id: "stripfooting", label: "Strip Footing" }] });
+  assert.match(prompt, /"via": "email"\|"document"/, "every item says whether an email or a document asks for it");
+  assert.match(prompt, /"also":/, "…and every OTHER place that mentions it");
+  assert.match(prompt, /"references":/, "the documents the scope refers to are listed");
+  assert.ok(SF.SCOPE_RESULT_KEYS.includes("references"), "a cut-off reply keeps its references");
+  assert.equal(SF.viaOf("email", "anything"), "email");
+  assert.equal(SF.viaOf(null, "Email — RE: 12 Beach Rd"), "email", "a source headed as an email is an email");
+  assert.equal(SF.viaOf(null, "S-01 Structural.pdf"), "document");
+  const parsed = SF.parseScopeResult({
+    items: [{ title: "Strip footings SF1", category: "footings", doc: "S-01.pdf", page: "2", quote: "SF1 450W", via: "document", also: [{ doc: "Email — RE: scope", quote: "price the footings", via: "email" }, { doc: "S-01.pdf", page: "2", quote: "SF1 450W" }] }],
+    gaps: [], exclusions: [], questions: [],
+    references: [{ ref: "Detail 7/S-05", kind: "detail", doc: "S-01.pdf", page: "2", quote: "REFER DETAIL 7/S-05", found: null }, { ref: "detail 7/s-05", doc: "Email — RE: scope", quote: "see 7/S-05", via: "email" }, { ref: "Geotech report", kind: "report", doc: "S-01.pdf", found: { doc: "Soil.pdf", page: "1" } }, { ref: "" }] }, { types: ["stripfooting"] });
+  const it = parsed.items[0];
+  assert.equal(it.via, "document");
+  assert.deepEqual(it.mentions.map((m) => m.via), ["document", "email"], "the same mention twice is one; the email's is kept beside the drawing's");
+  assert.equal(parsed.references.length, 2, "the same reference cited twice is one reference, a blank one is dropped");
+  assert.equal(parsed.references[0].cited.length, 2, "…with both places that cite it");
+  assert.equal(parsed.references[0].kind, "detail");
+  assert.deepEqual(parsed.references[1].found, { doc: "Soil.pdf", page: "1" });
+  assert.ok(parsed.references.every((r) => /^rf_/.test(r.id)), "reference ids are stable across reads");
+  // the page's pure module
+  const box = { console }; box.globalThis = box;
+  runInNewContext(fs.readFileSync(new URL("../portal/estimates-scope.js", import.meta.url), "utf8"), box, { filename: "estimates-scope.js" });
+  const plain = (x) => JSON.parse(JSON.stringify(x));
+  assert.equal(box.scopeMailQuery("12 Beach Road, Rye VIC 3941 — Pool house"), '"12 Beach Road"', "the mailbox is searched for the street as an exact phrase");
+  assert.equal(box.scopeMailQuery(""), "", "no name, no search");
+  assert.equal(box.scopeDriveClass("S-01 Structural.pdf", "").key, box.scopeDriveClass("anything.pdf", "Structural").key, "a file is classed by its name or its folder");
+  assert.ok(box.scopeDriveClass("Civiltest soil report.pdf", ""), "a soil report is a known class");
+  assert.equal(box.scopeDriveClass("site photo.jpg", ""), null);
+  assert.equal(box.scopeDriveReadable({ kind: "sheet", name: "Budget.xlsx" }), false, "a spreadsheet is not read");
+  const files = [{ id: "a", name: "site photo.jpg", kind: "image" }, { id: "b", name: "S-01 Structural.pdf", kind: "pdf" }, { id: "c", name: "Budget.xlsx", kind: "sheet" }, { id: "d", name: "Soil report.pdf", kind: "pdf" }];
+  assert.deepEqual(plain(box.scopeDriveAutoPick(files)).sort(), ["b", "d"], "drawings and reports are ticked, a photo and a spreadsheet are not");
+  assert.equal(box.scopeDriveAutoPick(Array.from({ length: 30 }, (_, i) => ({ id: "f" + i, name: `S-${i} Structural.pdf`, kind: "pdf" }))).length, box.SCOPE_DRIVE_AUTO_MAX, "the automatic tick is capped");
+  // the source ticks as a filter
+  const both = { mentions: [{ doc: "S-01.pdf", via: "document" }, { doc: "Email — x", via: "email" }] }, onlyDoc = { doc: "S-01.pdf", quote: "q", via: "document" }, onlyMail = { doc: "Email — x", quote: "q", via: "email" }, hand = { title: "typed by hand" };
+  assert.ok(box.scopeViaAllows(onlyDoc, { mail: true, drive: true }) && box.scopeViaAllows(onlyMail, { mail: true, drive: true }));
+  assert.ok(box.scopeViaAllows(onlyMail, { mail: true, drive: false }) && !box.scopeViaAllows(onlyDoc, { mail: true, drive: false }), "emails only");
+  assert.ok(box.scopeViaAllows(onlyDoc, { mail: false, drive: true }) && !box.scopeViaAllows(onlyMail, { mail: false, drive: true }), "Drive only");
+  assert.ok(box.scopeViaAllows(both, { mail: true, drive: false }) && box.scopeViaAllows(both, { mail: false, drive: true }), "an item both mention stays under either");
+  assert.ok(box.scopeViaAllows(hand, { mail: true, drive: false }), "an item typed by hand is never filtered away");
+  const doc0 = box.normalizeScopeDoc({ result: { items: [Object.assign({ id: "i1", title: "Footings", category: "footings", specs: [] }, both), Object.assign({ id: "i2", title: "Stair", category: "stairs", specs: [] }, onlyMail)], gaps: [], references: parsed.references } }, "t1", "12 Beach Road");
+  const groups = plain(box.scopeMentionsBySource(doc0, { mail: true, drive: true }));
+  assert.deepEqual(groups.map((g) => [g.via, g.rows.length]), [["email", 2], ["document", 1]], "by source: one group per email / document, emails first, with what each asks for");
+  assert.equal(plain(box.scopeMentionsBySource(doc0, { mail: false, drive: true })).length, 1, "…and the ticks apply there too");
+  // where a referred-to document is
+  assert.deepEqual(plain(box.scopeRefKeys({ ref: "Detail 7/S-05" })).map((k) => k.sheet), ["S-05"], "a sheet number is read out of the reference");
+  const keys = box.scopeRefKeys({ ref: "S-05" });
+  assert.ok(keys[0].re.test("S05 Details.pdf") && keys[0].re.test("S-5_details.pdf") && !keys[0].re.test("S-051 plan.pdf") && !keys[0].re.test("AS-05.pdf"), "…and found in any spelling, never inside another number");
+  const world = { files: [{ name: "S-01 Structural.pdf", url: "https://x/s01.pdf" }], notes: [{ kind: "email", name: "RE: scope", from: "Sam Builder <sam@b.com.au>" }],
+    found: { mail: [{ id: "m2", subject: "Drawings issued", from: "Eng <e@s.com.au>", date: "2026-11-10T00:00:00Z", attachments: [{ filename: "A201 Floor plan.pdf" }] }], drive: { folder: { id: "F1", name: "12 Beach Road Rye" }, files: [{ id: "d2", name: "S-05 Details.pdf", path: "Structural", webViewLink: "https://drive/d2" }] } } };
+  const L = (ref) => plain(box.scopeLocateReference(ref, world));
+  assert.equal(L({ ref: "Geotech", found: { doc: "Soil.pdf", page: "1" } }).state, "read", "the reader found it in the set");
+  assert.equal(L({ ref: "S-01" }).state, "read", "a file already among the sources");
+  const dr = L({ ref: "Detail 7/S-05" });
+  assert.equal(dr.state, "drive"); assert.equal(dr.fileId, "d2"); assert.match(dr.where, /12 Beach Road Rye › Structural › S-05 Details\.pdf/); assert.equal(dr.link, "https://drive/d2");
+  const ml = L({ ref: "A-201" });
+  assert.equal(ml.state, "mail"); assert.match(ml.where, /Attached to the email “Drawings issued” from Eng <e@s\.com\.au>, 2026-11-10: A201 Floor plan\.pdf/); assert.match(ml.link, /#all\/m2$/); assert.match(ml.how, /Download the attachment/);
+  const miss = L({ ref: "Landscape plan L-03", cited: [{ doc: "Email — RE: scope", via: "email" }] });
+  assert.equal(miss.state, "missing"); assert.equal(miss.search, "L-03");
+  assert.match(miss.where, /Not found in the Drive folder “12 Beach Road Rye” \(1 file\) or 1 project email/);
+  assert.match(miss.how, /ask Sam Builder <sam@b\.com\.au> for it — it is cited in Email — RE: scope/, "it names who to ask");
+  assert.match(plain(box.scopeLocateReference({ ref: "L-03" }, {})).where, /have not been scanned yet/, "nothing scanned is said, never 'not found'");
+  // merges
+  const m1 = box.mergeScopeResult({ items: [Object.assign({ id: "i1", title: "Footings", specs: [] }, onlyDoc)], gaps: [], references: [parsed.references[0]] }, { items: [Object.assign({ id: "i1", title: "Footings", specs: [] }, onlyMail)], gaps: [], references: [{ id: parsed.references[0].id, ref: "Detail 7/S-05", cited: [{ doc: "New.pdf", via: "document" }], found: { doc: "S-05.pdf" } }] });
+  assert.deepEqual(plain(m1.items[0].mentions).map((m) => m.via), ["document", "email"], "a later read ADDS the email's mention to the item");
+  assert.equal(m1.references.length, 1); assert.equal(m1.references[0].cited.length, 3); assert.equal(m1.references[0].found.doc, "S-05.pdf", "…and a reference found later is marked found");
+  const a = box.normalizeScopeDoc({ auto: { mail: true, drive: false }, drive: { id: "F1", name: "x" }, found: { at: "2026-11-20T01:00:00Z", mail: [], drive: null, errors: {} }, updatedAt: "2026-11-20T01:00:00Z" }, "t1", "n");
+  const b = box.normalizeScopeDoc({ found: { at: "2026-11-20T02:00:00Z", mail: [{ id: "m" }], drive: null, errors: {} }, updatedAt: "2026-11-20T00:30:00Z" }, "t1", "n");
+  const md = box.mergeScopeDocs(a, b);
+  assert.equal(md.found.at, "2026-11-20T02:00:00Z", "two devices: the newer look stands");
+  assert.equal(md.drive.id, "F1", "…and the chosen folder is kept");
+  assert.deepEqual(plain(box.emptyScopeDoc("t", "n").auto), { mail: true, drive: true }, "both sources are on to start");
+  const csv = box.scopeCsvRows(doc0).map((r) => r.join("|")).join("\n");
+  assert.match(csv, /Document referred to/); assert.match(csv, /Also mentioned/, "the export carries the mentions and the references");
+  // the page: read-only everywhere
+  const est = fs.readFileSync(new URL("../portal/estimates-app.html", import.meta.url), "utf8");
+  const block = est.slice(est.indexOf("async function scopeDriveLook(found){"), est.indexOf("function scopeClose(){"));
+  assert.match(est, /scopeDiscover\(false\);/, "the look runs when the panel opens");
+  assert.match(block, /action:"match", projectName:PROJECT\.name/, "the Drive folder is matched by the project's name");
+  assert.match(block, /action:"list", q, max:25/, "the mailbox is listed, never changed");
+  assert.match(block, /action:"copy", id:[^}]*target:"preview"/, "a Drive file is copied into the portal's own bucket to be read");
+  const actions = Array.from(block.matchAll(/action:"([a-z]+)"/g)).map((m) => m[1]);
+  assert.deepEqual(Array.from(new Set(actions)).sort(), ["copy", "list", "match", "read", "search"], "the scan only reads: match, list, read, copy, search — nothing is sent, labelled or written to Drive");
+  assert.match(est, /data-scope-auto="mail" data-testid="scope-src-mail"/); assert.match(est, /data-scope-auto="drive" data-testid="scope-src-drive"/);
+  assert.match(est, /data-testid="scope-scan"/); assert.match(est, /data-testid="scope-by-source"/); assert.match(est, /data-testid="scope-refs"/); assert.match(est, /data-testid="scope-ref-add"/); assert.match(est, /data-testid="scope-ref-search"/);
+  assert.ok(!/addInstance\(|saveEstimateState\(|pushTakeoffToCloud\(/.test(block), "the scan never touches the takeoff — only the estimator's own '+ Add to takeoff' does");
 });
 await checkAsync("Rates Library reads supplier rate documents (20 Nov 2026): the reader lists lines as written and never decides a figure; the page maps by rule, converts $/tonne by each bar's weight, flags what is not clear and leaves it unticked; applying records the document with its validity date and alarms as it nears", async () => {
   const RDL = await import("../src/lib/rateDocs.js");
