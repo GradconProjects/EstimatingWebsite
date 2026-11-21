@@ -87,7 +87,17 @@ export function pendingRateChanges(quote, log, createdAt) {
   byKey.forEach((c) => { if (kept[c.key] && kept[c.key].unitCost != null) c.from = kept[c.key].unitCost; });
   // a change this project already kept on its own (autoKeepPatch) is settled until the library moves that key again
   const autoKept = (quote.ratesAutoKept && typeof quote.ratesAutoKept === "object") ? quote.ratesAutoKept : {};
-  return [...byKey.values()].filter((c) => Number(c.from) !== Number(c.to) && !(autoKept[c.key] && Date.parse(autoKept[c.key]) >= Date.parse(c.at)));
+  // a figure this project typed ITSELF on a card (typedRatePatch — the card wrote it to the library) is settled while the library still holds it
+  const typed = (quote.ratesTyped && typeof quote.ratesTyped === "object") ? quote.ratesTyped : {};
+  return [...byKey.values()].filter((c) => Number(c.from) !== Number(c.to) && !(autoKept[c.key] && Date.parse(autoKept[c.key]) >= Date.parse(c.at)) && !(typed[c.key] != null && Number(typed[c.key]) === Number(c.to)));
+}
+/** A library rate typed on THIS project's card: the project is not asked about its own change, and a figure it had kept for that key is released (it now follows the library, which holds what was typed). */
+export function typedRatePatch(quote, key, price) {
+  const n = Number(price);
+  if (!quote || !key || !Number.isFinite(n)) return {};
+  const patch = { ratesTyped: { ...((quote.ratesTyped && typeof quote.ratesTyped === "object") ? quote.ratesTyped : {}), [key]: n } };
+  if (isLibraryPin(quote) && quote.ratesFrozen.rates && quote.ratesFrozen.rates[key]) Object.assign(patch, releaseKeptRatesPatch(quote, [key]));
+  return patch;
 }
 
 /* ---------- older work keeps its figures (Boma, 20 Nov 2026) ----------

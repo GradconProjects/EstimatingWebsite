@@ -470,29 +470,44 @@ const FORMWORK_ITEMS = [
 // his cost build-up). Same names as the Quotes catalog band so the prices flow by name.
 const PAVEMENT_FINISH_ITEMS = [
   {p:"Exposed aggregate pavement, 100 mm reinforced \u2014 RECOMMENDED preliminary estimate rate (budget allowance incl. estimating contingency; structural confirmation required)",u:"m2",cost:180},
-  {p:"Exposed aggregate \u2014 standard, supply & install (2026 Melbourne guide $130\u2013185/m\u00b2)",u:"m2",cost:157.5},
-  {p:"Exposed aggregate \u2014 premium (2026 Melbourne guide $180\u2013220/m\u00b2)",u:"m2",cost:200},
-  {p:"Exposed aggregate \u2014 difficult access (2026 Melbourne guide $180\u2013240+/m\u00b2)",u:"m2",cost:210},
-  {p:"Exposed aggregate concrete, sealed, P4 slip rating \u2014 crossover \u2014 RECOMMENDED tender allowance (build-up Nov 2026: $185 + $10 contingency; indicative $150\u2013230/m\u00b2; council thickness & reinforcement to confirm)",u:"m2",cost:195},
-  {p:"Ordinary grey concrete pavement, broom finish (2026 Melbourne guide $85\u2013120/m\u00b2)",u:"m2",cost:102.5},
-  {p:"Coloured concrete pavement (2026 Melbourne guide $100\u2013210/m\u00b2 incl. GST, typ. $145 \u2248 $132 ex GST)",u:"m2",cost:132},
-  {p:"Stamped / stencilled concrete pavement (2026 Melbourne guide $125\u2013210/m\u00b2 incl. GST, typ. $165 \u2248 $150 ex GST)",u:"m2",cost:150},
-  {p:"Polished concrete \u2014 grind & polish of a placed slab, excl. slab & prep (2026 Melbourne guide $50\u2013120/m\u00b2)",u:"m2",cost:85},
-  {p:"Burnished concrete finish \u2014 mechanical trowel burnish of a placed slab (guide $30\u201385/m\u00b2)",u:"m2",cost:57.5},
-  {p:"Honed concrete finish \u2014 light grind & seal of a placed slab (no 2026 Melbourne guide found; seeded between burnished and polished \u2014 confirm)",u:"m2",cost:70},
-  {p:"Sealer only \u2014 reseal of an existing pavement (indicative $6\u201316/m\u00b2; confirm with supplier)",u:"m2",cost:11},
-  {p:"Permeable paving, vehicle-rated, sealed, P4 slip rating \u2014 driveway / carport \u2014 RECOMMENDED tender allowance (build-up Nov 2026: $215 + $15 contingency; indicative $180\u2013280/m\u00b2; excl. major excavation, drainage, permits & traffic management)",u:"m2",cost:230},
-  {p:"Permeable paving \u2014 permeable pavers or permeable concrete, supply & install incl. open-graded base (2026 Melbourne guide $170\u2013230/m\u00b2 incl. GST, typ. $200 \u2248 $182 ex GST)",u:"m2",cost:182},
-  {p:"Permeable paving \u2014 resin-bound stone, supply & install (2026 Melbourne guide $150\u2013200/m\u00b2; GST basis not stated \u2014 confirm)",u:"m2",cost:175},
-  {p:"Permeable paving \u2014 gravel grid (2026 Melbourne guide $90\u2013130/m\u00b2; GST basis not stated \u2014 confirm)",u:"m2",cost:110},
+  {p:"Exposed aggregate \u2014 standard, supply & install (2026 Melbourne guide $130\u2013185/m\u00b2)",u:"m2",cost:185,was:157.5},
+  {p:"Exposed aggregate \u2014 premium (2026 Melbourne guide $180\u2013220/m\u00b2)",u:"m2",cost:220,was:200},
+  {p:"Exposed aggregate \u2014 difficult access (2026 Melbourne guide $180\u2013240+/m\u00b2)",u:"m2",cost:240,was:210},
+  {p:"Exposed aggregate concrete, sealed, P4 slip rating \u2014 crossover \u2014 RECOMMENDED tender allowance (build-up Nov 2026: $185 + $10 contingency; indicative $150\u2013230/m\u00b2; council thickness & reinforcement to confirm)",u:"m2",cost:230,was:195,label:"Exposed aggregate concrete, sealed, P4 slip rating \u2014 crossover \u2014 RECOMMENDED tender allowance (top of the indicative $150\u2013230/m\u00b2; build-up Nov 2026 $185 + $10 contingency = $195; council thickness & reinforcement to confirm)"},
+  {p:"Ordinary grey concrete pavement, broom finish (2026 Melbourne guide $85\u2013120/m\u00b2)",u:"m2",cost:120,was:102.5},
+  {p:"Coloured concrete pavement (2026 Melbourne guide $100\u2013210/m\u00b2 incl. GST, typ. $145 \u2248 $132 ex GST)",u:"m2",cost:190.91,was:132,label:"Coloured concrete pavement (2026 Melbourne guide $100\u2013210/m\u00b2 incl. GST \u2014 top of range $210 \u2248 $190.91 ex GST)"},
+  {p:"Stamped / stencilled concrete pavement (2026 Melbourne guide $125\u2013210/m\u00b2 incl. GST, typ. $165 \u2248 $150 ex GST)",u:"m2",cost:190.91,was:150,label:"Stamped / stencilled concrete pavement (2026 Melbourne guide $125\u2013210/m\u00b2 incl. GST \u2014 top of range $210 \u2248 $190.91 ex GST)"},
+  {p:"Polished concrete \u2014 grind & polish of a placed slab, excl. slab & prep (2026 Melbourne guide $50\u2013120/m\u00b2)",u:"m2",cost:120,was:85},
+  {p:"Burnished concrete finish \u2014 mechanical trowel burnish of a placed slab (guide $30\u201385/m\u00b2)",u:"m2",cost:85,was:57.5},
+  {p:"Honed concrete finish \u2014 light grind & seal of a placed slab (no 2026 Melbourne guide found; seeded between burnished and polished \u2014 confirm)",u:"m2",cost:102.5,was:70},
+  {p:"Sealer only \u2014 reseal of an existing pavement (indicative $6\u201316/m\u00b2; confirm with supplier)",u:"m2",cost:16,was:11},
+  {p:"Permeable paving, vehicle-rated, sealed, P4 slip rating \u2014 driveway / carport \u2014 RECOMMENDED tender allowance (build-up Nov 2026: $215 + $15 contingency; indicative $180\u2013280/m\u00b2; excl. major excavation, drainage, permits & traffic management)",u:"m2",cost:280,was:230,label:"Permeable paving, vehicle-rated, sealed, P4 slip rating \u2014 driveway / carport \u2014 RECOMMENDED tender allowance (top of the indicative $180\u2013280/m\u00b2; build-up Nov 2026 $215 + $15 contingency = $230; excl. major excavation, drainage, permits & traffic management)"},
+  {p:"Permeable paving \u2014 permeable pavers or permeable concrete, supply & install incl. open-graded base (2026 Melbourne guide $170\u2013230/m\u00b2 incl. GST, typ. $200 \u2248 $182 ex GST)",u:"m2",cost:209.09,was:182,label:"Permeable paving \u2014 permeable pavers or permeable concrete, supply & install incl. open-graded base (2026 Melbourne guide $170\u2013230/m\u00b2 incl. GST \u2014 top of range $230 \u2248 $209.09 ex GST)"},
+  {p:"Permeable paving \u2014 resin-bound stone, supply & install (2026 Melbourne guide $150\u2013200/m\u00b2; GST basis not stated \u2014 confirm)",u:"m2",cost:200,was:175},
+  {p:"Permeable paving \u2014 gravel grid (2026 Melbourne guide $90\u2013130/m\u00b2; GST basis not stated \u2014 confirm)",u:"m2",cost:130,was:110},
   {p:"Slip-resistant finish to P4 \u2014 sealer additive / surface treatment and slip test (no published rate found \u2014 enter the supplier's quote per m\u00b2)",u:"m2",cost:0},
-  {p:"Build-up: concrete supply incl. decorative aggregate ($40\u201355/m\u00b2)",u:"m2",cost:47.5},
-  {p:"Build-up: reinforcement mesh, chairs & installation ($15\u201322/m\u00b2)",u:"m2",cost:18.5},
-  {p:"Build-up: edge formwork, per m\u00b2 of pavement ($8\u201315/m\u00b2; ideally measured in lm)",u:"m2",cost:11.5},
-  {p:"Build-up: placement, screeding & exposed finish ($35\u201350/m\u00b2)",u:"m2",cost:42.5},
-  {p:"Build-up: movement / control joints allowance ($8\u201315/m\u00b2; ideally measured in lm)",u:"m2",cost:11.5},
-  {p:"Build-up: curing, cleaning & sealing ($10\u201315/m\u00b2)",u:"m2",cost:12.5},
+  {p:"Build-up: concrete supply incl. decorative aggregate ($40\u201355/m\u00b2)",u:"m2",cost:55,was:47.5},
+  {p:"Build-up: reinforcement mesh, chairs & installation ($15\u201322/m\u00b2)",u:"m2",cost:22,was:18.5},
+  {p:"Build-up: edge formwork, per m\u00b2 of pavement ($8\u201315/m\u00b2; ideally measured in lm)",u:"m2",cost:15,was:11.5},
+  {p:"Build-up: placement, screeding & exposed finish ($35\u201350/m\u00b2)",u:"m2",cost:50,was:42.5},
+  {p:"Build-up: movement / control joints allowance ($8\u201315/m\u00b2; ideally measured in lm)",u:"m2",cost:15,was:11.5},
+  {p:"Build-up: curing, cleaning & sealing ($10\u201315/m\u00b2)",u:"m2",cost:15,was:12.5},
 ];
+// Every finish rate sits at the TOP of its published range (Boma, 21 Nov 2026:
+// "always adopt the higher range"). A saved library is moved onto the upper
+// figures ONCE: a row still holding the figure it was seeded with (`was`)
+// takes the new one; a figure typed by hand is left exactly as it is.
+const FINISH_UPPER = 1;
+function migrateFinishUpper(st){
+  if(!st || st.finishUpper === FINISH_UPPER) return false;
+  st.finishRates = st.finishRates || {};
+  PAVEMENT_FINISH_ITEMS.forEach(it=>{
+    const row = st.finishRates[it.p];
+    if(it.was != null && row && Number(row.cost) === it.was) st.finishRates[it.p] = Object.assign({}, row, {cost: it.cost});
+  });
+  st.finishUpper = FINISH_UPPER;
+  return true;
+}
 const SPECIALIST_CONCRETE_ITEMS = [
   {p:"VicMix Fusion Ash \u2014 grey cement, grey granite/dark aggregate",u:"m3",cost:330},
   {p:"VicMix Meridian 37 Ash \u2014 grey cement, predominantly dark stone",u:"m3",cost:340},
@@ -820,6 +835,7 @@ function loadRates(){
 let state = backfill(loadRates() || {}, freshRates());
 if(!state.ratesVersion) state.ratesVersion = RATES_VERSION;
 if(migrateFormworkPattern(state)){ try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }catch(e){} }
+if(migrateFinishUpper(state)){ try{ state.updatedAt = new Date().toISOString(); localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }catch(e){} }
 // Reinforcement wastage is standardised at 5% — coerce any stored steel
 // entry still carrying an old default (8% bar / 3% processed) once on load,
 // so saved rate blobs can't keep the retired figures alive. Runs on every
@@ -863,6 +879,7 @@ async function syncFromCloud(){
     state = backfill(row.value || {}, freshRates());
     if(!state.ratesVersion) state.ratesVersion = RATES_VERSION;
     if(migrateFormworkPattern(state)){ try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }catch(e){} kvPush(STORAGE_KEY, state).then(function(p){ if(p) try{ localStorage.setItem(STORAGE_KEY+"__syncedAt", p.updated_at); }catch(e){} }); }
+    if(migrateFinishUpper(state)){ state.updatedAt = new Date().toISOString(); try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }catch(e){} kvPush(STORAGE_KEY, state).then(function(p){ if(p) try{ localStorage.setItem(STORAGE_KEY+"__syncedAt", p.updated_at); }catch(e){} }); }
     try{ if(state.global && state.global.concreteSurchargePerM3===2.59) state.global.concreteSurchargePerM3=9.17; }catch(e){}
     try{
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -918,7 +935,7 @@ function editableTable(items, stateMap, keyOf, fields, opts){
     const key = keyOf(it, idx);
     const row = stateMap[key];
     if(opts.groupOf){ const g = opts.groupOf(it); if(g && g !== lastGroup){ h += `<tr class="group-row"><td colspan="${2+fields.length}" style="background:var(--navy-light);font-weight:700;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--navy);">${g}</td></tr>`; lastGroup = g; } }
-    h += `<tr><td>${it.p}${it.note?`<br><small style="color:#6b7a86;">${it.note}</small>`:""}</td>${opts.showUnit!==false?`<td>${it.u||""}</td>`:""}`;
+    h += `<tr><td>${it.label||it.p}${it.note?`<br><small style="color:#6b7a86;">${it.note}</small>`:""}</td>${opts.showUnit!==false?`<td>${it.u||""}</td>`:""}`;
     fields.forEach(f=>{
       h += `<td><input type="number" step="any" class="lib-input" data-map="${opts.mapName}" data-key="${key}" data-field="${f.field}" value="${row[f.field]}"></td>`;
     });
@@ -1168,6 +1185,7 @@ function renderApp(){
   // Finished pavements & concrete finishes ($/m\u00b2 installed, preliminary)
   h += section("sec-finish-rates", "Pavement finishes", "Finished pavements & concrete finishes \u2014 $/m\u00b2 supply & install (preliminary estimating allowances)",
     PAVEMENT_FINISH_ITEMS.length,
+    `<p class="hint" data-testid="finish-upper-note"><b>Every rate here sits at the TOP of its published range</b> (a range stated incl. GST at its top \u00f7 1.1) \u2014 change any figure here, or type it on a Quotes card\u2019s Unit $ in this band: both are the same figure.</p>` +
     `<p class="hint"><b>Preliminary estimating allowances, ex GST \u2014 not confirmed subcontractor quotations.</b> Published Melbourne contractor guides for 2026 put standard exposed aggregate at $130\u2013185/m\u00b2 supply &amp; install, premium at $180\u2013220, difficult access at $180\u2013240+ and ordinary grey pavement at $85\u2013120; the guides vary in GST treatment and scope (a guide stated incl. GST is seeded here ex GST). The <b>recommended preliminary estimate rate is $180/m\u00b2 ex GST</b> for a standard 100 mm reinforced carport pavement \u2014 a budget allowance with estimating contingency, subject to structural confirmation. The <b>Build-up</b> rows are Gradcon's component allowances for a 100 mm slab with conventional mesh, standard decorative aggregate, standard access and no unusual ground (indicative direct cost $116\u2013172/m\u00b2); edge formwork and movement joints are better measured separately in lineal metres. Every rate here flows to the Quotes band of the same name.</p>` +
     editableTable(PAVEMENT_FINISH_ITEMS, state.finishRates, it=>it.p, [{field:"cost",label:"Rate ($/m\u00b2)"}], {mapName:"finishRates"}));
 
@@ -1607,6 +1625,31 @@ rdInit();
 document.getElementById("saveBtn").addEventListener("click", saveRates);
 syncFromCloud(); // then pull whatever another device last saved (or seed the cloud if this is the very first save anywhere)
 window.addEventListener("focus", syncFromCloud);
+// A Quotes card can ask for one section ("Open in the Rates Library" on a band): a one-shot request, removed the moment it is read.
+const LIBRARY_OPEN_KEY = "gradcon-rates-library-open";
+function openRequestedSection(){
+  let id = null;
+  try{ id = localStorage.getItem(LIBRARY_OPEN_KEY); if(id) localStorage.removeItem(LIBRARY_OPEN_KEY); }catch(e){}
+  if(!id) return;
+  const el = document.getElementById(id); if(!el) return;
+  el.open = true; el.setAttribute("data-requested","1");
+  try{ el.scrollIntoView({block:"start"}); }catch(e){}
+}
+openRequestedSection();
+window.addEventListener("focus", openRequestedSection);
+// A rate typed on a Quotes card is written to this browser's copy of the library (and to the cloud): take it at once, so a later save here never puts the old figure back.
+window.addEventListener("storage", function(e){
+  if(!e) return;
+  if(e.key === LIBRARY_OPEN_KEY){ openRequestedSection(); return; }
+  if(e.key !== STORAGE_KEY || !e.newValue) return;
+  if(document.activeElement && document.activeElement.classList && document.activeElement.classList.contains("lib-input")) return;
+  try{
+    const next = JSON.parse(e.newValue);
+    if(!next || !(String(next.updatedAt||"") > String(state.updatedAt||""))) return;
+    state = backfill(next, freshRates());
+    renderApp();
+  }catch(err){}
+});
 document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) syncFromCloud(); });
 setInterval(syncFromCloud, 6000); // close to live without a WebSocket subscription
 </script>

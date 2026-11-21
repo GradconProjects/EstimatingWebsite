@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Loader2, Check, AlertTriangle, ArrowUp, ArrowDown, X } from "lucide-react";
 import { defaultSortDir } from "../lib/projectSort.js";
 
@@ -52,6 +53,29 @@ export function NumInput({ value, onChange, placeholder = "—", className = "",
       placeholder={placeholder}
       className={`w-full bg-amber-50 border border-amber-200 rounded px-2 py-1 text-right font-mono text-[13px] tabular-nums
                   focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-orange-400 ${className}`}
+    />
+  );
+}
+
+/** A NumInput that COMMITS on blur / Enter instead of on every keystroke —
+ * for a figure whose write goes further than this project (a Rates Library
+ * price typed on a card: one write, one logged change, not one per digit).
+ * The typed draft stays on screen until the committed value comes back. */
+export function CommitNumInput({ value, onCommit, ...rest }) {
+  const [draft, setDraft] = useState(null);
+  useEffect(() => { setDraft(null); }, [value]);
+  const commit = () => {
+    if (draft === null) return;
+    if (draft === undefined || !Number.isFinite(Number(draft)) || Number(draft) === Number(value)) { setDraft(null); return; }
+    onCommit(Number(draft));
+  };
+  return (
+    <NumInput
+      {...rest}
+      value={draft === null ? value : draft}
+      onChange={(v) => setDraft(v)}
+      onBlur={commit}
+      onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); else if (e.key === "Escape") setDraft(null); }}
     />
   );
 }

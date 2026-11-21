@@ -487,31 +487,44 @@ export const FULL_CATALOG = [
    *   and reinforcement are the council's to confirm.
    * Both exclude major excavation, spoil, subgrade remediation, drainage,
    * permits and traffic management; the P4 result depends on the product
-   * and sealer chosen. */
-  { key: "FINISHED PAVEMENTS & CONCRETE FINISHES", label: "FINISHED PAVEMENTS & CONCRETE FINISHES", note: "$/m² supply & install — preliminary estimating allowances ex GST from 2026 Melbourne guides and Gradcon's build-up, not subcontractor quotes; $180/m² recommended for a standard 100 mm reinforced carport pavement", weightBasis: false, scopeBucket: "always", products: [
+   * and sealer chosen.
+   * EVERY RATE SITS AT THE TOP OF ITS RANGE (Boma, 21 Nov 2026: "i want you
+   * to always adopt the higher range"): a row whose name states a range is
+   * seeded at the range's upper figure (a "+" ceiling at the figure before
+   * it; a range stated incl. GST at its top ÷ 1.1), the honed row between
+   * the burnished and polished tops, the six build-up rows at their tops
+   * (they sum to $172, the top of the indicative direct cost), and the two
+   * recommended tender allowances at the top of their indicative ranges
+   * ($280 and $230 — the build-ups of $230 and $195 stay in their labels).
+   * The $180 carport headline has no range and stands. A `name` is the rate
+   * KEY and is never renamed, so a row whose name quotes the old "typ."
+   * figure carries a `label` with the new one. `librarySection` /
+   * `libraryAnchor` name the Rates Library section that governs the band:
+   * the card's Unit $ is typed in place and written to that section. */
+  { key: "FINISHED PAVEMENTS & CONCRETE FINISHES", label: "FINISHED PAVEMENTS & CONCRETE FINISHES", librarySection: "finishRates", libraryAnchor: "sec-finish-rates", note: "$/m² supply & install — preliminary estimating allowances ex GST, each seeded at the TOP of its published 2026 Melbourne range (or Gradcon's build-up), not subcontractor quotes; $180/m² recommended for a standard 100 mm reinforced carport pavement. These are the Rates Library's figures: a Unit $ typed here updates the library", weightBasis: false, scopeBucket: "always", products: [
     ["Exposed aggregate pavement, 100 mm reinforced — RECOMMENDED preliminary estimate rate (budget allowance incl. estimating contingency; structural confirmation required)", "m2", null, 180],
-    ["Exposed aggregate — standard, supply & install (2026 Melbourne guide $130–185/m²)", "m2", null, 157.5],
-    ["Exposed aggregate — premium (2026 Melbourne guide $180–220/m²)", "m2", null, 200],
-    ["Exposed aggregate — difficult access (2026 Melbourne guide $180–240+/m²)", "m2", null, 210],
-    ["Exposed aggregate concrete, sealed, P4 slip rating — crossover — RECOMMENDED tender allowance (build-up Nov 2026: $185 + $10 contingency; indicative $150–230/m²; council thickness & reinforcement to confirm)", "m2", null, 195],
-    ["Ordinary grey concrete pavement, broom finish (2026 Melbourne guide $85–120/m²)", "m2", null, 102.5],
-    ["Coloured concrete pavement (2026 Melbourne guide $100–210/m² incl. GST, typ. $145 ≈ $132 ex GST)", "m2", null, 132],
-    ["Stamped / stencilled concrete pavement (2026 Melbourne guide $125–210/m² incl. GST, typ. $165 ≈ $150 ex GST)", "m2", null, 150],
-    ["Polished concrete — grind & polish of a placed slab, excl. slab & prep (2026 Melbourne guide $50–120/m²)", "m2", null, 85],
-    ["Burnished concrete finish — mechanical trowel burnish of a placed slab (guide $30–85/m²)", "m2", null, 57.5],
-    ["Honed concrete finish — light grind & seal of a placed slab (no 2026 Melbourne guide found; seeded between burnished and polished — confirm)", "m2", null, 70],
-    ["Sealer only — reseal of an existing pavement (indicative $6–16/m²; confirm with supplier)", "m2", null, 11],
-    ["Permeable paving, vehicle-rated, sealed, P4 slip rating — driveway / carport — RECOMMENDED tender allowance (build-up Nov 2026: $215 + $15 contingency; indicative $180–280/m²; excl. major excavation, drainage, permits & traffic management)", "m2", null, 230],
-    ["Permeable paving — permeable pavers or permeable concrete, supply & install incl. open-graded base (2026 Melbourne guide $170–230/m² incl. GST, typ. $200 ≈ $182 ex GST)", "m2", null, 182],
-    ["Permeable paving — resin-bound stone, supply & install (2026 Melbourne guide $150–200/m²; GST basis not stated — confirm)", "m2", null, 175],
-    ["Permeable paving — gravel grid (2026 Melbourne guide $90–130/m²; GST basis not stated — confirm)", "m2", null, 110],
+    ["Exposed aggregate — standard, supply & install (2026 Melbourne guide $130–185/m²)", "m2", null, 185],
+    ["Exposed aggregate — premium (2026 Melbourne guide $180–220/m²)", "m2", null, 220],
+    ["Exposed aggregate — difficult access (2026 Melbourne guide $180–240+/m²)", "m2", null, 240],
+    { name: "Exposed aggregate concrete, sealed, P4 slip rating — crossover — RECOMMENDED tender allowance (build-up Nov 2026: $185 + $10 contingency; indicative $150–230/m²; council thickness & reinforcement to confirm)", unit: "m2", unitCost: 230, label: "Exposed aggregate concrete, sealed, P4 slip rating — crossover — RECOMMENDED tender allowance (top of the indicative $150–230/m²; build-up Nov 2026 $185 + $10 contingency = $195; council thickness & reinforcement to confirm)" },
+    ["Ordinary grey concrete pavement, broom finish (2026 Melbourne guide $85–120/m²)", "m2", null, 120],
+    { name: "Coloured concrete pavement (2026 Melbourne guide $100–210/m² incl. GST, typ. $145 ≈ $132 ex GST)", unit: "m2", unitCost: 190.91, label: "Coloured concrete pavement (2026 Melbourne guide $100–210/m² incl. GST — top of range $210 ≈ $190.91 ex GST)" },
+    { name: "Stamped / stencilled concrete pavement (2026 Melbourne guide $125–210/m² incl. GST, typ. $165 ≈ $150 ex GST)", unit: "m2", unitCost: 190.91, label: "Stamped / stencilled concrete pavement (2026 Melbourne guide $125–210/m² incl. GST — top of range $210 ≈ $190.91 ex GST)" },
+    ["Polished concrete — grind & polish of a placed slab, excl. slab & prep (2026 Melbourne guide $50–120/m²)", "m2", null, 120],
+    ["Burnished concrete finish — mechanical trowel burnish of a placed slab (guide $30–85/m²)", "m2", null, 85],
+    ["Honed concrete finish — light grind & seal of a placed slab (no 2026 Melbourne guide found; seeded between burnished and polished — confirm)", "m2", null, 102.5],
+    ["Sealer only — reseal of an existing pavement (indicative $6–16/m²; confirm with supplier)", "m2", null, 16],
+    { name: "Permeable paving, vehicle-rated, sealed, P4 slip rating — driveway / carport — RECOMMENDED tender allowance (build-up Nov 2026: $215 + $15 contingency; indicative $180–280/m²; excl. major excavation, drainage, permits & traffic management)", unit: "m2", unitCost: 280, label: "Permeable paving, vehicle-rated, sealed, P4 slip rating — driveway / carport — RECOMMENDED tender allowance (top of the indicative $180–280/m²; build-up Nov 2026 $215 + $15 contingency = $230; excl. major excavation, drainage, permits & traffic management)" },
+    { name: "Permeable paving — permeable pavers or permeable concrete, supply & install incl. open-graded base (2026 Melbourne guide $170–230/m² incl. GST, typ. $200 ≈ $182 ex GST)", unit: "m2", unitCost: 209.09, label: "Permeable paving — permeable pavers or permeable concrete, supply & install incl. open-graded base (2026 Melbourne guide $170–230/m² incl. GST — top of range $230 ≈ $209.09 ex GST)" },
+    ["Permeable paving — resin-bound stone, supply & install (2026 Melbourne guide $150–200/m²; GST basis not stated — confirm)", "m2", null, 200],
+    ["Permeable paving — gravel grid (2026 Melbourne guide $90–130/m²; GST basis not stated — confirm)", "m2", null, 130],
     ["Slip-resistant finish to P4 — sealer additive / surface treatment and slip test (no published rate found — enter the supplier's quote per m²)", "m2", null, 0],
-    ["Build-up: concrete supply incl. decorative aggregate ($40–55/m²)", "m2", null, 47.5],
-    ["Build-up: reinforcement mesh, chairs & installation ($15–22/m²)", "m2", null, 18.5],
-    ["Build-up: edge formwork, per m² of pavement ($8–15/m²; ideally measured in lm)", "m2", null, 11.5],
-    ["Build-up: placement, screeding & exposed finish ($35–50/m²)", "m2", null, 42.5],
-    ["Build-up: movement / control joints allowance ($8–15/m²; ideally measured in lm)", "m2", null, 11.5],
-    ["Build-up: curing, cleaning & sealing ($10–15/m²)", "m2", null, 12.5],
+    ["Build-up: concrete supply incl. decorative aggregate ($40–55/m²)", "m2", null, 55],
+    ["Build-up: reinforcement mesh, chairs & installation ($15–22/m²)", "m2", null, 22],
+    ["Build-up: edge formwork, per m² of pavement ($8–15/m²; ideally measured in lm)", "m2", null, 15],
+    ["Build-up: placement, screeding & exposed finish ($35–50/m²)", "m2", null, 50],
+    ["Build-up: movement / control joints allowance ($8–15/m²; ideally measured in lm)", "m2", null, 15],
+    ["Build-up: curing, cleaning & sealing ($10–15/m²)", "m2", null, 15],
   ]},
   /* FORMWORK follows Grady's 22 Oct 2026 sheet: every product carries its
    * APPLICATION (`group` — Ground slabs / Suspended / Vertical / Other, the

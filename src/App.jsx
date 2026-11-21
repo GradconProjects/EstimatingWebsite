@@ -9,7 +9,8 @@ import { ELEMENT_TYPES, QUOTE_STATUSES, QUOTE_STATUS_STYLES, QUOTE_SCOPES, norma
 import { defaultRates, newElementItem, computeGrandTotal, uid, money, rateKey, isManualQuoteKey, SCOPE_KEYS, scopeLabel, elementMarginPatch, rowMarginPatch, projectMarginPatch } from "./lib/costing.js";
 import { pendingRateUpdates, readLibraryState, readLastSynced, writeLastSynced, RATES_LIBRARY_KEY } from "./lib/ratesLibrarySync.js";
 import { effectiveRates, statusChangePatch, needsFreeze, freezeRates, frozenRateDrift, hasFrozenRates, isRatesLocked } from "./lib/rateFreeze.js";
-import { RATE_CHANGES_KEY, recordRateChanges, promptRateChanges, autoKeepChanges, autoKeepPatch, ratesKeepingOlderWork, firstWorkAck, elementRateChanges, decideRateChangesPatch, releaseKeptRatesPatch } from "./lib/rateChanges.js";
+import { writeLibraryPrice } from "./lib/libraryWrite.js";
+import { RATE_CHANGES_KEY, typedRatePatch, recordRateChanges, promptRateChanges, autoKeepChanges, autoKeepPatch, ratesKeepingOlderWork, firstWorkAck, elementRateChanges, decideRateChangesPatch, releaseKeptRatesPatch } from "./lib/rateChanges.js";
 import RateChangesPrompt, { KeptRatesBanner } from "./components/RateChangesPrompt.jsx";
 import CloudStorageView from "./components/CloudStorageView.jsx";
 import { AddressOptions } from "./components/AddressNaming.jsx";
@@ -745,6 +746,32 @@ function ProjectEditor({ project, allProjects, rates: liveRates, setRates: setLi
   // exact key the Rates modal shows; clearing restores the catalog default.
   const setMaterialRate = (key, v, fallback) => {
     setRates({ ...rates, [key]: { ...(rates[key] || {}), unitCost: v === undefined || v === "" ? fallback : Number(v) } });
+  };
+  // A band the RATES LIBRARY governs (catalog `librarySection` — the finished
+  // pavements band; Boma, 21 Nov 2026: "make it editable here and the update
+  // should cross reference to the rates library"): the figure typed on the
+  // card is written to the LIBRARY (lib/libraryWrite.js), whose ordinary sync
+  // then moves the live rate and logs the change for the other projects. This
+  // project is not asked about its own figure (typedRatePatch). A project
+  // whose rates are pinned by its status keeps the figure on its own copy:
+  // a finished quote never moves the library.
+  const [libraryNotes, setLibraryNotes] = useState({});
+  const setLibraryRate = async (cat, p, v) => {
+    const n = Number(v);
+    if (!cat || !p || !Number.isFinite(n) || n < 0) return;
+    const key = rateKey(cat.key, p.name, p.unit);
+    const amount = "$" + n.toFixed(2);
+    const say = (ok, text) => setLibraryNotes((m) => Object.assign({}, m, { [cat.key]: { ok, text } }));
+    if (locked) { setMaterialRate(key, n, p.unitCost ?? 0); say(true, amount + " kept on this project only: its rates are pinned, so the Rates Library is unchanged."); return; }
+    setQuote((q) => Object.assign({}, q, typedRatePatch(q, key, n)));
+    say(true, "Saving to the Rates Library…");
+    const r = await writeLibraryPrice(cat.librarySection, p.name, n);
+    if (r.ok) say(true, r.cloud ? "✓ " + amount + " saved to the Rates Library." : "✓ " + amount + " saved to this browser's Rates Library" + (r.reason ? " (" + r.reason + ")" : "") + ".");
+    else { setMaterialRate(key, n, p.unitCost ?? 0); say(false, amount + " is on the Quotes rates only: " + (r.reason || "the Rates Library could not be written") + "."); }
+  };
+  const openLibrarySection = (cat) => {
+    try { window.localStorage.setItem("gradcon-rates-library-open", (cat && cat.libraryAnchor) || ""); } catch { /* the library still opens */ }
+    try { window.parent.postMessage({ type: "gradcon:open-app", target: "rateslibrary" }, "*"); } catch { /* outside the portal */ }
   };
 
   // Mirrors the project's name/GFA into Cost Planner automatically, the same way
@@ -1533,6 +1560,9 @@ function ProjectEditor({ project, allProjects, rates: liveRates, setRates: setLi
               onReorder={reorderItems}
               onLabourRateChange={setLabourRate}
               onMaterialRateChange={setMaterialRate}
+              onLibraryRateChange={setLibraryRate}
+              onOpenLibrary={openLibrarySection}
+              libraryNotes={libraryNotes}
               projectScope={quote.scope}
               handover={quote.handover}
               packages={packages}

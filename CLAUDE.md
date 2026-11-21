@@ -207,7 +207,9 @@ safety net silently. Keep all cost arithmetic in `lib/costing.js`.
    **Permeable paving is on the band** (Boma, 20 Nov 2026, from a finishes
    schedule — EF 03 driveway / carport "Permeable Paving, sealer TBC, min. P4
    slip rating"; EF 04 crossover is the exposed aggregate already there):
-   permeable pavers / permeable concrete $182/m² (Antonio PrimeScape's
+   (the figures in this paragraph are the 20–21 Nov seeds and build-ups; every
+   row was moved to the TOP of its range the next day — see the end of this
+   rule) permeable pavers / permeable concrete $182/m² (Antonio PrimeScape's
    "Paving Prices Melbourne 2026", updated Nov 2026: $170–230 supplied and
    laid INCLUDING GST, typ. $200 → ex GST), resin-bound stone $175 and gravel
    grid $110 (Quartz Coatings' "Permeable Paving Guide 2026": $150–200 and
@@ -226,6 +228,59 @@ safety net silently. Keep all cost arithmetic in `lib/costing.js`.
    and traffic management. They are whole rates: the components are in the
    catalog comment, not separate rows (an element carrying a rate AND its
    components would buy the pavement twice). The band is 23 rows.
+   **Every rate sits at the TOP of its range, and the card's Unit $ is typed
+   in place** (Boma, 21 Nov 2026, after not finding the rows in the library:
+   "i want you to always adopt the higher range and make it editable here and
+   the update should cross reference to the rates library"). (a) **Top of
+   range — a standing rule for this band and for any allowance seeded from a
+   published range**: a row whose name states a range is seeded at its upper
+   figure ($130–185 → $185; a "+" ceiling at the figure before it; a range
+   stated incl. GST at its top ÷ 1.1, so $100–210 incl. → $190.91), the honed
+   row between the burnished and polished tops ($102.50), the six build-up
+   rows at their tops (sum $172) and the two recommended tender allowances at
+   the top of their indicative ranges ($280 and $230 — the build-ups of $230
+   and $195 stay in the label); the $180 carport headline states no range and
+   stands. A `name` is the rate KEY and is never renamed, so a row whose name
+   quotes an old "typ." figure is an OBJECT row with a `label` (the library's
+   item carries the same `label`; `editableTable` shows `it.label || it.p`).
+   A SAVED library moves once — `migrateFinishUpper` (`finishUpper = 1`, both
+   load paths): a row still on the figure it was seeded with (`was` on the
+   item) takes the new one, a figure typed by hand is left alone; the Quotes
+   sync then logs the moves and every project with elements is asked rate by
+   rate, as for any library change. (b) **`librarySection` / `libraryAnchor`
+   on a catalog band** name the Rates Library section that governs it
+   (`finishRates` / `sec-finish-rates` — the first such band): `CategoryBlock`
+   renders its Unit $ as `CommitNumInput` (`atoms.jsx`: the draft is committed
+   on blur / Enter, ONE write and one logged change, never one per digit;
+   `library-rate`, `data-key`) and a line under the band note
+   (`band-library`: what typing does, **Open this section in the Rates
+   Library** `band-library-open`, the outcome `band-library-note`).
+   `setLibraryRate` in `ProjectEditor`: `typedRatePatch(quote, key, n)`
+   (`rateChanges.js` — `quote.ratesTyped[key] = n`, so
+   `pendingRateChanges` never asks the project about its OWN figure while the
+   library still holds it, and a figure it had kept for that key is released)
+   then **`writeLibraryPrice(section, name, cost)`** (`src/lib/libraryWrite.js`
+   — `patchLibraryPrice` is the pure part): this browser's copy of the library
+   at once, then the cloud row — ONE section patched through
+   `estimator_kv_merge` (else a read-merge-write), built on the CLOUD's copy,
+   after which this browser's copy becomes the cloud's library with the figure
+   (never an older local copy) and the window's own library sync is told
+   (a `storage` event), so the live rate moves and the change is logged for
+   the other projects. The card NEVER writes the shared rates for such a row
+   (the sync would snap it back); with no library anywhere it falls back to
+   the plain rate and says so. **A project whose rates are pinned by its
+   status keeps the figure on its own copy** — the library is untouched and
+   the band says so. The library page takes a card's write at once (its
+   `storage` listener adopts a newer copy unless a library box has the focus)
+   and opens the requested section (`gradcon-rates-library-open`, a one-shot
+   read on load, focus and the storage event; `openRequestedSection`).
+   `verify.mjs` pins every row against its range, the labels, the one-time
+   move, the write (one section, the cloud's copy, the fallbacks), the settle
+   rule and the wiring; `test-finish-rates.mjs` proves the saved library's
+   move, the 23 typed cells, no write per keystroke, Enter → library → live
+   rate → row, the single logged change, the link opening the section, the
+   other project asked and the typing one not, and a submitted project
+   keeping its own figure (17 checks).
 
 8. **Contract minimums bill through `computeRowTotal`.** A product can
    carry a `minQty` (the 7th field in its catalog row) — a "4 hour min"

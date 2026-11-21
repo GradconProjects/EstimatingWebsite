@@ -19,7 +19,7 @@ import AdditionalItems from "./AdditionalItems.jsx";
  * the quote's item order (the summary rail, the print report and the
  * export all follow it), the same order QuoteSummary's own drag edits.
  */
-export default function ElementCard({ item, rates, onChange, onRemove, onDuplicate, onLabourRateChange, onMaterialRateChange, onMoveUp, onMoveDown, onReorder, projectScope , handover, onPickFromDrive, rateChanges, onRfq, packages = [], onAssignPackage, packageColour }) {
+export default function ElementCard({ item, rates, onChange, onRemove, onDuplicate, onLabourRateChange, onMaterialRateChange, onLibraryRateChange, onOpenLibrary, libraryNotes, onMoveUp, onMoveDown, onReorder, projectScope , handover, onPickFromDrive, rateChanges, onRfq, packages = [], onAssignPackage, packageColour }) {
   // who is typing (lib/workTrail.js): every figure entered records the
   // signed-in account, so Grady's own entries read in his colour
   const me = userKey(signedInUser());
@@ -622,6 +622,9 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
               onQtyChange={setQty}
               entryTone={tone}
               onRateChange={onMaterialRateChange}
+              onLibraryRateChange={onLibraryRateChange}
+              onOpenLibrary={onOpenLibrary}
+              libraryNote={libraryNotes && libraryNotes[cat.key]}
               onRowRateChange={setRowRate}
               onQuoteAmountChange={setQuoteAmount}
               catOpen={openCats[cat.key]}

@@ -2,7 +2,7 @@ import { Fragment } from "react";
 import { ChevronDown, ChevronRight, Plus, X } from "lucide-react";
 import { rateKey, money2, rowRate, computeRowTotal, rowContext, columnBasis, autoSoilRemoval, autoBlindingConcrete, blindingBuildUp, isQuantityOnlyKey, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, additionalRowsFor, additionalRowTotal, autoPigmentWashout, autoSpecialistShortLoad, productLabel, visibleProducts, isBlindingProduct, blindingIncluded, catalogRate } from "../lib/costing.js";
 import { SPECIALIST_CONCRETE_KEY } from "../data/catalog.js";
-import { NumInput } from "./atoms.jsx";
+import { NumInput, CommitNumInput } from "./atoms.jsx";
 import { validityState, validityLabel, formatValidUntil } from "../lib/rateValidity.js";
 
 /** "valid to 30 Sep" beside a time-limited rate — grey while current, amber
@@ -25,7 +25,7 @@ function ValidityChip({ validUntil }) {
  * shouldn't apply to a given job, the estimator just leaves those rows
  * blank (blank quantities cost nothing — see computeElementCost).
  */
-export default function CategoryBlock({ cat, item, rates, onQtyChange, entryTone, onRateChange, onRowRateChange, onQuoteAmountChange, catOpen, toggleCat, catTotal, onAddCustom, onRemoveCustom, onChangeCustom, charged = true, excludedTotal = 0, scopeName = "" }) {
+export default function CategoryBlock({ cat, item, rates, onQtyChange, entryTone, onRateChange, onRowRateChange, onQuoteAmountChange, onLibraryRateChange, onOpenLibrary, libraryNote, catOpen, toggleCat, catTotal, onAddCustom, onRemoveCustom, onChangeCustom, charged = true, excludedTotal = 0, scopeName = "" }) {
   const hasWeight = cat.products.some((p) => p.unitWeight != null);
   // Custom rows the estimator added under THIS category (item.additional
   // rows carrying cat === this key). They sit after the last catalog product,
@@ -82,6 +82,14 @@ export default function CategoryBlock({ cat, item, rates, onQtyChange, entryTone
       {catOpen && (
         <div className="overflow-x-auto">
           {cat.note && <p className="px-3 py-1.5 text-[11px] text-neutral-500 border-b border-neutral-100" data-testid="band-note">{cat.note}</p>}
+          {/* A band the Rates Library governs: its Unit $ is typed in place and written to the library (Boma, 21 Nov 2026). */}
+          {cat.librarySection && onLibraryRateChange && (
+            <p className="px-3 py-1.5 text-[11px] text-neutral-600 border-b border-neutral-100 bg-neutral-50 flex flex-wrap items-center gap-x-2 gap-y-1" data-testid="band-library">
+              <span>Type a <b>Unit $</b> to change a rate — it is saved to the Rates Library, and other open projects are asked whether to take it.</span>
+              {onOpenLibrary && <button type="button" onClick={() => onOpenLibrary(cat)} className="underline text-blue-800 hover:text-blue-950" data-testid="band-library-open">Open this section in the Rates Library</button>}
+              {libraryNote && <span className={libraryNote.ok ? "text-emerald-700" : "text-amber-700"} data-testid="band-library-note">{libraryNote.text}</span>}
+            </p>
+          )}
           <table className="w-full text-[13px]">
             <thead>
               <tr className="bg-neutral-50 text-neutral-500 text-[11px] uppercase tracking-wide">
@@ -227,6 +235,16 @@ export default function CategoryBlock({ cat, item, rates, onQtyChange, entryTone
                       ) : isQuantityOnlyKey(qKey) ? (
                         // a quantity-only row: the dig is costed on the crew sheet, never here
                         <span className="text-[10px] font-sans uppercase tracking-wide text-emerald-700" title="This row is a quantity only — it drives the crew sheet (Excavation & prep base, excavator and bobcat days, the soil removal) and never costs anything here, whatever rate is saved against it" data-testid="quantity-only">crew sheet</span>
+                      ) : cat.librarySection && onLibraryRateChange ? (
+                        // the Rates Library's own figure, typed in place: one write on blur / Enter
+                        <CommitNumInput
+                          step="0.5"
+                          value={rate.unitCost}
+                          onCommit={(v) => onLibraryRateChange(cat, p, v)}
+                          title="This is the Rates Library's rate. Type a figure and press Enter — it is saved to the library (and so to every project that follows it)"
+                          data-testid="library-rate"
+                          data-key={qKey}
+                        />
                       ) : onRateChange && ((cat.key === "CONCRETE" && (/minimum cartage|small load/i.test(p.name) || /transport surcharge/i.test(p.name) || /environment levy/i.test(p.name))) || (cat.key === SPECIALIST_CONCRETE_KEY && (/washout|short-load|delivery beyond/i.test(p.name))) || cat.volumeRateBasis) ? (
                         <NumInput
                           step={cat.volumeRateBasis ? "25" : "0.25"}
