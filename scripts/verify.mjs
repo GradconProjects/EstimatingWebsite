@@ -5968,6 +5968,36 @@ check("Compile assumptions (21 Nov 2026): what was measured comes off the takeof
   assert.match(pg, /a\.source === "estimates" && \(\s*\n\s*<div[^>]*data-testid="assumption-from-estimates"/, "the Assumptions list marks a pushed line");
 });
 
+check("Beam steel (22 Nov 2026): trench mesh AND bar sets can be used in the same beam — one reading, unset = the older either / or", () => {
+  const est = fs.readFileSync(new URL("../portal/estimates-app.html", import.meta.url), "utf8");
+  const m = est.match(/function beamSteelMix\(trench,both\)\{[^\n]*\}/);
+  assert.ok(m, "the ONE reading exists");
+  const mix = new Function(m[0] + "\nreturn beamSteelMix;")();
+  assert.deepEqual({ ...mix(undefined, undefined) }, { mesh: false, bars: true, both: false }, "nothing ticked (and every older takeoff): bar sets only");
+  assert.deepEqual({ ...mix(true, undefined) }, { mesh: true, bars: false, both: false }, "'Trench mesh instead' alone: the mesh only, as before");
+  assert.deepEqual({ ...mix(true, true) }, { mesh: true, bars: true, both: true }, "both ticks: mesh and bars");
+  assert.deepEqual({ ...mix(false, true) }, { mesh: true, bars: true, both: true }, "the both tick alone is both — it never needs the first tick");
+  // the calculators: two independent branches, never an else
+  const inner = est.slice(est.indexOf("function raftBeamGroupLinesInner("), est.indexOf("if(g.ligsOn){", est.indexOf("function raftBeamGroupLinesInner(")));
+  assert.match(inner, /const mix=beamSteelMix\(g\.trench,g\.both\);\s*\n\s*if\(mix\.mesh\)\{/);
+  assert.match(inner, /\n    \}\n    if\(mix\.bars\)\{\n      \(g\.rows\|\|\[\]\)\.forEach/, "the bar sets are priced beside the mesh, not instead of it");
+  assert.ok(!/\} else \{/.test(inner), "no either / or left in the slab beam steel");
+  assert.match(est, /trench:d\.edgeBeamTrenchMesh, both:d\.edgeBeamTrenchBars,/, "edge beam");
+  assert.match(est, /trench:d\.beamStripsTrenchMesh, both:d\.beamStripsTrenchBars,/, "internal beam strips");
+  assert.match(est, /trench:g\.trenchMesh, both:g\.trenchBars,/, "every extra beam group");
+  assert.match(est, /g\.trenchBars=!!d\[p\+"TrenchBars"\];/, "a beam duplicated from the primary keeps the choice");
+  assert.match(est, /const steelMix=beamSteelMix\(d\.trenchMesh,d\.trenchMeshBars\);\n  if\(steelMix\.mesh\)\{[\s\S]{0,1400}?\n  \}\n  if\(steelMix\.bars\)\{\n    d\.reoRows\.forEach/, "the standalone beam the same");
+  // the cards: the second tick sits beside the first, and the table follows the reading
+  for (const f of ['"edgeBeamTrenchBars",d.edgeBeamTrenchBars', '"beamStripsTrenchBars",d.beamStripsTrenchBars', 'base+"trenchBars",g.trenchBars', '"trenchMeshBars",d.trenchMeshBars']) {
+    assert.ok(est.includes(`chk(${f},BEAM_BOTH_LABEL,null,true)`), `the both tick is on the card (${f})`);
+  }
+  assert.match(est, /beamSteelMix\(d\.edgeBeamTrenchMesh,d\.edgeBeamTrenchBars\)\.bars\? raftBeamReoTable\(inst,d\.edgeBeamRows,"edgeBeamRows"\) : ""/);
+  assert.match(est, /<div class="subsec \$\{steelMix\.bars\?'':'hidden'\}" data-steel="bars">/, "the beam's bar table shows whenever bars are priced");
+  assert.ok(!est.includes('data-show-if="trenchMesh_off"'), "the old hide-the-bars toggle is gone from the beam");
+  // spec strings are unchanged, so a manual override keyed on them still applies
+  assert.match(inner, /spec:`\$\{g\.label\} — trench mesh \(longitudinal\)\$\{layerNote\}`/); assert.match(inner, /spec:`\$\{g\.label\} — \$\{r\.position\}\$\{layerNote\}`/);
+});
+
 if (process.exitCode) {
   console.error("\nSome checks FAILED — see above.");
 } else {

@@ -612,6 +612,34 @@ safety net silently. Keep all cost arithmetic in `lib/costing.js`.
   so the register, the orders schedule and the Quotes bridge see ordinary
   bar. The beam calculator and every slab beam run (edge beams, internal
   strips, extra groups) branch on it before `trenchReoMassPerM`.
+- **A beam can carry trench mesh AND bar sets** (Boma, 22 Nov 2026, on a
+  raft's Edge Beam Reinforcement block: "i have both mesh and rebars in same
+  edge beam. i want to have the option to use both"). Until then "Trench mesh
+  instead" was either / or — ticking it hid the bar-set table and priced the
+  mesh alone. Beside it now sits **"Use BOTH — trench mesh and bar sets in
+  the same beam"**: `edgeBeamTrenchBars` (edge beam), `beamStripsTrenchBars`
+  (internal beam strips), `g.trenchBars` (every extra beam group; carried by
+  `extraBeamGroupFromPrimary`) and `trenchMeshBars` (the standalone beam —
+  ground, capping, suspended, roof). `beamSteelMix(trench, both)` →
+  `{mesh, bars, both}` is the ONE reading for the card, the calculator and
+  the sketch: unset = the older either / or (so a saved takeoff prices as it
+  did), the both tick alone is both (it never needs the first tick).
+  `raftBeamGroupLinesInner` (`g.both`) and `computeBeam` emit the trench lines
+  when `mix.mesh` and the bar-set lines when `mix.bars` — two independent
+  branches, never an `else`; the spec strings are unchanged, so a manual
+  override keyed on them still applies. With both on the card shows the mesh
+  fields, `beam-both-note`, then the bar-set table (the rows typed earlier
+  are kept). The standalone beam's two blocks are `data-steel="mesh"` /
+  `data-steel="bars"` (the ticks rerender the card; the old
+  `data-show-if="trenchMesh_off"` toggle is gone) and its sketch draws the
+  bars with the mesh line above them and reads "TRENCH MESH … + TOP … BOT …".
+  The STRIP FOOTING never needed the tick: its trench mesh has always been
+  priced beside whichever longitudinal bars are ticked. `verify.mjs` pins the
+  reading, the two branches, the four ticks and the unchanged specs;
+  `test-beam-both.mjs` proves Boma's edge beam (4 + 2 N16 over 40 m: bars
+  only 160 + 80 m, mesh only 40 lm, both = all three and the kg add up), the
+  internal strips, a duplicated extra beam, a ground beam through its real
+  ticks, the save and an older takeoff (26 checks).
 - **Mesh sizes live in one catalog, mirrored in two places:** `SQUARE MESH`
   in `catalog.js` (name, sheet weight, $/sheet) is the source; the
   Estimates `MESHTYPES` table (kg/m² = sheet weight ÷ 14.4) and the portal

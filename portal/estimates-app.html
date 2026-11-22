@@ -4843,7 +4843,7 @@ function beamDefaults(cat){ return {
   beamType:"independent", grade:PROJECT.grade, cover:PROJECT.cover,
   formLeft:true, formRight:true, formSoffit:true, formTop:false, formStart:true, formFinish:true,
   reoRows:[{position:"Top continuous",qty:3,dia:"N24",layers:1,startA:"column",endA:"column"},{position:"Bottom continuous",qty:4,dia:"N28",layers:1,startA:"column",endA:"column"}],
-  trenchMesh:false, trenchMeshType:"4 Bar-L12TM", trenchMeshLayers:1, trenchMeshLap:false,
+  trenchMesh:false, trenchMeshBars:false, trenchMeshType:"4 Bar-L12TM", trenchMeshLayers:1, trenchMeshLap:false,
   ligZones:[{zone:"Left support",length:1200,dia:"N10",spacing:100},{zone:"Midspan",length:0,dia:"N10",spacing:200,auto:true},{zone:"Right support",length:1200,dia:"N10",spacing:100}], ligZonesLap:false,
   starters:false, connTarget:"", connQty:4, connDia:"N20", connEmbed:600, connProj:600,
   stepdown:false, sdLength:6, sdDepth:150, sdDia:"N12", sdSpacing:300, sdProj1:300, sdProj2:300
@@ -4863,12 +4863,14 @@ function renderBeam(inst,def){
    <label class="chk"><input type="radio" name="beamType_${inst.id}" data-field="beamType" value="upstand" ${d.beamType=="upstand"?"checked":""}>Upstand (above slab)</label>
   </div></div>`;
   let form=`<div class="grid cols3">${chk("formLeft",d.formLeft,"Left face")}${chk("formRight",d.formRight,"Right face")}${chk("formSoffit",d.formSoffit,"Soffit")}${chk("formTop",d.formTop,"Top")}${chk("formStart",d.formStart,"Start end")}${chk("formFinish",d.formFinish,"Finish end")}</div>`;
+  const steelMix=beamSteelMix(d.trenchMesh,d.trenchMeshBars);
   let reo=`<div class="sechead">Longitudinal Reinforcement</div>
-  <div class="grid cols3">${chk("trenchMesh",d.trenchMesh,"Trench mesh instead","trenchMesh")}</div>
-  <div class="subsec ${d.trenchMesh?'':'hidden'}" data-show-if="trenchMesh"><div class="grid cols3">${F("Trench mesh type",trenchMeshTypeSel("trenchMeshType",d.trenchMeshType,true))}${F("Layers",inpNumR("trenchMeshLayers",d.trenchMeshLayers===undefined?1:d.trenchMeshLayers))}${chk("trenchMeshLap",d.trenchMeshLap,"Include lap allowance (%)","trenchMeshLap")}</div>
+  <div class="grid cols3">${chk("trenchMesh",d.trenchMesh,"Trench mesh instead",null,true)}${chk("trenchMeshBars",d.trenchMeshBars,BEAM_BOTH_LABEL,null,true)}</div>
+  <div class="subsec ${steelMix.mesh?'':'hidden'}" data-steel="mesh"><div class="grid cols3">${F("Trench mesh type",trenchMeshTypeSel("trenchMeshType",d.trenchMeshType,true))}${F("Layers",inpNumR("trenchMeshLayers",d.trenchMeshLayers===undefined?1:d.trenchMeshLayers))}${chk("trenchMeshLap",d.trenchMeshLap,"Include lap allowance (%)","trenchMeshLap")}</div>
   ${layerTypeSelects(d,"trenchMeshLayers","trenchMeshType","trenchMeshLayerTypes",trenchMeshTypeSel,"trench mesh type")}
   <p class="small">Trench mesh is priced and ordered by the metre (a welded strip of longitudinal bars run the length of the beam), not by sheet area — this counts it the same way as any other run of bars. Same named types as Strip Footing and Quotes' own Trench Mesh catalog, for a ground beam reinforced the same way. Layers &gt; 1 stacks that many mesh strips — each layer can be its own product, and steel quantities follow per material. Lap allowance is off by default — turn it on if this beam's run is spliced from more than one length and needs the project's lap % added.</p></div>
-  <div class="subsec ${d.trenchMesh?'hidden':''}" data-show-if="trenchMesh_off">
+  ${d.trenchMeshBars? beamBothNote() : ""}
+  <div class="subsec ${steelMix.bars?'':'hidden'}" data-steel="bars">
   <p class="small">Layers &gt; 1 stacks that many identical bar sets in the same position (e.g. 2 layers of 4N28 bottom, common on heavily loaded transfer/cap beams) — steel quantity multiplies accordingly.</p>
   <table class="rows barsets" id="reoRows_${inst.id}"><thead><tr><th>Position</th><th>Qty/layer</th><th>Size</th><th>Layers</th><th>Start anchorage</th><th>End anchorage</th><th>Lap %</th><th></th></tr></thead>
   <tbody>${d.reoRows.map((r,i)=>reoRowHtml(inst.id,r,i)).join('')}</tbody></table>
@@ -4913,6 +4915,16 @@ function ligRowHtml(id,r,i,arr){
    <td><button class="btn small danger" data-action="delRow" data-target="${arr}" data-idx="${i}">✕</button></td>
   </tr>`;
 }
+/* A beam's longitudinal steel is bar sets, trench mesh, or BOTH in the same
+ * beam (Boma, 22 Nov 2026: "i have both mesh and rebars in same edge beam. i
+ * want to have the option to use both"). `trench` is the long-standing
+ * "Trench mesh instead" tick, `both` the tick beside it; unset = the older
+ * either / or, so a saved takeoff prices as it did. The ONE reading for the
+ * standalone beam and every slab beam (edge beam, internal strips, extra
+ * groups) — the card, the calculator and the sketch all ask it. */
+function beamSteelMix(trench,both){ return {mesh:!!trench||!!both, bars:!trench||!!both, both:!!both}; }
+const BEAM_BOTH_LABEL="Use BOTH — trench mesh and bar sets in the same beam";
+function beamBothNote(){ return `<p class="small" data-testid="beam-both-note">Both are priced: the trench mesh by the metre along the run AND every bar set in the table below it. Untick to go back to one or the other.</p>`; }
 /* Bar-set + ligature-zone tables for one raft beam group (edge beams or
  * internal beam strips) — the SAME parameter set as a standalone Ground
  * Beam, backed by prefixed arrays on the slab's own data. */
@@ -4958,7 +4970,7 @@ function newExtraBeamGroup(d,arrName,idx){
     len:"", width:k.dfltWidth, depthMode:"extra", extraDepth:k.dfltDepth, cover:"",
     blindOn:false, blindWidth:"", blindT:50, blindGrade:"",
     secShape:k.dfltShape, secSides:k.dfltSides, secBaseW:0,
-    reo:false, trenchMesh:false, trenchType:"4 Bar-L12TM", layers:1, lap:false, layerTypes:{},
+    reo:false, trenchMesh:false, trenchBars:false, trenchType:"4 Bar-L12TM", layers:1, lap:false, layerTypes:{},
     edgeBeamRows:[{position:"Bottom continuous",qty:4,dia:"N16",layers:1,startA:"straight",endA:"straight",lap:false}],
     ligs:false, ligLap:false,
     edgeBeamLigZones:[{zone:"General",length:0,dia:"N10",spacing:300}],
@@ -5004,7 +5016,7 @@ function extraBeamGroupFromPrimary(d,arrName){
   g.extraDepth=d[p+"ExtraDepth"]===undefined||d[p+"ExtraDepth"]===""? k.dfltDepth : d[p+"ExtraDepth"];
   g.cover=d[p+"Cover"]===undefined? "" : d[p+"Cover"];
   g.secShape=d[p+"Shape"]||k.dfltShape; g.secSides=d[p+"Sides"]||k.dfltSides; g.secBaseW=d[p+"BaseW"]===undefined? 0 : d[p+"BaseW"];
-  g.reo=!!d[p+"Reo"]; g.trenchMesh=!!d[p+"TrenchMesh"]; g.trenchType=d[p+"TrenchType"]||g.trenchType;
+  g.reo=!!d[p+"Reo"]; g.trenchMesh=!!d[p+"TrenchMesh"]; g.trenchBars=!!d[p+"TrenchBars"]; g.trenchType=d[p+"TrenchType"]||g.trenchType;
   g.layers=d[p+"Layers"]===undefined||d[p+"Layers"]===""? 1 : d[p+"Layers"]; g.lap=!!d[p+"Lap"]; g.layerTypes=cloneBeamData(d[p+"LayerTypes"])||{};
   g.edgeBeamRows=cloneBeamData(d[p+"Rows"])||[{position:"Bottom continuous",qty:num(d[p+"Bars"],4),dia:d[p+"Dia"]||"N16",layers:Math.max(1,Math.round(num(d[p+"Layers"],1))),startA:"straight",endA:"straight",lap:!!d[p+"Lap"]}];
   g.ligs=!!d[p+"Ligs"]; g.ligLap=!!d[p+"LigLap"];
@@ -5068,11 +5080,13 @@ function extraBeamGroupBlock(inst,d,arrName,g,i){
 
    <div class="grid cols3">${chk(base+"reo",g.reo,"Longitudinal reinforcement along this beam",null,true)}</div>
    ${g.reo? `<div class="subsec">
-    <div class="grid cols3">${chk(base+"trenchMesh",g.trenchMesh,"Trench mesh instead",null,true)}</div>
-    ${g.trenchMesh
+    <div class="grid cols3">${chk(base+"trenchMesh",g.trenchMesh,"Trench mesh instead",null,true)}${chk(base+"trenchBars",g.trenchBars,BEAM_BOTH_LABEL,null,true)}</div>
+    ${beamSteelMix(g.trenchMesh,g.trenchBars).mesh
       ? `<div class="grid cols3">${F("Trench mesh type",trenchMeshTypeSel(base+"trenchType",g.trenchType||"4 Bar-L12TM",true))}${F("Layers",inpNumR(base+"layers",g.layers===undefined?1:g.layers))}${chk(base+"lap",g.lap,"Include lap allowance (%)")}</div>
          ${layerTypeSelects(g,"layers","trenchType","layerTypes",trenchMeshTypeSel,"trench mesh type",base)}`
-      : raftBeamReoTable(inst,g.edgeBeamRows,base+"edgeBeamRows")}
+      : ""}
+    ${g.trenchBars? beamBothNote() : ""}
+    ${beamSteelMix(g.trenchMesh,g.trenchBars).bars? raftBeamReoTable(inst,g.edgeBeamRows,base+"edgeBeamRows") : ""}
    </div>`:""}
 
    <div class="grid cols3">${chk(base+"ligs",g.ligs,"Ligatures / stirrups on this beam",null,true)}</div>
@@ -5237,7 +5251,8 @@ function raftBeamGroupLinesInner(inst,def,lines,d,g){
   // per-group cover choice — blank falls back to the element's own cover
   let cvr = (g.coverMm!==undefined && g.coverMm!=="" && num(g.coverMm)>0)? num(g.coverMm) : num(d.cover,40);
   if(g.reoOn){
-    if(g.trench){
+    const mix=beamSteelMix(g.trench,g.both);
+    if(mix.mesh){
       let lapPct=g.trenchLap?MESH_LAP_PCT:0;
       // g.src lets an extra beam keep its trench-mesh fields on its OWN object
       // instead of the element data; the primary beams leave it unset.
@@ -5248,7 +5263,8 @@ function raftBeamGroupLinesInner(inst,def,lines,d,g){
         let layerNote=n>1?` × ${n} layers`:"";
         lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:type,spec:`${g.label} — trench mesh (longitudinal)${layerNote}`,qty:totLen,unit:"lm",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,lapPct),massPerUnit:mpm,formula:`${n}L×${fmt(g.runM,1)}m`,notes:`${fmt(wt,1)} kg`}));
       });
-    } else {
+    }
+    if(mix.bars){
       (g.rows||[]).forEach(r=>{
         if(!(num(r.qty)>0)) return;
         let bd=barDiaOf(r.dia);
@@ -5338,7 +5354,8 @@ function computeBeam(inst,def){
   if(d.formStart){ let a=N*Wm*sideD; fArea+=a; fParts.push(`Start ${fmt(a,2)}`); fw.push({name:"start end",runM:N*Wm,faceMm:sideD*1000}); }
   if(d.formFinish){ let a=N*Wm*sideD; fArea+=a; fParts.push(`Finish ${fmt(a,2)}`); fw.push({name:"finish end",runM:N*Wm,faceMm:sideD*1000}); }
   if(fArea>0) lines.push(...formworkLines(inst,def,{material:"Beam formwork",spec:"Selected faces",faces:fw,formula:fParts.join(" + ")}));
-  if(d.trenchMesh){
+  const steelMix=beamSteelMix(d.trenchMesh,d.trenchMeshBars);
+  if(steelMix.mesh){
     // one line per DISTINCT layer material — different layers can be different products
     let lapPct=d.trenchMeshLap?MESH_LAP_PCT:0;
     layerTypeCounts(d,"trenchMeshLayers","trenchMeshType","trenchMeshLayerTypes").forEach((n,type)=>{
@@ -5348,7 +5365,8 @@ function computeBeam(inst,def){
       let layerNote=n>1?` × ${n} layers`:"";
       lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",material:type,spec:`Trench mesh (longitudinal)${layerNote}`,qty:totLen,unit:"lm",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(totLen,PROJECT.reoWaste,lapPct),massPerUnit:mpm,formula:`${N}×${n}L×${fmt(Lm,2)}`,notes:`${fmt(wt,1)} kg`}));
     });
-  } else {
+  }
+  if(steelMix.bars){
     d.reoRows.forEach(r=>{
       let bd=barDiaOf(r.dia);
       let clearLen=Lm-2*(cover);
@@ -5436,10 +5454,10 @@ function slabDefaults(cat,suspended){ const precast=cat==="Precast Panel"; retur
   wallThickenReo:false, wallThickenBars:2, wallThickenDia:"N12", wallThickenLap:false,
   edgeBeamOn:false, edgeBeamLen:"", edgeBeamWidth:300, edgeBeamExtraDepth:300, edgeBeamDepthMode:"extra", edgeBeamCover:"", beamStripsCover:"", edgeBeamGrade:"", beamStripsGrade:"",   // each primary beam's own concrete grade (blank = beamGrade, then the slab grade — 26 Oct 2026)
   edgeBeamBlindOn:false, edgeBeamBlindWidth:"", edgeBeamBlindT:50, edgeBeamBlindGrade:"", beamStripsBlindOn:false, beamStripsBlindWidth:"", beamStripsBlindT:50, beamStripsBlindGrade:"",   // blinding under the beams, each its own tick (22 Oct 2026)
-  edgeBeamReo:false, edgeBeamTrenchMesh:false, edgeBeamBars:4, edgeBeamDia:"N16", edgeBeamTrenchType:"4 Bar-L12TM", edgeBeamLayers:1, edgeBeamLap:false,
+  edgeBeamReo:false, edgeBeamTrenchMesh:false, edgeBeamTrenchBars:false, edgeBeamBars:4, edgeBeamDia:"N16", edgeBeamTrenchType:"4 Bar-L12TM", edgeBeamLayers:1, edgeBeamLap:false,
   edgeBeamLigs:false, edgeBeamLigDia:"N10", edgeBeamLigSpacing:300, edgeBeamLigLap:false,
   beamStrips:false, beamStripsLength:0, beamStripsWidth:300, beamStripsExtraDepth:150,
-  beamStripsReo:false, beamStripsTrenchMesh:false, beamStripsBars:4, beamStripsDia:"N16", beamStripsTrenchType:"4 Bar-L12TM", beamStripsLayers:1, beamStripsLap:false,
+  beamStripsReo:false, beamStripsTrenchMesh:false, beamStripsTrenchBars:false, beamStripsBars:4, beamStripsDia:"N16", beamStripsTrenchType:"4 Bar-L12TM", beamStripsLayers:1, beamStripsLap:false,
   beamStripsLigs:false, beamStripsLigDia:"N10", beamStripsLigSpacing:300, beamStripsLigLap:false,
   // extra beams beyond the primary one on each tab — each a complete beam
   // with its own cross-section (see EXTRA_BEAM_KINDS)
@@ -5649,11 +5667,13 @@ function renderSlab(inst,def){
   ${layerTypeSelects(d,"meshLayers","meshType","meshLayerTypes",(f,v)=>selOpts(f,v,Object.keys(MESHTYPES).map(m=>[m,m])),"mesh type")}</div>`;
   let stripReoBlock = `<div class="subsec ${d.beamStrips?'':'hidden'}" data-show-if="beamStrips"><div class="sechead">Internal Beam Reinforcement</div><div class="grid cols3">${chk("beamStripsReo",d.beamStripsReo,"Longitudinal reinforcement along the beam strips","beamStripsReo")}</div>
   <div class="subsec ${d.beamStripsReo?'':'hidden'}" data-show-if="beamStripsReo">
-  <div class="grid cols3">${chk("beamStripsTrenchMesh",d.beamStripsTrenchMesh,"Trench mesh instead","beamStripsTrenchMesh",true)}</div>
-  ${d.beamStripsTrenchMesh
+  <div class="grid cols3">${chk("beamStripsTrenchMesh",d.beamStripsTrenchMesh,"Trench mesh instead","beamStripsTrenchMesh",true)}${chk("beamStripsTrenchBars",d.beamStripsTrenchBars,BEAM_BOTH_LABEL,null,true)}</div>
+  ${beamSteelMix(d.beamStripsTrenchMesh,d.beamStripsTrenchBars).mesh
     ? `<div class="grid cols3">${F("Trench mesh type",trenchMeshTypeSel("beamStripsTrenchType",d.beamStripsTrenchType,true))}${F("Layers",inpNumR("beamStripsLayers",d.beamStripsLayers===undefined?1:d.beamStripsLayers))}${chk("beamStripsLap",d.beamStripsLap,"Include lap allowance (%)","beamStripsLap")}</div>
        ${layerTypeSelects(d,"beamStripsLayers","beamStripsTrenchType","beamStripsLayerTypes",trenchMeshTypeSel,"trench mesh type")}`
-    : raftBeamReoTable(inst,d.beamStripsRows,"beamStripsRows")}
+    : ""}
+  ${d.beamStripsTrenchBars? beamBothNote() : ""}
+  ${beamSteelMix(d.beamStripsTrenchMesh,d.beamStripsTrenchBars).bars? raftBeamReoTable(inst,d.beamStripsRows,"beamStripsRows") : ""}
   <p class="small">The full standalone-Ground-Beam parameter set, run over the combined internal beam length entered on Geometry: every bar set has its own position, qty per layer, size, layers, start/end anchorage and lap tick — or a named trench mesh type with per-layer products.</p>
   </div>
   <div class="grid cols3">${chk("beamStripsLigs",d.beamStripsLigs,"Ligatures / stirrups on the internal beams","beamStripsLigs")}</div>
@@ -5710,11 +5730,13 @@ function renderSlab(inst,def){
   let edgeBeamReoBlock = `<div class="subsec ${d.edgeBeamOn?'':'hidden'}" data-show-if="edgeBeamOn"><div class="sechead">Edge Beam Reinforcement</div>
   <div class="grid cols3">${chk("edgeBeamReo",d.edgeBeamReo,"Longitudinal reinforcement along the edge beam","edgeBeamReo")}</div>
   <div class="subsec ${d.edgeBeamReo?'':'hidden'}" data-show-if="edgeBeamReo">
-  <div class="grid cols3">${chk("edgeBeamTrenchMesh",d.edgeBeamTrenchMesh,"Trench mesh instead","edgeBeamTrenchMesh",true)}</div>
-  ${d.edgeBeamTrenchMesh
+  <div class="grid cols3">${chk("edgeBeamTrenchMesh",d.edgeBeamTrenchMesh,"Trench mesh instead","edgeBeamTrenchMesh",true)}${chk("edgeBeamTrenchBars",d.edgeBeamTrenchBars,BEAM_BOTH_LABEL,null,true)}</div>
+  ${beamSteelMix(d.edgeBeamTrenchMesh,d.edgeBeamTrenchBars).mesh
     ? `<div class="grid cols3">${F("Trench mesh type",trenchMeshTypeSel("edgeBeamTrenchType",d.edgeBeamTrenchType||"4 Bar-L12TM",true))}${F("Layers",inpNumR("edgeBeamLayers",d.edgeBeamLayers===undefined?1:d.edgeBeamLayers))}${chk("edgeBeamLap",d.edgeBeamLap,"Include lap allowance (%)","edgeBeamLap")}</div>
        ${layerTypeSelects(d,"edgeBeamLayers","edgeBeamTrenchType","edgeBeamLayerTypes",trenchMeshTypeSel,"trench mesh type")}`
-    : raftBeamReoTable(inst,d.edgeBeamRows,"edgeBeamRows")}
+    : ""}
+  ${d.edgeBeamTrenchBars? beamBothNote() : ""}
+  ${beamSteelMix(d.edgeBeamTrenchMesh,d.edgeBeamTrenchBars).bars? raftBeamReoTable(inst,d.edgeBeamRows,"edgeBeamRows") : ""}
   <p class="small">The full standalone-Ground-Beam parameter set, run over the slab perimeter (the Edge Beams length on Geometry): every bar set has its own position, qty per layer, size, layers, start/end anchorage and lap tick — or a named trench mesh type with per-layer products. The raft's edge beam is taken off here with the slab, never as a separate element.</p>
   </div>
   <div class="grid cols3">${chk("edgeBeamLigs",d.edgeBeamLigs,"Ligatures / stirrups on the edge beam","edgeBeamLigs")}</div>
@@ -6006,7 +6028,7 @@ function computeSlab(inst,def){
       if(vol>0 && !legacy) lines.push(baseLine(inst,def,{materialGroup:"Concrete",part:"beam",material:`N${slabBeamGrade(d,null,"edge")} concrete`,spec:"Edge beam",qty:vol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(vol,concWastePct(d)),formula:`run(${fmt(ebRun,1)}m)×${sectionLabel(ebShape,ebW,extraMm,d.edgeBeamBaseW,etSectionAreaM2(d),d.edgeBeamSides)}${mode==="overall"?` (overall ${entered}−slab ${num(d.thickness,150)})`:""}`}));
       raftBeamGroupLines(inst,def,lines,d,{
         label:"Edge beam", runM:ebRun, widthMm:ebW, coverMm:d.edgeBeamCover, secDepthMm:secD,
-        reoOn:d.edgeBeamReo, trench:d.edgeBeamTrenchMesh, trenchLap:d.edgeBeamLap,
+        reoOn:d.edgeBeamReo, trench:d.edgeBeamTrenchMesh, both:d.edgeBeamTrenchBars, trenchLap:d.edgeBeamLap,
         layersField:"edgeBeamLayers", typeField:"edgeBeamTrenchType", layerTypesField:"edgeBeamLayerTypes",
         rows:d.edgeBeamRows||[{position:"Bottom continuous",qty:num(d.edgeBeamBars,4),dia:d.edgeBeamDia||"N16",layers:Math.max(1,Math.round(num(d.edgeBeamLayers,1))),startA:"straight",endA:"straight",lap:!!d.edgeBeamLap}],
         ligsOn:d.edgeBeamLigs, ligLap:d.edgeBeamLigLap,
@@ -6032,7 +6054,7 @@ function computeSlab(inst,def){
     raftBeamGroupLines(inst,def,lines,d,{
       label:"Beam strips", runM:num(d.beamStripsLength), widthMm:num(d.beamStripsWidth,300), coverMm:d.beamStripsCover,
       secDepthMm:num(d.thickness,150)+num(d.beamStripsExtraDepth,150),
-      reoOn:d.beamStripsReo, trench:d.beamStripsTrenchMesh, trenchLap:d.beamStripsLap,
+      reoOn:d.beamStripsReo, trench:d.beamStripsTrenchMesh, both:d.beamStripsTrenchBars, trenchLap:d.beamStripsLap,
       layersField:"beamStripsLayers", typeField:"beamStripsTrenchType", layerTypesField:"beamStripsLayerTypes",
       rows:d.beamStripsRows||[{position:"Bottom continuous",qty:num(d.beamStripsBars,4),dia:d.beamStripsDia||"N16",layers:Math.max(1,Math.round(num(d.beamStripsLayers,1))),startA:"straight",endA:"straight",lap:!!d.beamStripsLap}],
       ligsOn:d.beamStripsLigs, ligLap:d.beamStripsLigLap,
@@ -6061,7 +6083,7 @@ function computeSlab(inst,def){
       raftBeamGroupLines(inst,def,lines,d,{
         src:g,
         label, runM:geo.runM, widthMm:geo.widthMm, coverMm:g.cover, secDepthMm:geo.secDepthMm,
-        reoOn:g.reo, trench:g.trenchMesh, trenchLap:g.lap,
+        reoOn:g.reo, trench:g.trenchMesh, both:g.trenchBars, trenchLap:g.lap,
         layersField:"layers", typeField:"trenchType", layerTypesField:"layerTypes",
         rows:g.edgeBeamRows||[],
         ligsOn:g.ligs, ligLap:g.ligLap, ligZones:g.edgeBeamLigZones||[],
@@ -7718,6 +7740,7 @@ function diagPadFooting(inst){ let d=inst.data;
 function diagBeam(inst){ let d=inst.data;
   const W=Math.max(100,N_(d.width,400)), D=Math.max(100,N_(d.depth,600)), L=Math.max(300,N_(d.length,7200)), cov=coverOf(d), ST=N_(d.slabThickness,200);
   const type=d.beamType||"independent", withSlab=type!=="independent" && ST>0;
+  const steelMix=beamSteelMix(d.trenchMesh,d.trenchMeshBars);
   const rows=Array.isArray(d.reoRows)?d.reoRows:[];
   const top=rows.filter(r=>/top/i.test(r.position||"")), bot=rows.filter(r=>/bot/i.test(r.position||""));
   const nTop=top.reduce((s,r)=>s+N_(r.qty,0),0)||(rows[0]?N_(rows[0].qty,2):2), nBot=bot.reduce((s,r)=>s+N_(r.qty,0),0)||(rows[1]?N_(rows[1].qty,3):3);
@@ -7729,7 +7752,8 @@ function diagBeam(inst){ let d=inst.data;
   let section=`${DG.title(sx,sy-18,"SECTION")}
    ${withSlab?DG.rect(sx,slabY,W*s*3,st,'rgba(232,163,61,0.06)',1):''}
    ${DG.rect(bx,sy,w,dd)}
-   ${d.trenchMesh?`<line x1="${bx+cv}" y1="${sy+dd-cv}" x2="${bx+w-cv}" y2="${sy+dd-cv}" stroke="${DWG.bar}" stroke-width="1.3"/>`:`${DG.lig(bx+cv,sy+cv,w-2*cv,dd-2*cv)}${DG.bars(bx+cv,bx+w-cv,sy+dd-cv,nBot)}${DG.bars(bx+cv,bx+w-cv,sy+cv,nTop)}`}
+   ${steelMix.bars?`${DG.lig(bx+cv,sy+cv,w-2*cv,dd-2*cv)}${DG.bars(bx+cv,bx+w-cv,sy+dd-cv,nBot)}${DG.bars(bx+cv,bx+w-cv,sy+cv,nTop)}`:''}
+   ${steelMix.mesh?`<line x1="${bx+cv}" y1="${sy+dd-cv-(steelMix.both?4:0)}" x2="${bx+w-cv}" y2="${sy+dd-cv-(steelMix.both?4:0)}" stroke="${DWG.bar}" stroke-width="1.3"/>`:''}
    ${dimH(bx,bx+w,sy+dd+12,`W ${W}`)}
    ${dimV(sy,sy+dd,bx+w+12,`D ${D}`)}
    ${withSlab?dimV(slabY,slabY+st,sx-12,`SLAB ${ST}`):''}
@@ -7753,7 +7777,7 @@ function diagBeam(inst){ let d=inst.data;
    ${zoneDims}
    ${dimH(ex,ex+ew,ey+eh+38,`L ${L}${N_(d.qty,1)>1?` × ${N_(d.qty,1)}`:''}`)}
    ${d.stepdown?`<path d="M${ex+ew-40} ${ey} l0 -6 l40 0" fill="none" stroke="${DWG.ink}" stroke-width="1" stroke-dasharray="2 2"/>`:''}
-   ${specLine(ex,ey+eh+52,d.trenchMesh?`TRENCH MESH ${d.trenchMeshType||'4 Bar-L12TM'}`:`TOP ${nTop}${(top[0]||rows[0]||{}).dia||'N24'} · BOT ${nBot}${(bot[0]||rows[1]||{}).dia||'N28'} · LIGS ${(zones[0]||{}).dia||'N10'}`)}
+   ${specLine(ex,ey+eh+52,(steelMix.mesh?`TRENCH MESH ${d.trenchMeshType||'4 Bar-L12TM'}${steelMix.both?' + ':''}`:'')+(!steelMix.bars?'':`TOP ${nTop}${(top[0]||rows[0]||{}).dia||'N24'} · BOT ${nBot}${(bot[0]||rows[1]||{}).dia||'N28'} · LIGS ${(zones[0]||{}).dia||'N10'}`))}
    ${starterRunSpecLines(d,L/1000,ex,ey+eh+63,11)}`;
   return sheetFrame(inst, `${(d.category||'')} beam`.trim(), [316,ey+eh+84+(runs.length?Math.min(3,runs.length)*11:0)], section+elevation);
 }
