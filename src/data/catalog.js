@@ -609,6 +609,25 @@ export const FULL_CATALOG = [
     ["Rigid foam under-slab 300 kPa — 50mm", "m2", null, 36],
     ["Rigid foam under-slab 300 kPa — 75mm", "m2", null, 52],
     ["Rigid foam under-slab 300 kPa — 100mm", "m2", null, 67],
+    /* Slabmate (Boma, 22 Nov 2026, from a structural note: "PROVIDE SLAB MATE
+     * 50mm THICK MINIMUM UNDER SLAB INSULATION (UNDER SLAB PANELS ONLY).
+     * INSULATION TO HAVE MIN. 70kPa COMPRESSION CAPACITY"): Foilboard's SL-grade
+     * EPS under-slab board, 2400 x 1200 sheets, 70 kPa at 10% deformation
+     * (Slabmate Technical Brochure V2.24), and Slabmate Pro, the 185 kPa board
+     * (Slabmate Pro brochure V3). R-values as the supplier lists them. Seeds
+     * are SUPPLY ex GST from Insulation Essentials' published pack prices
+     * (Craigieburn VIC, read 22 Nov 2026, inc GST): pack / its m2 / 1.1 —
+     *   30mm $359.39 / 43.20 m2 · 40mm $382.89 / 34.56 · 50mm $399.31 / 28.80
+     *   60mm $382.89 / 23.04 · 70mm $389.92 / 20.16
+     *   Pro 40mm $876.06 / 34.56 · Pro 50mm $912.57 / 28.80
+     * Sold in whole packs; laying is crew-sheet labour; delivery not included. */
+    ["Slabmate under-slab 70 kPa — 30mm (R0.78)", "m2", null, 7.56],
+    ["Slabmate under-slab 70 kPa — 40mm (R0.92)", "m2", null, 10.07],
+    ["Slabmate under-slab 70 kPa — 50mm (R1.1)", "m2", null, 12.60],
+    ["Slabmate under-slab 70 kPa — 60mm (R1.35)", "m2", null, 15.11],
+    ["Slabmate under-slab 70 kPa — 70mm (R1.7)", "m2", null, 17.58],
+    ["Slabmate Pro under-slab 185 kPa — 40mm (R1.15)", "m2", null, 23.04],
+    ["Slabmate Pro under-slab 185 kPa — 50mm (R1.45)", "m2", null, 28.81],
     ["Kooltherm K3 Floorboard 50mm (R2.25)", "m2", null, 42],
     ["Kooltherm K3 Floorboard 60mm (R2.70)", "m2", null, 50],
     ["Kooltherm K3 Floorboard 80mm (R3.60)", "m2", null, 66],
@@ -628,6 +647,29 @@ export const FULL_CATALOG = [
     ["Thermal break strip 10mm", "m", null, 6],
     ["Thermal break strip 20mm", "m", null, 9],
     ["Insulation (other — specify in description)", "m2", null, 25],
+    /* VERTICAL insulation (Boma, 22 Nov 2026: "i encountered vertical
+     * insulation on this one. add vertical insulations to the insulation
+     * bar"): a board fixed UPRIGHT against a face — a slab edge, the outer
+     * face of an edge beam or footing, a wall, an upstand — measured in m² of
+     * face (run × height), so it is stated apart from the under-slab board on
+     * the card, the report and the tender. Each row is the SAME board as the
+     * flat row of that material and thickness above and is seeded at that
+     * row's own figure — the supply price of the board; no separate published
+     * vertical rate was read, and fixing is crew-sheet labour. Editable in the
+     * Rates modal. The Estimates app emits these names VERBATIM
+     * (INS_VERT_NAMES there; verify.mjs fails on drift). */
+    ["Vertical insulation — XPS rigid board 30mm (R0.88)", "m2", null, 18],
+    ["Vertical insulation — XPS rigid board 50mm (R1.47)", "m2", null, 26],
+    ["Vertical insulation — XPS rigid board 75mm (R2.20)", "m2", null, 36],
+    ["Vertical insulation — XPS rigid board 100mm (R2.94)", "m2", null, 46],
+    ["Vertical insulation — EPS board M-grade 50mm (R1.19)", "m2", null, 12],
+    ["Vertical insulation — EPS board M-grade 75mm (R1.79)", "m2", null, 16],
+    ["Vertical insulation — EPS board M-grade 100mm (R2.38)", "m2", null, 20],
+    ["Vertical insulation — Kooltherm K3 50mm (R2.25)", "m2", null, 42],
+    ["Vertical insulation — Kooltherm K3 60mm (R2.70)", "m2", null, 50],
+    ["Vertical insulation — Kooltherm K3 80mm (R3.60)", "m2", null, 66],
+    ["Vertical insulation — Kooltherm K3 100mm (R4.50)", "m2", null, 82],
+    ["Vertical insulation (other — specify in description)", "m2", null, 25],
   ]},
   /* Preliminaries — the site-wide items a job needs before and around the
    * concrete work: traffic management, temporary access and protection,

@@ -3095,6 +3095,8 @@ const INSULATION_FAMILIES=[
   ["rigid100","Rigid foam under-slab — 100 kPa","m²",[50,75,100],(t)=>`Rigid foam under-slab 100 kPa — ${t}mm`],
   ["rigid200","Rigid foam under-slab — 200 kPa","m²",[50,75,100],(t)=>`Rigid foam under-slab 200 kPa — ${t}mm`],
   ["rigid300","Rigid foam under-slab — 300 kPa","m²",[50,75,100],(t)=>`Rigid foam under-slab 300 kPa — ${t}mm`],
+  ["slabmate","Slabmate under-slab — 70 kPa (Foilboard EPS)","m²",[30,40,50,60,70],(t)=>`Slabmate under-slab 70 kPa — ${t}mm (${({30:"R0.78",40:"R0.92",50:"R1.1",60:"R1.35",70:"R1.7"})[t]})`],
+  ["slabmatepro","Slabmate Pro under-slab — 185 kPa (Foilboard EPS)","m²",[40,50],(t)=>`Slabmate Pro under-slab 185 kPa — ${t}mm (${({40:"R1.15",50:"R1.45"})[t]})`],
   ["kool","Kooltherm K3 Floorboard","m²",[50,60,80,100],(t)=>`Kooltherm K3 Floorboard ${t}mm (${({50:"R2.25",60:"R2.70",80:"R3.60",100:"R4.50"})[t]})`],
   ["xps","XPS rigid board","m²",[30,50,75,100],(t)=>`XPS rigid board ${t}mm (${({30:"R0.88",50:"R1.47",75:"R2.20",100:"R2.94"})[t]})`],
   ["eps","EPS board M-grade","m²",[50,75,100],(t)=>`EPS board M-grade ${t}mm (${({50:"R1.19",75:"R1.79",100:"R2.38"})[t]})`],
@@ -3150,6 +3152,71 @@ function insulationSubsection(d){
   </div>
   <p class="small">Priced as <b>${t.name}</b> — the Quotes catalog product this lands on when the takeoff is published. Every thickness is its own board with its own rate, so changing the thickness reprices the line rather than just relabelling it.</p>
   </div></div>`;
+}
+/* ---- VERTICAL insulation (Boma, 22 Nov 2026: "i encountered vertical
+   insulation on this one. add vertical insulations to the insulation bar").
+   A board fixed UPRIGHT against a face — a slab edge, the outer face of an
+   edge beam or footing, a wall or an upstand — is measured run × height ×
+   faces, never by the plan area the under-slab board takes, and a job can
+   carry several (the slab edge at 300 high, the edge beam at 600). So it is
+   a TABLE on the Blinding / Insulation tab: `inst.data.insVertRows[] =
+   {name, product, runM, heightMm, faces, areaM2, waste}`. The products are
+   the Quotes INSULATION band's "Vertical insulation — …" rows VERBATIM
+   (verify.mjs fails on drift), so a published line lands on its own row. ---- */
+const INS_VERT_BOARDS=["XPS rigid board 30mm (R0.88)","XPS rigid board 50mm (R1.47)","XPS rigid board 75mm (R2.20)","XPS rigid board 100mm (R2.94)","EPS board M-grade 50mm (R1.19)","EPS board M-grade 75mm (R1.79)","EPS board M-grade 100mm (R2.38)","Kooltherm K3 50mm (R2.25)","Kooltherm K3 60mm (R2.70)","Kooltherm K3 80mm (R3.60)","Kooltherm K3 100mm (R4.50)"];
+const INS_VERT_OTHER="Vertical insulation (other — specify in description)";
+const INS_VERT_NAMES=INS_VERT_BOARDS.map(b=>`Vertical insulation — ${b}`).concat([INS_VERT_OTHER]);
+const INS_VERT_DEFAULT=INS_VERT_NAMES[1];
+function insVertRows(d){ return Array.isArray(d&&d.insVertRows)? d.insVertRows : []; }
+function insVertProduct(r){ return INS_VERT_NAMES.includes(r&&r.product)? r.product : INS_VERT_DEFAULT; }
+/** The run a row takes when none is typed: the element's perimeter (slabs, screeds), else its published run (a footing, a beam). */
+function insVertAutoRun(inst){ const d=inst.data||{}; return num(d._autoInsPerim) || autoGeometry(inst).runM || 0; }
+/** The ONE arithmetic of a row: a typed area wins; else run (typed, or the element's) × height × faces (blank = 1). */
+function insVertCalc(r, autoRun){
+  const typedArea=num(r.areaM2), run=num(r.runM)>0? num(r.runM) : num(autoRun), H=num(r.heightMm), faces=num(r.faces)>0? num(r.faces) : 1;
+  const any=num(r.runM)>0 || H>0 || typedArea>0 || num(r.faces)>0;
+  const area = typedArea>0? typedArea : (run>0 && H>0? run*(H/1000)*faces : 0);
+  return {area, run, H, faces, typed:typedArea>0, autoRun:!(num(r.runM)>0) && run>0, any};
+}
+function insVertOutText(c){
+  if(c.area>0) return c.typed? `${fmt(c.area,2)} m² (typed)` : `${fmt(c.run,2)} m × ${fmt(c.H,0)} mm${c.faces!==1?` × ${fmt(c.faces,0)}`:""} = ${fmt(c.area,2)} m²`;
+  if(!c.any) return "—";
+  return !(c.H>0)? "type the height" : "type a run";
+}
+function verticalInsulationSection(inst){
+  const d=inst.data, rows=insVertRows(d), auto=insVertAutoRun(inst);
+  const opts=(v)=>INS_VERT_NAMES.map(n=>`<option value="${n}" ${v===n?'selected':''}>${n.replace(/^Vertical insulation — /,"")}</option>`).join('');
+  const body=rows.map((r,i)=>`<tr data-row="insVertRows.${i}">
+   <td style="min-width:150px">${inpText(`insVertRows.${i}.name`,r.name||"")}</td>
+   <td><select data-field="insVertRows.${i}.product">${opts(insVertProduct(r))}</select></td>
+   <td style="width:84px;min-width:84px">${inpNum(`insVertRows.${i}.runM`,r.runM)}</td>
+   <td style="width:84px;min-width:84px">${inpNum(`insVertRows.${i}.heightMm`,r.heightMm)}</td>
+   <td style="width:60px;min-width:60px">${inpNum(`insVertRows.${i}.faces`,r.faces)}</td>
+   <td style="width:84px;min-width:84px">${inpNum(`insVertRows.${i}.areaM2`,r.areaM2)}</td>
+   <td style="width:60px;min-width:60px">${inpNum(`insVertRows.${i}.waste`,r.waste===undefined?5:r.waste)}</td>
+   <td class="small" data-insvert-out="${i}">${insVertOutText(insVertCalc(r,auto))}</td>
+   <td><button type="button" class="btn small danger" data-action="delRow" data-target="insVertRows" data-idx="${i}" title="Remove this row">✕</button></td>
+  </tr>`).join('');
+  return `<div class="subsec" data-testid="vertical-insulation"><div class="sechead">Vertical insulation</div>
+  <p class="small">Boards fixed upright against a face — a slab edge, the outer face of an edge beam or footing, a wall or an upstand. One row per face: <b>run × height × faces</b>, or type the area. A blank run takes ${auto>0?`this element's own ${fmt(auto,2)} m`:"the element's perimeter or run where it has one — otherwise type it"}. Separate from the under-slab board above: tick that one for the plan area, add rows here for the upright faces.</p>
+  ${rows.length?`<table class="rows insvert"><thead><tr><th>Where</th><th>Board</th><th>Run (m)</th><th>Height (mm)</th><th>Faces</th><th>or Area (m²)</th><th>Waste %</th><th>Result</th><th></th></tr></thead><tbody>${body}</tbody></table>`:""}
+  <button class="btn small" data-action="addRow" data-target="insVertRows" data-testid="vertical-insulation-add" type="button">+ Add vertical insulation</button></div>`;
+}
+function refreshInsVertRows(card,inst,field){
+  if(!/^insVertRows\.\d+\./.test(field||"")) return;
+  const auto=insVertAutoRun(inst);
+  insVertRows(inst.data).forEach((r,i)=>{ const t=insVertOutText(insVertCalc(r,auto)); card.querySelectorAll(`[data-insvert-out="${i}"]`).forEach(td=>{ td.textContent=t; }); });
+}
+function computeVerticalInsulation(inst,def,out){
+  const rows=insVertRows(inst.data); if(!rows.length) return;
+  const auto=insVertAutoRun(inst);
+  rows.forEach((r,i)=>{
+    const c=insVertCalc(r,auto), nm=String(r.name||"").trim();
+    if(!(c.area>0)) return;                                      // a half-typed row is a completeness warning (validateInstance), never a line
+    const waste = r.waste===undefined||r.waste===""? 5 : num(r.waste);
+    out.lines.push(baseLine(inst,def,{materialGroup:"Insulation",material:insVertProduct(r),spec:`Vertical insulation${nm?" — "+nm:` ${i+1}`}`,qty:c.area,unit:"m²",waste,finalQty:withWaste(c.area,waste),
+      formula:c.typed? "entered area" : `${c.autoRun?"element run ":""}${fmt(c.run,2)} m × ${fmt(c.H,0)} mm${c.faces!==1?` × ${fmt(c.faces,0)} faces`:""}`,vertical:true}));
+  });
 }
 /* ---- Step-down setup shared by beams, slabs, walls and stepped strip
    footings: a PRESET step profile (1/2/3 risers, drawn live so the chosen
@@ -9215,6 +9282,7 @@ function validateInstance(inst, def, out){
   if(conc>0.05 && reoKg>0){ const r=reoKg/conc; if(r>checks.reoMaxKgM3) push(`Reinforcement ratio ${fmt(r,0)} kg/m³ is above the review prompt (${checks.reoMaxKgM3}) — check bar sizes, spacing and count`, "reo"); else if(r<checks.reoMinKgM3) push(`Reinforcement ratio ${fmt(r,0)} kg/m³ is below the review prompt (${checks.reoMinKgM3}) — check nothing is missing`, "reo"); }
   if(conc>0.05 && formM2/conc>checks.formMaxM2M3) push(`Formwork ${fmt(formM2/conc,1)} m² per m³ of concrete is above the review prompt (${checks.formMaxM2M3}) — check faces and dimensions`, "form");
   // sanity: duplicate linked connection
+  insVertRows(d).forEach((r,i)=>{ const c=insVertCalc(r,insVertAutoRun(inst)); if(c.any && !(c.area>0)) push(`Vertical insulation row${r.name?" ("+r.name+")":" "+(i+1)}: ${insVertOutText(c)} — it prices nothing`, "blind"); });
   if(Array.isArray(d.meshDowels)) d.meshDowels.forEach(r=>{ if(!(meshDowelCount(r)>0)) push(`A mesh dowel pieces row${r.name?" ("+r.name+")":""} has no run and spacing and no number — it prices nothing`, "conns"); });
   if(Array.isArray(d.extraConn)){ const seen={}; d.extraConn.forEach(r=>{ const name=extraConnTargetLabel(r); const k=(r.target===MANUAL_TARGET?"name:"+name.toLowerCase():(r.target||""))+"|"+(r.role||""); if(r.target && r.target!==MANUAL_TARGET && seen[k]) push(`Two connection rows point at the same element (${name||r.target}) — the bars may be counted twice`, "conns"); if(r.target===MANUAL_TARGET && !name) push("An additional connection has a typed target with no name — type the element it connects to", "conns"); if(r.target && extraConnBySpacing(r) && !(num(r.runM)>0)) push(`An additional connection (${name||"unlinked"}) is set out at a spacing but has no run length — type the run in metres`, "conns"); seen[k]=true; }); }
   // verify: values that depend on design/exposure/geotech — from defaults, never auto-approved
@@ -9863,7 +9931,7 @@ function buildCard(inst){
     let ad=inst.data;
     parts.blind = blindingSection(ad) + `<div class="grid cols3" style="margin-top:6px;">${F("Blinding / membrane area (m², 0 = element footprint where known)",inpNum("blindArea",ad.blindArea))}</div>`;
   }
-  parts.blind = parts.blind + insulationSubsection(inst.data);
+  parts.blind = parts.blind + insulationSubsection(inst.data) + verticalInsulationSection(inst);
   // EVERY ground element decides its own excavation (see applyExcavationOption).
   if(isGroundElement(def)) parts.exc = excavationOptionSection(inst,def) + (parts.exc||"");
   // EVERY element gets the additional reinforcement / elements catch-all.
@@ -10230,7 +10298,7 @@ function attachCardEvents(card,inst){
       // is too tight and doesnt allow me see what has been entered and also
       // doesnt allow decimals"). The value is stored and costed at once; only
       // the rebuild waits.
-      if(e.target.dataset.num!==undefined){ e.target.dataset.rerenderPending="1"; computeAllAndRefresh(); refreshExtraConnCount(card,inst,f); refreshRebateRows(card,inst,f); return; }
+      if(e.target.dataset.num!==undefined){ e.target.dataset.rerenderPending="1"; computeAllAndRefresh(); refreshExtraConnCount(card,inst,f); refreshRebateRows(card,inst,f); refreshInsVertRows(card,inst,f); return; }
       computeAllAndRefresh();
       rerenderCardKeepTab(card,inst);
       return;
@@ -10238,6 +10306,7 @@ function attachCardEvents(card,inst){
     refreshExtraConnCount(card,inst,f);
     refreshAddlRowTotal(card,inst,f);
     refreshRebateRows(card,inst,f);
+    refreshInsVertRows(card,inst,f);
     if(e.target.dataset.toggle){
       card.querySelectorAll(`[data-show-if="${e.target.dataset.toggle}"]`).forEach(sec=>sec.classList.toggle('hidden',!val));
       let offSecs=card.querySelectorAll(`[data-show-if="${e.target.dataset.toggle}_off"]`);
@@ -10356,6 +10425,7 @@ function attachCardEvents(card,inst){
       let template = leaf==="openings"? {label:"Opening",w:600,h:2100,qty:1}
        : /Groups$/.test(leaf)? newExtraBeamGroup(inst.data,leaf,arr.length)
        : leaf==="reoAreaRows"? {area:"", dia:"N12", spacing:200, ways:"each"}
+       : leaf==="insVertRows"? {name:"", product:INS_VERT_DEFAULT, runM:"", heightMm:"", faces:"", areaM2:"", waste:5}
        : leaf==="panelRows"? {mark:`P${arr.length+1}`, qty:1, hMm:3000, wMm:2400, openM2:0, openPerM:0}
        : /Rows$/.test(leaf)? {position:"Additional",qty:2,dia:"N16",layers:1,startA:"straight",endA:"straight"}
        : leaf==="extraConn"? {target:"",role:"Dowel",mode:"count",qty:4,runM:"",spacing:400,rows:1,dia:"N16",embed:400,proj:400,hook:"straight"}
@@ -10618,6 +10688,7 @@ function computeInstance(inst){
       out.lines.push(baseLine(inst,def,{materialGroup:"Insulation",material:t.name,spec,qty,unit:t.unit,waste,finalQty:withWaste(qty,waste),formula:num(d.insArea)>0?"entered":"from element"}));
     }
   }
+  computeVerticalInsulation(inst,def,out);   // upright boards: run × height × faces, one line per row
   // Phase 4: scoped site/placement allowances — estimating items, never design
   applyExcavationOption(inst,def,out);   // the estimator's excavation decision — before the allowances, so overbreak follows it
   out.lines.push(...siteAllowanceLines(inst, def, out.lines));

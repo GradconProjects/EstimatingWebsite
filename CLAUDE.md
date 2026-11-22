@@ -640,6 +640,47 @@ safety net silently. Keep all cost arithmetic in `lib/costing.js`.
   only 160 + 80 m, mesh only 40 lm, both = all three and the kg add up), the
   internal strips, a duplicated extra beam, a ground beam through its real
   ticks, the save and an older takeoff (26 checks).
+- **INSULATION carries vertical boards and Slabmate** (Boma, 22 Nov 2026).
+  **Vertical insulation** ("i encountered vertical insulation on this one. add
+  vertical insulations to the insulation bar"): a board fixed UPRIGHT against
+  a face — a slab edge, the outer face of an edge beam or footing, a wall, an
+  upstand — is measured in m² of FACE, never the plan area. Quotes: twelve
+  `m2` rows on the band, "Vertical insulation — <board>" for XPS 30 / 50 / 75 /
+  100, EPS M-grade 50 / 75 / 100, Kooltherm K3 50 / 60 / 80 / 100 and an
+  "other" row; each is the SAME board as its flat row and is seeded at that
+  row's own figure (the board's supply price — no separate vertical rate was
+  read; fixing is crew-sheet labour). Estimates: a TABLE on every Blinding /
+  Insulation tab under the under-slab board (`verticalInsulationSection`,
+  `data-testid="vertical-insulation"`, "+ Add vertical insulation" through the
+  `insVertRows` add-row template, which sits before the generic `/Rows$/`
+  rule): `inst.data.insVertRows[] = {name, product, runM, heightMm, faces,
+  areaM2, waste}`. `insVertCalc(r, autoRun)` is the ONE arithmetic — a typed
+  area wins, else run × height × faces (blank faces = 1), a blank run taking
+  `insVertAutoRun(inst)` (the slab's or screed's perimeter, else the published
+  run of a footing or beam); an untouched row is nothing, a row with figures
+  and no area is a completeness warning and no line. `computeVerticalInsulation`
+  emits ONE `Insulation` m² line per row (`vertical: true`, spec "Vertical
+  insulation — <where>"), the Result cell follows the typing
+  (`refreshInsVertRows`), and the render never creates the array.
+  `INS_VERT_BOARDS` / `INS_VERT_OTHER` are the catalog's names VERBATIM, so
+  the bridge lands each line on its own row. **Slabmate** (from a structural
+  note: "PROVIDE SLAB MATE 50mm THICK MINIMUM UNDER SLAB INSULATION … MIN.
+  70kPa COMPRESSION CAPACITY"): Foilboard's SL-grade EPS under-slab board,
+  70 kPa at 10% deformation (Slabmate Technical Brochure V2.24), 30 / 40 / 50 /
+  60 / 70 mm, and Slabmate Pro, 185 kPa, 40 / 50 mm — seven `m2` rows
+  ("Slabmate under-slab 70 kPa — 50mm (R1.1)" …) and two Estimates families
+  (`slabmate`, `slabmatepro`). Seeds are SUPPLY ex GST from Insulation
+  Essentials' published pack prices (Craigieburn VIC, read 22 Nov 2026):
+  pack ÷ its m² ÷ 1.1 — $7.56 / $10.07 / $12.60 / $15.11 / $17.58, Pro $23.04 /
+  $28.81; the packs and the arithmetic are in the catalog comment — never a
+  remembered figure. The band is 51 rows and no Rates Library section lists
+  it: the catalog default governs and the Rates modal edits it. `verify.mjs`
+  pins the vertical rows against their flat twins, the pack arithmetic, EVERY
+  Estimates insulation choice against a catalog row of the same unit, the
+  arithmetic out of the page source and the bridge; `test-insulation.mjs`
+  proves the Slabmate choice, the table (blank run, typed run × 2 faces, typed
+  area, the warning, delete, save, publish), a strip footing's own run and the
+  Quotes band at $3,144 (23 checks).
 - **Mesh sizes live in one catalog, mirrored in two places:** `SQUARE MESH`
   in `catalog.js` (name, sheet weight, $/sheet) is the source; the
   Estimates `MESHTYPES` table (kg/m² = sheet weight ÷ 14.4) and the portal

@@ -98,10 +98,10 @@ check("every element type has both a category and a section", () => {
   });
 });
 
-check("21 material categories, 418 products (incl. the R6 / R8 / R10 plain rounds on PROCESSED BAR, the 12-row Void formers group of FORMWORK, the 23-row FINISHED PAVEMENTS & CONCRETE FINISHES band (permeable paving and the P4 slip-resistant row added 20 Nov 2026, the two recommended tender allowances 21 Nov 2026), the 45-row SAW CUTS & DOWELS band, CONCRETE PUMPING, REINFORCEMENT BY RATE, the 32-board INSULATION range, 31 SCREEDS, 17 HYDRONIC HEATING, 48 SPECIALIST FINISHING CONCRETE, 45 PRELIMINARIES, the full 24-size TRENCH MESH grid, Bored Piers subcontract, minimum cartage, levy, surcharge)", () => {
+check("21 material categories, 437 products (incl. the 12 vertical insulation rows and the 7 Slabmate boards of INSULATION (22 Nov 2026), the R6 / R8 / R10 plain rounds on PROCESSED BAR, the 12-row Void formers group of FORMWORK, the 23-row FINISHED PAVEMENTS & CONCRETE FINISHES band (permeable paving and the P4 slip-resistant row added 20 Nov 2026, the two recommended tender allowances 21 Nov 2026), the 45-row SAW CUTS & DOWELS band, CONCRETE PUMPING, REINFORCEMENT BY RATE, the 51-row INSULATION range, 31 SCREEDS, 17 HYDRONIC HEATING, 48 SPECIALIST FINISHING CONCRETE, 45 PRELIMINARIES, the full 24-size TRENCH MESH grid, Bored Piers subcontract, minimum cartage, levy, surcharge)", () => {
   assert.equal(FULL_CATALOG.length, 21);
   const total = FULL_CATALOG.reduce((s, c) => s + c.products.length, 0);
-  assert.equal(total, 418);
+  assert.equal(total, 437);
   const pre = FULL_CATALOG.find((c) => c.key === "PRELIMINARIES");
   assert.equal(pre.products.length, 45);
   assert.ok(!pre.weightBasis && !pre.areaBasis && !pre.lengthBasis && !pre.volumeRateBasis, "preliminaries cost plain qty × rate");
@@ -2033,7 +2033,7 @@ check("rebates (19 Nov 2026): a rebate row runs along the slab perimeter, a beam
   assert.match(est, /formworkLines\(inst,def,\{material:"Rebate formwork"/, "rebate formwork goes through formworkLines (lineal metres under 400 mm)");
   assert.match(est, /if\(!c\.deduct \|\| num\(d\.concVolOverride\)>0\) return;/, "a measured concrete volume stands as typed");
   assert.match(est, /const line=\(c\.target\.concSpec && own\.find\(l=>l\.spec===c\.target\.concSpec\)\) \|\| own\[0\];/, "a beam's rebate comes off that beam's concrete line");
-  assert.match(est, /refreshExtraConnCount\(card,inst,f\); refreshRebateRows\(card,inst,f\); return; \}/, "the Result cell follows the typing");
+  assert.match(est, /refreshExtraConnCount\(card,inst,f\); refreshRebateRows\(card,inst,f\); refreshInsVertRows\(card,inst,f\); return; \}/, "the Result cell follows the typing");
   // the bridge
   const { quote, flags } = buildImportFromEstimate({ project: { name: "Rebates" }, lines: [
     estLine({ elementId: "R1", element: "Raft Slab 1", category: "Raft Slab", materialGroup: "Formwork", material: "Rebate formwork", spec: "Brick rebate — 120 wide × 150 deep — Edge beam — rebate, larger face 150 mm — under 400 mm — lineal metres", qty: 40, finalQty: 42, unit: "m", faceMm: 150, m2Equiv: 10.8 }),
@@ -5996,6 +5996,85 @@ check("Beam steel (22 Nov 2026): trench mesh AND bar sets can be used in the sam
   assert.ok(!est.includes('data-show-if="trenchMesh_off"'), "the old hide-the-bars toggle is gone from the beam");
   // spec strings are unchanged, so a manual override keyed on them still applies
   assert.match(inner, /spec:`\$\{g\.label\} — trench mesh \(longitudinal\)\$\{layerNote\}`/); assert.match(inner, /spec:`\$\{g\.label\} — \$\{r\.position\}\$\{layerNote\}`/);
+});
+
+check("Vertical insulation (22 Nov 2026): twelve m² rows on the INSULATION band, each at its flat board's figure; Estimates measures run × height × faces and lands on them", () => {
+  const cat = FULL_CATALOG.find((c) => c.key === "INSULATION");
+  const vert = cat.products.filter((p) => /^Vertical insulation/.test(p.name));
+  assert.equal(vert.length, 12, "twelve vertical rows");
+  assert.ok(vert.every((p) => p.unit === "m2" && p.unitCost > 0), "every row is m² of face and priced");
+  assert.equal(cat.products.length, 51);
+  // each row is the same board as the flat row of that material and thickness, at that row's own seed
+  const flat = (n) => cat.products.find((p) => p.name === n);
+  vert.forEach((p) => {
+    const board = p.name.replace(/^Vertical insulation — /, "");
+    const twin = /other/.test(p.name) ? flat("Insulation (other — specify in description)") : flat(board) || flat(board.replace("Kooltherm K3 ", "Kooltherm K3 Floorboard "));
+    assert.ok(twin, `${p.name} has a flat twin`);
+    assert.equal(p.unitCost, twin.unitCost, `${p.name} is seeded at its flat board's figure`);
+  });
+  const key = rateKey("INSULATION", "Vertical insulation — XPS rigid board 50mm (R1.47)", "m2");
+  const item = { id: "v", typeId: "raft_slab", qtys: { [key]: 24 }, tasks: [], additional: [] };
+  assert.equal(computeElementCost(item, defaultRates()).categoryTotals["INSULATION"], 24 * 26, "24 m² of face at $26 = $624");
+  // Estimates: the names are the catalog's, verbatim
+  const est = fs.readFileSync(new URL("../portal/estimates-app.html", import.meta.url), "utf8");
+  const boards = JSON.parse(est.match(/const INS_VERT_BOARDS=(\[[^\]]*\]);/)[1]);
+  const other = JSON.parse(est.match(/const INS_VERT_OTHER=("[^"]*");/)[1]);
+  assert.deepEqual(boards.map((b) => `Vertical insulation — ${b}`).concat([other]), vert.map((p) => p.name), "Estimates lists exactly the catalog's vertical rows, in order");
+  // the ONE arithmetic, run out of the page source
+  const num = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? n : 0; };
+  const calc = new Function("num", est.match(/function insVertCalc\(r, autoRun\)\{[\s\S]*?\n\}/)[0] + "\nreturn insVertCalc;")(num);
+  assert.equal(calc({ runM: 40, heightMm: 600 }, 0).area, 24, "40 m × 600 mm = 24 m²");
+  assert.equal(calc({ runM: 40, heightMm: 600, faces: 2 }, 0).area, 48, "both faces = 48 m²");
+  assert.equal(calc({ heightMm: 300 }, 60).area, 18, "a blank run takes the element's own (60 m × 300 mm)");
+  assert.equal(calc({ runM: 40, heightMm: 600, areaM2: 31.5 }, 0).area, 31.5, "a typed area wins");
+  assert.equal(calc({ runM: 40 }, 0).area, 0, "no height prices nothing");
+  assert.equal(calc({}, 60).any, false, "an untouched row is nothing — the element's run alone never makes a line");
+  // wiring
+  assert.ok(est.includes("insulationSubsection(inst.data) + verticalInsulationSection(inst)"), "the table sits on every Blinding / Insulation tab, under the under-slab board");
+  assert.match(est, /leaf==="insVertRows"\? \{name:"", product:INS_VERT_DEFAULT/, "its own add-row template, ahead of the generic Rows rule");
+  assert.ok(est.indexOf('leaf==="insVertRows"') < est.indexOf("/Rows$/.test(leaf)"));
+  assert.match(est, /computeVerticalInsulation\(inst,def,out\);/);
+  assert.match(est, /materialGroup:"Insulation",material:insVertProduct\(r\),spec:`Vertical insulation/);
+  assert.match(est, /function insVertRows\(d\)\{ return Array\.isArray\(d&&d\.insVertRows\)\? d\.insVertRows : \[\]; \}/, "the table never creates the array on render");
+  // the bridge lands a published line on its own row by name
+  const { quote, flags } = buildImportFromEstimate({ project: {}, lines: [
+    { ...estLine({}), category: "Slab on Ground", element: "Slab 1", elementId: "EL08",
+      materialGroup: "Insulation", material: "Vertical insulation — Kooltherm K3 80mm (R3.60)", spec: "Vertical insulation — edge beam", unit: "m²", finalQty: 25.2 },
+  ] });
+  assert.equal(quote.items[0].qtys[rateKey("INSULATION", "Vertical insulation — Kooltherm K3 80mm (R3.60)", "m2")], 25.2);
+  assert.ok(!flags.some((f) => /Vertical insulation/.test(f)), "…unflagged");
+});
+
+check("Slabmate (22 Nov 2026): Foilboard's 70 kPa under-slab EPS in five thicknesses and Slabmate Pro (185 kPa) in two, seeded ex GST from the published pack prices; every Estimates insulation choice names a catalog row", () => {
+  const cat = FULL_CATALOG.find((c) => c.key === "INSULATION");
+  const price = (n) => { const p = cat.products.find((x) => x.name === n); assert.ok(p, n); assert.equal(p.unit, "m2"); return p.unitCost; };
+  // pack price inc GST, the pack's m² (sheets × 2.88), as read off the supplier's pages
+  const packs = [
+    ["Slabmate under-slab 70 kPa — 30mm (R0.78)", 359.39, 15], ["Slabmate under-slab 70 kPa — 40mm (R0.92)", 382.89, 12],
+    ["Slabmate under-slab 70 kPa — 50mm (R1.1)", 399.31, 10], ["Slabmate under-slab 70 kPa — 60mm (R1.35)", 382.89, 8],
+    ["Slabmate under-slab 70 kPa — 70mm (R1.7)", 389.92, 7],
+    ["Slabmate Pro under-slab 185 kPa — 40mm (R1.15)", 876.06, 12], ["Slabmate Pro under-slab 185 kPa — 50mm (R1.45)", 912.57, 10],
+  ];
+  packs.forEach(([name, pack, sheets]) => assert.equal(price(name), Math.round((pack / (sheets * 2.88) / 1.1) * 100) / 100, `${name} = pack ÷ m² ÷ 1.1`));
+  assert.equal(price("Slabmate under-slab 70 kPa — 50mm (R1.1)"), 12.6, "the specified 50 mm board: $12.60/m² ex GST");
+  const key = rateKey("INSULATION", "Slabmate under-slab 70 kPa — 50mm (R1.1)", "m2");
+  assert.equal(computeElementCost({ id: "s", typeId: "raft_slab", qtys: { [key]: 200 }, tasks: [], additional: [] }, defaultRates()).categoryTotals["INSULATION"], 2520, "200 m² = $2,520");
+  // Estimates: every family × thickness is a catalog row of the same unit (the bridge maps by exact name)
+  const est = fs.readFileSync(new URL("../portal/estimates-app.html", import.meta.url), "utf8");
+  const fams = new Function(est.match(/const INSULATION_FAMILIES=\[[\s\S]*?\n\];/)[0] + "\nreturn INSULATION_FAMILIES;")();
+  fams.forEach(([k, , unit, ths, name]) => ths.forEach((t) => {
+    const p = cat.products.find((x) => x.name === name(t));
+    assert.ok(p, `Estimates' ${k} ${t}mm ("${name(t)}") is a Quotes INSULATION row`);
+    assert.equal(p.unit, unit === "m" ? "m" : "m2", `${name(t)} unit`);
+  }));
+  assert.deepEqual([...fams.find((f) => f[0] === "slabmate")[3]], [30, 40, 50, 60, 70]);
+  assert.deepEqual([...fams.find((f) => f[0] === "slabmatepro")[3]], [40, 50]);
+  const { quote, flags } = buildImportFromEstimate({ project: {}, lines: [
+    { ...estLine({}), category: "Slab on Ground", element: "Slab 1", elementId: "EL08",
+      materialGroup: "Insulation", material: "Slabmate under-slab 70 kPa — 50mm (R1.1)", spec: "Under-slab / under-element insulation — 50mm", unit: "m²", finalQty: 210 },
+  ] });
+  assert.equal(quote.items[0].qtys[key], 210, "a published Slabmate line lands on its row");
+  assert.ok(!flags.some((f) => /Slabmate/.test(f)));
 });
 
 if (process.exitCode) {
