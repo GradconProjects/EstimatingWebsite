@@ -2820,6 +2820,40 @@ no duplicate projects are present and yes copy email attachments". Rules:
    an hour before the newest message seen), reads IN FULL only the messages
    whose subject + snippet already score ≥ 2 and were not handled before (40
    per run), then `candidateFromMessage`.
+   **An informal price request is a request, and a missed one is read again
+   on a button** (Boma, 23 Nov 2026: "a new project came through but the
+   system didnt pick up" — a builder's "3 Wimbledon Crt Portsea … Looking to
+   get some indicative costs together for the attached boat house garage",
+   sent on the 21st and forwarded by the director two days later, made no
+   project; a tender headed "NEW TENDER" that morning was picked up two
+   minutes after it arrived). Four causes, four fixes: (a) STRONG gained the
+   words builders use — a request verb with "indicative / budget / ballpark /
+   rough costs | pricing | quote", "looking / hoping / needing to get … costs |
+   a price | a quote", "can / could you price | quote", "a price for the
+   attached" — never the bare noun, which a supplier sending ITS "budget
+   estimate" also writes; NOISE gained "attached our … quote | estimate |
+   pricing" ("a quote sent to Gradcon") and "your quotation" no longer
+   penalises "receiving / submitting / providing your quotation" (a lookbehind
+   on the request verbs — that tender had passed at exactly the threshold);
+   (b) `forwardedFrom` strips the "> " quote marks first — Apple Mail's
+   "Begin forwarded message" quotes every line, so "> From: …" never matched
+   and the builder's request read as the director's own; (c)
+   `isColleagueForward(msg, mailbox)` (a Fwd subject from an own-domain sender
+   that is not the mailbox) always earns the full read — a forward's snippet
+   is its header block, never the request; (d) "Crt", "Circle / Cir", "Chase",
+   "Cove", "Glen", "Heights" are street types, and `siteAddressOf` reads the
+   original subject and the subject each on its own (joined, the suburb read
+   "Portsea Fwd"). **Re-check**: a message the rules did not recognise was
+   never recorded, so `scanQuery(record, now, {lookbackDays})` reads from N
+   days back instead of the watermark (`lookbackDaysOf`, ≤
+   `LOOKBACK_MAX_DAYS` = 14); `POST {action:"scan", lookbackDays}` — never an
+   automatic scan — and Settings → Tender inbox scan → **Re-check the last 3
+   days** (`inbox-rescan`). A handled message or thread still makes no second
+   project, and a project it creates is texted as usual. The new rules were
+   run over 54 real headers of the mailbox: the one new candidate was the
+   missed request. `verify.mjs` covers the request, the quoted forward, the
+   one project for both, the supplier's estimate and rate notice, the
+   quotation wording, the window and the wiring.
 4. **Name, client, deadline, files.** `projectNameFrom`: the site address
    (`addressIn` — "<number> <Street> <Type>[, <Suburb>[ VIC][ <postcode>]]",
    the subject's, or the body's fuller spelling of the same street —

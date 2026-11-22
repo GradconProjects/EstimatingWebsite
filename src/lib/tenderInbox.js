@@ -93,7 +93,9 @@ const FWD_SUBJECT = /^\s*(?:(?:fwd?|fw|tr|wg)\s*:\s*)+/i;
 const FWD_MARKER = /-{2,}\s*(?:Forwarded message|Original Message|Begin forwarded message)\s*-{2,}|^Begin forwarded message:|^-+\s*Forwarded message\s*-+$/im;
 /** The sender inside a forwarded header block, and the original subject when it carries one. */
 export function forwardedFrom(msg) {
-  const subject = String((msg && msg.subject) || ""), body = String((msg && msg.body) || "");
+  // A forward QUOTED with "> " at the head of every line (Apple Mail's "Begin forwarded message") is read with the marks off:
+  // 23 Nov 2026, a builder's request the director forwarded was read as the director's own, because "> From: …" never matched.
+  const subject = String((msg && msg.subject) || ""), body = String((msg && msg.body) || "").replace(/^[ \t]*(?:>[ \t]?)+/gm, "");
   const marked = FWD_MARKER.test(body);
   if (!FWD_SUBJECT.test(subject) && !marked) return null;
   const start = marked ? body.search(FWD_MARKER) : 0;
@@ -131,6 +133,13 @@ const STRONG = [
   [/quot(?:e|ation)s?\s+(?:to\s+be\s+)?(?:back|returned|submitted|due)\s+by/i, "quote due by"],
   [/(?:scope\s+of\s+works?|concrete\s+(?:works?|package|scope))\b[\s\S]{0,120}\b(?:quot|pric|tender)/i, "scope of works for pricing"],
   [/(?:like|love|wish|want)\s+(?:you\s+)?to\s+(?:quote|price|tender)/i, "would like you to quote"],
+  // Builders rarely write "request for quotation" (23 Nov 2026: "Looking to get some indicative costs together for the attached
+  // boat house garage" made no project). A price ASKED for, in the words they use — never the bare noun, which a supplier
+  // sending its own "budget estimate" also writes.
+  [/\b(?:looking|hoping|wanting|trying|keen|needing|need|chasing|seeking|after)\b[^.\n]{0,60}\b(?:indicative|budget|ballpark|rough|preliminary|prelim)\s+(?:costs?|costings?|pric(?:e|es|ing)|quot(?:e|es|ations?)|estimates?|figures?|numbers?)\b/i, "indicative / budget costs asked for"],
+  [/\b(?:looking|hoping|wanting|trying|keen|needing|need)\s+to\s+(?:get|put|pull|have)\s+(?:\w+\s+){0,4}?(?:costs?|costings?|pric(?:e|es|ing)|quot(?:e|es|ations?)|estimates?)\b/i, "looking to get costs / a price"],
+  [/\b(?:can|could|would)\s+you\s+(?:please\s+|guys\s+)?(?:price|quote|cost)\b/i, "asked to price"],
+  [/\b(?:a\s+|your\s+|some\s+)(?:price|pricing|quote|quotation|costs?|costing)\s+(?:for|on)\s+(?:the\s+|this\s+)?(?:attached|following|below|job|project)\b/i, "a price for the attached"],
 ];
 const WEAK = [
   [/\btenders?\b/i, "tender"],
@@ -155,7 +164,8 @@ const NOISE = [
   [/\bwebinar\b|\bspecial\s+offer\b|\bpromo(?:tion)?\b/i, "marketing"],
   [/\b(?:tax\s+)?invoice\b|\bremittance\b|\bstatement\s+of\s+account\b|\bpayment\s+(?:claim|received|advice)\b|\bpurchase\s+order\b/i, "accounts mail"],
   [/\bquote\s+(?:has\s+been\s+|was\s+)?(?:accepted|approved|declined|unsuccessful)\b/i, "an outcome, not a request"],
-  [/\byour\s+(?:recent\s+)?quot(?:e|ation)\b/i, "about Gradcon's own quote"],
+  [/(?<!\b(?:receiv(?:e|ing)|submit(?:ting)?|provid(?:e|ing)|send(?:ing)?|forward(?:ing)?|return(?:ing)?|get(?:ting)?|await(?:ing)?|ensure|for|with|include|prepare|preparing)\s)\byour\s+(?:recent\s+)?quot(?:e|ation)\b/i, "about Gradcon's own quote"],
+  [/\b(?:attached|enclosed|herewith)\s+(?:is\s+|are\s+)?our\s+(?:\w+\s+){0,2}?(?:quot(?:e|ation)|estimate|pricing|price|proposal|rates)\b/i, "a quote sent to Gradcon"],
   [/\bthank\s+you\s+for\s+(?:your|the)\s+quot(?:e|ation)\b/i, "a thank-you for a quote"],
 ];
 const DRAWING_FILE = /\b(?:arch(?:itectural)?|struct(?:ural)?|eng(?:ineering)?|drawing|dwg|plan|spec(?:ification)?|geotech|soil|tender|boq|scope|schedule|survey|[AS]\s?-?\d{2,4}[A-Z]?)\b/i;
@@ -165,6 +175,9 @@ export const SIGNATURE_IMAGE_MAX_BYTES = 100 * 1024;
 export const isSignatureImage = (att) => !!att && MAIL_ATTACH_KINDS[attachExt(att.filename || att.name)]?.kind === "image" && Number(att.size) > 0 && Number(att.size) < SIGNATURE_IMAGE_MAX_BYTES;
 export const isAttachable = (att) => !!att && !!MAIL_ATTACH_KINDS[attachExt(att.filename || att.name)] && (att.attachmentId || att.body);
 
+/** A message a COLLEAGUE forwarded to the estimators: its snippet is the forwarded header block, never the request, so the
+ *  scan reads it in full whatever its first lines score. */
+export const isColleagueForward = (msg, mailbox = DEFAULT_MAILBOX) => !!msg && FWD_SUBJECT.test(String(msg.subject || "")) && isOwnAddress(msg.from) && !isMailboxAddress(msg.from, mailbox);
 /** Is this the scanned mailbox writing (the app's RFQs and notifications, the estimator's own replies)? */
 export const isMailboxAddress = (from, mailbox = DEFAULT_MAILBOX) => !!parseAddress(from).email && parseAddress(from).email === String(mailbox || DEFAULT_MAILBOX).trim().toLowerCase();
 /** A colleague asking the estimators directly: an own-domain sender that is not the mailbox and is not passing on someone else's request. */
@@ -203,7 +216,7 @@ export function requestKindOf(msg, internal) {
 }
 
 /* ---------- the project name and the site ---------- */
-const STREET_TYPES = "Street|St|Road|Rd|Avenue|Ave|Av|Drive|Dr|Court|Ct|Crescent|Cres|Cr|Place|Pl|Lane|Ln|Boulevard|Blvd|Bvd|Highway|Hwy|Parade|Pde|Way|Close|Cl|Terrace|Tce|Grove|Gr|Esplanade|Esp|Circuit|Cct|Square|Sq|Rise|Walk|Promenade|Prom|Track|Trk|Mews|Loop|Retreat|Rtt|Gardens|Gdns|Point|Pt|Quay|Ridge|Row|Strand|View|Vista|Wynd";
+const STREET_TYPES = "Street|St|Road|Rd|Avenue|Ave|Av|Drive|Dr|Court|Crt|Ct|Crescent|Cres|Cr|Place|Pl|Lane|Ln|Boulevard|Blvd|Bvd|Highway|Hwy|Parade|Pde|Way|Close|Cl|Terrace|Tce|Grove|Gr|Esplanade|Esp|Circuit|Cct|Circle|Cir|Chase|Cove|Glen|Heights|Hts|Square|Sq|Rise|Walk|Promenade|Prom|Track|Trk|Mews|Loop|Retreat|Rtt|Gardens|Gdns|Point|Pt|Quay|Ridge|Row|Strand|View|Vista|Wynd";
 const ADDRESS_RE = new RegExp(`\\b(\\d{1,5}[A-Za-z]?(?:\\s*[-–/]\\s*\\d{1,5}[A-Za-z]?)?\\s+(?:[A-Z][A-Za-z'’]+\\s+){1,4}(?:${STREET_TYPES})\\b\\.?)(?:,?\\s+((?:[A-Z][A-Za-z'’]+\\s?){1,3}))?(?:,?\\s*(VIC|Vic|Victoria|NSW|QLD|SA|WA|TAS|ACT|NT))?(?:,?\\s*(\\d{4}))?`);
 /** The first street address in a text, as "<number> <Street> <Type>[, <Suburb>[ VIC][ <postcode>]]", else "". */
 export function addressIn(text) {
@@ -222,10 +235,11 @@ const PREFIXES = /^\s*(?:(?:fwd?|fw|re|tr|wg|aw)\s*:\s*)+/i;
 const LEADS = /^\s*(?:(?:rfq|rft|itt|rfp|eoi|rfi|take[\s-]?off|measure(?:\s+up)?|mark[\s-]?up|tender(?:\s+invitation| documents| package)?|request\s+for\s+(?:quot(?:e|ation)|tender|pricing|proposal)|invitation\s+to\s+(?:tender|quote)|quote\s+request|quotation\s+request|pricing\s+request|call\s+for\s+tenders?)\s*(?:[-–—:|]|for|–)\s*)+/i;
 const TAILS = /\s*(?:[-–—:|]\s*)?(?:tender\s+documents?|for\s+pricing|for\s+quot(?:e|ation)|rfq|rft|quote\s+request|request\s+for\s+quot(?:e|ation))\s*$/i;
 /** "<number> <street> <type>" of an address, normalised — the part two spellings of one site share. */
-export const streetKey = (addr) => normName(String(addr || "").split(",")[0]).replace(/\b(street|st|road|rd|avenue|ave|av|drive|dr|court|ct|crescent|cres|cr|place|pl|lane|ln|boulevard|blvd|bvd|highway|hwy|parade|pde|close|cl|terrace|tce|grove|gr|esplanade|esp|circuit|cct|square|sq)\b/g, "").replace(/\s+/g, " ").trim();
+export const streetKey = (addr) => normName(String(addr || "").split(",")[0]).replace(/\b(street|st|road|rd|avenue|ave|av|drive|dr|court|crt|ct|crescent|cres|cr|place|pl|lane|ln|boulevard|blvd|bvd|highway|hwy|parade|pde|close|cl|terrace|tce|grove|gr|esplanade|esp|circuit|cct|circle|cir|square|sq)\b/g, "").replace(/\s+/g, " ").trim();
 /** The site address: the subject's, or the body's fuller spelling of the same street, else the body's first address. */
 export function siteAddressOf(msg, sender) {
-  const subj = addressIn(`${(sender && sender.originalSubject) || ""} ${(msg && msg.subject) || ""}`);
+  // each subject on its own, the forward's furniture off: joined, "…Portsea Fwd: 3 Wimbledon…" read the suburb as "Portsea Fwd"
+  const subj = addressIn((sender && sender.originalSubject) || "") || addressIn(String((msg && msg.subject) || "").replace(PREFIXES, ""));
   const body = addressIn(String((msg && msg.body) || ""));
   if (subj && body && streetKey(subj) === streetKey(body) && body.length > subj.length) return body;
   return subj || body;
@@ -382,9 +396,12 @@ export function autoScanHold(record, now = new Date()) {
   return null;
 }
 /** The Gmail search for the next scan: everything since the watermark (less an hour's overlap), the first time the last FIRST_SCAN_DAYS days; never spam, trash, sent or drafts. */
-export function scanQuery(record, now = new Date()) {
-  const wm = Number(record && record.watermarkMs) || 0;
-  const since = wm > 0 ? Math.floor((wm - SCAN_OVERLAP_MS) / 1000) : Math.floor((now.getTime() - FIRST_SCAN_DAYS * 86400000) / 1000);
+export const LOOKBACK_MAX_DAYS = 14;
+export const lookbackDaysOf = (v) => { const n = Math.floor(Number(v)); return Number.isFinite(n) && n > 0 ? Math.min(n, LOOKBACK_MAX_DAYS) : 0; };
+export function scanQuery(record, now = new Date(), { lookbackDays = 0 } = {}) {
+  const wm = Number(record && record.watermarkMs) || 0, back = lookbackDaysOf(lookbackDays);
+  const since = back > 0 ? Math.floor((now.getTime() - back * 86400000) / 1000)
+    : wm > 0 ? Math.floor((wm - SCAN_OVERLAP_MS) / 1000) : Math.floor((now.getTime() - FIRST_SCAN_DAYS * 86400000) / 1000);
   return `after:${since} -in:spam -in:trash -in:sent -in:drafts -in:chats`;
 }
 /** Fold one scan's outcome into the record: handled messages (newest 1000), the created list (newest 200), the watermark, the summary. */

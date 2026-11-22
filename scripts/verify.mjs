@@ -6077,6 +6077,46 @@ check("Slabmate (22 Nov 2026): Foilboard's 70 kPa under-slab EPS in five thickne
   assert.ok(!flags.some((f) => /Slabmate/.test(f)));
 });
 
+const TENDER_INBOX_23 = await import("../src/lib/tenderInbox.js");
+check("Tender inbox (23 Nov 2026): an informal price request and a quoted forward are recognised, a supplier's own estimate is not, and a re-check reads back a set number of days", () => {
+  const T = TENDER_INBOX_23;
+  const pdf = [{ filename: "3 WIMBLEDON CRT PORTSEA 03_TP0 _FULL SET.pdf", attachmentId: "a1", size: 900000, mimeType: "application/pdf" }];
+  const text = "Hi both\nLooking to get some indicative costs together for the attached boat house garage at 3 Wimbledon crt Portsea. No engineering or specifications as yet but for the exercise thought we just allow a 100mm raft slab with 600 edge beam.\nCall with any queries";
+  const direct = { id: "m1", threadId: "t1", from: "Dean Wilson <inbox@dwbuild.com.au>", to: "projects@gradcon.com.au", subject: "3 Wimbledon Crt Portsea", date: "2026-11-21T02:35:00Z", body: text, snippet: text.slice(0, 150), attachments: pdf };
+  const c1 = T.classifyMessage(direct);
+  assert.ok(c1.candidate && c1.reasons.includes("indicative / budget costs asked for") && c1.reasons.includes("looking to get costs / a price"), "\"looking to get some indicative costs\" is a request");
+  assert.ok(T.classifyMessage({ ...direct, body: direct.snippet, attachments: [] }).score >= 2, "…and its first lines alone earn the full read");
+  const cand = T.candidateFromMessage(direct, { now: new Date("2026-11-23T00:00:00Z") });
+  assert.deepEqual([cand.projectName, cand.siteAddress, cand.client, cand.deadlineSource, cand.internal], ["3 Wimbledon Crt, Portsea", "3 Wimbledon Crt, Portsea", "Dwbuild", "default", false], "named by its address — Crt is a street type");
+  // the same request forwarded by the director, every line quoted with "> " (Apple Mail)
+  const quoted = "\n> Begin forwarded message:\n> \n> From: Dean Wilson <inbox@dwbuild.com.au>\n> Subject: 3 Wimbledon Crt Portsea\n> Date: 21 November 2026 at 1:35:01 pm AEDT\n> To: Grady <grady@gradcon.com.au>\n> \n" + text.split("\n").map((l) => "> " + l).join("\n");
+  const fwd = { id: "m2", threadId: "t2", from: "Grady Fink <grady@gradcon.com.au>", to: "projects@gradcon.com.au", subject: "Fwd: 3 Wimbledon Crt Portsea", date: "2026-11-22T21:32:00Z", body: quoted, snippet: "> Begin forwarded message: > > From: Dean Wilson > Subject: 3 Wimbledon Crt Portsea", attachments: pdf };
+  assert.equal(T.forwardedFrom(fwd).from, "Dean Wilson <inbox@dwbuild.com.au>", "a forward quoted with > marks is read");
+  const cf = T.candidateFromMessage(fwd, { now: new Date("2026-11-23T00:00:00Z") });
+  assert.deepEqual([cf.client, cf.via, cf.internal, cf.projectName, cf.siteAddress], ["Dwbuild", "grady@gradcon.com.au", false, "3 Wimbledon Crt, Portsea", "3 Wimbledon Crt, Portsea"], "the builder is the client, the director the forwarder, the suburb never \"Portsea Fwd\"");
+  assert.ok(T.isColleagueForward(fwd) && !T.isColleagueForward(direct) && !T.isColleagueForward({ ...fwd, from: "Boma <projects@gradcon.com.au>" }), "a colleague's forward is always read in full; the mailbox's own is not");
+  assert.ok(T.findDuplicate(cand, [{ id: "p", name: cf.projectName, source: {} }]), "the original and its forward are one project");
+  // what must NOT become a project
+  const est = T.classifyMessage({ from: "Ruschiel <r@piling.example>", subject: "BUDGET ESTIMATE: 16-18 Beach Avenue, Blairgowrie - Conforming Piling", body: "Good morning Boma, Please find attached our budget estimate for the conforming piling and sleeper retaining wall.", attachments: pdf });
+  assert.ok(!est.candidate && est.reasons.some((r) => /a quote sent to Gradcon/.test(r)), "a supplier sending ITS estimate is not a request");
+  assert.ok(!T.classifyMessage({ from: "Rep <rep@steel.example>", subject: "Supply Rates", body: "Just wanted to send through some decreased general supply rates as per attached. Still happy to offer project rates.", attachments: pdf }).candidate, "a supplier's rate notice is not a request");
+  // "receiving your quotation" asks for a quote; "your quotation was received" is about one already sent
+  const ask = T.classifyMessage({ from: "Builder <b@builder.example>", subject: "NEW TENDER - 66 North Rd, Brighton", body: "We have a new tender opportunity. We would appreciate receiving your quotation by 11 December." });
+  assert.ok(ask.candidate && !ask.reasons.some((r) => /own quote/.test(r)), "\"receiving your quotation\" carries no penalty");
+  assert.ok(T.classifyMessage({ from: "Builder <b@builder.example>", subject: "Re: pricing", body: "Thanks, your quotation has been reviewed." }).reasons.some((r) => /own quote/.test(r)), "…mail about a quote already sent still does");
+  // the re-check window
+  const now = new Date("2026-11-23T00:00:00Z"), rec = { watermarkMs: Date.parse("2026-11-22T22:41:00Z") };
+  assert.equal(T.scanQuery(rec, now).match(/after:(\d+)/)[1], String(Math.floor((rec.watermarkMs - T.SCAN_OVERLAP_MS) / 1000)), "an ordinary scan reads from the watermark");
+  assert.equal(T.scanQuery(rec, now, { lookbackDays: 3 }).match(/after:(\d+)/)[1], String(Math.floor((now.getTime() - 3 * 86400000) / 1000)), "a re-check reads from three days back");
+  assert.deepEqual([T.lookbackDaysOf(3), T.lookbackDaysOf("3"), T.lookbackDaysOf(99), T.lookbackDaysOf(0), T.lookbackDaysOf(-2), T.lookbackDaysOf("x")], [3, 3, T.LOOKBACK_MAX_DAYS, 0, 0, 0], "bounded to 14 days, never negative");
+  const api = fs.readFileSync(new URL("../api/tender-inbox.js", import.meta.url), "utf8");
+  assert.match(api, /const lookbackDays = auto \? 0 : lookbackDaysOf\(lookbackAsked\);/, "an automatic scan never looks back");
+  assert.match(api, /scanQuery\(record, now, \{ lookbackDays \}\)/);
+  assert.match(api, /!\(h\.attachments \|\| \[\]\)\.length && !isColleagueForward\(h, mailbox\)\) continue;/, "a colleague's forward gets its full read");
+  const shell = fs.readFileSync(new URL("../portal/portal-shell.html", import.meta.url), "utf8");
+  assert.match(shell, /data-testid="inbox-rescan"/); assert.match(shell, /lookbackDays: back/);
+});
+
 check("Slab step-down edge formwork (22 Nov 2026): the edge along the step-down run is formed, shown and shaped on the Formwork tab; nothing chosen = the line as it was", () => {
   const est = fs.readFileSync(new URL("../portal/estimates-app.html", import.meta.url), "utf8");
   const num = (v, d) => { const n = parseFloat(v); return Number.isFinite(n) ? n : (d === undefined ? 0 : d); };

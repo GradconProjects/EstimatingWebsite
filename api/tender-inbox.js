@@ -40,7 +40,7 @@ import { smsStatus, sendSmsByRole } from "./_sms.js";
 import { newProjectTexts, existingProjectTexts, newProjectSmsOn } from "../src/lib/newProjectSms.js";
 import {
   INBOX_ROW_KEY, MAX_ATTACHMENT_BYTES, MAIL_ATTACH_KINDS, attachExt,
-  classifyMessage, candidateFromMessage, tenderQuoteFrom, findDuplicate, emptyRecord, scanQuery, applyScan, wasHandled,
+  classifyMessage, candidateFromMessage, isColleagueForward, lookbackDaysOf, tenderQuoteFrom, findDuplicate, emptyRecord, scanQuery, applyScan, wasHandled,
   tenderReviewPrompt, parseTenderReview, applyReview, isoDay, scanLockHeld, autoScanHold,
 } from "../src/lib/tenderInbox.js";
 
@@ -147,8 +147,12 @@ export async function takeScanLock(record, stamp, by, now, fetchImpl = fetch) {
 
 /** The scan. `deps.review` is the AI second opinion (default: callText on the configured provider; null → rules only).
  *  `auto` = the portal asked on its own (someone is signed in): throttled, daytime only, and answered without the record. */
-export async function runTenderInbox({ action = "status", by = "cron", auto = false } = {}, env = process.env, fetchImpl = fetch, deps = {}) {
+export async function runTenderInbox({ action = "status", by = "cron", auto = false, lookbackDays: lookbackAsked = 0 } = {}, env = process.env, fetchImpl = fetch, deps = {}) {
   const now = deps.now ? deps.now() : new Date();
+  // A RE-CHECK ("the last N days", Settings) reads the mailbox again from N days back instead of from the watermark: a request the
+  // rules of the day did not recognise was never recorded, so it is read again under today's rules. A handled message or thread
+  // still makes no second project (wasHandled). Only a person asks for it — never an automatic scan.
+  const lookbackDays = auto ? 0 : lookbackDaysOf(lookbackAsked);
   if (action === "status") {
     let record; try { record = (await readRecordRow(fetchImpl)).record; } catch { record = emptyRecord(); }   // a status read only shows; it never writes
     return { status: 200, body: { record, configured: Gm.googleConfigured(env), sms: newProjectSmsStatus(env) } };
@@ -175,7 +179,7 @@ export async function runTenderInbox({ action = "status", by = "cron", auto = fa
   const headers = [];
   try {
     let pageToken = "";
-    const q = scanQuery(record, now);
+    const q = scanQuery(record, now, { lookbackDays });
     while (headers.length < MAX_HEADERS) {
       const page = await Gm.listMessages({ q, max: 50, pageToken }, tok.token, fetchImpl);
       headers.push(...page.messages);
@@ -191,7 +195,7 @@ export async function runTenderInbox({ action = "status", by = "cron", auto = fa
     if (wasHandled(record, h, { mailbox })) continue;
     const quick = classifyMessage({ ...h, body: h.snippet || "" }, { mailbox });
     if (quick.excluded) { handled.push({ messageId: h.id, threadId: h.threadId, outcome: "skipped", reason: quick.excluded }); continue; }
-    if (quick.score < QUICK_SCORE && !(h.attachments || []).length) continue;
+    if (quick.score < QUICK_SCORE && !(h.attachments || []).length && !isColleagueForward(h, mailbox)) continue;
     if (fullReads >= MAX_FULL_READS) break;
     fullReads += 1;
     let full;
@@ -287,6 +291,6 @@ export default async function handler(req, res) {
   if (req.method !== "POST") { res.status(405).json({ error: "GET or POST" }); return; }
   if (own !== true) { res.status(403).json({ error: "The portal only." }); return; }
   const body = req.body || {};
-  const out = await runTenderInbox({ action: body.action || "status", by: String(body.by || "manual").slice(0, 40), auto: body.auto === true });
+  const out = await runTenderInbox({ action: body.action || "status", by: String(body.by || "manual").slice(0, 40), auto: body.auto === true, lookbackDays: body.lookbackDays });
   res.status(out.status).json(out.body);
 }

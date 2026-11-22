@@ -2148,12 +2148,15 @@
       var nums = [sm.to].concat(sm.copyTo || []).filter(Boolean).map(escapeHtml).join(' and ');
       smsLine = '<div class="ai-result" data-testid="inbox-sms-line">Text when a project is created: ' + (sm.on ? (sm.configured ? '<b>on</b> — to ' + nums : '<b>on</b>, but SMS is not configured') : '<b>off</b> — set NEW_PROJECT_SMS to on in the Vercel project to switch it on' + (nums ? ' (it would go to ' + nums + ')' : '')) + (sm.copyWarning ? ' · ' + escapeHtml(sm.copyWarning) : '') + '</div>';
     }
-    host.innerHTML = '<div class="ai-row"><div class="name" data-testid="inbox-scan-times">Every 15 min · 7 am – 9 pm · and every 3 min while signed in<small>' + line + '</small></div><button type="button" id="inbox-scan-now" data-testid="inbox-scan-now"' + (d && d.configured === false ? ' disabled' : '') + '>Scan now</button><span class="ai-result" id="inbox-scan-result"></span></div>' + smsLine + errs + (created ? '<div style="margin-top:6px">' + created + '</div>' : '');
+    host.innerHTML = '<div class="ai-row"><div class="name" data-testid="inbox-scan-times">Every 15 min · 7 am – 9 pm · and every 3 min while signed in<small>' + line + '</small></div><button type="button" id="inbox-scan-now" data-testid="inbox-scan-now"' + (d && d.configured === false ? ' disabled' : '') + '>Scan now</button><button type="button" id="inbox-rescan" data-testid="inbox-rescan" title="Reads the last 3 days of the mailbox again under the current rules — use it when a request was missed. A project it creates is texted as usual; an email that already made a project never makes a second."' + (d && d.configured === false ? ' disabled' : '') + '>Re-check the last 3 days</button><span class="ai-result" id="inbox-scan-result"></span></div>' + smsLine + errs + (created ? '<div style="margin-top:6px">' + created + '</div>' : '');
   }
+  var INBOX_RECHECK_DAYS = 3;
   document.getElementById('settings-inbox').addEventListener('click', function(e){
-    var b = e.target.closest('#inbox-scan-now'); if(!b) return;
-    b.disabled = true; var out = document.getElementById('inbox-scan-result'); if(out) out.textContent = 'Scanning the mailbox…';
-    fetch('/api/tender-inbox', { method:'POST', headers:{ 'content-type':'application/json', accept:'application/json' }, body: JSON.stringify({ action:'scan', by: String(currentUser || 'manual').split('@')[0] }) })
+    var b = e.target.closest('#inbox-scan-now, #inbox-rescan'); if(!b) return;
+    // "Re-check the last 3 days" (23 Nov 2026): a request the rules did not recognise was never recorded, so a wider read picks it up
+    var back = b.id === 'inbox-rescan' ? INBOX_RECHECK_DAYS : 0;
+    b.disabled = true; var out = document.getElementById('inbox-scan-result'); if(out) out.textContent = back ? 'Reading the last ' + back + ' days again…' : 'Scanning the mailbox…';
+    fetch('/api/tender-inbox', { method:'POST', headers:{ 'content-type':'application/json', accept:'application/json' }, body: JSON.stringify(back ? { action:'scan', lookbackDays: back, by: String(currentUser || 'manual').split('@')[0] } : { action:'scan', by: String(currentUser || 'manual').split('@')[0] }) })
       .then(function(r){ return r.json().then(function(d){ return { ok:r.ok, d:d }; }); })
       .then(function(x){ if(!x.ok){ if(out) out.textContent = (x.d && x.d.error) || 'The scan failed.'; b.disabled = false; return; } paintInboxScan({ record: x.d.record, configured: true }); paintInboxBand(x.d.record); var o2 = document.getElementById('inbox-scan-result'); if(o2) o2.textContent = 'Done — ' + (x.d.summary ? x.d.summary.created + ' created, ' + x.d.summary.duplicates + ' duplicates, ' + x.d.summary.scanned + ' read' : 'scanned'); })
       .catch(function(){ if(out) out.textContent = 'The scan could not be reached.'; b.disabled = false; });
