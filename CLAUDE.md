@@ -4081,6 +4081,39 @@ and the first tab pulled it back within six seconds):
    minute). Every deploy day has two builds open somewhere; content must
    compare equal across them.
 
+8. **The cloud check never pulls this tab's OWN save back over the typing**
+   (22 Nov 2026, Boma: "while entering values, things jump out sometimes, in
+   estimates changing or entering elements name and also typing values and
+   also naming additional rebars and a whole cuts off and i have to retype
+   sometimes 3 times before it stays"). `syncFromCloud` runs every 6 s and on
+   every window focus, and two of its readings mistook the tab's live work for
+   something older: (a) a write COMMITS in the database before its answer
+   reaches the tab, and `__syncedAt` is only taken from the answer — a check
+   landing in between saw "a row newer than this tab has synced", which was
+   the tab's own save, applied it and rebuilt the card (`renderWorkspace`)
+   under the cursor, dropping every character typed since that save went out;
+   (b) the stale-browser-copy test of rule 6 ran on EVERY check, so a check
+   landing while the screen was less than a second of typing ahead of the last
+   save read "differs from the cloud and not newer" and put the cloud copy
+   back. Three guards: `ownPushInFlight(key)` (`PUSH_STATE[key].running ||
+   .queued`) ends the check right after the fetch, and again after the
+   `before-sync` version is kept — the push's own conflict rule (rule 2)
+   settles a real collision; the stale-copy test returns false once
+   `cloudReconciled(key)` — it is a BOOT test, decided at the session's first
+   reconcile of the key; and a cloud row whose CONTENT equals the screen
+   (`sameTakeoff(localSnap, migratedRow)`) is adopted — stamp and
+   `LAST_CLOUD_HASH` taken, `markReconciled` — with NO rebuild. A change made
+   on another device is still pulled in when this tab is not mid-save.
+   **A check that would rebuild the workspace must first rule out that it is
+   looking at this tab's own work.** `verify.mjs` pins the three guards and
+   their order; `test-typing-sync.mjs` runs a mock PostgREST whose PATCH
+   commits at once and answers late (1.5 s, and 120 ms) while the check fires
+   every 350 ms: before the fix every character of an element name was lost;
+   after it the name, a dimension and an Additional Reinforcement description
+   stay, the cloud ends on what was typed with no self-conflict, another
+   device's change still arrives, an identical copy rebuilds nothing, and a
+   stale browser copy still loses on a fresh load (13 checks).
+
 ## Estimates provenance and status (Phase 2)
 
 Data, not layout, so both layouts share it: `inst.entered[field] = true` is

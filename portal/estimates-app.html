@@ -1543,6 +1543,15 @@ function sameTakeoff(a, b){ return contentString(a) === contentString(b); }
 // pushes racing from the SAME tab would otherwise read the same stale stamp
 // and report the tab's own previous write as another device's.
 const PUSH_STATE = {};
+/** This tab is writing this key right now — a push in flight, or one queued behind it.
+ *  22 Nov 2026 (Boma: "while entering values, things jump out … a whole cuts off and i
+ *  have to retype sometimes 3 times before it stays"): a write COMMITS in the database
+ *  before its answer reaches the tab, and the stamp is only taken from the answer — so
+ *  a cloud check landing in between saw "a newer row than this tab has synced", which
+ *  was the tab's OWN save, applied it and rebuilt the card under the cursor, dropping
+ *  every character typed since that save went out. The check stands down while a write
+ *  of this tab's is on its way; the next one (6 s, or the next focus) looks again. */
+function ownPushInFlight(key){ const st=PUSH_STATE[key]; return !!(st && (st.running || st.queued)); }
 async function pushTakeoffToCloud(key, snapshot){
   if(!SUPABASE_URL) return null;
   if(!cloudReconciled(key)){ PENDING_CLOUD_PUSH[key] = true; return null; }
@@ -1956,6 +1965,9 @@ async function syncFromCloud(){
       scheduleCloudRetry();
       return;
     }
+    // This tab's own save is on its way (see ownPushInFlight): what the cloud holds this
+    // instant may be that save, seen before its answer. Never pull it back over the typing.
+    if(ownPushInFlight(keyAtStart)) return;
     if(!row){
       // The cloud answered: no row under this key — the fresh state IS this takeoff's state.
       if(CURRENT_PROJECT_KEY === keyAtStart) awaitingCloudLoad = false;
@@ -1979,6 +1991,12 @@ async function syncFromCloud(){
     // tab made and never managed to push); otherwise it is stale and the cloud
     // copy is applied (the local one kept as a before-sync version).
     const staleLocal = (()=>{
+      // …decided ONCE, at this session's first reconcile of the key. After that the screen
+      // is this tab's LIVE work, never a stale browser copy: until 22 Nov 2026 the test ran
+      // on every check, and a check landing while the screen was less than a second of
+      // typing ahead of the last save read "differs from the cloud and not newer" and put
+      // the cloud copy back over the characters just typed.
+      if(cloudReconciled(keyAtStart)) return false;
       if(!localSyncedAt || awaitingCloudLoad || !row.value) return false;
       try{ if(sameTakeoff(estimateStateSnapshot(), row.value)) return false; }catch(e){ return false; }
       // the copy's save time as LOADED — the boot's own first save has already rewritten the stored one
@@ -2002,10 +2020,20 @@ async function syncFromCloud(){
     // replaces what is on screen, keep the local content as a version when it
     // differs and is not just the placeholder of a still-loading takeoff.
     const localSnap = estimateStateSnapshot();
+    if(!awaitingCloudLoad && !localBlank && sameTakeoff(localSnap, migratedRow)){
+      // The cloud holds exactly what is on screen, under a newer stamp (this tab's own write
+      // seen late, or another tab re-saving the same content): take the stamp and rebuild
+      // NOTHING — a rebuild throws the cursor out of the box being typed in.
+      try{ localStorage.setItem(keyAtStart+"__syncedAt", row.updated_at); }catch(e){}
+      LAST_CLOUD_HASH[keyAtStart] = snapshotHash(migratedRow);
+      markReconciled(keyAtStart);
+      return;
+    }
     if(!awaitingCloudLoad && (localSnap.instances||[]).length && !sameTakeoff(localSnap, migratedRow)){
       await keepEstimateVersion(keyAtStart, localSnap, "before-sync");
     }
     if(CURRENT_PROJECT_KEY !== keyAtStart) return;
+    if(ownPushInFlight(keyAtStart)) return;   // typed while the version was being kept: the push's own conflict rule settles it (their copy kept, this tab's work goes up)
     applyLoadedEstimateState(migratedRow);
     if(CURRENT_PROJECT_KEY === keyAtStart) awaitingCloudLoad = false;
     try{

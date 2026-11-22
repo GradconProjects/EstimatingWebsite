@@ -6077,6 +6077,20 @@ check("Slabmate (22 Nov 2026): Foilboard's 70 kPa under-slab EPS in five thickne
   assert.ok(!flags.some((f) => /Slabmate/.test(f)));
 });
 
+check("Estimates cloud check never pulls this tab's own save back over the typing (22 Nov 2026): it stands down while a push is in flight, judges a browser copy stale only at the first reconcile, and adopts an identical cloud copy without rebuilding", () => {
+  const est = fs.readFileSync(new URL("../portal/estimates-app.html", import.meta.url), "utf8");
+  assert.match(est, /function ownPushInFlight\(key\)\{ const st=PUSH_STATE\[key\]; return !!\(st && \(st\.running \|\| st\.queued\)\); \}/);
+  const sync = est.slice(est.indexOf("async function syncFromCloud(){"), est.indexOf("async function syncProjectsIndexFromCloud(){"));
+  assert.ok(sync.length > 2000);
+  const iFail = sync.indexOf("scheduleCloudRetry();"), iOwn = sync.indexOf("if(ownPushInFlight(keyAtStart)) return;"), iApply = sync.indexOf("applyLoadedEstimateState(migratedRow);");
+  assert.ok(iFail > 0 && iOwn > iFail && iOwn < iApply, "a push of this tab's in flight ends the check before anything is compared or applied");
+  assert.equal((sync.match(/if\(ownPushInFlight\(keyAtStart\)\) return;/g) || []).length, 2, "…and again after the version was kept, right before the apply");
+  assert.match(sync, /const staleLocal = \(\(\)=>\{[\s\S]{0,700}?if\(cloudReconciled\(keyAtStart\)\) return false;/, "the stale-browser-copy test runs only at this session's first reconcile of the key");
+  const iSame = sync.indexOf("if(!awaitingCloudLoad && !localBlank && sameTakeoff(localSnap, migratedRow)){");
+  assert.ok(iSame > 0 && iSame < iApply, "an identical cloud copy is caught before the apply");
+  assert.match(sync.slice(iSame, iSame + 700), /localStorage\.setItem\(keyAtStart\+"__syncedAt", row\.updated_at\);[\s\S]*?LAST_CLOUD_HASH\[keyAtStart\] = snapshotHash\(migratedRow\);\s*markReconciled\(keyAtStart\);\s*return;/, "…its stamp is taken and nothing is rebuilt");
+});
+
 if (process.exitCode) {
   console.error("\nSome checks FAILED — see above.");
 } else {
