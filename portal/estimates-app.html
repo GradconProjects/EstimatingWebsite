@@ -3309,6 +3309,57 @@ function sdExtraBarLines(inst,def,lines,d,runM,mult){
     lines.push(baseLine(inst,def,{materialGroup:"Connections",material:r.dia||"N12",spec,qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula,notes:`${np} bars, ${fmt(wt,1)} kg`}));
   });
 }
+/* ---- Step-down EDGE FORMWORK (Boma, 22 Nov 2026: "apply slab step down run
+   edges to have formworks"). The step's formed edge was always taken off, but
+   only as a side effect of the dowel tick on the Reinforcement tab — nothing
+   on the Formwork tab said so or let the estimator shape it. sdFormGeom(d) is
+   the ONE reading: on = the slab steps AND "Form the edges" is not unticked
+   (unset = ON, so a takeoff saved before this forms its step as it did); the
+   run of ONE edge = the typed run, else the total step-down length; × risers
+   × edges (1 = the step face, 2 = both edges of the run — a set-down strip or
+   recess formed on both sides); the face = the typed height, else the step
+   depth. `custom` is false while nothing new is chosen, and then the line is
+   spelled EXACTLY as before (the manual-override key is built from the spec). */
+function sdFormGeom(d){
+  const sdf=sdFactors(d);
+  const stepRun = d.sdLength!==undefined? num(d.sdLength) : 0;
+  const typedRun = num(d.sdFormRunM)>0, typedFace = num(d.sdFormFaceMm)>0;
+  const edges = String(d.sdFormEdges)==="2"? 2 : 1;
+  const runEach = typedRun? num(d.sdFormRunM) : stepRun;
+  const faceMm = typedFace? num(d.sdFormFaceMm) : num(d.sdDepth);
+  const runM = runEach*sdf.risers*edges;
+  return {on: !!d.stepdown && d.sdFormOn!==false, sdf, stepRun, typedRun, typedFace, edges, runEach, faceMm, runM,
+          custom: typedRun || typedFace || edges===2, areaM2: runM*Math.max(0,faceMm)/1000};
+}
+function sdFormOutText(d){
+  const g=sdFormGeom(d);
+  if(!d.stepdown) return "";
+  if(!g.on) return "No formwork is taken to the step-down edges.";
+  if(!(g.runEach>0)) return "No run yet — type the total step-down length (Reinforcement tab) or the run of the step edge here. No edge formwork is taken off until it is.";
+  if(!(g.faceMm>0)) return "No face height yet — type the step depth (Reinforcement tab) or the formed face height here.";
+  const how=`${fmt(g.runEach,2)} m${g.sdf.risers>1?` × ${g.sdf.risers} risers`:""}${g.edges===2?" × 2 edges":""}`;
+  return formworkLmFace(g.faceMm)
+    ? `= ${fmt(g.runM,2)} m of step-down edge form (${how}), ${fmt(g.faceMm,0)} mm face — under 400 mm, so by the lineal metre (≈ ${fmt(g.areaM2,2)} m²).`
+    : `= ${fmt(g.areaM2,2)} m² of step-down edge form (${how} × ${fmt(g.faceMm,0)} mm face) — 400 mm or deeper, so by the m².`;
+}
+function stepdownFormSection(d){
+  const g=sdFormGeom(d);
+  const dowelsOn = d.sdDowels!==false;
+  return `<div class="subsec" data-testid="stepdown-form"><div class="sechead">Step-down edge formwork</div>
+  <div class="grid cols2">${chk("stepdown",d.stepdown,"Slab has a step-down / level change","stepdown",true)}${d.stepdown? chk("sdFormOn",d.sdFormOn!==false,"Form the edges along the step-down run",null,true) : ""}</div>
+  ${!d.stepdown? `<p class="small">Tick it when the slab steps (a sunken wet area, a garage set-down, a split level): the edge along the step-down run is then formed and taken off here. The connecting dowels across the step are on the Reinforcement tab.</p>` : `
+  ${g.on? `<div class="grid cols3">
+   ${F("Edges formed along the run",selOpts("sdFormEdges",String(g.edges),[["1","One edge — the step face"],["2","Both edges of the run"]]))}
+   ${F(`Run of the step edge (m, blank = the step-down length${g.stepRun>0?` ${fmt(g.stepRun,2)} m`:""})`,inpNum("sdFormRunM",d.sdFormRunM))}
+   ${F(`Formed face height (mm, blank = the step depth${num(d.sdDepth)>0?` ${fmt(num(d.sdDepth),0)} mm`:""})`,inpNum("sdFormFaceMm",d.sdFormFaceMm))}
+  </div>` : ""}
+  <p class="small" data-sdform-out data-testid="stepdown-form-out" style="font-weight:600;">${sdFormOutText(d)}</p>
+  <p class="small">The step-down length, the step depth and the risers are the ones typed under "Step-down / Level Change" on the Reinforcement tab — each riser is formed. A face under 400 mm is measured by the lineal metre, a deeper one in m². Connecting dowels across the step: <b>${dowelsOn? "counted" : "not counted"}</b> (the tick is on the Reinforcement tab).</p>`}
+  </div>`;
+}
+function refreshSdFormNote(card,inst){
+  const el=card.querySelector('[data-sdform-out]'); if(el) el.textContent=sdFormOutText(inst.data);
+}
 function sdFactors(d){
   return { risers: Math.max(1,Math.round(num(d.sdRisers,1)||1)), legs: Math.max(1,Math.round(num(d.sdLegs,1)||1)) };
 }
@@ -5723,7 +5774,7 @@ function renderSlab(inst,def){
    ${d.suspended && d.category!=="Precast Panel"? chk("soffit",d.soffit,"Soffit formwork"):""}
    ${chk("cjStopEnds",d.cjStopEnds,"Construction joint stop ends")}
   </div></div>${panelEdgeFormSection(inst)}
-  ${slabBeamFormworkSection(inst,d)}`;
+  ${slabBeamFormworkSection(inst,d)}${stepdownFormSection(d)}`;
   function barBlock(prefix,label){
     const precastBlk = d.category==="Precast Panel";
     let manual = d.manualArea && !precastBlk;   // a precast panel set is ALWAYS a manual total area, yet its bars are taken by area covered (blank = the whole panel area) or as sections
@@ -5885,8 +5936,9 @@ function renderSlab(inst,def){
   // run is the slab perimeter.
   let conns=panelErectionSection(inst)+starterRunsUI(inst,d,slabPerimM(d),"slab","slab perimeter");
   let steps = `<div class="sechead">Step-down / Level Change</div>
-  ${chk("stepdown",d.stepdown,"Slab has a step-down / level change requiring connecting dowels","stepdown")}
-  <div class="subsec ${d.stepdown?'':'hidden'}" data-show-if="stepdown"><div class="grid cols4">
+  ${chk("stepdown",d.stepdown,"Slab has a step-down / level change requiring connecting dowels","stepdown",true)}
+  <div class="subsec ${d.stepdown?'':'hidden'}" data-show-if="stepdown"><div class="grid cols2">${chk("sdDowels",d.sdDowels!==false,"Connecting dowels across the step (untick when the step is formed only — no dowels are counted)",null,true)}</div>
+  <p class="small" data-testid="stepdown-form-pointer">The edge along the step-down run is formed — its formwork is on the <b>Formwork</b> tab ("Step-down edge formwork"), where it can be switched off, formed on both edges or given its own run and face height.</p><div class="grid cols4">
    ${F("Total step-down length (m)",inpNum("sdLength",d.sdLength))}${F("Step depth (mm)",inpNum("sdDepth",d.sdDepth))}${F("Dowel / step reinforcement",dowelProductSel("sdDia",d.sdDia))}${dowelProductFields(d,"sdDia","sdSpacing","Spacing (mm)","sd")}
   </div>${sdBarShapeIf(d,num(d.sdProj1)+num(d.sdProj2))}${sdSetupFields(d)}<div class="tip"><span class="ico">🏗️</span><div>Split-level slabs (a sunken wet area, a stepped car park deck) need dowels across the step or the two pours act independently under load. Size and space dowels the same way you'd detail a construction joint — this is the item estimators most often forget because it's buried in a section detail, not called up on the reinforcement schedule.</div></div></div>`;
   let concExtras = `<div class="subsec"><div class="sechead">Pour Details</div><div class="grid cols4">${chk("drops",d.drops,"Drops")}${chk("setdowns",d.setdowns,"Setdowns / recesses")}${chk("upstands",d.upstands,"Upstands")}</div></div>`;
@@ -6314,13 +6366,22 @@ function computeSlab(inst,def){
     let sdRunM = d.sdLength!==undefined? num(d.sdLength) : perim;
     let sdf=sdFactors(d);
     let count=(Math.floor(sdRunM*1000/Math.max(1,num(d.sdSpacing,300)))+1)*sdf.risers*sdf.legs;
-    if(d.sdLength!==undefined && sdRunM>0){
-      let fLm=sdRunM*sdf.risers;
-      lines.push(...formworkLines(inst,def,{material:"Step-down face formwork",spec:`${d.sdDepth}mm deep step ×${sdf.risers} riser(s)`,faces:[{name:"step faces",runM:fLm,faceMm:num(d.sdDepth)>0? num(d.sdDepth) : 1}],formula:`step length ${fmt(sdRunM,1)}m ×${sdf.risers}`}));
+    // The step's EDGE FORMWORK (22 Nov 2026) — decided on the Formwork tab; sdFormGeom is the ONE reading. Nothing new chosen = the line as it always was.
+    const sf=sdFormGeom(d);
+    if(sf.on && sf.runEach>0){
+      if(!sf.custom){
+        let fLm=sdRunM*sdf.risers;
+        lines.push(...formworkLines(inst,def,{material:"Step-down face formwork",spec:`${d.sdDepth}mm deep step ×${sdf.risers} riser(s)`,faces:[{name:"step faces",runM:fLm,faceMm:num(d.sdDepth)>0? num(d.sdDepth) : 1}],formula:`step length ${fmt(sdRunM,1)}m ×${sdf.risers}`}));
+      } else if(sf.faceMm>0){
+        lines.push(...formworkLines(inst,def,{material:"Step-down face formwork",spec:`${fmt(sf.faceMm,0)}mm deep step ×${sdf.risers} riser(s)${sf.edges===2?" — both edges of the run":""}`,faces:[{name:sf.edges===2?"step edges":"step faces",runM:sf.runM,faceMm:sf.faceMm}],formula:`step ${sf.typedRun?"edge run":"length"} ${fmt(sf.runEach,1)}m ×${sdf.risers}${sf.edges===2?" ×2 edges":""}`}));
+      }
     }
+    if(sf.on && !(sf.runEach>0)) warnings.push({text:"Step-down: the edge along the step is to be formed but no run is known — type the total step-down length (Reinforcement tab) or the run of the step edge (Formwork tab); no edge formwork is taken off until it is",section:"form",level:"completeness"});
+    else if(sf.on && !(sf.faceMm>0)) warnings.push({text:"Step-down: the edge along the step is to be formed but it has no face height — type the step depth (Reinforcement tab) or the formed face height (Formwork tab)",section:"form",level:"completeness"});
     let len=sdBarLenMm(d, num(d.sdProj1)+num(d.sdProj2))/1000;
     let totLen=count*len; let wt=totLen*massPerM(dia);
-    if(dowelProduct(d.sdDia).kind!=="bar") lines.push(dowelPieceLine(inst,def,"Connections",dowelProduct(d.sdDia),count*1,d,"sd","Step-down connecting dowels",`${count} positions${1>1?" × "+1:""}`)); else lines.push(baseLine(inst,def,{materialGroup:"Connections",material:d.sdDia,spec:"Step-down connecting dowels",qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`count(${count})×(proj1+proj2)/1000`,notes:`${count} dowels, ${fmt(wt,1)} kg`}));
+    if(d.sdDowels===false){ /* formed only — no connecting dowels counted */ }
+    else if(dowelProduct(d.sdDia).kind!=="bar") lines.push(dowelPieceLine(inst,def,"Connections",dowelProduct(d.sdDia),count*1,d,"sd","Step-down connecting dowels",`${count} positions${1>1?" × "+1:""}`)); else lines.push(baseLine(inst,def,{materialGroup:"Connections",material:d.sdDia,spec:"Step-down connecting dowels",qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`count(${count})×(proj1+proj2)/1000`,notes:`${count} dowels, ${fmt(wt,1)} kg`}));
     sdExtraBarLines(inst,def,lines,d,sdRunM,1);
   }
   return {lines,warnings};
@@ -10335,6 +10396,7 @@ function attachCardEvents(card,inst){
     refreshAddlRowTotal(card,inst,f);
     refreshRebateRows(card,inst,f);
     refreshInsVertRows(card,inst,f);
+    refreshSdFormNote(card,inst);
     if(e.target.dataset.toggle){
       card.querySelectorAll(`[data-show-if="${e.target.dataset.toggle}"]`).forEach(sec=>sec.classList.toggle('hidden',!val));
       let offSecs=card.querySelectorAll(`[data-show-if="${e.target.dataset.toggle}_off"]`);

@@ -5201,6 +5201,36 @@ element families waits on the owner's approval of the pad footing.
   three rows at once, a 450 mm rebate in m², a removed beam), a ground beam,
   a strip footing, the warnings and the real clicks (add on the Edge Beams
   tab, type, switch to the slab, duplicate, delete).
+- **A slab's step-down EDGE is formed on the Formwork tab** (Boma, 22 Nov
+  2026: "apply slab step down run edges to have formworks"). The step's face
+  was always taken off, but only as a side effect of the dowel tick on the
+  Reinforcement tab — the Formwork tab said nothing and nothing could shape
+  it. The slab's Formwork tab now ends with "Step-down edge formwork"
+  (`stepdownFormSection(d)`, `data-testid="stepdown-form"`): the SAME
+  `stepdown` tick as the Reinforcement tab (both rebuild the card, so the two
+  stay in step), "Form the edges along the step-down run" (`sdFormOn`, UNSET =
+  ON — a takeoff saved before this forms its step as it did), "Edges formed
+  along the run" (`sdFormEdges`: 1 = the step face, 2 = both edges of the run —
+  a set-down strip or recess formed on both sides), "Run of the step edge"
+  (`sdFormRunM`, blank = the total step-down length) and "Formed face height"
+  (`sdFormFaceMm`, blank = the step depth), with a live result line
+  (`stepdown-form-out`, `refreshSdFormNote`). `sdFormGeom(d)` is the ONE
+  reading (run of one edge × risers × edges; `custom` false while nothing new
+  is chosen) and `computeSlab` reads it: nothing chosen emits the line EXACTLY
+  as before (same spec — the manual-override key), a choice emits "Step-down
+  face formwork" through `formworkLines` (under 400 mm by the lineal metre,
+  deeper in m²; "— both edges of the run" in the spec). A step to be formed
+  with no run, or no face height, is a completeness warning. **The dowels are
+  their own tick** (`sdDowels`, unset = counted, on the Reinforcement tab's
+  step block, which points at the Formwork tab): unticked, the step is formed
+  only and no dowel line is emitted — so ticking the step from the Formwork
+  tab never forces dowels. The beam, wall and strip-footing step-downs are
+  unchanged (they form their step faces as before). The bridge lands the lm
+  line on FORMWORK "Edgeform" and a 400 mm+ face on "Edgeform >400mm deep".
+  `verify.mjs` runs `sdFormGeom` out of the page source and pins the wiring,
+  the old spec and the bridge; `test-stepdown-form.mjs` proves the tick on the
+  Formwork tab, both edges, a typed run and face, two risers, dowels off, the
+  warning, the untick, an older takeoff and the save (19 checks).
 - **A sheet-mesh line WEIGHS** (26 Oct 2026, Grady's pad footing PF1-3 with
   two layers of SL92 read "0kg reo"): `lineWeightKg` returns final m² ×
   `MESHTYPES[material]` (kg/m²) for an m² Reinforcement line, so the element

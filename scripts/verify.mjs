@@ -6077,6 +6077,41 @@ check("Slabmate (22 Nov 2026): Foilboard's 70 kPa under-slab EPS in five thickne
   assert.ok(!flags.some((f) => /Slabmate/.test(f)));
 });
 
+check("Slab step-down edge formwork (22 Nov 2026): the edge along the step-down run is formed, shown and shaped on the Formwork tab; nothing chosen = the line as it was", () => {
+  const est = fs.readFileSync(new URL("../portal/estimates-app.html", import.meta.url), "utf8");
+  const num = (v, d) => { const n = parseFloat(v); return Number.isFinite(n) ? n : (d === undefined ? 0 : d); };
+  const geom = new Function("num", est.match(/function sdFactors\(d\)\{[\s\S]*?\n\}/)[0] + "\n" + est.match(/function sdFormGeom\(d\)\{[\s\S]*?\n\}/)[0] + "\nreturn sdFormGeom;")(num);
+  const base = { stepdown: true, sdLength: 6, sdDepth: 150 };
+  let g = geom(base);
+  assert.ok(g.on && !g.custom && g.runEach === 6 && g.runM === 6 && g.faceMm === 150, "a step saved before the choice: formed, 6 m, 150 mm, not custom");
+  assert.equal(geom({ ...base, sdRisers: 2 }).runM, 12, "each riser is formed");
+  g = geom({ ...base, sdFormEdges: "2" });
+  assert.ok(g.custom && g.runM === 12 && g.edges === 2, "both edges of the run = twice the run");
+  g = geom({ ...base, sdFormRunM: 9.5, sdFormFaceMm: 450 });
+  assert.ok(g.custom && g.runEach === 9.5 && g.faceMm === 450 && Math.abs(g.areaM2 - 4.275) < 1e-9, "a typed run and face height win (9.5 m × 450 mm = 4.275 m²)");
+  assert.equal(geom({ ...base, sdFormOn: false }).on, false, "unticked = no edge formwork");
+  assert.equal(geom({ ...base, stepdown: false }).on, false, "no step, no formwork");
+  assert.equal(geom({ stepdown: true, sdDepth: 150 }).runEach, 0, "no step-down length and no typed run = nothing to form");
+  assert.equal(geom({ stepdown: true, sdDepth: 150, sdFormRunM: 4 }).runEach, 4, "…a typed run alone is enough");
+  // wiring: the block is on the slab's Formwork tab, the compute reads the ONE geometry, the old spec is kept
+  assert.ok(est.includes("${slabBeamFormworkSection(inst,d)}${stepdownFormSection(d)}`;"), "the block sits on the slab's Formwork tab");
+  assert.match(est, /data-testid="stepdown-form"/);
+  assert.match(est, /chk\("sdFormOn",d\.sdFormOn!==false,/, "unset = formed");
+  assert.match(est, /const sf=sdFormGeom\(d\);\s*if\(sf\.on && sf\.runEach>0\)\{\s*if\(!sf\.custom\)\{/, "the compute reads sdFormGeom; nothing chosen takes the old branch");
+  assert.ok(est.includes('spec:`${d.sdDepth}mm deep step ×${sdf.risers} riser(s)`,faces:[{name:"step faces",runM:fLm,'), "the default line's spec is spelled as before (manual-override key)");
+  assert.match(est, /if\(d\.sdDowels===false\)\{[^}]*\}\s*else if\(dowelProduct\(d\.sdDia\)\.kind!=="bar"\)/, "the dowels are their own tick (unset = counted)");
+  assert.match(est, /refreshSdFormNote\(card,inst\);/, "the result line follows the typing");
+  assert.match(est, /Step-down: the edge along the step is to be formed but no run is known/, "a step with no run is a completeness warning");
+  // the bridge: the lm line lands on Edgeform, a 400 mm+ face on the deep-edge m² row
+  const { quote } = buildImportFromEstimate({ project: {}, lines: [
+    { ...estLine({}), category: "Slab on Ground", element: "Slab 1", elementId: "EL01", materialGroup: "Formwork", material: "Step-down face formwork", spec: "150mm deep step ×1 riser(s) — both edges of the run — step edges 150 mm — under 400 mm — lineal metres", unit: "m", finalQty: 12, faceMm: 150 },
+    { ...estLine({}), category: "Slab on Ground", element: "Slab 1", elementId: "EL01", materialGroup: "Formwork", material: "Step-down face formwork", spec: "450mm deep step ×1 riser(s) — step faces 450 mm", unit: "m²", finalQty: 4.275, faceMm: 450 },
+  ] });
+  const q = quote.items[0].qtys;
+  assert.equal(q[rateKey("FORMWORK", "Edgeform", "m")], 12, "12 m of step edge on Edgeform");
+  assert.equal(q[rateKey("FORMWORK", "Edgeform >400mm deep", "m2")], 4.275, "a 450 mm step face on the deep-edge m² row");
+});
+
 check("Estimates cloud check never pulls this tab's own save back over the typing (22 Nov 2026): it stands down while a push is in flight, judges a browser copy stale only at the first reconcile, and adopts an identical cloud copy without rebuilding", () => {
   const est = fs.readFileSync(new URL("../portal/estimates-app.html", import.meta.url), "utf8");
   assert.match(est, /function ownPushInFlight\(key\)\{ const st=PUSH_STATE\[key\]; return !!\(st && \(st\.running \|\| st\.queued\)\); \}/);
