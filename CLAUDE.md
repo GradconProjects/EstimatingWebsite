@@ -3958,6 +3958,43 @@ whose boot-time reading and first stamp answer both omit a stored project)
 proves it stays listed and is asked for by its own key, a truly row-less entry
 is still pruned, the band, the put-back and a reload (18 checks).
 
+**A value painted from the remembered copy is never re-saved as an edit**
+(23 Nov 2026, an hour later — Boma: "reloading the page makes it disappear
+again"). The logs showed EVERY page load reading the projects index and
+writing it back half a second later. `useStoredState` told a remote apply
+from a local edit by a ONE-SHOT flag (`remoteApplyRef`), and on a cache-first
+key it was spent too early: on mount the load effect paints the mirror, React
+runs that updater at once (nothing else is queued) and arms the flag; the save
+effect's own MOUNT run consumed it; the re-render carrying the mirror value
+found no flag and was read as a local edit. So every load (a) re-saved the
+index and the RATES from this browser's remembered copy and (b) held "a local
+edit is pending", so the newer cloud copy landing a moment later was NOT
+applied. The index is merged, the rates are a plain overwrite: **a reload
+with an older remembered copy put it back over another device's rates** (run
+against the build before the fix, the probe's cloud rates went from "v2" back
+to "v1"). Fixes, all in `storage.js` / `arrayMerge.js`, verify-covered:
+(1) what came from storage is remembered BY IDENTITY — `applyRemote` and the
+save's merge set `remoteValueRef`, and the save effect returns when the value
+in state IS that object, whatever order the effects ran in; `seenValueRef`
+(seeded with the first render's value) makes a run that changed nothing — the
+mount, a key switch — save nothing; (2) **an entry leaves an id-keyed list
+only by a removal**: the save effect notes the ids a LOCAL edit removed
+(`removedHereRef`; an id the edit put back is forgotten, a saved removal is
+dropped from the set) and `mergeById(local, remote, base, removedHere)` reads
+"in base, gone locally" as removed-here ONLY for those ids — any other entry
+the cloud holds is put back (with no 4th argument the rule is as it was);
+(3) the base never runs AHEAD of the tab: when a merged list could not be put
+into state (an edit landed while the cloud was being read) the base becomes
+the saved ids this tab actually holds, never `noteSynced(toSave)` — an entry
+another device added would otherwise read as "removed here" on the next save
+and be dropped for everyone. **Never decide "this was a local edit" from a
+flag that an effect can consume out of order; compare the value.**
+`test-boot-save.mjs` (cloud build, mocked PostgREST) proves no index or rates
+write on a reload, another device's newer rates and added project standing
+after a reload with older remembered copies, a project deleted elsewhere not
+put back, and that real edits still save (a delete here, typing in an open
+project) — 13 checks, of which four fail on the build before the fix.
+
 A new project is a **draft** held only in `App` state until it has a name
 or an element (`onPromote`); leaving it unpromoted discards it, so an
 "Untitled project" never persists. The dashboard prunes index entries whose

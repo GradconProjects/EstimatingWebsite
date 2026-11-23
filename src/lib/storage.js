@@ -29,6 +29,8 @@ const TABLE = "estimator_kv";
  * that's deliberate (see CLAUDE.md → "Known limitations") so components
  * never need to know or care which one is in use.
  */
+const NO_REMOTE = Symbol("nothing applied from storage yet");
+
 export function useStoredState(key, initial, { cacheFirst = false } = {}) {
   const [value, setValue] = useState(initial);
   const [status, setStatus] = useState("loading");
@@ -80,6 +82,20 @@ export function useStoredState(key, initial, { cacheFirst = false } = {}) {
   // edit — a live, silent cross-device sync failure. Skipping the save entirely when
   // this flag is set removes that failure mode at the source.
   const remoteApplyRef = useRef(false);
+  // 23 Nov 2026: the flag above is a ONE-SHOT, and on a cache-first key it was spent too early. On mount the load
+  // effect paints the mirror and React runs that updater at once (nothing else is queued), arming the flag; the save
+  // effect's own MOUNT run then consumed it; the re-render carrying the mirror value found no flag and was read as a
+  // local edit. So every page load (a) re-saved the projects index and the RATES from this browser's remembered copy,
+  // and (b) held "a local edit is pending", so the newer cloud copy that landed a moment later was NOT applied. For
+  // the rates — a plain overwrite, no merge — a reload could put an older copy back over another device's change.
+  // The value that came from storage is now remembered BY IDENTITY: whatever is in state and IS that object is never
+  // a local edit, however many times and in whatever order the effects run. `seenValueRef` is the value the save
+  // effect last looked at, so a run that changed nothing (mount, a key switch) saves nothing either.
+  const remoteValueRef = useRef(NO_REMOTE);
+  const seenValueRef = useRef(value);   // the first render's value: the mount run of the save effect changed nothing
+  // ids this tab REMOVED from an id-keyed list by a local edit and has not saved yet (arrayMerge.js): only those may
+  // be read as "removed here" by the save's merge — an entry that is merely absent from this tab's copy is put back.
+  const removedHereRef = useRef(new Set());
   // For an id-keyed LIST (the projects index): the ids this tab last knew to
   // be in the cloud — what it loaded, what a poll or push delivered, what it
   // last saved. The save's three-way merge (arrayMerge.js) reads it to tell
@@ -95,6 +111,7 @@ export function useStoredState(key, initial, { cacheFirst = false } = {}) {
   // mistake for a remote apply and never save. That is exactly what happened
   // to the first project created against an empty table.
   const applyRemote = (next) => {
+    remoteValueRef.current = next;
     setValue((cur) => {
       remoteApplyRef.current = !Object.is(cur, next);
       return next;
@@ -228,6 +245,7 @@ export function useStoredState(key, initial, { cacheFirst = false } = {}) {
     if (supabaseEnabled) {
       try {
         let toSave = valueRef.current;
+        let mergedNotInState = false;
         // Array-shaped values (e.g. the projects index — a plain list of
         // {id, ...} entries) are merged by id with whatever is in the cloud
         // before this browser overwrites the row, so two accounts creating
@@ -245,15 +263,16 @@ export function useStoredState(key, initial, { cacheFirst = false } = {}) {
           const started = toSave;
           const { data: current } = await supabase.from(TABLE).select("value, updated_at").eq("key", key).maybeSingle();
           if (current && Array.isArray(current.value)) {
-            const res = mergeById(toSave, current.value, baseIdsRef.current);
+            const res = mergeById(toSave, current.value, baseIdsRef.current, removedHereRef.current);
             if (res.changed) {
               toSave = res.merged;
               // only when nothing was edited while the cloud was being read —
               // a newer local edit is saved (and merged) by its own pass
               if (valueRef.current === started) {
                 remoteApplyRef.current = true;
+                remoteValueRef.current = res.merged;
                 setValue(res.merged);
-              }
+              } else mergedNotInState = true;
             }
           }
         }
@@ -261,7 +280,15 @@ export function useStoredState(key, initial, { cacheFirst = false } = {}) {
         const { error } = await supabase.from(TABLE).upsert({ key, value: toSave, updated_at: nowIso });
         if (!error) {
           lastSyncedAtRef.current = nowIso;
-          noteSynced(toSave);
+          // The base ("what this tab knows to be in the cloud") never runs AHEAD of what the tab holds: when the merged
+          // list could not be put into state (an edit landed while the cloud was being read), an entry another device
+          // added is in the cloud and NOT here — were it in the base, this tab's next save would read it as "removed
+          // here" and drop it for everyone.
+          if (mergedNotInState && Array.isArray(toSave)) {
+            const here = idSet(valueRef.current);
+            baseIdsRef.current = new Set([...idSet(toSave)].filter((id) => here.has(id)));
+          } else noteSynced(toSave);
+          if (Array.isArray(toSave)) { const saved = idSet(toSave); removedHereRef.current = new Set([...removedHereRef.current].filter((id) => saved.has(id))); }
           if (cacheFirst) writeMirror(key, toSave, nowIso);
         }
         setStatus(error ? "error" : "saved");
@@ -286,13 +313,22 @@ export function useStoredState(key, initial, { cacheFirst = false } = {}) {
   };
 
   useEffect(() => {
+    const prev = seenValueRef.current;
+    seenValueRef.current = value;
     if (!loadedRef.current) return;
-    if (remoteApplyRef.current) {
-      // This change came from the initial load or the poll below, not a local
-      // edit — nothing to save, and saving it anyway is what breaks sync (see
-      // remoteApplyRef's comment above).
+    if (Object.is(value, remoteValueRef.current)) {
+      // What is in state IS the object that came from storage (the mirror, the load, a poll, a push, a merge) — not a
+      // local edit: nothing to save, and saving it anyway is what breaks sync (see remoteValueRef's comment above).
       remoteApplyRef.current = false;
       return;
+    }
+    if (Object.is(value, prev)) return;            // nothing changed since this effect last looked (mount, a key switch)
+    remoteApplyRef.current = false;
+    // an id-keyed list: note what THIS edit removed, and forget a removal the edit put back
+    if (Array.isArray(value) && Array.isArray(prev)) {
+      const now = idSet(value);
+      idSet(prev).forEach((id) => { if (!now.has(id)) removedHereRef.current.add(id); });
+      now.forEach((id) => removedHereRef.current.delete(id));
     }
     setStatus("saving");
     if (saveTimer.current) clearTimeout(saveTimer.current);

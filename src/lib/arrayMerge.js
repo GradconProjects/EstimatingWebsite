@@ -35,10 +35,18 @@ export function idSet(list) {
 /** Removals read off the cloud are honoured only up to this many, or half the list. */
 export const REMOTE_REMOVALS_MAX = 5;
 
-export function mergeById(local, remote, base) {
+/**
+ * `removedHere` (23 Nov 2026, optional): the ids this tab removed by a LOCAL edit it has not saved yet. When it is
+ * given, "in base, gone locally" is honoured as a removal ONLY for those ids; any other entry that is in the cloud
+ * and merely absent from this tab's copy is put back. A whole project dropped off the shared list that day while its
+ * data row was intact: an entry must leave the list because someone removed it, never because one tab's copy and
+ * its idea of the cloud fell out of step.
+ */
+export function mergeById(local, remote, base, removedHere) {
   const L = Array.isArray(local) ? local : [];
   const R = Array.isArray(remote) ? remote : [];
   const known = base instanceof Set ? base : null;
+  const removed = removedHere instanceof Set ? removedHere : null;
   const localIds = idSet(L), remoteIds = idSet(R);
   let goneRemotely = known ? L.map(idOf).filter((id) => id != null && known.has(id) && !remoteIds.has(id)) : [];
   if (goneRemotely.length > Math.max(REMOTE_REMOVALS_MAX, Math.floor(L.length / 2))) goneRemotely = []; // a clobbered cloud copy, not a clean-up
@@ -48,7 +56,7 @@ export function mergeById(local, remote, base) {
   R.forEach((item) => {
     const id = idOf(item);
     if (id == null || localIds.has(id)) return;   // this tab's copy of a shared entry stands
-    if (known && known.has(id)) return;           // seen before and no longer here: removed here
+    if (known && known.has(id) && (!removed || removed.has(id))) return; // seen before and no longer here: removed here
     merged.push(item); added.push(id);
   });
   return { merged, added, dropped: goneRemotely, changed: added.length > 0 || goneRemotely.length > 0 };

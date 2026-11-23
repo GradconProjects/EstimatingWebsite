@@ -5737,11 +5737,25 @@ await checkAsync("the projects index merges THREE ways: a removal sticks, an add
   assert.ok(AM.stampNotNewer("2026-11-12T20:55:51.169+00:00", "2026-11-12T20:55:51.170Z"));
   assert.ok(!AM.stampNotNewer("2026-11-12T20:55:51.17+00:00", null), "nothing held: the cloud copy is newer");
   const st = fs.readFileSync(new URL("../src/lib/storage.js", import.meta.url), "utf8");
-  assert.match(st, /const res = mergeById\(toSave, current\.value, baseIdsRef\.current\);/, "the save merges three ways");
+  assert.match(st, /const res = mergeById\(toSave, current\.value, baseIdsRef\.current, removedHereRef\.current\);/, "the save merges three ways, honouring only the removals this tab made");
   assert.ok(!/updated_at !== lastSyncedAtRef\.current/.test(st) && !/updated_at <= lastSyncedAtRef\.current/.test(st), "no stamp is compared as text any more");
   assert.equal((st.match(/stampNotNewer\(/g) || []).length, 4, "load, poll (twice) and push compare instants");
   assert.equal((st.match(/noteSynced\(/g) || []).length, 5, "the base is noted on the mirror paint, the load, the save, the poll and the push");
-  assert.match(st, /if \(valueRef\.current === started\) \{\s+remoteApplyRef\.current = true;\s+setValue\(res\.merged\);/, "a merged list never overwrites an edit made while the cloud was being read");
+  assert.match(st, /if \(valueRef\.current === started\) \{\s+remoteApplyRef\.current = true;\s+remoteValueRef\.current = res\.merged;\s+setValue\(res\.merged\);\s+\} else mergedNotInState = true;/, "a merged list never overwrites an edit made while the cloud was being read");
+  // 23 Nov 2026: a value painted from storage is never re-saved as an edit, and an entry leaves the list only by a removal
+  assert.match(st, /const applyRemote = \(next\) => \{\s+remoteValueRef\.current = next;/, "what came from storage is remembered by identity");
+  const saveEffect = st.slice(st.indexOf("const prev = seenValueRef.current;"), st.indexOf("// Explicit \"Save\" button support"));
+  assert.ok(saveEffect.length > 300);
+  assert.ok(saveEffect.indexOf("if (Object.is(value, remoteValueRef.current)) {") > 0 && saveEffect.indexOf("if (Object.is(value, remoteValueRef.current)) {") < saveEffect.indexOf("saveTimer.current = setTimeout(doSave, 500);"), "the value that came from storage schedules no save, whatever order the effects ran in");
+  assert.match(saveEffect, /if \(Object\.is\(value, prev\)\) return;/, "a run that changed nothing (mount, a key switch) saves nothing");
+  assert.doesNotMatch(saveEffect, /if \(remoteApplyRef\.current\) \{/, "the one-shot flag no longer decides a save");
+  assert.match(st, /const seenValueRef = useRef\(value\);/);
+  assert.match(st, /if \(mergedNotInState && Array\.isArray\(toSave\)\) \{\s+const here = idSet\(valueRef\.current\);\s+baseIdsRef\.current = new Set\(\[\.\.\.idSet\(toSave\)\]\.filter\(\(id\) => here\.has\(id\)\)\);\s+\} else noteSynced\(toSave\);/, "the base never runs ahead of what the tab holds");
+  const ent = (id) => ({ id });
+  assert.deepEqual(AM.mergeById([ent("a")], [ent("a"), ent("b")], new Set(["a", "b"]), new Set()).merged.map((x) => x.id), ["a", "b"], "in the cloud, known, absent here and NOT removed here: put back");
+  assert.deepEqual(AM.mergeById([ent("a")], [ent("a"), ent("b")], new Set(["a", "b"]), new Set(["b"])).merged.map((x) => x.id), ["a"], "removed here: stays removed");
+  assert.deepEqual(AM.mergeById([ent("a")], [ent("a"), ent("b")], new Set(["a", "b"])).merged.map((x) => x.id), ["a"], "with no removal record the rule is as it was");
+  assert.deepEqual(AM.mergeById([ent("a"), ent("b")], [ent("a")], new Set(["a", "b"]), new Set()).merged.map((x) => x.id), ["a"], "removed elsewhere is still dropped here");
   const dash = fs.readFileSync(new URL("../src/components/Dashboard.jsx", import.meta.url), "utf8");
   assert.match(dash, /projects\.filter\(\(p\) => !orphanKeys\.has\(p\.storageKey\)\)\.map\(/, "an entry with no data row is never listed");
   assert.match(dash, /if \(t\.n >= 10 \|\| now - t\.at < 20000\) return false;/, "the prune is asked at most once in 20 s, ten times in all");
