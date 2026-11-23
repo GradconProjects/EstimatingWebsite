@@ -6166,6 +6166,53 @@ check("Estimates cloud check never pulls this tab's own save back over the typin
   assert.match(sync.slice(iSame, iSame + 700), /localStorage\.setItem\(keyAtStart\+"__syncedAt", row\.updated_at\);[\s\S]*?LAST_CLOUD_HASH\[keyAtStart\] = snapshotHash\(migratedRow\);\s*markReconciled\(keyAtStart\);\s*return;/, "…its stamp is taken and nothing is rebuilt");
 });
 
+const LIST_GUARD_23 = await import("../src/lib/listGuard.js");
+check("A project never drops off the list while its row is stored (23 Nov 2026 — 3206 Point Nepean Road NOV23 vanished while two people had it open): boot-time stamps answer only while seconds old and complete, a prune needs a fresh per-key confirmation, a stored row with no entry is offered back", () => {
+  const G = LIST_GUARD_23;
+  const k = (id) => `gradcon-quote-${id}`;
+  const t0 = Date.UTC(2026, 10, 23, 23, 3, 27);
+  const pre = { [k("a")]: "x", [k("b")]: "y" };
+  // 1. the boot-time stamps
+  assert.equal(G.prefetchUsable(pre, t0, [k("a"), k("b")], t0 + 2000), true, "seconds old and complete: used");
+  assert.equal(G.prefetchUsable(pre, t0, [k("a"), k("b")], t0 + 10 * 60 * 1000), false, "ten minutes old: never used");
+  assert.equal(G.prefetchUsable(pre, t0, [k("a"), k("c")], t0 + 2000), false, "a key it does not list is looked up fresh, never called missing");
+  assert.equal(G.prefetchUsable(null, t0, [k("a")], t0 + 1), false);
+  assert.equal(G.prefetchUsable(pre, t0, ["other-key"], t0 + 1), false);
+  assert.equal(G.prefetchUsable(pre, t0, [], t0 + 1), true);
+  // 2. the prune's confirmation
+  assert.deepEqual(G.confirmedAbsent([k("a"), k("gone")], { [k("a")]: "x" }), [k("gone")], "only the key the fresh query did not return");
+  assert.deepEqual(G.confirmedAbsent([k("a"), k("gone")], null), [], "a failed query confirms nothing");
+  assert.deepEqual(G.confirmedAbsent([k("gone")], {}), [k("gone")], "an answered, empty result is a confirmation");
+  // 3. stored rows with no entry
+  const now = Date.UTC(2026, 10, 23, 23, 20, 0);
+  const stamps = { [k("9tcfmth0mwttljb4")]: "2026-11-23T23:07:45.412+00:00", [k("listed")]: "2026-11-01T00:00:00Z", [k("fresh")]: new Date(now - 30000).toISOString(), "gradcon-rates": "2026-11-01T00:00:00Z", "gradcon-quote-": "2026-11-01T00:00:00Z" };
+  assert.deepEqual(G.unlistedRowKeys(stamps, [k("listed")], now), [k("9tcfmth0mwttljb4")], "the dropped project is found; a row seconds old (a create in flight) and other keys are not");
+  assert.deepEqual(G.unlistedRowKeys(stamps, new Set([k("listed"), k("9tcfmth0mwttljb4")]), now), []);
+  assert.deepEqual(G.unlistedRowKeys(null, [], now), []);
+  const e = G.restoredEntry(k("9tcfmth0mwttljb4"), "2026-11-23T23:07:45.412+00:00");
+  assert.equal(e.id, "9tcfmth0mwttljb4"); assert.equal(e.storageKey, k("9tcfmth0mwttljb4"));
+  assert.equal(e.createdAt.slice(0, 16), "2026-11-23T22:11", "the creation time is read back out of the id (the copy was made at 22:11:17 UTC)");
+  assert.equal(G.restoredEntry("gradcon-rates"), null);
+  assert.equal(G.createdAtFromId("short", "2026-01-01T00:00:00.000Z"), "2026-01-01T00:00:00.000Z", "an id with no readable time takes the fallback");
+  // the wiring
+  const pj = fs.readFileSync(new URL("../src/lib/projects.js", import.meta.url), "utf8");
+  assert.match(pj, /if \(prefetchUsable\(pre, stampsPrefetchAt, storageKeys\)\) stamps = pre;/, "the first read takes the boot-time stamps only through the guard");
+  assert.doesNotMatch(pj, /if \(pre && storageKeys\.every/, "…never on the key spelling alone");
+  assert.match(pj, /export async function confirmRowsAbsent\(storageKeys\) \{[\s\S]{0,400}?const stamps = await readQuoteStamps\(keys\);\s*return stamps \? confirmedAbsent\(keys, stamps\) : null;/, "the confirmation is a fresh stamp query for exactly those keys");
+  assert.match(pj, /export async function readUnlistedProjects\(listedKeys\)/);
+  const dash = fs.readFileSync(new URL("../src/components/Dashboard.jsx", import.meta.url), "utf8");
+  const eff = dash.slice(dash.indexOf("const suspects = projects.filter("), dash.indexOf("// Stored projects that are not on the list"));
+  assert.ok(eff.length > 500);
+  assert.match(eff, /confirmRowsAbsent\(suspects\.map\(\(p\) => p\.storageKey\)\)\.then\(\(absent\) => \{[\s\S]{0,200}?applyOrphans\(suspects\.filter\(\(p\) => gone\.has\(p\.storageKey\)\)\);/, "only entries the fresh check confirmed absent are hidden and pruned");
+  assert.equal((dash.match(/onPrune\(due\)/g) || []).length, 1, "ONE prune call");
+  assert.ok(dash.indexOf("onPrune(due)") < dash.indexOf("confirmRowsAbsent(suspects"), "…inside applyOrphans, which the suspects reach only through the confirmation");
+  assert.doesNotMatch(eff, /applyOrphans\(suspects\)/, "the suspects are never pruned as they stand");
+  assert.match(dash, /data-testid="unlisted-projects"/); assert.match(dash, /data-testid="unlisted-restore"/);
+  const app = fs.readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
+  assert.match(app, /const restoreProject = \(entry\) => \{[\s\S]{0,200}?setProjects\(\(ps\) => \(ps\.some\(\(p\) => p\.id === entry\.id\) \? ps : \[\.\.\.ps, entry\]\)\);/, "putting a project back only ever ADDS its entry");
+  assert.match(app, /onRestore=\{restoreProject\}/);
+});
+
 if (process.exitCode) {
   console.error("\nSome checks FAILED — see above.");
 } else {

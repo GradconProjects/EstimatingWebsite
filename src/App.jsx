@@ -522,6 +522,11 @@ export default function App() {
   };
   // Dashboard found index entries with no data row (see its comment).
   const pruneProjects = (ids) => setProjects((ps) => ps.filter((p) => !ids.includes(p.id)));
+  // "Put back on the list" (Dashboard, lib/listGuard.js): a stored project whose list entry was dropped.
+  const restoreProject = (entry) => {
+    if (!entry || !entry.id || !entry.storageKey) return;
+    setProjects((ps) => (ps.some((p) => p.id === entry.id) ? ps : [...ps, entry]));
+  };
 
   // "Open .json": a file written by Save-to-computer or a Versions download
   // becomes a project. Its row is written BEFORE it joins the index, so the
@@ -628,7 +633,7 @@ export default function App() {
           </div>
         </div>
         {view === "dashboard" && (
-          <Dashboard projects={projects} rates={rates} rateChanges={rateChanges} onOpen={setActiveId} onCreate={createProject} onDelete={deleteProject} onDuplicate={duplicateProject} onImportFile={importQuoteFile} onPrune={pruneProjects} />
+          <Dashboard projects={projects} rates={rates} rateChanges={rateChanges} onOpen={setActiveId} onCreate={createProject} onDelete={deleteProject} onDuplicate={duplicateProject} onImportFile={importQuoteFile} onPrune={pruneProjects} onRestore={restoreProject} />
         )}
         {view === "planner" && <PlannerView projects={projects} onOpen={setActiveId} />}
         {view === "folder" && (

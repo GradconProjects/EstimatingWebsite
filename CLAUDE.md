@@ -3879,6 +3879,48 @@ as Postgres does) proves the entry is never listed, one index save not a
 loop, a delete that stays deleted after the tab's own save, a project added
 on another device kept through a local delete, and an older tab's re-add.
 
+**A project never drops off the list while its row is stored** (23 Nov 2026,
+Boma: "the entire project went missing … grady was working on it and it got
+missing … make sure this doesnt happen anymore where things will just go
+missing randomly"). "3206 Point Nepean Road — NOV23" left the shared
+`gradcon-projects` index at 23:13:31 UTC while both accounts had it open; its
+row was intact (8 elements, every figure). The database logs showed the list
+rewritten by one browser the instant its Dashboard mounted and read summaries
+on stamps it ALREADY HELD (no stamp query went out first), two minutes after
+the entry's one-hour grace ended; the other browser's editor was thrown to
+the Dashboard by that save. The only path that removes an entry and leaves
+the row is the Dashboard's prune of "entries with no data row", and it trusted
+one reading — which could be the boot-time stamp prefetch, consumed whenever a
+Dashboard is first shown, possibly hours after it was taken. The entry was put
+back by a conditional write of the index (the row confirmed first, a private
+copy of the list kept). `src/lib/listGuard.js` (pure, verify-covered), three
+rules: (1) `prefetchUsable(pre, takenAt, keys)` — the boot-time stamps answer
+the first summary read only while they are `PREFETCH_MAX_AGE_MS` = 15 s old
+AND list every key asked for; otherwise `readQuoteStamps` asks fresh, so a key
+is never called missing off an old reading; (2) the Dashboard's `suspects`
+(missing + past the hour's grace) are asked for AGAIN, fresh and by their own
+keys — `confirmRowsAbsent(keys)` in `projects.js` → `confirmedAbsent` — and
+only the entries that query answers for and does not return reach
+`applyOrphans` (hidden, pruned); a query that fails confirms nothing; (3) a
+stored project with no list entry is OFFERED back: `readUnlistedProjects(
+listedKeys)` (every `gradcon-quote-*` stamp, `unlistedRowKeys` — rows older
+than `UNLISTED_GRACE_MS` = 2 min that no entry points at, a blank unnamed
+draft left out — with their summaries) feeds the Dashboard band
+`unlisted-projects` ("A stored project is not on this list. Nothing in it was
+lost …": name, client, status, elements, last saved, **Put back on the list**
+`unlisted-restore` → App's `restoreProject(entry)`, which only ever ADDS;
+`restoredEntry` reads the creation time back out of the id — eight random
+characters then `Date.now()` in base 36 — so rate prompts and "date added"
+stay right; "Delete it instead" is two clicks). A deleted project has no row,
+so a row with no entry is always a dropped entry. **Never remove a project
+from the shared list on a reading that was not made fresh for that key, and
+never restore or delete an unlisted row on its own.** A tab on an older build
+still carries the old prune until it reloads. `verify.mjs` pins the three
+rules and the wiring; `test-list-guard.mjs` (cloud build, mocked PostgREST
+whose boot-time reading and first stamp answer both omit a stored project)
+proves it stays listed and is asked for by its own key, a truly row-less entry
+is still pruned, the band, the put-back and a reload (18 checks).
+
 A new project is a **draft** held only in `App` state until it has a name
 or an element (`onPromote`); leaving it unpromoted discards it, so an
 "Untitled project" never persists. The dashboard prunes index entries whose

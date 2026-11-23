@@ -4,7 +4,7 @@ import { QUOTE_STATUSES, QUOTE_STATUS_STYLES, normalizeStatus } from "../data/ca
 import { computeGrandTotal, computeMarginLadder, computeMarginRegister, money, getDefaultMargin, getMarginSteps, scopeLabel } from "../lib/costing.js";
 import { packageList } from "../lib/packages.js";
 import { checklistProgress } from "../lib/tenderChecklist.js";
-import { readQuoteSummariesDetailed, readQuotesCached, patchQuoteFields } from "../lib/projects.js";
+import { readQuoteSummariesDetailed, readQuotesCached, patchQuoteFields, confirmRowsAbsent, readUnlistedProjects, deleteQuote } from "../lib/projects.js";
 import { SummaryLoadNotice } from "./atoms.jsx";
 import { dashboardDueLabel, formatDay, OPEN_STATUSES } from "../lib/planner.js";
 import { effectiveRates, statusChangePatch, completedDay } from "../lib/rateFreeze.js";
@@ -96,7 +96,7 @@ function StatTile({ label, value, highlight }) {
   );
 }
 
-export default function Dashboard({ projects, rates, rateChanges, onOpen, onCreate, onDelete, onDuplicate, onImportFile, onPrune }) {
+export default function Dashboard({ projects, rates, rateChanges, onOpen, onCreate, onDelete, onDuplicate, onImportFile, onPrune, onRestore }) {
   // First paint comes from the last-known summary mirror (instant), then the
   // effect below replaces it with what the database actually holds. An
   // install without a mirror yet starts empty exactly as before.
@@ -165,26 +165,67 @@ export default function Dashboard({ projects, rates, rateChanges, onOpen, onCrea
       // is never pruned. A brand-new entry is left alone for an hour so a
       // slow first save cannot be mistaken for an orphan.
       const cutoff = Date.now() - 60 * 60 * 1000;
-      const orphanEntries = projects.filter((p) => missing.includes(p.storageKey) && Date.parse(p.createdAt || 0) < cutoff);
-      setOrphanKeys((prev) => {
-        const next = new Set(orphanEntries.map((p) => p.storageKey));
-        return next.size === prev.size && [...next].every((k) => prev.has(k)) ? prev : next;
+      const suspects = projects.filter((p) => missing.includes(p.storageKey) && Date.parse(p.createdAt || 0) < cutoff);
+      const applyOrphans = (orphanEntries) => {
+        setOrphanKeys((prev) => {
+          const next = new Set(orphanEntries.map((p) => p.storageKey));
+          return next.size === prev.size && [...next].every((k) => prev.has(k)) ? prev : next;
+        });
+        if (onPrune && orphanEntries.length > 0) {
+          const now = Date.now();
+          const due = orphanEntries.filter((p) => {
+            const t = pruneTried.current[p.id] || { n: 0, at: 0 };
+            if (t.n >= 10 || now - t.at < 20000) return false;
+            pruneTried.current[p.id] = { n: t.n + 1, at: now };
+            return true;
+          }).map((p) => p.id);
+          if (due.length) onPrune(due);
+        }
+      };
+      if (suspects.length === 0) { applyOrphans([]); return; }
+      // 23 Nov 2026 (a whole project dropped off the list while two people had
+      // it open — its row was intact): the reading above is never enough to
+      // remove a project from the SHARED list. Each suspect is asked for again,
+      // fresh and by its own key, right now; only an entry that query answers
+      // for and does not return is hidden and pruned. A query that fails
+      // confirms nothing (lib/listGuard.js).
+      confirmRowsAbsent(suspects.map((p) => p.storageKey)).then((absent) => {
+        if (cancelled) return;
+        const gone = new Set(Array.isArray(absent) ? absent : []);
+        applyOrphans(suspects.filter((p) => gone.has(p.storageKey)));
       });
-      if (onPrune && orphanEntries.length > 0) {
-        const now = Date.now();
-        const due = orphanEntries.filter((p) => {
-          const t = pruneTried.current[p.id] || { n: 0, at: 0 };
-          if (t.n >= 10 || now - t.at < 20000) return false;
-          pruneTried.current[p.id] = { n: t.n + 1, at: now };
-          return true;
-        }).map((p) => p.id);
-        if (due.length) onPrune(due);
-      }
     });
     return () => {
       cancelled = true;
     };
   }, [projects, reloadTick]);
+
+  // Stored projects that are not on the list (lib/listGuard.js): a deleted
+  // project has no row, so a row with no entry is an entry that was dropped.
+  // They are offered back here — never restored or removed on their own.
+  const [unlisted, setUnlisted] = useState([]);
+  const [unlistedBusy, setUnlistedBusy] = useState(null);
+  const [unlistedConfirm, setUnlistedConfirm] = useState(null);
+  const listedKeySig = projects.map((p) => p.storageKey).join("|");
+  useEffect(() => {
+    let cancelled = false;
+    readUnlistedProjects(projects.map((p) => p.storageKey)).then((found) => {
+      if (!cancelled && Array.isArray(found)) setUnlisted(found);
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listedKeySig, reloadTick]);
+  const putBack = (u) => {
+    if (!onRestore || !u || !u.entry) return;
+    onRestore(u.entry);
+    setUnlisted((list) => list.filter((x) => x.storageKey !== u.storageKey));
+  };
+  const removeForGood = async (u) => {
+    setUnlistedBusy(u.storageKey);
+    await deleteQuote(u.storageKey);
+    setUnlisted((list) => list.filter((x) => x.storageKey !== u.storageKey));
+    setUnlistedBusy(null); setUnlistedConfirm(null);
+  };
 
   const summaries = useMemo(
     () => projects.filter((p) => !orphanKeys.has(p.storageKey)).map((p) => ({ project: p, ...summarizeQuote(quotesByKey[p.storageKey], rates, rateChanges, p.createdAt) })),
@@ -360,6 +401,28 @@ export default function Dashboard({ projects, rates, rateChanges, onOpen, onCrea
       </div>
       {renaming && <RenameProjectsModal rows={renameRows} onRename={renameProject} onClose={() => setRenaming(false)} />}
       <SummaryLoadNotice failedCount={failedCount} onRetry={() => setReloadTick((t) => t + 1)} />
+      {unlisted.length > 0 && (
+        <div className="mb-3 border border-amber-400 bg-amber-50 rounded-lg px-3 py-2 text-[12.5px] text-neutral-900" role="status" data-testid="unlisted-projects">
+          <div className="font-semibold">{unlisted.length === 1 ? "A stored project is not on this list." : `${unlisted.length} stored projects are not on this list.`} <span className="font-normal text-neutral-700">Nothing in {unlisted.length === 1 ? "it" : "them"} was lost — only the list entry is missing. Put {unlisted.length === 1 ? "it" : "each"} back with one click.</span></div>
+          <ul className="mt-1.5 space-y-1">
+            {unlisted.map((u) => (
+              <li key={u.storageKey} className="flex flex-wrap items-center gap-2" data-testid="unlisted-project" data-key={u.storageKey}>
+                <span className="font-medium">{u.name || "Untitled project"}</span>
+                <span className="text-neutral-600 text-[11.5px]">{[u.client, u.status, u.elements != null ? `${u.elements} element${u.elements === 1 ? "" : "s"}` : null, u.updatedAt ? `last saved ${formatDay(String(u.updatedAt).slice(0, 10))}` : null].filter(Boolean).join(" · ")}</span>
+                <button type="button" onClick={() => putBack(u)} className="px-2.5 py-1 rounded-md bg-orange-600 hover:bg-orange-700 text-white text-[12px] font-semibold" data-testid="unlisted-restore">Put back on the list</button>
+                {unlistedConfirm === u.storageKey ? (
+                  <>
+                    <button type="button" disabled={unlistedBusy === u.storageKey} onClick={() => removeForGood(u)} className="px-2 py-1 rounded-md bg-red-600 hover:bg-red-700 text-white text-[11.5px] font-semibold disabled:opacity-50" data-testid="unlisted-delete-confirm">Yes, delete it for good</button>
+                    <button type="button" onClick={() => setUnlistedConfirm(null)} className="px-2 py-1 rounded-md border border-neutral-300 text-[11.5px]">Keep</button>
+                  </>
+                ) : (
+                  <button type="button" onClick={() => setUnlistedConfirm(u.storageKey)} className="px-2 py-1 rounded-md border border-neutral-300 text-neutral-600 text-[11.5px] hover:bg-white" data-testid="unlisted-delete">Delete it instead</button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       {duplicated && (
         <div className={`mb-3 border rounded-lg px-3 py-2 text-[12.5px] flex flex-wrap items-center gap-2 ${duplicated.ok ? "border-emerald-300 bg-emerald-50 text-emerald-950" : "border-red-300 bg-red-50 text-red-900"}`} role="status" data-testid="project-duplicated" data-ok={duplicated.ok ? "1" : "0"}>
           {duplicated.ok ? (

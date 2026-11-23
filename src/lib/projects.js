@@ -11,6 +11,7 @@ import { supabase, supabaseEnabled } from "./supabaseClient.js";
 import { FULL_CATALOG, normalizeStatus } from "../data/catalog.js";
 import { readMirror, writeMirror, clearMirror } from "./localMirror.js";
 import { collectSummaries } from "./summaryBatches.js";
+import { prefetchUsable, confirmedAbsent, unlistedRowKeys, restoredEntry } from "./listGuard.js";
 
 const TABLE = "estimator_kv";
 
@@ -201,13 +202,65 @@ export async function readQuoteSummariesDetailed(storageKeys, { onPartial } = {}
       const pending = stampsPrefetch;
       stampsPrefetch = null;
       const pre = await pending;
-      if (pre && storageKeys.every((k) => k.startsWith(`${LEGACY_QUOTE_KEY}-`))) stamps = pre;
+      // 23 Nov 2026: only while it is seconds old and lists EVERY key asked for —
+      // a key the boot-time stamps do not list is looked up fresh below, never
+      // called missing off a reading that may be hours old (lib/listGuard.js).
+      if (prefetchUsable(pre, stampsPrefetchAt, storageKeys)) stamps = pre;
     }
     if (!stamps) stamps = await readQuoteStamps(storageKeys);
     if (!stamps) return summariesUnavailable(storageKeys, "stamps");
     return await summariesFromStamps(storageKeys, stamps, onPartial);
   } catch {
     return summariesUnavailable(storageKeys, "network");
+  }
+}
+/**
+ * Of `storageKeys`, those a FRESH, direct stamp query confirms have no row —
+ * the ONLY reading the Dashboard may prune a list entry on (lib/listGuard.js).
+ * `null` when the query could not be made: nothing is confirmed, nothing is pruned.
+ */
+export async function confirmRowsAbsent(storageKeys) {
+  const keys = (Array.isArray(storageKeys) ? storageKeys : []).filter(Boolean);
+  if (keys.length === 0) return [];
+  if (!supabaseEnabled) return null;
+  try {
+    const stamps = await readQuoteStamps(keys);
+    return stamps ? confirmedAbsent(keys, stamps) : null;
+  } catch {
+    return null;
+  }
+}
+/**
+ * Stored projects that are NOT on the list (their row exists, no index entry
+ * points at it) → `[{ storageKey, entry, name, client, status, elements, updatedAt }]`,
+ * or `null` when the database could not be asked. Read-only. A deleted project
+ * has no row, so a row with no entry is a list entry that was dropped — the
+ * Dashboard offers it back.
+ */
+export async function readUnlistedProjects(listedKeys) {
+  if (!supabaseEnabled) return [];
+  try {
+    const { data, error } = await supabase.from(TABLE).select("key, updated_at").like("key", `${LEGACY_QUOTE_KEY}-%`);
+    if (error || !data) return null;
+    const stamps = {};
+    data.forEach((row) => { stamps[row.key] = row.updated_at; });
+    const keys = unlistedRowKeys(stamps, listedKeys);
+    if (keys.length === 0) return [];
+    const { map } = await fetchSummaries(keys, null, null);
+    return keys.map((k) => {
+      const q = map[k] || null;
+      return {
+        storageKey: k,
+        entry: restoredEntry(k, stamps[k]),
+        name: (q && q.projectName) || "",
+        client: (q && q.clientName) || "",
+        status: (q && q.status) || "",
+        elements: q && Array.isArray(q.items) ? q.items.length : null,
+        updatedAt: stamps[k] || null,
+      };
+    }).filter((u) => u.entry && (u.name || u.elements)); // a blank, unnamed row is a draft someone is still typing
+  } catch {
+    return null;
   }
 }
 /** `{ storageKey: quote-without-drawing-data }` — the map of
@@ -288,7 +341,9 @@ export function readQuotesCached(storageKeys) {
 // row data: which rows are needed is decided by the first read, against the
 // mirror, and fetched drawing-free (see fetchSummaries). Consumed once.
 let stampsPrefetch = null;
+let stampsPrefetchAt = 0;
 if (supabaseEnabled) {
+  stampsPrefetchAt = Date.now();
   stampsPrefetch = (async () => {
     try {
       const { data, error } = await supabase.from(TABLE).select("key, updated_at").like("key", `${LEGACY_QUOTE_KEY}-%`);
