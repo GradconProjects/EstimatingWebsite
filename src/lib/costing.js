@@ -861,7 +861,7 @@ export function blindingPartsFor(item) {
   const section = type ? type.section : item.section || "";
   const labour = type ? type.labour : item.labour || "";
   const keys = (...k) => k.map((x) => BP[x]);
-  if (["PRELIMINARIES", "EARTHWORKS", "VERTICAL STRUCTURE", "PRECAST / TILT-UP", "SUSPENDED STRUCTURE", "ROOF", "SCREEDS", "TOPPINGS", "HYDRONIC HEATING", "SPECIALIST FINISHING CONCRETE"].includes(category)) return [];
+  if (["PRELIMINARIES", "EARTHWORKS", "VERTICAL STRUCTURE", "PRECAST / TILT-UP", "SUSPENDED STRUCTURE", "ROOF", "SCREEDS", "TOPPINGS", "HYDRONIC HEATING", "SPECIALIST FINISHING CONCRETE", "CUSTOM ITEMS"].includes(category)) return [];
   if (section === "PILING & PIERS") return [];
   if (labour === "slab_ground" || /slab|raft|driveway|paths|paving|hardstand|ramp/.test(id)) return id === "pool_slab" ? keys("slab", "edge") : keys("slab", "edge", "internal");
   if (/pile_cap|pad|stump|anchor_block|base_plate/.test(id)) return keys("pad");
@@ -1336,7 +1336,11 @@ export function sellAtMargin(loaded, margin) {
   const m = Number(margin) || 0;
   return m < 1 ? loaded / (1 - m) : loaded;
 }
-/** The element's SUB CONTRACTORS quote rows that carry money under the scope: `[{key, name, cost}]`. */
+/** The key a custom row added under the SUB CONTRACTORS band is pinned and priced by (`item.rowMargins[customSubKey(row.id)]`). */
+export const customSubKey = (rowId) => `add:${rowId}`;
+/** The element's subcontract quote lines that carry money under the scope: `[{key, name, cost, custom?, rowId?}]` — the SUB
+ * CONTRACTORS quote rows and (Boma, 23 Nov 2026: "post tension works wasnt seperated right here") every custom row added
+ * UNDER that band ("Post Tensioning Quote from Contractor"), each its own line with its own margin. */
 export function subcontractQuoteLines(item, rates, projectScope) {
   const cat = FULL_CATALOG.find((c) => c.key === SUBCONTRACT_CATEGORY_KEY);
   if (!cat || !item || !categoryAppliesTo(cat, item)) return [];
@@ -1351,7 +1355,50 @@ export function subcontractQuoteLines(item, rates, projectScope) {
     const cost = computeRowTotal(cat, rowRate(item, rates, key, catalogRate(p)), qty, ctx);
     if (cost > 0) out.push({ key, name: productLabel(p), cost });
   });
+  additionalRowsFor(item, cat.key).forEach((a) => {
+    const cost = additionalRowTotal(a);
+    if (cost > 0) out.push({ key: customSubKey(a.id), name: String(a.name || "").trim() || "Custom subcontract item", cost, custom: true, rowId: a.id });
+  });
   return out;
+}
+/**
+ * A CUSTOM LINE (Boma, 23 Nov 2026: "we should be able to add custom margin input there with editable costs"): a lump
+ * sum typed in the Margin Register — a real element of type `custom_item` flagged `customLine`, whose cost is ONE
+ * RATE ITEMS row marked `lump` (qty 1 × the figure). Being an element it is in the grand total, the tender, the
+ * exports and the packages, and its margin is the element's own pin. The register edits its name and cost in place.
+ */
+export const CUSTOM_ITEM_TYPE_ID = "custom_item";
+export const CUSTOM_LINE_CAT = "RATE ITEMS";
+export function isCustomLine(item) { return !!(item && item.customLine); }
+const lumpRowOf = (item) => ((item && item.additional) || []).find((a) => a && a.lump) || null;
+/** The lump sum a custom line carries (0 when none is typed). */
+export function customLineCost(item) { const r = lumpRowOf(item); return r ? additionalRowTotal(r) : 0; }
+export function newCustomLine(type, { name = "", cost } = {}) {
+  const label = String(name || "").trim() || "Custom item";
+  const n = Number(cost);
+  return { ...newElementItem(type), label, customLine: true, collapsed: true, additional: [{ id: uid(), cat: CUSTOM_LINE_CAT, lump: true, name: label, unit: "item", qty: 1, rate: Number.isFinite(n) && n > 0 ? n : undefined }] };
+}
+/** Rename a custom line and / or set its lump sum (blank clears the figure — the line stays, at $0). */
+export function customLinePatch(item, change = {}) {
+  if (!isCustomLine(item)) return item;
+  const next = { ...item };
+  let rows = (item.additional || []).slice();
+  let i = rows.findIndex((a) => a && a.lump);
+  if (i < 0) { rows.push({ id: uid(), cat: CUSTOM_LINE_CAT, lump: true, name: item.label || "Custom item", unit: "item", qty: 1 }); i = rows.length - 1; }
+  if ("name" in change) { next.label = String(change.name == null ? "" : change.name); rows[i] = { ...rows[i], name: next.label }; }
+  if ("cost" in change) { const n = Number(change.cost); rows[i] = { ...rows[i], qty: 1, rate: change.cost === undefined || change.cost === "" || !Number.isFinite(n) ? undefined : n }; }
+  next.additional = rows;
+  return next;
+}
+/** Set the cost of a custom row added under a band (the register's Cost cell on a custom subcontract line): qty kept (1 when blank), rate = cost ÷ qty. */
+export function customRowCostPatch(item, rowId, cost) {
+  const n = Number(cost);
+  return { ...item, additional: (item.additional || []).map((a) => {
+    if (!a || a.id !== rowId) return a;
+    if (cost === undefined || cost === "" || !Number.isFinite(n)) return { ...a, rate: undefined };
+    const q = Number(a.qty) > 0 ? Number(a.qty) : 1;
+    return { ...a, qty: q, rate: n / q };
+  }) };
 }
 /** One element priced at its resolved margins: `{id, label, cost, loaded, sell, margin (blended), elementMargin, lines: [{kind: "own" | "sub", key, name, cost, loaded, margin, source, sell}]}`. */
 export function computeElementSell(item, rates, quote, projectScope) {
@@ -1371,7 +1418,7 @@ export function computeElementSell(item, rates, quote, projectScope) {
   subs.forEach((l) => {
     const m = rowMargin(item, l.key, base);
     const loaded = loadCost(l.cost, oh, ct);
-    lines.push({ kind: "sub", key: l.key, name: l.name, cost: l.cost, loaded, margin: m, source: marginSource(item, l.key, q), sell: sellAtMargin(loaded, m) });
+    lines.push({ kind: "sub", key: l.key, name: l.name, cost: l.cost, loaded, margin: m, source: marginSource(item, l.key, q), sell: sellAtMargin(loaded, m), ...(l.custom ? { custom: true, rowId: l.rowId } : {}) });
   });
   const loaded = lines.reduce((s, l) => s + l.loaded, 0);
   const sell = lines.reduce((s, l) => s + l.sell, 0);

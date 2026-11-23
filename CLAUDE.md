@@ -1056,6 +1056,43 @@ other margins should be entered in a new row under the element rows". Rules:
    `-low`, each with its reasons underneath) and ONLY a "Use N%"
    (`margin-use-high` / `margin-use-low`) writes the project margin. No provider → 503, never a made-up figure. Benchmark
    figures never come from memory.
+6. **A custom row under the SUB CONTRACTORS band is its own subcontract line,
+   and the register takes custom lines** (Boma, 23 Nov 2026, on a slab whose
+   card carried "Post Tensioning Quote from Contractor" $45,000 as a CUSTOM
+   row under the band: "post tension works wasnt seperated right here"; "we
+   should be able to add custom margin input there with editable costs").
+   `subcontractQuoteLines` returns the band's quote rows AND every custom row
+   added under that band with money on it (`{key: customSubKey(row.id)` =
+   `"add:<rowId>"`, `name`, `cost`, `custom: true, rowId}`); a custom row
+   under any OTHER band stays own work. Its margin is the ordinary row pin
+   (`item.rowMargins["add:<rowId>"]`), blank = the element's — so it sells
+   exactly as it did inside the own work until a rate is typed (on the 3206
+   NOV23 quote the total stayed $921,648.65; own work 536,759 → 491,759, sub
+   218,000 → 263,000). The register's Cost cell on such a line is a box
+   (`margin-register-sub-cost` → `customRowCostPatch(item, rowId, cost)`: qty
+   kept, rate = cost ÷ qty — the same row as on the card). **Custom lines**:
+   **+ Add custom line** (`margin-register-add`, in the project's register and
+   in a package's own) adds a LUMP-SUM ELEMENT — type `custom_item`
+   ("Custom item (lump sum)", category / section `CUSTOM ITEMS`, the last
+   `ELEMENT_TYPES` entry, also in the Add-Element dropdown), flagged
+   `customLine`, its cost ONE `RATE ITEMS` row marked `lump` (qty 1 × the
+   figure; `newCustomLine`, `isCustomLine`, `customLineCost`,
+   `customLinePatch(item, {name, cost})` — one lump row, edited in place). It
+   is a real element on purpose: the grand total, the rail, the packages, the
+   tender, the print and the exports carry it with no second arithmetic, and
+   its margin is the element's own pin. In the register its name
+   (`margin-register-custom-name`) and cost (`margin-register-custom-cost`)
+   are typed in place (editable while the lump row IS the element's whole
+   cost), ✕ is two clicks (`margin-register-custom-remove` / `-confirm`) and
+   goes through `removeItem`, so a `before-remove` version is kept. The
+   register lays its rows out per ELEMENT in the quote's order (`rowsOf(g)`:
+   its priced lines, or a blank row for a custom line with no cost yet), so a
+   row keeps its place and its key while its cost is typed — a line at $0 is
+   not in `computeMarginRegister`, which is unchanged for print and export.
+   A custom line never blinds and the handover leaves an element with nothing
+   poured, tied or dug alone. `test-custom-lines.mjs` proves the separated
+   line, its own margin and cost, the add / name / cost / margin / remove and
+   the stored element (19 checks).
 `verify.mjs` covers the resolution and patches, the element split, the
 register totals and class subtotals, the tie to the external / tender lines,
 the overall-rate move, the default behaviour of an untyped quote, the advice

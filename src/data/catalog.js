@@ -1139,6 +1139,10 @@ export const ELEMENT_TYPES = [
   { id: "headwall", category: "CIVIL & INFRASTRUCTURE", section: "CIVIL STRUCTURES", name: "Headwall", labour: "wall" },
   { id: "manhole_pit", category: "CIVIL & INFRASTRUCTURE", section: "CIVIL STRUCTURES", name: "Manhole / Pit (in-situ)", labour: "footing" },
   { id: "bridge_abutment", category: "CIVIL & INFRASTRUCTURE", section: "CIVIL STRUCTURES", name: "Bridge Abutment", labour: "wall" },
+
+  // A lump-sum line with no takeoff behind it (Boma, 23 Nov 2026 — "+ Add custom line" in the Margin Register): a name,
+  // a cost and its own margin. A real element, so it is in the grand total, the tender, the exports and the packages.
+  { id: "custom_item", category: "CUSTOM ITEMS", section: "CUSTOM ITEMS", name: "Custom item (lump sum)", labour: "footing" },
 ];
 
 export const CATEGORY_ORDER = [...new Set(ELEMENT_TYPES.map((t) => t.category))];

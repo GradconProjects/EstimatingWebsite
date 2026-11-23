@@ -59,14 +59,15 @@ const C25 = RATE("CONCRETE", "25 mpa", "m3");
 const C32 = RATE("CONCRETE", "32 mpa", "m3");
 
 /* ---------- catalog shape ---------- */
-check("112 element types, 17 categories, 28 sections (PRECAST / TILT-UP 4 after VERTICAL STRUCTURE; ROOF 8 after SUSPENDED STRUCTURE; PRELIMINARIES 17 first; Basement Ramp beside Ramp; IRREGULAR CONCRETE CONSTRUCTIONS 3 before External & Landscape; SCREEDS 14, TOPPINGS 7, HYDRONIC HEATING 3, SPECIALIST FINISHING CONCRETE 10 — each its own category)", () => {
-  assert.equal(ELEMENT_TYPES.length, 112);
+check("113 element types, 18 categories, 29 sections (CUSTOM ITEMS 1, last; PRECAST / TILT-UP 4 after VERTICAL STRUCTURE; ROOF 8 after SUSPENDED STRUCTURE; PRELIMINARIES 17 first; Basement Ramp beside Ramp; IRREGULAR CONCRETE CONSTRUCTIONS 3 before External & Landscape; SCREEDS 14, TOPPINGS 7, HYDRONIC HEATING 3, SPECIALIST FINISHING CONCRETE 10 — each its own category)", () => {
+  assert.equal(ELEMENT_TYPES.length, 113);
+  assert.deepEqual(ELEMENT_TYPES[ELEMENT_TYPES.length - 1], { id: "custom_item", category: "CUSTOM ITEMS", section: "CUSTOM ITEMS", name: "Custom item (lump sum)", labour: "footing" }, "the custom lump-sum line is the last type");
   assert.equal(ELEMENT_TYPES.filter((t) => t.category === "IRREGULAR CONCRETE CONSTRUCTIONS").length, 3);
   assert.ok(ELEMENT_TYPES.some((t) => t.id === "hearth_fireplace_base" && t.labour === "composite"), "hearth is a priced Quotes element with a crew sheet");
   assert.ok(CATEGORY_ORDER.indexOf("IRREGULAR CONCRETE CONSTRUCTIONS") < CATEGORY_ORDER.indexOf("EXTERNAL & LANDSCAPE CONCRETE"), "irregular constructions sit with the structure, before landscape works");
   assert.ok(ELEMENT_TYPES.some((t) => t.id === "basement_ramp" && t.section === "GROUND-BEARING SLABS"), "Basement Ramp is its own selectable element");
-  assert.equal(CATEGORY_ORDER.length, 17);
-  assert.equal(SECTION_ORDER.length, 28);
+  assert.equal(CATEGORY_ORDER.length, 18);
+  assert.equal(SECTION_ORDER.length, 29);
   assert.equal(ELEMENT_TYPES.filter((t) => t.category === "PRELIMINARIES").length, 17);
   assert.equal(CATEGORY_ORDER[0], "PRELIMINARIES", "preliminaries come before earthworks");
   assert.deepEqual(SECTION_ORDER.slice(0, 3), ["TRAFFIC & ACCESS", "SITE ESTABLISHMENT", "SITE MANAGEMENT & COMPLIANCE"]);
@@ -6164,6 +6165,62 @@ check("Estimates cloud check never pulls this tab's own save back over the typin
   const iSame = sync.indexOf("if(!awaitingCloudLoad && !localBlank && sameTakeoff(localSnap, migratedRow)){");
   assert.ok(iSame > 0 && iSame < iApply, "an identical cloud copy is caught before the apply");
   assert.match(sync.slice(iSame, iSame + 700), /localStorage\.setItem\(keyAtStart\+"__syncedAt", row\.updated_at\);[\s\S]*?LAST_CLOUD_HASH\[keyAtStart\] = snapshotHash\(migratedRow\);\s*markReconciled\(keyAtStart\);\s*return;/, "…its stamp is taken and nothing is rebuilt");
+});
+
+check("Margin Register (23 Nov 2026): a custom row under the SUB CONTRACTORS band is its own subcontract line with its own margin, and a custom LINE added in the register is a lump-sum element with an editable name and cost", () => {
+  const near = (x, y, tol = 0.005, msg) => { if (typeof tol === "string") { msg = tol; tol = 0.005; } assert.ok(Math.abs(x - y) <= tol, `${msg || "near"}: ${x} vs ${y}`); };
+  const SUB = "SUB CONTRACTORS / TEMPORARY WORKS";
+  const fw = rateKey(SUB, "Formwork (subcontract)", "quote");
+  const slabType = ELEMENT_TYPES.find((t) => t.id === "suspended_slab") || ELEMENT_TYPES.find((t) => t.category === "SUSPENDED STRUCTURE");
+  const slab = { ...newElementItem(slabType), label: "Post-Tensioned Slab", marginPct: 0.2,
+    qtys: { [fw]: 1 }, rateOverrides: { [fw]: { unitCost: 167793.65 } }, rowMargins: { [fw]: 0.15 / 1.15 },
+    additional: [{ id: "pt1", cat: SUB, name: "Post Tensioning Quote from Contractor", unit: "", qty: 1, rate: 45000 }, { id: "ri1", cat: "RATE ITEMS", name: "Hobs", unit: "m", qty: 10, rate: 51.661 }] };
+  const rates = defaultRates(); const q = { marginPct: 0.25 };
+  const lines = costingAll.subcontractQuoteLines(slab, rates, "both");
+  assert.deepEqual(lines.map((l) => [l.key, l.name, l.cost]), [[fw, "Formwork (subcontract)", 167793.65], ["add:pt1", "Post Tensioning Quote from Contractor", 45000]], "the catalog quote row, then the custom row added under the band — a custom row under ANOTHER band is own work");
+  assert.equal(lines[1].custom, true); assert.equal(lines[1].rowId, "pt1"); assert.equal(costingAll.customSubKey("pt1"), "add:pt1");
+  const before = costingAll.computeElementSell(slab, rates, q, "both");
+  const pt = before.lines.find((l) => l.key === "add:pt1"), own = before.lines.find((l) => l.kind === "own");
+  assert.equal(pt.kind, "sub"); assert.equal(pt.custom, true); assert.equal(pt.rowId, "pt1", "the register edits its cost by the row's id"); near(pt.cost, 45000); near(pt.margin, 0.2); assert.equal(pt.source, "element"); near(pt.sell, 56250);
+  near(own.cost, before.cost - 167793.65 - 45000, 0.01, "the post-tensioning quote is no longer inside the slab's own work");
+  near(before.sell, before.cost / 0.8 - 167793.65 / 0.8 + 167793.65 * 1.15, 0.01, "unpinned it sells exactly as it did inside the own work — nothing re-prices on its own");
+  // its own margin: 10% on the post-tensioning quote alone
+  const pinned = costingAll.rowMarginPatch(slab, "add:pt1", 0.1);
+  const after = costingAll.computeElementSell(pinned, rates, q, "both");
+  const pt2 = after.lines.find((l) => l.key === "add:pt1");
+  near(pt2.margin, 0.1); assert.equal(pt2.source, "row"); near(pt2.sell, 50000);
+  near(after.sell, before.sell - 56250 + 50000, 0.01, "only that line moved");
+  const reg = costingAll.computeMarginRegister([pinned], rates, q, "both");
+  assert.equal(reg.byClass.sub.count, 2); near(reg.byClass.sub.cost, 212793.65); near(reg.totals.cost, after.cost);
+  // an unpriced custom row is no line; the register can set its cost
+  assert.equal(costingAll.subcontractQuoteLines({ ...slab, additional: [{ id: "x", cat: SUB, name: "", qty: 1 }] }, rates, "both").length, 1);
+  const costed = costingAll.customRowCostPatch(slab, "pt1", 52000);
+  near(costed.additional.find((a) => a.id === "pt1").rate, 52000); assert.equal(costed.additional.find((a) => a.id === "ri1").rate, 51.661, "no other row is touched");
+  near(costingAll.customRowCostPatch({ ...slab, additional: [{ id: "pt1", cat: SUB, qty: 2, rate: 10 }] }, "pt1", 300).additional[0].rate, 150, "the quantity is kept: rate = cost ÷ qty");
+  assert.equal(costingAll.customRowCostPatch(slab, "pt1", undefined).additional.find((a) => a.id === "pt1").rate, undefined);
+  // a custom LINE: a lump-sum element
+  const type = ELEMENT_TYPES.find((t) => t.id === costingAll.CUSTOM_ITEM_TYPE_ID);
+  assert.ok(type && type.category === "CUSTOM ITEMS");
+  const line = costingAll.newCustomLine(type);
+  assert.equal(costingAll.isCustomLine(line), true); assert.equal(line.label, "Custom item"); assert.equal(costingAll.customLineCost(line), 0);
+  assert.equal(computeElementCost(line, rates, "both").total, 0, "a new line costs nothing until a figure is typed");
+  const named = costingAll.customLinePatch(costingAll.customLinePatch(line, { name: "Crane hire allowance" }), { cost: 12500 });
+  assert.equal(named.label, "Crane hire allowance"); assert.equal(named.additional.length, 1, "ONE lump row, edited in place");
+  assert.equal(named.additional[0].name, "Crane hire allowance"); assert.equal(named.additional[0].cat, "RATE ITEMS"); assert.equal(named.additional[0].lump, true);
+  near(computeElementCost(named, rates, "both").total, 12500); near(costingAll.customLineCost(named), 12500);
+  near(computeElementCost(named, rates, "labour").total, 12500, "a lump sum is charged under every scope"); near(computeElementCost(named, rates, "materials").total, 12500);
+  const sold = costingAll.computeElementSell(costingAll.elementMarginPatch(named, 0.1), rates, q, "both");
+  assert.equal(sold.lines.length, 1); assert.equal(sold.lines[0].kind, "own"); near(sold.sell, 12500 / 0.9);
+  near(computeGrandTotal([pinned, named], rates, "both"), after.cost + 12500, 0.01, "the grand total carries it");
+  assert.equal(costingAll.customLineCost(costingAll.customLinePatch(named, { cost: undefined })), 0, "a cleared figure leaves the line at $0");
+  assert.equal(costingAll.customLinePatch(slab, { cost: 5 }), slab, "an ordinary element is never patched as a custom line");
+  assert.equal(costingAll.blindingPartsFor(named).length, 0, "a custom line never blinds");
+  // the wiring
+  const mr = fs.readFileSync(new URL("../src/components/MarginRegister.jsx", import.meta.url), "utf8");
+  for (const id of ["margin-register-add", "margin-register-custom-name", "margin-register-custom-cost", "margin-register-custom-remove", "margin-register-sub-cost"]) assert.ok(mr.includes(`data-testid="${id}"`), id);
+  assert.match(mr, /\.\.\.rowsOf\(g\)\.map\(\(l\) => \{/, "rows are laid out per element, so an unpriced custom line keeps its row and its key");
+  const app = fs.readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
+  assert.equal((app.match(/onAddCustomLine=\{addCustomLine\} onCustomLine=\{setCustomLine\} onRemoveCustomLine=\{removeItem\} onCustomRowCost=\{setCustomRowCost\}/g) || []).length, 2, "both registers (a package's and the project's) take the four writers; removal goes through removeItem, which keeps a before-remove version");
 });
 
 const LIST_GUARD_23 = await import("../src/lib/listGuard.js");

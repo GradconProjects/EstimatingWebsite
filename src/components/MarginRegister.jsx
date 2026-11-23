@@ -8,15 +8,15 @@
  * quote row (never kept twice); the overall rate box is the ladder's project
  * margin. Priced through computeMarginRegister — never its own arithmetic.
  */
-import { useMemo } from "react";
-import { computeMarginRegister, projectMargin, pinnedMargin, getDefaultMargin, money, money2, markupFromMargin, marginFromMarkup } from "../lib/costing.js";
-import { PctInput } from "./atoms.jsx";
+import { useMemo, useState } from "react";
+import { computeMarginRegister, projectMargin, pinnedMargin, getDefaultMargin, money, money2, markupFromMargin, marginFromMarkup, isCustomLine, customLineCost, elementMargin, marginSource } from "../lib/costing.js";
+import { PctInput, NumInput } from "./atoms.jsx";
 import { packageList, packageMargin, packageName, packageColour, inkFor, itemsInPackages, itemsByPackage, hasPackages } from "../lib/packages.js";
 
 const pctLabel = (f) => `${Math.round((Number(f) || 0) * 1000) / 10}%`;
 const SOURCE_LABEL = { project: "project", element: "element · pinned", row: "row · pinned", package: "package · pinned" };
 
-export default function MarginRegister({ items, rates, quote, scope, setProjectMargin, setElementMargin, setRowMargin, open, onToggle, pkg = null, setPackageMargin, excludedPackages = null }) {
+export default function MarginRegister({ items, rates, quote, scope, setProjectMargin, setElementMargin, setRowMargin, open, onToggle, pkg = null, setPackageMargin, excludedPackages = null, onAddCustomLine, onCustomLine, onRemoveCustomLine, onCustomRowCost }) {
   // the OVERALL register of a packaged project rolls up the TICKED packages only (Grady, 4 Nov 2026: "the overall should
   // consider all available packages and individual margin registers and should still use the checklist logic for them"):
   // the rail's ticks (`excludedPackages`) choose the packages, the lines are grouped under a band per package with that
@@ -37,6 +37,20 @@ export default function MarginRegister({ items, rates, quote, scope, setProjectM
   const band = pkg ? { background: packageColour(quote, pkg), color: inkFor(packageColour(quote, pkg)) } : undefined;
   const t = reg.totals;
   const pkgNameOf = (id) => { const p = packageList(quote).find((x) => x.id === id); return p ? (p.name || "Package") : ""; };
+  // Custom lines (Boma, 23 Nov 2026): a lump sum added HERE — a name, a cost and its own margin. A line with no cost yet
+  // is not in the priced register, so the rows are laid out per ELEMENT in the quote's order (its priced lines, or a
+  // blank row for an unpriced custom line): a row keeps its place and its key while its cost is typed.
+  const [confirmDel, setConfirmDel] = useState(null);
+  const rowsOf = (g) => {
+    const byEl = {};
+    g.reg.lines.forEach((l) => { (byEl[l.elementId] = byEl[l.elementId] || []).push(l); });
+    return g.items.flatMap((it) => {
+      if (byEl[it.id]) return byEl[it.id];
+      if (!isCustomLine(it)) return [];
+      const base = pkg ? pm : (g.pkg && pinnedMargin(g.pkg.marginPct) != null ? packageMargin(quote || {}, g.pkg) : projectPm);
+      return [{ kind: "own", key: null, elementId: it.id, element: it.label, cost: 0, loaded: 0, sell: 0, margin: elementMargin(it, base), source: marginSource(it, null, quote || {}), inherited: base, packageId: it.packageId || null, pending: true }];
+    });
+  };
   return (
     <div className="rounded-xl border border-neutral-200 bg-white shadow-sm overflow-hidden print:hidden" data-testid={pkg ? "package-margin-register" : "margin-register"} id={pkg ? `margin-register-${pkg.id}` : "margin-register"} data-package={pkg ? pkg.id : undefined}>
       <button type="button" onClick={onToggle} className="w-full flex items-center justify-between gap-3 px-4 py-2.5 text-left bg-neutral-900 text-white" data-band={pkg ? undefined : "summary"} style={band} data-testid="margin-register-toggle" aria-expanded={open}>
@@ -83,22 +97,40 @@ export default function MarginRegister({ items, rates, quote, scope, setProjectM
                       </td>
                     </tr>
                   ),
-                  ...g.reg.lines.map((l) => {
+                  ...rowsOf(g).map((l) => {
                   const item = items.find((it) => it.id === l.elementId);
+                  // a custom line's name and cost are typed here; so is the cost of a custom row added under the SUB CONTRACTORS band
+                  const lump = l.kind === "own" && isCustomLine(item) && onCustomLine && Math.abs(l.cost - customLineCost(item)) < 0.005;
+                  const customSub = l.kind === "sub" && l.custom && onCustomRowCost;
                   const pinned = l.kind === "sub" ? pinnedMargin(item && item.rowMargins && item.rowMargins[l.key]) : pinnedMargin(item && item.marginPct);
                   const base = l.inherited != null ? l.inherited : pm; // the package's margin when it pins one (lib/packages.js), else the project's
                   const inherit = l.kind === "sub" ? (pinnedMargin(item && item.marginPct) ?? base) : base;
                   return (
-                    <tr key={`${l.elementId}:${l.key || "own"}`} className="border-t border-neutral-100" data-testid="margin-register-row" data-kind={l.kind}>
+                    <tr key={`${l.elementId}:${l.key || "own"}`} className={`border-t border-neutral-100 ${lump ? "bg-orange-50/40" : ""}`} data-testid="margin-register-row" data-kind={l.kind} data-custom={lump ? "line" : customSub ? "sub" : undefined} data-element={l.elementId}>
                       <td className="px-2 py-1">
-                        <span className="text-neutral-800">{l.kind === "sub" ? l.name : l.element}</span>
+                        {lump ? (
+                          <span className="inline-flex items-center gap-1.5 align-middle">
+                            <input type="text" value={item.label || ""} placeholder="Custom line — name it" onChange={(e) => onCustomLine(item.id, { name: e.target.value })} className="w-56 max-w-full border border-neutral-200 rounded px-2 py-0.5 text-[12px] focus:outline-none focus:ring-2 focus:ring-orange-400" data-testid="margin-register-custom-name" />
+                            {onRemoveCustomLine && (confirmDel === item.id
+                              ? <><button type="button" onClick={() => { setConfirmDel(null); onRemoveCustomLine(item.id); }} className="text-[10px] font-semibold text-white bg-red-600 hover:bg-red-700 rounded px-1.5 py-0.5" data-testid="margin-register-custom-remove-confirm">remove</button><button type="button" onClick={() => setConfirmDel(null)} className="text-[10px] text-neutral-500 underline">keep</button></>
+                              : <button type="button" onClick={() => setConfirmDel(item.id)} className="text-neutral-400 hover:text-red-600 text-[13px] leading-none" title="Remove this custom line" data-testid="margin-register-custom-remove">×</button>)}
+                          </span>
+                        ) : <span className="text-neutral-800">{l.kind === "sub" ? l.name : l.element}</span>}
                         {l.kind === "sub"
                           ? <span className="ml-1.5 text-[9px] font-semibold uppercase tracking-wide text-amber-800 bg-amber-50 rounded px-1">sub quote</span>
-                          : <span className="ml-1.5 text-[9px] font-semibold uppercase tracking-wide text-neutral-500 border border-neutral-200 rounded px-1">own work</span>}
+                          : lump
+                            ? <span className="ml-1.5 text-[9px] font-semibold uppercase tracking-wide text-orange-800 bg-orange-100 rounded px-1">custom line</span>
+                            : <span className="ml-1.5 text-[9px] font-semibold uppercase tracking-wide text-neutral-500 border border-neutral-200 rounded px-1">own work</span>}
                         {l.kind === "sub" && <div className="text-[10px] text-neutral-400">{l.element}</div>}
                         {!groups && l.packageId && pkgNameOf(l.packageId) && <div className="text-[10px] text-neutral-400" data-testid="margin-register-package">{pkgNameOf(l.packageId)}</div>}
                       </td>
-                      <td className="px-2 py-1 text-right font-mono tabular-nums">{money2(l.cost)}</td>
+                      <td className="px-2 py-1 text-right font-mono tabular-nums">
+                        {lump
+                          ? <NumInput step="50" value={l.cost > 0 ? l.cost : undefined} placeholder="cost $" className="!w-28 !py-0.5 !text-[12px] ml-auto" title="This line's cost — typed here" onChange={(v) => onCustomLine(item.id, { cost: v })} data-testid="margin-register-custom-cost" />
+                          : customSub
+                            ? <NumInput step="50" value={l.cost} className="!w-28 !py-0.5 !text-[12px] ml-auto" title="The cost of this custom subcontract row — the same figure as on the element's card" onChange={(v) => onCustomRowCost(l.elementId, l.rowId, v)} data-testid="margin-register-sub-cost" />
+                            : money2(l.cost)}
+                      </td>
                       <td className="px-2 py-1 text-right font-mono tabular-nums">{money2(l.loaded)}</td>
                       <td className="px-2 py-1 text-right">
                         <PctInput value={pinned ?? undefined} placeholder={pctLabel(inherit)} className="!w-16 !py-0.5" title={pinned != null ? "Pinned — clear to inherit" : `Inherits ${pctLabel(inherit)} — type a rate to pin this line`}
@@ -127,7 +159,7 @@ export default function MarginRegister({ items, rates, quote, scope, setProjectM
                     </tr>
                   ),
                 ])}
-                {reg.lines.length === 0 && <tr><td colSpan={8} className="px-2 py-3 text-center text-neutral-400">{grouped && leftOut.length === allPkgs.length ? "Every package is unticked on the Quote Summary — tick one to bring it in." : "Nothing priced yet."}</td></tr>}
+                {reg.lines.length === 0 && !regItems.some(isCustomLine) && <tr><td colSpan={8} className="px-2 py-3 text-center text-neutral-400">{grouped && leftOut.length === allPkgs.length ? "Every package is unticked on the Quote Summary — tick one to bring it in." : "Nothing priced yet."}</td></tr>}
               </tbody>
               <tfoot>
                 <tr className="border-t-2 border-neutral-800 font-semibold">
@@ -143,6 +175,12 @@ export default function MarginRegister({ items, rates, quote, scope, setProjectM
               </tfoot>
             </table>
           </div>
+          {onAddCustomLine && (
+            <div className="flex flex-wrap items-center gap-2 text-[11.5px] text-neutral-500">
+              <button type="button" onClick={() => onAddCustomLine(pkg ? pkg.id : null)} className="px-2.5 py-1 rounded-md border border-orange-300 bg-orange-50 hover:bg-orange-100 text-neutral-900 text-[12px] font-semibold" data-testid="margin-register-add">+ Add custom line</button>
+              <span>A lump sum with its own name, cost and margin — it joins the quote as an element{pkg ? ` of ${packageName(pkg)}` : ""}, so the totals, the tender and the exports carry it.</span>
+            </div>
+          )}
           {grouped && leftOut.length > 0 && (
             <div className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1 mb-2" data-testid="margin-register-excluded">
               Not in this register — unticked on the Quote Summary: {leftOut.map((p) => packageName(p)).join(", ")}. Each still has its own register under its package band; tick it on the summary to bring it back in here.

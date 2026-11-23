@@ -6,7 +6,7 @@ import { saveVersion, downloadQuoteFile, parseQuoteFile } from "./lib/quoteVersi
 import { quoteStorageKey } from "./lib/projects.js";
 import VersionsModal from "./components/VersionsModal.jsx";
 import { ELEMENT_TYPES, QUOTE_STATUSES, QUOTE_STATUS_STYLES, QUOTE_SCOPES, normalizeStatus } from "./data/catalog.js";
-import { defaultRates, newElementItem, computeGrandTotal, uid, money, rateKey, isManualQuoteKey, SCOPE_KEYS, scopeLabel, elementMarginPatch, rowMarginPatch, projectMarginPatch } from "./lib/costing.js";
+import { defaultRates, newElementItem, computeGrandTotal, uid, money, rateKey, isManualQuoteKey, SCOPE_KEYS, scopeLabel, elementMarginPatch, rowMarginPatch, projectMarginPatch, newCustomLine, customLinePatch, customRowCostPatch, CUSTOM_ITEM_TYPE_ID } from "./lib/costing.js";
 import { pendingRateUpdates, readLibraryState, readLastSynced, writeLastSynced, RATES_LIBRARY_KEY } from "./lib/ratesLibrarySync.js";
 import { effectiveRates, statusChangePatch, needsFreeze, freezeRates, frozenRateDrift, hasFrozenRates, isRatesLocked } from "./lib/rateFreeze.js";
 import { writeLibraryPrice } from "./lib/libraryWrite.js";
@@ -1133,6 +1133,17 @@ function ProjectEditor({ project, allProjects, rates: liveRates, setRates: setLi
   const setProjectMargin = (v) => setQuote((q) => projectMarginPatch(q, v));
   const setElementMargin = (id, v) => setItems((its) => its.map((it) => (it.id === id ? elementMarginPatch(it, v) : it)));
   const setRowMargin = (id, key, v) => setItems((its) => its.map((it) => (it.id === id ? rowMarginPatch(it, key, v) : it)));
+  // Custom lines in the Margin Register (Boma, 23 Nov 2026): a lump sum added there is a real element (type custom_item),
+  // so every total carries it; its name and cost are typed in the register, and so is the cost of a custom row under a
+  // card's SUB CONTRACTORS band.
+  const addCustomLine = (pkgId) => {
+    const type = elementTypes.find((t) => t.id === CUSTOM_ITEM_TYPE_ID);
+    if (!type) return;
+    const into = pkgId && packages.some((p) => p.id === pkgId) ? pkgId : packages.some((p) => p.id === addInto) ? addInto : (packages[0] ? packages[0].id : "");
+    setItems((its) => [...its, into ? { ...newCustomLine(type), packageId: into } : newCustomLine(type)]);
+  };
+  const setCustomLine = (id, change) => setItems((its) => its.map((it) => (it.id === id ? customLinePatch(it, change) : it)));
+  const setCustomRowCost = (id, rowId, cost) => setItems((its) => its.map((it) => (it.id === id ? customRowCostPatch(it, rowId, cost) : it)));
   const requestAdvice = async () => {
     let past = [];
     try {
@@ -1685,6 +1696,7 @@ function ProjectEditor({ project, allProjects, rates: liveRates, setRates: setLi
                 <MarginRegister
                   items={group} rates={rates} quote={quote} scope={quote.scope} pkg={pkg}
                   setProjectMargin={setProjectMargin} setElementMargin={setElementMargin} setRowMargin={setRowMargin} setPackageMargin={setPackageMargin}
+                  onAddCustomLine={addCustomLine} onCustomLine={setCustomLine} onRemoveCustomLine={removeItem} onCustomRowCost={setCustomRowCost}
                   open={!!pkgRegOpen[pkg.id]} onToggle={() => setPkgRegOpen((o) => ({ ...o, [pkg.id]: !o[pkg.id] }))}
                 />
               )}
@@ -1718,6 +1730,7 @@ function ProjectEditor({ project, allProjects, rates: liveRates, setRates: setLi
             <MarginRegister
               items={items} rates={rates} quote={quote} scope={quote.scope}
               setProjectMargin={setProjectMargin} setElementMargin={setElementMargin} setRowMargin={setRowMargin}
+              onAddCustomLine={addCustomLine} onCustomLine={setCustomLine} onRemoveCustomLine={removeItem} onCustomRowCost={setCustomRowCost}
               open={marginsOpen} onToggle={() => setMarginsOpen((o) => !o)}
               excludedPackages={summaryExcluded}
             />
