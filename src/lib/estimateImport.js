@@ -407,7 +407,11 @@ export function buildImportFromEstimate(estimateExport) {
     // flagged (next block) — that code is not a Trench Mesh product.
     group.filter((l) => ["Reinforcement", "Connections", "Joints"].includes(l.materialGroup) && (l.unit === "lm" || l.unit === "m") && !handled.has(l) && TRENCH_CAT && TRENCH_CAT.products.some((p) => p.name === l.material)).forEach((l) => {
       const product = TRENCH_CAT.products.find((p) => p.name === l.material);
-      map(l, rateKey("TRENCH MESH", product.name, product.unit), Math.ceil((Number(l.finalQty) || 0) / TRENCH_STOCK_M - 1e-9));
+      // the Quotes row takes METRES and buys the whole 6 m lengths itself (24 Nov 2026) — marked so on the element
+      const tmKey = rateKey("TRENCH MESH", product.name, product.unit);
+      map(l, tmKey, Math.round((Number(l.finalQty) || 0) * 100) / 100);
+      item.qtys[tmKey] = Math.round(item.qtys[tmKey] * 100) / 100;
+      item.qtyBasis = { ...(item.qtyBasis || {}), [tmKey]: "m" };
     });
     group.filter((l) => l.materialGroup === "Reinforcement" && l.spec === "Trench mesh" && !handled.has(l)).forEach((l) => {
       flag(l,
@@ -625,6 +629,7 @@ export function buildImportFromEstimate(estimateExport) {
     Object.entries(item.qtys).forEach(([key, qty]) => {
       prior.item.qtys[key] = (Number(prior.item.qtys[key]) || 0) + (Number(qty) || 0);
     });
+    if (item.qtyBasis) prior.item.qtyBasis = { ...(prior.item.qtyBasis || {}), ...item.qtyBasis }; // metres add up as metres
     // Quantities combine, so their geometry must too: three strip footings
     // merged into one card divide by the three strips' TOTAL length/area.
     ["measureNo", "measureLm", "measureM2"].forEach((k) => {

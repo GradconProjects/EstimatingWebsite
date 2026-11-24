@@ -80,9 +80,10 @@ safety net silently. Keep all cost arithmetic in `lib/costing.js`.
    `ceil(qty / sheetArea) * unitCost` (sheets are bought whole, so this
    always rounds up; `sheetArea` — 14.4 m², a standard 6.0×2.4m sheet — is
    a per-product catalog/rate field, editable in the Rates modal like
-   `unitWeight`). Every other category — including Trench Mesh and Stock
-   Bar, which also carry a `unitWeight` — costs as `qty * unitCost`
-   directly, because their catalog price is per length/bar, not per tonne;
+   `unitWeight`). No other category costs off tonnage or area —
+   Trench Mesh and Stock Bar also carry a `unitWeight`, but their catalog
+   price is per length / bar (metres typed, whole lengths / bars bought — see
+   the end of this rule), not per tonne;
    that leftover `unitWeight` exists purely so the UI can show informational
    tonnage (useful for delivery planning). **`computeRowTotal` in
    `costing.js` is the ONE place that implements all three rules — always
@@ -92,6 +93,50 @@ safety net silently. Keep all cost arithmetic in `lib/costing.js`.
    weight- or area-priced category, set the matching flag in `catalog.js`.
    If you're unsure whether a category should be `true` on either flag, it
    almost certainly shouldn't be — only Processed Bar and Square Mesh are.
+
+   **TRENCH MESH is typed in METRES and bought in whole 6 m lengths** (Boma,
+   24 Nov 2026, on "4 Bar-L12TM · length · 105.84 · $41.19 = $4,359.55":
+   "rates are for single bar lengths and was quoted as lm. check this doesnt
+   affecct all projects"). The band's price and weight are per 6 m LENGTH and
+   its unit read "length", so a lineal-metre figure priced as that many
+   lengths: a read-only audit of the 40 live projects found trench mesh on 21
+   (57 rows, 42 of them fractional — plainly metres), $168,782 of direct cost
+   where whole lengths are $29,055. The band carries `metresEntry: true,
+   stockLengthM: 6, stockName: "length"` (its OWN flag, not `lengthBasis`: the
+   Rates modal and the Rates Library still edit $ per length, and the rate KEY
+   keeps the unit "length" — keys are never renamed) and prices as
+   `ceil(metres ÷ 6) × $/length`: `stockLengthOf(key)` names the band's stock
+   length, `rowRate` lays it on EVERY row as `barLength` (a saved rates row
+   predates the field), `computeRowTotal`, `computeElementReinforcementTonnes`
+   and `CategoryBlock` read it as they do a stock bar's. **Every row is read
+   that way, saved ones included** (Boma, same day: "apply to all the projects
+   with trench mesh") — no project row was rewritten; the reading changed, so
+   the Dashboard, the reports and a submitted quote's figures all moved down
+   by the difference (a Tender Quote's stored prices are a snapshot and show
+   the drift). A saved figure that really was a COUNT of lengths cannot be
+   told from metres (15 of the 57 were whole numbers), so a row is CONFIRMED
+   by a mark, `item.qtyBasis[key] === "m"`, written by `typedQtyItem` (the ONE
+   typing rule, `ElementCard.setQty`: a blank row that takes a figure is
+   confirmed, a cleared row forgets its mark, an unanswered row being retyped
+   stays unanswered), by the Estimates bridge (which now writes the METRES,
+   not `ceil(lm ÷ 6)`, and merges the marks when cards combine) and by the two
+   answers: `confirmMetresPatch` ("✓ Metres is right") and
+   `lengthsToMetresPatch` ("it was N lengths" → N × 6 m, priced as before,
+   never applied twice). `isUnconfirmedStockRow` is the ONE test and
+   `unconfirmedStockRows(items, rates)` the project's list (`before` = the
+   old qty × $, `now`, `lengths`, `whole`): the row shows `stock-unconfirmed`
+   with both answers and `StockMetresNotice` (`stock-metres-notice`, top of
+   the editor, clearable — `NOTICE_IDS.stockMetres`, signature = the rows and
+   their figures) lists them with before → now, "it was N lengths" per row and
+   "All N are metres". The band reads Lengths · kg / length · $ / length
+   (`columnBasis`), the unit cell "m", the Total prints "18 lengths × $41.19",
+   and the print report and exports print `rowUnit` ("m") with `stockNote`
+   (" — 18 × 6 m lengths"). A tab on a build from before this still prices and
+   imports in lengths until it reloads. `verify.mjs` covers the screenshot row
+   (empty, stale and default rates), the exact-length boundary, the tonnage,
+   the typing rule, both answers, the list, the bridge and the wiring;
+   `test-trench-metres.mjs` proves the banner, the band, both answers, a new
+   figure and a cleared row (19 checks).
 
 3. **Percentages are fractions, not whole numbers.** `overheadPct: 0.08`
    means 8%, not `8`. A whole-number entry displayed with a `%` format
@@ -4524,8 +4569,9 @@ element families waits on the owner's approval of the pad footing.
   joint dowels stay bars (a kerb joint is a profile wide). **The bridge
   prices an L-series line by NAME** (`estimateImport.js`): a Reinforcement /
   Connections / Joints line in lineal metres whose material is a TRENCH MESH
-  catalog product ("4 Bar-L12TM") lands on that product in whole
-  `TRENCH_STOCK_M` = 6 m lengths (ceil), and a Joints / Connections m² line
+  catalog product ("4 Bar-L12TM") lands on that product in METRES, marked
+  as metres (24 Nov 2026 — the Quotes row buys the whole `TRENCH_STOCK_M` =
+  6 m lengths itself; until then the bridge wrote `ceil(lm ÷ 6)`), and a Joints / Connections m² line
   whose material is a sheet mesh lands on SQUARE MESH like a Reinforcement
   one; only an SL/RL sheet code on a trench line stays flagged.
   `test-dowel-products.mjs` proves the three products on the joints (the

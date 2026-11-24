@@ -230,13 +230,55 @@ check("Concrete costs directly: 50 m3 Minimum cartage @ $80 = $4000", () => {
   assert.equal(cost.concreteQty, 0); // a fee row is never poured volume
 });
 
-check("Trench Mesh costs directly (NOT via tonnage): 10x 4 Bar-L12TM @ $41.19 = $411.90", () => {
+check("Trench Mesh costs per WHOLE 6 m length off the METRES typed (NOT via tonnage): 60 m of 4 Bar-L12TM = 10 lengths @ $41.19 = $411.90", () => {
   const rates = defaultRates();
   const type = ELEMENT_TYPES.find((t) => t.id === "strip_footings");
   const item = newElementItem(type);
-  item.qtys[rateKey("TRENCH MESH", "4 Bar-L12TM", "length")] = 10;
+  item.qtys[rateKey("TRENCH MESH", "4 Bar-L12TM", "length")] = 60;
   const cost = computeElementCost(item, rates);
   assert.equal(cost.categoryTotals["TRENCH MESH"], 411.9);
+});
+
+check("Trench mesh is typed in METRES and bought in whole 6 m lengths, on every row saved or new (24 Nov 2026 — 105.84 lm had priced as 105.84 lengths, $4,359.55 for $741.42); a saved row is asked about once", () => {
+  const C = costingAll, KEY = rateKey("TRENCH MESH", "4 Bar-L12TM", "length"), tm = FULL_CATALOG.find((c) => c.key === "TRENCH MESH");
+  assert.ok(tm.metresEntry && tm.stockLengthM === 6 && !tm.lengthBasis && !tm.weightBasis && !tm.areaBasis, "its own flag: the Rates modal still edits $ per length");
+  assert.ok(tm.products.every((p) => p.unit === "length"), "the rate KEY keeps its unit — keys are never renamed");
+  assert.equal(C.stockLengthOf(KEY), 6); assert.equal(C.stockLengthOf(rateKey("STOCK BAR", "N12 - 6.0m length", "m")), null); assert.equal(C.stockLengthOf("CONCRETE::32 mpa::m3"), null);
+  const mk = (qty, extra = {}) => ({ ...newElementItem(ELEMENT_TYPES.find((t) => t.id === "raft_foundation")), qtys: { [KEY]: qty }, ...extra });
+  const near = (a, b, m) => assert.ok(Math.abs(a - b) < 0.005, `${m || ""}: ${a} vs ${b}`);
+  // the row on the screenshot: saved before the change, no mark — read as metres all the same
+  const saved = mk(105.84);
+  near(computeElementCost(saved, defaultRates()).categoryTotals["TRENCH MESH"], 18 * 41.19, "105.84 m = 18 whole lengths");
+  // an EMPTY and a STALE rates row (no barLength on the saved trench rate) price the same
+  near(computeElementCost(saved, {}).categoryTotals["TRENCH MESH"], 741.42, "empty rates row");
+  near(computeElementCost(saved, { [KEY]: { unitCost: 41.19, unitWeight: 21.8 } }).categoryTotals["TRENCH MESH"], 741.42, "a saved rate from before the field");
+  near(computeElementCost(mk(6), {}).categoryTotals["TRENCH MESH"], 41.19, "exactly one length"); near(computeElementCost(mk(6.01), {}).categoryTotals["TRENCH MESH"], 82.38, "a centimetre over buys the next length");
+  assert.equal(C.stockLengthsFor(saved, KEY), 18); assert.equal(C.rowUnit(saved, tm, tm.products[0]), "m"); assert.equal(C.stockNote(saved, tm, KEY), " — 18 × 6 m lengths");
+  near(C.computeElementReinforcementTonnes(saved, defaultRates()), 18 * 21.8 / 1000, "the tonnage is the whole lengths' weight");
+  assert.deepEqual([C.columnBasis(tm).price, C.columnBasis(tm).weight, C.columnBasis(tm).per], ["$ / length", "kg / length", "length"]);
+  // the question: asked of a saved row, never of a row typed after the change or written by the bridge
+  assert.equal(C.isUnconfirmedStockRow(saved, KEY), true);
+  const typed = C.typedQtyItem(mk(undefined), KEY, 40);
+  assert.deepEqual(typed.qtyBasis, { [KEY]: "m" }); assert.equal(C.isUnconfirmedStockRow(typed, KEY), false);
+  assert.equal(C.isUnconfirmedStockRow(C.typedQtyItem(saved, KEY, 110), KEY), true, "retyping an unanswered row does not answer it");
+  assert.equal(C.typedQtyItem(typed, KEY, undefined).qtyBasis, undefined, "a cleared row forgets its mark");
+  const other = C.typedQtyItem(mk(undefined), "CONCRETE::32 mpa::m3", 5); assert.equal(other.qtyBasis, undefined, "every other band: the quantity alone");
+  // the two answers
+  const yes = C.confirmMetresPatch(saved, KEY);
+  assert.equal(yes.qtys[KEY], 105.84); assert.equal(C.isUnconfirmedStockRow(yes, KEY), false);
+  const wasLengths = C.lengthsToMetresPatch(mk(38), KEY);
+  assert.equal(wasLengths.qtys[KEY], 228); near(computeElementCost(wasLengths, {}).categoryTotals["TRENCH MESH"], 38 * 41.19, "38 lengths = 228 m, priced as it was");
+  assert.equal(C.lengthsToMetresPatch(wasLengths, KEY), wasLengths, "an answered row is never multiplied again");
+  // the project's list
+  const rows = C.unconfirmedStockRows([saved, typed, mk(38)], defaultRates());
+  assert.equal(rows.length, 2); near(rows[0].before, 4359.55, "priced until 24 Nov"); near(rows[0].now, 741.42); assert.equal(rows[0].lengths, 18); assert.equal(rows[0].whole, false); assert.equal(rows[1].whole, true);
+  // wiring: ONE typing rule, the band, the banner, the print and the export
+  const readSrc = (f) => fs.readFileSync(new URL("../" + f, import.meta.url), "utf8");
+  const card = readSrc("src/components/ElementCard.jsx"), band = readSrc("src/components/CategoryBlock.jsx"), app = readSrc("src/App.jsx");
+  assert.match(card, /stamp\(typedQtyItem\(it, qKey, v\)/); assert.match(card, /onStockBasis=\{setStockBasis\}/);
+  assert.match(band, /cat\.lengthBasis \|\| cat\.metresEntry/); assert.match(band, /data-testid="stock-unconfirmed"/); assert.match(band, /cat\.metresEntry \? "Lengths" : "Bars"/);
+  assert.match(app, /<StockMetresNotice/);
+  ["src/components/PrintQuoteReport.jsx", "src/lib/exportQuote.js"].forEach((f) => assert.match(readSrc(f), /unit: rowUnit\(item, cat, p\)/, f));
 });
 
 
@@ -5349,7 +5391,9 @@ check("bridge: an L-series trench-mesh line in lineal metres (a joint dowel stri
     { elementId: "S", element: "Raft Slab A", category: "Raft Slab", materialGroup: "Reinforcement", material: "SL72", spec: "Trench mesh", qty: 8, finalQty: 8.4, unit: "lm", massPerUnit: 1.0 },
   ], elementGeometry: {} });
   const it = br.quote.items[0];
-  assertTrue(it.qtys[rateKey("TRENCH MESH", "4 Bar-L12TM", "length")] === 6, "31.5 lm ÷ 6 = 5.25 → 6 lengths: " + JSON.stringify(it.qtys));
+  const tmK = rateKey("TRENCH MESH", "4 Bar-L12TM", "length");
+  assertTrue(it.qtys[tmK] === 31.5 && it.qtyBasis && it.qtyBasis[tmK] === "m", "the row takes the METRES, marked as metres (24 Nov 2026): " + JSON.stringify(it.qtys));
+  assertTrue(costingAll.stockLengthsFor(it, tmK) === 6 && Math.abs(computeElementCost(it, defaultRates()).categoryTotals["TRENCH MESH"] - 6 * 41.19) < 0.005, "31.5 lm ÷ 6 = 5.25 → 6 lengths, bought by the row");
   assertTrue(Object.keys(it.qtys).some((k) => /SQUARE MESH/.test(k) && /SL82/.test(k)), "sheet-mesh dowel pieces (m²) land on Square Mesh: " + JSON.stringify(it.qtys));
   assertTrue(br.flags.some((f) => /of SL72/.test(f)) && !br.flags.some((f) => /of 4 Bar-L12TM|of SL82/.test(f)), br.flags.join(" | "));
   assertTrue(importAll.TRENCH_STOCK_M === 6);
@@ -5801,9 +5845,9 @@ await checkAsync("a server that does not answer is never 'not configured'; the b
   assert.deepEqual([C2.columnBasis(cat("SQUARE MESH")).price, C2.columnBasis(cat("SQUARE MESH")).weight], ["$ / sheet", "kg / sheet"]);
   assert.deepEqual([C2.columnBasis(cat("PROCESSED BAR")).price, C2.columnBasis(cat("PROCESSED BAR")).weight], ["$ / tonne", "kg / m"]);
   assert.equal(C2.columnBasis(cat("REINFORCEMENT BY RATE")).price, "$ / tonne");
-  assert.equal(C2.columnBasis(cat("CONCRETE")).price, "Unit $"); assert.equal(C2.columnBasis(cat("TRENCH MESH")).price, "Unit $");
+  assert.equal(C2.columnBasis(cat("CONCRETE")).price, "Unit $"); assert.equal(C2.columnBasis(cat("TRENCH MESH")).price, "$ / length");
   // every basis computeRowTotal prices by has its words (a band with a basis flag never reads plain "Unit $")
-  FULL_CATALOG.forEach((c) => { if (c.lengthBasis || c.areaBasis || c.weightBasis || c.volumeRateBasis) assert.notEqual(C2.columnBasis(c).price, "Unit $", c.key); });
+  FULL_CATALOG.forEach((c) => { if (c.lengthBasis || c.metresEntry || c.areaBasis || c.weightBasis || c.volumeRateBasis) assert.notEqual(C2.columnBasis(c).price, "Unit $", c.key); });
   // Boma's row: 112 m of N12 = 19 whole bars × $9.96 = $189.24 (not 112 × $9.96)
   const sb = cat("STOCK BAR"); const n12 = sb.products.map((p) => (Array.isArray(p) ? { name: p[0], unit: p[1], unitWeight: p[2], unitCost: p[3], barLength: p[5] } : p)).find((p) => p.name === "N12 - 6.0m length");
   assert.equal(Math.round(C2.computeRowTotal(sb, { unitCost: n12.unitCost, unitWeight: n12.unitWeight, barLength: n12.barLength }, 112, { concreteM3: 0 }) * 100) / 100, 189.24);

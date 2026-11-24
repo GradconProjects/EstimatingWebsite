@@ -3,7 +3,7 @@ import { ChevronDown, ChevronRight, Copy, Trash2, Paperclip, X, RotateCw, ZoomIn
 import { FULL_CATALOG, LABOUR_TEMPLATES, QUOTE_SCOPES, CREW_TASKS_VER } from "../data/catalog.js";
 import { userKey, markEntry, entryTone, ENTRY_KEY, isDone, donePatch, whenLabel } from "../lib/workTrail.js";
 import { signedInUser } from "../lib/quoteVersions.js";
-import { uid, money, money2, isProvisional, upgradeCrewTasks, computeElementCost, computeElementUnitRates, autoLabourQtys, labourQuantities, categoryAppliesTo, elementScope, categoryChargedUnder, scopeLabel, SCOPE_KEYS } from "../lib/costing.js";
+import { uid, money, money2, isProvisional, upgradeCrewTasks, computeElementCost, computeElementUnitRates, autoLabourQtys, labourQuantities, categoryAppliesTo, elementScope, categoryChargedUnder, scopeLabel, SCOPE_KEYS, typedQtyItem, confirmMetresPatch, lengthsToMetresPatch } from "../lib/costing.js";
 import { prefilledCells, applySteelMode, steelModeFor } from "../lib/handover.js";
 import { pdfToJpegPages } from "../lib/pdfToImages.js";
 import { markupSrc, markupDataURL } from "../lib/markupStore.js";
@@ -137,7 +137,11 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
       tasks: it.tasks.map((t) => ({ ...t, qtys: {}, qty: undefined })),
     }));
 
-  const setQty = (qKey, v) => patch((it) => stamp({ ...it, qtys: { ...it.qtys, [qKey]: v } }, ENTRY_KEY.qty(qKey)));
+  // typedQtyItem: a blank TRENCH MESH row that takes a figure is confirmed METRES (costing.js, 24 Nov 2026)
+  const setQty = (qKey, v) => patch((it) => stamp(typedQtyItem(it, qKey, v), ENTRY_KEY.qty(qKey)));
+  // a trench mesh row saved before metres entry: answer what its figure was — metres (it stands) or a count of
+  // lengths (it becomes its metres, × 6, and prices as it did before)
+  const setStockBasis = (qKey, as) => patch((it) => stamp(as === "m" ? confirmMetresPatch(it, qKey) : lengthsToMetresPatch(it, qKey), ENTRY_KEY.qty(qKey)));
   // A rate that belongs to THIS element (a received subcontract quote, say):
   // stored on the item under the same key as its quantity, read back through
   // rowRate in lib/costing.js. Clearing removes the override, so the row
@@ -620,6 +624,7 @@ export default function ElementCard({ item, rates, onChange, onRemove, onDuplica
               item={item}
               rates={rates}
               onQtyChange={setQty}
+              onStockBasis={setStockBasis}
               entryTone={tone}
               onRateChange={onMaterialRateChange}
               onLibraryRateChange={onLibraryRateChange}

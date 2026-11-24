@@ -141,11 +141,95 @@ export function rowRate(item, rates, key, fallback) {
   if (isQuantityOnlyKey(key)) return { ...(fallback || {}), unitCost: 0 }; // a quantity-only row (Excavation) never prices — the crew sheet carries the dig
   const base = lookupRate(rates, key, fallback);
   const ov = item && item.rateOverrides && item.rateOverrides[key];
-  const merged = ov && typeof ov === "object" ? { ...base, ...ov } : base;
+  let merged = ov && typeof ov === "object" ? { ...base, ...ov } : base;
+  // A stock-length band (TRENCH MESH): the quantity is metres and the row buys whole lengths — the band's own stock
+  // length, whatever the saved rates row carries (it predates the field).
+  const stockM = stockLengthOf(key);
+  if (stockM) merged = { ...merged, barLength: stockM };
   // Subcontract quotes are per job, full stop: no shared figure, no library
   // figure — only what was typed on this element, else nothing.
   if (isManualQuoteKey(key)) return { ...merged, unitCost: ov && ov.unitCost != null ? Number(ov.unitCost) || 0 : 0 };
   return merged;
+}
+
+/* ---- Stock-length bands: typed in metres, bought in whole lengths (TRENCH MESH, 24 Nov 2026) ----
+ * Boma: "rates are for single bar lengths and was quoted as lm. check this doesnt affecct all projects" — the band's
+ * price is per 6 m length, its unit read "length", and 42 of the 57 trench rows on the 21 live projects that carried
+ * any held lineal metres (105.84 × $41.19 = $4,359.55 where 18 whole lengths are $741.42). The band now takes METRES,
+ * like STOCK BAR, and — Boma, same day: "apply to all the projects with trench mesh" — EVERY row is read that way, the
+ * saved ones included. A saved figure that really was a count of lengths cannot be told from metres (15 of the 57 were
+ * whole numbers), so a row is CONFIRMED by a mark: `item.qtyBasis[key] === "m"`, written when a blank row is typed, by
+ * the Estimates bridge and by the two answers below. A row with a quantity and no mark is priced as metres like every
+ * other and the card asks once: metres (keep), or a count of lengths (× the stock length). */
+const STOCK_LENGTH_BANDS = Object.fromEntries(FULL_CATALOG.filter((c) => c.metresEntry && c.stockLengthM > 0).map((c) => [c.key, c.stockLengthM]));
+/** The stock length (m) of the band a rate key belongs to, or null for every other band. */
+export function stockLengthOf(key) {
+  const k = String(key || ""), i = k.indexOf("::");
+  return (i > 0 && STOCK_LENGTH_BANDS[k.slice(0, i)]) || null;
+}
+/** A row saved before metres entry (a quantity, no mark): read as metres, still to be confirmed. */
+export function isUnconfirmedStockRow(item, key) {
+  return !!(stockLengthOf(key) && item && Number(item.qtys && item.qtys[key]) > 0 && !(item.qtyBasis && item.qtyBasis[key] === "m"));
+}
+/** How many whole stock lengths a row's metres buy; null off a stock-length band. */
+export function stockLengthsFor(item, key) {
+  const m = stockLengthOf(key); if (!m) return null;
+  return Math.ceil((Number(item && item.qtys && item.qtys[key]) || 0) / m - 1e-9);
+}
+/** The unit a row's quantity is IN: "m" on a stock-length band, else the catalog unit (the rate KEY keeps "length"). */
+export function rowUnit(item, cat, p) {
+  return cat && cat.metresEntry ? "m" : p.unit;
+}
+/** " — 18 × 6 m lengths" after a stock-length row's label on the print report and the exports; "" for every other row. */
+export function stockNote(item, cat, key) {
+  if (!cat || !cat.metresEntry) return "";
+  const n = stockLengthsFor(item, key);
+  return ` — ${n} × ${cat.stockLengthM} m length${n === 1 ? "" : "s"}`;
+}
+const withBasis = (item, key, on) => {
+  const next = { ...(item.qtyBasis || {}) };
+  if (on) next[key] = "m"; else delete next[key];
+  return Object.keys(next).length ? next : undefined;
+};
+/** The typing rule, for the ONE place a quantity is typed (ElementCard.setQty): a blank stock-length row that takes a
+ * figure is confirmed metres; a cleared row forgets its mark; an unconfirmed row being retyped stays unconfirmed until
+ * it is answered. Every other band: the quantity alone. */
+export function typedQtyItem(item, key, value) {
+  const next = { ...item, qtys: { ...(item.qtys || {}), [key]: value } };
+  if (!stockLengthOf(key)) return next;
+  const had = Number(item.qtys && item.qtys[key]) > 0, has = Number(value) > 0;
+  if (!has) return { ...next, qtyBasis: withBasis(item, key, false) };
+  if (!had) return { ...next, qtyBasis: withBasis(item, key, true) };
+  return next;
+}
+/** "Yes, metres": the figure stands and the question goes. */
+export function confirmMetresPatch(item, key) {
+  if (!isUnconfirmedStockRow(item, key)) return item;
+  return { ...item, qtyBasis: withBasis(item, key, true) };
+}
+/** "It was a count of lengths": the quantity becomes its metres (× the stock length), so it prices as it did before. */
+export function lengthsToMetresPatch(item, key) {
+  if (!isUnconfirmedStockRow(item, key)) return item;
+  const m = stockLengthOf(key), qty = Number(item.qtys[key]) || 0;
+  return { ...item, qtys: { ...item.qtys, [key]: Math.round(qty * m * 100) / 100 }, qtyBasis: withBasis(item, key, true) };
+}
+/** Every unconfirmed stock-length row of a quote, with what it was priced at as a count of lengths and what it is now
+ * as metres: [{itemId, element, key, name, qty, stockM, rate, before, now, lengths, whole}]. */
+export function unconfirmedStockRows(items, rates) {
+  const out = [];
+  (items || []).forEach((item) => {
+    FULL_CATALOG.forEach((cat) => {
+      if (!cat.metresEntry || !categoryAppliesTo(cat, item)) return;
+      cat.products.forEach((p) => {
+        const key = rateKey(cat.key, p.name, p.unit);
+        if (!isUnconfirmedStockRow(item, key)) return;
+        const qty = Number(item.qtys[key]) || 0, rate = rowRate(item, rates, key, catalogRate(p));
+        const unitCost = Number(rate.unitCost) || 0, lengths = stockLengthsFor(item, key);
+        out.push({ itemId: item.id, element: item.label || "", key, name: p.label || p.name, qty, stockM: cat.stockLengthM, rate: unitCost, before: qty * unitCost, now: lengths * unitCost, lengths, whole: Number.isInteger(qty) });
+      });
+    });
+  });
+  return out;
 }
 
 /** A subcontract row — every "quote"-unit product — whose amount is ONLY
@@ -182,8 +266,8 @@ export function computeRowTotal(cat, rate, qty, ctx) {
   if (cat.areaBasis && rate.sheetArea) {
     return Math.ceil(qty / rate.sheetArea) * rate.unitCost;
   }
-  if (cat.lengthBasis && rate.barLength) {
-    return Math.ceil(qty / rate.barLength) * rate.unitCost;
+  if ((cat.lengthBasis || cat.metresEntry) && rate.barLength) {
+    return Math.ceil(qty / rate.barLength - 1e-9) * rate.unitCost;
   }
   return qty * rate.unitCost;
 }
@@ -198,6 +282,7 @@ export function computeRowTotal(cat, rate, qty, ctx) {
  */
 export function columnBasis(cat) {
   const c = cat || {};
+  if (c.metresEntry) return { per: c.stockName || "length", weight: `kg / ${c.stockName || "length"}`, price: `$ / ${c.stockName || "length"}`, priceNote: `Priced per WHOLE ${c.stockLengthM} m length: the metres typed are rounded up to whole lengths (the Lengths column) and Total $ = lengths × $ / length` };
   if (c.lengthBasis) return { per: "bar", weight: "kg / bar", price: "$ / bar", priceNote: "Priced per WHOLE bar: the metres typed are rounded up to whole bars (the Bars column) and Total $ = bars × $ / bar" };
   if (c.areaBasis) return { per: "sheet", weight: "kg / sheet", price: "$ / sheet", priceNote: "Priced per WHOLE sheet: the m² typed is rounded up to whole sheets (the Sheets column) and Total $ = sheets × $ / sheet" };
   if (c.weightBasis) return { per: "tonne", weight: "kg / m", price: "$ / tonne", priceNote: "Priced by weight: Total $ = Total (t) × $ / tonne" };
@@ -695,7 +780,7 @@ export function computeElementReinforcementTonnes(item, rates) {
       const rate = rowRate(item, rates, qKey, catalogRate(p));
       if (rate.unitWeight == null) return;
       const sheets = cat.areaBasis && rate.sheetArea ? Math.ceil(qty / rate.sheetArea) : null;
-      const bars = cat.lengthBasis && rate.barLength ? Math.ceil(qty / rate.barLength) : null;
+      const bars = (cat.lengthBasis || cat.metresEntry) && rate.barLength ? Math.ceil(qty / rate.barLength - 1e-9) : null;
       const units = sheets != null ? sheets : bars != null ? bars : qty;
       totalKg += units * rate.unitWeight;
     });

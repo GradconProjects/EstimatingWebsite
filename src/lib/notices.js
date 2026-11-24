@@ -24,6 +24,7 @@ export const NOTICE_IDS = {
   ratesPinned: "ratesPinned",
   handover: "handover",
   inbox: "inbox",
+  stockMetres: "stockMetres",
 };
 
 /** One string for what a notice says, from its parts (order kept, blanks dropped). */

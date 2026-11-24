@@ -1,6 +1,6 @@
 import { Fragment } from "react";
 import { ChevronDown, ChevronRight, Plus, X } from "lucide-react";
-import { rateKey, money2, rowRate, computeRowTotal, rowContext, columnBasis, autoSoilRemoval, autoBlindingConcrete, blindingBuildUp, isQuantityOnlyKey, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, additionalRowsFor, additionalRowTotal, autoPigmentWashout, autoSpecialistShortLoad, productLabel, visibleProducts, isBlindingProduct, blindingIncluded, catalogRate } from "../lib/costing.js";
+import { rateKey, money2, rowRate, computeRowTotal, rowContext, columnBasis, autoSoilRemoval, autoBlindingConcrete, blindingBuildUp, isQuantityOnlyKey, autoMinimumCartage, autoConcreteSurcharge, autoEnvironmentLevy, additionalRowsFor, additionalRowTotal, autoPigmentWashout, autoSpecialistShortLoad, productLabel, visibleProducts, isBlindingProduct, blindingIncluded, catalogRate, isUnconfirmedStockRow } from "../lib/costing.js";
 import { SPECIALIST_CONCRETE_KEY } from "../data/catalog.js";
 import { NumInput, CommitNumInput } from "./atoms.jsx";
 import { validityState, validityLabel, formatValidUntil } from "../lib/rateValidity.js";
@@ -25,14 +25,16 @@ function ValidityChip({ validUntil }) {
  * shouldn't apply to a given job, the estimator just leaves those rows
  * blank (blank quantities cost nothing — see computeElementCost).
  */
-export default function CategoryBlock({ cat, item, rates, onQtyChange, entryTone, onRateChange, onRowRateChange, onQuoteAmountChange, onLibraryRateChange, onOpenLibrary, libraryNote, catOpen, toggleCat, catTotal, onAddCustom, onRemoveCustom, onChangeCustom, charged = true, excludedTotal = 0, scopeName = "" }) {
+export default function CategoryBlock({ cat, item, rates, onQtyChange, onStockBasis, entryTone, onRateChange, onRowRateChange, onQuoteAmountChange, onLibraryRateChange, onOpenLibrary, libraryNote, catOpen, toggleCat, catTotal, onAddCustom, onRemoveCustom, onChangeCustom, charged = true, excludedTotal = 0, scopeName = "" }) {
   const hasWeight = cat.products.some((p) => p.unitWeight != null);
   // Custom rows the estimator added under THIS category (item.additional
   // rows carrying cat === this key). They sit after the last catalog product,
   // cost qty × rate through computeElementCost, and are part of catTotal.
   const customRows = additionalRowsFor(item, cat.key);
   const hasArea = !!cat.areaBasis;
-  const hasLength = !!cat.lengthBasis;
+  // STOCK BAR and TRENCH MESH: metres typed, whole bars / lengths bought (the count has its own column)
+  const hasLength = !!(cat.lengthBasis || cat.metresEntry);
+  const stockWord = cat.metresEntry ? (cat.stockName || "length") : "bar";
   // Reinforcement priced in kg/m³ needs the element's poured volume, both to
   // cost the row and to show the estimator the tonnage the rate works out to.
   const hasVolumeRate = !!cat.volumeRateBasis;
@@ -97,10 +99,10 @@ export default function CategoryBlock({ cat, item, rates, onQtyChange, entryTone
                 <th className="text-left px-2 py-1.5 font-medium">Unit</th>
                 <th className="text-right px-2 py-1.5 font-medium w-28 min-w-[7rem]">Qty</th>
                 {hasArea && <th className="text-right px-2 py-1.5 font-medium w-20">Sheets</th>}
-                {hasLength && <th className="text-right px-2 py-1.5 font-medium w-20">Bars</th>}
+                {hasLength && <th className="text-right px-2 py-1.5 font-medium w-20" data-testid="col-stock-count">{cat.metresEntry ? "Lengths" : "Bars"}</th>}
                 {hasVolumeRate && <th className="text-right px-2 py-1.5 font-medium w-20">On m³</th>}
                 {hasVolumeRate && <th className="text-right px-2 py-1.5 font-medium w-20">Steel (t)</th>}
-                {hasWeight && <th className="text-right px-2 py-1.5 font-medium w-20" data-testid="col-weight" title={hasLength ? "Weight of one whole bar" : hasArea ? "Weight of one whole sheet" : undefined}>{basis.weight}</th>}
+                {hasWeight && <th className="text-right px-2 py-1.5 font-medium w-20" data-testid="col-weight" title={hasLength ? `Weight of one whole ${stockWord}` : hasArea ? "Weight of one whole sheet" : undefined}>{basis.weight}</th>}
                 {hasWeight && <th className="text-right px-2 py-1.5 font-medium w-20">Total (t)</th>}
                 <th className="text-right px-2 py-1.5 font-medium w-28 min-w-[7rem]" data-testid="col-unit-cost" title={basis.priceNote}>{basis.price}</th>
                 <th className="text-right px-3 py-1.5 font-medium w-28 min-w-[7rem]">Total $</th>
@@ -119,7 +121,9 @@ export default function CategoryBlock({ cat, item, rates, onQtyChange, entryTone
                 const setRowRate = isQuoteRow && onRowRateChange ? (v) => onRowRateChange(qKey, v) : (v) => onRateChange(qKey, v, p.unitCost ?? 0);
                 const qty = Number(item.qtys[qKey]) || 0;
                 const sheets = hasArea && rate.sheetArea ? Math.ceil(qty / rate.sheetArea) : null;
-                const bars = hasLength && rate.barLength ? Math.ceil(qty / rate.barLength) : null;
+                // a trench mesh row saved before metres entry: priced as metres like every row, and asked about once
+                const unconfirmed = !!cat.metresEntry && isUnconfirmedStockRow(item, qKey);
+                const bars = hasLength && rate.barLength ? Math.ceil(qty / rate.barLength - 1e-9) : null;
                 const totalWeight = rate.unitWeight
                   ? ((sheets != null ? sheets : bars != null ? bars : qty) * rate.unitWeight) / 1000
                   : null;
@@ -162,6 +166,18 @@ export default function CategoryBlock({ cat, item, rates, onQtyChange, entryTone
                       {isAutoLevy && <span className="ml-1.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700">auto — per m³ of concrete</span>}
                       {isAutoWashout && <span className="ml-1.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700" title={`${washout.pigmentedM3} m³ of pigmented mix at ${washout.truckM3} m³ per Maxi truck (editable in the Rates modal: "VicMix Maxi truck load size") = ${washout.qty} truck${washout.qty === 1 ? "" : "s"}. Type a quantity to set the truck count yourself.`}>auto — {washout.qty} truck{washout.qty === 1 ? "" : "s"} of pigmented mix ({washout.pigmentedM3} m³), + GST</span>}
                       {isAutoShort && <span className="ml-1.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700" title={`VicMix's published price applies to a minimum ${shortLoad.minimumM3} m³ delivery; this element pours ${shortLoad.volumeM3} m³ (${shortLoad.shortByM3} m³ short). VicMix does not publish the charge — enter it on this row's rate. Type a quantity to take the row manual.`}>auto — {shortLoad.volumeM3} m³ is under the {shortLoad.minimumM3} m³ minimum</span>}
+                      {unconfirmed && (
+                        <div className="mt-0.5 text-[10px] leading-snug text-amber-800 bg-amber-50 border border-amber-200 rounded px-1.5 py-1" data-testid="stock-unconfirmed" data-key={qKey}>
+                          Now read as <b>{qty} m</b> = {bars} whole {cat.stockLengthM} m lengths ({money2(bars * rate.unitCost)}). It was priced as {qty} lengths ({money2(qty * rate.unitCost)}) until 24 Nov 2026.
+                          {onStockBasis && (
+                            <span className="ml-1 whitespace-nowrap">
+                              <button type="button" className="underline font-semibold hover:text-amber-950" data-testid="stock-confirm-metres" onClick={() => onStockBasis(qKey, "m")} title="The figure is lineal metres — keep it and stop asking">✓ Metres is right</button>
+                              <span className="mx-1 text-amber-400">·</span>
+                              <button type="button" className="underline hover:text-amber-950" data-testid="stock-as-lengths" onClick={() => onStockBasis(qKey, "lengths")} title={`${qty} was a count of lengths: make it ${Math.round(qty * cat.stockLengthM * 100) / 100} m, priced ${money2(qty * rate.unitCost)} as before`}>It was {qty} lengths → {Math.round(qty * cat.stockLengthM * 100) / 100} m</button>
+                            </span>
+                          )}
+                        </div>
+                      )}
                       {rate.validUntil && <ValidityChip validUntil={rate.validUntil} />}
                       {isQuoteRow && qty > 0 && !pinnedHere && onRowRateChange && (
                         <span
@@ -172,7 +188,7 @@ export default function CategoryBlock({ cat, item, rates, onQtyChange, entryTone
                         </span>
                       )}
                     </td>
-                    <td className="px-2 py-1 text-neutral-400">{p.unit}</td>
+                    <td className="px-2 py-1 text-neutral-400" data-testid={cat.metresEntry ? "stock-unit" : undefined}>{cat.metresEntry ? "m" : p.unit}</td>
                     <td className="px-2 py-1">
                       <NumInput
                         value={item.qtys[qKey]}
@@ -283,7 +299,7 @@ export default function CategoryBlock({ cat, item, rates, onQtyChange, entryTone
                           {money2(rowTotal)}
                           {/* the sum behind a whole-bar / whole-sheet row, so the figure can be checked at a glance */}
                           {!autoRow && qty > 0 && (bars != null || sheets != null) && (
-                            <div className="text-[10px] font-normal text-neutral-400 leading-tight" data-testid="row-sum">{bars != null ? bars : sheets} {bars != null ? (bars === 1 ? "bar" : "bars") : (sheets === 1 ? "sheet" : "sheets")} × {money2(rate.unitCost)}</div>
+                            <div className="text-[10px] font-normal text-neutral-400 leading-tight" data-testid="row-sum">{bars != null ? bars : sheets} {bars != null ? (bars === 1 ? stockWord : stockWord + "s") : (sheets === 1 ? "sheet" : "sheets")} × {money2(rate.unitCost)}</div>
                           )}
                         </>
                       )}

@@ -267,7 +267,13 @@ export const FULL_CATALOG = [
    * not quoted, so confirm them with the supplier before relying on one. As
    * with every catalog price these are only what a fresh install seeds; the
    * Rates modal overrides win (see lookupRate). */
-  { key: "TRENCH MESH", weightBasis: false, products: [
+  /* metresEntry (24 Nov 2026 — Boma, on "4 Bar-L12TM · length · 105.84 · $41.19 = $4,359.55": "rates are for single bar
+   * lengths and was quoted as lm"): the price and the weight are per 6 m LENGTH, and the quantity is METRES like a stock
+   * bar — Total = ceil(metres ÷ stockLengthM) × $/length, on every row, saved ones included ("apply to all the projects
+   * with trench mesh"). See stockLengthOf / rowRate in lib/costing.js. The unit in the rate KEY stays "length" (keys are
+   * never renamed); the card, the print and the exports show "m". */
+  { key: "TRENCH MESH", weightBasis: false, metresEntry: true, stockLengthM: 6, stockName: "length",
+    note: "Type the lineal METRES needed. Trench mesh is bought in whole 6 m lengths: the Lengths column is the metres rounded up, and the price and the weight are per 6 m length.", products: [
     ["3 Bar-L8TM", "length", 6.8, 14.39], ["4 Bar-L8TM", "length", 9.2, 18.58], ["5 Bar-L8TM", "length", 11.6, 25.87], ["6 Bar-L8TM", "length", 13.9, 31.05], ["7 Bar-L8TM", "length", 16.3, 35.05], ["8 Bar-L8TM", "length", 18.7, 40.21],
     ["3 Bar-L11TM", "length", 13.3, 24.43], ["4 Bar-L11TM", "length", 17.7, 33.79], ["5 Bar-L11TM", "length", 22.3, 41.3], ["6 Bar-L11TM", "length", 26.8, 50.66], ["7 Bar-L11TM", "length", 31.3, 58.59], ["8 Bar-L11TM", "length", 35.8, 67.02],
     ["3 Bar-L12TM", "length", 16.3, 30.07], ["4 Bar-L12TM", "length", 21.8, 41.19], ["5 Bar-L12TM", "length", 27.3, 50.66], ["6 Bar-L12TM", "length", 32.8, 61.84], ["7 Bar-L12TM", "length", 38.75, 103.5], ["8 Bar-L12TM", "length", 44.25, 82.7],

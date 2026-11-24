@@ -57,6 +57,8 @@ import TenderQuoteReport from "./components/TenderQuoteReport.jsx";
 import ExportExcelModal from "./components/ExportExcelModal.jsx";
 import ImportFlagsBanner from "./components/ImportFlagsBanner.jsx";
 import HandoverBanner from "./components/HandoverBanner.jsx";
+import StockMetresNotice from "./components/StockMetresNotice.jsx";
+import { confirmMetresPatch, lengthsToMetresPatch } from "./lib/costing.js";
 import { applyHandover, liveHandover, liveHandoverApplies, undoHandover, HANDOVER_LIVE_ON } from "./lib/handover.js";
 import { needsOffload, offloadMarkups, applyOffload, markupStoreEnabled } from "./lib/markupStore.js";
 import ManageElementTypesModal from "./components/ManageElementTypesModal.jsx";
@@ -1571,6 +1573,20 @@ function ProjectEditor({ project, allProjects, rates: liveRates, setRates: setLi
               setQuote((q) => ({ ...q, ...decideRateChangesPatch(q, liveRates, changes, apply) }));
               const kept = changes.length - apply.length;
               note(kept === 0 ? "This project now prices at the new Rates Library figures" : apply.length === 0 ? "Previous rates kept for this project — release them from the blue banner whenever you want today's figures" : `${apply.length} new rate${apply.length === 1 ? "" : "s"} applied, ${kept} kept at the previous figure${kept === 1 ? "" : "s"}`);
+            }}
+          />
+          {/* trench mesh rows saved before metres entry (24 Nov 2026): now read as metres — listed, answered, clearable */}
+          <StockMetresNotice
+            items={items}
+            rates={rates}
+            cleared={clearedNotices}
+            onClear={clearNoticeOn}
+            onJump={(id) => { const el = document.getElementById(`element-${id}`); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); }}
+            onAnswer={(rows, as) => {
+              const byItem = new Map();
+              rows.forEach((r) => byItem.set(r.itemId, [...(byItem.get(r.itemId) || []), r.key]));
+              setItems((its) => its.map((it) => (byItem.has(it.id) ? byItem.get(it.id).reduce((acc, k) => (as === "m" ? confirmMetresPatch(acc, k) : lengthsToMetresPatch(acc, k)), it) : it)));
+              note(as === "m" ? "Trench mesh confirmed as metres" : "That row is now its metres (lengths × 6) — priced as it was before");
             }}
           />
           {!locked && (
