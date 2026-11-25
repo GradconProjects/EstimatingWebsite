@@ -3085,6 +3085,7 @@ const FORMWORK_SYSTEMS=[
   // instead of a generic system name. Generic site systems follow.
   ["conventional","Conventional timber / ply"],
   ["bondek","Bondek (permanent metal deck)"],
+  ["kingflor","KingFlor (Fielders steel decking — permanent)"],
   ["edgeform","Edgeform (proprietary edge boards)"],
   ["beamsides","Beam / fold sides"],
   ["walls","Wall formwork"],
@@ -3430,7 +3431,58 @@ function etRunShapeUI(d){
 }
 function etRunM(d,perim){
   if(num(d.edgeThickenLenOverride)>0) return num(d.edgeThickenLenOverride);
-  return perim;
+  // the first thickening takes what is LEFT of the perimeter once the further thickenings have their runs
+  return Math.max(0, perim - extraEdgeThickenRunM(d));
+}
+/* ---- FURTHER EDGE THICKENINGS (25 Nov 2026 — Boma, on a slab whose edge is thickened to various widths: "i want to be
+ * able to add more edge thickenings as i have various widths") ----
+ * `d.edgeThickens[] = {name, runM, widthMm, depthMm, shape, baseW}` — each its own run, width, extra depth and section
+ * shape, priced as run × section area like the first one (concrete only, no cage). Each run is TYPED; the first
+ * thickening, left on "blank = perimeter", then covers the rest of the perimeter, so the widths never overlap. The
+ * array is never created by a render; with none, the slab prices exactly as before. */
+function etRowShapes(){ return SECTION_SHAPES.filter(o=>o[0]!=="sketch"); } // read when a row is drawn — SECTION_SHAPES is declared further down
+function extraEdgeThickens(d){ return Array.isArray(d&&d.edgeThickens)? d.edgeThickens : []; }
+/** One further thickening: {shape, run, area, vol, touched, label}. A row with a width or depth and no run is "touched"
+ * and prices nothing (a completeness warning says so). */
+function edgeThickenRowCalc(r){
+  r=r||{};
+  const shape=r.shape||"tri", run=num(r.runM);
+  const area=sectionAreaM2(shape,r.widthMm,r.depthMm,r.baseW,0);
+  const touched = run>0 || num(r.widthMm)>0 || num(r.depthMm)>0;
+  return {shape, run, area, vol:(run>0&&area>0)? run*area : 0, touched, label:sectionLabel(shape,r.widthMm,r.depthMm,r.baseW,0,"one")};
+}
+function extraEdgeThickenRunM(d){ return d&&d.edgeThicken? extraEdgeThickens(d).reduce((s,r)=>s+Math.max(0,num(r.runM)),0) : 0; }
+function edgeThickenRowName(r,i){ return (r&&String(r.name||"").trim()) || `Edge thickening ${i+2}`; }
+function edgeThickenRowOut(c){ return c.vol>0? `${fmt(c.vol,2)} m³` : (c.touched? (c.run>0? "type width & depth" : "type the run") : "—"); }
+/** What the first thickening runs over, in words — shown under its fields and refreshed as the rows are typed. */
+function edgeThickenRunNote(d){
+  const perim=slabPerimM(d), others=extraEdgeThickenRunM(d);
+  if(num(d.edgeThickenLenOverride)>0) return `This thickening runs <b>${fmt(num(d.edgeThickenLenOverride),1)} m</b> (typed)${others>0?`; the further thickenings below add ${fmt(others,1)} m`:""}.`;
+  if(!(others>0)) return `This thickening runs the whole slab perimeter (<b>${fmt(perim,1)} m</b>).`;
+  const rest=Math.max(0,perim-others);
+  return `This thickening runs <b>${fmt(rest,1)} m</b> = the perimeter ${fmt(perim,1)} m less ${fmt(others,1)} m of the further thickenings below${others>perim+1e-9?` — <b style="color:#b45309">the further runs are longer than the perimeter</b>`:""}.`;
+}
+function edgeThickenRowsSection(d){
+  const rows=extraEdgeThickens(d);
+  const body=rows.map((r,i)=>{ const c=edgeThickenRowCalc(r); return `<tr data-row="edgeThickens.${i}">
+   <td style="min-width:150px">${inpText(`edgeThickens.${i}.name`,r.name||"")}</td>
+   <td style="width:84px;min-width:84px">${inpNum(`edgeThickens.${i}.runM`,r.runM)}</td>
+   <td style="width:84px;min-width:84px">${inpNum(`edgeThickens.${i}.widthMm`,r.widthMm)}</td>
+   <td style="width:84px;min-width:84px">${inpNum(`edgeThickens.${i}.depthMm`,r.depthMm)}</td>
+   <td>${selOpts(`edgeThickens.${i}.shape`,c.shape,etRowShapes(),true)}</td>
+   <td style="width:84px;min-width:84px">${c.shape==="trap"? inpNum(`edgeThickens.${i}.baseW`,r.baseW===undefined?"":r.baseW) : `<span class="small">—</span>`}</td>
+   <td class="small" style="white-space:nowrap"><b data-et-out="${i}">${edgeThickenRowOut(c)}</b></td>
+   <td style="white-space:nowrap"><button type="button" class="btn small" data-action="dupEdgeThicken" data-idx="${i}" title="Duplicate this thickening (the run is left blank)">⧉</button> <button type="button" class="btn small danger" data-action="delRow" data-target="edgeThickens" data-idx="${i}" title="Remove this thickening">✕</button></td>
+  </tr>`; }).join('');
+  return `<div class="subsec" data-testid="edge-thickens"><div class="sechead">Further edge thickenings — other widths</div>
+  <p class="small">One row per <b>width</b>: type the <b>run</b> it covers, its width, the extra depth below the slab and its section shape. The first thickening above then covers the <b>rest of the perimeter</b> (unless its own run is typed), so the widths never overlap.</p>
+  ${rows.length? `<div style="overflow-x:auto"><table class="rows edge-thickens"><thead><tr><th>Where / name</th><th>Run (m)</th><th>Width (mm)</th><th>Extra depth (mm)</th><th>Section shape</th><th>Flat base (mm)</th><th>Concrete</th><th></th></tr></thead><tbody>${body}</tbody></table></div>` : ""}
+  <button class="btn small primary" data-action="addEdgeThicken" data-testid="edge-thicken-add" type="button">+ Add another edge thickening</button></div>`;
+}
+function refreshEdgeThickenRows(card,inst,field){
+  if(!/^(edgeThickens\.\d+\.|edgeThickenLenOverride$)/.test(field||"")) return;
+  extraEdgeThickens(inst.data).forEach((r,i)=>{ const t=edgeThickenRowOut(edgeThickenRowCalc(r)); card.querySelectorAll(`[data-et-out="${i}"]`).forEach(el=>{ el.textContent=t; }); });
+  card.querySelectorAll('[data-testid="edge-thicken-run-note"]').forEach(el=>{ el.innerHTML=edgeThickenRunNote(inst.data); });
 }
 
 /* ---- SHARED THICKENING / RIB CROSS-SECTION ----
@@ -5835,10 +5887,12 @@ function renderSlab(inst,def){
   <p class="small">Same as a Ground Beam's trench: dug volume + a bulked spoil-disposal line, along the combined run. Off by default so existing takeoffs don't change.</p></div>
   </div>`;
   let edgeThickenGeom = `<div class="subsec"><div class="sechead">⚠ Edge Thickening</div><div class="grid cols3">${chk("edgeThicken",d.edgeThicken,"<b>Edge thickening</b> — simple thickened strip, follows the slab perimeter automatically","edgeThicken")}</div>
-  <div class="subsec ${d.edgeThicken?'':'hidden'}" data-show-if="edgeThicken"><div class="grid cols4">${F("Thickened strip width (mm)",inpNum("edgeThickenWidth",d.edgeThickenWidth))}${F("Extra depth below slab thickness (mm)",inpNum("edgeThickenExtraDepth",d.edgeThickenExtraDepth))}${F("Run length override (m, blank = slab perimeter)",inpNum("edgeThickenLenOverride",d.edgeThickenLenOverride))}${F("Section shape",selOpts("etShape",d.etShape||((Array.isArray(d.etDirs)&&d.etDirs.length)?"sketch":"rect"),SECTION_SHAPES,true))}${(d.etShape==="rect"||d.etShape==="sketch"||!d.etShape)?"":F("Tapered on",selOpts("etSides",d.etSides||"one",SECTION_SIDES,true))}${d.etShape==="trap"?F("Flat base width (mm)",inpNum("etBaseW",d.etBaseW===undefined?0:d.etBaseW)):""}</div>
+  <div class="subsec ${d.edgeThicken?'':'hidden'}" data-show-if="edgeThicken"><div class="grid cols4">${F("Thickened strip width (mm)",inpNum("edgeThickenWidth",d.edgeThickenWidth))}${F("Extra depth below slab thickness (mm)",inpNum("edgeThickenExtraDepth",d.edgeThickenExtraDepth))}${F("Run length override (m, blank = slab perimeter, less any further thickenings)",inpNum("edgeThickenLenOverride",d.edgeThickenLenOverride))}${F("Section shape",selOpts("etShape",d.etShape||((Array.isArray(d.etDirs)&&d.etDirs.length)?"sketch":"rect"),SECTION_SHAPES,true))}${(d.etShape==="rect"||d.etShape==="sketch"||!d.etShape)?"":F("Tapered on",selOpts("etSides",d.etSides||"one",SECTION_SIDES,true))}${d.etShape==="trap"?F("Flat base width (mm)",inpNum("etBaseW",d.etBaseW===undefined?0:d.etBaseW)):""}</div>
   ${(()=>{ let sh=d.etShape||((Array.isArray(d.etDirs)&&d.etDirs.length)?"sketch":"rect");
     return sh==="sketch"? etRunShapeUI(d) : `<p class="small">Section area = width × extra depth × ${sh==="rect"?"1 (full rectangle)":sh==="tri"?"½ (straight triangular taper)":sh==="concave"?"⅓ (parabolic concave taper)":"⅔ (parabolic convex bulge)"}.</p>
     <div style="margin:4px 0 8px;"><button class="btn small primary" data-action="sketchEtRun" type="button">✏️ Sketch the SECTION profile instead (draw it off the section detail)</button></div>`; })()}
+  <p class="small" data-testid="edge-thicken-run-note">${edgeThickenRunNote(d)}</p>
+  ${edgeThickenRowsSection(d)}
   <div class="tip"><span class="ico">🏗️</span><div><b>Edge thickening is NOT an edge beam.</b> This is a simple thickening of the slab edge — extra concrete only, costed as run × section area on top of the flat slab volume, with no cage of its own (the slab mats run through it). The run follows the slab perimeter by default (type a manual override to change it); the SECTION comes from the shape preset — triangular by default — or SKETCH the section profile off the section detail with the ✏️ button. A detailed edge BEAM — with its own manually measured run, bar sets, ligatures and excavation — lives on the <b>Edge Beams</b> tab. Don't tick both for the same edge or the concrete double-counts.</div></div></div></div>`;
   let edgeBeamGeom = `<div class="subsec"><div class="sechead">Edge Beams (dedicated beams at the slab edge)</div><div class="grid cols3">${chk("edgeBeamOn",d.edgeBeamOn,"Edge beams — full beam takeoff, manual run length","edgeBeamOn")}</div>
   <div class="subsec ${d.edgeBeamOn?'':'hidden'}" data-show-if="edgeBeamOn"><div class="grid cols4">${F("Total edge beam run length (m) — manual, from the drawing",inpNum("edgeBeamLen",d.edgeBeamLen))}${F("Beam width (mm)",inpNum("edgeBeamWidth",d.edgeBeamWidth===undefined?300:d.edgeBeamWidth))}${F("Depth entered as",selOpts("edgeBeamDepthMode",d.edgeBeamDepthMode||"extra",[["extra","Extra depth below slab (drop)"],["overall","Overall beam depth (incl. slab)"]],true))}${F((d.edgeBeamDepthMode||"extra")==="overall"?"Overall beam depth (mm)":"Extra depth below slab thickness (mm)",inpNum("edgeBeamExtraDepth",d.edgeBeamExtraDepth===undefined?300:d.edgeBeamExtraDepth))}${F("Cover (mm, blank = element cover)",inpNum("edgeBeamCover",d.edgeBeamCover))}</div>
@@ -6115,7 +6169,8 @@ function computeSlab(inst,def){
     // only, following the slab perimeter automatically. Distinct from the
     // Edge Beams below (real beams, manual run, own cage).
     let etRun=etRunM(d,perim);
-    let runSrc=num(d.edgeThickenLenOverride)>0? "manual run" : "perimeter";
+    let etOthers=extraEdgeThickenRunM(d);
+    let runSrc=num(d.edgeThickenLenOverride)>0? "manual run" : (etOthers>0? "perimeter less the further thickenings" : "perimeter");
     // Bounded section shapes: the thickened edge is mostly TRIANGULAR (a
     // straight taper out to nothing — the default), sometimes rectangular,
     // concave (parabolic inward, area w·d/3) or convex (parabolic outward,
@@ -6129,6 +6184,15 @@ function computeSlab(inst,def){
     let shapeLabel = sectionLabel(shape,d.edgeThickenWidth,d.edgeThickenExtraDepth,d.etBaseW,sketchArea,d.etSides);
     let edgeVol=etRun*secArea;
     if(edgeVol>0) lines.push(baseLine(inst,def,{materialGroup:"Concrete",part:"beam",material:`N${slabBeamGrade(d)} concrete`,spec:"Edge thickening (perimeter strip)",qty:edgeVol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(edgeVol,concWastePct(d)),formula:`${runSrc}(${fmt(etRun,1)}m)×${shapeLabel}`}));
+    // further thickenings — other widths, each on its own typed run
+    extraEdgeThickens(d).forEach((r,ri)=>{
+      const c=edgeThickenRowCalc(r), nm=edgeThickenRowName(r,ri);
+      if(!c.touched) return;
+      if(!(c.run>0)){ warnings.push({text:`${nm} has no run length — type the run (m) it covers on Geometry → Edge Thickening; it prices nothing until then`,section:"geom",level:"completeness"}); return; }
+      if(!(c.area>0)){ warnings.push({text:`${nm} has no width or extra depth — it prices nothing until both are typed`,section:"geom",level:"completeness"}); return; }
+      lines.push(baseLine(inst,def,{materialGroup:"Concrete",part:"beam",material:`N${slabBeamGrade(d)} concrete`,spec:`Edge thickening — ${nm}`,qty:c.vol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(c.vol,concWastePct(d)),formula:`run(${fmt(c.run,1)}m)×${c.label}`}));
+    });
+    if(!(num(d.edgeThickenLenOverride)>0) && etOthers>perim+1e-9) warnings.push({text:`The further edge thickenings run ${fmt(etOthers,1)} m, more than the slab perimeter (${fmt(perim,1)} m) — check their runs`,section:"geom",level:"sanity"});
   }
   // THICKENING UNDER LOAD-BEARING WALLS — a band of extra concrete where an
   // internal wall lands on the slab, on every slab type. Run is measured off
@@ -10387,7 +10451,7 @@ function attachCardEvents(card,inst){
       // is too tight and doesnt allow me see what has been entered and also
       // doesnt allow decimals"). The value is stored and costed at once; only
       // the rebuild waits.
-      if(e.target.dataset.num!==undefined){ e.target.dataset.rerenderPending="1"; computeAllAndRefresh(); refreshExtraConnCount(card,inst,f); refreshRebateRows(card,inst,f); refreshInsVertRows(card,inst,f); return; }
+      if(e.target.dataset.num!==undefined){ e.target.dataset.rerenderPending="1"; computeAllAndRefresh(); refreshExtraConnCount(card,inst,f); refreshRebateRows(card,inst,f); refreshInsVertRows(card,inst,f); refreshEdgeThickenRows(card,inst,f); return; }
       computeAllAndRefresh();
       rerenderCardKeepTab(card,inst);
       return;
@@ -10396,6 +10460,7 @@ function attachCardEvents(card,inst){
     refreshAddlRowTotal(card,inst,f);
     refreshRebateRows(card,inst,f);
     refreshInsVertRows(card,inst,f);
+    refreshEdgeThickenRows(card,inst,f);
     refreshSdFormNote(card,inst);
     if(e.target.dataset.toggle){
       card.querySelectorAll(`[data-show-if="${e.target.dataset.toggle}"]`).forEach(sec=>sec.classList.toggle('hidden',!val));
@@ -10528,6 +10593,12 @@ function attachCardEvents(card,inst){
        : leaf==="outlinePts"? {x:0,y:0}
        : {zone:"Zone",length:1000,dia:"N10",spacing:200};
       arr.push(template);
+      rerenderCardKeepTab(card,inst);
+    } else if(act==="addEdgeThicken" || act==="dupEdgeThicken"){
+      // a further edge thickening: seeded from the first one's section (or a copy of a row); the run is always typed
+      const d0=inst.data; let arr=Array.isArray(d0.edgeThickens)? d0.edgeThickens : (d0.edgeThickens=[]);
+      if(act==="dupEdgeThicken"){ const i=parseInt(e.target.dataset.idx), src=arr[i]; if(src) arr.splice(i+1,0,Object.assign({},src,{name:copyName(src.name||edgeThickenRowName(src,i),arr), runM:""})); }
+      else arr.push({name:"", runM:"", widthMm:num(d0.edgeThickenWidth)>0? d0.edgeThickenWidth : 300, depthMm:num(d0.edgeThickenExtraDepth)>0? d0.edgeThickenExtraDepth : 150, shape:(d0.etShape&&d0.etShape!=="sketch")? d0.etShape : "tri", baseW:""});
       rerenderCardKeepTab(card,inst);
     } else if(act==="addRebate" || act==="dupRebate"){
       // a rebate row: added on the chosen run (the slab perimeter, one of its beams, a typed length), or a copy of a row

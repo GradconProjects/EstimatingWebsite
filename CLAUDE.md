@@ -5427,6 +5427,57 @@ element families waits on the owner's approval of the pad footing.
   the old spec and the bridge; `test-stepdown-form.mjs` proves the tick on the
   Formwork tab, both edges, a typed run and face, two risers, dowels off, the
   warning, the untick, an older takeoff and the save (19 checks).
+- **A slab's edge can be thickened to SEVERAL widths** (Boma, 25 Nov 2026, on
+  the slab's Edge Thickening block: "i want to be able to add more edge
+  thickenings as i have various widths"). Under the first thickening's fields
+  sits "Further edge thickenings — other widths" (`edgeThickenRowsSection`,
+  `data-testid="edge-thickens"`, **+ Add another edge thickening**
+  `edge-thicken-add` → action `addEdgeThicken`, seeded from the first one's
+  width / depth / shape; ⧉ `dupEdgeThicken` copies a row with its run blanked;
+  ✕ is the ordinary `delRow`): `d.edgeThickens[] = {name, runM, widthMm,
+  depthMm, shape, baseW}` — a name, the RUN it covers (always typed), its
+  width, the extra depth below the slab, a section shape (rectangular /
+  triangular / trapezoidal with a flat base / concave / convex — never a
+  sketch; `etRowShapes()`). `edgeThickenRowCalc(r)` is the ONE arithmetic
+  (run × `sectionAreaM2`), `extraEdgeThickenRunM(d)` the further runs' total,
+  and **`etRunM(d, perim)` gives the first thickening the REST of the
+  perimeter** (perimeter − the further runs, never below zero) unless its own
+  run is typed — so the widths never overlap and adding a width never buys
+  that run twice; `edge-thicken-run-note` states the run in words and follows
+  the typing with the rows' Concrete cells (`refreshEdgeThickenRows`).
+  `computeSlab` emits ONE Concrete line per row (`part: "beam"`, spec "Edge
+  thickening — <name>", the slab-beam grade and waste class); the first
+  thickening's spec is unchanged (the manual-override key). A row with a
+  section and no run, or a run and no section, prices nothing and is a
+  completeness warning; further runs longer than the perimeter are a sanity
+  warning. The Edge thickening tick governs every width together; with no
+  rows the slab prices exactly as before, and a render never creates the
+  array. A helper that reads a `const` table declared further down the page
+  must read it INSIDE a function — a top-level `const X = SECTION_SHAPES…`
+  placed above the table stopped the whole page loading, and only the browser
+  probe showed it. `verify.mjs` runs the arithmetic out of the page source and
+  pins the wiring; `test-edge-thickens.mjs` proves the perimeter split (60 →
+  40 + 20 → 32 + 20 + 8), the typed cursor, the live cells, duplicate, delete,
+  the warnings, the save and the tick (19 checks).
+- **KingFlor is a formwork system and a FORMWORK row** (Boma, 25 Nov 2026,
+  from a slab note — "300mm THICK N32 MPa SUSPENDED CONCRETE SLAB WITH SL92
+  MESH TOP … AND KINGFLOR SHEETING, OR EQUIVALENT, BTM." — "INCLUDE kingflor
+  in the formwork and other materials list"): Fielders' composite steel
+  decking, a permanent soffit of the same kind as Bondek. Estimates:
+  `FORMWORK_SYSTEMS` carries `["kingflor", "KingFlor (Fielders steel decking —
+  permanent)"]` right after Bondek, so it travels on every formwork line's
+  spec. Quotes: FORMWORK "KingFlor" (m², group Suspended, after Bondek).
+  **No KingFlor price was read from a supplier**: the row is seeded at the
+  Bondek figure ($150/m², Gradcon's own rate for a permanent steel deck
+  soffit) and its label says so ("seeded at the Bondek rate, confirm with the
+  supplier's quote") — never a remembered price. The bridge
+  (`FORMWORK_SYSTEM_PRODUCTS`, `/kingflor/i`) lands a KingFlor soffit on that
+  row. The Rates Library's Formwork table lists it by the same name (a stored
+  library gains it through `backfill`, so its figure governs Quotes) and its
+  position-based formwork list and the Cost Planner's two lists carry
+  "KingFlor decking to suspended slab" / "KingFlor" at the Bondek figures, not
+  marked established. The catalog is 438 products. `verify.mjs` pins the list
+  order, the label, the four lists and the bridge (100 m² → $15,000).
 - **A sheet-mesh line WEIGHS** (26 Oct 2026, Grady's pad footing PF1-3 with
   two layers of SL92 read "0kg reo"): `lineWeightKg` returns final m² ×
   `MESHTYPES[material]` (kg/m²) for an m² Reinforcement line, so the element

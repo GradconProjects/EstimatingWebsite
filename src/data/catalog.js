@@ -549,6 +549,11 @@ export const FULL_CATALOG = [
     { name: "Edgeform >400mm deep", unit: "m2", unitCost: 250, group: "Ground slabs", label: "Edgeform — over 400 mm deep" },
     { name: "Conventional", unit: "m2", unitCost: 200, group: "Suspended", label: "Conventional (soffit)" },
     { name: "Bondek", unit: "m2", unitCost: 150, group: "Suspended" },
+    // KingFlor (Boma, 25 Nov 2026, from a slab note: "300mm THICK N32 MPa SUSPENDED CONCRETE SLAB … AND KINGFLOR SHEETING,
+    // OR EQUIVALENT, BTM. TYPICAL" — "INCLUDE kingflor in the formwork and other materials list"): Fielders' composite
+    // steel decking, the same kind of permanent soffit as Bondek. No KingFlor price was read from a supplier, so the row
+    // is seeded at the Bondek figure (Gradcon's own rate for a permanent steel deck soffit) and its label says so.
+    { name: "KingFlor", unit: "m2", unitCost: 150, group: "Suspended", label: "KingFlor (steel decking — seeded at the Bondek rate, confirm with the supplier's quote)" },
     { name: "Edgeform (suspended)", unit: "m", unitCost: 50, group: "Suspended" },
     // Void formers (Grady, 4 Nov 2026: "add void formers cost as formwork with the best applicable rates per square
     // meter"): SUPPLY per m² of void former, ex GST — laying is crew-sheet labour (the m² joins the Boxing row's

@@ -180,6 +180,7 @@ function findInsulationProduct(name, unit) {
 // specific priced FORMWORK product, land the area straight on it.
 const FORMWORK_SYSTEM_PRODUCTS = [
   [/bondek/i, "Bondek"],
+  [/kingflor/i, "KingFlor"],
   [/oregon/i, "Oregon boards"],
   [/walls curved|curved wall/i, "Walls Curved"],
 ];

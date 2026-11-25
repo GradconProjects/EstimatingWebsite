@@ -396,6 +396,7 @@ const FORMWORK_ITEMS = [
   {p:"Extra for Class 2 off-form finish",u:"m2",material:30,fixHrs:0.05,stripHrs:0},
   {p:"1mm Bondek to suspended slab",u:"m2",material:125,fixHrs:0.30,stripHrs:0,established:true},
   {p:"0.75mm Bondek to suspended slab",u:"m2",material:125,fixHrs:0.28,stripHrs:0,established:true},
+  {p:"KingFlor decking to suspended slab",u:"m2",material:125,fixHrs:0.30,stripHrs:0}, // Fielders steel decking; at the Bondek figures until a supplier's quote is entered (not an established rate)
 ];
 
 // ---- RATE ITEMS: composite in-situ items, built from concrete + steel + formwork sub-rates ----
@@ -477,6 +478,7 @@ const FORMWORK_LEGACY_ITEMS = [
   {p:"Material",u:"unit",cost:400},
   {p:"Conventional",u:"m2",cost:150,note:"<3.5m $150, >3.5m $200"},
   {p:"Bondek",u:"m2",cost:125},
+  {p:"KingFlor",u:"m2",cost:125,note:"steel decking — at the Bondek figure until quoted"},
   {p:"Edgeform",u:"m",cost:50},
   {p:"Beam/fold sides <400mm d",u:"m",cost:100},
   {p:"Beam/fold sides >400mm d",u:"m2",cost:250},
@@ -691,7 +693,7 @@ function inferMember(kind, desc, group){
   }
   if (kind==="formwork"){
     if (d.includes("footing")) return "Footings";
-    if (d.includes("bondek")) return "Suspended Slab";
+    if (d.includes("bondek")||d.includes("kingflor")) return "Suspended Slab";
     if (d.includes("suspended slab")) return "Suspended Slab";
     if (d.includes("suspended stair")) return "Stairs";
     if (d.includes("wall")) return "Insitu Walls";
@@ -716,7 +718,7 @@ function inferMember(kind, desc, group){
   }
   if (kind==="concgrade") return "General / Other"; // grade is a material choice, not tied to one member
   if (kind==="fwlegacy"){
-    if (d.includes("conventional")||d.includes("edgeform")||d.includes("bondek")) return "Ground Slab";
+    if (d.includes("conventional")||d.includes("edgeform")||d.includes("bondek")||d.includes("kingflor")) return "Ground Slab";
     if (d.includes("beam")) return "Beams";
     if (d.includes("handrail")) return "Stairs";
     if (d.includes("curved")) return "Insitu Walls";

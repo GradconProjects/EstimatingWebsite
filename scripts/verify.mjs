@@ -99,10 +99,10 @@ check("every element type has both a category and a section", () => {
   });
 });
 
-check("21 material categories, 437 products (incl. the 12 vertical insulation rows and the 7 Slabmate boards of INSULATION (22 Nov 2026), the R6 / R8 / R10 plain rounds on PROCESSED BAR, the 12-row Void formers group of FORMWORK, the 23-row FINISHED PAVEMENTS & CONCRETE FINISHES band (permeable paving and the P4 slip-resistant row added 20 Nov 2026, the two recommended tender allowances 21 Nov 2026), the 45-row SAW CUTS & DOWELS band, CONCRETE PUMPING, REINFORCEMENT BY RATE, the 51-row INSULATION range, 31 SCREEDS, 17 HYDRONIC HEATING, 48 SPECIALIST FINISHING CONCRETE, 45 PRELIMINARIES, the full 24-size TRENCH MESH grid, Bored Piers subcontract, minimum cartage, levy, surcharge)", () => {
+check("21 material categories, 438 products (incl. KingFlor steel decking on FORMWORK (25 Nov 2026), the 12 vertical insulation rows and the 7 Slabmate boards of INSULATION (22 Nov 2026), the R6 / R8 / R10 plain rounds on PROCESSED BAR, the 12-row Void formers group of FORMWORK, the 23-row FINISHED PAVEMENTS & CONCRETE FINISHES band (permeable paving and the P4 slip-resistant row added 20 Nov 2026, the two recommended tender allowances 21 Nov 2026), the 45-row SAW CUTS & DOWELS band, CONCRETE PUMPING, REINFORCEMENT BY RATE, the 51-row INSULATION range, 31 SCREEDS, 17 HYDRONIC HEATING, 48 SPECIALIST FINISHING CONCRETE, 45 PRELIMINARIES, the full 24-size TRENCH MESH grid, Bored Piers subcontract, minimum cartage, levy, surcharge)", () => {
   assert.equal(FULL_CATALOG.length, 21);
   const total = FULL_CATALOG.reduce((s, c) => s + c.products.length, 0);
-  assert.equal(total, 437);
+  assert.equal(total, 438);
   const pre = FULL_CATALOG.find((c) => c.key === "PRELIMINARIES");
   assert.equal(pre.products.length, 45);
   assert.ok(!pre.weightBasis && !pre.areaBasis && !pre.lengthBasis && !pre.volumeRateBasis, "preliminaries cost plain qty × rate");
@@ -1429,7 +1429,8 @@ await checkAsync("FORMWORK follows the 22 Oct 2026 pattern: application groups i
   const byName = (n) => cat.products.find((p) => p.name === n);
   assert.deepEqual([byName("Edgeform").unit, byName("Edgeform").unitCost, byName("Edgeform").group], ["m", 25, "Ground slabs"], "ground-slab edgeform up to 400 mm: lineal metres at $25");
   assert.deepEqual([byName("Edgeform >400mm deep").unit, byName("Edgeform >400mm deep").unitCost], ["m2", 250]);
-  assert.deepEqual(live.filter((p) => p.group === "Suspended").map((p) => [p.name, p.unit, p.unitCost]), [["Conventional", "m2", 200], ["Bondek", "m2", 150], ["Edgeform (suspended)", "m", 50]], "three suspended rates, the edgeform by the lineal metre");
+  assert.deepEqual(live.filter((p) => p.group === "Suspended").map((p) => [p.name, p.unit, p.unitCost]), [["Conventional", "m2", 200], ["Bondek", "m2", 150], ["KingFlor", "m2", 150], ["Edgeform (suspended)", "m", 50]], "the suspended rates (KingFlor beside Bondek, at its figure — 25 Nov 2026), the edgeform by the lineal metre");
+  assert.match(live.find((p) => p.name === "KingFlor").label, /seeded at the Bondek rate/, "KingFlor's label says where its figure comes from");
   assert.equal(byName("Columns (eg 300x300)").unitCost, 1500); assert.equal(byName("Crane Truck hire").unitCost, 2500); assert.equal(byName("Scaffold hire (set-up)").unitCost, 600); assert.equal(byName("Handrail").unitCost, 50);
   assert.deepEqual(retired.map((p) => p.name).sort(), ["Beam/fold sides <400mm d", "Beam/fold sides >400mm d", "Scaffold Hire"]);
   assert.equal(productLabel(byName("Edgeform")), "Edgeform — up to 400 mm deep"); assert.equal(productLabel(byName("Bondek")), "Bondek");
@@ -2076,7 +2077,7 @@ check("rebates (19 Nov 2026): a rebate row runs along the slab perimeter, a beam
   assert.match(est, /formworkLines\(inst,def,\{material:"Rebate formwork"/, "rebate formwork goes through formworkLines (lineal metres under 400 mm)");
   assert.match(est, /if\(!c\.deduct \|\| num\(d\.concVolOverride\)>0\) return;/, "a measured concrete volume stands as typed");
   assert.match(est, /const line=\(c\.target\.concSpec && own\.find\(l=>l\.spec===c\.target\.concSpec\)\) \|\| own\[0\];/, "a beam's rebate comes off that beam's concrete line");
-  assert.match(est, /refreshExtraConnCount\(card,inst,f\); refreshRebateRows\(card,inst,f\); refreshInsVertRows\(card,inst,f\); return; \}/, "the Result cell follows the typing");
+  assert.match(est, /refreshExtraConnCount\(card,inst,f\); refreshRebateRows\(card,inst,f\); refreshInsVertRows\(card,inst,f\); refreshEdgeThickenRows\(card,inst,f\); return; \}/, "the Result cell follows the typing");
   // the bridge
   const { quote, flags } = buildImportFromEstimate({ project: { name: "Rebates" }, lines: [
     estLine({ elementId: "R1", element: "Raft Slab 1", category: "Raft Slab", materialGroup: "Formwork", material: "Rebate formwork", spec: "Brick rebate — 120 wide × 150 deep — Edge beam — rebate, larger face 150 mm — under 400 mm — lineal metres", qty: 40, finalQty: 42, unit: "m", faceMm: 150, m2Equiv: 10.8 }),
@@ -6326,6 +6327,50 @@ check("A project never drops off the list while its row is stored (23 Nov 2026 �
   const app = fs.readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
   assert.match(app, /const restoreProject = \(entry\) => \{[\s\S]{0,200}?setProjects\(\(ps\) => \(ps\.some\(\(p\) => p\.id === entry\.id\) \? ps : \[\.\.\.ps, entry\]\)\);/, "putting a project back only ever ADDS its entry");
   assert.match(app, /onRestore=\{restoreProject\}/);
+});
+
+check("KingFlor (25 Nov 2026): a formwork system in Estimates, a FORMWORK row in Quotes and the Rates Library, and the bridge lands a KingFlor soffit on it", () => {
+  const est = fs.readFileSync(new URL("../portal/estimates-app.html", import.meta.url), "utf8");
+  assert.match(est, /\["bondek","Bondek \(permanent metal deck\)"\],\s*\["kingflor","KingFlor \(Fielders steel decking — permanent\)"\]/);
+  const lib = fs.readFileSync(new URL("../portal/rates-library.html", import.meta.url), "utf8"), cp = fs.readFileSync(new URL("../portal/cost-planner.html", import.meta.url), "utf8");
+  assert.match(lib, /\{g:"Suspended", p:"KingFlor",u:"m2",cost:150,/); assert.match(lib, /p:"KingFlor decking to suspended slab"/); assert.match(cp, /p:"KingFlor decking to suspended slab"/); assert.match(cp, /\{p:"KingFlor",u:"m2",cost:125,/);
+  const br = buildImportFromEstimate({ project: { name: "KF" }, lines: [
+    { elementId: "S", element: "Suspended Slab L1", category: "Suspended Slab", materialGroup: "Concrete", material: "N32 concrete", spec: "Suspended Slab 300mm", qty: 30, finalQty: 30.75, unit: "m³" },
+    { elementId: "S", element: "Suspended Slab L1", category: "Suspended Slab", materialGroup: "Formwork", material: "Soffit formwork", spec: "Soffit · KingFlor (Fielders steel decking — permanent)", qty: 100, finalQty: 100, unit: "m²" },
+  ], elementGeometry: {} });
+  const it = br.quote.items[0], K = rateKey("FORMWORK", "KingFlor", "m2");
+  assert.equal(it.qtys[K], 100, "the soffit lands on the KingFlor row: " + JSON.stringify(it.qtys));
+  assert.ok(!it.qtys[rateKey("FORMWORK", "Conventional", "m2")] && !it.qtys[rateKey("FORMWORK", "Bondek", "m2")]);
+  assert.ok(Math.abs(computeElementCost(it, defaultRates()).categoryTotals["FORMWORK"] - 15000) < 0.005);
+});
+
+check("Further edge thickenings (25 Nov 2026): a slab's edge can be thickened to several widths — each on its own typed run, the first taking the rest of the perimeter; none = the slab as it was", () => {
+  const est = fs.readFileSync(new URL("../portal/estimates-app.html", import.meta.url), "utf8");
+  const num = (v, d) => { const n = parseFloat(v); return Number.isFinite(n) ? n : (d === undefined ? 0 : d); };
+  const fmt = (n, dp) => Number(n).toFixed(dp === undefined ? 2 : dp);
+  const fn = (name) => est.match(new RegExp("function " + name + "\\([^)]*\\)\\{[\\s\\S]*?\\n\\}"))[0];
+  const one = (name) => est.match(new RegExp("function " + name + "\\([^\\n]*\\n"))[0];
+  const M = new Function("num", "fmt", [fn("sectionAreaM2"), fn("sectionLabel"), one("extraEdgeThickens"), fn("edgeThickenRowCalc"), one("extraEdgeThickenRunM"), fn("etRunM")].join("\n") + "\nreturn {edgeThickenRowCalc, extraEdgeThickenRunM, etRunM};")(num, fmt);
+  const near = (a, b, m) => assert.ok(Math.abs(a - b) < 1e-9, `${m}: ${a} vs ${b}`);
+  // none: the first thickening runs the whole perimeter, as before
+  assert.equal(M.etRunM({ edgeThicken: true }, 60), 60); assert.equal(M.etRunM({ edgeThicken: true, edgeThickens: [] }, 60), 60);
+  // 450 wide over 20 m and 600 wide over 8 m: the first takes the other 32 m
+  const d = { edgeThicken: true, edgeThickens: [{ runM: 20, widthMm: 450, depthMm: 150, shape: "tri" }, { runM: 8, widthMm: 600, depthMm: 200, shape: "rect" }] };
+  assert.equal(M.extraEdgeThickenRunM(d), 28); assert.equal(M.etRunM(d, 60), 32);
+  assert.equal(M.etRunM({ ...d, edgeThickenLenOverride: 40 }, 60), 40, "a typed run on the first thickening stands");
+  assert.equal(M.etRunM({ edgeThicken: true, edgeThickens: [{ runM: 70 }] }, 60), 0, "never below zero");
+  near(M.edgeThickenRowCalc(d.edgeThickens[0]).vol, 20 * 0.45 * 0.15 / 2, "triangular: run × w × d ÷ 2");
+  near(M.edgeThickenRowCalc(d.edgeThickens[1]).vol, 8 * 0.6 * 0.2, "rectangular: run × w × d");
+  near(M.edgeThickenRowCalc({ runM: 10, widthMm: 400, depthMm: 200, shape: "trap", baseW: 200 }).vol, 10 * (0.4 + 0.2) * 0.2 / 2, "trapezoidal with a flat base");
+  const noRun = M.edgeThickenRowCalc({ widthMm: 300, depthMm: 150 });
+  assert.ok(noRun.touched && noRun.vol === 0, "a row with no run prices nothing and is flagged");
+  assert.equal(M.edgeThickenRowCalc({}).touched, false);
+  // wiring: the render never creates the array; the compute emits a line per row; add / duplicate / delete; the live cells
+  assert.doesNotMatch(est, /d\.edgeThickens\s*\|\|\s*\(d\.edgeThickens\s*=/, "a render never creates the array");
+  assert.match(est, /spec:`Edge thickening — \$\{nm\}`/); assert.match(est, /spec:"Edge thickening \(perimeter strip\)"/, "the first thickening's spec is unchanged (the override key)");
+  assert.match(est, /act==="addEdgeThicken" \|\| act==="dupEdgeThicken"/); assert.match(est, /data-action="delRow" data-target="edgeThickens"/);
+  assert.match(est, /data-testid="edge-thickens"/); assert.match(est, /data-testid="edge-thicken-run-note"/);
+  assert.equal((est.match(/refreshEdgeThickenRows\(card,inst,f\)/g) || []).length, 2, "both typing paths refresh the row results");
 });
 
 if (process.exitCode) {
