@@ -6373,6 +6373,39 @@ check("Further edge thickenings (25 Nov 2026): a slab's edge can be thickened to
   assert.equal((est.match(/refreshEdgeThickenRows\(card,inst,f\)/g) || []).length, 2, "both typing paths refresh the row results");
 });
 
+check("Blinding between the pile faces of a shotcrete wall (26 Nov 2026): wall length and the number of piles give the scallop fill — (L × D/2 − N × πD²/8) × height", () => {
+  const est = fs.readFileSync(new URL("../portal/estimates-app.html", import.meta.url), "utf8");
+  const num = (v, d) => { const n = parseFloat(v); return Number.isFinite(n) ? n : (d === undefined ? 0 : d); };
+  const fn = (name) => est.match(new RegExp("function " + name + "\\([^)]*\\)\\{[\\s\\S]*?\\n\\}"))[0];
+  const geom = new Function("num", fn("pileBlindGeom") + "\nreturn pileBlindGeom;")(num);
+  const near = (a, b, m, tol = 1e-9) => assert.ok(Math.abs(a - b) < tol, `${m}: ${a} vs ${b}`);
+  // the detail: 450 dia piles touching (P1 at 900 with a P2 between), 20 m of wall = 44.44 → say 18 m with 40 piles
+  let g = geom({ pileBlindOn: true, length: 18000, height: 3000, pileBlindPiles: 40, pileBlindDia: 450 });
+  assert.equal(g.ready, true); near(g.L, 18, "blank length = the wall length"); near(g.H, 3, "blank height = the wall height");
+  near(g.plan, 18 * 0.225 - 40 * Math.PI * 0.45 * 0.45 / 8, "strip less the half piles");
+  near(g.avgMm, 0.45 * (0.5 - Math.PI / 8) * 1000, "touching piles: 0.107 × D = 48.3 mm on average", 1e-6);
+  near(g.vol, g.plan * 3, "× the height"); near(g.centresMm, 450, "centres = length ÷ piles"); assert.equal(g.over, false);
+  // a typed length and height win; piles standing apart fill more per pile
+  g = geom({ pileBlindOn: true, length: 18000, height: 3000, pileBlindLenMm: 9000, pileBlindHeightMm: 2500, pileBlindPiles: 15, pileBlindDia: 450 });
+  near(g.L, 9, "typed length"); near(g.H, 2.5, "typed height"); near(g.centresMm, 600, "600 centres");
+  near(g.vol, (9 * 0.225 - 15 * Math.PI * 0.2025 / 8) * 2.5, "volume at 600 centres"); assert.ok(g.avgMm > 48.4, "more fill between piles that stand apart");
+  // nothing typed: not ready, names what is missing, prices nothing
+  g = geom({ pileBlindOn: true, length: 18000, height: 3000 });
+  assert.equal(g.ready, false); assert.equal(g.vol, 0); assert.deepEqual(g.missing, ["the pile diameter", "the number of piles"]);
+  assert.equal(geom({ length: 18000, height: 3000, pileBlindPiles: 40, pileBlindDia: 450 }).on, false, "off until ticked");
+  // more pile than wall is flagged, and the fill never goes negative
+  g = geom({ pileBlindOn: true, length: 9000, height: 3000, pileBlindPiles: 40, pileBlindDia: 450 });
+  assert.equal(g.over, true); assert.ok(g.plan >= 0 && g.vol >= 0);
+  // wiring: the Blinding tab leads with it on a shotcrete wall; a Base/Blinding concrete line the bridge lands on the blinding row; the note follows the typing
+  assert.match(est, /if\(def\.calc==="shotwall"\) parts\.blind = pileBlindSection\(inst\.data\) \+ parts\.blind;/);
+  assert.match(est, /const pb=pileBlindGeom\(d\);/); assert.equal((est.match(/=pileBlindGeom\(d\);/g) || []).length, 2, "compute and the note read the ONE geometry");
+  assert.match(est, /materialGroup:"Base\/Blinding",material:`Blinding concrete N\$\{bg\}`,spec:"Between the pile faces — flush finish behind the shotcrete"/);
+  assert.match(est, /inpNum\("pileBlindLenMm",d\.pileBlindLenMm\)/); assert.match(est, /inpNum\("pileBlindPiles",d\.pileBlindPiles\)/);
+  assert.match(est, /refreshSdFormNote\(card,inst\);\s*refreshPileBlindNote\(card,inst\);/, "the result line follows the typing");
+  assert.match(est, / missing — nothing is priced for it\.`,section:"blind",level:"completeness"/); assert.match(est, /level:"sanity"\}\);\s*\}\s*\}\s*return \{lines,warnings\};/);
+  assert.doesNotMatch(est.match(/function shotWallDefaults[\s\S]*?\n\};?\}/)[0], /pileBlind/, "no new default: an older shotcrete wall's content is unchanged");
+});
+
 check("Openings / penetrations by perimeter (25 Nov 2026): a row is width × height, or a typed perimeter and area — the perimeter forms the reveal, the area comes off the concrete; untouched rows price as before", () => {
   const est = fs.readFileSync(new URL("../portal/estimates-app.html", import.meta.url), "utf8");
   const num = (v, d) => { const n = parseFloat(v); return Number.isFinite(n) ? n : (d === undefined ? 0 : d); };

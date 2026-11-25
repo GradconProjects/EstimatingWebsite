@@ -5459,6 +5459,39 @@ element families waits on the owner's approval of the pad footing.
   pins the wiring; `test-edge-thickens.mjs` proves the perimeter split (60 →
   40 + 20 → 32 + 20 + 8), the typed cursor, the live cells, duplicate, delete,
   the warnings, the save and the tick (19 checks).
+- **A shotcrete wall blinds BETWEEN THE PILE FACES** (Boma, 26 Nov 2026, on a
+  shotcrete-to-contiguous-piled-wall detail — 450 dia piles, "ALLOW TO
+  PROVIDE N20 MPa BLINDING CONCRETE LAYER FOR FLUSH FINISH": "how do we
+  calculate the blinding between the faces of the bored piers and the
+  shotcrete wall"; then "i want it in and i want to be able to specify wall
+  length and the total number of pile affected"). The Shotcrete Wall's
+  Blinding tab LEADS with "Blinding between the pile faces (behind the
+  shotcrete)" (`pileBlindSection`, `data-testid="pile-blinding"`, added in
+  `buildCard` for `calc === "shotwall"`; the Concrete tab points at it):
+  the tick `pileBlindOn`, **Wall length blinded** (`pileBlindLenMm`, blank =
+  the wall's length), **Total number of piles affected** (`pileBlindPiles` —
+  EVERY pile in the length, reinforced and mass-concrete alike), **Pile
+  diameter** (`pileBlindDia`), Height blinded (`pileBlindHeightMm`, blank =
+  the wall's height) and a grade (`pileBlindGrade`, blank = the project's
+  blinding grade). `pileBlindGeom(d)` is the ONE reading: in plan the fill is
+  the strip from the pile centreline out to the plane across the pile faces
+  (length × D ÷ 2) less the half of every pile standing in it (N × πD² ÷ 8),
+  × the height — touching piles average 0.107 × D (48 mm on a 450 pile),
+  piles standing apart more. `computeShotWall` emits ONE `Base/Blinding` m³
+  line "Blinding concrete N<grade>" (spec "Between the pile faces — flush
+  finish behind the shotcrete", the centres and average thickness in the
+  notes) at the WALL's concrete waste class (shotcrete / irregular — the
+  piles are never perfectly in line), so the bridge lands it on the Quotes
+  CONCRETE "Blinding concrete" row; the shotcrete keeps its own thickness,
+  measured from that plane. Ticked with a figure missing is a completeness
+  warning and no line; more pile than wall (N × D > length — the formula
+  assumes piles that touch or stand apart) is a sanity warning. The result
+  line (`pile-blinding-out`) follows the typing (`refreshPileBlindNote`).
+  No field was added to `shotWallDefaults`, so an older wall's content is
+  unchanged. `verify.mjs` runs the geometry out of the page source and pins
+  the wiring; `test-pile-blinding.mjs` proves the tab, the tick, the warning,
+  40 piles on 18 m × 3 m = 2.61 m³, a typed length / height / grade, the
+  overlap flag, the cursor, the save and the untick (20 checks).
 - **An opening or penetration can be entered by its PERIMETER** (Boma,
   25 Nov 2026: "i would like the option of entering openings and penetrations
   in perimeter lm also"). The Openings table on the slab and the wall

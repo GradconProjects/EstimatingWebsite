@@ -6990,6 +6990,56 @@ function shotPierCount(d){
   let tgt=INSTANCES.find(x=>x.id===d.pierDowelTarget); if(!tgt) return 0;
   return Math.max(0,Math.round(num(tgt.data.qty,1)));
 }
+/* ---- BLINDING BETWEEN THE PILE FACES (26 Nov 2026) ----
+ * A shotcrete wall sprayed onto a contiguous bored-pile wall first has the
+ * scallops between the round piles filled flush with the pile faces (the
+ * typical detail: "allow to provide N20 MPa blinding concrete layer for flush
+ * finish"). The estimator types the WALL LENGTH blinded and the TOTAL NUMBER
+ * OF PILES in it, with the pile diameter. In plan the fill is the strip from
+ * the pile centreline out to the plane touching the pile faces (length × D/2)
+ * less the half of every pile that stands in it (N × πD²/8); × the height.
+ * Touching piles give an average of 0.107 × D (48 mm on a 450 pile). The
+ * formula assumes piles that touch or stand apart — more pile than wall
+ * (N × D > length) is flagged, never silently priced as right.
+ * pileBlindGeom(d) is the ONE reading (compute, the note, the warnings). */
+function pileBlindGeom(d){
+  d=d||{};
+  const on=!!d.pileBlindOn;
+  const D=num(d.pileBlindDia)/1000;
+  const lenTyped=num(d.pileBlindLenMm)>0, heightTyped=num(d.pileBlindHeightMm)>0;
+  const L=(lenTyped? num(d.pileBlindLenMm) : num(d.length))/1000;
+  const H=(heightTyped? num(d.pileBlindHeightMm) : num(d.height))/1000;
+  const N=Math.max(0,Math.round(num(d.pileBlindPiles)));
+  const strip=L*D/2, piles=N*Math.PI*D*D/8;
+  const plan=Math.max(0,strip-piles);
+  const ready=D>0&&L>0&&H>0&&N>0;
+  const missing=[]; if(!(D>0)) missing.push("the pile diameter"); if(!(N>0)) missing.push("the number of piles"); if(!(L>0)) missing.push("the wall length"); if(!(H>0)) missing.push("the height");
+  return {on, D, L, H, N, lenTyped, heightTyped, strip, piles, plan, ready, missing,
+    avgMm: L>0? plan/L*1000 : 0, centresMm: N>0? L/N*1000 : 0, vol: ready? plan*H : 0, over: ready && N*D>L*1.001};
+}
+function pileBlindOutText(d){
+  const g=pileBlindGeom(d);
+  if(!g.on) return "";
+  if(!g.ready) return `Type ${g.missing.join(", ")} — nothing is priced for the blinding until then.`;
+  return `${fmt(g.L,2)} m of wall × ${fmt(g.H,2)} m high · ${g.N} piles Ø${fmt(g.D*1000,0)} at ${fmt(g.centresMm,0)} mm centres → average ${fmt(g.avgMm,0)} mm thick · ${fmt(g.vol,2)} m³ net`
+    + (g.over? ` — ${g.N} × Ø${fmt(g.D*1000,0)} is ${fmt(g.N*g.D,2)} m of pile on a ${fmt(g.L,2)} m wall: check the number of piles or the length` : "");
+}
+function pileBlindSection(d){
+  return `<div class="subsec" data-testid="pile-blinding"><div class="sechead">Blinding between the pile faces (behind the shotcrete)</div>
+  ${chk("pileBlindOn",d.pileBlindOn,"Blinding concrete fills between the pile faces for a flush finish before the wall is sprayed","pileBlindOn")}
+  <div class="subsec ${d.pileBlindOn?'':'hidden'}" data-show-if="pileBlindOn"><div class="grid cols3">
+   ${F("Wall length blinded (mm, blank = the wall length)",inpNum("pileBlindLenMm",d.pileBlindLenMm))}
+   ${F("Total number of piles affected",inpNum("pileBlindPiles",d.pileBlindPiles))}
+   ${F("Pile diameter (mm)",inpNum("pileBlindDia",d.pileBlindDia))}
+   ${F("Height blinded (mm, blank = the wall height)",inpNum("pileBlindHeightMm",d.pileBlindHeightMm))}
+   ${F(`Blinding grade (N, blank = N${blindGradeDefault()})`,inpNum("pileBlindGrade",d.pileBlindGrade))}
+  </div>
+  <p class="small" data-testid="pile-blinding-out" data-pileblind-out style="font-weight:600">${pileBlindOutText(d)}</p>
+  <p class="small">Volume = (wall length × pile diameter ÷ 2 − number of piles × π × diameter² ÷ 8) × height: the fill from the pile centreline out to the plane across the pile faces, less the piles themselves. Count EVERY pile in the length (the reinforced and the mass-concrete ones alike). The shotcrete stays its own thickness measured from that plane; this line takes the wall's concrete waste class, because the piles are never perfectly in line.</p></div></div>`;
+}
+function refreshPileBlindNote(card,inst){
+  const el=card.querySelector('[data-pileblind-out]'); if(el) el.textContent=pileBlindOutText(inst.data);
+}
 function renderShotWall(inst){
   let d=inst.data;
   let geom=`<div class="grid cols4">${LF("Wall length (mm)","length",d.length)}${LF("Wall height (mm)","height",d.height)}${F("Thickness (mm)",inpNum("thickness",d.thickness))}${coverField(inst)}</div>`;
@@ -7000,7 +7050,8 @@ function renderShotWall(inst){
         [["auto",`Auto — ${concWasteClassLabel(shotAuto)} (${CONC_WASTE[shotAuto]}%)`], ...CONC_WASTE_CLASSES.map(c=>[c.key,`${c.label} — ${CONC_WASTE[c.key]}% (typ. ${c.range})`])], true));
   let conc=`<div class="grid cols3">${F("Shotcrete strength grade (N/MPa)",inpNum("grade",d.grade===undefined?PROJECT.grade:d.grade))}${shotClassSel}${F(`Rebound / overspray waste % override (blank = ${shotEff}%)`,inpNum("concreteWasteOverride",d.concreteWasteOverride))}</div>
   <p class="small">Concrete = length × height × thickness, sprayed application — the register line carries the grade you choose (N32 / N40 / N50 shotcrete mixes are common) and the sprayed waste, which is higher than a formed pour.</p>
-  <div class="grid cols3">${chk("xypex",d.xypex,"Penetron (Xypex) waterproofing additive","xypex")}</div>`;
+  <div class="grid cols3">${chk("xypex",d.xypex,"Penetron (Xypex) waterproofing additive","xypex")}</div>
+  <p class="small">Blinding concrete between the pile faces of a piled wall (the flush finish behind the shotcrete) is on the <b>Blinding</b> tab.</p>`;
   let reo=`<div class="grid cols3">${F("Mesh type",selOpts("meshType",d.meshType,Object.keys(MESHTYPES).map(m=>[m,m]),true))}${F("Layers",inpNumR("meshLayers",d.meshLayers))}${chk("meshLap",d.meshLap,"Include lap allowance (%)","meshLap")}</div>
   ${layerTypeSelects(d,"meshLayers","meshType","meshLayerTypes",(f,v)=>selOpts(f,v,Object.keys(MESHTYPES).map(m=>[m,m])),"mesh type")}
   <p class="small">Central mesh layer(s) across the full wall face — sprayed walls are typically single-face-mesh, not two independent faces like a formed wall.</p>`;
@@ -7066,7 +7117,18 @@ function computeShotWall(inst,def){
   if(d.stripDrain && num(d.stripDrainLength)>0){
     lines.push(baseLine(inst,def,{materialGroup:"Drainage",material:"Strip drain (out of scope — verify)",spec:"",qty:num(d.stripDrainLength)/1000,unit:"m",waste:0,finalQty:num(d.stripDrainLength)/1000,formula:"manual entry"}));
   }
-  return {lines,warnings:[]};
+  // Blinding between the pile faces (26 Nov 2026) — pileBlindGeom is the ONE reading.
+  const warnings=[];
+  const pb=pileBlindGeom(d);
+  if(pb.on){
+    if(!pb.ready) warnings.push({text:`Blinding between the pile faces is ticked but ${pb.missing.join(", ")} ${pb.missing.length>1?"are":"is"} missing — nothing is priced for it.`,section:"blind",level:"completeness"});
+    else {
+      const bg=num(d.pileBlindGrade)>0? num(d.pileBlindGrade) : blindGradeDefault();
+      if(pb.vol>0) lines.push(baseLine(inst,def,{materialGroup:"Base/Blinding",material:`Blinding concrete N${bg}`,spec:"Between the pile faces — flush finish behind the shotcrete",qty:pb.vol,unit:"m³",waste:sprayWaste,finalQty:withWaste(pb.vol,sprayWaste),formula:`(${fmt(pb.L,2)} m × Ø${fmt(pb.D*1000,0)}÷2 − ${pb.N} piles × π×Ø²÷8) × ${fmt(pb.H,2)} m high (+${fmt(sprayWaste,0)}% waste)`,notes:`${pb.N} piles Ø${fmt(pb.D*1000,0)} at ${fmt(pb.centresMm,0)} mm centres over ${fmt(pb.L,2)} m — average ${fmt(pb.avgMm,0)} mm thick`}));
+      if(pb.over) warnings.push({text:`Blinding between the pile faces: ${pb.N} piles of Ø${fmt(pb.D*1000,0)} are ${fmt(pb.N*pb.D,2)} m of pile on a ${fmt(pb.L,2)} m wall — the piles overlap, so the fill is understated${pb.vol>0?"":" (it prices nothing)"}. Check the number of piles or the wall length.`,section:"blind",level:"sanity"});
+    }
+  }
+  return {lines,warnings};
 }
 
 /* ---- STAIRS ---- */
@@ -10117,6 +10179,7 @@ function buildCard(inst){
     let ad=inst.data;
     parts.blind = blindingSection(ad) + `<div class="grid cols3" style="margin-top:6px;">${F("Blinding / membrane area (m², 0 = element footprint where known)",inpNum("blindArea",ad.blindArea))}</div>`;
   }
+  if(def.calc==="shotwall") parts.blind = pileBlindSection(inst.data) + parts.blind;
   parts.blind = parts.blind + insulationSubsection(inst.data) + verticalInsulationSection(inst);
   // EVERY ground element decides its own excavation (see applyExcavationOption).
   if(isGroundElement(def)) parts.exc = excavationOptionSection(inst,def) + (parts.exc||"");
@@ -10496,6 +10559,7 @@ function attachCardEvents(card,inst){
     refreshEdgeThickenRows(card,inst,f);
     refreshOpeningRows(card,inst,f);
     refreshSdFormNote(card,inst);
+    refreshPileBlindNote(card,inst);
     if(e.target.dataset.toggle){
       card.querySelectorAll(`[data-show-if="${e.target.dataset.toggle}"]`).forEach(sec=>sec.classList.toggle('hidden',!val));
       let offSecs=card.querySelectorAll(`[data-show-if="${e.target.dataset.toggle}_off"]`);
