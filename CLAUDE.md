@@ -5664,6 +5664,48 @@ element families waits on the owner's approval of the pad footing.
   sheets, the same kg, the summary, the register row, a 30 m² override), the
   L-series mesh still in lm, a ground beam, a pad's fill strips, a slab's
   re-entrant strips and no sheet line left in metres (15 checks).
+- **A slab's edge beam can be DEEPENED** (Boma, 27 Nov 2026, on the "Typical
+  deepened external beam connection detail" — brick veneer and stud wall
+  versions: "how do we include deepened beams"; then "it should account for
+  the concrete if selected"). Where the site levels make the external beam
+  found lower than the slab (controlled fill, or retaining to the beam), the
+  beam itself (EB1 on the footing schedule) sits at the bottom and a THROAT
+  rises from it to the slab. The slab's Edge Beams tab ends with "Deepened
+  edge beams — the throat down to a lowered beam" (`deepBeamSection`,
+  `data-testid="deep-beams"`; **+ Add a deepened beam run** `deep-beam-add` →
+  action `addDeepBeam`, ⧉ `dupDeepBeam` copies a row with its run blank, ✕ is
+  the ordinary `delRow`): `d.deepBeams[]`, one row (`deep-beam-row`) per run
+  with its own height, seeded from the detail (`DEEP_BEAM_SEED`: 200 mm
+  throat, N12-200 each way cast 400 mm into the footing, N12-600 'L' bars
+  300 each way, one N12 continuous top perimeter bar, outer face formed,
+  inner face lost formwork). The beam stays in the Edge Beams fields over its
+  WHOLE run; a row adds only what the deepening adds. `deepBeamCalc(r,
+  dfltW)` is the ONE arithmetic and `deepBeamLines` (called once by
+  `computeSlab`) the ONE set of lines, every one `part: "beam"` so a by-rate /
+  by-area method keeps it: throat concrete = run × deepened height × throat;
+  vertical bars = (run ÷ spacing + 1) × faces × (height + embedment),
+  horizontal = (height ÷ spacing + 1) × faces × run — or the detail's
+  alternative, a sheet mesh over run × (height + embedment) in m² with whole
+  sheets; 'L' bars = (run ÷ spacing + 1) × two legs; the perimeter bar = bars
+  × run with the lap; the outer and inner faces through `formworkLines` as
+  "Beam formwork" (under 400 mm by the lineal metre, deeper in m² — the inner
+  face's spec says "LOST formwork (left in place against the fill)"; the
+  bridge lands both on the Edgeform rows). **Under the beam** (`under`, the
+  second detail's note): "Deepen the footing 'D'" — run × width W
+  (`footWMm`, blank = the edge beam's width) × `footExtraMm` of beam
+  concrete — or "Blinding concrete under the footing (the alternative)" —
+  run × W × `blindTMm` on a Base/Blinding line the bridge lands on the Quotes
+  blinding row; whichever is selected is counted, selected with no depth is a
+  completeness warning and no line. A row with a run and no height (or the
+  reverse) prices nothing and warns; an untouched row is nothing; the render
+  never creates the array, so an older slab's content is unchanged; the
+  row's note (`deep-beam-out`) follows the typing (`refreshDeepBeamRows`).
+  The controlled fill is not measured. `verify.mjs` runs `deepBeamCalc` out of
+  the page source and pins the wiring; `test-deep-beams.mjs` proves the
+  detail over 12 m (1.44 m³, 61 + 48 m of N12, 12.6 m of L bars, 12 m
+  perimeter bar, 7.2 m² each face), a 300 mm throat by the metre, the mesh
+  alternative, both under-beam choices, two faces, duplicate, by-rate, the
+  save and the remove (33 checks).
 - **A sheet-mesh line WEIGHS** (26 Oct 2026, Grady's pad footing PF1-3 with
   two layers of SL92 read "0kg reo"): `lineWeightKg` returns final m² ×
   `MESHTYPES[material]` (kg/m²) for an m² Reinforcement line, so the element

@@ -2077,7 +2077,7 @@ check("rebates (19 Nov 2026): a rebate row runs along the slab perimeter, a beam
   assert.match(est, /formworkLines\(inst,def,\{material:"Rebate formwork"/, "rebate formwork goes through formworkLines (lineal metres under 400 mm)");
   assert.match(est, /if\(!c\.deduct \|\| num\(d\.concVolOverride\)>0\) return;/, "a measured concrete volume stands as typed");
   assert.match(est, /const line=\(c\.target\.concSpec && own\.find\(l=>l\.spec===c\.target\.concSpec\)\) \|\| own\[0\];/, "a beam's rebate comes off that beam's concrete line");
-  assert.match(est, /refreshExtraConnCount\(card,inst,f\); refreshRebateRows\(card,inst,f\); refreshInsVertRows\(card,inst,f\); refreshEdgeThickenRows\(card,inst,f\); refreshOpeningRows\(card,inst,f\); return; \}/, "the Result cell follows the typing");
+  assert.match(est, /refreshExtraConnCount\(card,inst,f\); refreshRebateRows\(card,inst,f\); refreshInsVertRows\(card,inst,f\); refreshEdgeThickenRows\(card,inst,f\); refreshDeepBeamRows\(card,inst,f\); refreshOpeningRows\(card,inst,f\); return; \}/, "the Result cell follows the typing");
   // the bridge
   const { quote, flags } = buildImportFromEstimate({ project: { name: "Rebates" }, lines: [
     estLine({ elementId: "R1", element: "Raft Slab 1", category: "Raft Slab", materialGroup: "Formwork", material: "Rebate formwork", spec: "Brick rebate — 120 wide × 150 deep — Edge beam — rebate, larger face 150 mm — under 400 mm — lineal metres", qty: 40, finalQty: 42, unit: "m", faceMm: 150, m2Equiv: 10.8 }),
@@ -6582,6 +6582,41 @@ check("Openings / penetrations by perimeter (25 Nov 2026): a row is width × hei
   assert.doesNotMatch(est, /reduce\(\(s,o\)=>s\+2\*\(\(num\(o\.w\)/, "no calculator spells the reveal arithmetic itself any more");
   assert.match(est, /openTot\.typedPerim\? "Σ perimeter×qty \(typed perimeter, else 2×\(w\+h\)\)" : "Σ 2×\(w\+h\)×qty"/, "an untouched takeoff keeps its formula text");
   assert.match(est, /data-open-out=/); assert.equal((est.match(/refreshOpeningRows\(card,inst,f\)/g) || []).length, 2);
+});
+
+check("Deepened edge beams on a slab (27 Nov 2026): the throat, its bars or mesh cast into the footing, 'L' bars, the perimeter bar, and the concrete under the beam when selected", () => {
+  const est = fs.readFileSync(new URL("../portal/estimates-app.html", import.meta.url), "utf8");
+  const num = (v, d) => { const n = parseFloat(v); return Number.isFinite(n) ? n : (d === undefined ? 0 : d); };
+  const fn = (name) => est.match(new RegExp("function " + name + "\\([^)]*\\)\\{[\\s\\S]*?\\n\\}"))[0];
+  const calc = new Function("num", fn("deepBeamCalc") + "\nreturn deepBeamCalc;")(num);
+  const near = (a, b, m) => assert.ok(Math.abs(a - b) < 1e-9, `${m}: ${a} vs ${b}`);
+  // the typical detail over 12 m: 600 deepening, 200 throat, N12-200 each way cast 400 into the footing, N12-600 L bars 300 each way, 1 perimeter bar
+  let c = calc({ runM: 12, heightMm: 600, throatMm: 200, reo: "bars", spacing: 200, embedMm: 400, lSpacing: 600, lLegMm: 300, topBars: 1 }, 300);
+  near(c.vol, 1.44, "throat concrete"); near(c.face, 7.2, "one face");
+  assert.equal(c.vBars, 61); near(c.vM, 61, "vertical bars × (height + embedment)"); assert.equal(c.hBars, 4); near(c.hM, 48, "horizontal bars × run");
+  assert.equal(c.lBars, 21); near(c.lM, 12.6, "L bars × two legs"); near(c.topM, 12, "the perimeter bar");
+  assert.equal(c.under, "none"); assert.equal(c.underVol, 0, "nothing under the beam unless selected");
+  // blanks take the detail's figures; two faces double the bars
+  c = calc({ runM: 12, heightMm: 600, faces: 2 }, 300); near(c.T, 0.2, "blank throat = 200"); near(c.embed, 0.4, "blank embedment = 400"); assert.equal(c.vBars, 122); near(c.lM, 12.6, "blank L bars = 600 centres, 300 legs");
+  // the mesh alternative; L bars off; no perimeter bar
+  c = calc({ runM: 12, heightMm: 600, reo: "mesh", lOn: false, topBars: 0 }, 300); near(c.meshM2, 12, "mesh over run × (height + embedment)"); assert.equal(c.vM, 0); assert.equal(c.lM, 0); assert.equal(c.topM, 0);
+  // under the beam: the footing deepened 'D' at the edge beam's width, a typed W, or the blinding alternative
+  c = calc({ runM: 12, heightMm: 600, under: "deepen", footExtraMm: 300 }, 300); near(c.underVol, 1.08, "deepened at the edge beam width");
+  c = calc({ runM: 12, heightMm: 600, under: "deepen", footExtraMm: 300, footWMm: 450 }, 300); near(c.underVol, 1.62, "a typed W");
+  c = calc({ runM: 12, heightMm: 600, under: "blind", blindTMm: 100, footWMm: 450, footExtraMm: 300 }, 300); near(c.underVol, 0.54, "blinding reads ITS depth, never the deepening's");
+  assert.equal(calc({ runM: 12, heightMm: 600, under: "deepen" }, 300).underVol, 0, "selected with no depth prices nothing (a warning says so)");
+  // nothing typed is nothing; a run with no height is not ready
+  assert.equal(calc({}, 300).touched, false); c = calc({ runM: 12 }, 300); assert.equal(c.ready, false); assert.deepEqual(c.missing, ["the deepened height"]); assert.equal(c.vol, 0);
+  // wiring: the Edge Beams tab, the compute, the live note, the add / duplicate, never created by a render, beam steel survives the methods
+  assert.match(est, /edgebeams: edgeBeamGeom \+ edgeBeamReoBlock \+ extraBeamGroupsSection\(inst,d,"edgeBeamGroups"\) \+ deepBeamSection\(d\),/);
+  assert.equal((est.match(/deepBeamLines\(inst,def,lines,warnings\);/g) || []).length, 1, "computeSlab calls it once");
+  assert.equal((est.match(/refreshDeepBeamRows\(card,inst,f\)/g) || []).length, 2);
+  assert.match(est, /act==="addDeepBeam" \|\| act==="dupDeepBeam"/); assert.match(est, /runM:""\}\)\); \}\s*else arr\.push\(Object\.assign\(\{\},DEEP_BEAM_SEED\)\);/, "a copy's run is blank");
+  assert.match(est, /function deepBeams\(d\)\{ return Array\.isArray\(d&&d\.deepBeams\)\? d\.deepBeams : \[\]; \}/, "a render never creates the array");
+  const body = fn("deepBeamLines");
+  assert.equal((body.match(/part:"beam"/g) || []).length, 7, "every concrete and steel line is a beam part (kept under by-rate / by-area)");
+  assert.match(body, /spec:`\$\{lead\} — throat`/); assert.match(body, /footing deepened 'D'/); assert.match(body, /blindingLine\(inst,def,c\.run\*c\.footW,c\.underMm,"concrete"/);
+  assert.match(body, /LOST formwork \(left in place against the fill\)/); assert.equal((body.match(/material:"Beam formwork"/g) || []).length, 2, "both faces go through formworkLines as beam formwork (the bridge's edge rows)");
 });
 
 if (process.exitCode) {

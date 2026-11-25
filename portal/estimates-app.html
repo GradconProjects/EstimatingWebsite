@@ -3513,6 +3513,141 @@ function refreshEdgeThickenRows(card,inst,field){
   card.querySelectorAll('[data-testid="edge-thicken-run-note"]').forEach(el=>{ el.innerHTML=edgeThickenRunNote(inst.data); });
 }
 
+/* ---- DEEPENED EDGE BEAMS (27 Nov 2026 — Boma, on the "Typical deepened external beam connection detail": "how do we
+ * include deepened beams") ----
+ * Where the site levels make the external beam found lower than the slab (controlled fill, or retaining to the beam),
+ * the beam itself (EB1 on the footing schedule) sits at the bottom and a THROAT — 200 mm min. thick in the detail —
+ * rises from it to the slab. `d.deepBeams[] = {name, runM, heightMm, throatMm, reo, dia, spacing, meshType, faces,
+ * embedMm, lap, lOn, lDia, lSpacing, lLegMm, topBars, topDia, topLap, formOuter, formInner}` — one row per run of
+ * deepened beam; the beam stays in the Edge Beams fields over its whole run, and a row adds only what the deepening
+ * adds: the throat concrete, its bars each way (or a sheet mesh) cast into the footing, the 'L' bars tying it into the
+ * slab, the continuous top perimeter bar, the formed outer face and the lost formwork against the fill. The array is
+ * never created by a render; with none, the slab prices exactly as before. */
+function deepBeams(d){ return Array.isArray(d&&d.deepBeams)? d.deepBeams : []; }
+function deepBeamName(r,i){ return (r&&String(r.name||"").trim()) || `Deepened beam ${i+1}`; }
+const DEEP_BEAM_SEED={name:"", runM:"", heightMm:"", throatMm:200, reo:"bars", dia:"N12", spacing:200, meshType:"SL81", faces:1, embedMm:400, lap:false,
+  lOn:true, lDia:"N12", lSpacing:600, lLegMm:300, topBars:1, topDia:"N12", topLap:true, formOuter:"formed", formInner:"lost",
+  under:"none", footWMm:"", footExtraMm:"", blindTMm:"", blindGrade:""};
+/** ONE reading of a deepened-beam row. Lengths in metres, bar runs in metres of bar, mesh in m². */
+function deepBeamCalc(r,dfltW){
+  r=r||{};
+  const blank=(v)=>v===undefined||v===null||v==="";
+  const run=num(r.runM), H=num(r.heightMm)/1000, T=(blank(r.throatMm)? 200 : num(r.throatMm))/1000;
+  const touched = run>0 || H>0;
+  const ready = run>0 && H>0 && T>0;
+  const missing=[]; if(!(run>0)) missing.push("the run"); if(!(H>0)) missing.push("the deepened height"); if(!(T>0)) missing.push("the throat thickness");
+  const reo = r.reo==="mesh"? "mesh" : r.reo==="none"? "none" : "bars";
+  const faces=Math.max(1,Math.round(num(r.faces,1))||1);
+  const embed=(blank(r.embedMm)? 400 : num(r.embedMm))/1000;
+  const sp=num(r.spacing,200);
+  const out={run,H,T,touched,ready,missing,reo,faces,embed,sp, vol: ready? run*H*T : 0, face: ready? run*H : 0,
+    vBars:0,vEach:0,vM:0,hBars:0,hM:0,meshM2:0,lBars:0,lEach:0,lM:0,topBars:0,topM:0,
+    under: r.under==="deepen"? "deepen" : r.under==="blind"? "blind" : "none", footW:0, underMm:0, underVol:0};
+  if(!ready) return out;
+  // what goes UNDER the beam where the founding material is lower still: the footing deepened ('D'), or blinding concrete
+  out.footW=(num(r.footWMm)>0? num(r.footWMm) : num(dfltW,300))/1000;
+  out.underMm = out.under==="deepen"? num(r.footExtraMm) : out.under==="blind"? num(r.blindTMm) : 0;
+  out.underVol = (out.under!=="none" && out.footW>0 && out.underMm>0)? run*out.footW*out.underMm/1000 : 0;
+  if(reo==="bars" && sp>0){
+    out.vBars=(Math.floor(run*1000/sp+1e-9)+1)*faces; out.vEach=H+embed; out.vM=out.vBars*out.vEach;
+    out.hBars=(Math.floor(H*1000/sp+1e-9)+1)*faces; out.hM=out.hBars*run;
+  }
+  if(reo==="mesh") out.meshM2=run*(H+embed)*faces;
+  const lsp=num(r.lSpacing,600), leg=(blank(r.lLegMm)? 300 : num(r.lLegMm))/1000;
+  if(r.lOn!==false && lsp>0 && leg>0){ out.lBars=Math.floor(run*1000/lsp+1e-9)+1; out.lEach=2*leg; out.lM=out.lBars*out.lEach; }
+  const tb=Math.max(0,Math.round(num(r.topBars,1)));
+  if(tb>0){ out.topBars=tb; out.topM=tb*run; }
+  return out;
+}
+function deepBeamOutText(r,dfltW){
+  const c=deepBeamCalc(r,dfltW);
+  if(!c.touched) return "Type the run and the deepened height.";
+  if(!c.ready) return `Still to type: ${c.missing.join(", ")} — nothing is priced for this row until then.`;
+  const bits=[`throat ${fmt(c.run,2)} m × ${fmt(c.H*1000,0)} mm × ${fmt(c.T*1000,0)} mm = ${fmt(c.vol,2)} m³`];
+  if(c.reo==="bars" && c.vM>0) bits.push(`${c.vBars} vertical × ${fmt(c.vEach,2)} m + ${c.hBars} horizontal × ${fmt(c.run,2)} m = ${fmt(c.vM+c.hM,1)} m of ${r.dia||"N12"}`);
+  if(c.reo==="mesh") bits.push(`${fmt(c.meshM2,2)} m² of ${r.meshType||"SL81"}`);
+  if(c.lM>0) bits.push(`${c.lBars} 'L' bars × ${fmt(c.lEach,2)} m`);
+  if(c.topM>0) bits.push(`${c.topBars} top perimeter bar${c.topBars===1?"":"s"} × ${fmt(c.run,2)} m`);
+  const fo=r.formOuter==="none"? 0 : c.face, fi=r.formInner==="none"? 0 : c.face;
+  if(c.under!=="none") bits.push(c.underVol>0? `${c.under==="deepen"?"footing deepened":"blinding under"} ${fmt(c.run,2)} m × ${fmt(c.footW*1000,0)} mm × ${fmt(c.underMm,0)} mm = ${fmt(c.underVol,2)} m³` : `${c.under==="deepen"?"footing deepening":"blinding"}: type its depth`);
+  if(fo>0||fi>0) bits.push(`faces ${fmt(c.face,2)} m² each${fo>0?" · outer formed":""}${fi>0?(r.formInner==="formed"?" · inner formed":" · inner lost formwork"):""}`);
+  return bits.join(" · ");
+}
+function deepBeamSection(d){
+  const rows=deepBeams(d);
+  const meshOpts=Object.keys(MESHTYPES).map(m=>[m,m]);
+  const ebW=num(d.edgeBeamWidth,300);
+  const body=rows.map((r,i)=>{ const b=`deepBeams.${i}.`, c=deepBeamCalc(r,ebW), v=(k)=>r[k]===undefined? DEEP_BEAM_SEED[k] : r[k];
+   return `<div class="subsec" data-testid="deep-beam-row" data-idx="${i}" style="border-left:3px solid var(--accent,#b45309);padding-left:10px;">
+   <div class="sechead" style="display:flex;align-items:center;justify-content:space-between;gap:8px;"><span>${deepBeamName(r,i)}</span>
+    <span style="display:flex;gap:6px;"><button class="btn small" data-action="dupDeepBeam" data-idx="${i}" type="button" title="Copy this row — the run is left blank">⧉ Duplicate</button><button class="btn small danger" data-action="delRow" data-target="deepBeams" data-idx="${i}" type="button">✕ Remove</button></span></div>
+   <div class="grid cols4">${F("Where / name",inpText(b+"name",r.name||""))}${F("Run of deepened beam (m)",inpNum(b+"runM",r.runM))}${F("Deepened height (mm) — slab underside down to the top of the beam",inpNum(b+"heightMm",r.heightMm))}${F("Throat thickness (mm, blank = 200)",inpNum(b+"throatMm",v("throatMm")))}</div>
+   <div class="grid cols4">${F("Throat reinforcement",selOpts(b+"reo",c.reo,[["bars","Bars each way"],["mesh","Sheet mesh (the detail's alternative)"],["none","None"]],true))}
+    ${c.reo==="bars"? F("Bar size",barSizeSel(b+"dia",v("dia")))+F("Spacing each way (mm)",inpNum(b+"spacing",v("spacing"))) : ""}
+    ${c.reo==="mesh"? F("Mesh type",selOpts(b+"meshType",v("meshType"),meshOpts)) : ""}
+    ${c.reo!=="none"? F("Faces / layers",inpNum(b+"faces",v("faces")))+F("Cast into the footing (mm, blank = 400)",inpNum(b+"embedMm",v("embedMm"))) : ""}
+    ${c.reo!=="none"? chk(b+"lap",!!r.lap,"Include lap allowance (%)") : ""}</div>
+   <div class="grid cols4">${chk(b+"lOn",r.lOn!==false,"'L' bars at the top, tying the throat into the slab",null,true)}
+    ${r.lOn!==false? F("'L' bar size",barSizeSel(b+"lDia",v("lDia")))+F("'L' bar spacing (mm)",inpNum(b+"lSpacing",v("lSpacing")))+F("Leg each way (mm, blank = 300)",inpNum(b+"lLegMm",v("lLegMm"))) : ""}</div>
+   <div class="grid cols4">${F("Continuous top perimeter bars (no., 0 = none)",inpNum(b+"topBars",v("topBars")))}${F("Perimeter bar size",barSizeSel(b+"topDia",v("topDia")))}${chk(b+"topLap",r.topLap!==false,"Lap allowance on the perimeter bar (%)")}</div>
+   <div class="grid cols4">${F("Outer face of the throat",selOpts(b+"formOuter",v("formOuter"),[["formed","Formed (stripped)"],["none","Not formed"]]))}${F("Inner face (against the fill)",selOpts(b+"formInner",v("formInner"),[["lost","Lost formwork — left in place"],["formed","Formed (stripped)"],["none","Not formed"]]))}</div>
+   <div class="grid cols4">${F("Under the beam, where the founding material is lower",selOpts(b+"under",c.under,[["none","Nothing extra"],["deepen","Deepen the footing 'D' (beam concrete)"],["blind","Blinding concrete under the footing (the alternative)"]],true))}
+    ${c.under!=="none"? F(`Footing width 'W' (mm, blank = edge beam width ${ebW})`,inpNum(b+"footWMm",r.footWMm)) : ""}
+    ${c.under==="deepen"? F("Footing deepened by (mm)",inpNum(b+"footExtraMm",r.footExtraMm)) : ""}
+    ${c.under==="blind"? F("Blinding depth (mm)",inpNum(b+"blindTMm",r.blindTMm))+F("Blinding grade (N, blank = project default)",inpNum(b+"blindGrade",r.blindGrade)) : ""}</div>
+   <p class="small" data-testid="deep-beam-out" data-deep-out="${i}">${deepBeamOutText(r,ebW)}</p></div>`; }).join('');
+  return `<div class="subsec" data-testid="deep-beams"><div class="sechead">Deepened edge beams — the throat down to a lowered beam</div>
+  <p class="small">For an external beam founded <b>lower than the slab</b> (controlled fill, or retaining to the beam — the "typical deepened external beam" detail). The beam itself stays in the Edge Beams fields above over its <b>whole run</b>; each row here adds only what the deepening adds over its run: the <b>throat</b> concrete, its bars each way (or a sheet mesh) cast into the footing, the <b>'L' bars</b> into the slab, the continuous <b>top perimeter bar</b>, the formed outer face and the <b>lost formwork</b> against the fill. One row per run with its own height. Where the founding material is lower still, choose what goes <b>under the beam</b> on the row — the footing deepened ('D', beam concrete) or blinding concrete — and its concrete is counted too. The controlled fill is not measured here.</p>
+  ${body}
+  <button class="btn small primary" data-action="addDeepBeam" data-testid="deep-beam-add" type="button">+ Add a deepened beam run</button></div>`;
+}
+function refreshDeepBeamRows(card,inst,field){
+  if(!/^deepBeams\.\d+\./.test(field||"")) return;
+  const ebW=num(inst.data.edgeBeamWidth,300);
+  deepBeams(inst.data).forEach((r,i)=>{ const t=deepBeamOutText(r,ebW); card.querySelectorAll(`[data-deep-out="${i}"]`).forEach(el=>{ el.textContent=t; }); });
+}
+/** The register lines of every deepened-beam row (called by computeSlab). */
+function deepBeamLines(inst,def,lines,warnings){
+  const d=inst.data;
+  deepBeams(d).forEach((r,ri)=>{
+    const c=deepBeamCalc(r,num(d.edgeBeamWidth,300)), nm=deepBeamName(r,ri), lead=`Deepened beam — ${nm}`;
+    if(!c.touched) return;
+    if(!c.ready){ warnings.push({text:`${nm}: ${c.missing.join(", ")} still to type on the Edge Beams tab — nothing of the deepening is priced until then`,section:"edgebeams",level:"completeness"}); return; }
+    const hMm=Math.round(c.H*1000), tMm=Math.round(c.T*1000);
+    lines.push(baseLine(inst,def,{materialGroup:"Concrete",part:"beam",material:`N${slabBeamGrade(d,null,"edge")} concrete`,spec:`${lead} — throat`,qty:c.vol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(c.vol,concWastePct(d)),formula:`run ${fmt(c.run,2)}m × ${hMm}mm high × ${tMm}mm throat`}));
+    // under the beam: the footing deepened 'D' (beam concrete), or the blinding-concrete alternative — whichever is selected
+    if(c.under!=="none" && !(c.underVol>0)) warnings.push({text:`${nm}: ${c.under==="deepen"?"the footing is to be deepened but its extra depth":"blinding under the footing is selected but its depth"} is not typed — that concrete is not priced`,section:"edgebeams",level:"completeness"});
+    if(c.under==="deepen" && c.underVol>0) lines.push(baseLine(inst,def,{materialGroup:"Concrete",part:"beam",material:`N${slabBeamGrade(d,null,"edge")} concrete`,spec:`${lead} — footing deepened 'D'`,qty:c.underVol,unit:"m³",waste:concWastePct(d),finalQty:withWaste(c.underVol,concWastePct(d)),formula:`run ${fmt(c.run,2)}m × ${fmt(c.footW*1000,0)}mm wide × ${fmt(c.underMm,0)}mm deeper`}));
+    if(c.under==="blind" && c.underVol>0){
+      const bl=blindingLine(inst,def,c.run*c.footW,c.underMm,"concrete",num(r.blindGrade)>0? num(r.blindGrade) : blindGradeDefault());
+      bl.spec=`${lead} — ${fmt(c.underMm,0)}mm × ${fmt(c.footW*1000,0)}mm wide under the footing`; bl.formula=`run ${fmt(c.run,2)}m × ${fmt(c.footW*1000,0)}mm × ${fmt(c.underMm,0)}mm`; bl.part="beam";
+      lines.push(bl);
+    }
+    const lapPct=r.lap?PROJECT.lapPct:0;
+    if(c.reo==="bars"){
+      if(!(c.sp>0)) warnings.push({text:`${nm}: the throat bars have no spacing — they are not priced`,section:"edgebeams",level:"completeness"});
+      else{
+        const dia=r.dia||"N12", mpm=massPerM(barDiaOf(dia)), emb=Math.round(c.embed*1000), fc=c.faces>1?` × ${c.faces} faces`:"";
+        lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",part:"beam",material:dia,spec:`${lead} — throat vertical bars @${c.sp}${fc} (cast ${emb}mm into the footing)`,qty:c.vM,unit:"m",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(c.vM,PROJECT.reoWaste,lapPct),formula:`${c.vBars} bars (run ${fmt(c.run,2)}m ÷ ${c.sp} + 1${fc}) × (${hMm} + ${emb})/1000`,notes:`${fmt(c.vM*mpm,1)} kg`}));
+        lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",part:"beam",material:dia,spec:`${lead} — throat horizontal bars @${c.sp}${fc}`,qty:c.hM,unit:"m",waste:PROJECT.reoWaste,lap:lapPct,finalQty:withWasteLap(c.hM,PROJECT.reoWaste,lapPct),formula:`${c.hBars} bars (${hMm} ÷ ${c.sp} + 1${fc}) × run ${fmt(c.run,2)}m`,notes:`${fmt(c.hM*mpm,1)} kg`}));
+      }
+    } else if(c.reo==="mesh"){
+      const mt=r.meshType||"SL81", mLap=r.lap?MESH_LAP_PCT:0, fq=withWasteLap(c.meshM2,PROJECT.reoWaste,mLap), sheets=Math.ceil(fq/MESH_SHEET_AREA_M2-1e-9);
+      lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",part:"beam",material:mt,spec:`${lead} — throat mesh${c.faces>1?` × ${c.faces} layers`:""} (cast ${Math.round(c.embed*1000)}mm into the footing)`,qty:c.meshM2,unit:"m²",waste:PROJECT.reoWaste,lap:mLap,finalQty:fq,sheets,formula:`run ${fmt(c.run,2)}m × (${hMm} + ${Math.round(c.embed*1000)})/1000${c.faces>1?` × ${c.faces}`:""} → ${sheets} sheets`,notes:`${sheets} sheets (6.0×2.4m nominal)`}));
+    }
+    if(c.lM>0){
+      const dia=r.lDia||"N12", leg=Math.round(c.lEach*500);
+      lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",part:"beam",material:dia,spec:`${lead} — 'L' bars top @${num(r.lSpacing,600)} (${leg} each way)`,qty:c.lM,unit:"m",waste:PROJECT.reoWaste,lap:0,finalQty:withWasteLap(c.lM,PROJECT.reoWaste,0),formula:`${c.lBars} bars (run ${fmt(c.run,2)}m ÷ ${num(r.lSpacing,600)} + 1) × (${leg} + ${leg})/1000`,notes:`${c.lBars} no., ${fmt(c.lM*massPerM(barDiaOf(dia)),1)} kg`}));
+    }
+    if(c.topM>0){
+      const dia=r.topDia||"N12", tl=r.topLap!==false?PROJECT.lapPct:0;
+      lines.push(baseLine(inst,def,{materialGroup:"Reinforcement",part:"beam",material:dia,spec:`${lead} — continuous top perimeter bar`,qty:c.topM,unit:"m",waste:PROJECT.reoWaste,lap:tl,finalQty:withWasteLap(c.topM,PROJECT.reoWaste,tl),formula:`${c.topBars} × run ${fmt(c.run,2)}m`,notes:`${fmt(c.topM*massPerM(barDiaOf(dia)),1)} kg`}));
+    }
+    if(r.formOuter!=="none") lines.push(...formworkLines(inst,def,{material:"Beam formwork",spec:`${lead} — throat outer face`,faces:[{name:"outer face",runM:c.run,faceMm:hMm}],formula:`run ${fmt(c.run,2)}m × ${hMm}mm`}));
+    if(r.formInner!=="none") lines.push(...formworkLines(inst,def,{material:"Beam formwork",spec:r.formInner==="formed"? `${lead} — throat inner face` : `${lead} — throat inner face, LOST formwork (left in place against the fill)`,faces:[{name:"inner face",runM:c.run,faceMm:hMm}],formula:`run ${fmt(c.run,2)}m × ${hMm}mm`}));
+  });
+}
+
 /* ---- SHARED THICKENING / RIB CROSS-SECTION ----
  * One shape system for every thickened run in a slab: the perimeter edge
  * thickening, the edge beams, the internal ribs, and the thickening under a
@@ -6033,7 +6168,7 @@ function renderSlab(inst,def){
   </div>${sdBarShapeIf(d,num(d.sdProj1)+num(d.sdProj2))}${sdSetupFields(d)}<div class="tip"><span class="ico">🏗️</span><div>Split-level slabs (a sunken wet area, a stepped car park deck) need dowels across the step or the two pours act independently under load. Size and space dowels the same way you'd detail a construction joint — this is the item estimators most often forget because it's buried in a section detail, not called up on the reinforcement schedule.</div></div></div>`;
   let concExtras = `<div class="subsec"><div class="sechead">Pour Details</div><div class="grid cols4">${chk("drops",d.drops,"Drops")}${chk("setdowns",d.setdowns,"Setdowns / recesses")}${chk("upstands",d.upstands,"Upstands")}</div></div>`;
   return {geom: geom + edgeThickenGeom + wallThickenGeom, reoAlways:reoExtras+steps, conc:concSection(d,"<p class='small'>Concrete = area × thickness (area = L×W unless manually entered)</p>")+`<div class="grid cols3">${F("Beam / thickening concrete grade (N/MPa, blank = slab grade)",inpNum("beamGrade",d.beamGrade))}</div><p class="small">Edge beams, internal beams / raft ribs, edge and wall thickenings are often poured at a different grade to the slab — enter it here and every beam line carries it as its own concrete product. The Edge Beams and Internal Beams tabs each carry their own grade box too, as does every extra beam group — a grade typed there wins for that beam. Blank keeps the slab grade.</p>`+concExtras,reo:reoMat,
-   edgebeams: edgeBeamGeom + edgeBeamReoBlock + extraBeamGroupsSection(inst,d,"edgeBeamGroups"),
+   edgebeams: edgeBeamGeom + edgeBeamReoBlock + extraBeamGroupsSection(inst,d,"edgeBeamGroups") + deepBeamSection(d),
    intbeams: stripGeom + stripReoBlock + extraBeamGroupsSection(inst,d,"intBeamGroups"),
    form,
    blind: d.suspended? undefined : `<div class="sechead">Base Course</div><div class="grid cols3">${F("Base thickness (mm)",inpNum("baseThickness",d.baseThickness))}${F("Base material",selOpts("baseMaterialState",d.baseMaterialState,[["compacted","Compacted"],["loose","Loose"]]))}</div>
@@ -6318,6 +6453,7 @@ function computeSlab(inst,def){
       });
     }
   }
+  deepBeamLines(inst,def,lines,warnings);   // deepened edge beams — the throat and what it carries (27 Nov 2026)
   if(d.beamStrips && !(num(d.beamStripsLength)>0)) warnings.push({text:"Internal beams are switched on but have no run length — enter their total run length (m) on the Internal Beams tab; nothing of the beams is priced until it is",section:"intbeams",level:"completeness"});
   if(d.beamStrips && num(d.beamStripsLength)>0){
     let bw=num(d.beamStripsWidth)/1000, bd=num(d.beamStripsExtraDepth)/1000;
@@ -10725,7 +10861,7 @@ function attachCardEvents(card,inst){
       // is too tight and doesnt allow me see what has been entered and also
       // doesnt allow decimals"). The value is stored and costed at once; only
       // the rebuild waits.
-      if(e.target.dataset.num!==undefined){ e.target.dataset.rerenderPending="1"; computeAllAndRefresh(); refreshExtraConnCount(card,inst,f); refreshRebateRows(card,inst,f); refreshInsVertRows(card,inst,f); refreshEdgeThickenRows(card,inst,f); refreshOpeningRows(card,inst,f); return; }
+      if(e.target.dataset.num!==undefined){ e.target.dataset.rerenderPending="1"; computeAllAndRefresh(); refreshExtraConnCount(card,inst,f); refreshRebateRows(card,inst,f); refreshInsVertRows(card,inst,f); refreshEdgeThickenRows(card,inst,f); refreshDeepBeamRows(card,inst,f); refreshOpeningRows(card,inst,f); return; }
       computeAllAndRefresh();
       rerenderCardKeepTab(card,inst);
       return;
@@ -10735,6 +10871,7 @@ function attachCardEvents(card,inst){
     refreshRebateRows(card,inst,f);
     refreshInsVertRows(card,inst,f);
     refreshEdgeThickenRows(card,inst,f);
+    refreshDeepBeamRows(card,inst,f);
     refreshOpeningRows(card,inst,f);
     refreshSdFormNote(card,inst);
     refreshPileBlindNote(card,inst);
@@ -10876,6 +11013,13 @@ function attachCardEvents(card,inst){
       const d0=inst.data; let arr=Array.isArray(d0.edgeThickens)? d0.edgeThickens : (d0.edgeThickens=[]);
       if(act==="dupEdgeThicken"){ const i=parseInt(e.target.dataset.idx), src=arr[i]; if(src) arr.splice(i+1,0,Object.assign({},src,{name:copyName(src.name||edgeThickenRowName(src,i),arr), runM:""})); }
       else arr.push({name:"", runM:"", widthMm:num(d0.edgeThickenWidth)>0? d0.edgeThickenWidth : 300, depthMm:num(d0.edgeThickenExtraDepth)>0? d0.edgeThickenExtraDepth : 150, shape:(d0.etShape&&d0.etShape!=="sketch")? d0.etShape : "tri", baseW:""});
+      rerenderCardKeepTab(card,inst);
+    } else if(act==="addDeepBeam" || act==="dupDeepBeam"){
+      // a deepened edge beam run: seeded from the typical detail (200 throat, N12-200 each way cast 400 into the footing,
+      // N12-600 'L' bars 300 each way, one N12 top perimeter bar), or a copy of a row; the run is always typed
+      let arr=inst.data.deepBeams; if(!Array.isArray(arr)) arr=inst.data.deepBeams=[];
+      if(act==="dupDeepBeam"){ const i=parseInt(e.target.dataset.idx,10), src=arr[i]; if(src) arr.splice(i+1,0,Object.assign({},src,{name:copyName(src.name||deepBeamName(src,i),arr), runM:""})); }
+      else arr.push(Object.assign({},DEEP_BEAM_SEED));
       rerenderCardKeepTab(card,inst);
     } else if(act==="addRebate" || act==="dupRebate"){
       // a rebate row: added on the chosen run (the slab perimeter, one of its beams, a typed length), or a copy of a row
