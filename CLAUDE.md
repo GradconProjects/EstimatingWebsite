@@ -5459,6 +5459,29 @@ element families waits on the owner's approval of the pad footing.
   pins the wiring; `test-edge-thickens.mjs` proves the perimeter split (60 →
   40 + 20 → 32 + 20 + 8), the typed cursor, the live cells, duplicate, delete,
   the warnings, the save and the tick (19 checks).
+- **An opening or penetration can be entered by its PERIMETER** (Boma,
+  25 Nov 2026: "i would like the option of entering openings and penetrations
+  in perimeter lm also"). The Openings table on the slab and the wall
+  (`data-testid="openings"`, `openingsHeadHtml` / `openRowHtml` — one row
+  markup for both) keeps Width and Height / Length and gains **Perimeter (m)**
+  (`perimM`, of ONE opening) and **Area (m²)** (`areaM2`, of one), beside Qty
+  and a live Result cell (`data-open-out`, `refreshOpeningRows`).
+  `openingCalc(o)` is the ONE reading and `openingsTotals(list)` the sum both
+  calculators read (`openTot`): the PERIMETER is the typed one, else
+  2 × (w + h) — it is what the reveal formwork runs along, so a typed figure
+  also covers an opening against an edge with three sides formed; the AREA is
+  the typed one, else w × h — it is what comes off the concrete (and a wall's
+  formed faces). A row with a perimeter and no area forms its reveal and
+  deducts NOTHING: the row says "no area — nothing off the concrete" and the
+  element carries a verify-level note naming it — an area is never guessed
+  from a perimeter. The reveal line runs whenever there is a perimeter (it
+  used to need an area), its formula reads "Σ perimeter×qty (typed perimeter,
+  else 2×(w+h))" only when a perimeter is typed, and a row with neither new
+  box prices exactly as before. No calculator spells the reveal arithmetic
+  itself any more. `verify.mjs` runs both functions out of the page source
+  and pins the wiring; `test-openings-perim.mjs` proves the unchanged row, a
+  typed perimeter, perimeter alone, area × qty, the cursor, a wall and the
+  save (11 checks).
 - **KingFlor is a formwork system and a FORMWORK row** (Boma, 25 Nov 2026,
   from a slab note — "300mm THICK N32 MPa SUSPENDED CONCRETE SLAB WITH SL92
   MESH TOP … AND KINGFLOR SHEETING, OR EQUIVALENT, BTM." — "INCLUDE kingflor

@@ -5817,9 +5817,9 @@ function renderSlab(inst,def){
     <div style="flex:1;min-width:260px;" class="outlineHost">${slabOutlineSVG(d)}</div>
    </div>
   </div>
-  <div class="subsec"><div class="sechead">Openings / Penetrations</div>
-  <table class="rows"><thead><tr><th>Label</th><th>Width (mm)</th><th>Height/Length (mm)</th><th>Qty</th><th></th></tr></thead>
-  <tbody>${d.openings.map((r,i)=>openRowHtml(i,r)).join('')}</tbody></table>
+  <div class="subsec" data-testid="openings"><div class="sechead">Openings / Penetrations</div>${OPENINGS_NOTE}
+  <div style="overflow-x:auto"><table class="rows openings">${openingsHeadHtml("Height/Length (mm)")}
+  <tbody>${d.openings.map((r,i)=>openRowHtml(i,r)).join('')}</tbody></table></div>
   <button class="btn small" data-action="addRow" data-target="openings">+ Add opening</button></div>`;
   let form=`<div class="subsec"><div class="sechead">Slab Formwork</div><div class="grid cols4">
    ${chk("edgeForms",d.edgeForms,d.category==="Precast Panel"? "Panel edge formwork (by the metre — pick the edges below)" : "Perimeter edge formwork (by the metre)")}
@@ -6008,8 +6008,39 @@ function renderSlab(inst,def){
    ${vapourSubsection(d,"Vapour barrier / membrane under slab")}`,
    conns};
 }
+/* ---- OPENINGS / PENETRATIONS by size OR by perimeter (25 Nov 2026 — Boma: "i would like the option of entering openings
+ * and penetrations in perimeter lm also") ----
+ * A row is width × height as before, and may ALSO carry a typed perimeter (m, each) and a typed area (m², each) — for a
+ * round, an irregular or a scaled-off penetration. openingCalc(o) is the ONE reading (slab and wall): the PERIMETER is
+ * the typed one, else 2 × (w + h); the AREA is the typed one, else w × h; both × Qty. The perimeter is what the reveal
+ * formwork runs along; the area is what comes off the concrete. A perimeter with no area (and no w × h) forms its
+ * reveal and deducts nothing — said on the row and as a note, never guessed from the perimeter. With neither new box
+ * typed a row prices exactly as it always did. */
+function openingCalc(o){
+  o=o||{};
+  const qty=num(o.qty,1), w=num(o.w)/1000, h=num(o.h)/1000;
+  const perimTyped=num(o.perimM)>0, areaTyped=num(o.areaM2)>0;
+  const perimEach=perimTyped? num(o.perimM) : 2*(w+h);
+  const areaEach=areaTyped? num(o.areaM2) : w*h;
+  return {qty, perimEach, areaEach, perimM:perimEach*qty, areaM2:areaEach*qty, perimTyped, areaTyped, noArea: perimEach>0 && !(areaEach>0)};
+}
+function openingsTotals(list){
+  const t={perimM:0, areaM2:0, typedPerim:false, noArea:[]};
+  (Array.isArray(list)? list : []).forEach((o,i)=>{ const c=openingCalc(o); t.perimM+=c.perimM; t.areaM2+=c.areaM2; if(c.perimTyped) t.typedPerim=true; if(c.noArea && c.qty>0) t.noArea.push(String(o.label||"").trim()||`Opening ${i+1}`); });
+  return t;
+}
+function openingOutText(c){
+  if(!(c.perimM>0) && !(c.areaM2>0)) return "—";
+  return `${fmt(c.perimM,2)} m reveal · ${c.areaM2>0? fmt(c.areaM2,2)+" m² out" : "no area — nothing off the concrete"}`;
+}
+const OPENINGS_NOTE=`<p class="small" data-testid="openings-note">Size an opening by <b>width × height</b>, or type its <b>perimeter</b> (m, each) — a round, irregular or scaled-off penetration. The perimeter is what the reveal formwork runs along (typed, else 2 × (w + h)); the <b>area</b> (typed, else w × h) is what comes off the concrete. A perimeter with no area forms its reveal and deducts nothing.</p>`;
+function openingsHeadHtml(hLabel){ return `<thead><tr><th>Label</th><th>Width (mm)</th><th>${hLabel}</th><th title="Perimeter of ONE opening in metres — wins over 2 × (width + height)">Perimeter (m)</th><th title="Area of ONE opening in m² — wins over width × height">Area (m²)</th><th>Qty</th><th>Result</th><th></th></tr></thead>`; }
 function openRowHtml(i,r){
-  return `<tr data-row="openings.${i}"><td>${inpText(`openings.${i}.label`,r.label)}</td><td style="width:90px">${inpNum(`openings.${i}.w`,r.w)}</td><td style="width:90px">${inpNum(`openings.${i}.h`,r.h)}</td><td style="width:60px">${inpNum(`openings.${i}.qty`,r.qty)}</td><td><button class="btn small danger" data-action="delRow" data-target="openings" data-idx="${i}">✕</button></td></tr>`;
+  return `<tr data-row="openings.${i}"><td>${inpText(`openings.${i}.label`,r.label)}</td><td style="width:90px">${inpNum(`openings.${i}.w`,r.w)}</td><td style="width:90px">${inpNum(`openings.${i}.h`,r.h)}</td><td style="width:90px">${inpNum(`openings.${i}.perimM`,r.perimM)}</td><td style="width:80px">${inpNum(`openings.${i}.areaM2`,r.areaM2)}</td><td style="width:60px">${inpNum(`openings.${i}.qty`,r.qty)}</td><td class="small" style="white-space:nowrap" data-open-out="${i}">${openingOutText(openingCalc(r))}</td><td><button class="btn small danger" data-action="delRow" data-target="openings" data-idx="${i}">✕</button></td></tr>`;
+}
+function refreshOpeningRows(card,inst,field){
+  if(!/^openings\.\d+\./.test(field||"")) return;
+  (inst.data.openings||[]).forEach((r,i)=>{ const t=openingOutText(openingCalc(r)); card.querySelectorAll(`[data-open-out="${i}"]`).forEach(td=>{ td.textContent=t; }); });
 }
 function barSchedRowHtml(prefix,i,r){
   let count = Math.max(0,Math.floor((num(r.span)*1000)/Math.max(1,num(r.spacing,200)))+1);
@@ -6119,8 +6150,9 @@ function computeSlab(inst,def){
   let area = ps? ps.grossM2 : d.manualArea? num(d.areaOverride) : (outline? polyArea(outline) : circular? Math.PI*Math.pow(num(d.diameterM),2)/4 : num(d.length)*num(d.width));
   if(circular && !(num(d.diameterM)>0)) warnings.push({text:"Circular slab with no diameter — type the diameter in metres (nothing is taken off until it is)",section:"geom",level:"completeness"});
   if(ps && !(ps.count>0)) warnings.push({text:"Panel schedule is on but no panel has a count, height and width — nothing is taken off until a row is complete",section:"geom",level:"completeness"});
-  let openArea= ps? ps.openM2 : 0;
-  (d.openings||[]).forEach(o=>{ openArea += (num(o.w)/1000)*(num(o.h)/1000)*num(o.qty,1); });
+  const openTot=openingsTotals(d.openings);   // size or typed perimeter / area — openingCalc is the ONE reading
+  let openArea= (ps? ps.openM2 : 0) + openTot.areaM2;
+  if(openTot.noArea.length) warnings.push({text:`${openTot.noArea.join(", ")}: entered by perimeter with no area — the reveal is formed but nothing is deducted from the concrete; type the area (m²) to deduct it`,section:"geom",level:"verify"});
   let netArea=Math.max(0,area-openArea);
   d._autoInsArea = netArea; // insulation line (computeInstance) defaults to the slab's own plan area
   let t=num(d.thickness)/1000;
@@ -6156,13 +6188,13 @@ function computeSlab(inst,def){
     if(revLm>0) lines.push(...formworkLines(inst,def,{material:"Opening reveals",spec:`${d.thickness}mm high reveal — panel blockouts`,faces:[{name:"reveals",runM:revLm,faceMm:num(d.thickness)>0? num(d.thickness) : 1}],formula:ps? "Σ panels × reveals each" : "typed reveal run"}));
     const extraLm=num(d.panelEdgeExtraM);
     if(extraLm>0) lines.push(...formworkLines(inst,def,{material:"Edgeform — perimeter edge formwork",spec:`${d.thickness}mm high edge — rebates, steps, returns`,faces:[{name:"extra formed edges",runM:extraLm,faceMm:num(d.thickness)>0? num(d.thickness) : 1}],formula:"typed extra edges"}));
-  } else if(openArea>0){
+  } else if(openTot.perimM>0){
     // Reveals are edge boards — measured by the METRE around each opening
     // (like Edgeform), with the slab thickness on the spec as the board
     // height. Previously area-based AND carried finalQty:0, so reveals
     // never actually reached the register totals.
-    let revLm=(d.openings||[]).reduce((s,o)=>s+2*((num(o.w)/1000)+(num(o.h)/1000))*num(o.qty,1),0);
-    lines.push(...formworkLines(inst,def,{material:"Opening reveals",spec:`${d.thickness}mm high reveal`,faces:[{name:"reveals",runM:revLm,faceMm:num(d.thickness)>0? num(d.thickness) : 1}],formula:"Σ 2×(w+h)×qty"}));
+    let revLm=openTot.perimM;
+    lines.push(...formworkLines(inst,def,{material:"Opening reveals",spec:`${d.thickness}mm high reveal`,faces:[{name:"reveals",runM:revLm,faceMm:num(d.thickness)>0? num(d.thickness) : 1}],formula:openTot.typedPerim? "Σ perimeter×qty (typed perimeter, else 2×(w+h))" : "Σ 2×(w+h)×qty"}));
   }
   if(d.edgeThicken){
     // EDGE THICKENING — a simple thickening of the slab edge, concrete
@@ -6545,9 +6577,9 @@ function renderWall(inst){
   let d=inst.data;
   let geom=`<div class="grid cols4">${F("Quantity",inpNum("qty",d.qty))}${LF("Length (mm)","length",d.length)}${F("Thickness (mm)",inpNum("thickness",d.thickness))}${LF("Height (mm)","height",d.height)}${coverField(inst)}</div>
   ${elevationSketchUI(inst,"wall elevation")}
-  <div class="subsec"><div class="sechead">Openings</div>
-  <table class="rows"><thead><tr><th>Label</th><th>Width (mm)</th><th>Height (mm)</th><th>Qty</th><th></th></tr></thead>
-  <tbody>${d.openings.map((r,i)=>openRowHtml(i,r)).join('')}</tbody></table>
+  <div class="subsec" data-testid="openings"><div class="sechead">Openings</div>${OPENINGS_NOTE}
+  <div style="overflow-x:auto"><table class="rows openings">${openingsHeadHtml("Height (mm)")}
+  <tbody>${d.openings.map((r,i)=>openRowHtml(i,r)).join('')}</tbody></table></div>
   <button class="btn small" data-action="addRow" data-target="openings">+ Add opening</button></div>`;
   let form=`<div class="grid cols4">${chk("formA",d.formA,"Face A")}${chk("formB",d.formB,"Face B")}${chk("formEnds",d.formEnds,"Ends")}${chk("formTop",d.formTop,"Top")}${chk("cjStopEnds",d.cjStopEnds,"Construction joint stop ends")}${chk("waterstop",d.waterstop,"Waterstop at joints")}</div>`;
   let reo=`<div class="sechead">Face A</div><div class="grid cols4">${chk("vertA",d.vertA,"Vertical")}${F("Dia",barSizeSel("vertADia",d.vertADia))}${F("Spacing",inpNum("vertASpacing",d.vertASpacing))}${chk("vertALap",d.vertALap,"Include lap allowance (%)","vertALap")}${chk("horA",d.horA,"Horizontal")}${F("Dia",barSizeSel("horADia",d.horADia))}${F("Spacing",inpNum("horASpacing",d.horASpacing))}${chk("horALap",d.horALap,"Include lap allowance (%)","horALap")}</div>
@@ -6570,7 +6602,8 @@ function computeWall(inst,def){
   let ev=elevGeom(d,Lm,Hm);
   if(ev){ Lm=ev.L; Hm=ev.H; }
   let hAvg = ev && Lm>0? ev.areaM2/Lm : Hm;
-  let openArea=0; (d.openings||[]).forEach(o=>{ openArea+=(num(o.w)/1000)*(num(o.h)/1000)*num(o.qty,1); });
+  const openTot=openingsTotals(d.openings);   // size or typed perimeter / area — openingCalc is the ONE reading
+  let openArea=openTot.areaM2;
   let grossArea=(ev? ev.areaM2 : Lm*Hm)-openArea;
   d._autoAreaM2 = N*grossArea;   // the wall's face — what a wall is measured in per m² (Project Geometry → Quotes $/m²)
   let vol=N*grossArea*Tm;
@@ -6580,9 +6613,9 @@ function computeWall(inst,def){
   if(d.formEnds){ fArea+=N*2*Tm*Hm; fw.push({name:"ends",runM:N*2*Hm,faceMm:Tm*1000}); }
   if(d.formTop){ fArea+=N*Lm*Tm; fw.push({name:"top",runM:N*Lm,faceMm:Tm*1000}); }
   if(fArea>0) lines.push(...formworkLines(inst,def,{material:"Wall formwork",spec:"Selected faces",faces:fw,formula:"faces × (L×H − openings) / ends (a face under 400 mm by the metre)"}));
-  if(openArea>0){
-    let revLm=N*(d.openings||[]).reduce((s,o)=>s+2*((num(o.w)/1000)+(num(o.h)/1000))*num(o.qty,1),0);
-    lines.push(...formworkLines(inst,def,{material:"Opening reveals",spec:`${d.thickness}mm deep reveal`,faces:[{name:"reveals",runM:revLm,faceMm:num(d.thickness)>0? num(d.thickness) : 1}],formula:"Σ 2×(w+h)×qty"}));
+  if(openTot.perimM>0){
+    let revLm=N*openTot.perimM;
+    lines.push(...formworkLines(inst,def,{material:"Opening reveals",spec:`${d.thickness}mm deep reveal`,faces:[{name:"reveals",runM:revLm,faceMm:num(d.thickness)>0? num(d.thickness) : 1}],formula:openTot.typedPerim? "Σ perimeter×qty (typed perimeter, else 2×(w+h))" : "Σ 2×(w+h)×qty"}));
   }
   function barCalc(vflag,vdia,vsp,vlap,hflag,hdia,hsp,hlap,faceLabel){
     if(vflag){
@@ -6630,7 +6663,7 @@ function computeWall(inst,def){
     sdExtraBarLines(inst,def,lines,d,sdRunM,N);
   }
   lines.push(...reentrantLines(inst,def,4*(d.openings||[]).reduce((n,o)=>n+Math.max(0,num(o.qty,1)),0)*Math.max(1,num(d.qty,1))));
-  return {lines,warnings:[]};
+  return {lines,warnings: openTot.noArea.length? [{text:`${openTot.noArea.join(", ")}: entered by perimeter with no area — the reveal is formed but nothing is deducted from the wall; type the area (m²) to deduct it`,section:"geom",level:"verify"}] : []};
 }
 
 /* ---- RETAINING WALL (compound) ---- */
@@ -9408,7 +9441,7 @@ function validateInstance(inst, def, out){
   })(d,"",0);
   if(Array.isArray(d.openings) && d.openings.length){
     let plan=num(d._autoInsArea)||num(d._autoBlindArea)||0;
-    let openArea=d.openings.reduce((s,o)=>s+(num(o.w)/1000)*(num(o.h)/1000)*num(o.qty,1),0);
+    let openArea=openingsTotals(d.openings).areaM2;
     if(plan>0 && openArea>=plan) push(`Openings (${fmt(openArea,2)} m²) equal or exceed the host area (${fmt(plan,2)} m²) — check opening sizes are in mm`, "geom");
   }
   // completeness: a rate with nothing to apply it to
@@ -10451,7 +10484,7 @@ function attachCardEvents(card,inst){
       // is too tight and doesnt allow me see what has been entered and also
       // doesnt allow decimals"). The value is stored and costed at once; only
       // the rebuild waits.
-      if(e.target.dataset.num!==undefined){ e.target.dataset.rerenderPending="1"; computeAllAndRefresh(); refreshExtraConnCount(card,inst,f); refreshRebateRows(card,inst,f); refreshInsVertRows(card,inst,f); refreshEdgeThickenRows(card,inst,f); return; }
+      if(e.target.dataset.num!==undefined){ e.target.dataset.rerenderPending="1"; computeAllAndRefresh(); refreshExtraConnCount(card,inst,f); refreshRebateRows(card,inst,f); refreshInsVertRows(card,inst,f); refreshEdgeThickenRows(card,inst,f); refreshOpeningRows(card,inst,f); return; }
       computeAllAndRefresh();
       rerenderCardKeepTab(card,inst);
       return;
@@ -10461,6 +10494,7 @@ function attachCardEvents(card,inst){
     refreshRebateRows(card,inst,f);
     refreshInsVertRows(card,inst,f);
     refreshEdgeThickenRows(card,inst,f);
+    refreshOpeningRows(card,inst,f);
     refreshSdFormNote(card,inst);
     if(e.target.dataset.toggle){
       card.querySelectorAll(`[data-show-if="${e.target.dataset.toggle}"]`).forEach(sec=>sec.classList.toggle('hidden',!val));

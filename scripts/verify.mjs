@@ -2077,7 +2077,7 @@ check("rebates (19 Nov 2026): a rebate row runs along the slab perimeter, a beam
   assert.match(est, /formworkLines\(inst,def,\{material:"Rebate formwork"/, "rebate formwork goes through formworkLines (lineal metres under 400 mm)");
   assert.match(est, /if\(!c\.deduct \|\| num\(d\.concVolOverride\)>0\) return;/, "a measured concrete volume stands as typed");
   assert.match(est, /const line=\(c\.target\.concSpec && own\.find\(l=>l\.spec===c\.target\.concSpec\)\) \|\| own\[0\];/, "a beam's rebate comes off that beam's concrete line");
-  assert.match(est, /refreshExtraConnCount\(card,inst,f\); refreshRebateRows\(card,inst,f\); refreshInsVertRows\(card,inst,f\); refreshEdgeThickenRows\(card,inst,f\); return; \}/, "the Result cell follows the typing");
+  assert.match(est, /refreshExtraConnCount\(card,inst,f\); refreshRebateRows\(card,inst,f\); refreshInsVertRows\(card,inst,f\); refreshEdgeThickenRows\(card,inst,f\); refreshOpeningRows\(card,inst,f\); return; \}/, "the Result cell follows the typing");
   // the bridge
   const { quote, flags } = buildImportFromEstimate({ project: { name: "Rebates" }, lines: [
     estLine({ elementId: "R1", element: "Raft Slab 1", category: "Raft Slab", materialGroup: "Formwork", material: "Rebate formwork", spec: "Brick rebate — 120 wide × 150 deep — Edge beam — rebate, larger face 150 mm — under 400 mm — lineal metres", qty: 40, finalQty: 42, unit: "m", faceMm: 150, m2Equiv: 10.8 }),
@@ -4298,7 +4298,7 @@ check("Project Geometry carries a COUNT: $/no. leads the benchmark rates, sums a
     assert.match(est, /function panelScheduleTotals\(d\)\{/, "panelScheduleTotals is the ONE schedule reading");
     assert.match(est, /if\(panelScheduleOn\(d\)\) return panelScheduleTotals\(d\)\.edgeM;/, "the schedule's edge length is the perimeter (edge forms)");
     assert.match(est, /let area = ps\? ps\.grossM2 : d\.manualArea\?/, "the schedule's gross area drives the slab area");
-    assert.match(est, /let openArea= ps\? ps\.openM2 : 0;/, "the schedule's openings come off");
+    assert.match(est, /let openArea= \(ps\? ps\.openM2 : 0\) \+ openTot\.areaM2;/, "the schedule's openings come off");
     assert.match(est, /: precast\? slabPerimM\(d\)\s*: 0;/, "autoGeometry publishes a panel set's edge length as its run");
     assert.match(est, /const countNo = \(precast && panelScheduleOn\(d\)\)\? panelScheduleTotals\(d\)\.count : Math\.max\(0, num\(d\.qty, 1\)\);/, "the schedule's count is the element's No.");
     assert.match(est, /leaf==="panelRows"\? \{mark:`P\$\{arr\.length\+1\}`, qty:1, hMm:3000, wMm:2400, openM2:0, openPerM:0\}/, "the add-row template precedes the generic Rows rule");
@@ -6371,6 +6371,33 @@ check("Further edge thickenings (25 Nov 2026): a slab's edge can be thickened to
   assert.match(est, /act==="addEdgeThicken" \|\| act==="dupEdgeThicken"/); assert.match(est, /data-action="delRow" data-target="edgeThickens"/);
   assert.match(est, /data-testid="edge-thickens"/); assert.match(est, /data-testid="edge-thicken-run-note"/);
   assert.equal((est.match(/refreshEdgeThickenRows\(card,inst,f\)/g) || []).length, 2, "both typing paths refresh the row results");
+});
+
+check("Openings / penetrations by perimeter (25 Nov 2026): a row is width × height, or a typed perimeter and area — the perimeter forms the reveal, the area comes off the concrete; untouched rows price as before", () => {
+  const est = fs.readFileSync(new URL("../portal/estimates-app.html", import.meta.url), "utf8");
+  const num = (v, d) => { const n = parseFloat(v); return Number.isFinite(n) ? n : (d === undefined ? 0 : d); };
+  const fn = (name) => est.match(new RegExp("function " + name + "\\([^)]*\\)\\{[\\s\\S]*?\\n\\}"))[0];
+  const M = new Function("num", fn("openingCalc") + "\n" + fn("openingsTotals") + "\nreturn {openingCalc, openingsTotals};")(num);
+  const near = (a, b, m) => assert.ok(Math.abs(a - b) < 1e-9, `${m}: ${a} vs ${b}`);
+  // as before: 600 × 2100 × 2
+  let c = M.openingCalc({ w: 600, h: 2100, qty: 2 });
+  near(c.perimM, 2 * (0.6 + 2.1) * 2, "2 × (w + h) × qty"); near(c.areaM2, 0.6 * 2.1 * 2, "w × h × qty"); assert.equal(c.perimTyped, false); assert.equal(c.noArea, false);
+  // a typed perimeter wins for the reveal; the area still comes from w × h
+  c = M.openingCalc({ w: 1000, h: 1000, perimM: 3, qty: 1 }); near(c.perimM, 3, "typed perimeter (an opening against an edge: three sides formed)"); near(c.areaM2, 1, "area still w × h");
+  // perimeter and area, no size: a round Ø300 penetration × 6
+  c = M.openingCalc({ perimM: 0.942, areaM2: 0.0707, qty: 6 }); near(c.perimM, 5.652, "perimeter × qty"); near(c.areaM2, 0.4242, "area × qty");
+  // perimeter alone: the reveal, nothing off the concrete, and it says so
+  c = M.openingCalc({ label: "Riser", perimM: 4.4, qty: 1 }); near(c.perimM, 4.4, "reveal"); assert.equal(c.areaM2, 0); assert.equal(c.noArea, true);
+  assert.equal(M.openingCalc({ perimM: 2 }).qty, 1, "blank qty = 1"); assert.equal(M.openingCalc({}).perimM, 0);
+  const t = M.openingsTotals([{ w: 600, h: 2100, qty: 2 }, { label: "Riser", perimM: 4.4, qty: 1 }, { perimM: 0.942, areaM2: 0.0707, qty: 6 }]);
+  near(t.perimM, 10.8 + 4.4 + 5.652, "the reveals add up"); near(t.areaM2, 2.52 + 0.4242, "the areas add up"); assert.equal(t.typedPerim, true); assert.deepEqual(t.noArea, ["Riser"]);
+  assert.equal(M.openingsTotals([{ w: 600, h: 2100, qty: 2 }]).typedPerim, false);
+  // wiring: slab and wall both read it; the reveal runs whenever there is a perimeter; the live cell
+  assert.equal((est.match(/const openTot=openingsTotals\(d\.openings\);/g) || []).length, 2, "the slab and the wall read the ONE totals");
+  assert.match(est, /\} else if\(openTot\.perimM>0\)\{/); assert.match(est, /if\(openTot\.perimM>0\)\{\s*let revLm=N\*openTot\.perimM;/);
+  assert.doesNotMatch(est, /reduce\(\(s,o\)=>s\+2\*\(\(num\(o\.w\)/, "no calculator spells the reveal arithmetic itself any more");
+  assert.match(est, /openTot\.typedPerim\? "Σ perimeter×qty \(typed perimeter, else 2×\(w\+h\)\)" : "Σ 2×\(w\+h\)×qty"/, "an untouched takeoff keeps its formula text");
+  assert.match(est, /data-open-out=/); assert.equal((est.match(/refreshOpeningRows\(card,inst,f\)/g) || []).length, 2);
 });
 
 if (process.exitCode) {
