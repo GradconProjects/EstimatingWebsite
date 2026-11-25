@@ -6406,6 +6406,37 @@ check("Blinding between the pile faces of a shotcrete wall (26 Nov 2026): wall l
   assert.doesNotMatch(est.match(/function shotWallDefaults[\s\S]*?\n\};?\}/)[0], /pileBlind/, "no new default: an older shotcrete wall's content is unchanged");
 });
 
+check("Shotcrete wall dowels into the piers set out as a VERTICAL RUN (26 Nov 2026): positions up a pier = run ÷ spacing + 1, × bars × piers; no mode = a number per pier, as before", () => {
+  const est = fs.readFileSync(new URL("../portal/estimates-app.html", import.meta.url), "utf8");
+  const num = (v, d) => { const n = parseFloat(v); return Number.isFinite(n) ? n : (d === undefined ? 0 : d); };
+  const fn = (name) => est.match(new RegExp("function " + name + "\\([^)]*\\)\\{[\\s\\S]*?\\n\\}"))[0];
+  const setOut = new Function("num", "INSTANCES", fn("shotPierCount") + "\n" + fn("pierDowelSetOut") + "\nreturn pierDowelSetOut;")(num, [{ id: "p1", data: { qty: 12 } }]);
+  const near = (a, b, m) => assert.ok(Math.abs(a - b) < 1e-9, `${m}: ${a} vs ${b}`);
+  // as before: no mode = a number per pier (defaults 4 per pier, 400 + 600)
+  let g = setOut({ pierDowelOn: true, pierDowelPiers: 10 });
+  assert.equal(g.mode, "count"); assert.equal(g.total, 40); near(g.each, 1.0, "embed 400 + proj 600");
+  // the detail: 1 × N12 at 900 cts vertically, 110 embedment, lap 400, to every P1 pile — 20 piles on a 3 m wall
+  g = setOut({ pierDowelOn: true, pierDowelMode: "spacing", height: 3000, pierDowelPiers: 20, pierDowelSpacing: 900, pierDowelEmbed: 110, pierDowelProj: 400, pierDowelFix: "epoxy" });
+  assert.equal(g.positions, 4, "3000 ÷ 900 + 1 = 4 positions up a pier"); assert.equal(g.total, 80, "× 20 piles"); near(g.each, 0.51, "110 + 400"); assert.equal(g.epoxy, true);
+  // a typed run, two bars at each position, the linked pier element's quantity
+  g = setOut({ pierDowelOn: true, pierDowelMode: "spacing", height: 3000, pierDowelRunMm: 5400, pierDowelSpacing: 900, pierDowelAt: 2, pierDowelTarget: "p1" });
+  assert.equal(g.positions, 7, "5400 ÷ 900 + 1"); assert.equal(g.piers, 12, "the linked pier element's quantity"); assert.equal(g.total, 12 * 7 * 2);
+  assert.equal(setOut({ pierDowelMode: "spacing", height: 3000, pierDowelPiers: 5 }).sp, 900, "a blank spacing is the 900 shown in the box");
+  assert.equal(setOut({ pierDowelMode: "spacing", height: 0, pierDowelPiers: 5 }).total, 0, "no run: nothing");
+  assert.equal(setOut({ pierDowelMode: "spacing", height: 3000, pierDowelSpacing: 0, pierDowelPiers: 5 }).total, 0, "no spacing: nothing");
+  // wiring: the old spec and formula stand in count mode; the vertical run has its own spec; epoxy holes land on the ChemSet row; the note follows the typing
+  assert.match(est, /spec:\(vertRun\?"Dowels into bored piers \(vertical run\) → ":"Dowels into bored piers → "\)\+\(tgt\|\|"\(unlinked\)"\)/);
+  assert.match(est, /`\$\{piers\} piers × \$\{per\} dowels × \(embed \$\{num\(d\.pierDowelEmbed,400\)\} \+ proj \$\{num\(d\.pierDowelProj,600\)\}\)\/1000`/, "the count-mode formula is unchanged");
+  assert.match(est, /materialGroup:"Connections",material:"Drill & epoxy",spec:`Dowels into bored piers: /);
+  assert.match(est, /selOpts\("pierDowelMode",vert\?"spacing":"count",\[\["count","A number per pier"\],\["spacing","At a spacing up each pier \(vertical run\)"\]\],true\)/);
+  assert.match(est, /refreshPileBlindNote\(card,inst\);\s*refreshPierDowelNote\(card,inst\);/);
+  assert.match(est, /nothing is priced for them\.`,section:"conn",level:"completeness"/);
+  assert.doesNotMatch(est.match(/function shotWallDefaults[\s\S]*?\n\};?\}/)[0], /pierDowelMode|pierDowelFix/, "no new default: an older wall prices as it did");
+  // the bridge: the holes line is the one the ChemSet hole-only allowance takes
+  const imp = fs.readFileSync(new URL("../src/lib/estimateImport.js", import.meta.url), "utf8");
+  assert.match(imp, /\/\^drill & epoxy\$\/i\.test\(l\.material \|\| ""\) && l\.unit === "no\."/);
+});
+
 check("Vertical blinding on a shotcrete wall (26 Nov 2026): face area × thickness — a typed area, else length × height; blank thickness = 50 mm", () => {
   const est = fs.readFileSync(new URL("../portal/estimates-app.html", import.meta.url), "utf8");
   const num = (v, d) => { const n = parseFloat(v); return Number.isFinite(n) ? n : (d === undefined ? 0 : d); };

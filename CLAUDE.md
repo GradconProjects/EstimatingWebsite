@@ -5492,6 +5492,31 @@ element families waits on the owner's approval of the pad footing.
   the wiring; `test-pile-blinding.mjs` proves the tab, the tick, the warning,
   40 piles on 18 m × 3 m = 2.61 m³, a typed length / height / grade, the
   overlap flag, the cursor, the save and the untick (20 checks).
+- **A shotcrete wall's dowels into the piers can be a VERTICAL RUN** (Boma,
+  26 Nov 2026: "include vertical run rebars between piers and shotcrete
+  wall" — the detail's "DRILL AND EPOXY GROUT 1 x N12 DOWEL BARS AT 900 CTS.
+  VERTICALLY x 110mm EMBEDMENT … LAP 400mm WITH WALL REINFORCEMENT … TO EVERY
+  'P1' CONCRETE PILE"). The Connections tab's "Dowel bars into adjoining
+  bored piers" gains **Set out** (`pierDowelMode`, a rerendering select: "A
+  number per pier" — no value, so a wall saved before this prices as it did,
+  same spec and formula — or "At a spacing up each pier (vertical run)") and
+  **Fixing** (`pierDowelFix`: cast in / drill & epoxy). In the vertical run
+  the per-pier count is replaced by `pierDowelRunMm` (blank = the wall
+  height), `pierDowelSpacing` (the box opens on 900) and `pierDowelAt` (bars
+  at each position, 1). `pierDowelSetOut(d)` is the ONE reading: positions up
+  one pier = run ÷ spacing + 1, × bars × piers (`shotPierCount` — typed, else
+  the linked pier element's quantity), each embedment + projection (the lap
+  with the wall reinforcement). The bar line's spec is "Dowels into bored
+  piers (vertical run) → …"; epoxy adds a `Connections` "Drill & epoxy" line
+  in no. (one hole per dowel, `massPerUnit: 0`) that the bridge lands on the
+  ChemSet hole-only allowance, as a starter run's does. A vertical run with
+  no piers, run or spacing is a completeness warning and no line; the result
+  line (`pier-dowel-out`) follows the typing (`refreshPierDowelNote`).
+  `verify.mjs` runs the set-out out of the page source; 
+  `test-pier-dowel-run.mjs` proves an older wall unchanged, the detail (20
+  piles × 4 positions = 80 × N12 × 0.51 m = 40.8 m and 80 holes), a typed run
+  and two bars, 600 centres, the warning, cast in, the save and the switch
+  back (19 checks).
 - **A shotcrete wall takes VERTICAL blinding** (Boma, 26 Nov 2026: "allow
   vertical blinding in shotcrete walls"). Under the pile-face fill on the
   Shotcrete Wall's Blinding tab sits "Vertical blinding to the wall face"

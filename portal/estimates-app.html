@@ -6990,6 +6990,53 @@ function shotPierCount(d){
   let tgt=INSTANCES.find(x=>x.id===d.pierDowelTarget); if(!tgt) return 0;
   return Math.max(0,Math.round(num(tgt.data.qty,1)));
 }
+/* ---- DOWELS SET OUT UP EACH PIER (26 Nov 2026) ----
+ * The bars between the bored piers and the shotcrete wall are usually drawn
+ * as a VERTICAL RUN: "drill and epoxy grout 1 × N12 dowel bars at 900 cts
+ * vertically × 110 mm embedment, lap 400 mm with wall reinforcement, to every
+ * P1 pile". pierDowelMode "spacing" sets them out that way — positions up one
+ * pier = vertical run ÷ spacing + 1 (run blank = the wall height), × bars at
+ * each position, × piers — beside the older "a number per pier" (no mode =
+ * count, so a wall saved before this prices as it did). pierDowelFix "epoxy"
+ * adds the "Drill & epoxy" holes line (one hole per dowel) the bridge lands
+ * on the ChemSet hole-only allowance. pierDowelSetOut(d) is the ONE reading. */
+function pierDowelSetOut(d){
+  d=d||{};
+  const piers=shotPierCount(d);
+  const each=(num(d.pierDowelEmbed,400)+num(d.pierDowelProj,600))/1000;
+  const epoxy=d.pierDowelFix==="epoxy";
+  if(d.pierDowelMode!=="spacing"){ const per=num(d.pierDowelQty,4); return {mode:"count",piers,per,total:piers*per,each,epoxy}; }
+  const runMm=num(d.pierDowelRunMm)>0? num(d.pierDowelRunMm) : num(d.height);
+  const sp=num(d.pierDowelSpacing,900);
+  const at=Math.max(1,Math.round(num(d.pierDowelAt,1)||1));
+  const positions=(runMm>0&&sp>0)? Math.floor(runMm/sp+1e-9)+1 : 0;
+  const per=positions*at;
+  return {mode:"spacing",piers,per,total:piers*per,each,epoxy,runMm,sp,at,positions};
+}
+function pierDowelOutText(d){
+  const g=pierDowelSetOut(d);
+  if(!d.pierDowelOn) return "";
+  const dia=d.pierDowelDia||"N16";
+  if(!(g.piers>0)) return "No piers yet — type the number of piers, or link a bored-pier element with a quantity.";
+  if(g.mode==="spacing" && !(g.positions>0)) return "Type the vertical run and the spacing up the pier — nothing is priced for the dowels until then.";
+  const how=g.mode==="spacing"
+    ? `${g.piers} pier(s) × ${g.positions} position(s) up each (${fmt(g.runMm,0)} ÷ ${fmt(g.sp,0)} + 1)${g.at>1?` × ${g.at} bars`:""}`
+    : `${g.piers} pier(s) × ${fmt(g.per,0)} per pier`;
+  return `${how} = ${fmt(g.total,0)} × ${dia} dowels, each ${fmt(g.each*1000,0)} mm = ${fmt(g.total*g.each,2)} m${g.epoxy?` · ${fmt(g.total,0)} drilled & epoxied holes`:""}`;
+}
+function pierDowelSetOutFields(d){
+  const vert=d.pierDowelMode==="spacing";
+  return F("Set out",selOpts("pierDowelMode",vert?"spacing":"count",[["count","A number per pier"],["spacing","At a spacing up each pier (vertical run)"]],true))
+    + (vert
+      ? F("Vertical run per pier (mm, blank = the wall height)",inpNum("pierDowelRunMm",d.pierDowelRunMm))
+        + F("Spacing up the pier (mm)",inpNum("pierDowelSpacing",d.pierDowelSpacing===undefined?900:d.pierDowelSpacing))
+        + F("Bars at each position",inpNum("pierDowelAt",d.pierDowelAt===undefined?1:d.pierDowelAt))
+      : F("Dowels per pier",inpNum("pierDowelQty",d.pierDowelQty===undefined?4:d.pierDowelQty)))
+    + F("Fixing",selOpts("pierDowelFix",d.pierDowelFix||"cast",[["cast","Cast in (wet set)"],["epoxy","Drill & epoxy into the pier"]]));
+}
+function refreshPierDowelNote(card,inst){
+  const el=card.querySelector('[data-pierdowel-out]'); if(el) el.textContent=pierDowelOutText(inst.data);
+}
 /* ---- BLINDING BETWEEN THE PILE FACES (26 Nov 2026) ----
  * A shotcrete wall sprayed onto a contiguous bored-pile wall first has the
  * scallops between the round piles filled flush with the pile faces (the
@@ -7103,8 +7150,9 @@ function renderShotWall(inst){
   <p class="small">Bars = wall length ÷ spacing + 1, each embedment + projection. Counted here, on the wall — the slab's own register never repeats them. Only slab elements are listed.</p></div></div>
   <div class="subsec"><div class="sechead">Dowel bars into adjoining bored piers</div>
   ${chk("pierDowelOn",d.pierDowelOn,"Dowel bars tie this wall into the adjoining bored piers (per pier)","pierDowelOn")}
-  <div class="subsec ${d.pierDowelOn?'':'hidden'}" data-show-if="pierDowelOn"><div class="grid cols4">${F("Bored piers",targetSelect("pierDowelTarget",d.pierDowelTarget,inst.id,"pier"))}${F("Number of piers (0 = from the linked pier element)",inpNum("pierDowelPiers",d.pierDowelPiers))}${F("Dowels per pier",inpNum("pierDowelQty",d.pierDowelQty===undefined?4:d.pierDowelQty))}${F("Dia",barSizeSel("pierDowelDia",d.pierDowelDia||"N16"))}${F("Embedment into pier (mm)",inpNum("pierDowelEmbed",d.pierDowelEmbed===undefined?400:d.pierDowelEmbed))}${F("Projection into wall (mm)",inpNum("pierDowelProj",d.pierDowelProj===undefined?600:d.pierDowelProj))}</div>
-  <p class="small">Dowels = piers × dowels per pier, each embedment + projection — ${shotPierCount(d)} pier(s) at present. Only bored-pier / pile elements are listed.</p></div></div>
+  <div class="subsec ${d.pierDowelOn?'':'hidden'}" data-show-if="pierDowelOn"><div class="grid cols4">${F("Bored piers",targetSelect("pierDowelTarget",d.pierDowelTarget,inst.id,"pier"))}${F("Number of piers (0 = from the linked pier element)",inpNum("pierDowelPiers",d.pierDowelPiers))}${pierDowelSetOutFields(d)}${F("Dia",barSizeSel("pierDowelDia",d.pierDowelDia||"N16"))}${F("Embedment into pier (mm)",inpNum("pierDowelEmbed",d.pierDowelEmbed===undefined?400:d.pierDowelEmbed))}${F("Projection into wall (mm)",inpNum("pierDowelProj",d.pierDowelProj===undefined?600:d.pierDowelProj))}</div>
+  <p class="small" data-testid="pier-dowel-out" data-pierdowel-out style="font-weight:600">${pierDowelOutText(d)}</p>
+  <p class="small">Dowels = piers × dowels per pier, each embedment + projection (the lap with the wall reinforcement). Set out <b>at a spacing up each pier</b> for a vertical run — "1 × N12 dowel at 900 cts vertically, 110 embedment, lap 400, to every P1 pile" is spacing 900, 1 bar, embedment 110, projection 400, with the number of P1 piles as the piers: positions up one pier = run ÷ spacing + 1. Drill & epoxy adds one hole per dowel. Only bored-pier / pile elements are listed.</p></div></div>
   <div class="subsec"><div class="sechead">Dowels out (to slab or wall above)</div><div class="grid cols4">${F("Connects to",targetSelect("dowelsOut",d.dowelsOut,inst.id))}${F("Qty",inpNum("outQty",d.outQty))}${F("Dia",barSizeSel("outDia",d.outDia))}${F("Embedment (mm)",inpNum("outEmbed",d.outEmbed))}${F("Projection (mm)",inpNum("outProj",d.outProj))}</div></div>
   <div class="subsec"><div class="sechead">Strip Drain (behind wall, out of scope by default)</div>${chk("stripDrain",d.stripDrain,"Include strip drain — verify scope","stripDrain")}
   <div class="subsec ${d.stripDrain?'':'hidden'}" data-show-if="stripDrain">${F("Strip drain length (mm)",inpNum("stripDrainLength",d.stripDrainLength))}</div></div>`;
@@ -7112,6 +7160,7 @@ function renderShotWall(inst){
 }
 function computeShotWall(inst,def){
   let d=inst.data, lines=[];
+  const warnings=[];
   let Lm=num(d.length)/1000, Hm=num(d.height)/1000, Tm=num(d.thickness)/1000;
   let area=Lm*Hm, vol=area*Tm;
   d._autoAreaM2 = area;   // sprayed face — the m² a shotcrete wall is measured in
@@ -7149,16 +7198,19 @@ function computeShotWall(inst,def){
     if(totLen>0) lines.push(baseLine(inst,def,{materialGroup:"Connections",material:d.slabTieDia||"N12",spec:"Horizontal bars into slab → "+(tgt||"(unlinked)"),qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`${count} bars (L ${num(d.length)} ÷ ${sp} + 1) × (embed ${num(d.slabTieEmbed,500)} + proj ${num(d.slabTieProj,600)})/1000`,linkedElement:tgt,notes:`${fmt(wt2,1)} kg`}));
   }
   if(d.pierDowelOn){
-    let piers=shotPierCount(d), per=num(d.pierDowelQty,4);
-    let dia=barDiaOf(d.pierDowelDia||"N16"); let each=(num(d.pierDowelEmbed,400)+num(d.pierDowelProj,600))/1000;
-    let totLen=piers*per*each; let wt2=totLen*massPerM(dia); let tgt=targetLabelOf(d.pierDowelTarget);
-    if(totLen>0) lines.push(baseLine(inst,def,{materialGroup:"Connections",material:d.pierDowelDia||"N16",spec:"Dowels into bored piers → "+(tgt||"(unlinked)"),qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:`${piers} piers × ${per} dowels × (embed ${num(d.pierDowelEmbed,400)} + proj ${num(d.pierDowelProj,600)})/1000`,linkedElement:tgt,notes:`${fmt(wt2,1)} kg`}));
+    // pierDowelSetOut is the ONE reading: a number per pier (as always), or a vertical run at a spacing (26 Nov 2026).
+    const pd=pierDowelSetOut(d), vertRun=pd.mode==="spacing";
+    let piers=pd.piers, per=pd.per;
+    let dia=barDiaOf(d.pierDowelDia||"N16"); let each=pd.each;
+    let totLen=pd.total*each; let wt2=totLen*massPerM(dia); let tgt=targetLabelOf(d.pierDowelTarget);
+    if(totLen>0) lines.push(baseLine(inst,def,{materialGroup:"Connections",material:d.pierDowelDia||"N16",spec:(vertRun?"Dowels into bored piers (vertical run) → ":"Dowels into bored piers → ")+(tgt||"(unlinked)"),qty:totLen,unit:"m",waste:PROJECT.reoWaste,finalQty:withWaste(totLen,PROJECT.reoWaste),formula:vertRun? `${piers} piers × ${pd.positions} positions (run ${fmt(pd.runMm,0)} ÷ ${fmt(pd.sp,0)} + 1)${pd.at>1?` × ${pd.at} bars`:""} × (embed ${num(d.pierDowelEmbed,400)} + proj ${num(d.pierDowelProj,600)})/1000` : `${piers} piers × ${per} dowels × (embed ${num(d.pierDowelEmbed,400)} + proj ${num(d.pierDowelProj,600)})/1000`,linkedElement:tgt,notes:`${fmt(wt2,1)} kg${vertRun?` — ${fmt(pd.total,0)} dowels at ${fmt(pd.sp,0)} mm centres up each pier`:""}`}));
+    if(pd.epoxy && pd.total>0 && each>0) lines.push(baseLine(inst,def,{materialGroup:"Connections",material:"Drill & epoxy",spec:`Dowels into bored piers: ${fmt(pd.total,0)} holes for ${d.pierDowelDia||"N16"}, ${num(d.pierDowelEmbed,400)}mm embedment → ${tgt||"(unlinked)"}`,qty:pd.total,unit:"no.",waste:0,finalQty:pd.total,massPerUnit:0,formula:"one hole per dowel"}));
+    if(vertRun && !(pd.total>0)) warnings.push({text:`Dowels into the bored piers are set out at a spacing but ${!(piers>0)?"there are no piers (type the number, or link a pier element)":"the vertical run or the spacing is missing"} — nothing is priced for them.`,section:"conn",level:"completeness"});
   }
   if(d.stripDrain && num(d.stripDrainLength)>0){
     lines.push(baseLine(inst,def,{materialGroup:"Drainage",material:"Strip drain (out of scope — verify)",spec:"",qty:num(d.stripDrainLength)/1000,unit:"m",waste:0,finalQty:num(d.stripDrainLength)/1000,formula:"manual entry"}));
   }
   // Blinding between the pile faces (26 Nov 2026) — pileBlindGeom is the ONE reading.
-  const warnings=[];
   // Vertical blinding to the wall face (26 Nov 2026) — vertBlindGeom is the ONE reading.
   const vb=vertBlindGeom(d);
   if(vb.on){
@@ -10609,6 +10661,7 @@ function attachCardEvents(card,inst){
     refreshOpeningRows(card,inst,f);
     refreshSdFormNote(card,inst);
     refreshPileBlindNote(card,inst);
+    refreshPierDowelNote(card,inst);
     if(e.target.dataset.toggle){
       card.querySelectorAll(`[data-show-if="${e.target.dataset.toggle}"]`).forEach(sec=>sec.classList.toggle('hidden',!val));
       let offSecs=card.querySelectorAll(`[data-show-if="${e.target.dataset.toggle}_off"]`);
