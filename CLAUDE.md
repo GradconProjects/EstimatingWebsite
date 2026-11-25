@@ -5537,6 +5537,32 @@ element families waits on the owner's approval of the pad footing.
   source; `test-vert-blinding.mjs` proves the tick, 54 m² × 50 mm = 2.7 m³, a
   typed thickness / length / height / area / grade, both blindings together,
   the warning, the save and the untick (17 checks).
+- **A shotcrete wall takes a VERTICAL VAPOUR BARRIER** (Boma, 26 Nov 2026:
+  "cant find the vertical vapour barrier" — there was none; the wall only had
+  the generic "under element" membrane, which needs a typed area). Third on
+  the Shotcrete Wall's Blinding tab, under the two blindings: "Vertical vapour
+  barrier / membrane to the wall face" (`vertVmSection`,
+  `data-testid="vert-vapour"`): the tick `vertVmOn`, Membrane type
+  (`vertVmType`, `VERT_VM_TYPES` — the same four as the under-element
+  membrane), Laps (`vertVmLap`, blank = 10 %, a typed 0 is 0), Length and
+  Height covered (`vertVmLenMm` / `vertVmHeightMm`, each blank = the wall's
+  own) and a typed Face area (`vertVmAreaM2`, replaces length × height).
+  `vertVmGeom(d)` is the ONE reading — FACE area plus laps — and
+  `computeShotWall` emits ONE `Vapour Barrier` m² line "Vapour barrier —
+  <type>", spec "Vertical — to the wall face, incl. laps", which the bridge
+  lands on OTHER ACCESSORIES "Vapour barrier". It is a SHEET vapour barrier:
+  a specialist waterproofing system behind the wall (a bentonite sheet such
+  as Voltex, installed and certified by others) is a subcontract quote, and
+  the section says so. **The three wall-face lines carry `shotFace: true`**
+  and the generic under-element blinding / membrane path ignores them when it
+  decides whether the element already blinds — before this, ticking either
+  blinding switched the generic section off. Ticked with no face area is a
+  completeness warning and no line; the result line (`vert-vapour-out`)
+  follows the typing through `refreshPileBlindNote`. No new default.
+  `verify.mjs` runs the geometry out of the page source and pins the wiring;
+  `test-vert-vapour.mjs` proves the place on the tab, 54 m² → 59.4 m², typed
+  laps / length / height / area / type, the line beside the blindings and the
+  generic membrane, the warning, the save and the untick (18 checks).
 - **An opening or penetration can be entered by its PERIMETER** (Boma,
   25 Nov 2026: "i would like the option of entering openings and penetrations
   in perimeter lm also"). The Openings table on the slab and the wall

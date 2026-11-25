@@ -7123,7 +7123,43 @@ function vertBlindSection(d){
   <p class="small" data-testid="vert-blinding-out" data-vertblind-out style="font-weight:600">${vertBlindOutText(d)}</p>
   <p class="small">Volume = face area × thickness — the wall's FACE, not a plan area. It takes the wall's concrete waste class. Separate from the fill between the pile faces above: tick both where the scallops are filled AND a layer goes over the face, and both are priced.</p></div></div>`;
 }
+/* ---- VERTICAL VAPOUR BARRIER / membrane to a shotcrete wall's face
+ * (26 Nov 2026) — a membrane hung UPRIGHT against the face before the wall is
+ * sprayed, measured in m² of FACE with a lap allowance: a typed area wins,
+ * else length × height (each blank = the wall's own). Its own tick and its
+ * own line, beside the two blindings. vertVmGeom(d) is the ONE reading. */
+const VERT_VM_TYPES=[["200um polyethylene","200µm polyethylene (standard)"],["300um polyethylene","300µm polyethylene (heavy duty)"],["Fortecon 200um","Fortecon 200µm"],["Damp-proof membrane","Damp-proof membrane (other)"]];
+function vertVmGeom(d){
+  d=d||{};
+  const on=!!d.vertVmOn;
+  const areaTyped=num(d.vertVmAreaM2)>0;
+  const L=(num(d.vertVmLenMm)>0? num(d.vertVmLenMm) : num(d.length))/1000;
+  const H=(num(d.vertVmHeightMm)>0? num(d.vertVmHeightMm) : num(d.height))/1000;
+  const area=areaTyped? num(d.vertVmAreaM2) : L*H;
+  const lap=(d.vertVmLap===undefined||d.vertVmLap==="")? 10 : Math.max(0,num(d.vertVmLap));
+  return {on, areaTyped, L, H, area, lap, ready: area>0, finalM2: area>0? area*(1+lap/100) : 0, type: d.vertVmType||"200um polyethylene"};
+}
+function vertVmOutText(d){
+  const g=vertVmGeom(d);
+  if(!g.on) return "";
+  if(!g.ready) return "Type the face area, or a wall length and height — nothing is priced for the vertical vapour barrier until then.";
+  return `${g.areaTyped? `${fmt(g.area,2)} m² of face (typed)` : `${fmt(g.L,2)} m × ${fmt(g.H,2)} m high = ${fmt(g.area,2)} m² of face`} + ${fmt(g.lap,0)}% laps = ${fmt(g.finalM2,2)} m²`;
+}
+function vertVmSection(d){
+  return `<div class="subsec" data-testid="vert-vapour"><div class="sechead">Vertical vapour barrier / membrane to the wall face</div>
+  ${chk("vertVmOn",d.vertVmOn,"Vapour barrier / membrane fixed upright to the face before the wall is sprayed","vertVmOn")}
+  <div class="subsec ${d.vertVmOn?'':'hidden'}" data-show-if="vertVmOn"><div class="grid cols3">
+   ${F("Membrane type",selOpts("vertVmType",d.vertVmType||"200um polyethylene",VERT_VM_TYPES))}
+   ${F("Laps allowance (%, blank = 10)",inpNum("vertVmLap",d.vertVmLap))}
+   ${F("Length covered (mm, blank = the wall length)",inpNum("vertVmLenMm",d.vertVmLenMm))}
+   ${F("Height covered (mm, blank = the wall height)",inpNum("vertVmHeightMm",d.vertVmHeightMm))}
+   ${F("Face area (m², typed — replaces length × height)",inpNum("vertVmAreaM2",d.vertVmAreaM2))}
+  </div>
+  <p class="small" data-testid="vert-vapour-out" data-vertvm-out style="font-weight:600">${vertVmOutText(d)}</p>
+  <p class="small">Area = the wall's FACE (not a plan area) plus the laps. This is a sheet vapour barrier; a specialist waterproofing system behind the wall (a bentonite sheet such as Voltex, installed and certified by others) is a subcontract quote, not this row.</p></div></div>`;
+}
 function refreshPileBlindNote(card,inst){
+  const em=card.querySelector('[data-vertvm-out]'); if(em) em.textContent=vertVmOutText(inst.data);
   const el=card.querySelector('[data-pileblind-out]'); if(el) el.textContent=pileBlindOutText(inst.data);
   const ev=card.querySelector('[data-vertblind-out]'); if(ev) ev.textContent=vertBlindOutText(inst.data);
 }
@@ -7138,7 +7174,7 @@ function renderShotWall(inst){
   let conc=`<div class="grid cols3">${F("Shotcrete strength grade (N/MPa)",inpNum("grade",d.grade===undefined?PROJECT.grade:d.grade))}${shotClassSel}${F(`Rebound / overspray waste % override (blank = ${shotEff}%)`,inpNum("concreteWasteOverride",d.concreteWasteOverride))}</div>
   <p class="small">Concrete = length × height × thickness, sprayed application — the register line carries the grade you choose (N32 / N40 / N50 shotcrete mixes are common) and the sprayed waste, which is higher than a formed pour.</p>
   <div class="grid cols3">${chk("xypex",d.xypex,"Penetron (Xypex) waterproofing additive","xypex")}</div>
-  <p class="small">Blinding concrete between the pile faces of a piled wall (the flush finish behind the shotcrete) and a vertical blinding layer to the wall face are on the <b>Blinding</b> tab.</p>`;
+  <p class="small">Blinding concrete between the pile faces of a piled wall (the flush finish behind the shotcrete) a vertical blinding layer and a vertical vapour barrier to the wall face are on the <b>Blinding</b> tab.</p>`;
   let reo=`<div class="grid cols3">${F("Mesh type",selOpts("meshType",d.meshType,Object.keys(MESHTYPES).map(m=>[m,m]),true))}${F("Layers",inpNumR("meshLayers",d.meshLayers))}${chk("meshLap",d.meshLap,"Include lap allowance (%)","meshLap")}</div>
   ${layerTypeSelects(d,"meshLayers","meshType","meshLayerTypes",(f,v)=>selOpts(f,v,Object.keys(MESHTYPES).map(m=>[m,m])),"mesh type")}
   <p class="small">Central mesh layer(s) across the full wall face — sprayed walls are typically single-face-mesh, not two independent faces like a formed wall.</p>`;
@@ -7217,15 +7253,21 @@ function computeShotWall(inst,def){
     if(!vb.ready) warnings.push({text:"Vertical blinding to the wall face is ticked but there is no face area (a typed area, or a length and a height) — nothing is priced for it.",section:"blind",level:"completeness"});
     else {
       const vg=num(d.vertBlindGrade)>0? num(d.vertBlindGrade) : blindGradeDefault();
-      lines.push(baseLine(inst,def,{materialGroup:"Base/Blinding",material:`Blinding concrete N${vg}`,spec:"Vertical blinding to the wall face",qty:vb.vol,unit:"m³",waste:sprayWaste,finalQty:withWaste(vb.vol,sprayWaste),formula:`${vb.areaTyped? `${fmt(vb.area,2)} m² face (typed)` : `${fmt(vb.L,2)} × ${fmt(vb.H,2)} m face`} × ${fmt(vb.tMm,0)} mm (+${fmt(sprayWaste,0)}% waste)`,notes:`${fmt(vb.area,2)} m² of wall face, ${fmt(vb.tMm,0)} mm thick`}));
+      lines.push(baseLine(inst,def,{materialGroup:"Base/Blinding",material:`Blinding concrete N${vg}`,spec:"Vertical blinding to the wall face",shotFace:true,qty:vb.vol,unit:"m³",waste:sprayWaste,finalQty:withWaste(vb.vol,sprayWaste),formula:`${vb.areaTyped? `${fmt(vb.area,2)} m² face (typed)` : `${fmt(vb.L,2)} × ${fmt(vb.H,2)} m face`} × ${fmt(vb.tMm,0)} mm (+${fmt(sprayWaste,0)}% waste)`,notes:`${fmt(vb.area,2)} m² of wall face, ${fmt(vb.tMm,0)} mm thick`}));
     }
+  }
+  // Vertical vapour barrier to the wall face (26 Nov 2026) — vertVmGeom is the ONE reading.
+  const vm=vertVmGeom(d);
+  if(vm.on){
+    if(!vm.ready) warnings.push({text:"Vertical vapour barrier to the wall face is ticked but there is no face area (a typed area, or a length and a height) — nothing is priced for it.",section:"blind",level:"completeness"});
+    else lines.push(baseLine(inst,def,{materialGroup:"Vapour Barrier",material:`Vapour barrier — ${vm.type}`,spec:"Vertical — to the wall face, incl. laps",shotFace:true,qty:vm.area,unit:"m²",waste:vm.lap,finalQty:vm.finalM2,formula:`${vm.areaTyped? `${fmt(vm.area,2)} m² face (typed)` : `${fmt(vm.L,2)} × ${fmt(vm.H,2)} m face`} (+${fmt(vm.lap,0)}% laps)`,notes:`${fmt(vm.area,2)} m² of wall face`}));
   }
   const pb=pileBlindGeom(d);
   if(pb.on){
     if(!pb.ready) warnings.push({text:`Blinding between the pile faces is ticked but ${pb.missing.join(", ")} ${pb.missing.length>1?"are":"is"} missing — nothing is priced for it.`,section:"blind",level:"completeness"});
     else {
       const bg=num(d.pileBlindGrade)>0? num(d.pileBlindGrade) : blindGradeDefault();
-      if(pb.vol>0) lines.push(baseLine(inst,def,{materialGroup:"Base/Blinding",material:`Blinding concrete N${bg}`,spec:"Between the pile faces — flush finish behind the shotcrete",qty:pb.vol,unit:"m³",waste:sprayWaste,finalQty:withWaste(pb.vol,sprayWaste),formula:`(${fmt(pb.L,2)} m × Ø${fmt(pb.D*1000,0)}÷2 − ${pb.N} piles × π×Ø²÷8) × ${fmt(pb.H,2)} m high (+${fmt(sprayWaste,0)}% waste)`,notes:`${pb.N} piles Ø${fmt(pb.D*1000,0)} at ${fmt(pb.centresMm,0)} mm centres over ${fmt(pb.L,2)} m — average ${fmt(pb.avgMm,0)} mm thick`}));
+      if(pb.vol>0) lines.push(baseLine(inst,def,{materialGroup:"Base/Blinding",material:`Blinding concrete N${bg}`,spec:"Between the pile faces — flush finish behind the shotcrete",shotFace:true,qty:pb.vol,unit:"m³",waste:sprayWaste,finalQty:withWaste(pb.vol,sprayWaste),formula:`(${fmt(pb.L,2)} m × Ø${fmt(pb.D*1000,0)}÷2 − ${pb.N} piles × π×Ø²÷8) × ${fmt(pb.H,2)} m high (+${fmt(sprayWaste,0)}% waste)`,notes:`${pb.N} piles Ø${fmt(pb.D*1000,0)} at ${fmt(pb.centresMm,0)} mm centres over ${fmt(pb.L,2)} m — average ${fmt(pb.avgMm,0)} mm thick`}));
       if(pb.over) warnings.push({text:`Blinding between the pile faces: ${pb.N} piles of Ø${fmt(pb.D*1000,0)} are ${fmt(pb.N*pb.D,2)} m of pile on a ${fmt(pb.L,2)} m wall — the piles overlap, so the fill is understated${pb.vol>0?"":" (it prices nothing)"}. Check the number of piles or the wall length.`,section:"blind",level:"sanity"});
     }
   }
@@ -10280,7 +10322,7 @@ function buildCard(inst){
     let ad=inst.data;
     parts.blind = blindingSection(ad) + `<div class="grid cols3" style="margin-top:6px;">${F("Blinding / membrane area (m², 0 = element footprint where known)",inpNum("blindArea",ad.blindArea))}</div>`;
   }
-  if(def.calc==="shotwall") parts.blind = pileBlindSection(inst.data) + vertBlindSection(inst.data) + parts.blind;
+  if(def.calc==="shotwall") parts.blind = pileBlindSection(inst.data) + vertBlindSection(inst.data) + vertVmSection(inst.data) + parts.blind;
   parts.blind = parts.blind + insulationSubsection(inst.data) + verticalInsulationSection(inst);
   // EVERY ground element decides its own excavation (see applyExcavationOption).
   if(isGroundElement(def)) parts.exc = excavationOptionSection(inst,def) + (parts.exc||"");
@@ -10969,7 +11011,7 @@ function computeInstance(inst){
   // derived (beams set _autoBlindArea, slabs _autoInsArea). Calculators that
   // already emit Base/Blinding lines (footings, pile caps, ground slabs)
   // are left alone so nothing double-counts.
-  if(!(out.lines||[]).some(l=>l.materialGroup==="Base/Blinding"||l.materialGroup==="Vapour Barrier")){
+  if(!(out.lines||[]).some(l=>(l.materialGroup==="Base/Blinding"||l.materialGroup==="Vapour Barrier") && !l.shotFace)){
     let bArea = num(d.blindArea)>0? num(d.blindArea) : (num(d._autoBlindArea)||num(d._autoInsArea)||0);
     if(bArea>0){
       const gThk=blindingThicknessMm(d);

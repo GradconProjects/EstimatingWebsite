@@ -6397,9 +6397,9 @@ check("Blinding between the pile faces of a shotcrete wall (26 Nov 2026): wall l
   g = geom({ pileBlindOn: true, length: 9000, height: 3000, pileBlindPiles: 40, pileBlindDia: 450 });
   assert.equal(g.over, true); assert.ok(g.plan >= 0 && g.vol >= 0);
   // wiring: the Blinding tab leads with it on a shotcrete wall; a Base/Blinding concrete line the bridge lands on the blinding row; the note follows the typing
-  assert.match(est, /if\(def\.calc==="shotwall"\) parts\.blind = pileBlindSection\(inst\.data\) \+ vertBlindSection\(inst\.data\) \+ parts\.blind;/);
+  assert.match(est, /if\(def\.calc==="shotwall"\) parts\.blind = pileBlindSection\(inst\.data\) \+ vertBlindSection\(inst\.data\) \+ vertVmSection\(inst\.data\) \+ parts\.blind;/);
   assert.match(est, /const pb=pileBlindGeom\(d\);/); assert.equal((est.match(/=pileBlindGeom\(d\);/g) || []).length, 2, "compute and the note read the ONE geometry");
-  assert.match(est, /materialGroup:"Base\/Blinding",material:`Blinding concrete N\$\{bg\}`,spec:"Between the pile faces — flush finish behind the shotcrete"/);
+  assert.match(est, /materialGroup:"Base\/Blinding",material:`Blinding concrete N\$\{bg\}`,spec:"Between the pile faces — flush finish behind the shotcrete",shotFace:true/);
   assert.match(est, /inpNum\("pileBlindLenMm",d\.pileBlindLenMm\)/); assert.match(est, /inpNum\("pileBlindPiles",d\.pileBlindPiles\)/);
   assert.match(est, /refreshSdFormNote\(card,inst\);\s*refreshPileBlindNote\(card,inst\);/, "the result line follows the typing");
   assert.match(est, / missing — nothing is priced for it\.`,section:"blind",level:"completeness"/); assert.match(est, /level:"sanity"\}\);\s*\}\s*\}\s*return \{lines,warnings\};/);
@@ -6437,6 +6437,30 @@ check("Shotcrete wall dowels into the piers set out as a VERTICAL RUN (26 Nov 20
   assert.match(imp, /\/\^drill & epoxy\$\/i\.test\(l\.material \|\| ""\) && l\.unit === "no\."/);
 });
 
+check("Vertical vapour barrier on a shotcrete wall (26 Nov 2026): face area + laps — a typed area, else length × height; its own line beside the blindings", () => {
+  const est = fs.readFileSync(new URL("../portal/estimates-app.html", import.meta.url), "utf8");
+  const num = (v, d) => { const n = parseFloat(v); return Number.isFinite(n) ? n : (d === undefined ? 0 : d); };
+  const fn = (name) => est.match(new RegExp("function " + name + "\\([^)]*\\)\\{[\\s\\S]*?\\n\\}"))[0];
+  const geom = new Function("num", fn("vertVmGeom") + "\nreturn vertVmGeom;")(num);
+  const near = (a, b, m) => assert.ok(Math.abs(a - b) < 1e-9, `${m}: ${a} vs ${b}`);
+  let g = geom({ vertVmOn: true, length: 18000, height: 3000 });
+  near(g.area, 54, "blank = the wall's own length × height"); assert.equal(g.lap, 10, "blank laps = 10%"); near(g.finalM2, 59.4, "54 m² + 10%"); assert.equal(g.type, "200um polyethylene");
+  g = geom({ vertVmOn: true, length: 18000, height: 3000, vertVmLenMm: 9000, vertVmHeightMm: 2000, vertVmLap: 15, vertVmType: "Fortecon 200um" });
+  near(g.area, 18, "typed length × height"); near(g.finalM2, 18 * 1.15, "+ a typed 15%"); assert.equal(g.type, "Fortecon 200um");
+  g = geom({ vertVmOn: true, length: 18000, height: 3000, vertVmAreaM2: 41.5, vertVmLap: 0 });
+  assert.equal(g.areaTyped, true); near(g.finalM2, 41.5, "a typed face area wins; 0% laps is 0, not the default");
+  assert.equal(geom({ vertVmOn: true }).ready, false); assert.equal(geom({ length: 18000, height: 3000 }).on, false, "off until ticked");
+  // wiring: its own Vapour Barrier line, which the bridge lands on the Vapour barrier row; the wall-face lines never switch the generic under-element section off
+  assert.match(est, /const vm=vertVmGeom\(d\);/);
+  assert.match(est, /materialGroup:"Vapour Barrier",material:`Vapour barrier — \$\{vm\.type\}`,spec:"Vertical — to the wall face, incl\. laps",shotFace:true/);
+  assert.match(est, /\(l\.materialGroup==="Base\/Blinding"\|\|l\.materialGroup==="Vapour Barrier"\) && !l\.shotFace\)\)\{/, "the generic blinding / membrane still prices beside the wall-face lines");
+  assert.match(est, /data-vertvm-out\]'\); if\(em\) em\.textContent=vertVmOutText\(inst\.data\);/);
+  assert.match(est, /Vertical vapour barrier to the wall face is ticked but there is no face area[^`"]*nothing is priced for it\.",section:"blind",level:"completeness"/);
+  assert.doesNotMatch(est.match(/function shotWallDefaults[\s\S]*?\n\};?\}/)[0], /vertVm/, "no new default: an older shotcrete wall's content is unchanged");
+  const imp = fs.readFileSync(new URL("../src/lib/estimateImport.js", import.meta.url), "utf8");
+  assert.match(imp, /l\.materialGroup === "Vapour Barrier"\) && \/vapour\|membrane\/i\.test\(l\.material \|\| ""\)/);
+});
+
 check("Vertical blinding on a shotcrete wall (26 Nov 2026): face area × thickness — a typed area, else length × height; blank thickness = 50 mm", () => {
   const est = fs.readFileSync(new URL("../portal/estimates-app.html", import.meta.url), "utf8");
   const num = (v, d) => { const n = parseFloat(v); return Number.isFinite(n) ? n : (d === undefined ? 0 : d); };
@@ -6454,7 +6478,7 @@ check("Vertical blinding on a shotcrete wall (26 Nov 2026): face area × thickne
   assert.equal(geom({ length: 18000, height: 3000 }).on, false, "off until ticked");
   // wiring: its own Base/Blinding concrete line with a stable spec, beside the pile fill; the note follows the typing; no new default
   assert.match(est, /const vb=vertBlindGeom\(d\);/);
-  assert.match(est, /materialGroup:"Base\/Blinding",material:`Blinding concrete N\$\{vg\}`,spec:"Vertical blinding to the wall face"/);
+  assert.match(est, /materialGroup:"Base\/Blinding",material:`Blinding concrete N\$\{vg\}`,spec:"Vertical blinding to the wall face",shotFace:true/);
   assert.match(est, /Vertical blinding to the wall face is ticked but there is no face area[^`"]*nothing is priced for it\.",section:"blind",level:"completeness"/);
   assert.match(est, /data-vertblind-out\]'\); if\(ev\) ev\.textContent=vertBlindOutText\(inst\.data\);/);
   assert.match(est, /inpNum\("vertBlindT",d\.vertBlindT\)/); assert.match(est, /inpNum\("vertBlindAreaM2",d\.vertBlindAreaM2\)/);
