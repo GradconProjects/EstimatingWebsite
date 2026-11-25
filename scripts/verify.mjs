@@ -6397,13 +6397,37 @@ check("Blinding between the pile faces of a shotcrete wall (26 Nov 2026): wall l
   g = geom({ pileBlindOn: true, length: 9000, height: 3000, pileBlindPiles: 40, pileBlindDia: 450 });
   assert.equal(g.over, true); assert.ok(g.plan >= 0 && g.vol >= 0);
   // wiring: the Blinding tab leads with it on a shotcrete wall; a Base/Blinding concrete line the bridge lands on the blinding row; the note follows the typing
-  assert.match(est, /if\(def\.calc==="shotwall"\) parts\.blind = pileBlindSection\(inst\.data\) \+ parts\.blind;/);
+  assert.match(est, /if\(def\.calc==="shotwall"\) parts\.blind = pileBlindSection\(inst\.data\) \+ vertBlindSection\(inst\.data\) \+ parts\.blind;/);
   assert.match(est, /const pb=pileBlindGeom\(d\);/); assert.equal((est.match(/=pileBlindGeom\(d\);/g) || []).length, 2, "compute and the note read the ONE geometry");
   assert.match(est, /materialGroup:"Base\/Blinding",material:`Blinding concrete N\$\{bg\}`,spec:"Between the pile faces — flush finish behind the shotcrete"/);
   assert.match(est, /inpNum\("pileBlindLenMm",d\.pileBlindLenMm\)/); assert.match(est, /inpNum\("pileBlindPiles",d\.pileBlindPiles\)/);
   assert.match(est, /refreshSdFormNote\(card,inst\);\s*refreshPileBlindNote\(card,inst\);/, "the result line follows the typing");
   assert.match(est, / missing — nothing is priced for it\.`,section:"blind",level:"completeness"/); assert.match(est, /level:"sanity"\}\);\s*\}\s*\}\s*return \{lines,warnings\};/);
   assert.doesNotMatch(est.match(/function shotWallDefaults[\s\S]*?\n\};?\}/)[0], /pileBlind/, "no new default: an older shotcrete wall's content is unchanged");
+});
+
+check("Vertical blinding on a shotcrete wall (26 Nov 2026): face area × thickness — a typed area, else length × height; blank thickness = 50 mm", () => {
+  const est = fs.readFileSync(new URL("../portal/estimates-app.html", import.meta.url), "utf8");
+  const num = (v, d) => { const n = parseFloat(v); return Number.isFinite(n) ? n : (d === undefined ? 0 : d); };
+  const fn = (name) => est.match(new RegExp("function " + name + "\\([^)]*\\)\\{[\\s\\S]*?\\n\\}"))[0];
+  const geom = new Function("num", "const VERT_BLIND_T_MM=50;\n" + fn("vertBlindGeom") + "\nreturn vertBlindGeom;")(num);
+  assert.match(est, /const VERT_BLIND_T_MM=50;/);
+  const near = (a, b, m) => assert.ok(Math.abs(a - b) < 1e-9, `${m}: ${a} vs ${b}`);
+  let g = geom({ vertBlindOn: true, length: 18000, height: 3000 });
+  near(g.area, 54, "blank = the wall's own length × height"); assert.equal(g.tMm, 50, "blank thickness = 50 mm"); near(g.vol, 2.7, "54 m² × 50 mm");
+  g = geom({ vertBlindOn: true, length: 18000, height: 3000, vertBlindLenMm: 9000, vertBlindHeightMm: 2000, vertBlindT: 75 });
+  near(g.area, 18, "typed length × height"); near(g.vol, 18 * 0.075, "× a typed thickness");
+  g = geom({ vertBlindOn: true, length: 18000, height: 3000, vertBlindAreaM2: 41.5, vertBlindT: 40 });
+  assert.equal(g.areaTyped, true); near(g.area, 41.5, "a typed face area wins"); near(g.vol, 41.5 * 0.04, "typed area × thickness");
+  g = geom({ vertBlindOn: true }); assert.equal(g.ready, false); assert.equal(g.vol, 0, "no face area: nothing priced");
+  assert.equal(geom({ length: 18000, height: 3000 }).on, false, "off until ticked");
+  // wiring: its own Base/Blinding concrete line with a stable spec, beside the pile fill; the note follows the typing; no new default
+  assert.match(est, /const vb=vertBlindGeom\(d\);/);
+  assert.match(est, /materialGroup:"Base\/Blinding",material:`Blinding concrete N\$\{vg\}`,spec:"Vertical blinding to the wall face"/);
+  assert.match(est, /Vertical blinding to the wall face is ticked but there is no face area[^`"]*nothing is priced for it\.",section:"blind",level:"completeness"/);
+  assert.match(est, /data-vertblind-out\]'\); if\(ev\) ev\.textContent=vertBlindOutText\(inst\.data\);/);
+  assert.match(est, /inpNum\("vertBlindT",d\.vertBlindT\)/); assert.match(est, /inpNum\("vertBlindAreaM2",d\.vertBlindAreaM2\)/);
+  assert.doesNotMatch(est.match(/function shotWallDefaults[\s\S]*?\n\};?\}/)[0], /vertBlind/, "no new default: an older shotcrete wall's content is unchanged");
 });
 
 check("Openings / penetrations by perimeter (25 Nov 2026): a row is width × height, or a typed perimeter and area — the perimeter forms the reveal, the area comes off the concrete; untouched rows price as before", () => {

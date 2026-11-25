@@ -5492,6 +5492,26 @@ element families waits on the owner's approval of the pad footing.
   the wiring; `test-pile-blinding.mjs` proves the tab, the tick, the warning,
   40 piles on 18 m × 3 m = 2.61 m³, a typed length / height / grade, the
   overlap flag, the cursor, the save and the untick (20 checks).
+- **A shotcrete wall takes VERTICAL blinding** (Boma, 26 Nov 2026: "allow
+  vertical blinding in shotcrete walls"). Under the pile-face fill on the
+  Shotcrete Wall's Blinding tab sits "Vertical blinding to the wall face"
+  (`vertBlindSection`, `data-testid="vert-blinding"`): the tick `vertBlindOn`,
+  Thickness (`vertBlindT`, blank = `VERT_BLIND_T_MM` 50), Length and Height
+  blinded (`vertBlindLenMm` / `vertBlindHeightMm`, each blank = the wall's
+  own), a typed Face area (`vertBlindAreaM2` — it replaces length × height)
+  and a grade (`vertBlindGrade`, blank = the project's blinding grade).
+  `vertBlindGeom(d)` is the ONE reading — the wall's FACE area × thickness,
+  never a plan area — and `computeShotWall` emits ONE `Base/Blinding` m³ line
+  "Blinding concrete N<grade>", spec "Vertical blinding to the wall face", at
+  the wall's concrete waste class, which the bridge lands on the Quotes
+  "Blinding concrete" row. It is independent of the fill between the pile
+  faces: both ticked, both priced, two lines. Ticked with no face area is a
+  completeness warning and no line; the result line (`vert-blinding-out`)
+  follows the typing through `refreshPileBlindNote`. No new default, so an
+  older wall is unchanged. `verify.mjs` runs the geometry out of the page
+  source; `test-vert-blinding.mjs` proves the tick, 54 m² × 50 mm = 2.7 m³, a
+  typed thickness / length / height / area / grade, both blindings together,
+  the warning, the save and the untick (17 checks).
 - **An opening or penetration can be entered by its PERIMETER** (Boma,
   25 Nov 2026: "i would like the option of entering openings and penetrations
   in perimeter lm also"). The Openings table on the slab and the wall
