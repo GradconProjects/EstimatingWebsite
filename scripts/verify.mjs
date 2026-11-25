@@ -6437,6 +6437,42 @@ check("Shotcrete wall dowels into the piers set out as a VERTICAL RUN (26 Nov 20
   assert.match(imp, /\/\^drill & epoxy\$\/i\.test\(l\.material \|\| ""\) && l\.unit === "no\."/);
 });
 
+check("A sheet mesh is measured in AREA whatever it is used for (27 Nov 2026): an SL / RL strip line becomes m² with whole sheets; an L-series trench mesh stays in lm", () => {
+  const est = fs.readFileSync(new URL("../portal/estimates-app.html", import.meta.url), "utf8");
+  const num = (v, d) => { const n = parseFloat(v); return Number.isFinite(n) ? n : (d === undefined ? 0 : d); };
+  const fmt = (n, dp) => String(Math.round(n * 10 ** (dp || 0)) / 10 ** (dp || 0));
+  const fn = (name) => est.match(new RegExp("function " + name + "\\([^)]*\\)\\{[\\s\\S]*?\\n\\}"))[0];
+  const MESHTYPES = { SL81: 105 / 14.4, SL82: 52 / 14.4 };
+  const conv = new Function("num", "fmt", "MESHTYPES", "MESH_SHEET_AREA_M2", fn("sheetMeshStripToArea") + "\nreturn sheetMeshStripToArea;")(num, fmt, MESHTYPES, 14.4);
+  const near = (a, b, m) => assert.ok(Math.abs(a - b) < 1e-9, `${m}: ${a} vs ${b}`);
+  // the screenshot's shape: SL81 strips 800 mm wide, 24 lm net, 26.46 lm with waste and lap
+  let l = { materialGroup: "Reinforcement", material: "SL81", spec: "Trench mesh × 4 layers", unit: "lm", qty: 24, finalQty: 26.46, massPerUnit: MESHTYPES.SL81 * 0.8, formula: "1×4L×6", notes: "" };
+  const kgBefore = l.finalQty * l.massPerUnit;
+  conv(l);
+  assert.equal(l.unit, "m²"); near(l.qty, 24 * 0.8, "net area = strip metres × strip width"); near(l.finalQty, 26.46 * 0.8, "final area");
+  assert.equal(l.stripWidthMm, 800); assert.equal(l.stripLm, 24); assert.equal(l.sheets, 2, "21.17 m² = 2 whole sheets");
+  near(l.finalQty * l.massPerUnit, kgBefore, "the kg is exactly what it was"); assert.equal(l.spec, "Trench mesh × 4 layers", "the spec — the override key — is untouched");
+  assert.match(l.formula, /24 lm × 800 mm strip = 19\.2 m²/); assert.match(l.notes, /cut as 800 mm strips .* 2 sheets/);
+  // exactly one sheet's worth is one sheet, a Connections strip converts too
+  l = { materialGroup: "Connections", material: "SL82", unit: "lm", qty: 48, finalQty: 48, massPerUnit: MESHTYPES.SL82 * 0.3 }; conv(l);
+  near(l.finalQty, 14.4, "48 lm × 300 mm"); assert.equal(l.sheets, 1);
+  // left alone: an L-series trench mesh, a bar, a sheet line already in m², a strip with no weight, another group
+  const keep = (o) => { const c = { ...o }; conv(c); assert.equal(c.unit, o.unit); assert.equal(c.qty, o.qty); };
+  keep({ materialGroup: "Reinforcement", material: "4 Bar-L12TM", unit: "lm", qty: 24, finalQty: 26, massPerUnit: 3.6 });
+  keep({ materialGroup: "Reinforcement", material: "N12", unit: "m", qty: 24, finalQty: 26 });
+  keep({ materialGroup: "Reinforcement", material: "SL81", unit: "m²", qty: 24, finalQty: 26 });
+  keep({ materialGroup: "Reinforcement", material: "SL81", unit: "lm", qty: 24, finalQty: 26 });
+  keep({ materialGroup: "Formwork", material: "SL81", unit: "lm", qty: 24, finalQty: 26, massPerUnit: 5 });
+  // wiring: every register line goes through it, before the manual override is read; an override is in m² and re-counts the sheets
+  assert.match(est, /\}, over\);\s*sheetMeshStripToArea\(line\);\s*let key = overrideKeyFor\(/, "converted in baseLine, before the override");
+  assert.match(est, /if\(line\.stripLm!==undefined\) line\.sheets=Math\.ceil\(line\.finalQty\/MESH_SHEET_AREA_M2-1e-9\);/);
+  // the bridge: the m² line lands on SQUARE MESH like any sheet (the strip-on-a-trench flag is no longer raised)
+  const { quote, flags } = buildImportFromEstimate({ project: {}, lines: [
+    { ...estLine({}), category: "Strip Footing", element: "SF1", elementId: "EL04", materialGroup: "Reinforcement", material: "SL81", spec: "Trench mesh × 4 layers", unit: "m²", finalQty: 21.168, sheets: 2 },
+  ] });
+  assert.equal(quote.items[0].qtys[rateKey("SQUARE MESH", "SL81", "m2")], 21.168); assert.ok(!flags.some((f) => /SL81/.test(f)), flags.join(" | "));
+});
+
 check("Voltex waterproofing membranes (26 Nov 2026): two OTHER ACCESSORIES rows seeded from a published roll price, offered in every Estimates membrane select and bridged by name", () => {
   const V = "Voltex bentonite waterproofing membrane (supply)", VD = "Voltex DS bentonite waterproofing membrane (supply)";
   const acc = FULL_CATALOG.find((c) => c.key === "OTHER ACCESSORIES");

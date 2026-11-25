@@ -5631,6 +5631,39 @@ element families waits on the owner's approval of the pad footing.
   "KingFlor decking to suspended slab" / "KingFlor" at the Bondek figures, not
   marked established. The catalog was 438 products that day. `verify.mjs` pins the list
   order, the label, the four lists and the bridge (100 m² → $15,000).
+- **A sheet mesh is measured in AREA whatever it is used for** (Boma, 27 Nov
+  2026, on a strip footing's register row "SL81 · Trench mesh × 4 layers ·
+  24 lm": "SL81 should have been measured in area regardless of use"; "sheet
+  bars regardless of use should be in sqm"). An SL / RL sheet cut into strips
+  — a footing's or beam's trench layers, a raft beam group's, a pad's fill
+  strips, a precast panel's, the generic calculator's, an edge return, a
+  re-entrant strip, a by-area strip layer — was emitted by the lineal metre
+  of strip, which is how an L-series trench mesh is bought, never a sheet.
+  `sheetMeshStripToArea(line)` runs at the top of **`baseLine`** (the one
+  place a register line is built), BEFORE the manual override is read: a
+  Reinforcement / Connections / Joints line in lm (or m) whose material is a
+  `MESHTYPES` sheet and which carries `massPerUnit` becomes m² — area = the
+  strip metres × the strip width, the width read back off the line's own
+  kg per metre (kg/m ÷ the sheet's kg/m²), so NO calculator changed and the
+  kg is exactly what it was — with `sheets` (whole sheets of the final area),
+  `stripLm` / `stripWidthMm` kept on the line and the strips stated in the
+  formula and the notes. The spec is untouched (the manual-override key is
+  built from it); **an override on such a line is now typed in m²** and
+  re-counts the sheets — one typed in lm before this day reads as m² and
+  needs retyping (the review status flags the element as changed). An
+  L-series trench mesh stays in lm; a sheet line already in m² is left
+  alone. Downstream follows the unit on its own: the Reinforcement Summary
+  lists the product under mesh sheets, not "Trench mesh / strips"; the orders
+  schedule buys whole sheets; the bridge lands the line on SQUARE MESH (the
+  "SL/RL code on a trench line" flag is no longer raised by a new publish).
+  The by-area method's layer table still shows a strip layer's metres in its
+  own cell — the register line is m². `verify.mjs` runs the conversion out
+  of the page source (the screenshot's row, one exact sheet, what is left
+  alone) and pins the place in `baseLine` and the bridge;
+  `test-sheet-strip-area.mjs` proves the strip footing (19.2 m² net, 2
+  sheets, the same kg, the summary, the register row, a 30 m² override), the
+  L-series mesh still in lm, a ground beam, a pad's fill strips, a slab's
+  re-entrant strips and no sheet line left in metres (15 checks).
 - **A sheet-mesh line WEIGHS** (26 Oct 2026, Grady's pad footing PF1-3 with
   two layers of SL92 read "0kg reo"): `lineWeightKg` returns final m² ×
   `MESHTYPES[material]` (kg/m²) for an m² Reinforcement line, so the element

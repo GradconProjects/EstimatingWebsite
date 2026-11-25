@@ -2796,11 +2796,38 @@ function lineWeightKg(materialGroup,material,unit,finalQty){
   if((unit==="m²"||unit==="m2") && MESHTYPES[material]!==undefined) return finalQty*MESHTYPES[material];
   return 0;
 }
+/* A SHEET mesh is measured in AREA whatever it is used for (Boma, 27 Nov
+ * 2026, on a strip footing's "SL81 · Trench mesh × 4 layers · 26.46 lm":
+ * "SL81 should have been measured in area regardless of use"). An SL / RL
+ * sheet cut into strips — a footing's or beam's trench layers, a pad's fill
+ * strips, an edge return, a re-entrant strip, a by-area strip layer — was
+ * emitted by the lineal metre of strip, which is how an L-series trench mesh
+ * is bought, not how a sheet is. baseLine converts EVERY such line, in the
+ * one place a register line is built: area = the strip metres × the strip's
+ * width, in m², with whole sheets. The width is read back off the line's own
+ * kg per metre (kg/m ÷ the sheet's kg/m²), so no calculator had to change and
+ * the kg is exactly what it was. The spec is untouched (the manual-override
+ * key is built from it); the strip metres stay on the line as stripLm /
+ * stripWidthMm and in the formula. An L-series trench mesh stays in lm. */
+function sheetMeshStripToArea(line){
+  if(line.unit!=="lm" && line.unit!=="m") return;
+  if(line.materialGroup!=="Reinforcement" && line.materialGroup!=="Connections" && line.materialGroup!=="Joints") return;
+  const kgm2=MESHTYPES[line.material]; if(!(kgm2>0)) return;
+  const mpm=num(line.massPerUnit); if(!(mpm>0)) return;
+  const wM=mpm/kgm2, wMm=Math.round(wM*1000);
+  const lm=num(line.qty), lmFinal=num(line.finalQty);
+  line.stripLm=lm; line.stripWidthMm=wMm;
+  line.qty=lm*wM; line.finalQty=lmFinal*wM; line.unit="m²"; line.massPerUnit=kgm2;
+  line.sheets=Math.ceil(line.finalQty/MESH_SHEET_AREA_M2-1e-9);
+  line.formula=`${line.formula? line.formula+" → " : ""}${fmt(lm,2)} lm × ${wMm} mm strip = ${fmt(line.qty,2)} m²`;
+  line.notes=[line.notes,`sheet mesh cut as ${wMm} mm strips (${fmt(lmFinal,2)} lm of strip) — ${line.sheets} sheet${line.sheets===1?"":"s"} (6.0×2.4m nominal)`].filter(Boolean).join(" · ");
+}
 function baseLine(inst,def,over){
   let line = Object.assign({
     stage:def.groupName, category:def.label, element:inst.label, elementId:inst.id,
     materialGroup:"", material:"", spec:"", qty:0, unit:"", waste:0, lap:0, finalQty:0, formula:"", linkedElement:"", notes:""
   }, over);
+  sheetMeshStripToArea(line);
   let key = overrideKeyFor(line.materialGroup, line.material, line.spec);
   line.overrideKey = key;
   let ov = inst.data.manualOverrides && inst.data.manualOverrides[key];
@@ -2809,6 +2836,7 @@ function baseLine(inst,def,over){
     line.finalQty = (ov.qty===""||ov.qty===undefined||ov.qty===null||isNaN(ov.qty))? 0 : Number(ov.qty);
     line.manualOverride = true;
     line.overrideReason = ov.reason || "";
+    if(line.stripLm!==undefined) line.sheets=Math.ceil(line.finalQty/MESH_SHEET_AREA_M2-1e-9);   // the override is typed in m²
   }
   // Lines whose weight can't be derived from material name alone (e.g. square mesh laid
   // as trench strips — kg depends on strip width) pass massPerUnit; computing weight from
