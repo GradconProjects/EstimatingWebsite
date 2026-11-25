@@ -810,7 +810,20 @@ export const FULL_CATALOG = [
   { key: "OTHER ACCESSORIES", weightBasis: false, products: [
     // Vapour barrier is its own product, DISTINCT from Insulation — a 200µm
     // poly membrane per m² laid, not an insulation board/strip.
-    ["Packing sand", "m3", null, 50], ["Crushed Rock", "m3", null, 63], ["Insulation", "m2", null, 25], ["Vapour barrier", "m2", null, 3], ["Epoxy", "unit", null, 70],
+    ["Packing sand", "m3", null, 50], ["Crushed Rock", "m3", null, 63], ["Insulation", "m2", null, 25], ["Vapour barrier", "m2", null, 3],
+    // CETCO Voltex (Boma, 26 Nov 2026: "include voltex membrane in materials
+    // vapour barrier") — a bentonite / geotextile waterproofing sheet, the
+    // membrane behind a shotcrete wall on a piled retention. SUPPLY only, ex
+    // GST, per m² of membrane (the laps are in the quantity): the WaterStop
+    // Shop, Oakleigh VIC, published prices read 26 Nov 2026 for a 1.1 m × 5 m
+    // roll (5.5 m²) — Voltex $233.75 inc GST → $212.50 ex ÷ 5.5 = $38.64/m²;
+    // Voltex DS (with the bonded HDPE liner) $265.65 inc → $241.50 ex ÷ 5.5 =
+    // $43.91/m². TradieCart listed the same Voltex roll at $183.34 ex that
+    // day; the higher published figure is seeded (the top-of-range rule).
+    // Installation and certification by the waterproofer is a subcontract
+    // quote, never this row.
+    ["Voltex bentonite waterproofing membrane (supply)", "m2", null, 38.64], ["Voltex DS bentonite waterproofing membrane (supply)", "m2", null, 43.91],
+    ["Epoxy", "unit", null, 70],
     ["Marking Paint", "unit", null, 4], ["Sealers/Acid/MBT", "each", null, 400], ["Curing Products", "price", null, 100],
   ]},
   /* Saw cuts & dowels — Danley PD3 10 mm tapered plate dowel cradles @ 450 mm

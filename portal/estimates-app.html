@@ -3584,9 +3584,17 @@ function concSection(d,note){
   const eff = concWasteFlat()? PROJECT.concreteWaste : CONC_WASTE[concWasteClassOf(d)];
   return `<div class="grid cols3">${F("Concrete grade (N/MPa)",inpNum("grade",d.grade))}${classSel}${F(`Concrete waste % override (blank = ${eff}%)`,inpNum("concreteWasteOverride",d.concreteWasteOverride))}</div>${note||""}`;
 }
+/* The membrane choices of EVERY vapour barrier select (under an element,
+ * under pile caps, upright on a shotcrete wall's face). The two Voltex
+ * values are the Quotes OTHER ACCESSORIES row names VERBATIM (verify.mjs
+ * checks), so the bridge lands them on their own priced rows; vmMaterial is
+ * the ONE reading of the line's material. */
+const VM_VOLTEX="Voltex bentonite waterproofing membrane (supply)", VM_VOLTEX_DS="Voltex DS bentonite waterproofing membrane (supply)";
+const VM_TYPES=[["200um polyethylene","200µm polyethylene (standard)"],["300um polyethylene","300µm polyethylene (heavy duty)"],["Fortecon 200um","Fortecon 200µm"],["Damp-proof membrane","Damp-proof membrane (other)"],[VM_VOLTEX,"Voltex — bentonite waterproofing membrane (CETCO)"],[VM_VOLTEX_DS,"Voltex DS — bentonite membrane with HDPE liner (CETCO)"]];
+function vmMaterial(type){ const t=type||"200um polyethylene"; return /^Voltex/.test(t)? t : `Vapour barrier — ${t}`; }
 function vapourMembraneLine(inst,def,area,type,lapPct){
   let lap=lapPct===undefined?10:num(lapPct,10);
-  return baseLine(inst,def,{materialGroup:"Vapour Barrier",material:`Vapour barrier — ${type||"200um polyethylene"}`,spec:`incl. ${lap}% laps/upturns`,qty:area,unit:"m²",waste:lap,finalQty:withWaste(area,lap),formula:`area (+${lap}% laps)`});
+  return baseLine(inst,def,{materialGroup:"Vapour Barrier",material:vmMaterial(type),spec:`incl. ${lap}% laps/upturns`,qty:area,unit:"m²",waste:lap,finalQty:withWaste(area,lap),formula:`area (+${lap}% laps)`});
 }
 /* ---- Blinding & Vapour Barrier: ONE full section shared by every element
    that blinds its base (strip/pad/stump footings, pile caps), so every
@@ -3609,7 +3617,7 @@ function blindingThicknessMm(d){ if(!blindingEnabled(d)) return 0; return (d.bli
 function vapourSubsection(d,label){
   return `${chk("vapourMembrane",d.vapourMembrane,label||"Vapour barrier / membrane under element","vapourMembrane")}
   <div class="subsec ${d.vapourMembrane?'':'hidden'}" data-show-if="vapourMembrane"><div class="grid cols3">
-   ${F("Membrane type",selOpts("vmType",d.vmType||"200um polyethylene",[["200um polyethylene","200µm polyethylene (standard)"],["300um polyethylene","300µm polyethylene (heavy duty)"],["Fortecon 200um","Fortecon 200µm"],["Damp-proof membrane","Damp-proof membrane (other)"]]))}
+   ${F("Membrane type",selOpts("vmType",d.vmType||"200um polyethylene",VM_TYPES))}
    ${F("Laps & upturns allowance (%)",inpNum("vmLap",d.vmLap===undefined?10:d.vmLap))}
    ${F("Extends to",selOpts("vmExtent",d.vmExtent||"foot",[["foot","Element footprint"],["exc","Excavation footprint (incl. oversize)"]]))}
   </div></div>`;
@@ -4300,7 +4308,7 @@ function capBlindingSection(inst){
   <p class="small">${(thick>0&&d.capBlindOn!==false)?`${thick}mm`:"No blinding"} over the oversized excavation footprint — the hole it's actually poured into, not the cap's own plan area. Turning the caps' excavation off on the Pile Cap tab removes the blinding with it.</p>
   ${chk("capVapour",d.capVapour,"Vapour barrier / membrane under the caps","capVapour")}
   <div class="subsec ${d.capVapour?'':'hidden'}" data-show-if="capVapour"><div class="grid cols3">
-   ${F("Membrane type",selOpts("capVmType",d.capVmType||"200um polyethylene",[["200um polyethylene","200µm polyethylene (standard)"],["300um polyethylene","300µm polyethylene (heavy duty)"],["Fortecon 200um","Fortecon 200µm"],["Damp-proof membrane","Damp-proof membrane (other)"]]))}
+   ${F("Membrane type",selOpts("capVmType",d.capVmType||"200um polyethylene",VM_TYPES))}
    ${F("Laps &amp; upturns allowance (%)",inpNum("capVmLap",d.capVmLap===undefined?10:d.capVmLap))}
   </div></div>`;
 }
@@ -7128,7 +7136,6 @@ function vertBlindSection(d){
  * sprayed, measured in m² of FACE with a lap allowance: a typed area wins,
  * else length × height (each blank = the wall's own). Its own tick and its
  * own line, beside the two blindings. vertVmGeom(d) is the ONE reading. */
-const VERT_VM_TYPES=[["200um polyethylene","200µm polyethylene (standard)"],["300um polyethylene","300µm polyethylene (heavy duty)"],["Fortecon 200um","Fortecon 200µm"],["Damp-proof membrane","Damp-proof membrane (other)"]];
 function vertVmGeom(d){
   d=d||{};
   const on=!!d.vertVmOn;
@@ -7149,14 +7156,14 @@ function vertVmSection(d){
   return `<div class="subsec" data-testid="vert-vapour"><div class="sechead">Vertical vapour barrier / membrane to the wall face</div>
   ${chk("vertVmOn",d.vertVmOn,"Vapour barrier / membrane fixed upright to the face before the wall is sprayed","vertVmOn")}
   <div class="subsec ${d.vertVmOn?'':'hidden'}" data-show-if="vertVmOn"><div class="grid cols3">
-   ${F("Membrane type",selOpts("vertVmType",d.vertVmType||"200um polyethylene",VERT_VM_TYPES))}
+   ${F("Membrane type",selOpts("vertVmType",d.vertVmType||"200um polyethylene",VM_TYPES))}
    ${F("Laps allowance (%, blank = 10)",inpNum("vertVmLap",d.vertVmLap))}
    ${F("Length covered (mm, blank = the wall length)",inpNum("vertVmLenMm",d.vertVmLenMm))}
    ${F("Height covered (mm, blank = the wall height)",inpNum("vertVmHeightMm",d.vertVmHeightMm))}
    ${F("Face area (m², typed — replaces length × height)",inpNum("vertVmAreaM2",d.vertVmAreaM2))}
   </div>
   <p class="small" data-testid="vert-vapour-out" data-vertvm-out style="font-weight:600">${vertVmOutText(d)}</p>
-  <p class="small">Area = the wall's FACE (not a plan area) plus the laps. This is a sheet vapour barrier; a specialist waterproofing system behind the wall (a bentonite sheet such as Voltex, installed and certified by others) is a subcontract quote, not this row.</p></div></div>`;
+  <p class="small">Area = the wall's FACE (not a plan area) plus the laps. Voltex and Voltex DS (CETCO bentonite waterproofing sheets) are in the Membrane type list and price the SUPPLY of the sheet per m² — set the laps to the manufacturer's; installation and certification by the waterproofer is a subcontract quote in Quotes.</p></div></div>`;
 }
 function refreshPileBlindNote(card,inst){
   const em=card.querySelector('[data-vertvm-out]'); if(em) em.textContent=vertVmOutText(inst.data);
@@ -7260,7 +7267,7 @@ function computeShotWall(inst,def){
   const vm=vertVmGeom(d);
   if(vm.on){
     if(!vm.ready) warnings.push({text:"Vertical vapour barrier to the wall face is ticked but there is no face area (a typed area, or a length and a height) — nothing is priced for it.",section:"blind",level:"completeness"});
-    else lines.push(baseLine(inst,def,{materialGroup:"Vapour Barrier",material:`Vapour barrier — ${vm.type}`,spec:"Vertical — to the wall face, incl. laps",shotFace:true,qty:vm.area,unit:"m²",waste:vm.lap,finalQty:vm.finalM2,formula:`${vm.areaTyped? `${fmt(vm.area,2)} m² face (typed)` : `${fmt(vm.L,2)} × ${fmt(vm.H,2)} m face`} (+${fmt(vm.lap,0)}% laps)`,notes:`${fmt(vm.area,2)} m² of wall face`}));
+    else lines.push(baseLine(inst,def,{materialGroup:"Vapour Barrier",material:vmMaterial(vm.type),spec:"Vertical — to the wall face, incl. laps",shotFace:true,qty:vm.area,unit:"m²",waste:vm.lap,finalQty:vm.finalM2,formula:`${vm.areaTyped? `${fmt(vm.area,2)} m² face (typed)` : `${fmt(vm.L,2)} × ${fmt(vm.H,2)} m face`} (+${fmt(vm.lap,0)}% laps)`,notes:`${fmt(vm.area,2)} m² of wall face`}));
   }
   const pb=pileBlindGeom(d);
   if(pb.on){

@@ -54,6 +54,10 @@ export const ESTIMATE_TYPE_MAP = {
   "Column": "rc_columns",
   "Concrete Wall / Core": "core_shear_wall",
   "Retaining Wall": "retaining_wall",
+  // 26 Nov 2026: a shotcrete wall crossed as "a type this bridge doesn't know
+  // about yet", so none of its lines (shotcrete, mesh, dowels, the wall-face
+  // blinding and membrane) reached Quotes.
+  "Shotcrete Wall": "shotcrete_wall",
   "Concrete Stair": "staircase",
   "Ramp / External Sloped Slab": "ramp",
   "Basement Ramp": "basement_ramp",
@@ -96,6 +100,7 @@ const QUOTES_TYPE_BY_ID = {};
 ELEMENT_TYPES.forEach((t) => { QUOTES_TYPE_BY_ID[t.id] = t; });
 
 const CONCRETE_CAT = FULL_CATALOG.find((c) => c.key === "CONCRETE");
+const ACCESSORIES_CAT = FULL_CATALOG.find((c) => c.key === "OTHER ACCESSORIES");
 const PRECAST_CAT = FULL_CATALOG.find((c) => c.key === "PRECAST / TILT-UP");
 const TRENCH_CAT = FULL_CATALOG.find((c) => c.key === "TRENCH MESH");
 /** Quotes prices trench mesh per stock LENGTH; Estimates measures it in lineal metres. */
@@ -523,7 +528,11 @@ export function buildImportFromEstimate(estimateExport) {
     // included in finalQty) land on the dedicated OTHER ACCESSORIES "Vapour
     // barrier" product — distinct from Insulation. ---
     group.filter((l) => (l.materialGroup === "Base/Blinding" || l.materialGroup === "Vapour Barrier") && /vapour|membrane/i.test(l.material || "") && (l.unit === "m²" || l.unit === "m2")).forEach((l) => {
-      map(l, rateKey("OTHER ACCESSORIES", "Vapour barrier", "m2"), Number(l.finalQty) || 0);
+      // A membrane NAMED after its own OTHER ACCESSORIES row (the Voltex
+      // waterproofing sheets, 26 Nov 2026) lands on that row; every other
+      // vapour barrier on the one "Vapour barrier" product.
+      const named = ACCESSORIES_CAT && ACCESSORIES_CAT.products.find((p) => p.name === l.material && p.unit === "m2");
+      map(l, rateKey("OTHER ACCESSORIES", named ? named.name : "Vapour barrier", "m2"), Number(l.finalQty) || 0);
     });
 
     // --- Drilled & epoxied starters: an Estimates starter run fixed "Drill &

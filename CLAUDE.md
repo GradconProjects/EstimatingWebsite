@@ -5543,17 +5543,14 @@ element families waits on the owner's approval of the pad footing.
   the Shotcrete Wall's Blinding tab, under the two blindings: "Vertical vapour
   barrier / membrane to the wall face" (`vertVmSection`,
   `data-testid="vert-vapour"`): the tick `vertVmOn`, Membrane type
-  (`vertVmType`, `VERT_VM_TYPES` — the same four as the under-element
-  membrane), Laps (`vertVmLap`, blank = 10 %, a typed 0 is 0), Length and
+  (`vertVmType`, `VM_TYPES` — the ONE list every membrane select offers), Laps (`vertVmLap`, blank = 10 %, a typed 0 is 0), Length and
   Height covered (`vertVmLenMm` / `vertVmHeightMm`, each blank = the wall's
   own) and a typed Face area (`vertVmAreaM2`, replaces length × height).
   `vertVmGeom(d)` is the ONE reading — FACE area plus laps — and
   `computeShotWall` emits ONE `Vapour Barrier` m² line "Vapour barrier —
   <type>", spec "Vertical — to the wall face, incl. laps", which the bridge
-  lands on OTHER ACCESSORIES "Vapour barrier". It is a SHEET vapour barrier:
-  a specialist waterproofing system behind the wall (a bentonite sheet such
-  as Voltex, installed and certified by others) is a subcontract quote, and
-  the section says so. **The three wall-face lines carry `shotFace: true`**
+  lands on OTHER ACCESSORIES "Vapour barrier" (Voltex on its own row — see
+  the next bullet). **The three wall-face lines carry `shotFace: true`**
   and the generic under-element blinding / membrane path ignores them when it
   decides whether the element already blinds — before this, ticking either
   blinding switched the generic section off. Ticked with no face area is a
@@ -5563,6 +5560,35 @@ element families waits on the owner's approval of the pad footing.
   `test-vert-vapour.mjs` proves the place on the tab, 54 m² → 59.4 m², typed
   laps / length / height / area / type, the line beside the blindings and the
   generic membrane, the warning, the save and the untick (18 checks).
+- **Voltex is a membrane choice and a priced row** (Boma, 26 Nov 2026:
+  "include voltex membrane in materials vapour barrier" — the piled-wall
+  detail's "CETCO'S VOLTEX WATERPROOFING SYSTEM (OR EQUIVALENT)"). Quotes:
+  two OTHER ACCESSORIES `m2` rows right after "Vapour barrier" — "Voltex
+  bentonite waterproofing membrane (supply)" $38.64 and "Voltex DS bentonite
+  waterproofing membrane (supply)" $43.91, SUPPLY only ex GST per m² of
+  membrane (the laps are in the quantity). **The seeds are a published roll
+  price, never a remembered one**: the WaterStop Shop (Oakleigh VIC), read
+  26 Nov 2026, 1.1 m × 5 m roll = 5.5 m² — Voltex $233.75 inc GST → $212.50
+  ex ÷ 5.5; Voltex DS $265.65 inc → $241.50 ex ÷ 5.5 (TradieCart listed the
+  Voltex roll at $183.34 ex that day; the higher published figure is seeded,
+  the top-of-range rule); the arithmetic is in the catalog comment.
+  Installation and certification by the waterproofer is a subcontract quote,
+  never these rows. The Rates Library's Other Accessories lists both by the
+  same name (a stored library gains them through `backfill`), so its figures
+  govern Quotes. Estimates: `VM_TYPES` is the ONE list behind the three
+  membrane selects (`vmType` under an element, `capVmType` under a pier's
+  caps, `vertVmType` on a shotcrete wall's face) and carries `VM_VOLTEX` /
+  `VM_VOLTEX_DS` — the catalog names VERBATIM; `vmMaterial(type)` is the ONE
+  reading of a membrane line's material (a Voltex line is named after its
+  row, every other "Vapour barrier — <type>"). The bridge lands a Vapour
+  Barrier m² line whose material IS an OTHER ACCESSORIES row on that row, and
+  every other one on "Vapour barrier". **An Estimates "Shotcrete Wall" now
+  maps to the Quotes `shotcrete_wall`** (`ESTIMATE_TYPE_MAP`): until this day
+  it crossed as "a type this bridge doesn't know about yet" and none of its
+  lines reached Quotes. The catalog is 440 products. `verify.mjs` pins the
+  roll arithmetic, the order, the library rows, the one list, `vmMaterial`
+  and the bridge; `test-voltex.mjs` proves the three selects, the lines and
+  the Quotes band (59.4 m² × $38.64 = $2,295.22; 12 checks).
 - **An opening or penetration can be entered by its PERIMETER** (Boma,
   25 Nov 2026: "i would like the option of entering openings and penetrations
   in perimeter lm also"). The Openings table on the slab and the wall
@@ -5603,7 +5629,7 @@ element families waits on the owner's approval of the pad footing.
   library gains it through `backfill`, so its figure governs Quotes) and its
   position-based formwork list and the Cost Planner's two lists carry
   "KingFlor decking to suspended slab" / "KingFlor" at the Bondek figures, not
-  marked established. The catalog is 438 products. `verify.mjs` pins the list
+  marked established. The catalog was 438 products that day. `verify.mjs` pins the list
   order, the label, the four lists and the bridge (100 m² → $15,000).
 - **A sheet-mesh line WEIGHS** (26 Oct 2026, Grady's pad footing PF1-3 with
   two layers of SL92 read "0kg reo"): `lineWeightKg` returns final m² ×

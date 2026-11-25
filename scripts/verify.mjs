@@ -99,10 +99,10 @@ check("every element type has both a category and a section", () => {
   });
 });
 
-check("21 material categories, 438 products (incl. KingFlor steel decking on FORMWORK (25 Nov 2026), the 12 vertical insulation rows and the 7 Slabmate boards of INSULATION (22 Nov 2026), the R6 / R8 / R10 plain rounds on PROCESSED BAR, the 12-row Void formers group of FORMWORK, the 23-row FINISHED PAVEMENTS & CONCRETE FINISHES band (permeable paving and the P4 slip-resistant row added 20 Nov 2026, the two recommended tender allowances 21 Nov 2026), the 45-row SAW CUTS & DOWELS band, CONCRETE PUMPING, REINFORCEMENT BY RATE, the 51-row INSULATION range, 31 SCREEDS, 17 HYDRONIC HEATING, 48 SPECIALIST FINISHING CONCRETE, 45 PRELIMINARIES, the full 24-size TRENCH MESH grid, Bored Piers subcontract, minimum cartage, levy, surcharge)", () => {
+check("21 material categories, 440 products (incl. the two Voltex waterproofing membranes on OTHER ACCESSORIES (26 Nov 2026), incl. KingFlor steel decking on FORMWORK (25 Nov 2026), the 12 vertical insulation rows and the 7 Slabmate boards of INSULATION (22 Nov 2026), the R6 / R8 / R10 plain rounds on PROCESSED BAR, the 12-row Void formers group of FORMWORK, the 23-row FINISHED PAVEMENTS & CONCRETE FINISHES band (permeable paving and the P4 slip-resistant row added 20 Nov 2026, the two recommended tender allowances 21 Nov 2026), the 45-row SAW CUTS & DOWELS band, CONCRETE PUMPING, REINFORCEMENT BY RATE, the 51-row INSULATION range, 31 SCREEDS, 17 HYDRONIC HEATING, 48 SPECIALIST FINISHING CONCRETE, 45 PRELIMINARIES, the full 24-size TRENCH MESH grid, Bored Piers subcontract, minimum cartage, levy, surcharge)", () => {
   assert.equal(FULL_CATALOG.length, 21);
   const total = FULL_CATALOG.reduce((s, c) => s + c.products.length, 0);
-  assert.equal(total, 438);
+  assert.equal(total, 440);
   const pre = FULL_CATALOG.find((c) => c.key === "PRELIMINARIES");
   assert.equal(pre.products.length, 45);
   assert.ok(!pre.weightBasis && !pre.areaBasis && !pre.lengthBasis && !pre.volumeRateBasis, "preliminaries cost plain qty × rate");
@@ -6437,6 +6437,42 @@ check("Shotcrete wall dowels into the piers set out as a VERTICAL RUN (26 Nov 20
   assert.match(imp, /\/\^drill & epoxy\$\/i\.test\(l\.material \|\| ""\) && l\.unit === "no\."/);
 });
 
+check("Voltex waterproofing membranes (26 Nov 2026): two OTHER ACCESSORIES rows seeded from a published roll price, offered in every Estimates membrane select and bridged by name", () => {
+  const V = "Voltex bentonite waterproofing membrane (supply)", VD = "Voltex DS bentonite waterproofing membrane (supply)";
+  const acc = FULL_CATALOG.find((c) => c.key === "OTHER ACCESSORIES");
+  const row = (n) => acc.products.find((p) => p.name === n);
+  // the published roll: 1.1 m × 5 m = 5.5 m², price inc GST → ex GST per m²
+  const perM2 = (inc) => Math.round(inc / 1.1 / 5.5 * 100) / 100;
+  assert.equal(row(V).unit, "m2"); assert.equal(row(V).unitCost, perM2(233.75)); assert.equal(row(V).unitCost, 38.64);
+  assert.equal(row(VD).unit, "m2"); assert.equal(row(VD).unitCost, perM2(265.65)); assert.equal(row(VD).unitCost, 43.91);
+  assert.equal(row("Vapour barrier").unitCost, 3, "the polyethylene row is unchanged");
+  const names = acc.products.map((p) => p.name);
+  assert.ok(names.indexOf(V) === names.indexOf("Vapour barrier") + 1 && names.indexOf(VD) === names.indexOf(V) + 1, "they sit right after Vapour barrier");
+  assert.equal(computeRowTotal(acc, { unitCost: row(V).unitCost }, 59.4), 59.4 * 38.64, "priced per m² of membrane, laps in the quantity");
+  // the Rates Library lists the same names at the same figures, so its figures govern Quotes
+  const lib = fs.readFileSync(new URL("../portal/rates-library.html", import.meta.url), "utf8");
+  assert.ok(lib.includes(`{p:"${V}",u:"m2",cost:38.64,`) && lib.includes(`{p:"${VD}",u:"m2",cost:43.91,`), "the library's Other Accessories carries both");
+  // Estimates: ONE list for the three selects, the values are the catalog names verbatim
+  const est = fs.readFileSync(new URL("../portal/estimates-app.html", import.meta.url), "utf8");
+  assert.ok(est.includes(`const VM_VOLTEX="${V}", VM_VOLTEX_DS="${VD}";`), "the Estimates values are the catalog names");
+  assert.match(est, /\[VM_VOLTEX,"Voltex — bentonite waterproofing membrane \(CETCO\)"\],\[VM_VOLTEX_DS,/);
+  for (const f of ["vmType", "capVmType", "vertVmType"]) assert.ok(est.includes(`selOpts("${f}",d.${f}||"200um polyethylene",VM_TYPES)`), `${f} offers the one list`);
+  const vmMaterial = new Function(est.match(/function vmMaterial\(type\)\{[^\n]*\}/)[0] + "\nreturn vmMaterial;")();
+  assert.equal(vmMaterial(V), V, "a Voltex line is named after its row"); assert.equal(vmMaterial("Fortecon 200um"), "Vapour barrier — Fortecon 200um"); assert.equal(vmMaterial(), "Vapour barrier — 200um polyethylene");
+  assert.match(est, /materialGroup:"Vapour Barrier",material:vmMaterial\(type\),/);
+  // the bridge: Voltex on its own row, polyethylene on the Vapour barrier row, nothing flagged
+  const { quote, flags } = buildImportFromEstimate({ project: {}, lines: [
+    { ...estLine({}), category: "Shotcrete Wall", element: "SW1", elementId: "EL01", materialGroup: "Vapour Barrier", material: V, spec: "Vertical — to the wall face, incl. laps", unit: "m²", finalQty: 59.4 },
+    { ...estLine({}), category: "Shotcrete Wall", element: "SW1", elementId: "EL01", materialGroup: "Vapour Barrier", material: VD, spec: "incl. 10% laps/upturns", unit: "m²", finalQty: 12 },
+    { ...estLine({}), category: "Shotcrete Wall", element: "SW1", elementId: "EL01", materialGroup: "Vapour Barrier", material: "Vapour barrier — 300um polyethylene", spec: "incl. 10% laps/upturns", unit: "m²", finalQty: 20 },
+  ] });
+  const it = quote.items[0];
+  assert.equal(it.typeId, "shotcrete_wall", "an Estimates Shotcrete Wall lands on the Quotes Shotcrete Retention Wall");
+  assert.equal(it.qtys[rateKey("OTHER ACCESSORIES", V, "m2")], 59.4); assert.equal(it.qtys[rateKey("OTHER ACCESSORIES", VD, "m2")], 12);
+  assert.equal(it.qtys[rateKey("OTHER ACCESSORIES", "Vapour barrier", "m2")], 20, "the polyethylene line alone on the Vapour barrier row");
+  assert.ok(!flags.some((f) => /Voltex|Vapour/i.test(f)), `nothing flagged: ${flags.join(" | ")}`);
+});
+
 check("Vertical vapour barrier on a shotcrete wall (26 Nov 2026): face area + laps — a typed area, else length × height; its own line beside the blindings", () => {
   const est = fs.readFileSync(new URL("../portal/estimates-app.html", import.meta.url), "utf8");
   const num = (v, d) => { const n = parseFloat(v); return Number.isFinite(n) ? n : (d === undefined ? 0 : d); };
@@ -6452,7 +6488,7 @@ check("Vertical vapour barrier on a shotcrete wall (26 Nov 2026): face area + la
   assert.equal(geom({ vertVmOn: true }).ready, false); assert.equal(geom({ length: 18000, height: 3000 }).on, false, "off until ticked");
   // wiring: its own Vapour Barrier line, which the bridge lands on the Vapour barrier row; the wall-face lines never switch the generic under-element section off
   assert.match(est, /const vm=vertVmGeom\(d\);/);
-  assert.match(est, /materialGroup:"Vapour Barrier",material:`Vapour barrier — \$\{vm\.type\}`,spec:"Vertical — to the wall face, incl\. laps",shotFace:true/);
+  assert.match(est, /materialGroup:"Vapour Barrier",material:vmMaterial\(vm\.type\),spec:"Vertical — to the wall face, incl\. laps",shotFace:true/);
   assert.match(est, /\(l\.materialGroup==="Base\/Blinding"\|\|l\.materialGroup==="Vapour Barrier"\) && !l\.shotFace\)\)\{/, "the generic blinding / membrane still prices beside the wall-face lines");
   assert.match(est, /data-vertvm-out\]'\); if\(em\) em\.textContent=vertVmOutText\(inst\.data\);/);
   assert.match(est, /Vertical vapour barrier to the wall face is ticked but there is no face area[^`"]*nothing is priced for it\.",section:"blind",level:"completeness"/);
